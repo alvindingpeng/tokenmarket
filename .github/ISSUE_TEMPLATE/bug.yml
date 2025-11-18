@@ -1,0 +1,31 @@
+name: 错误反馈
+description: "提交错误反馈"
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: checkboxes
+    id: ensure
+    attributes:
+      label: 验证步骤
+      description: 在提交之前，请勾选以下选项以证明您已经阅读并理解了以下要求，否则该 issue 将被关闭。
+      options:
+        - label: 我已在 Issue 中寻找过我要提出的问题，并且没有找到
+          required: true
+        
+  - type: textarea
+    attributes:
+      label: 描述
+      description: 请提供错误的详细描述。
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: 重现方式
+      description: 请提供重现错误的步骤
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: 日志
+      description: 在下方附上运行日志
+      render: shell
