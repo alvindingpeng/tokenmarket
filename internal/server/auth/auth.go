@@ -1,14 +1,18 @@
 package auth
 
 import (
+	"context"
+	"crypto/rand"
+	"math/big"
+	"strings"
 	"time"
 
-	"github.com/alvindingpeng/go-backend-template/internal/conf"
-	"github.com/alvindingpeng/go-backend-template/internal/op"
+	"github.com/alvindingpeng/switchyard/internal/conf"
+	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/golang-jwt/jwt/v5"
 )
 
-func GenerateToken(expiresMin int) (string, string, error) {
+func GenerateJWTToken(expiresMin int) (string, string, error) {
 	now := time.Now()
 	claims := &jwt.RegisteredClaims{
 		IssuedAt:  jwt.NewNumericDate(now),
@@ -31,13 +35,37 @@ func GenerateToken(expiresMin int) (string, string, error) {
 	return token, claims.ExpiresAt.Format(time.RFC3339), nil
 }
 
-func VerifyToken(token string) bool {
+func VerifyJWTToken(token string) bool {
 	jwtToken, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
 		user := op.UserGet()
 		secret := user.Username + user.Password
 		return []byte(secret), nil
 	})
 	if err != nil || !jwtToken.Valid {
+		return false
+	}
+	return true
+}
+
+func GenerateAPIKey() string {
+	const keyChars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	b := make([]byte, 48)
+	maxI := big.NewInt(int64(len(keyChars)))
+	for i := range b {
+		n, err := rand.Int(rand.Reader, maxI)
+		if err != nil {
+			return ""
+		}
+		b[i] = keyChars[n.Int64()]
+	}
+	return "sk-" + conf.APP_NAME + "-" + string(b)
+}
+
+func VerifyAPIKey(apiKey string, ctx context.Context) bool {
+	if !strings.HasPrefix(apiKey, "sk-"+conf.APP_NAME+"-") {
+		return false
+	}
+	if !op.APIKeyVerify(apiKey, ctx) {
 		return false
 	}
 	return true

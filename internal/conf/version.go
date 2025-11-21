@@ -5,5 +5,5 @@ var (
 	Commit    = "unknown"
 	BuildTime = "unknown"
 	Author    = "bestrui"
-	Repo      = "https://github.com/alvindingpeng/go-backend-template"
+	Repo      = "https://github.com/alvindingpeng/switchyard"
 )

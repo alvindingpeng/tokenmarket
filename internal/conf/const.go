@@ -1,6 +1,6 @@
 package conf
 
 const (
-	APP_NAME = "example"
-	APP_DESC = "Example Service"
+	APP_NAME = "switchyard"
+	APP_DESC = "all ai service in one place"
 )

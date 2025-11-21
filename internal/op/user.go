@@ -3,9 +3,9 @@ package op
 import (
 	"fmt"
 
-	"github.com/alvindingpeng/go-backend-template/internal/db"
-	"github.com/alvindingpeng/go-backend-template/internal/model"
-	"github.com/alvindingpeng/go-backend-template/internal/utils/log"
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/utils/log"
 )
 
 var userCache model.User

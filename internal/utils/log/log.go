@@ -28,6 +28,7 @@ func init() {
 	)
 	opts := []zap.Option{
 		zap.AddCaller(),
+		zap.AddCallerSkip(1),
 		zap.AddStacktrace(zap.ErrorLevel),
 	}
 	Logger = zap.New(core, opts...).Sugar()

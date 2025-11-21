@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/alvindingpeng/go-backend-template/internal/utils/log"
+	"github.com/alvindingpeng/switchyard/internal/utils/log"
 	"github.com/spf13/viper"
 )
 
