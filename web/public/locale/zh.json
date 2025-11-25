@@ -1,0 +1,25 @@
+{
+    "login": {
+        "title": "登录您的账户",
+        "description": "输入用户名和密码登录",
+        "username": "用户名",
+        "usernamePlaceholder": "请输入用户名",
+        "password": "密码",
+        "passwordPlaceholder": "请输入密码",
+        "error": {
+            "generic": "登录失败，请检查用户名和密码"
+        },
+        "button": {
+            "loading": "登录中...",
+            "submit": "登录"
+        }
+    },
+    "navbar": {
+        "home": "主页",
+        "channel": "渠道",
+        "group": "分组",
+        "key": "密钥",
+        "model": "模型",
+        "setting": "设置"
+    }
+}
