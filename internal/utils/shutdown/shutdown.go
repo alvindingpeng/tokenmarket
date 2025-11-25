@@ -35,8 +35,8 @@ func (s *ShutDown) Listen() {
 	if len(s.funcs) == 0 {
 		return
 	}
-	for _, fn := range s.funcs {
-		if err := fn(); err != nil {
+	for i := len(s.funcs) - 1; i >= 0; i-- {
+		if err := s.funcs[i](); err != nil {
 			s.log.Errorf("Closing functions execution failed: %v", err)
 		}
 	}
