@@ -39,6 +39,7 @@ func InitDB(path string, debug bool) error {
 		&model.LLMModel{},
 		&model.APIKey{},
 		&model.Setting{},
+		&model.StatsTotal{},
 		&model.StatsDaily{},
 		&model.StatsModel{},
 	)

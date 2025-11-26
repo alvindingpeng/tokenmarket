@@ -30,7 +30,9 @@ func InitCache() error {
 }
 
 func SaveCache() error {
-	if err := StatsSaveDB(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := StatsSaveDB(ctx); err != nil {
 		return err
 	}
 	return nil
