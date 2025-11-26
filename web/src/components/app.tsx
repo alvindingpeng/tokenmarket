@@ -40,11 +40,9 @@ export function AppContainer() {
     }
 
     return (
-        <div className="px-3 md:px-6 max-w-7xl mx-auto text-foreground md:flex">
-            <div className="md:pr-6">
-                <NavBar />
-            </div>
-            <main className="w-full mb-28">
+        <div className="px-3 md:px-6 max-w-6xl mx-auto md:flex">
+            <NavBar />
+            <main className="w-full mb-28 min-w-0">
                 <header className="flex items-center gap-x-2 my-6">
                     <Logo />
                     <div className="text-3xl font-bold mt-1">{t(activeItem)}</div>

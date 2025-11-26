@@ -91,9 +91,9 @@
   --sidebar-accent-foreground: oklch(0.2189 0.0281 148.5092);
   --sidebar-border: oklch(0.4006 0.0210 145.1704);
   --sidebar-ring: oklch(0.6990 0.1292 144.8727);
-  --font-sans: Montserrat, sans-serif;
-  --font-serif: Merriweather, serif;
-  --font-mono: Source Code Pro, monospace;
+  --font-sans: "MiSans", sans-serif;
+  --font-serif: "MiSans", serif;
+  --font-mono: "MiSans", monospace;
   --radius: 0.5rem;
   --shadow-x: 0;
   --shadow-y: 1px;
@@ -169,7 +169,6 @@
     @apply border-border outline-ring/50;
     scrollbar-width: none;
     -ms-overflow-style: none;
-    transition: all 300ms;
   }
 
   body {
