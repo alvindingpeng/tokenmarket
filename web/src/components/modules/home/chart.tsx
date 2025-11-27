@@ -40,16 +40,16 @@ export function StatsChart() {
 
     return (
         <div className="rounded-3xl bg-card border-card-border border pt-2 pb-0 text-card-foreground custom-shadow">
-            <div className="flex justify-end gap-2 px-6">
+            <div className="flex justify-end gap-2 pr-2">
                 <Select value={period} onValueChange={(value) => setPeriod(value as Period)}>
-                    <SelectTrigger size="sm">
+                    <SelectTrigger size="sm" className='rounded-xl'>
                         <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="7">{t('period.last7Days')}</SelectItem>
-                        <SelectItem value="30">{t('period.last30Days')}</SelectItem>
-                        <SelectItem value="60">{t('period.last60Days')}</SelectItem>
-                        <SelectItem value="180">{t('period.last6Months')}</SelectItem>
+                    <SelectContent className='rounded-xl'>
+                        <SelectItem className='rounded-xl' value="7">{t('period.last7Days')}</SelectItem>
+                        <SelectItem className='rounded-xl' value="30">{t('period.last30Days')}</SelectItem>
+                        <SelectItem className='rounded-xl' value="60">{t('period.last60Days')}</SelectItem>
+                        <SelectItem className='rounded-xl' value="180">{t('period.last6Months')}</SelectItem>
                     </SelectContent>
                 </Select>
             </div>
