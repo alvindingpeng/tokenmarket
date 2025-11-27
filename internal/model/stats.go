@@ -1,43 +1,50 @@
 package model
 
-import "time"
+type StatsMetrics struct {
+	InputToken     int64   `json:"input_token" gorm:"bigint;default:0"`
+	OutputToken    int64   `json:"output_token" gorm:"bigint;default:0"`
+	InputCost      float64 `json:"input_cost" gorm:"type:real;default:0.00"`
+	OutputCost     float64 `json:"output_cost" gorm:"type:real;default:0.00"`
+	WaitTime       int64   `json:"wait_time" gorm:"bigint;default:0"`
+	RequestSuccess int64   `json:"request_success" gorm:"bigint;default:0"`
+	RequestFailed  int64   `json:"request_failed" gorm:"bigint;default:0"`
+}
 
 type StatsTotal struct {
-	ID           int     `gorm:"primaryKey;check:id=1"`
-	InputToken   int64   `json:"input_token" gorm:"bigint;default:0"`
-	OutputToken  int64   `json:"output_token" gorm:"bigint;default:0"`
-	InputCost    float64 `json:"input_cost" gorm:"type:real;default:0.00"`
-	OutputCost   float64 `json:"output_cost" gorm:"type:real;default:0.00"`
-	WaitTime     int64   `json:"wait_time" gorm:"bigint;default:0"`
-	RequestCount int64   `json:"request_count" gorm:"bigint;default:0"`
+	ID int `gorm:"primaryKey;check:id=1"`
+	StatsMetrics
+}
+
+type StatsHourly struct {
+	Hour int    `json:"hour" gorm:"primaryKey;check:hour between 0 and 23"`
+	Date string `json:"date" gorm:"not null;default:0"` // 记录最后更新日期，格式：20060102
+	StatsMetrics
 }
 
 type StatsDaily struct {
-	Date         time.Time `json:"date" gorm:"primaryKey"`
-	InputToken   int64     `json:"input_token" gorm:"bigint;default:0"`
-	OutputToken  int64     `json:"output_token" gorm:"bigint;default:0"`
-	InputCost    float64   `json:"input_cost" gorm:"type:real;default:0.00"`
-	OutputCost   float64   `json:"output_cost" gorm:"type:real;default:0.00"`
-	WaitTime     int64     `json:"wait_time" gorm:"bigint;default:0"`
-	RequestCount int64     `json:"request_count" gorm:"bigint;default:0"`
+	Date string `json:"date" gorm:"primaryKey"`
+	StatsMetrics
 }
 
 type StatsModel struct {
-	ID           int     `json:"id" gorm:"primaryKey"`
-	Name         string  `json:"name" gorm:"not null"`
-	ChannelID    int     `json:"channel_id" gorm:"not null"`
-	InputToken   int64   `json:"input_token" gorm:"bigint;default:0"`
-	OutputToken  int64   `json:"output_token" gorm:"bigint;default:0"`
-	InputCost    float64 `json:"input_cost" gorm:"type:real;default:0.00"`
-	OutputCost   float64 `json:"output_cost" gorm:"type:real;default:0.00"`
-	RequestCount int64   `json:"request_count" gorm:"bigint;default:0"`
+	ID        int    `json:"id" gorm:"primaryKey"`
+	Name      string `json:"name" gorm:"not null"`
+	ChannelID int    `json:"channel_id" gorm:"not null"`
+	StatsMetrics
 }
+
 type StatsChannel struct {
-	ChannelID      int     `json:"channel_id" gorm:"primaryKey"`
-	InputToken     int64   `json:"input_token"`
-	OutputToken    int64   `json:"output_token"`
-	InputCost      float64 `json:"input_cost" gorm:"type:real;default:0.00"`
-	OutputCost     float64 `json:"output_cost" gorm:"type:real;default:0.00"`
-	RequestSuccess int64   `json:"request_success"`
-	RequestFailed  int64   `json:"request_failed"`
+	ChannelID int `json:"channel_id" gorm:"primaryKey"`
+	StatsMetrics
+}
+
+// Add aggregates another StatsMetrics into the current one.
+func (s *StatsMetrics) Add(delta StatsMetrics) {
+	s.InputToken += delta.InputToken
+	s.OutputToken += delta.OutputToken
+	s.InputCost += delta.InputCost
+	s.OutputCost += delta.OutputCost
+	s.WaitTime += delta.WaitTime
+	s.RequestSuccess += delta.RequestSuccess
+	s.RequestFailed += delta.RequestFailed
 }

@@ -1,9 +1,22 @@
 'use client';
 
-import { useStatsDaily, type StatsDailyData } from '@/api/endpoints/stats';
+import { useStatsDaily, type StatsDaily } from '@/api/endpoints/stats';
 import { useMemo, useRef, useLayoutEffect, useState, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { Fragment } from 'react';
+import dayjs from 'dayjs';
+
+interface StatsDailyData {
+    dateStr: string;
+    isFuture: boolean;
+    raw: StatsDaily | null;
+    formatted: {
+        wait_time: { value: number; unit: string };
+        request_count: { value: number; unit: string };
+        total_cost: { value: number; unit: string };
+        total_token: { value: number; unit: string };
+    } | null;
+}
 
 const ACTIVITY_LEVELS = [
     { min: 5000, level: 4 },
@@ -27,25 +40,24 @@ export function Activity() {
     const days = useMemo(() => {
         if (!statsDaily) return [];
 
-        const rawMap = new Map(statsDaily.raw.map(stat => [stat.date.split('T')[0], stat]));
-        const formattedMap = new Map(statsDaily.formatted.map(stat => [stat.date.split('T')[0], stat]));
+        const rawMap = new Map(statsDaily.raw.map(stat => [stat.date, stat]));
+        const formattedMap = new Map(statsDaily.formatted.map(stat => [stat.date, stat]));
 
-        const today = new Date();
-        const todayStr = today.toISOString().slice(0, 10);
-
-        today.setDate(today.getDate() - (today.getDay() + 53 * 7));
+        const today = dayjs();
+        const startDate = today.subtract(today.day() + 53 * 7, 'day');
 
         const result: StatsDailyData[] = [];
 
         for (let i = 0; i < 54 * 7; i++) {
-            const dateStr = today.toISOString().slice(0, 10);
+            const currentDate = startDate.add(i, 'day');
+            const dateStr = currentDate.format('YYYYMMDD');
+
             result.push({
                 dateStr,
-                isFuture: dateStr > todayStr,
+                isFuture: currentDate.isAfter(today, 'day'),
                 raw: rawMap.get(dateStr) || null,
                 formatted: formattedMap.get(dateStr) || null
             });
-            today.setDate(today.getDate() + 1);
         }
 
         return result;
@@ -103,7 +115,7 @@ export function Activity() {
                                 return <div key={day.dateStr} />;
                             }
 
-                            const requestCount = day.raw?.request_count || 0;
+                            const requestCount = (day.raw?.request_success || 0) + (day.raw?.request_failed || 0);
                             const level = getActivityLevel(requestCount);
 
                             return (
@@ -126,6 +138,8 @@ export function Activity() {
                 const isLeft = tooltip.x < 200;
                 const isRight = tooltip.x > window.innerWidth - 200;
                 const isTop = tooltip.y < window.innerHeight / 2;
+                const tooltipDate = dayjs(tooltip.day.dateStr, 'YYYYMMDD');
+                const tooltipDateLabel = tooltipDate.isValid() ? tooltipDate.format('YYYY-MM-DD') : tooltip.day.dateStr;
 
                 let transform = 'translate(-50%, 15%)';
                 if (!isTop && !isLeft && !isRight) {
@@ -150,16 +164,14 @@ export function Activity() {
                         }}
                     >
                         <div className="space-y-2">
-                            <p className="font-semibold text-foreground">{tooltip.day.dateStr}</p>
+                            <p className="font-semibold text-foreground">{tooltipDateLabel}</p>
                             {tooltip.day.formatted ? (
                                 <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 items-center text-muted-foreground">
                                     {[
                                         { labelKey: 'requestCount', ...tooltip.day.formatted.request_count },
                                         { labelKey: 'waitTime', ...tooltip.day.formatted.wait_time },
-                                        { labelKey: 'inputToken', ...tooltip.day.formatted.input_token },
-                                        { labelKey: 'inputCost', ...tooltip.day.formatted.input_cost },
-                                        { labelKey: 'outputToken', ...tooltip.day.formatted.output_token },
-                                        { labelKey: 'outputCost', ...tooltip.day.formatted.output_cost },
+                                        { labelKey: 'totalToken', ...tooltip.day.formatted.total_token },
+                                        { labelKey: 'totalCost', ...tooltip.day.formatted.total_cost },
                                     ].map((item, index) => (
                                         <Fragment key={index}>
                                             <span className="wrap-break-word">{t(item.labelKey)}</span>

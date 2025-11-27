@@ -12,20 +12,10 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useStatsTotal } from '@/api/endpoints/stats';
-import { formatCount, formatMoney, formatTime } from '@/lib/utils';
 
 export function Total() {
     const { data } = useStatsTotal();
     const t = useTranslations('home.total');
-
-    const requestStats = formatCount(data?.request_count);
-    const timeStats = formatTime(data?.wait_time);
-    const inputTokenStats = formatCount(data?.input_token);
-    const outputTokenStats = formatCount(data?.output_token);
-    const inputCostStats = formatMoney(data?.input_cost);
-    const outputCostStats = formatMoney(data?.output_cost);
-    const totalTokenStats = formatCount((data?.input_token || 0) + (data?.output_token || 0));
-    const totalCostStats = formatMoney((data?.input_cost || 0) + (data?.output_cost || 0));
 
     const cards = [
         {
@@ -34,19 +24,19 @@ export function Total() {
             items: [
                 {
                     label: t('requestCount'),
-                    value: requestStats.value,
+                    value: data?.formatted.request_count.value,
                     icon: MessageSquare,
                     color: 'text-primary',
                     bgColor: 'bg-primary/10',
-                    unit: requestStats.unit
+                    unit: data?.formatted.request_count.unit
                 },
                 {
                     label: t('timeConsumed'),
-                    value: timeStats.value,
+                    value: data?.formatted.wait_time.value,
                     icon: Clock,
                     color: 'text-accent',
                     bgColor: 'bg-accent/10',
-                    unit: timeStats.unit
+                    unit: data?.formatted.wait_time.unit
                 }
             ]
         },
@@ -56,19 +46,19 @@ export function Total() {
             items: [
                 {
                     label: t('totalToken'),
-                    value: totalTokenStats.value,
+                    value: data?.formatted.total_token.value,
                     icon: Bot,
                     color: 'text-chart-1',
                     bgColor: 'bg-chart-1/10',
-                    unit: totalTokenStats.unit
+                    unit: data?.formatted.total_token.unit
                 },
                 {
                     label: t('totalCost'),
-                    value: totalCostStats.value,
+                    value: data?.formatted.total_cost.value,
                     icon: DollarSign,
                     color: 'text-chart-2',
                     bgColor: 'bg-chart-2/10',
-                    unit: totalCostStats.unit
+                    unit: data?.formatted.total_cost.unit
                 }
             ]
         },
@@ -78,19 +68,19 @@ export function Total() {
             items: [
                 {
                     label: t('inputTokens'),
-                    value: inputTokenStats.value,
+                    value: data?.formatted.input_token.value,
                     icon: Rewind,
                     color: 'text-chart-3',
                     bgColor: 'bg-chart-3/10',
-                    unit: inputTokenStats.unit
+                    unit: data?.formatted.input_token.unit
                 },
                 {
                     label: t('inputCost'),
-                    value: inputCostStats.value,
+                    value: data?.formatted.input_cost.value,
                     icon: DollarSign,
                     color: 'text-chart-3',
                     bgColor: 'bg-chart-3/10',
-                    unit: inputCostStats.unit
+                    unit: data?.formatted.input_cost.unit
                 }
             ]
         },
@@ -100,19 +90,19 @@ export function Total() {
             items: [
                 {
                     label: t('outputTokens'),
-                    value: outputTokenStats.value,
+                    value: data?.formatted.output_token.value,
                     icon: FastForward,
                     color: 'text-chart-4',
                     bgColor: 'bg-chart-4/10',
-                    unit: outputTokenStats.unit
+                    unit: data?.formatted.output_token.unit
                 },
                 {
                     label: t('outputCost'),
-                    value: outputCostStats.value,
+                    value: data?.formatted.output_cost.value,
                     icon: DollarSign,
                     color: 'text-chart-4',
                     bgColor: 'bg-chart-4/10',
-                    unit: outputCostStats.unit
+                    unit: data?.formatted.output_cost.unit
                 }
             ]
         }

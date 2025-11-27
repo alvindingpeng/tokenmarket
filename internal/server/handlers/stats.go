@@ -22,6 +22,10 @@ func init() {
 				Handle(getStatsDaily),
 		).
 		AddRoute(
+			router.NewRoute("/hourly", http.MethodGet).
+				Handle(getStatsHourly),
+		).
+		AddRoute(
 			router.NewRoute("/total", http.MethodGet).
 				Handle(getStatsTotal),
 		)
@@ -38,6 +42,10 @@ func getStatsDaily(c *gin.Context) {
 		return
 	}
 	resp.Success(c, statsDaily)
+}
+
+func getStatsHourly(c *gin.Context) {
+	resp.Success(c, op.StatsHourlyGet())
 }
 
 func getStatsTotal(c *gin.Context) {

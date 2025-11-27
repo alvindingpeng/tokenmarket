@@ -41,6 +41,7 @@ func InitDB(path string, debug bool) error {
 		&model.Setting{},
 		&model.StatsTotal{},
 		&model.StatsDaily{},
+		&model.StatsHourly{},
 		&model.StatsModel{},
 		&model.StatsChannel{},
 	)

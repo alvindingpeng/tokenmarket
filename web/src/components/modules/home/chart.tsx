@@ -1,18 +1,18 @@
 'use client';
 
 import { useStatsDaily } from '@/api/endpoints/stats';
-import { ChartContainer, ChartTooltip, ChartLegend, ChartTooltipContent } from '@/components/ui/chart';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { useMemo, useState } from 'react';
-import { Area, AreaChart, XAxis } from 'recharts';
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { useTranslations } from 'next-intl';
+import { formatCount, formatMoney } from '@/lib/utils';
+import dayjs from 'dayjs';
 
-type Period = '7' | '30' | '60' | '180';
+const PERIODS = ['7', '30'] as const;
 
 export function StatsChart() {
     const { data: statsDaily } = useStatsDaily();
-    const [period, setPeriod] = useState<Period>('7');
-    const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
+    const [period, setPeriod] = useState<typeof PERIODS[number]>('7');
     const t = useTranslations('home.chart');
 
     const chartData = useMemo(() => {
@@ -20,97 +20,90 @@ export function StatsChart() {
         const days = parseInt(period);
         return statsDaily.raw.slice(-days).map((stat) => {
             return {
-                date: new Date(stat.date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' }),
-                requests: stat.request_count,
-                input_tokens: stat.input_token,
-                output_tokens: stat.output_token,
-                input_cost: stat.input_cost,
-                output_cost: stat.output_cost,
+                date: dayjs(stat.date).format('MM/DD'),
+                total_cost: stat.input_cost + stat.output_cost,
             };
         });
     }, [statsDaily, period]);
 
+    const totals = useMemo(() => {
+        if (!statsDaily) return { requests: 0, cost: 0 };
+        const days = parseInt(period);
+        const recentStats = statsDaily.raw.slice(-days);
+        return {
+            requests: recentStats.reduce((acc, stat) => acc + stat.request_success + stat.request_failed, 0),
+            cost: recentStats.reduce((acc, stat) => acc + stat.input_cost + stat.output_cost, 0),
+        };
+    }, [statsDaily, period]);
+
     const chartConfig = {
-        requests: { label: t('requests') },
-        input_tokens: { label: t('inputTokens') },
-        output_tokens: { label: t('outputTokens') },
-        input_cost: { label: t('inputCost') },
-        output_cost: { label: t('outputCost') },
+        total_cost: { label: t('totalCost') },
+    };
+
+    const getPeriodLabel = (p: typeof period) => {
+        const labels = {
+            '7': t('period.last7Days'),
+            '30': t('period.last30Days'),
+        };
+        return labels[p];
+    };
+
+    const handlePeriodClick = () => {
+        const currentIndex = PERIODS.indexOf(period);
+        const nextIndex = (currentIndex + 1) % PERIODS.length;
+        setPeriod(PERIODS[nextIndex]);
     };
 
     return (
         <div className="rounded-3xl bg-card border-card-border border pt-2 pb-0 text-card-foreground custom-shadow">
-            <div className="flex justify-end gap-2 pr-2">
-                <Select value={period} onValueChange={(value) => setPeriod(value as Period)}>
-                    <SelectTrigger size="sm" className='rounded-xl'>
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className='rounded-xl'>
-                        <SelectItem className='rounded-xl' value="7">{t('period.last7Days')}</SelectItem>
-                        <SelectItem className='rounded-xl' value="30">{t('period.last30Days')}</SelectItem>
-                        <SelectItem className='rounded-xl' value="60">{t('period.last60Days')}</SelectItem>
-                        <SelectItem className='rounded-xl' value="180">{t('period.last6Months')}</SelectItem>
-                    </SelectContent>
-                </Select>
+            <div className="flex justify-between items-start px-4 pb-2">
+                <div className="flex gap-2 text-sm">
+                    <div>
+                        <div className="text-xs text-muted-foreground">{t('totalRequests')}</div>
+                        <div className="text-xl font-semibold">
+                            {formatCount(totals.requests).value}
+                            <span className="text-base ml-0.5">{formatCount(totals.requests).unit}</span>
+                        </div>
+                    </div>
+                    <div className="w-px bg-border self-stretch"></div>
+                    <div>
+                        <div className="text-xs text-muted-foreground">{t('totalCost')}</div>
+                        <div className="text-xl font-semibold">
+                            {formatMoney(totals.cost).value}
+                            <span className="text-base ml-0.5">{formatMoney(totals.cost).unit}</span>
+                        </div>
+                    </div>
+                </div>
+                <div
+                    className="flex gap-2 text-sm cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={handlePeriodClick}
+                >
+                    <div>
+                        <div className="text-xs text-muted-foreground">{t('timePeriod')}</div>
+                        <div className="text-xl font-semibold">{getPeriodLabel(period)}</div>
+                    </div>
+                </div>
             </div>
-            <ChartContainer config={chartConfig} className="h-64 w-full" >
+            <ChartContainer config={chartConfig} className="h-40 w-full" >
                 <AreaChart accessibilityLayer data={chartData}>
                     <defs>
-
-                        <linearGradient id="fillOutputTokens" x1="0" y1="0" x2="0" y2="1">
+                        <linearGradient id="fillTotalCost" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={1.0} />
                             <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0.1} />
                         </linearGradient>
-                        <linearGradient id="fillInputTokens" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="var(--chart-2)" stopOpacity={1.0} />
-                            <stop offset="95%" stopColor="var(--chart-2)" stopOpacity={0.1} />
-                        </linearGradient>
-                        <linearGradient id="fillInputCost" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="var(--chart-3)" stopOpacity={1.0} />
-                            <stop offset="95%" stopColor="var(--chart-3)" stopOpacity={0.1} />
-                        </linearGradient>
-                        <linearGradient id="fillOutputCost" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="var(--chart-4)" stopOpacity={1.0} />
-                            <stop offset="95%" stopColor="var(--chart-4)" stopOpacity={0.1} />
-                        </linearGradient>
-                        <linearGradient id="fillRequests" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="var(--chart-5)" stopOpacity={1.0} />
-                            <stop offset="95%" stopColor="var(--chart-5)" stopOpacity={0.1} />
-                        </linearGradient>
                     </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="date" tickLine={false} axisLine={false} />
+                    <YAxis
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(value) => {
+                            const formatted = formatMoney(value);
+                            return `${formatted.value}${formatted.unit}`;
+                        }}
+                    />
                     <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" />} />
-                    <Area type="monotone" dataKey="input_tokens" stroke="var(--chart-1)" fill="url(#fillInputTokens)" stackId="a" hide={hiddenSeries.has('input_tokens')} />
-                    <Area type="monotone" dataKey="output_tokens" stroke="var(--chart-2)" fill="url(#fillOutputTokens)" stackId="a" hide={hiddenSeries.has('output_tokens')} />
-                    <Area type="monotone" dataKey="input_cost" stroke="var(--chart-3)" fill="url(#fillInputCost)" stackId="a" hide={hiddenSeries.has('input_cost')} />
-                    <Area type="monotone" dataKey="output_cost" stroke="var(--chart-4)" fill="url(#fillOutputCost)" stackId="a" hide={hiddenSeries.has('output_cost')} />
-                    <Area type="monotone" dataKey="requests" stroke="var(--chart-5)" fill="url(#fillRequests)" stackId="a" hide={hiddenSeries.has('requests')} />
-                    <ChartLegend content={(props) => (
-                        <div className="flex items-center justify-center gap-4 pt-3">
-                            {props.payload?.map((item) => (
-                                <div
-                                    key={item.value}
-                                    className="flex items-center gap-1.5 cursor-pointer"
-                                    onClick={() => {
-                                        const key = item.dataKey as string;
-                                        setHiddenSeries(prev => {
-                                            const next = new Set(prev);
-                                            next.has(key) ? next.delete(key) : next.add(key);
-                                            return next;
-                                        });
-                                    }}
-                                >
-                                    <div
-                                        className="h-2 w-2 shrink-0 rounded-[2px]"
-                                        style={{ backgroundColor: item.color, opacity: hiddenSeries.has(item.dataKey as string) ? 0.3 : 1 }}
-                                    />
-                                    <span style={{ opacity: hiddenSeries.has(item.dataKey as string) ? 0.3 : 1 }}>
-                                        {chartConfig[item.dataKey as keyof typeof chartConfig]?.label}
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                    )} />
+                    <Area type="monotone" dataKey="total_cost" stroke="var(--chart-1)" fill="url(#fillTotalCost)" />
                 </AreaChart>
             </ChartContainer>
         </div>

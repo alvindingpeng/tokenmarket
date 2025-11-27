@@ -5,38 +5,27 @@ import { formatCount, formatMoney, formatTime } from '@/lib/utils';
 /**
  * 统计数据
  */
-export interface StatsDaily {
-    date: string; // ISO 8601 格式
+interface StatsMetrics {
     input_token: number;
     output_token: number;
-    request_count: number;
     input_cost: number;
     output_cost: number;
     wait_time: number;
-}
-export interface StatsTotal {
-    id: number;
-    input_token: number;
-    output_token: number;
-    request_count: number;
-    input_cost: number;
-    output_cost: number;
-    wait_time: number;
+    request_success: number;
+    request_failed: number;
 }
 
-export interface StatsDailyData {
-    dateStr: string;
-    isFuture: boolean;
-    raw: StatsDaily | null;
-    formatted: {
-        request_count: { value: string; unit: string };
-        wait_time: { value: string; unit: string };
-        input_token: { value: string; unit: string };
-        input_cost: { value: string; unit: string };
-        output_token: { value: string; unit: string };
-        output_cost: { value: string; unit: string };
-    } | null;
+export interface StatsChannel extends StatsMetrics {
+    channel_id: number;
 }
+
+export interface StatsDaily extends StatsMetrics {
+    date: string;
+}
+export interface StatsTotal extends StatsMetrics {
+    id: number;
+}
+
 /**
  * 获取今日统计数据 Hook
  */
@@ -65,10 +54,14 @@ export function useStatsDaily() {
                 date: item.date,
                 input_token: formatCount(item.input_token),
                 output_token: formatCount(item.output_token),
-                request_count: formatCount(item.request_count),
+                request_count: formatCount(item.request_success + item.request_failed),
+                request_success: formatCount(item.request_success),
+                request_failed: formatCount(item.request_failed),
                 input_cost: formatMoney(item.input_cost),
                 output_cost: formatMoney(item.output_cost),
+                total_token: formatCount(item.input_token + item.output_token),
                 wait_time: formatTime(item.wait_time),
+                total_cost: formatMoney(item.input_cost + item.output_cost),
             }))
         }),
         refetchInterval: 3600000, // 1 小时
@@ -83,6 +76,21 @@ export function useStatsTotal() {
         queryFn: async () => {
             return apiClient.get<StatsTotal>('/api/v1/stats/total');
         },
+        select: (data) => ({
+            raw: data,
+            formatted: {
+                request_count: formatCount(data.request_success + data.request_failed),
+                request_success: formatCount(data.request_success),
+                request_failed: formatCount(data.request_failed),
+                wait_time: formatTime(data.wait_time),
+                input_token: formatCount(data.input_token),
+                output_token: formatCount(data.output_token),
+                total_token: formatCount(data.input_token + data.output_token),
+                input_cost: formatMoney(data.input_cost),
+                output_cost: formatMoney(data.output_cost),
+                total_cost: formatMoney(data.input_cost + data.output_cost),
+            },
+        }),
         refetchInterval: 10000,// 10 秒
     });
 }

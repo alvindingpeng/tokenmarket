@@ -9,7 +9,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/utils/cache"
 	"github.com/alvindingpeng/switchyard/internal/utils/log"
-	"github.com/alvindingpeng/switchyard/internal/utils/timeo"
+	"gorm.io/gorm/clause"
 )
 
 var statsDailyCache model.StatsDaily
@@ -17,6 +17,9 @@ var statsDailyCacheLock sync.RWMutex
 
 var statsTotalCache model.StatsTotal
 var statsTotalCacheLock sync.RWMutex
+
+var statsHourlyCache [24]model.StatsHourly
+var statsHourlyCacheLock sync.RWMutex
 
 var statsChannelCache = cache.New[int, model.StatsChannel](16)
 var statsChannelCacheNeedUpdate = make(map[int]struct{})
@@ -40,18 +43,47 @@ func StatsSaveDBTask() {
 
 func StatsSaveDB(ctx context.Context) error {
 	db := db.GetDB().WithContext(ctx)
+
+	// 保存总计数据
 	statsTotalCacheLock.Lock()
 	defer statsTotalCacheLock.Unlock()
 	result := db.Save(&statsTotalCache)
 	if result.Error != nil {
 		return result.Error
 	}
+
+	// 保存每日数据
 	statsDailyCacheLock.Lock()
 	defer statsDailyCacheLock.Unlock()
 	result = db.Save(&statsDailyCache)
 	if result.Error != nil {
 		return result.Error
 	}
+
+	// 保存所有24小时的数据（只保存有数据的小时）
+	statsHourlyCacheLock.RLock()
+	hourlyStats := make([]model.StatsHourly, 0, 24)
+	for hour := 0; hour < 24; hour++ {
+		if statsHourlyCache[hour].Date != time.Now().Format("20060102") { // 只保存有实际数据的小时
+			statsHourlyCache[hour] = model.StatsHourly{
+				Hour: hour,
+				Date: time.Now().Format("20060102"),
+			}
+		}
+	}
+	statsHourlyCacheLock.RUnlock()
+
+	if len(hourlyStats) > 0 {
+		result = db.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "hour"}},
+			UpdateAll: true,
+		}).Create(&hourlyStats)
+		if result.Error != nil {
+			return result.Error
+		}
+	}
+
+	// 保存渠道数据
 	for id := range statsChannelCacheNeedUpdate {
 		delete(statsChannelCacheNeedUpdate, id)
 		cache, ok := statsChannelCache.Get(id)
@@ -63,56 +95,61 @@ func StatsSaveDB(ctx context.Context) error {
 			return result.Error
 		}
 	}
+
 	return nil
 }
 
-func StatsDailyUpdate(ctx context.Context, stats model.StatsDaily) error {
+func StatsDailyUpdate(ctx context.Context, metrics model.StatsMetrics) error {
 	statsDailyCacheLock.Lock()
 	defer statsDailyCacheLock.Unlock()
-	if timeo.ToMidnight(statsDailyCache.Date) != timeo.GetMidnight() {
+	if statsDailyCache.Date != time.Now().Format("20060102") {
 		if err := StatsSaveDB(ctx); err != nil {
 			return err
 		}
 		statsDailyCache = model.StatsDaily{
-			Date: timeo.GetMidnight(),
+			Date: time.Now().Format("20060102"),
 		}
 	}
-	statsDailyCache.InputToken += stats.InputToken
-	statsDailyCache.OutputToken += stats.OutputToken
-	statsDailyCache.RequestCount += stats.RequestCount
-	statsDailyCache.InputCost += stats.InputCost
-	statsDailyCache.OutputCost += stats.OutputCost
-	statsDailyCache.WaitTime += stats.WaitTime
+	statsDailyCache.StatsMetrics.Add(metrics)
 	return nil
 }
 
-func StatsTotalUpdate(stats model.StatsTotal) error {
+func StatsTotalUpdate(metrics model.StatsMetrics) error {
 	statsTotalCacheLock.Lock()
 	defer statsTotalCacheLock.Unlock()
-	statsTotalCache.InputToken += stats.InputToken
-	statsTotalCache.OutputToken += stats.OutputToken
-	statsTotalCache.RequestCount += stats.RequestCount
-	statsTotalCache.InputCost += stats.InputCost
-	statsTotalCache.OutputCost += stats.OutputCost
-	statsTotalCache.WaitTime += stats.WaitTime
+	statsTotalCache.StatsMetrics.Add(metrics)
 	return nil
 }
 
-func StatsChannelUpdate(ctx context.Context, stats model.StatsChannel) error {
+func StatsChannelUpdate(stats model.StatsChannel) error {
 	channelCache, ok := statsChannelCache.Get(stats.ChannelID)
 	if !ok {
 		channelCache = model.StatsChannel{
 			ChannelID: stats.ChannelID,
 		}
 	}
-	channelCache.InputToken += stats.InputToken
-	channelCache.OutputToken += stats.OutputToken
-	channelCache.InputCost += stats.InputCost
-	channelCache.OutputCost += stats.OutputCost
-	channelCache.RequestSuccess += stats.RequestSuccess
-	channelCache.RequestFailed += stats.RequestFailed
+	channelCache.StatsMetrics.Add(stats.StatsMetrics)
 	statsChannelCache.Set(stats.ChannelID, channelCache)
 	statsChannelCacheNeedUpdate[stats.ChannelID] = struct{}{}
+	return nil
+}
+
+func StatsHourlyUpdate(metrics model.StatsMetrics) error {
+	now := time.Now()
+	nowHour := now.Hour()
+	todayDate := time.Now().Format("20060102")
+
+	statsHourlyCacheLock.Lock()
+	defer statsHourlyCacheLock.Unlock()
+
+	if statsHourlyCache[nowHour].Date != todayDate {
+		statsHourlyCache[nowHour] = model.StatsHourly{
+			Hour: nowHour,
+			Date: todayDate,
+		}
+	}
+
+	statsHourlyCache[nowHour].StatsMetrics.Add(metrics)
 	return nil
 }
 
@@ -150,6 +187,30 @@ func StatsChannelGet(id int) model.StatsChannel {
 	return stats
 }
 
+func StatsHourlyGet() []model.StatsHourly {
+	now := time.Now()
+	currentHour := now.Hour()
+	todayDate := time.Now().Format("20060102")
+
+	statsHourlyCacheLock.RLock()
+	defer statsHourlyCacheLock.RUnlock()
+
+	result := make([]model.StatsHourly, 0, currentHour+1)
+
+	for hour := 0; hour <= currentHour; hour++ {
+		if statsHourlyCache[hour].Date == todayDate {
+			result = append(result, statsHourlyCache[hour])
+		} else {
+			result = append(result, model.StatsHourly{
+				Hour: hour,
+				Date: todayDate,
+			})
+		}
+	}
+
+	return result
+}
+
 func StatsGetDaily(ctx context.Context) ([]model.StatsDaily, error) {
 	var statsDaily []model.StatsDaily
 	result := db.GetDB().WithContext(ctx).Find(&statsDaily)
@@ -166,7 +227,7 @@ func statsRefreshCache(ctx context.Context) error {
 	result := db.Last(&statsDailyCache)
 	if result.RowsAffected == 0 {
 		statsDailyCache = model.StatsDaily{
-			Date: timeo.GetMidnight(),
+			Date: time.Now().Format("20060102"),
 		}
 		return nil
 	}
@@ -174,9 +235,10 @@ func statsRefreshCache(ctx context.Context) error {
 	if result.Error != nil {
 		return result.Error
 	}
-	if timeo.ToMidnight(statsDailyCache.Date) != timeo.GetMidnight() {
+	if statsDailyCache.Date != time.Now().Format("20060102") {
+		log.Warnf("stats daily cache is not today, date: %s", statsDailyCache.Date)
 		statsDailyCache = model.StatsDaily{
-			Date: timeo.GetMidnight(),
+			Date: time.Now().Format("20060102"),
 		}
 	}
 	statsTotalCacheLock.Lock()
@@ -199,5 +261,19 @@ func statsRefreshCache(ctx context.Context) error {
 	for _, v := range statsChannel {
 		statsChannelCache.Set(v.ChannelID, v)
 	}
+	var statsHourly []model.StatsHourly
+	result = db.Find(&statsHourly)
+	if result.Error != nil {
+		return result.Error
+	}
+	// 加载所有24小时的数据到缓存
+	// 更新数据时会自动判断日期，如果是昨天的数据会清空重新统计
+	statsHourlyCacheLock.Lock()
+	for _, v := range statsHourly {
+		if v.Hour >= 0 && v.Hour < 24 {
+			statsHourlyCache[v.Hour] = v
+		}
+	}
+	statsHourlyCacheLock.Unlock()
 	return nil
 }
