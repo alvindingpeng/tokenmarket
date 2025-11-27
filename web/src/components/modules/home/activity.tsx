@@ -1,15 +1,9 @@
 'use client';
 
-import { useStatsDaily, type StatsDaily } from '@/api/endpoints/stats';
-import { formatCount, formatMoney, formatTime } from '@/lib/utils';
+import { useStatsDaily, type StatsDailyData } from '@/api/endpoints/stats';
 import { useMemo, useRef, useLayoutEffect, useState, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { Fragment } from 'react';
-interface DayData {
-    dateStr: string;
-    isFuture: boolean;
-    data: StatsDaily | null;
-}
 
 const ACTIVITY_LEVELS = [
     { min: 5000, level: 4 },
@@ -26,28 +20,30 @@ function getActivityLevel(value: number): number {
 export function Activity() {
     const { data: statsDaily, isLoading } = useStatsDaily();
     const scrollRef = useRef<HTMLDivElement>(null);
-    const t = useTranslations('activity');
+    const t = useTranslations('home.activity');
 
-    const [tooltip, setTooltip] = useState<{ day: DayData; x: number; y: number; visible: boolean } | null>(null);
+    const [tooltip, setTooltip] = useState<{ day: StatsDailyData; x: number; y: number; visible: boolean } | null>(null);
 
     const days = useMemo(() => {
         if (!statsDaily) return [];
 
-        const statsMap = new Map(statsDaily.map(stat => [stat.date.split('T')[0], stat]));
+        const rawMap = new Map(statsDaily.raw.map(stat => [stat.date.split('T')[0], stat]));
+        const formattedMap = new Map(statsDaily.formatted.map(stat => [stat.date.split('T')[0], stat]));
 
         const today = new Date();
         const todayStr = today.toISOString().slice(0, 10);
 
         today.setDate(today.getDate() - (today.getDay() + 53 * 7));
 
-        const result: DayData[] = [];
+        const result: StatsDailyData[] = [];
 
         for (let i = 0; i < 54 * 7; i++) {
             const dateStr = today.toISOString().slice(0, 10);
             result.push({
                 dateStr,
                 isFuture: dateStr > todayStr,
-                data: statsMap.get(dateStr) || null
+                raw: rawMap.get(dateStr) || null,
+                formatted: formattedMap.get(dateStr) || null
             });
             today.setDate(today.getDate() + 1);
         }
@@ -107,7 +103,7 @@ export function Activity() {
                                 return <div key={day.dateStr} />;
                             }
 
-                            const requestCount = day.data?.request_count || 0;
+                            const requestCount = day.raw?.request_count || 0;
                             const level = getActivityLevel(requestCount);
 
                             return (
@@ -146,7 +142,7 @@ export function Activity() {
 
                 return (
                     <div
-                        className={`fixed z-50 w-fit min-w-max text-sm bg-popover text-popover-foreground border rounded-3xl custom-shadow p-3 transition-opacity duration-500 pointer-events-none ${tooltip.visible ? 'opacity-100' : 'opacity-0'}`}
+                        className={`fixed z-50 w-fit min-w-max text-sm bg-background text-foreground border rounded-3xl custom-shadow p-3 transition-opacity duration-500 pointer-events-none ${tooltip.visible ? 'opacity-100' : 'opacity-0'}`}
                         style={{
                             left: tooltip.x,
                             top: tooltip.y,
@@ -155,15 +151,15 @@ export function Activity() {
                     >
                         <div className="space-y-2">
                             <p className="font-semibold text-foreground">{tooltip.day.dateStr}</p>
-                            {tooltip.day.data ? (
+                            {tooltip.day.formatted ? (
                                 <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 items-center text-muted-foreground">
                                     {[
-                                        { labelKey: 'requestCount', ...formatCount(tooltip.day.data.request_count) },
-                                        { labelKey: 'waitTime', ...formatTime(tooltip.day.data.wait_time) },
-                                        { labelKey: 'inputToken', ...formatCount(tooltip.day.data.input_token) },
-                                        { labelKey: 'inputCost', ...formatMoney(tooltip.day.data.input_cost) },
-                                        { labelKey: 'outputToken', ...formatCount(tooltip.day.data.output_token) },
-                                        { labelKey: 'outputCost', ...formatMoney(tooltip.day.data.output_cost) },
+                                        { labelKey: 'requestCount', ...tooltip.day.formatted.request_count },
+                                        { labelKey: 'waitTime', ...tooltip.day.formatted.wait_time },
+                                        { labelKey: 'inputToken', ...tooltip.day.formatted.input_token },
+                                        { labelKey: 'inputCost', ...tooltip.day.formatted.input_cost },
+                                        { labelKey: 'outputToken', ...tooltip.day.formatted.output_token },
+                                        { labelKey: 'outputCost', ...tooltip.day.formatted.output_cost },
                                     ].map((item, index) => (
                                         <Fragment key={index}>
                                             <span className="wrap-break-word">{t(item.labelKey)}</span>

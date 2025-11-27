@@ -13,7 +13,7 @@ export function StatsChart() {
     const { data: statsDaily } = useStatsDaily();
     const [period, setPeriod] = useState<Period>('7');
     const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
-    const t = useTranslations('chart');
+    const t = useTranslations('home.chart');
 
     const chartData = useMemo(() => {
         if (!statsDaily) return [];

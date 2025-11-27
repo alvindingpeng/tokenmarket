@@ -16,7 +16,7 @@ import { formatCount, formatMoney, formatTime } from '@/lib/utils';
 
 export function Total() {
     const { data } = useStatsTotal();
-    const t = useTranslations('total');
+    const t = useTranslations('home.total');
 
     const requestStats = formatCount(data?.request_count);
     const timeStats = formatTime(data?.wait_time);
