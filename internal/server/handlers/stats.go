@@ -28,7 +28,7 @@ func init() {
 }
 
 func getStatsToday(c *gin.Context) {
-	resp.Success(c, op.StatsGetToday())
+	resp.Success(c, op.StatsTodayGet())
 }
 
 func getStatsDaily(c *gin.Context) {

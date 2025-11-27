@@ -45,6 +45,9 @@ func ChannelUpdate(channel *model.Channel, ctx context.Context) error {
 }
 
 func ChannelDel(id int, ctx context.Context) error {
+	if err := StatsChannelDel(id); err != nil {
+		return err
+	}
 	channel, ok := channelCache.Get(id)
 	if !ok {
 		return fmt.Errorf("channel not found")

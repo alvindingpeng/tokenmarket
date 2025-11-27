@@ -42,6 +42,7 @@ func InitDB(path string, debug bool) error {
 		&model.StatsTotal{},
 		&model.StatsDaily{},
 		&model.StatsModel{},
+		&model.StatsChannel{},
 	)
 }
 

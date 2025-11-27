@@ -32,3 +32,12 @@ type StatsModel struct {
 	OutputCost   float64 `json:"output_cost" gorm:"type:real;default:0.00"`
 	RequestCount int64   `json:"request_count" gorm:"bigint;default:0"`
 }
+type StatsChannel struct {
+	ChannelID      int     `json:"channel_id" gorm:"primaryKey"`
+	InputToken     int64   `json:"input_token"`
+	OutputToken    int64   `json:"output_token"`
+	InputCost      float64 `json:"input_cost" gorm:"type:real;default:0.00"`
+	OutputCost     float64 `json:"output_cost" gorm:"type:real;default:0.00"`
+	RequestSuccess int64   `json:"request_success"`
+	RequestFailed  int64   `json:"request_failed"`
+}

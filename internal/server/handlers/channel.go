@@ -38,6 +38,10 @@ func listChannel(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	for i, channel := range channels {
+		stats := op.StatsChannelGet(channel.ID)
+		channels[i].Stats = &stats
+	}
 	resp.Success(c, channels)
 }
 
@@ -51,6 +55,8 @@ func createChannel(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	stats := op.StatsChannelGet(channel.ID)
+	channel.Stats = &stats
 	resp.Success(c, channel)
 }
 
@@ -64,6 +70,8 @@ func updateChannel(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	stats := op.StatsChannelGet(channel.ID)
+	channel.Stats = &stats
 	resp.Success(c, channel)
 }
 
