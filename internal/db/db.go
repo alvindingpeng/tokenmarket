@@ -36,6 +36,7 @@ func InitDB(path string, debug bool) error {
 		&model.User{},
 		&model.Channel{},
 		&model.Group{},
+		&model.GroupItem{},
 		&model.LLMModel{},
 		&model.APIKey{},
 		&model.Setting{},

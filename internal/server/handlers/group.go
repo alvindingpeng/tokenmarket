@@ -39,31 +39,7 @@ func getGroupList(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-
-	// Transform groups to GroupResponse format
-	groupMap := make(map[string]*model.GroupResponse)
-	for _, group := range groups {
-		if _, exists := groupMap[group.Name]; !exists {
-			groupMap[group.Name] = &model.GroupResponse{
-				Name:  group.Name,
-				Items: []model.GroupItem{},
-			}
-		}
-		groupMap[group.Name].Items = append(groupMap[group.Name].Items, model.GroupItem{
-			ID:        group.ID,
-			ChannelID: group.ChannelID,
-			ModelName: group.ModelName,
-			Priority:  group.Priority,
-		})
-	}
-
-	// Convert map to slice
-	var groupResponses []model.GroupResponse
-	for _, groupResponse := range groupMap {
-		groupResponses = append(groupResponses, *groupResponse)
-	}
-
-	resp.Success(c, groupResponses)
+	resp.Success(c, groups)
 }
 
 func createGroup(c *gin.Context) {

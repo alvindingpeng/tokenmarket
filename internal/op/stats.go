@@ -24,6 +24,9 @@ var statsHourlyCacheLock sync.RWMutex
 var statsChannelCache = cache.New[int, model.StatsChannel](16)
 var statsChannelCacheNeedUpdate = make(map[int]struct{})
 
+var statsModelCache = cache.New[int, model.StatsModel](16)
+var statsModelCacheNeedUpdate = make(map[int]struct{})
+
 func StatsSaveDBTask() {
 	interval, err := SettingGetInt(model.SettingKeyStatsSaveInterval)
 	if err != nil {
@@ -150,6 +153,19 @@ func StatsHourlyUpdate(metrics model.StatsMetrics) error {
 	}
 
 	statsHourlyCache[nowHour].StatsMetrics.Add(metrics)
+	return nil
+}
+
+func StatsModelUpdate(stats model.StatsModel) error {
+	modelCache, ok := statsModelCache.Get(stats.ID)
+	if !ok {
+		modelCache = model.StatsModel{
+			ID: stats.ID,
+		}
+	}
+	modelCache.StatsMetrics.Add(stats.StatsMetrics)
+	statsModelCache.Set(stats.ID, modelCache)
+	statsModelCacheNeedUpdate[stats.ID] = struct{}{}
 	return nil
 }
 
