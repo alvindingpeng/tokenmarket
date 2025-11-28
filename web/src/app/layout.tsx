@@ -15,13 +15,17 @@ export default function RootLayout({
   return (
     <html suppressHydrationWarning>
       <head>
-        <meta name="apple-mobile-web-app-title" content="Switchyard" />
         <meta name="theme-color" content="#eae9e3" />
-        <script
-          async
-          crossOrigin="anonymous"
-          src="https://tweakcn.com/live-preview.min.js"
-        />
+        <meta name="application-name" content="Switchyard" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+        <meta name="apple-mobile-web-app-title" content="Switchyard" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-status-bar-style" content="black" />
+        <meta name="mobile-web-app-title" content="Switchyard" />
+        <link rel="manifest" href="/manifest.json" />
+        <title>Switchyard</title>
+        <script async crossOrigin="anonymous" src="https://tweakcn.com/live-preview.min.js" />
       </head>
       <body className="antialiased">
         <ServiceWorkerRegister />

@@ -7,7 +7,7 @@ import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { useTranslations } from 'next-intl';
 import { formatCount, formatMoney } from '@/lib/utils';
 import dayjs from 'dayjs';
-
+import { AnimatedNumber } from '@/components/common/AnimatedNumber';
 const PERIODS = ['7', '30'] as const;
 
 export function StatsChart() {
@@ -61,7 +61,7 @@ export function StatsChart() {
                     <div>
                         <div className="text-xs text-muted-foreground">{t('totalRequests')}</div>
                         <div className="text-xl font-semibold">
-                            {formatCount(totals.requests).value}
+                            <AnimatedNumber value={formatCount(totals.requests).value} />
                             <span className="text-base ml-0.5">{formatCount(totals.requests).unit}</span>
                         </div>
                     </div>
@@ -69,7 +69,7 @@ export function StatsChart() {
                     <div>
                         <div className="text-xs text-muted-foreground">{t('totalCost')}</div>
                         <div className="text-xl font-semibold">
-                            {formatMoney(totals.cost).value}
+                            <AnimatedNumber value={formatMoney(totals.cost).value} />
                             <span className="text-base ml-0.5">{formatMoney(totals.cost).unit}</span>
                         </div>
                     </div>

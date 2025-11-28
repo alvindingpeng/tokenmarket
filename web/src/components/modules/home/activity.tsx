@@ -2,6 +2,7 @@
 
 import { useStatsDaily, type StatsDaily } from '@/api/endpoints/stats';
 import { useMemo, useRef, useLayoutEffect, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslations } from 'next-intl';
 import { Fragment } from 'react';
 import dayjs from 'dayjs';
@@ -134,58 +135,61 @@ export function Activity() {
                     </div>
                 </div>
             </div>
-            {tooltip && (() => {
-                const isLeft = tooltip.x < 200;
-                const isRight = tooltip.x > window.innerWidth - 200;
-                const isTop = tooltip.y < window.innerHeight / 2;
-                const tooltipDate = dayjs(tooltip.day.dateStr, 'YYYYMMDD');
-                const tooltipDateLabel = tooltipDate.isValid() ? tooltipDate.format('YYYY-MM-DD') : tooltip.day.dateStr;
+            {tooltip && typeof document !== 'undefined' && createPortal(
+                (() => {
+                    const isLeft = tooltip.x < 200;
+                    const isRight = tooltip.x > window.innerWidth - 200;
+                    const isTop = tooltip.y < window.innerHeight / 2;
+                    const tooltipDate = dayjs(tooltip.day.dateStr, 'YYYYMMDD');
+                    const tooltipDateLabel = tooltipDate.isValid() ? tooltipDate.format('YYYY-MM-DD') : tooltip.day.dateStr;
 
-                let transform = 'translate(-50%, 15%)';
-                if (!isTop && !isLeft && !isRight) {
-                    transform = 'translate(-50%, -105%)';
-                } else if (isTop && isLeft) {
-                    transform = 'translate(10%, 15%)';
-                } else if (isTop && isRight) {
-                    transform = 'translate(-110%, 15%)';
-                } else if (!isTop && isLeft) {
-                    transform = 'translate(10%, -105%)';
-                } else if (!isTop && isRight) {
-                    transform = 'translate(-110%, -105%)';
-                }
+                    let transform = 'translate(-50%, 15%)';
+                    if (!isTop && !isLeft && !isRight) {
+                        transform = 'translate(-50%, -105%)';
+                    } else if (isTop && isLeft) {
+                        transform = 'translate(10%, 15%)';
+                    } else if (isTop && isRight) {
+                        transform = 'translate(-110%, 15%)';
+                    } else if (!isTop && isLeft) {
+                        transform = 'translate(10%, -105%)';
+                    } else if (!isTop && isRight) {
+                        transform = 'translate(-110%, -105%)';
+                    }
 
-                return (
-                    <div
-                        className={`fixed z-50 w-fit min-w-max text-sm bg-background text-foreground border rounded-3xl custom-shadow p-3 transition-opacity duration-500 pointer-events-none ${tooltip.visible ? 'opacity-100' : 'opacity-0'}`}
-                        style={{
-                            left: tooltip.x,
-                            top: tooltip.y,
-                            transform
-                        }}
-                    >
-                        <div className="space-y-2">
-                            <p className="font-semibold text-foreground">{tooltipDateLabel}</p>
-                            {tooltip.day.formatted ? (
-                                <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 items-center text-muted-foreground">
-                                    {[
-                                        { labelKey: 'requestCount', ...tooltip.day.formatted.request_count },
-                                        { labelKey: 'waitTime', ...tooltip.day.formatted.wait_time },
-                                        { labelKey: 'totalToken', ...tooltip.day.formatted.total_token },
-                                        { labelKey: 'totalCost', ...tooltip.day.formatted.total_cost },
-                                    ].map((item, index) => (
-                                        <Fragment key={index}>
-                                            <span className="wrap-break-word">{t(item.labelKey)}</span>
-                                            <span className="text-foreground font-medium text-right">{item.value}{item.unit}</span>
-                                        </Fragment>
-                                    ))}
-                                </div>
-                            ) : (
-                                <p className="text-muted-foreground">{t('noData')}</p>
-                            )}
+                    return (
+                        <div
+                            className={`fixed z-50 w-fit min-w-max text-sm bg-background text-foreground border rounded-3xl custom-shadow p-3 transition-opacity duration-500 pointer-events-none ${tooltip.visible ? 'opacity-100' : 'opacity-0'}`}
+                            style={{
+                                left: tooltip.x,
+                                top: tooltip.y,
+                                transform
+                            }}
+                        >
+                            <div className="space-y-2">
+                                <p className="font-semibold text-foreground">{tooltipDateLabel}</p>
+                                {tooltip.day.formatted ? (
+                                    <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 items-center text-muted-foreground">
+                                        {[
+                                            { labelKey: 'requestCount', ...tooltip.day.formatted.request_count },
+                                            { labelKey: 'waitTime', ...tooltip.day.formatted.wait_time },
+                                            { labelKey: 'totalToken', ...tooltip.day.formatted.total_token },
+                                            { labelKey: 'totalCost', ...tooltip.day.formatted.total_cost },
+                                        ].map((item, index) => (
+                                            <Fragment key={index}>
+                                                <span className="wrap-break-word">{t(item.labelKey)}</span>
+                                                <span className="text-foreground font-medium text-right">{item.value}{item.unit}</span>
+                                            </Fragment>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-muted-foreground">{t('noData')}</p>
+                                )}
+                            </div>
                         </div>
-                    </div>
-                );
-            })()}
+                    );
+                })(),
+                document.body
+            )}
         </div>
     );
 }

@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils"
 import { useNavStore, type NavItem } from "@/components/modules/navbar"
 import { ROUTES } from "@/route/config"
 import { usePreload } from "@/route/use-preload"
+import { ENTRANCE_VARIANTS } from "@/lib/animations/fluid-transitions"
 
 export function NavBar() {
     const { activeItem, setActiveItem } = useNavStore()
@@ -13,18 +14,20 @@ export function NavBar() {
     return (
         <div className="md:pr-6 relative z-50">
             <aside className="sticky top-30">
-                <nav
+                <motion.nav
                     aria-label="Main Navigation"
                     className={cn(
                         "fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1 p-3",
                         "md:relative md:left-auto md:bottom-auto md:translate-x-0 md:flex-col md:gap-3",
                         "bg-sidebar text-sidebar-foreground border border-sidebar-border rounded-3xl",
-                        "custom-shadow",
-                        "transition duration-300"
+                        "custom-shadow"
                     )}
+                    variants={ENTRANCE_VARIANTS.navbar}
+                    initial="initial"
+                    animate="animate"
                 >
-                    {ROUTES.map((route) => (
-                        <button
+                    {ROUTES.map((route, index) => (
+                        <motion.button
                             key={route.id}
                             type="button"
                             onClick={() => setActiveItem(route.id as NavItem)}
@@ -33,6 +36,17 @@ export function NavBar() {
                                 "relative p-2 md:p-3 rounded-2xl",
                                 activeItem === route.id ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/60 hover:bg-sidebar-accent"
                             )}
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{
+                                opacity: 1,
+                                scale: 1,
+                                transition: {
+                                    delay: index * 0.05,
+                                    duration: 0.3,
+                                }
+                            }}
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.95 }}
                         >
                             {activeItem === route.id && (
                                 <motion.div
@@ -42,9 +56,9 @@ export function NavBar() {
                                 />
                             )}
                             <route.icon strokeWidth={2} className="relative" />
-                        </button>
+                        </motion.button>
                     ))}
-                </nav>
+                </motion.nav>
             </aside>
         </div>
     )

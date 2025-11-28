@@ -1,13 +1,14 @@
 
 'use client';
 
-import { motion } from "framer-motion"
+import { motion, AnimatePresence } from "framer-motion"
 import { useAuth } from '@/api/endpoints/user';
 import { LoginForm } from '@/components/modules/login';
 import { ContentLoader } from '@/route/content-loader';
 import { NavBar, useNavStore } from '@/components/modules/navbar';
 import { useTranslations } from 'next-intl'
 import Logo from '@/components/modules/logo';
+import { LOADING_VARIANTS, ENTRANCE_VARIANTS } from '@/lib/animations/fluid-transitions';
 
 export function AppContainer() {
     const { isAuthenticated, isLoading } = useAuth();
@@ -17,8 +18,11 @@ export function AppContainer() {
     if (isLoading) {
         return (
             <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
+                key="loading"
+                variants={LOADING_VARIANTS}
+                initial="initial"
+                animate="animate"
+                exit="exit"
                 className="min-h-screen flex items-center justify-center"
             >
                 <div className="text-center">
@@ -30,25 +34,39 @@ export function AppContainer() {
 
     if (!isAuthenticated) {
         return (
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-            >
+            <AnimatePresence mode="wait">
                 <LoginForm />
-            </motion.div>
+            </AnimatePresence>
         )
     }
 
     return (
-        <div className="px-3 md:px-6 max-w-6xl mx-auto md:flex">
+        <motion.div
+            key="main-app"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3 }}
+            className="px-3 md:px-6 max-w-6xl mx-auto md:flex"
+        >
             <NavBar />
             <main className="w-full mb-28 min-w-0">
-                <header className="flex items-center gap-x-2 my-6">
+                <motion.header
+                    variants={ENTRANCE_VARIANTS.header}
+                    initial="initial"
+                    animate="animate"
+                    className="flex items-center gap-x-2 my-6"
+                >
                     <Logo />
                     <div className="text-3xl font-bold mt-1">{t(activeItem)}</div>
-                </header>
-                <ContentLoader activeRoute={activeItem} />
+                </motion.header>
+                <motion.div
+                    variants={ENTRANCE_VARIANTS.content}
+                    initial="initial"
+                    animate="animate"
+                >
+                    <ContentLoader activeRoute={activeItem} />
+                </motion.div>
             </main>
-        </div>
+        </motion.div>
     );
 }

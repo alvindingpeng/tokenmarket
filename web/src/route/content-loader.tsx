@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion } from 'framer-motion';
 import { CONTENT_MAP } from './config';
+import { ROUTE_CHANGE_VARIANTS } from '@/lib/animations/fluid-transitions';
 
 export function ContentLoader({ activeRoute }: { activeRoute: string }) {
     const Component = CONTENT_MAP[activeRoute];
@@ -18,10 +19,10 @@ export function ContentLoader({ activeRoute }: { activeRoute: string }) {
         <AnimatePresence mode="wait">
             <motion.div
                 key={activeRoute}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.3 }}
+                variants={ROUTE_CHANGE_VARIANTS}
+                initial="initial"
+                animate="animate"
+                exit="exit"
             >
                 <Component />
             </motion.div>

@@ -1,14 +1,19 @@
+'use client';
+
+import { motion } from 'framer-motion';
 import { Activity } from './activity';
 import { Total } from './total';
 import { StatsChart } from './chart';
 import { Rank } from './rank';
+import { PageWrapper } from '@/components/common/PageWrapper';
+
 export function Home() {
     return (
-        <div className="space-y-6">
+        <PageWrapper>
             <Total />
             <Activity />
             <StatsChart />
             <Rank />
-        </div>
+        </PageWrapper>
     );
 }

@@ -1,9 +1,13 @@
+'use client';
+
+import { PageWrapper } from '@/components/common/PageWrapper';
+
 export function Group() {
     return (
-        <div className="space-y-6">
+        <PageWrapper>
             <div className="rounded-3xl bg-sidebar p-6 text-card-foreground custom-shadow">
                 <div className="h-128" />
             </div>
-        </div>
+        </PageWrapper>
     );
 }

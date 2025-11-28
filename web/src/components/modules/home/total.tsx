@@ -1,3 +1,6 @@
+'use client';
+
+import { motion } from 'framer-motion';
 import {
     Activity,
     MessageSquare,
@@ -12,6 +15,9 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useStatsTotal } from '@/api/endpoints/stats';
+import { AnimatedNumber } from '@/components/common/AnimatedNumber';
+import { GRID_CARD_VARIANTS } from '@/lib/animations/fluid-transitions';
+
 
 export function Total() {
     const { data } = useStatsTotal();
@@ -109,9 +115,18 @@ export function Total() {
     ];
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <motion.div
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
+            variants={GRID_CARD_VARIANTS.container}
+            initial="initial"
+            animate="animate"
+        >
             {cards.map((card, index) => (
-                <section key={index} className="rounded-3xl bg-card border-card-border border p-5 text-card-foreground custom-shadow flex flex-row items-center gap-4">
+                <motion.section
+                    key={index}
+                    className="rounded-3xl bg-card border-card-border border p-5 text-card-foreground custom-shadow flex flex-row items-center gap-4"
+                    variants={GRID_CARD_VARIANTS.item}
+                >
                     <div className="flex flex-col items-center justify-center gap-3 border-r border-border/50 pr-4 py-1 self-stretch">
                         <card.headerIcon className="w-4 h-4" />
                         <h3 className="font-medium text-sm [writing-mode:vertical-lr]">{card.title}</h3>
@@ -127,7 +142,7 @@ export function Total() {
                                     <span className="text-xs text-muted-foreground">{item.label}</span>
                                     <div className="flex items-baseline gap-1">
                                         <span className="text-xl">
-                                            {item.value ?? '-'}
+                                            <AnimatedNumber value={item.value} />
                                         </span>
                                         {item.unit && item.value && (
                                             <span className="text-sm text-muted-foreground">{item.unit}</span>
@@ -137,8 +152,8 @@ export function Total() {
                             </div>
                         ))}
                     </div>
-                </section>
+                </motion.section>
             ))}
-        </div>
+        </motion.div>
     );
 }
