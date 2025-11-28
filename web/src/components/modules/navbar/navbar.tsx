@@ -12,54 +12,52 @@ export function NavBar() {
     const { preload } = usePreload()
 
     return (
-        <div className="md:pr-6 relative z-50">
-            <aside className="sticky top-30">
-                <motion.nav
-                    aria-label="Main Navigation"
-                    className={cn(
-                        "fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1 p-3",
-                        "md:relative md:left-auto md:bottom-auto md:translate-x-0 md:flex-col md:gap-3",
-                        "bg-sidebar text-sidebar-foreground border border-sidebar-border rounded-3xl",
-                        "custom-shadow"
-                    )}
-                    variants={ENTRANCE_VARIANTS.navbar}
-                    initial="initial"
-                    animate="animate"
-                >
-                    {ROUTES.map((route, index) => (
-                        <motion.button
-                            key={route.id}
-                            type="button"
-                            onClick={() => setActiveItem(route.id as NavItem)}
-                            onMouseEnter={() => preload(route.id)}
-                            className={cn(
-                                "relative p-2 md:p-3 rounded-2xl",
-                                activeItem === route.id ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/60 hover:bg-sidebar-accent"
-                            )}
-                            initial={{ opacity: 0, scale: 0.8 }}
-                            animate={{
-                                opacity: 1,
-                                scale: 1,
-                                transition: {
-                                    delay: index * 0.05,
-                                    duration: 0.3,
-                                }
-                            }}
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.95 }}
-                        >
-                            {activeItem === route.id && (
-                                <motion.div
-                                    layoutId="active-nav"
-                                    className="transition-none absolute inset-0 bg-sidebar-primary rounded-2xl"
-                                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                                />
-                            )}
-                            <route.icon strokeWidth={2} className="relative" />
-                        </motion.button>
-                    ))}
-                </motion.nav>
-            </aside>
+        <div className="relative z-50 md:min-h-screen">
+            <motion.nav
+                aria-label="Main Navigation"
+                className={cn(
+                    "fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1 p-3",
+                    "md:sticky md:top-30 md:left-auto md:bottom-auto md:translate-x-0 md:flex-col md:gap-3",
+                    "bg-sidebar text-sidebar-foreground border border-sidebar-border rounded-3xl",
+                    "custom-shadow"
+                )}
+                variants={ENTRANCE_VARIANTS.navbar}
+                initial="initial"
+                animate="animate"
+            >
+                {ROUTES.map((route, index) => (
+                    <motion.button
+                        key={route.id}
+                        type="button"
+                        onClick={() => setActiveItem(route.id as NavItem)}
+                        onMouseEnter={() => preload(route.id)}
+                        className={cn(
+                            "relative p-2 md:p-3 rounded-2xl",
+                            activeItem === route.id ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/60 hover:bg-sidebar-accent"
+                        )}
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{
+                            opacity: 1,
+                            scale: 1,
+                            transition: {
+                                delay: index * 0.05,
+                                duration: 0.3,
+                            }
+                        }}
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.95 }}
+                    >
+                        {activeItem === route.id && (
+                            <motion.div
+                                layoutId="active-nav"
+                                className="transition-none absolute inset-0 bg-sidebar-primary rounded-2xl"
+                                transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                            />
+                        )}
+                        <route.icon strokeWidth={2} className="relative" />
+                    </motion.button>
+                ))}
+            </motion.nav>
         </div>
     )
 }

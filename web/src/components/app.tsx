@@ -46,10 +46,10 @@ export function AppContainer() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.3 }}
-            className="px-3 md:px-6 max-w-6xl mx-auto md:flex"
+            className="px-3 md:px-6 max-w-6xl mx-auto md:grid md:grid-cols-[auto_1fr] md:gap-6"
         >
             <NavBar />
-            <main className="w-full mb-28 min-w-0">
+            <main className="w-full mb-28 min-w-0 md:mb-6">
                 <motion.header
                     variants={ENTRANCE_VARIANTS.header}
                     initial="initial"
