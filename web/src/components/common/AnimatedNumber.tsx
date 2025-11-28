@@ -12,7 +12,6 @@ export function AnimatedNumber({ value, duration = 800 }: AnimatedNumberProps) {
 
     useEffect(() => {
         if (value === undefined || value === null || value === '-') {
-            setDisplayValue(0);
             prevValueRef.current = 0;
             return;
         }

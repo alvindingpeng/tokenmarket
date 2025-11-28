@@ -1,6 +1,5 @@
 'use client';
 
-import { motion } from 'framer-motion';
 import { Activity } from './activity';
 import { Total } from './total';
 import { StatsChart } from './chart';

@@ -1,7 +1,7 @@
 import type { ApiError } from './types';
 import { HttpStatus } from './types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://192.168.8.120:8080';
 
 /**
  * 获取认证 Store（延迟导入以避免循环依赖）

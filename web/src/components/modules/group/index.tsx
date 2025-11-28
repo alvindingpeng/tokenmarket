@@ -6,7 +6,7 @@ export function Group() {
     return (
         <PageWrapper>
             <div className="rounded-3xl bg-sidebar p-6 text-card-foreground custom-shadow">
-                <div className="h-128" />
+                <div className="h-64" />
             </div>
         </PageWrapper>
     );
