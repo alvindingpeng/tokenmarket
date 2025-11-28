@@ -54,9 +54,9 @@
             "totalCost": "消费金额",
             "timePeriod": "时间范围",
             "period": {
+                "today": "今天",
                 "last7Days": "7天",
-                "last30Days": "30天",
-                "last60Days": "60天"
+                "last30Days": "30天"
             }
         },
         "rank": {

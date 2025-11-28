@@ -26,6 +26,11 @@ export interface StatsTotal extends StatsMetrics {
     id: number;
 }
 
+export interface StatsHourly extends StatsMetrics {
+    hour: number;
+    date: string;
+}
+
 /**
  * 获取今日统计数据 Hook
  */
@@ -70,6 +75,33 @@ export function useStatsDaily() {
 /**
  * 获取总统计数据 Hook
  */
+export function useStatsHourly() {
+    return useQuery({
+        queryKey: ['stats', 'hourly'],
+        queryFn: async () => {
+            return apiClient.get<StatsHourly[]>('/api/v1/stats/hourly');
+        },
+        select: (data) => ({
+            raw: data,
+            formatted: data.map(item => ({
+                hour: item.hour,
+                date: item.date,
+                input_token: formatCount(item.input_token),
+                output_token: formatCount(item.output_token),
+                total_token: formatCount(item.input_token + item.output_token),
+                input_cost: formatMoney(item.input_cost),
+                output_cost: formatMoney(item.output_cost),
+                total_cost: formatMoney(item.input_cost + item.output_cost),
+                wait_time: formatTime(item.wait_time),
+                request_success: formatCount(item.request_success),
+                request_failed: formatCount(item.request_failed),
+                request_count: formatCount(item.request_success + item.request_failed),
+            })),
+        }),
+        refetchInterval: 10000,// 10 秒
+    });
+}
+
 export function useStatsTotal() {
     return useQuery({
         queryKey: ['stats', 'total'],

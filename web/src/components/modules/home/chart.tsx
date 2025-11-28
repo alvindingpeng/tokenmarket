@@ -1,6 +1,6 @@
 'use client';
 
-import { useStatsDaily } from '@/api/endpoints/stats';
+import { useStatsDaily, useStatsHourly } from '@/api/endpoints/stats';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { useMemo, useState } from 'react';
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
@@ -8,33 +8,52 @@ import { useTranslations } from 'next-intl';
 import { formatCount, formatMoney } from '@/lib/utils';
 import dayjs from 'dayjs';
 import { AnimatedNumber } from '@/components/common/AnimatedNumber';
-const PERIODS = ['7', '30'] as const;
+const PERIODS = ['1', '7', '30'] as const;
 
 export function StatsChart() {
     const { data: statsDaily } = useStatsDaily();
-    const [period, setPeriod] = useState<typeof PERIODS[number]>('7');
+    const { data: statsHourly } = useStatsHourly();
+    const [period, setPeriod] = useState<typeof PERIODS[number]>('1');
     const t = useTranslations('home.chart');
 
     const chartData = useMemo(() => {
-        if (!statsDaily) return [];
-        const days = parseInt(period);
-        return statsDaily.raw.slice(-days).map((stat) => {
-            return {
-                date: dayjs(stat.date).format('MM/DD'),
-                total_cost: stat.input_cost + stat.output_cost,
-            };
-        });
-    }, [statsDaily, period]);
+        if (period === '1') {
+            if (!statsHourly) return [];
+            return statsHourly.raw.map((stat) => {
+                return {
+                    date: `${stat.hour}:00`,
+                    total_cost: stat.input_cost + stat.output_cost,
+                };
+            });
+        } else {
+            if (!statsDaily) return [];
+            const days = parseInt(period);
+            return statsDaily.raw.slice(-days).map((stat) => {
+                return {
+                    date: dayjs(stat.date).format('MM/DD'),
+                    total_cost: stat.input_cost + stat.output_cost,
+                };
+            });
+        }
+    }, [statsDaily, statsHourly, period]);
 
     const totals = useMemo(() => {
-        if (!statsDaily) return { requests: 0, cost: 0 };
-        const days = parseInt(period);
-        const recentStats = statsDaily.raw.slice(-days);
-        return {
-            requests: recentStats.reduce((acc, stat) => acc + stat.request_success + stat.request_failed, 0),
-            cost: recentStats.reduce((acc, stat) => acc + stat.input_cost + stat.output_cost, 0),
-        };
-    }, [statsDaily, period]);
+        if (period === '1') {
+            if (!statsHourly) return { requests: 0, cost: 0 };
+            return {
+                requests: statsHourly.raw.reduce((acc, stat) => acc + stat.request_success + stat.request_failed, 0),
+                cost: statsHourly.raw.reduce((acc, stat) => acc + stat.input_cost + stat.output_cost, 0),
+            };
+        } else {
+            if (!statsDaily) return { requests: 0, cost: 0 };
+            const days = parseInt(period);
+            const recentStats = statsDaily.raw.slice(-days);
+            return {
+                requests: recentStats.reduce((acc, stat) => acc + stat.request_success + stat.request_failed, 0),
+                cost: recentStats.reduce((acc, stat) => acc + stat.input_cost + stat.output_cost, 0),
+            };
+        }
+    }, [statsDaily, statsHourly, period]);
 
     const chartConfig = {
         total_cost: { label: t('totalCost') },
@@ -42,6 +61,7 @@ export function StatsChart() {
 
     const getPeriodLabel = (p: typeof period) => {
         const labels = {
+            '1': t('period.today'),
             '7': t('period.last7Days'),
             '30': t('period.last30Days'),
         };
