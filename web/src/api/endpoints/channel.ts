@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { logger } from '@/lib/logger';
-import { formatCount, formatMoney } from '@/lib/utils';
-import { StatsChannel } from './stats';
+import { formatCount, formatMoney, formatTime } from '@/lib/utils';
+import { StatsChannel, type StatsMetricsFormatted } from './stats';
 /**
  * 渠道类型枚举
  */
@@ -28,6 +28,12 @@ export interface Channel {
     proxy: boolean;
     stats: StatsChannel;
 }
+
+export interface ChannelData {
+    raw: Channel;
+    formatted: StatsMetricsFormatted;
+}
+
 
 /**
  * 创建渠道请求
@@ -65,7 +71,7 @@ export interface UpdateChannelRequest {
  * if (isLoading) return <Loading />;
  * if (error) return <Error message={error.message} />;
  * 
- * channels.forEach(channel => console.log(channel.name));
+ * channels?.forEach(channel => console.log(channel.raw.name));
  */
 export function useChannelList() {
     return useQuery({
@@ -73,11 +79,9 @@ export function useChannelList() {
         queryFn: async () => {
             return apiClient.get<Channel[]>('/api/v1/channel/list');
         },
-        select: (data) => ({
-            raw: data,
-            formatted: data.map(item => ({
-                id: item.id,
-                name: item.name,
+        select: (data) => data.map((item): ChannelData => ({
+            raw: item,
+            formatted: {
                 input_token: formatCount(item.stats.input_token),
                 output_token: formatCount(item.stats.output_token),
                 total_token: formatCount(item.stats.input_token + item.stats.output_token),
@@ -87,8 +91,9 @@ export function useChannelList() {
                 request_success: formatCount(item.stats.request_success),
                 request_failed: formatCount(item.stats.request_failed),
                 request_count: formatCount(item.stats.request_success + item.stats.request_failed),
-            }))
-        }),
+                wait_time: formatTime(item.stats.wait_time),
+            }
+        })),
         refetchInterval: 30000,
     });
 }
