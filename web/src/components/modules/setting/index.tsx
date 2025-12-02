@@ -1,12 +1,21 @@
 'use client';
 
 import { PageWrapper } from '@/components/common/PageWrapper';
+import { SettingAppearance } from './Appearance';
+import { SettingSystem } from './System';
+import { SettingAPIKey } from './APIKey';
 
 export function Setting() {
     return (
-        <PageWrapper>
-            <div className="rounded-3xl bg-sidebar p-6 text-sidebar-foreground custom-shadow">
-                <div className="h-128" />
+        <PageWrapper className="columns-1 md:columns-2 gap-4 [&>div]:mb-4 [&>div]:break-inside-avoid">
+            <div>
+                <SettingAppearance key="setting-appearance" />
+            </div>
+            <div>
+                <SettingSystem key="setting-system" />
+            </div>
+            <div>
+                <SettingAPIKey key="setting-apikey" />
             </div>
         </PageWrapper>
     );

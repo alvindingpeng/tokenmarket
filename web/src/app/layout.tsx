@@ -1,7 +1,7 @@
 import "./globals.css";
 import { ThemeProvider } from "@/provider/theme";
 import { Toaster } from "@/components/ui/sonner"
-import { NextIntlClientProvider } from 'next-intl';
+import { LocaleProvider } from "@/provider/locale";
 import QueryProvider from "@/provider/query";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 
@@ -31,10 +31,10 @@ export default function RootLayout({
         <ServiceWorkerRegister />
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <QueryProvider>
-            <NextIntlClientProvider>
+            <LocaleProvider>
               {children}
               <Toaster />
-            </NextIntlClientProvider>
+            </LocaleProvider>
           </QueryProvider>
         </ThemeProvider>
       </body>

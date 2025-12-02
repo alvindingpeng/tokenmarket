@@ -66,6 +66,40 @@
             "noData": "暂无排行数据"
         }
     },
+    "setting": {
+        "title": "设置",
+        "appearance": "外观",
+        "system": "系统",
+        "theme": {
+            "label": "主题",
+            "light": "浅色",
+            "dark": "深色",
+            "system": "跟随系统"
+        },
+        "language": {
+            "label": "语言",
+            "zh": "中文",
+            "en": "English"
+        },
+        "proxyUrl": {
+            "label": "代理地址",
+            "placeholder": "请输入代理地址",
+            "description": "用于请求的 HTTP 代理"
+        },
+        "statsSaveInterval": {
+            "label": "统计保存周期（分钟）",
+            "placeholder": "请输入周期（分钟）",
+            "description": "统计数据写入数据库的周期（分钟）"
+        },
+        "save": "保存",
+        "saving": "保存中...",
+        "saved": "已保存",
+        "apiKey": {
+            "title": "API 密钥",
+            "placeholder": "输入密钥名称",
+            "empty": "暂无 API 密钥"
+        }
+    },
     "channel": {
         "card": {
             "status": {

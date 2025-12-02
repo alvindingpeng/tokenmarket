@@ -1,0 +1,173 @@
+{
+    "login": {
+        "title": "Login to your account",
+        "description": "Enter your username and password to login",
+        "username": "Username",
+        "usernamePlaceholder": "Enter your username",
+        "password": "Password",
+        "passwordPlaceholder": "Enter your password",
+        "error": {
+            "generic": "Login failed, please check your username and password"
+        },
+        "button": {
+            "loading": "Logging in...",
+            "submit": "Login"
+        }
+    },
+    "navbar": {
+        "home": "Home",
+        "channel": "Channel",
+        "group": "Group",
+        "key": "Key",
+        "model": "Model",
+        "setting": "Setting"
+    },
+    "home": {
+        "activity": {
+            "requestCount": "Requests",
+            "waitTime": "Wait Time",
+            "totalToken": "Tokens Used",
+            "totalCost": "Total Cost",
+            "noData": "No Data"
+        },
+        "total": {
+            "requestStats": "Request Stats",
+            "totalStats": "Total Stats",
+            "inputStats": "Input Stats",
+            "outputStats": "Output Stats",
+            "requestCount": "Requests",
+            "timeConsumed": "Time Consumed",
+            "totalToken": "Tokens Used",
+            "totalCost": "Total Cost",
+            "inputTokens": "Input Tokens",
+            "inputCost": "Input Cost",
+            "outputTokens": "Output Tokens",
+            "outputCost": "Output Cost"
+        },
+        "chart": {
+            "requests": "Requests",
+            "inputTokens": "Input Tokens",
+            "outputTokens": "Output Tokens",
+            "inputCost": "Input Cost",
+            "outputCost": "Output Cost",
+            "totalRequests": "Total Requests",
+            "totalCost": "Total Cost",
+            "timePeriod": "Time Period",
+            "period": {
+                "today": "Today",
+                "last7Days": "7 Days",
+                "last30Days": "30 Days"
+            }
+        },
+        "rank": {
+            "title": "Channel Ranking",
+            "channel": "Channel",
+            "totalCost": "Total Cost",
+            "noData": "No ranking data"
+        }
+    },
+    "channel": {
+        "card": {
+            "status": {
+                "enabled": "Enabled",
+                "disabled": "Disabled"
+            },
+            "requestCount": "Requests",
+            "totalCost": "Total Cost"
+        },
+        "detail": {
+            "title": {
+                "edit": "Edit Channel",
+                "view": "Channel Details"
+            },
+            "sections": {
+                "overview": "Overview",
+                "requests": "Request Details",
+                "tokens": "Token Usage",
+                "costs": "Cost Details"
+            },
+            "metrics": {
+                "totalRequests": "Total Requests",
+                "totalToken": "Total Tokens",
+                "totalCost": "Total Cost",
+                "successRequests": "Successful Requests",
+                "failedRequests": "Failed Requests",
+                "inputToken": "Input Tokens",
+                "outputToken": "Output Tokens",
+                "inputCost": "Input Cost",
+                "outputCost": "Output Cost",
+                "avgWaitTime": "Avg Wait Time"
+            },
+            "actions": {
+                "edit": "Edit",
+                "cancel": "Cancel",
+                "save": "Save",
+                "saving": "Saving...",
+                "delete": "Delete",
+                "confirmDelete": "Confirm Delete",
+                "deleting": "Deleting..."
+            }
+        },
+        "create": {
+            "title": "Create Channel",
+            "dialogTitle": "Create New Channel",
+            "submit": "Create Channel",
+            "submitting": "Creating..."
+        },
+        "form": {
+            "name": "Channel Name",
+            "type": "Channel Type",
+            "baseUrl": "Base URL",
+            "apiKey": "API Key",
+            "model": "Model",
+            "enabled": "Enabled",
+            "proxy": "Use Proxy",
+            "modelCustomPlaceholder": "Custom model name",
+            "modelAdd": "Add",
+            "modelSelected": "Selected Models",
+            "modelNoSelected": "No models selected",
+            "modelAvailable": "Available Models",
+            "modelAllAdded": "All models added",
+            "modelFetching": "Fetching models...",
+            "modelFetchPrompt": "Click refresh to get models",
+            "typeOpenAIChat": "OpenAI Chat",
+            "typeOpenAIResponse": "OpenAI Response",
+            "typeAnthropic": "Anthropic",
+            "typeOneAPI": "OneAPI",
+            "typeUnknown": "Unknown"
+        }
+    },
+    "setting": {
+        "title": "Settings",
+        "appearance": "Appearance",
+        "system": "System",
+        "theme": {
+            "label": "Theme",
+            "light": "Light",
+            "dark": "Dark",
+            "system": "System"
+        },
+        "language": {
+            "label": "Language",
+            "zh": "中文",
+            "en": "English"
+        },
+        "proxyUrl": {
+            "label": "Proxy URL",
+            "placeholder": "Enter proxy URL",
+            "description": "HTTP proxy for outgoing requests"
+        },
+        "statsSaveInterval": {
+            "label": "Stats Save Interval",
+            "placeholder": "Enter interval in minutes",
+            "description": "Interval to save statistics to database (minutes)"
+        },
+        "save": "Save",
+        "saving": "Saving...",
+        "saved": "Saved",
+        "apiKey": {
+            "title": "API Keys",
+            "placeholder": "Enter key name"
+        }
+    }
+}
