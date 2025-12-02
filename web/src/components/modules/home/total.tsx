@@ -16,7 +16,7 @@ import {
 import { useTranslations } from 'next-intl';
 import { useStatsTotal } from '@/api/endpoints/stats';
 import { AnimatedNumber } from '@/components/common/AnimatedNumber';
-import { GRID_CARD_VARIANTS } from '@/lib/animations/fluid-transitions';
+import { EASING } from '@/lib/animations/fluid-transitions';
 
 
 export function Total() {
@@ -40,7 +40,7 @@ export function Total() {
                     label: t('timeConsumed'),
                     value: statsTotalFormatted?.wait_time.formatted.value,
                     icon: Clock,
-                    color: 'text-card-foreground',
+                    color: 'text-primary',
                     bgColor: 'bg-accent/10',
                     unit: statsTotalFormatted?.wait_time.formatted.unit
                 }
@@ -62,7 +62,7 @@ export function Total() {
                     label: t('totalCost'),
                     value: statsTotalFormatted?.total_cost.formatted.value,
                     icon: DollarSign,
-                    color: 'text-card-foreground',
+                    color: 'text-primary',
                     bgColor: 'bg-chart-2/10',
                     unit: statsTotalFormatted?.total_cost.formatted.unit
                 }
@@ -84,7 +84,7 @@ export function Total() {
                     label: t('inputCost'),
                     value: statsTotalFormatted?.input_cost.formatted.value,
                     icon: DollarSign,
-                    color: 'text-card-foreground',
+                    color: 'text-primary',
                     bgColor: 'bg-chart-3/10',
                     unit: statsTotalFormatted?.input_cost.formatted.unit
                 }
@@ -106,7 +106,7 @@ export function Total() {
                     label: t('outputCost'),
                     value: statsTotalFormatted?.output_cost.formatted.value,
                     icon: DollarSign,
-                    color: 'text-card-foreground',
+                    color: 'text-primary',
                     bgColor: 'bg-chart-4/10',
                     unit: statsTotalFormatted?.output_cost.formatted.unit
                 }
@@ -115,17 +115,18 @@ export function Total() {
     ];
 
     return (
-        <motion.div
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
-            variants={GRID_CARD_VARIANTS.container}
-            initial="initial"
-            animate="animate"
-        >
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {cards.map((card, index) => (
                 <motion.section
                     key={index}
                     className="rounded-3xl bg-card border-card-border border p-5 text-card-foreground custom-shadow flex flex-row items-center gap-4"
-                    variants={GRID_CARD_VARIANTS.item}
+                    initial={{ opacity: 0, y: 20, filter: 'blur(8px)' }}
+                    animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                    transition={{
+                        duration: 0.5,
+                        ease: EASING.easeOutExpo,
+                        delay: index * 0.08,
+                    }}
                 >
                     <div className="flex flex-col items-center justify-center gap-3 border-r border-border/50 pr-4 py-1 self-stretch">
                         <card.headerIcon className="w-4 h-4" />
@@ -154,6 +155,6 @@ export function Total() {
                     </div>
                 </motion.section>
             ))}
-        </motion.div>
+        </div>
     );
 }

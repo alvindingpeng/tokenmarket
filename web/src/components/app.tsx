@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from "framer-motion"
 import { useAuth } from '@/api/endpoints/user';
 import { LoginForm } from '@/components/modules/login';
@@ -8,38 +9,54 @@ import { ContentLoader } from '@/route/content-loader';
 import { NavBar, useNavStore } from '@/components/modules/navbar';
 import { useTranslations } from 'next-intl'
 import Logo from '@/components/modules/logo';
-import { LOADING_VARIANTS, ENTRANCE_VARIANTS } from '@/lib/animations/fluid-transitions';
+import { ENTRANCE_VARIANTS } from '@/lib/animations/fluid-transitions';
+
+// Logo 绘制动画时长
+const LOGO_ANIMATION_DURATION = 1400;
 
 export function AppContainer() {
-    const { isAuthenticated, isLoading } = useAuth();
+    const { isAuthenticated, isLoading: authLoading } = useAuth();
     const { activeItem, direction } = useNavStore();
     const t = useTranslations('navbar');
 
+    // Logo 动画完成状态
+    const [logoAnimationComplete, setLogoAnimationComplete] = useState(false);
+
+    useEffect(() => {
+        const timer = setTimeout(() => setLogoAnimationComplete(true), LOGO_ANIMATION_DURATION);
+        return () => clearTimeout(timer);
+    }, []);
+
+    // 加载状态
+    const isLoading = authLoading || !logoAnimationComplete;
+
+    // 加载页面
     if (isLoading) {
         return (
-            <motion.div
-                key="loading"
-                variants={LOADING_VARIANTS}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                className="min-h-screen flex items-center justify-center"
-            >
-                <div className="text-center">
-                    <div className="animate-spin rounded-full border-b-2 border-primary mx-auto h-8 w-8" />
-                </div>
-            </motion.div>
+            <div className="min-h-screen flex items-center justify-center bg-background">
+                <Logo size={120} animate />
+            </div>
         );
     }
 
+    // 登录页面
     if (!isAuthenticated) {
         return (
             <AnimatePresence mode="wait">
-                <LoginForm />
+                <motion.div
+                    key="login"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.3 }}
+                >
+                    <LoginForm />
+                </motion.div>
             </AnimatePresence>
-        )
+        );
     }
 
+    // 主界面
     return (
         <motion.div
             key="main-app"
@@ -50,13 +67,8 @@ export function AppContainer() {
         >
             <NavBar />
             <main className="w-full mb-28 min-w-0 md:mb-6">
-                <motion.header
-                    variants={ENTRANCE_VARIANTS.header}
-                    initial="initial"
-                    animate="animate"
-                    className="flex items-center gap-x-2 my-6"
-                >
-                    <Logo />
+                <header className="flex items-center gap-x-2 my-6">
+                    <Logo size={48} />
                     <div className="text-3xl font-bold mt-1 overflow-hidden">
                         <AnimatePresence mode="wait" custom={direction}>
                             <motion.div
@@ -85,8 +97,7 @@ export function AppContainer() {
                             </motion.div>
                         </AnimatePresence>
                     </div>
-
-                </motion.header>
+                </header>
                 <motion.div
                     variants={ENTRANCE_VARIANTS.content}
                     initial="initial"
