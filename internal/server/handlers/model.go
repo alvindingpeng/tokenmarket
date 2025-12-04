@@ -15,24 +15,24 @@ func init() {
 	router.NewGroupRouter("/api/v1/model").
 		Use(middleware.Auth()).
 		AddRoute(
-			router.NewRoute("/channel", http.MethodGet).
-				Handle(getChannelModelList),
-		).
-		AddRoute(
 			router.NewRoute("/list", http.MethodGet).
-				Handle(getLLMModelList),
-		).
-		AddRoute(
-			router.NewRoute("/update", http.MethodPost).
-				Handle(updateLLMModel),
-		).
-		AddRoute(
-			router.NewRoute("/delete/:name", http.MethodDelete).
-				Handle(deleteLLMModel),
+				Handle(listLLM),
 		).
 		AddRoute(
 			router.NewRoute("/create", http.MethodPost).
-				Handle(createLLMModel),
+				Handle(createLLM),
+		).
+		AddRoute(
+			router.NewRoute("/channel", http.MethodGet).
+				Handle(listLLMByChannel),
+		).
+		AddRoute(
+			router.NewRoute("/update", http.MethodPost).
+				Handle(updateLLM),
+		).
+		AddRoute(
+			router.NewRoute("/delete/:name", http.MethodDelete).
+				Handle(deleteLLM),
 		)
 	router.NewGroupRouter("/v1").
 		Use(middleware.APIKeyAuth()).
@@ -40,15 +40,6 @@ func init() {
 			router.NewRoute("/models", http.MethodGet).
 				Handle(getModelList),
 		)
-}
-
-func getChannelModelList(c *gin.Context) {
-	channelModels, err := op.ChannelModelList(c.Request.Context())
-	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	resp.Success(c, channelModels)
 }
 
 func getModelList(c *gin.Context) {
@@ -92,8 +83,8 @@ func getModelList(c *gin.Context) {
 	}
 }
 
-func getLLMModelList(c *gin.Context) {
-	models, err := op.LLMModelList(c.Request.Context())
+func listLLM(c *gin.Context) {
+	models, err := op.LLMList(c.Request.Context())
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -101,35 +92,44 @@ func getLLMModelList(c *gin.Context) {
 	resp.Success(c, models)
 }
 
-func updateLLMModel(c *gin.Context) {
-	var model model.LLMModel
+func listLLMByChannel(c *gin.Context) {
+	channels, err := op.ChannelLLMList(c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, channels)
+}
+
+func createLLM(c *gin.Context) {
+	var model model.LLMInfo
 	if err := c.ShouldBindJSON(&model); err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := op.LLMModelUpdate(&model, c.Request.Context()); err != nil {
+	if err := op.LLMCreate(model, c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 	resp.Success(c, model)
 }
 
-func createLLMModel(c *gin.Context) {
-	var model model.LLMModel
+func updateLLM(c *gin.Context) {
+	var model model.LLMInfo
 	if err := c.ShouldBindJSON(&model); err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := op.LLMModelCreate(&model, c.Request.Context()); err != nil {
+	if err := op.LLMUpdate(model, c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 	resp.Success(c, model)
 }
 
-func deleteLLMModel(c *gin.Context) {
+func deleteLLM(c *gin.Context) {
 	modelName := c.Param("name")
-	if err := op.LLMModelDelete(modelName, c.Request.Context()); err != nil {
+	if err := op.LLMDelete(modelName, c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}

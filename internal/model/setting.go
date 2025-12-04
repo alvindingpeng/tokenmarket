@@ -3,8 +3,9 @@ package model
 type SettingKey string
 
 const (
-	SettingKeyProxyURL          SettingKey = "proxy_url"
-	SettingKeyStatsSaveInterval SettingKey = "stats_save_interval" //将统计信息写入数据库的周期;单位分钟
+	SettingKeyProxyURL                SettingKey = "proxy_url"
+	SettingKeyStatsSaveInterval       SettingKey = "stats_save_interval"        //将统计信息写入数据库的周期(分钟)
+	SettingKeyModelInfoUpdateInterval SettingKey = "model_info_update_interval" //模型信息更新间隔(小时)
 )
 
 type Setting struct {
@@ -15,6 +16,7 @@ type Setting struct {
 func DefaultSettings() []Setting {
 	return []Setting{
 		{Key: SettingKeyProxyURL, Value: ""},
-		{Key: SettingKeyStatsSaveInterval, Value: "60"}, //默认1小时保存一次数据库
+		{Key: SettingKeyStatsSaveInterval, Value: "60"},       // 默认1小时保存一次数据库
+		{Key: SettingKeyModelInfoUpdateInterval, Value: "24"}, // 默认24小时更新一次模型信息
 	}
 }

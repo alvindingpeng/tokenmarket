@@ -20,7 +20,7 @@ func InitCache() error {
 	if err := apiKeyRefreshCache(ctx); err != nil {
 		return err
 	}
-	if err := llmModelRefreshCache(ctx); err != nil {
+	if err := llmRefreshCache(ctx); err != nil {
 		return err
 	}
 	if err := statsRefreshCache(ctx); err != nil {

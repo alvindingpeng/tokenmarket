@@ -103,13 +103,17 @@ func ChannelDel(id int, ctx context.Context) error {
 	return nil
 }
 
-func ChannelModelList(ctx context.Context) ([]string, error) {
-	models := []string{}
+func ChannelLLMList(ctx context.Context) ([]model.LLMChannel, error) {
+	models := []model.LLMChannel{}
 	for _, channel := range channelCache.GetAll() {
 		if channel.Enabled {
-			spl := strings.Split(channel.Model, ",")
-			for _, model := range spl {
-				models = append(models, channel.Name+"/"+model)
+			modelNames := strings.Split(channel.Model, ",")
+			for _, modelName := range modelNames {
+				models = append(models, model.LLMChannel{
+					Name:        modelName,
+					ChannelID:   channel.ID,
+					ChannelName: channel.Name,
+				})
 			}
 		}
 	}

@@ -37,7 +37,7 @@ func InitDB(path string, debug bool) error {
 		&model.Channel{},
 		&model.Group{},
 		&model.GroupItem{},
-		&model.LLMModel{},
+		&model.LLMInfo{},
 		&model.APIKey{},
 		&model.Setting{},
 		&model.StatsTotal{},

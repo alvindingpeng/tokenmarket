@@ -9,7 +9,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
-func FetchModel(ctx context.Context, request model.Channel) ([]string, error) {
+func FetchLLMName(ctx context.Context, request model.Channel) ([]string, error) {
 	client, err := NewHTTPClient(request.Proxy)
 	if err != nil {
 		return nil, err
