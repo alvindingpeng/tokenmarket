@@ -66,6 +66,51 @@
             "noData": "No ranking data"
         }
     },
+    "group": {
+        "create": {
+            "title": "Create Group",
+            "button": "New Group",
+            "submit": "Create",
+            "submitting": "Creating..."
+        },
+        "card": {
+            "itemCount": "Routing Rules",
+            "empty": "No rules"
+        },
+        "detail": {
+            "title": {
+                "edit": "Edit Group",
+                "view": "Group Details"
+            },
+            "actions": {
+                "edit": "Edit",
+                "cancel": "Cancel",
+                "save": "Save",
+                "saving": "Saving...",
+                "delete": "Delete",
+                "confirmDelete": "Confirm Delete",
+                "deleting": "Deleting..."
+            }
+        },
+        "form": {
+            "name": "Group Name",
+            "namePlaceholder": "Enter group name",
+            "items": "Routing Rules",
+            "addItem": "Add Rule",
+            "selectModel": "Select model channel",
+            "allAdded": "All models added",
+            "channel": "Channel",
+            "channelPlaceholder": "Select channel",
+            "model": "Model",
+            "modelPlaceholder": "Select or enter model",
+            "priority": "Priority",
+            "noChannel": "No model channels available",
+            "noItems": "No routing rules",
+            "selectChannel": "Select channel",
+            "added": "Added"
+        },
+        "empty": "No groups yet, click the button above to create one"
+    },
     "channel": {
         "card": {
             "status": {

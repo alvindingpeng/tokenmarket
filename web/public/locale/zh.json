@@ -116,6 +116,51 @@
             "updateFailed": "价格更新失败"
         }
     },
+    "group": {
+        "create": {
+            "title": "创建分组",
+            "button": "新建分组",
+            "submit": "创建",
+            "submitting": "创建中..."
+        },
+        "card": {
+            "itemCount": "路由规则",
+            "empty": "暂无规则"
+        },
+        "detail": {
+            "title": {
+                "edit": "编辑分组",
+                "view": "分组详情"
+            },
+            "actions": {
+                "edit": "编辑",
+                "cancel": "取消",
+                "save": "保存",
+                "saving": "保存中...",
+                "delete": "删除",
+                "confirmDelete": "确认删除",
+                "deleting": "删除中..."
+            }
+        },
+        "form": {
+            "name": "分组名称",
+            "namePlaceholder": "请输入分组名称",
+            "items": "路由规则",
+            "addItem": "添加规则",
+            "selectModel": "选择模型渠道",
+            "allAdded": "所有模型已添加",
+            "channel": "渠道",
+            "channelPlaceholder": "选择渠道",
+            "model": "模型",
+            "modelPlaceholder": "选择或输入模型",
+            "priority": "优先级",
+            "noChannel": "暂无可用模型渠道",
+            "noItems": "暂无路由规则",
+            "selectChannel": "选择渠道",
+            "added": "已添加"
+        },
+        "empty": "暂无分组，点击左上角按钮创建"
+    },
     "channel": {
         "card": {
             "status": {

@@ -7,6 +7,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/utils/cache"
+	"gorm.io/gorm"
 )
 
 var groupCache = cache.New[int, model.Group](16)
@@ -43,17 +44,81 @@ func GroupCreate(group *model.Group, ctx context.Context) error {
 	return nil
 }
 
-func GroupUpdate(group *model.Group, ctx context.Context) error {
-	_, ok := groupCache.Get(group.ID)
+func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Group, error) {
+	_, ok := groupCache.Get(req.ID)
 	if !ok {
-		return fmt.Errorf("group not found")
+		return nil, fmt.Errorf("group not found")
 	}
-	if err := db.GetDB().WithContext(ctx).Model(group).
-		Select("Name", "Model").
-		Updates(group).Error; err != nil {
-		return err
+
+	tx := db.GetDB().WithContext(ctx).Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// 更新 group name (仅在有变更时)
+	if req.Name != nil {
+		if err := tx.Model(&model.Group{}).Where("id = ?", req.ID).Update("name", *req.Name).Error; err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("failed to update group name: %w", err)
+		}
 	}
-	return groupRefreshCacheByID(group.ID, ctx)
+
+	// 删除 items
+	if len(req.ItemsToDelete) > 0 {
+		if err := tx.Where("id IN ? AND group_id = ?", req.ItemsToDelete, req.ID).Delete(&model.GroupItem{}).Error; err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("failed to delete items: %w", err)
+		}
+	}
+
+	// 批量更新 items priority
+	if len(req.ItemsToUpdate) > 0 {
+		ids := make([]int, len(req.ItemsToUpdate))
+		caseSQL := "CASE id"
+		for i, item := range req.ItemsToUpdate {
+			ids[i] = item.ID
+			caseSQL += fmt.Sprintf(" WHEN %d THEN %d", item.ID, item.Priority)
+		}
+		caseSQL += " END"
+
+		if err := tx.Model(&model.GroupItem{}).
+			Where("id IN ? AND group_id = ?", ids, req.ID).
+			Update("priority", gorm.Expr(caseSQL)).Error; err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("failed to update items priority: %w", err)
+		}
+	}
+
+	// 批量新增 items
+	if len(req.ItemsToAdd) > 0 {
+		newItems := make([]model.GroupItem, len(req.ItemsToAdd))
+		for i, item := range req.ItemsToAdd {
+			newItems[i] = model.GroupItem{
+				GroupID:   req.ID,
+				ChannelID: item.ChannelID,
+				ModelName: item.ModelName,
+				Priority:  item.Priority,
+			}
+		}
+		if err := tx.Create(&newItems).Error; err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("failed to create items: %w", err)
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	// 刷新缓存并返回最新数据
+	if err := groupRefreshCacheByID(req.ID, ctx); err != nil {
+		return nil, err
+	}
+
+	group, _ := groupCache.Get(req.ID)
+	return &group, nil
 }
 
 func GroupDel(id int, ctx context.Context) error {

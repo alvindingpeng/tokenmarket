@@ -56,12 +56,13 @@ func createGroup(c *gin.Context) {
 }
 
 func updateGroup(c *gin.Context) {
-	var group model.Group
-	if err := c.ShouldBindJSON(&group); err != nil {
+	var req model.GroupUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := op.GroupUpdate(&group, c.Request.Context()); err != nil {
+	group, err := op.GroupUpdate(&req, c.Request.Context())
+	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
