@@ -167,7 +167,24 @@
         "saved": "Saved",
         "apiKey": {
             "title": "API Keys",
-            "placeholder": "Enter key name"
+            "placeholder": "Enter key name",
+            "empty": "No API keys"
+        },
+        "llmPrice": {
+            "title": "Model Pricing",
+            "updateInterval": {
+                "label": "Auto Update Interval (hours)",
+                "placeholder": "Enter interval in hours"
+            },
+            "manualUpdate": {
+                "label": "Manual Price Update",
+                "button": "Update Now",
+                "updating": "Updating..."
+            },
+            "lastUpdate": "Last Update",
+            "neverUpdated": "Never updated",
+            "updateSuccess": "Price updated successfully",
+            "updateFailed": "Failed to update price"
         }
     }
 }

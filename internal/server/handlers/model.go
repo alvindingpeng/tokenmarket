@@ -5,6 +5,7 @@ import (
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
+	"github.com/alvindingpeng/switchyard/internal/price"
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/alvindingpeng/switchyard/internal/server/router"
@@ -33,6 +34,14 @@ func init() {
 		AddRoute(
 			router.NewRoute("/delete/:name", http.MethodDelete).
 				Handle(deleteLLM),
+		).
+		AddRoute(
+			router.NewRoute("/update-price", http.MethodPost).
+				Handle(updateLLMPrice),
+		).
+		AddRoute(
+			router.NewRoute("/last-update-time", http.MethodGet).
+				Handle(getLastUpdateTime),
 		)
 	router.NewGroupRouter("/v1").
 		Use(middleware.APIKeyAuth()).
@@ -134,4 +143,18 @@ func deleteLLM(c *gin.Context) {
 		return
 	}
 	resp.Success(c, nil)
+}
+
+func updateLLMPrice(c *gin.Context) {
+	err := price.UpdateLLMPrice(c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, nil)
+}
+
+func getLastUpdateTime(c *gin.Context) {
+	time := price.GetLastUpdateTime()
+	resp.Success(c, time)
 }

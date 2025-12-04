@@ -21,7 +21,11 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     }, [locale]);
 
     return (
-        <NextIntlClientProvider locale={currentLocale} messages={messages[currentLocale]}>
+        <NextIntlClientProvider
+            locale={currentLocale}
+            messages={messages[currentLocale]}
+            timeZone="Asia/Shanghai"
+        >
             {children}
         </NextIntlClientProvider>
     );

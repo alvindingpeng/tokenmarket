@@ -10,6 +10,12 @@ export interface Setting {
     value: string;
 }
 
+export const SettingKey = {
+    ProxyURL: 'proxy_url',
+    StatsSaveInterval: 'stats_save_interval',
+    ModelInfoUpdateInterval: 'model_info_update_interval',
+} as const;
+
 /**
  * 获取 Setting 列表 Hook
  * 

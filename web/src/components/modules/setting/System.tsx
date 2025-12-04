@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { Monitor, Globe, Clock } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { useSettingList, useSetSetting } from '@/api/endpoints/setting';
+import { useSettingList, useSetSetting, SettingKey } from '@/api/endpoints/setting';
 import { toast } from '@/components/common/Toast';
 
 export function SettingSystem() {
@@ -20,8 +20,8 @@ export function SettingSystem() {
 
     useEffect(() => {
         if (settings) {
-            const proxy = settings.find(s => s.key === 'proxy_url');
-            const interval = settings.find(s => s.key === 'stats_save_interval');
+            const proxy = settings.find(s => s.key === SettingKey.ProxyURL);
+            const interval = settings.find(s => s.key === SettingKey.StatsSaveInterval);
             if (proxy) {
                 setProxyUrl(proxy.value);
                 initialProxyUrl.current = proxy.value;
@@ -39,7 +39,7 @@ export function SettingSystem() {
         setSetting.mutate({ key, value }, {
             onSuccess: () => {
                 toast.success(t('saved'));
-                if (key === 'proxy_url') {
+                if (key === SettingKey.ProxyURL) {
                     initialProxyUrl.current = value;
                 } else {
                     initialStatsSaveInterval.current = value;

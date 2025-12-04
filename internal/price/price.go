@@ -45,7 +45,6 @@ func UpdateLLMPriceTask() {
 		log.Warnf("failed to update price info: %v", err)
 		return
 	}
-	lastUpdateTime = time.Now()
 	log.Infof("LLM price updated successfully")
 }
 
@@ -83,7 +82,12 @@ func UpdateLLMPrice(ctx context.Context) error {
 		}
 	}
 	llmPriceLock.Unlock()
+	lastUpdateTime = time.Now()
 	return nil
+}
+
+func GetLastUpdateTime() time.Time {
+	return lastUpdateTime
 }
 
 func GetLLMPrice(modelName string) (model.LLMPrice, error) {

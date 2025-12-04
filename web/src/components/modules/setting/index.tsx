@@ -4,6 +4,7 @@ import { PageWrapper } from '@/components/common/PageWrapper';
 import { SettingAppearance } from './Appearance';
 import { SettingSystem } from './System';
 import { SettingAPIKey } from './APIKey';
+import { SettingLLMPrice } from './LLMPrice';
 
 export function Setting() {
     return (
@@ -16,6 +17,9 @@ export function Setting() {
             </div>
             <div>
                 <SettingAPIKey key="setting-apikey" />
+            </div>
+            <div>
+                <SettingLLMPrice key="setting-llmprice" />
             </div>
         </PageWrapper>
     );
