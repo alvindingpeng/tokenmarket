@@ -86,6 +86,24 @@ prepare_environment() {
     local go_version=$(go version 2>/dev/null | grep -o 'go[0-9]\+\.[0-9]\+' | head -1)
     log_success "Go version: $go_version"
 
+    # Check Node.js
+    if ! command_exists node; then
+        log_error "Node.js is not installed. Please install Node.js from https://nodejs.org/"
+        return 1
+    fi
+
+    local node_version=$(node --version 2>/dev/null)
+    log_success "Node.js version: $node_version"
+
+    # Check pnpm
+    if ! command_exists pnpm; then
+        log_error "pnpm is not installed. Please install pnpm: npm install -g pnpm"
+        return 1
+    fi
+
+    local pnpm_version=$(pnpm --version 2>/dev/null)
+    log_success "pnpm version: $pnpm_version"
+
     # Check git
     if ! command_exists git; then
         install_command git git || return 1
@@ -167,6 +185,63 @@ prepare_environment() {
 # =============================================================================
 # Build Functions
 # =============================================================================
+
+build_frontend() {
+    log_step "Building frontend"
+
+    local web_dir="web"
+
+    # Check if web directory exists
+    if [ ! -d "$web_dir" ]; then
+        log_error "Web directory not found: $web_dir"
+        log_error "Please run this script from the project root directory"
+        return 1
+    fi
+
+    # Change to web directory
+    cd "$web_dir" || return 1
+
+    # Install dependencies
+    log_info "Installing frontend dependencies..."
+    if ! pnpm install; then
+        log_error "Failed to install frontend dependencies"
+        cd ..
+        return 1
+    fi
+    log_success "Frontend dependencies installed"
+
+    # Build the project
+    log_info "Building frontend project..."
+    if ! pnpm run build; then
+        log_error "Failed to build frontend project"
+        cd ..
+        return 1
+    fi
+    log_success "Frontend build completed"
+
+    # Return to original directory
+    cd ..
+
+    # Move out directory to static directory
+    log_info "Moving frontend output to static directory..."
+    
+    # Remove old static/out if exists
+    if [ -d "static/out" ]; then
+        rm -rf "static/out"
+        log_info "Removed old static/out directory"
+    fi
+    
+    # Move web/out to static/out
+    if [ -d "${web_dir}/out" ]; then
+        mv "${web_dir}/out" "static/"
+        log_success "Moved frontend output to static/out"
+    else
+        log_error "Frontend output directory not found: ${web_dir}/out"
+        return 1
+    fi
+
+    return 0
+}
 
 get_go_arch() {
     case "$1" in
@@ -434,6 +509,12 @@ main() {
             exit 1
         fi
 
+        # Build frontend
+        if ! build_frontend; then
+            log_error "Failed to build frontend"
+            exit 1
+        fi
+
         # Build for specified platform
         log_step "Building binary"
 
@@ -453,6 +534,12 @@ main() {
         # Setup
         if ! prepare_environment; then
             log_error "Failed to prepare build environment"
+            exit 1
+        fi
+
+        # Build frontend
+        if ! build_frontend; then
+            log_error "Failed to build frontend"
             exit 1
         fi
 

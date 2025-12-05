@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Search, Plus, Check, X, Loader } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { useCreateModel } from '@/api/endpoints/model';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/common/Toast';

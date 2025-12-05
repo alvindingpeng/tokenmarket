@@ -9,6 +9,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
 	"github.com/alvindingpeng/switchyard/internal/server/router"
 	"github.com/alvindingpeng/switchyard/internal/utils/log"
+	"github.com/alvindingpeng/switchyard/static"
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,9 +24,11 @@ func Start() error {
 
 	r := gin.New()
 
-	r.Use(middleware.Cors())
-	r.Use(middleware.Logger())
-	r.Use(middleware.StaticLocal("/", "static"))
+	if conf.IsDebug() {
+		r.Use(middleware.Cors())
+		r.Use(middleware.Logger())
+	}
+	r.Use(middleware.StaticEmbed("/", static.StaticFS))
 
 	router.RegisterAll(r)
 

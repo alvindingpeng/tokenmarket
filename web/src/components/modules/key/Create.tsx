@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Plus, Loader } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { useCreateAPIKey } from '@/api/endpoints/apikey';
 import { Input } from '@/components/ui/input';
 

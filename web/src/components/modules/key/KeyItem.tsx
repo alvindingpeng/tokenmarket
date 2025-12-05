@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Copy, Trash2, Check, X } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { useDeleteAPIKey, type APIKey } from '@/api/endpoints/apikey';
 
 interface KeyItemProps {

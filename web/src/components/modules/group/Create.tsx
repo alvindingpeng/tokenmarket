@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback } from 'react';
 import { Plus, GripVertical, X, Layers, Check } from 'lucide-react';
-import { Reorder, useDragControls } from 'framer-motion';
+import { Reorder, useDragControls } from 'motion/react';
 import {
     MorphingDialog,
     MorphingDialogTrigger,

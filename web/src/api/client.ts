@@ -1,7 +1,7 @@
 import type { ApiError } from './types';
 import { HttpStatus } from './types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://192.168.8.120:8080';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
 /**
  * 获取认证 Store（延迟导入以避免循环依赖）
@@ -71,12 +71,10 @@ async function request<T>(
     params?: Record<string, string | number | boolean>
 ): Promise<T> {
     // 构建 URL
-    const url = new URL(path, API_BASE_URL);
-    if (params) {
-        Object.entries(params).forEach(([key, value]) => {
-            url.searchParams.append(key, String(value));
-        });
-    }
+    const searchParams = params ? new URLSearchParams(
+        Object.entries(params).map(([k, v]) => [k, String(v)])
+    ).toString() : '';
+    const url = `${API_BASE_URL}${path}${searchParams ? `?${searchParams}` : ''}`;
 
     // 构建请求头
     const headers = new Headers();

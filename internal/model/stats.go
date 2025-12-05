@@ -1,13 +1,13 @@
 package model
 
 type StatsMetrics struct {
-	InputToken     int64   `json:"input_token" gorm:"bigint;default:0"`
-	OutputToken    int64   `json:"output_token" gorm:"bigint;default:0"`
-	InputCost      float64 `json:"input_cost" gorm:"type:real;default:0.00"`
-	OutputCost     float64 `json:"output_cost" gorm:"type:real;default:0.00"`
-	WaitTime       int64   `json:"wait_time" gorm:"bigint;default:0"`
-	RequestSuccess int64   `json:"request_success" gorm:"bigint;default:0"`
-	RequestFailed  int64   `json:"request_failed" gorm:"bigint;default:0"`
+	InputToken     int64   `json:"input_token" gorm:"bigint"`
+	OutputToken    int64   `json:"output_token" gorm:"bigint"`
+	InputCost      float64 `json:"input_cost" gorm:"type:real"`
+	OutputCost     float64 `json:"output_cost" gorm:"type:real"`
+	WaitTime       int64   `json:"wait_time" gorm:"bigint"`
+	RequestSuccess int64   `json:"request_success" gorm:"bigint"`
+	RequestFailed  int64   `json:"request_failed" gorm:"bigint"`
 }
 
 type StatsTotal struct {
@@ -17,7 +17,7 @@ type StatsTotal struct {
 
 type StatsHourly struct {
 	Hour int    `json:"hour" gorm:"primaryKey;check:hour between 0 and 23"`
-	Date string `json:"date" gorm:"not null;default:0"` // 记录最后更新日期，格式：20060102
+	Date string `json:"date" gorm:"not null"` // 记录最后更新日期，格式：20060102
 	StatsMetrics
 }
 

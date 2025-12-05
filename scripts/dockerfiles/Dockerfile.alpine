@@ -9,7 +9,7 @@ RUN apk add --no-cache alpine-conf ca-certificates su-exec && \
     rm -rf /var/cache/apk/* && \
     mkdir -p /app
 
-COPY build/docker/${TARGETPLATFORM}/example /app/example
+COPY build/docker/${TARGETPLATFORM}/switchyard /app/switchyard
 COPY scripts/dockerfiles/entrypoint.sh /entrypoint.sh
 
 RUN chmod +x /entrypoint.sh

@@ -5,7 +5,7 @@ import { CreateGroupButton } from './Create';
 import { GroupCard } from './Item';
 import { useGroupList } from '@/api/endpoints/group';
 import { useTranslations } from 'next-intl';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 
 export function Group() {
     const { data: groups = [] } = useGroupList();

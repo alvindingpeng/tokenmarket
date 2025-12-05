@@ -1,14 +1,14 @@
 package middleware
 
 import (
-	"embed"
+	"io/fs"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
-func StaticEmbed(urlPrefix string, embedFS embed.FS) gin.HandlerFunc {
+func StaticEmbed(urlPrefix string, embedFS fs.FS) gin.HandlerFunc {
 	fs := http.FS(embedFS)
 	return static(urlPrefix, fs)
 }

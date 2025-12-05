@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { Pencil, Trash2, Check, X, Loader, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { useUpdateModel, useDeleteModel, type LLMInfo } from '@/api/endpoints/model';
 import { Input } from '@/components/ui/input';
 import { getModelIcon } from '@/lib/model-icons';

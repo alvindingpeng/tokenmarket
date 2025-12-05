@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { animate } from 'framer-motion';
+import { animate } from 'motion/react';
 
 interface AnimatedNumberProps {
     value: string | number | undefined;
@@ -25,7 +25,7 @@ export function AnimatedNumber({ value, duration = 800 }: AnimatedNumberProps) {
         }
 
         const controls = animate(prevValueRef.current, numericValue, {
-            duration: duration / 1000, // framer-motion uses seconds
+            duration: duration / 1000, // motion/react uses seconds
             ease: 'easeOut',
             onUpdate: (latest) => {
                 setDisplayValue(latest);

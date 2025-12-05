@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { Pencil, Trash2, Layers, GripVertical, X, Plus, Check } from 'lucide-react';
-import { Reorder, useDragControls, motion, AnimatePresence } from 'framer-motion';
+import { Reorder, useDragControls, motion, AnimatePresence } from 'motion/react';
 import {
     Select,
     SelectContent,
