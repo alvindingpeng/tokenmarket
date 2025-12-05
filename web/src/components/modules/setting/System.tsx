@@ -23,11 +23,11 @@ export function SettingSystem() {
             const proxy = settings.find(s => s.key === SettingKey.ProxyURL);
             const interval = settings.find(s => s.key === SettingKey.StatsSaveInterval);
             if (proxy) {
-                setProxyUrl(proxy.value);
+                queueMicrotask(() => setProxyUrl(proxy.value));
                 initialProxyUrl.current = proxy.value;
             }
             if (interval) {
-                setStatsSaveInterval(interval.value);
+                queueMicrotask(() => setStatsSaveInterval(interval.value));
                 initialStatsSaveInterval.current = interval.value;
             }
         }

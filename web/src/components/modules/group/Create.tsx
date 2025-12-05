@@ -1,253 +1,22 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { Plus, GripVertical, X, Layers, Check } from 'lucide-react';
-import { Reorder, useDragControls } from 'motion/react';
+import { Plus, Layers } from 'lucide-react';
+import { Reorder } from 'motion/react';
 import {
-    MorphingDialog,
-    MorphingDialogTrigger,
-    MorphingDialogContainer,
-    MorphingDialogContent,
     MorphingDialogClose,
     MorphingDialogTitle,
     MorphingDialogDescription,
     useMorphingDialog,
 } from '@/components/ui/morphing-dialog';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
 import { useCreateGroup, type GroupItem } from '@/api/endpoints/group';
 import { useModelChannelList, type LLMChannel } from '@/api/endpoints/model';
 import { useTranslations } from 'next-intl';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Field, FieldLabel, FieldGroup } from '@/components/ui/field';
 import { cn } from '@/lib/utils';
-import { getModelIcon } from '@/lib/model-icons';
-
-interface SelectedMember extends LLMChannel {
-    id: string;
-}
-
-// 已确认的成员项 - 可拖拽
-function DraggableItem({
-    member,
-    onRemove,
-    isRemoving,
-    index,
-}: {
-    member: SelectedMember;
-    onRemove: (id: string) => void;
-    isRemoving: boolean;
-    index: number;
-}) {
-    const controls = useDragControls();
-    const { Avatar: ModelAvatar } = getModelIcon(member.name);
-
-    return (
-        <Reorder.Item
-            value={member}
-            dragListener={false}
-            dragControls={controls}
-            className="relative"
-            style={{
-                display: 'grid',
-                gridTemplateRows: isRemoving ? '0fr' : '1fr',
-                transition: 'grid-template-rows 200ms ease-out',
-            }}
-            whileDrag={{
-                scale: 1.02,
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
-                zIndex: 50,
-            }}
-        >
-            <div className="overflow-hidden">
-                <div
-                    className={cn(
-                        'flex items-center gap-2 rounded-lg bg-background border border-border/50 px-2.5 py-2 select-none',
-                        'transition-opacity duration-200 ease-out',
-                        isRemoving && 'opacity-0'
-                    )}
-                >
-                    <span className="flex items-center justify-center size-5 rounded-md bg-primary/10 text-primary text-xs font-bold shrink-0">
-                        {index + 1}
-                    </span>
-
-                    <button
-                        type="button"
-                        onPointerDown={(e) => controls.start(e)}
-                        className="cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-muted transition-colors touch-none"
-                    >
-                        <GripVertical className="size-3.5 text-muted-foreground" />
-                    </button>
-
-                    <ModelAvatar size={18} />
-                    <div className="flex flex-col min-w-0 flex-1 gap-0">
-                        <span className="text-sm font-medium truncate leading-tight">{member.name}</span>
-                        <span className="text-[10px] text-muted-foreground truncate leading-tight">
-                            {member.channel_name}
-                        </span>
-                    </div>
-
-                    <button
-                        type="button"
-                        onClick={() => onRemove(member.id)}
-                        className="p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-colors"
-                        disabled={isRemoving}
-                    >
-                        <X className="size-3" />
-                    </button>
-                </div>
-            </div>
-        </Reorder.Item>
-    );
-}
-
-// 新增成员项 - 编辑模式（和成员项样式一致）
-function EditingMemberItem({
-    index,
-    channels,
-    modelChannels,
-    selectedMembers,
-    onConfirm,
-    onCancel,
-    t,
-}: {
-    index: number;
-    channels: { id: number; name: string }[];
-    modelChannels: LLMChannel[];
-    selectedMembers: SelectedMember[];
-    onConfirm: (channel: LLMChannel) => void;
-    onCancel: () => void;
-    t: (key: string) => string;
-}) {
-    const [selectedChannelId, setSelectedChannelId] = useState<string>('');
-    const [selectedModelName, setSelectedModelName] = useState<string>('');
-
-    // 根据选中的渠道筛选可用的模型
-    const availableModels = useMemo(() => {
-        if (!selectedChannelId) return [];
-        const channelIdNum = parseInt(selectedChannelId, 10);
-        return modelChannels.filter((mc) => mc.channel_id === channelIdNum);
-    }, [modelChannels, selectedChannelId]);
-
-    // 检查是否已经添加过该模型
-    const isModelAlreadyAdded = useMemo(() => {
-        if (!selectedChannelId || !selectedModelName) return false;
-        const channelIdNum = parseInt(selectedChannelId, 10);
-        return selectedMembers.some(
-            (m) => m.channel_id === channelIdNum && m.name === selectedModelName
-        );
-    }, [selectedMembers, selectedChannelId, selectedModelName]);
-
-    const handleChannelChange = (value: string) => {
-        setSelectedChannelId(value);
-        setSelectedModelName('');
-    };
-
-    const handleConfirm = () => {
-        if (!selectedChannelId || !selectedModelName || isModelAlreadyAdded) return;
-
-        const channelIdNum = parseInt(selectedChannelId, 10);
-        const channel = modelChannels.find(
-            (mc) => mc.channel_id === channelIdNum && mc.name === selectedModelName
-        );
-
-        if (channel) {
-            onConfirm(channel);
-        }
-    };
-
-    const canConfirm = selectedChannelId && selectedModelName && !isModelAlreadyAdded;
-
-    return (
-        <div className="flex items-center gap-2 rounded-lg bg-background border-2 border-dashed border-primary/30 px-2.5 py-2">
-            {/* 序号 */}
-            <span className="flex items-center justify-center size-5 rounded-md bg-primary/10 text-primary text-xs font-bold shrink-0">
-                {index + 1}
-            </span>
-
-            {/* 占位 - 对应拖拽手柄 */}
-            <div className="p-0.5">
-                <GripVertical className="size-3.5 text-muted-foreground/30" />
-            </div>
-
-            {/* 选择渠道 */}
-            <Select value={selectedChannelId} onValueChange={handleChannelChange}>
-                <SelectTrigger className="flex-1 h-7 rounded-md text-xs min-w-0" size="sm">
-                    <SelectValue placeholder={t('form.selectChannel')} />
-                </SelectTrigger>
-                <SelectContent>
-                    {channels.map((channel) => (
-                        <SelectItem key={channel.id} value={String(channel.id)}>
-                            {channel.name}
-                        </SelectItem>
-                    ))}
-                </SelectContent>
-            </Select>
-
-            {/* 选择模型 */}
-            <Select
-                value={selectedModelName}
-                onValueChange={setSelectedModelName}
-                disabled={!selectedChannelId}
-            >
-                <SelectTrigger className="flex-1 h-7 rounded-md text-xs min-w-0" size="sm">
-                    <SelectValue placeholder={t('form.selectModel')} />
-                </SelectTrigger>
-                <SelectContent>
-                    {availableModels.map((model) => {
-                        const { Avatar: ModelAvatar } = getModelIcon(model.name);
-                        const isAdded = selectedMembers.some(
-                            (m) => m.channel_id === model.channel_id && m.name === model.name
-                        );
-                        return (
-                            <SelectItem
-                                key={model.name}
-                                value={model.name}
-                                disabled={isAdded}
-                                className={cn(isAdded && 'opacity-50')}
-                            >
-                                <div className="flex items-center gap-2">
-                                    <ModelAvatar size={14} />
-                                    <span>{model.name}</span>
-                                </div>
-                            </SelectItem>
-                        );
-                    })}
-                </SelectContent>
-            </Select>
-
-            {/* 确认按钮 */}
-            <button
-                type="button"
-                onClick={handleConfirm}
-                disabled={!canConfirm}
-                className={cn(
-                    'flex items-center justify-center size-6 rounded-md shrink-0 transition-colors',
-                    canConfirm
-                        ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                        : 'bg-muted text-muted-foreground cursor-not-allowed'
-                )}
-            >
-                <Check className="size-3.5" />
-            </button>
-
-            {/* 取消按钮 */}
-            <button
-                type="button"
-                onClick={onCancel}
-                className="flex items-center justify-center size-6 rounded-md shrink-0 hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-colors"
-            >
-                <X className="size-3.5" />
-            </button>
-        </div>
-    );
-}
+import { MemberItem, AddMemberRow, type SelectedMember } from './components';
 
 function MembersSection({
     members,
@@ -339,7 +108,7 @@ function MembersSection({
                                 className="flex flex-col gap-1.5"
                             >
                                 {members.map((member, index) => (
-                                    <DraggableItem
+                                    <MemberItem
                                         key={member.id}
                                         member={member}
                                         onRemove={onRemove}
@@ -352,7 +121,7 @@ function MembersSection({
 
                         {/* 新增成员项 - 放在列表末尾 */}
                         {isAdding && (
-                            <EditingMemberItem
+                            <AddMemberRow
                                 index={members.length}
                                 channels={channels}
                                 modelChannels={modelChannels}
@@ -369,7 +138,7 @@ function MembersSection({
     );
 }
 
-function CreateDialogContent() {
+export function CreateDialogContent() {
     const { setIsOpen } = useMorphingDialog();
     const createGroup = useCreateGroup();
     const { data: modelChannels = [] } = useModelChannelList();
@@ -464,7 +233,6 @@ function CreateDialogContent() {
                                 id="group-name"
                                 value={groupName}
                                 onChange={(e) => setGroupName(e.target.value)}
-                                placeholder={t('form.namePlaceholder')}
                                 className="rounded-xl"
                             />
                         </Field>
@@ -494,24 +262,5 @@ function CreateDialogContent() {
                 </form>
             </MorphingDialogDescription>
         </>
-    );
-}
-
-export function CreateGroupButton() {
-    const t = useTranslations('group.create');
-
-    return (
-        <MorphingDialog>
-            <MorphingDialogTrigger className={buttonVariants({ size: "default", className: "rounded-xl gap-2 transition-none" })}>
-                <Plus className="size-4" />
-                <span>{t('button')}</span>
-            </MorphingDialogTrigger>
-
-            <MorphingDialogContainer>
-                <MorphingDialogContent className="w-full max-w-xl bg-card text-card-foreground px-6 py-4 rounded-3xl custom-shadow max-h-[90vh] overflow-y-auto">
-                    <CreateDialogContent />
-                </MorphingDialogContent>
-            </MorphingDialogContainer>
-        </MorphingDialog>
     );
 }

@@ -1,10 +1,5 @@
 import { useState } from 'react';
-import { Plus } from 'lucide-react';
 import {
-    MorphingDialog,
-    MorphingDialogTrigger,
-    MorphingDialogContainer,
-    MorphingDialogContent,
     MorphingDialogClose,
     MorphingDialogTitle,
     MorphingDialogDescription,
@@ -14,7 +9,7 @@ import { useCreateChannel, ChannelType } from '@/api/endpoints/channel';
 import { useTranslations } from 'next-intl';
 import { ChannelForm, type ChannelFormData } from './Form';
 
-function CreateCardContent() {
+export function CreateDialogContent() {
     const { setIsOpen } = useMorphingDialog();
     const createChannel = useCreateChannel();
     const [formData, setFormData] = useState<ChannelFormData>({
@@ -73,28 +68,5 @@ function CreateCardContent() {
                 />
             </MorphingDialogDescription>
         </>
-    );
-}
-
-export function CreateCard() {
-    const t = useTranslations('channel.create');
-
-    return (
-        <MorphingDialog>
-            <MorphingDialogTrigger className="w-full">
-                <article className="h-54 flex flex-col items-center justify-center gap-6 rounded-3xl bg-primary p-6 text-center text-primary-foreground custom-shadow transition-all duration-300 hover:scale-[1.02]">
-                    <span className="flex h-16 w-16 items-center justify-center rounded-full bg-primary-foreground/20">
-                        <Plus className="h-8 w-8 text-primary-foreground" />
-                    </span>
-                    <p className="text-lg font-semibold text-primary-foreground">{t('title')}</p>
-                </article>
-            </MorphingDialogTrigger>
-
-            <MorphingDialogContainer>
-                <MorphingDialogContent className="w-full max-w-2xl bg-card text-card-foreground px-4 py-2 rounded-3xl custom-shadow max-h-[90vh] overflow-y-auto">
-                    <CreateCardContent />
-                </MorphingDialogContent>
-            </MorphingDialogContainer>
-        </MorphingDialog>
     );
 }

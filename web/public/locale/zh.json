@@ -1,7 +1,5 @@
 {
     "login": {
-        "title": "登录您的账户",
-        "description": "输入用户名和密码登录",
         "username": "用户名",
         "usernamePlaceholder": "请输入用户名",
         "password": "密码",
@@ -45,11 +43,6 @@
             "outputCost": "输出费用"
         },
         "chart": {
-            "requests": "请求次数",
-            "inputTokens": "输入 Token",
-            "outputTokens": "输出 Token",
-            "inputCost": "输入费用",
-            "outputCost": "输出费用",
             "totalRequests": "请求次数",
             "totalCost": "消费金额",
             "timePeriod": "时间范围",
@@ -60,14 +53,10 @@
             }
         },
         "rank": {
-            "title": "渠道排行",
-            "channel": "渠道",
-            "totalCost": "总费用",
             "noData": "暂无排行数据"
         }
     },
     "setting": {
-        "title": "设置",
         "appearance": "外观",
         "system": "系统",
         "theme": {
@@ -83,16 +72,12 @@
         },
         "proxyUrl": {
             "label": "代理地址",
-            "placeholder": "请输入代理地址",
-            "description": "用于请求的 HTTP 代理"
+            "placeholder": "请输入代理地址"
         },
         "statsSaveInterval": {
             "label": "统计保存周期（分钟）",
-            "placeholder": "请输入周期（分钟）",
-            "description": "统计数据写入数据库的周期（分钟）"
+            "placeholder": "请输入周期（分钟）"
         },
-        "save": "保存",
-        "saving": "保存中...",
         "saved": "已保存",
         "apiKey": {
             "title": "API 密钥",
@@ -119,47 +104,38 @@
     "group": {
         "create": {
             "title": "创建分组",
-            "button": "新建分组",
             "submit": "创建",
             "submitting": "创建中..."
         },
         "card": {
-            "itemCount": "路由规则",
             "empty": "暂无规则"
         },
         "detail": {
-            "title": {
-                "edit": "编辑分组",
-                "view": "分组详情"
-            },
             "actions": {
-                "edit": "编辑",
-                "cancel": "取消",
-                "save": "保存",
-                "saving": "保存中...",
-                "delete": "删除",
-                "confirmDelete": "确认删除",
-                "deleting": "删除中..."
+                "confirmDelete": "确认删除"
             }
         },
         "form": {
             "name": "分组名称",
-            "namePlaceholder": "请输入分组名称",
             "items": "路由规则",
             "addItem": "添加规则",
-            "selectModel": "选择模型渠道",
-            "allAdded": "所有模型已添加",
-            "channel": "渠道",
-            "channelPlaceholder": "选择渠道",
-            "model": "模型",
-            "modelPlaceholder": "选择或输入模型",
-            "priority": "优先级",
-            "noChannel": "暂无可用模型渠道",
             "noItems": "暂无路由规则",
             "selectChannel": "选择渠道",
-            "added": "已添加"
+            "selectModel": "选择模型"
         },
         "empty": "暂无分组，点击左上角按钮创建"
+    },
+    "model": {
+        "create": {
+            "title": "创建模型",
+            "name": "模型名称",
+            "input": "输入价格",
+            "output": "输出价格",
+            "cacheRead": "缓存读取",
+            "cacheWrite": "缓存写入",
+            "submit": "创建",
+            "submitting": "创建中..."
+        }
     },
     "channel": {
         "card": {
@@ -176,7 +152,6 @@
                 "view": "渠道详情"
             },
             "sections": {
-                "overview": "概览",
                 "requests": "请求详情",
                 "tokens": "Token 使用",
                 "costs": "成本详情"
@@ -204,7 +179,6 @@
             }
         },
         "create": {
-            "title": "创建渠道",
             "dialogTitle": "创建新渠道",
             "submit": "创建渠道",
             "submitting": "创建中..."
@@ -228,8 +202,7 @@
             "typeOpenAIChat": "OpenAI Chat",
             "typeOpenAIResponse": "OpenAI Response",
             "typeAnthropic": "Anthropic",
-            "typeOneAPI": "OneAPI",
-            "typeUnknown": "未知"
+            "typeOneAPI": "OneAPI"
         }
     }
 }

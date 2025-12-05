@@ -43,7 +43,7 @@ export interface StatsDailyFormatted extends StatsMetricsFormatted {
 export interface StatsTotal extends StatsMetrics {
     id: number;
 }
-export interface StatsTotalFormatted extends StatsMetricsFormatted { }
+export type StatsTotalFormatted = StatsMetricsFormatted;
 
 export interface StatsHourly extends StatsMetrics {
     hour: number;

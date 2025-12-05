@@ -1,7 +1,5 @@
 {
     "login": {
-        "title": "Login to your account",
-        "description": "Enter your username and password to login",
         "username": "Username",
         "usernamePlaceholder": "Enter your username",
         "password": "Password",
@@ -45,11 +43,6 @@
             "outputCost": "Output Cost"
         },
         "chart": {
-            "requests": "Requests",
-            "inputTokens": "Input Tokens",
-            "outputTokens": "Output Tokens",
-            "inputCost": "Input Cost",
-            "outputCost": "Output Cost",
             "totalRequests": "Total Requests",
             "totalCost": "Total Cost",
             "timePeriod": "Time Period",
@@ -60,56 +53,89 @@
             }
         },
         "rank": {
-            "title": "Channel Ranking",
-            "channel": "Channel",
-            "totalCost": "Total Cost",
             "noData": "No ranking data"
+        }
+    },
+    "setting": {
+        "appearance": "Appearance",
+        "system": "System",
+        "theme": {
+            "label": "Theme",
+            "light": "Light",
+            "dark": "Dark",
+            "system": "System"
+        },
+        "language": {
+            "label": "Language",
+            "zh": "中文",
+            "en": "English"
+        },
+        "proxyUrl": {
+            "label": "Proxy URL",
+            "placeholder": "Enter proxy URL"
+        },
+        "statsSaveInterval": {
+            "label": "Stats Save Interval",
+            "placeholder": "Enter interval in minutes"
+        },
+        "saved": "Saved",
+        "apiKey": {
+            "title": "API Keys",
+            "placeholder": "Enter key name",
+            "empty": "No API keys"
+        },
+        "llmPrice": {
+            "title": "Model Pricing",
+            "updateInterval": {
+                "label": "Auto Update Interval (hours)",
+                "placeholder": "Enter interval in hours"
+            },
+            "manualUpdate": {
+                "label": "Manual Price Update",
+                "button": "Update Now",
+                "updating": "Updating..."
+            },
+            "lastUpdate": "Last Update",
+            "neverUpdated": "Never updated",
+            "updateSuccess": "Price updated successfully",
+            "updateFailed": "Failed to update price"
         }
     },
     "group": {
         "create": {
             "title": "Create Group",
-            "button": "New Group",
             "submit": "Create",
             "submitting": "Creating..."
         },
         "card": {
-            "itemCount": "Routing Rules",
             "empty": "No rules"
         },
         "detail": {
-            "title": {
-                "edit": "Edit Group",
-                "view": "Group Details"
-            },
             "actions": {
-                "edit": "Edit",
-                "cancel": "Cancel",
-                "save": "Save",
-                "saving": "Saving...",
-                "delete": "Delete",
-                "confirmDelete": "Confirm Delete",
-                "deleting": "Deleting..."
+                "confirmDelete": "Confirm Delete"
             }
         },
         "form": {
             "name": "Group Name",
-            "namePlaceholder": "Enter group name",
             "items": "Routing Rules",
             "addItem": "Add Rule",
-            "selectModel": "Select model channel",
-            "allAdded": "All models added",
-            "channel": "Channel",
-            "channelPlaceholder": "Select channel",
-            "model": "Model",
-            "modelPlaceholder": "Select or enter model",
-            "priority": "Priority",
-            "noChannel": "No model channels available",
             "noItems": "No routing rules",
             "selectChannel": "Select channel",
-            "added": "Added"
+            "selectModel": "Select model"
         },
         "empty": "No groups yet, click the button above to create one"
+    },
+    "model": {
+        "create": {
+            "title": "Create Model",
+            "name": "Model Name",
+            "input": "Input Price",
+            "output": "Output Price",
+            "cacheRead": "Cache Read",
+            "cacheWrite": "Cache Write",
+            "submit": "Create",
+            "submitting": "Creating..."
+        }
     },
     "channel": {
         "card": {
@@ -126,7 +152,6 @@
                 "view": "Channel Details"
             },
             "sections": {
-                "overview": "Overview",
                 "requests": "Request Details",
                 "tokens": "Token Usage",
                 "costs": "Cost Details"
@@ -154,7 +179,6 @@
             }
         },
         "create": {
-            "title": "Create Channel",
             "dialogTitle": "Create New Channel",
             "submit": "Create Channel",
             "submitting": "Creating..."
@@ -178,58 +202,7 @@
             "typeOpenAIChat": "OpenAI Chat",
             "typeOpenAIResponse": "OpenAI Response",
             "typeAnthropic": "Anthropic",
-            "typeOneAPI": "OneAPI",
-            "typeUnknown": "Unknown"
-        }
-    },
-    "setting": {
-        "title": "Settings",
-        "appearance": "Appearance",
-        "system": "System",
-        "theme": {
-            "label": "Theme",
-            "light": "Light",
-            "dark": "Dark",
-            "system": "System"
-        },
-        "language": {
-            "label": "Language",
-            "zh": "中文",
-            "en": "English"
-        },
-        "proxyUrl": {
-            "label": "Proxy URL",
-            "placeholder": "Enter proxy URL",
-            "description": "HTTP proxy for outgoing requests"
-        },
-        "statsSaveInterval": {
-            "label": "Stats Save Interval",
-            "placeholder": "Enter interval in minutes",
-            "description": "Interval to save statistics to database (minutes)"
-        },
-        "save": "Save",
-        "saving": "Saving...",
-        "saved": "Saved",
-        "apiKey": {
-            "title": "API Keys",
-            "placeholder": "Enter key name",
-            "empty": "No API keys"
-        },
-        "llmPrice": {
-            "title": "Model Pricing",
-            "updateInterval": {
-                "label": "Auto Update Interval (hours)",
-                "placeholder": "Enter interval in hours"
-            },
-            "manualUpdate": {
-                "label": "Manual Price Update",
-                "button": "Update Now",
-                "updating": "Updating..."
-            },
-            "lastUpdate": "Last Update",
-            "neverUpdated": "Never updated",
-            "updateSuccess": "Price updated successfully",
-            "updateFailed": "Failed to update price"
+            "typeOneAPI": "OneAPI"
         }
     }
 }

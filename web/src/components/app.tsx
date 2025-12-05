@@ -9,6 +9,7 @@ import { ContentLoader } from '@/route/content-loader';
 import { NavBar, useNavStore } from '@/components/modules/navbar';
 import { useTranslations } from 'next-intl'
 import Logo from '@/components/modules/logo';
+import { Toolbar } from '@/components/modules/toolbar';
 import { ENTRANCE_VARIANTS } from '@/lib/animations/fluid-transitions';
 
 // Logo 绘制动画时长
@@ -67,9 +68,9 @@ export function AppContainer() {
         >
             <NavBar />
             <main className="w-full mb-28 min-w-0 md:mb-6">
-                <header className="flex items-center gap-x-2 my-6">
+                <header className="flex items-center gap-x-2 my-6 px-2">
                     <Logo size={48} />
-                    <div className="text-3xl font-bold mt-1 overflow-hidden">
+                    <div className="flex-1 overflow-hidden">
                         <AnimatePresence mode="wait" custom={direction}>
                             <motion.div
                                 key={activeItem}
@@ -92,10 +93,15 @@ export function AppContainer() {
                                 animate="animate"
                                 exit="exit"
                                 transition={{ duration: 0.3 }}
+                                className="flex items-center"
                             >
-                                {t(activeItem)}
+                                <span className="text-3xl font-bold mt-1">{t(activeItem)}</span>
+                                {/* Header 插槽 - 子页面通过 Portal 渲染到这里 */}
                             </motion.div>
                         </AnimatePresence>
+                    </div>
+                    <div className="ml-auto">
+                        <Toolbar />
                     </div>
                 </header>
                 <motion.div
@@ -109,3 +115,4 @@ export function AppContainer() {
         </motion.div>
     );
 }
+

@@ -23,7 +23,7 @@ export function SettingLLMPrice() {
         if (settings) {
             const interval = settings.find(s => s.key === SettingKey.ModelInfoUpdateInterval);
             if (interval) {
-                setUpdateInterval(interval.value);
+                queueMicrotask(() => setUpdateInterval(interval.value));
                 initialUpdateInterval.current = interval.value;
             }
         }
