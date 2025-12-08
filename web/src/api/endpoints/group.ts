@@ -11,12 +11,13 @@ export interface GroupItem {
     channel_id: number;
     model_name: string;
     priority: number;
+    weight: number;
 }
 
 /**
  * 分组模式
  */
-export type GroupMode = 1 | 2 | 3; // 1: 顺序, 2: 随机, 3: 优先级
+export type GroupMode = 1 | 2 | 3 | 4; // 1: 轮询, 2: 随机, 3: 故障转移, 4: 加权分配
 
 /**
  * 分组信息
@@ -35,6 +36,7 @@ export interface GroupItemAddRequest {
     channel_id: number;
     model_name: string;
     priority: number;
+    weight: number;
 }
 
 /**
@@ -43,6 +45,7 @@ export interface GroupItemAddRequest {
 export interface GroupItemUpdateRequest {
     id: number;
     priority: number;
+    weight: number;
 }
 
 /**

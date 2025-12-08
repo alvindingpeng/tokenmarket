@@ -81,21 +81,27 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 		}
 	}
 
-	// 批量更新 items priority
+	// 批量更新 items
 	if len(req.ItemsToUpdate) > 0 {
 		ids := make([]int, len(req.ItemsToUpdate))
-		caseSQL := "CASE id"
+		priorityCase := "CASE id"
+		weightCase := "CASE id"
 		for i, item := range req.ItemsToUpdate {
 			ids[i] = item.ID
-			caseSQL += fmt.Sprintf(" WHEN %d THEN %d", item.ID, item.Priority)
+			priorityCase += fmt.Sprintf(" WHEN %d THEN %d", item.ID, item.Priority)
+			weightCase += fmt.Sprintf(" WHEN %d THEN %d", item.ID, item.Weight)
 		}
-		caseSQL += " END"
+		priorityCase += " END"
+		weightCase += " END"
 
 		if err := tx.Model(&model.GroupItem{}).
 			Where("id IN ? AND group_id = ?", ids, req.ID).
-			Update("priority", gorm.Expr(caseSQL)).Error; err != nil {
+			Updates(map[string]interface{}{
+				"priority": gorm.Expr(priorityCase),
+				"weight":   gorm.Expr(weightCase),
+			}).Error; err != nil {
 			tx.Rollback()
-			return nil, fmt.Errorf("failed to update items priority: %w", err)
+			return nil, fmt.Errorf("failed to update items: %w", err)
 		}
 	}
 
@@ -108,6 +114,7 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 				ChannelID: item.ChannelID,
 				ModelName: item.ModelName,
 				Priority:  item.Priority,
+				Weight:    item.Weight,
 			}
 		}
 		if err := tx.Create(&newItems).Error; err != nil {
@@ -174,7 +181,7 @@ func GroupItemAdd(item *model.GroupItem, ctx context.Context) error {
 
 func GroupItemUpdate(item *model.GroupItem, ctx context.Context) error {
 	if err := db.GetDB().WithContext(ctx).Model(item).
-		Select("ModelName", "Priority").
+		Select("ModelName", "Priority", "Weight").
 		Updates(item).Error; err != nil {
 		return err
 	}

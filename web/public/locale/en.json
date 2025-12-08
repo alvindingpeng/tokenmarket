@@ -124,9 +124,10 @@
             "selectModel": "Select model"
         },
         "mode": {
-            "sequence": "Sequence",
+            "roundRobin": "Round Robin",
             "random": "Random",
-            "priority": "Priority"
+            "failover": "Failover",
+            "weighted": "Weighted"
         },
         "empty": "No groups yet, click the button above to create one"
     },

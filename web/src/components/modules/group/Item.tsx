@@ -45,6 +45,7 @@ export function GroupCard({ group }: { group: Group }) {
                 channel_id: item.channel_id,
                 channel_name: channelMap.get(item.channel_id) || `Channel ${item.channel_id}`,
                 item_id: item.id,
+                weight: item.weight,
             })),
         [group.items, channelMap]
     );
@@ -59,16 +60,20 @@ export function GroupCard({ group }: { group: Group }) {
     const { hasChanges, isValid, isEmpty } = useMemo(() => {
         const changed = editName !== group.name ||
             editMembers.length !== displayMembers.length ||
-            editMembers.some((m, i) => m.id !== displayMembers[i]?.id);
+            editMembers.some((m, i) => m.id !== displayMembers[i]?.id || m.weight !== displayMembers[i]?.weight);
         const valid = !!editName.trim() && editMembers.length > 0;
         const visibleCount = editMembers.filter((m) => !removingIds.has(m.id)).length;
         return { hasChanges: changed, isValid: valid, isEmpty: visibleCount === 0 && !isAdding };
     }, [editName, editMembers, group.name, displayMembers, removingIds, isAdding]);
 
     const handleAddMember = (channel: LLMChannel) => {
-        setEditMembers((prev) => [...prev, { ...channel, id: `${channel.channel_id}-${channel.name}-${Date.now()}` }]);
+        setEditMembers((prev) => [...prev, { ...channel, id: `${channel.channel_id}-${channel.name}-${Date.now()}`, weight: 1 }]);
         setIsAdding(false);
     };
+
+    const handleWeightChange = useCallback((id: string, weight: number) => {
+        setEditMembers((prev) => prev.map((m) => m.id === id ? { ...m, weight } : m));
+    }, []);
 
     const handleRemoveMember = useCallback((id: string) => {
         setRemovingIds((prev) => new Set(prev).add(id));
@@ -91,13 +96,16 @@ export function GroupCard({ group }: { group: Group }) {
         const itemsToAdd = editMembers
             .map((m, i) => ({ m, priority: i + 1 }))
             .filter(({ m }) => m.item_id === undefined)
-            .map(({ m, priority }) => ({ channel_id: m.channel_id, model_name: m.name, priority }));
+            .map(({ m, priority }) => ({ channel_id: m.channel_id, model_name: m.name, priority, weight: m.weight ?? 1 }));
         if (itemsToAdd.length > 0) req.items_to_add = itemsToAdd;
 
         const itemsToUpdate = editMembers
             .map((m, i) => ({ m, priority: i + 1 }))
-            .filter(({ m, priority }) => m.item_id !== undefined && originalItems.get(m.item_id)?.priority !== priority)
-            .map(({ m, priority }) => ({ id: m.item_id!, priority }));
+            .filter(({ m, priority }) => {
+                const orig = originalItems.get(m.item_id);
+                return m.item_id !== undefined && (orig?.priority !== priority || orig?.weight !== m.weight);
+            })
+            .map(({ m, priority }) => ({ id: m.item_id!, priority, weight: m.weight ?? 1 }));
         if (itemsToUpdate.length > 0) req.items_to_update = itemsToUpdate;
 
         updateGroup.mutate(req);
@@ -204,7 +212,7 @@ export function GroupCard({ group }: { group: Group }) {
 
             {/* Mode Selection */}
             <div className="flex gap-1 mb-3">
-                {([1, 2, 3] as const).map((m) => (
+                {([1, 2, 3, 4] as const).map((m) => (
                     <button
                         key={m}
                         type="button"
@@ -214,7 +222,7 @@ export function GroupCard({ group }: { group: Group }) {
                             group.mode === m ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
                         )}
                     >
-                        {t(`mode.${m === 1 ? 'sequence' : m === 2 ? 'random' : 'priority'}`)}
+                        {t(`mode.${m === 1 ? 'roundRobin' : m === 2 ? 'random' : m === 3 ? 'failover' : 'weighted'}`)}
                     </button>
                 ))}
             </div>
@@ -229,7 +237,7 @@ export function GroupCard({ group }: { group: Group }) {
                     <div className="p-2 flex flex-col gap-1.5">
                         <Reorder.Group axis="y" values={editMembers} onReorder={setEditMembers} className="flex flex-col gap-1.5">
                             {editMembers.map((m, i) => (
-                                <MemberItem key={m.id} member={m} onRemove={handleRemoveMember} isRemoving={removingIds.has(m.id)} index={i} editable />
+                                <MemberItem key={m.id} member={m} onRemove={handleRemoveMember} onWeightChange={handleWeightChange} isRemoving={removingIds.has(m.id)} index={i} editable showWeight={group.mode === 4} />
                             ))}
                         </Reorder.Group>
                         {isAdding && <AddMemberRow index={editMembers.length} channels={channels} modelChannels={modelChannels} selectedMembers={editMembers} onConfirm={handleAddMember} onCancel={() => setIsAdding(false)} t={t} />}

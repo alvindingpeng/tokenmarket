@@ -124,9 +124,10 @@
             "selectModel": "选择模型"
         },
         "mode": {
-            "sequence": "顺序",
+            "roundRobin": "轮询",
             "random": "随机",
-            "priority": "优先级"
+            "failover": "故障转移",
+            "weighted": "加权分配"
         },
         "empty": "暂无分组，点击左上角按钮创建"
     },

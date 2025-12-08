@@ -17,21 +17,26 @@ import { getModelIcon } from '@/lib/model-icons';
 export interface SelectedMember extends LLMChannel {
     id: string;
     item_id?: number;
+    weight?: number;
 }
 
 // 可拖拽成员项
 export function MemberItem({
     member,
     onRemove,
+    onWeightChange,
     isRemoving,
     index,
     editable = true,
+    showWeight = false,
 }: {
     member: SelectedMember;
     onRemove: (id: string) => void;
+    onWeightChange?: (id: string, weight: number) => void;
     isRemoving?: boolean;
     index: number;
     editable?: boolean;
+    showWeight?: boolean;
 }) {
     const controls = useDragControls();
     const { Avatar: ModelAvatar } = getModelIcon(member.name);
@@ -67,6 +72,16 @@ export function MemberItem({
                         <span className="text-sm font-medium truncate leading-tight">{member.name}</span>
                         <span className="text-[10px] text-muted-foreground truncate leading-tight">{member.channel_name}</span>
                     </div>
+
+                    {showWeight && editable && (
+                        <input
+                            type="number"
+                            min={1}
+                            value={member.weight ?? 1}
+                            onChange={(e) => onWeightChange?.(member.id, Math.max(1, parseInt(e.target.value) || 1))}
+                            className="w-12 h-6 text-xs text-center rounded border border-border bg-muted/50 focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                    )}
 
                     {!confirmDelete && (
                         <motion.button

@@ -22,22 +22,26 @@ function MembersSection({
     members,
     onReorder,
     onRemove,
+    onWeightChange,
     onAdd,
     removingIds,
     emptyText,
     channels,
     modelChannels,
     t,
+    showWeight,
 }: {
     members: SelectedMember[];
     onReorder: (members: SelectedMember[]) => void;
     onRemove: (id: string) => void;
+    onWeightChange: (id: string, weight: number) => void;
     onAdd: (channel: LLMChannel) => void;
     removingIds: Set<string>;
     emptyText: string;
     channels: { id: number; name: string }[];
     modelChannels: LLMChannel[];
     t: (key: string) => string;
+    showWeight: boolean;
 }) {
     const [isAdding, setIsAdding] = useState(false);
     const showEmpty = members.filter((m) => !removingIds.has(m.id)).length === 0 && !isAdding;
@@ -105,8 +109,10 @@ function MembersSection({
                                         key={member.id}
                                         member={member}
                                         onRemove={onRemove}
+                                        onWeightChange={onWeightChange}
                                         isRemoving={removingIds.has(member.id)}
                                         index={index}
+                                        showWeight={showWeight}
                                     />
                                 ))}
                             </Reorder.Group>
@@ -154,8 +160,12 @@ export function CreateDialogContent() {
     }, [modelChannels]);
 
     const handleAddMember = (channel: LLMChannel) => {
-        setSelectedMembers((prev) => [...prev, { ...channel, id: `${channel.channel_id}-${channel.name}-${Date.now()}` }]);
+        setSelectedMembers((prev) => [...prev, { ...channel, id: `${channel.channel_id}-${channel.name}-${Date.now()}`, weight: 1 }]);
     };
+
+    const handleWeightChange = useCallback((id: string, weight: number) => {
+        setSelectedMembers((prev) => prev.map((m) => m.id === id ? { ...m, weight } : m));
+    }, []);
 
     const handleRemoveMember = useCallback((id: string) => {
         setRemovingIds((prev) => new Set(prev).add(id));
@@ -172,6 +182,7 @@ export function CreateDialogContent() {
             channel_id: member.channel_id,
             model_name: member.name,
             priority: index + 1,
+            weight: member.weight ?? 1,
         }));
 
         createGroup.mutate(
@@ -225,7 +236,7 @@ export function CreateDialogContent() {
 
                         {/* Mode */}
                         <div className="flex gap-1">
-                            {([1, 2, 3] as const).map((m) => (
+                            {([1, 2, 3, 4] as const).map((m) => (
                                 <button
                                     key={m}
                                     type="button"
@@ -235,7 +246,7 @@ export function CreateDialogContent() {
                                         mode === m ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
                                     )}
                                 >
-                                    {t(`mode.${m === 1 ? 'sequence' : m === 2 ? 'random' : 'priority'}`)}
+                                    {t(`mode.${m === 1 ? 'roundRobin' : m === 2 ? 'random' : m === 3 ? 'failover' : 'weighted'}`)}
                                 </button>
                             ))}
                         </div>
@@ -245,12 +256,14 @@ export function CreateDialogContent() {
                             members={selectedMembers}
                             onReorder={setSelectedMembers}
                             onRemove={handleRemoveMember}
+                            onWeightChange={handleWeightChange}
                             onAdd={handleAddMember}
                             removingIds={removingIds}
                             emptyText={t('form.noItems')}
                             channels={channels}
                             modelChannels={modelChannels}
                             t={t}
+                            showWeight={mode === 4}
                         />
 
                         {/* Submit Button */}
