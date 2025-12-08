@@ -117,11 +117,16 @@
         },
         "form": {
             "name": "Group Name",
-            "items": "Routing Rules",
-            "addItem": "Add Rule",
-            "noItems": "No routing rules",
+            "items": "Model Names",
+            "addItem": "Add Model",
+            "noItems": "No models",
             "selectChannel": "Select channel",
             "selectModel": "Select model"
+        },
+        "mode": {
+            "sequence": "Sequence",
+            "random": "Random",
+            "priority": "Priority"
         },
         "empty": "No groups yet, click the button above to create one"
     },

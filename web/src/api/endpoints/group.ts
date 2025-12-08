@@ -14,11 +14,17 @@ export interface GroupItem {
 }
 
 /**
+ * 分组模式
+ */
+export type GroupMode = 1 | 2 | 3; // 1: 顺序, 2: 随机, 3: 优先级
+
+/**
  * 分组信息
  */
 export interface Group {
     id?: number;
     name: string;
+    mode: GroupMode;
     items?: GroupItem[];
 }
 
@@ -45,6 +51,7 @@ export interface GroupItemUpdateRequest {
 export interface GroupUpdateRequest {
     id: number;
     name?: string;                        // 仅在名称变更时发送
+    mode?: GroupMode;                     // 仅在模式变更时发送
     items_to_add?: GroupItemAddRequest[];    // 新增的 items
     items_to_update?: GroupItemUpdateRequest[]; // 更新的 items (priority 变更)
     items_to_delete?: number[];              // 删除的 item IDs

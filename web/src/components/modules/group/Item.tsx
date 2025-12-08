@@ -1,39 +1,26 @@
 'use client';
 
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { Pencil, Trash2, Layers, X, Plus, Check, Copy } from 'lucide-react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { Trash2, Layers, X, Plus, Check, Copy } from 'lucide-react';
 import { Reorder, motion, AnimatePresence } from 'motion/react';
-import { type Group, type GroupUpdateRequest, useDeleteGroup, useUpdateGroup } from '@/api/endpoints/group';
+import { type Group, type GroupUpdateRequest, type GroupMode, useDeleteGroup, useUpdateGroup } from '@/api/endpoints/group';
 import { useModelChannelList, type LLMChannel } from '@/api/endpoints/model';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { MemberItem, AddMemberRow, type SelectedMember } from './components';
 
-// 主组件
 export function GroupCard({ group }: { group: Group }) {
     const t = useTranslations('group');
     const updateGroup = useUpdateGroup();
     const deleteGroup = useDeleteGroup();
     const { data: modelChannels = [] } = useModelChannelList();
 
-    const [isEditing, setIsEditing] = useState(false);
     const [editName, setEditName] = useState(group.name);
     const [editMembers, setEditMembers] = useState<SelectedMember[]>([]);
     const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
     const [isAdding, setIsAdding] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState(false);
     const [copied, setCopied] = useState(false);
-
-    // 用于追踪是否正在等待数据刷新
-    const waitingForRefreshRef = useRef(false);
-
-    // 当保存成功后，等待 group 数据刷新再退出编辑模式
-    useEffect(() => {
-        if (waitingForRefreshRef.current) {
-            waitingForRefreshRef.current = false;
-            queueMicrotask(() => setIsEditing(false));
-        }
-    }, [group]);
 
     // 合并计算渠道映射和列表
     const { channelMap, channels } = useMemo(() => {
@@ -57,23 +44,26 @@ export function GroupCard({ group }: { group: Group }) {
                 name: item.model_name,
                 channel_id: item.channel_id,
                 channel_name: channelMap.get(item.channel_id) || `Channel ${item.channel_id}`,
-                item_id: item.id, // 保存原始数据库 id
+                item_id: item.id,
             })),
         [group.items, channelMap]
     );
 
-    const handleStartEdit = () => {
+    // 同步 group 数据到编辑状态
+    useEffect(() => {
         setEditName(group.name);
         setEditMembers([...displayMembers]);
-        setIsEditing(true);
-        setIsAdding(false);
-        setConfirmDelete(false);
-    };
+    }, [group.name, displayMembers]);
 
-    const handleCancelEdit = () => {
-        setIsEditing(false);
-        setIsAdding(false);
-    };
+    // 计算派生状态
+    const { hasChanges, isValid, isEmpty } = useMemo(() => {
+        const changed = editName !== group.name ||
+            editMembers.length !== displayMembers.length ||
+            editMembers.some((m, i) => m.id !== displayMembers[i]?.id);
+        const valid = !!editName.trim() && editMembers.length > 0;
+        const visibleCount = editMembers.filter((m) => !removingIds.has(m.id)).length;
+        return { hasChanges: changed, isValid: valid, isEmpty: visibleCount === 0 && !isAdding };
+    }, [editName, editMembers, group.name, displayMembers, removingIds, isAdding]);
 
     const handleAddMember = (channel: LLMChannel) => {
         setEditMembers((prev) => [...prev, { ...channel, id: `${channel.channel_id}-${channel.name}-${Date.now()}` }]);
@@ -89,168 +79,99 @@ export function GroupCard({ group }: { group: Group }) {
     }, []);
 
     const handleSave = () => {
-        // 构建原始 items 的 Map (按 item_id)
-        const originalItems = new Map(
-            (group.items || []).map((item) => [item.id, item])
-        );
+        const originalItems = new Map((group.items || []).map((item) => [item.id, item]));
+        const editItemIds = new Set(editMembers.filter((m) => m.item_id !== undefined).map((m) => m.item_id));
 
-        // 构建编辑后 items 的 Map (按 item_id)
-        const editItemIds = new Set(
-            editMembers.filter((m) => m.item_id !== undefined).map((m) => m.item_id)
-        );
+        const req: GroupUpdateRequest = { id: group.id! };
+        if (editName !== group.name) req.name = editName;
 
-        const req: GroupUpdateRequest = {
-            id: group.id!,
-        };
+        const itemsToDelete = [...originalItems.keys()].filter((id) => id !== undefined && !editItemIds.has(id)) as number[];
+        if (itemsToDelete.length > 0) req.items_to_delete = itemsToDelete;
 
-        // 名称变更
-        if (editName !== group.name) {
-            req.name = editName;
-        }
-
-        // 删除的 items: 原始存在但编辑后不存在的
-        const itemsToDelete = [...originalItems.keys()].filter(
-            (id) => id !== undefined && !editItemIds.has(id)
-        ) as number[];
-        if (itemsToDelete.length > 0) {
-            req.items_to_delete = itemsToDelete;
-        }
-
-        // 新增的 items: 编辑后存在但无 item_id 的
         const itemsToAdd = editMembers
-            .filter((m) => m.item_id === undefined)
-            .map((m) => ({
-                channel_id: m.channel_id,
-                model_name: m.name,
-                priority: editMembers.indexOf(m) + 1,
-            }));
-        if (itemsToAdd.length > 0) {
-            req.items_to_add = itemsToAdd;
-        }
+            .map((m, i) => ({ m, priority: i + 1 }))
+            .filter(({ m }) => m.item_id === undefined)
+            .map(({ m, priority }) => ({ channel_id: m.channel_id, model_name: m.name, priority }));
+        if (itemsToAdd.length > 0) req.items_to_add = itemsToAdd;
 
-        // 更新的 items: 原始存在且编辑后仍存在，但 priority 变更的
         const itemsToUpdate = editMembers
-            .filter((m) => {
-                if (m.item_id === undefined) return false;
-                const original = originalItems.get(m.item_id);
-                if (!original) return false;
-                const newPriority = editMembers.indexOf(m) + 1;
-                return original.priority !== newPriority;
-            })
-            .map((m) => ({
-                id: m.item_id!,
-                priority: editMembers.indexOf(m) + 1,
-            }));
-        if (itemsToUpdate.length > 0) {
-            req.items_to_update = itemsToUpdate;
-        }
+            .map((m, i) => ({ m, priority: i + 1 }))
+            .filter(({ m, priority }) => m.item_id !== undefined && originalItems.get(m.item_id)?.priority !== priority)
+            .map(({ m, priority }) => ({ id: m.item_id!, priority }));
+        if (itemsToUpdate.length > 0) req.items_to_update = itemsToUpdate;
 
-        updateGroup.mutate(req, {
-            onSuccess: () => {
-                // 标记等待数据刷新，当 group 数据更新后再退出编辑模式
-                waitingForRefreshRef.current = true;
-            },
-        });
+        updateGroup.mutate(req);
     };
 
-    const handleDeleteClick = () => {
-        setConfirmDelete(true);
-    };
+    const scaleAnim = { initial: { scale: 0 }, animate: { scale: 1 }, exit: { scale: 0 } };
 
-    const handleConfirmDelete = () => {
-        if (group.id) {
-            deleteGroup.mutate(group.id);
+    const handleSaveOrCopy = () => {
+        if (hasChanges) {
+            handleSave();
+        } else {
+            navigator.clipboard.writeText(group.name);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
         }
     };
-
-    const handleCancelDelete = () => {
-        setConfirmDelete(false);
-    };
-
-    const isValid = editName.trim() && editMembers.length > 0;
-    const members = isEditing ? editMembers : displayMembers;
-    const visibleCount = isEditing ? editMembers.filter((m) => !removingIds.has(m.id)).length : displayMembers.length;
-    const isEmpty = visibleCount === 0 && !isAdding;
 
     return (
         <article className="flex flex-col rounded-3xl border border-border bg-card text-card-foreground p-4 custom-shadow">
             <header className="flex items-start justify-between mb-3 relative overflow-hidden rounded-xl -mx-1 px-1 -my-1 py-1">
                 <h3
-                    contentEditable={isEditing}
+                    contentEditable
                     suppressContentEditableWarning
-                    onBlur={(e) => isEditing && setEditName(e.currentTarget.textContent || '')}
+                    onBlur={(e) => setEditName(e.currentTarget.textContent || '')}
                     className="text-lg font-bold truncate flex-1 mr-2 outline-none"
                 >
-                    {isEditing ? editName : group.name}
+                    {editName}
                 </h3>
 
                 <div className="flex items-center gap-1 shrink-0">
-                    <AnimatePresence mode="wait">
-                        {isEditing ? (
-                            <motion.div
-                                key="editing"
-                                className="flex items-center gap-1"
-                                initial={{ opacity: 0, scale: 0.8 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0.8 }}
-                                transition={{ duration: 0.15 }}
-                            >
-                                <button type="button" onClick={handleCancelEdit} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
-                                    <X className="size-4" />
-                                </button>
-                                <button type="button" onClick={() => setIsAdding(true)} disabled={isAdding} className={cn('p-1.5 rounded-lg transition-colors', isAdding ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground hover:text-foreground')}>
-                                    <Plus className="size-4" />
-                                </button>
-                                <button type="button" onClick={handleSave} disabled={!isValid || updateGroup.isPending} className={cn('p-1.5 rounded-lg transition-colors', isValid && !updateGroup.isPending ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'bg-muted text-muted-foreground cursor-not-allowed')}>
-                                    {updateGroup.isPending ? <div className="size-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Check className="size-4" />}
-                                </button>
-                            </motion.div>
-                        ) : (
-                            <motion.div
-                                key="viewing"
-                                className="flex items-center gap-1"
-                                initial={{ opacity: 0, scale: 0.8 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0.8 }}
-                                transition={{ duration: 0.15 }}
-                            >
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        navigator.clipboard.writeText(group.name);
-                                        setCopied(true);
-                                        setTimeout(() => setCopied(false), 1500);
-                                    }}
-                                    className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                                >
-                                    <AnimatePresence mode="wait">
-                                        {copied ? (
-                                            <motion.div key="check" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}>
-                                                <Check className="size-4" />
-                                            </motion.div>
-                                        ) : (
-                                            <motion.div key="copy" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}>
-                                                <Copy className="size-4" />
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-                                </button>
-                                <button type="button" onClick={handleStartEdit} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"  >
-                                    <Pencil className="size-4" />
-                                </button>
-                                {!confirmDelete && (
-                                    <motion.button
-                                        layoutId={`delete-btn-group-${group.id}`}
-                                        type="button"
-                                        onClick={handleDeleteClick}
-                                        className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                                    >
-                                        <Trash2 className="size-4" />
-                                    </motion.button>
-                                )}
-                            </motion.div>
+                    <button type="button" onClick={() => setIsAdding(true)} disabled={isAdding} className={cn('p-1.5 rounded-lg transition-colors', isAdding ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground hover:text-foreground')}>
+                        <Plus className="size-4" />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleSaveOrCopy}
+                        disabled={hasChanges && (!isValid || updateGroup.isPending)}
+                        className={cn(
+                            'p-1.5 rounded-lg transition-colors hover:bg-muted',
+                            hasChanges
+                                ? (isValid && !updateGroup.isPending ? 'text-primary hover:text-primary' : 'text-muted-foreground cursor-not-allowed')
+                                : 'text-muted-foreground hover:text-foreground'
                         )}
-                    </AnimatePresence>
+                    >
+                        <AnimatePresence mode="wait">
+                            {hasChanges ? (
+                                updateGroup.isPending ? (
+                                    <motion.div key="loading" {...scaleAnim}>
+                                        <div className="size-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                    </motion.div>
+                                ) : (
+                                    <motion.div key="save" {...scaleAnim}><Check className="size-4" /></motion.div>
+                                )
+                            ) : (
+                                <motion.div key={copied ? 'check' : 'copy'} {...scaleAnim}>
+                                    {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </button>
+                    {!confirmDelete && (
+                        <motion.button
+                            layoutId={`delete-btn-group-${group.id}`}
+                            type="button"
+                            onClick={hasChanges ? () => { setEditName(group.name); setEditMembers([...displayMembers]); } : () => setConfirmDelete(true)}
+                            className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                        >
+                            <AnimatePresence mode="wait">
+                                <motion.div key={hasChanges ? 'cancel' : 'delete'} {...scaleAnim}>
+                                    {hasChanges ? <X className="size-4" /> : <Trash2 className="size-4" />}
+                                </motion.div>
+                            </AnimatePresence>
+                        </motion.button>
+                    )}
                 </div>
 
                 <AnimatePresence>
@@ -262,14 +183,14 @@ export function GroupCard({ group }: { group: Group }) {
                         >
                             <button
                                 type="button"
-                                onClick={handleCancelDelete}
+                                onClick={() => setConfirmDelete(false)}
                                 className="flex h-7 w-7 items-center justify-center rounded-lg bg-destructive-foreground/20 text-destructive-foreground transition-all hover:bg-destructive-foreground/30 active:scale-95"
                             >
                                 <X className="h-4 w-4" />
                             </button>
                             <button
                                 type="button"
-                                onClick={handleConfirmDelete}
+                                onClick={() => group.id && deleteGroup.mutate(group.id)}
                                 disabled={deleteGroup.isPending}
                                 className="flex-1 h-7 flex items-center justify-center gap-2 rounded-lg bg-destructive-foreground text-destructive text-sm font-semibold transition-all hover:bg-destructive-foreground/90 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
                             >
@@ -281,7 +202,24 @@ export function GroupCard({ group }: { group: Group }) {
                 </AnimatePresence>
             </header>
 
-            <section className={cn('flex-1 rounded-xl border bg-muted/30 overflow-hidden relative min-h-0 transition-colors duration-200', isEditing ? 'border-primary/50' : 'border-border/50')}>
+            {/* Mode Selection */}
+            <div className="flex gap-1 mb-3">
+                {([1, 2, 3] as const).map((m) => (
+                    <button
+                        key={m}
+                        type="button"
+                        onClick={() => m !== group.mode && updateGroup.mutate({ id: group.id!, mode: m })}
+                        className={cn(
+                            'flex-1 py-1 text-xs rounded-lg transition-colors',
+                            group.mode === m ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
+                        )}
+                    >
+                        {t(`mode.${m === 1 ? 'sequence' : m === 2 ? 'random' : 'priority'}`)}
+                    </button>
+                ))}
+            </div>
+
+            <section className={cn('flex-1 rounded-xl border bg-muted/30 overflow-hidden relative min-h-0 transition-colors duration-200', hasChanges ? 'border-primary/50' : 'border-border/50')}>
                 <div className={cn('absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground transition-opacity duration-200', isEmpty ? 'opacity-100' : 'opacity-0 pointer-events-none')}>
                     <Layers className="size-8 opacity-40" />
                     <span className="text-xs">{t('card.empty')}</span>
@@ -289,9 +227,9 @@ export function GroupCard({ group }: { group: Group }) {
 
                 <div className={cn('min-h-100  overflow-y-auto transition-opacity duration-200', isEmpty && 'opacity-0')}>
                     <div className="p-2 flex flex-col gap-1.5">
-                        <Reorder.Group axis="y" values={members} onReorder={isEditing ? setEditMembers : () => { }} className="flex flex-col gap-1.5">
-                            {members.map((m, i) => (
-                                <MemberItem key={m.id} member={m} onRemove={handleRemoveMember} isRemoving={removingIds.has(m.id)} index={i} editable={isEditing} />
+                        <Reorder.Group axis="y" values={editMembers} onReorder={setEditMembers} className="flex flex-col gap-1.5">
+                            {editMembers.map((m, i) => (
+                                <MemberItem key={m.id} member={m} onRemove={handleRemoveMember} isRemoving={removingIds.has(m.id)} index={i} editable />
                             ))}
                         </Reorder.Group>
                         {isAdding && <AddMemberRow index={editMembers.length} channels={channels} modelChannels={modelChannels} selectedMembers={editMembers} onConfirm={handleAddMember} onCancel={() => setIsAdding(false)} t={t} />}

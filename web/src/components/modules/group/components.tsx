@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { GripVertical, X, Check } from 'lucide-react';
-import { Reorder, useDragControls, motion } from 'motion/react';
+import { GripVertical, X, Check, Trash2 } from 'lucide-react';
+import { Reorder, useDragControls, motion, AnimatePresence } from 'motion/react';
 import {
     Select,
     SelectContent,
@@ -35,6 +35,7 @@ export function MemberItem({
 }) {
     const controls = useDragControls();
     const { Avatar: ModelAvatar } = getModelIcon(member.name);
+    const [confirmDelete, setConfirmDelete] = useState(false);
 
     return (
         <Reorder.Item
@@ -46,7 +47,7 @@ export function MemberItem({
         >
             <div className="overflow-hidden">
                 <div className={cn(
-                    'flex items-center gap-2 rounded-lg bg-background border border-border/50 px-2.5 py-2 select-none transition-opacity duration-200',
+                    'flex items-center gap-2 rounded-lg bg-background border border-border/50 px-2.5 py-2 select-none transition-opacity duration-200 relative overflow-hidden',
                     isRemoving && 'opacity-0'
                 )}>
                     <span className="size-5 rounded-md bg-primary/10 text-primary text-xs font-bold grid place-items-center shrink-0">
@@ -67,17 +68,45 @@ export function MemberItem({
                         <span className="text-[10px] text-muted-foreground truncate leading-tight">{member.channel_name}</span>
                     </div>
 
-                    <motion.button
-                        type="button"
-                        onClick={() => onRemove(member.id)}
-                        className="p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-colors"
-                        initial={false}
-                        animate={{ opacity: editable ? 1 : 0, x: editable ? 0 : 8 }}
-                        transition={{ duration: 0.15 }}
-                        style={{ pointerEvents: editable ? 'auto' : 'none' }}
-                    >
-                        <X className="size-3" />
-                    </motion.button>
+                    {!confirmDelete && (
+                        <motion.button
+                            layoutId={`delete-btn-member-${member.id}`}
+                            type="button"
+                            onClick={() => setConfirmDelete(true)}
+                            className="p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-colors"
+                            initial={false}
+                            animate={{ opacity: editable ? 1 : 0, x: editable ? 0 : 8 }}
+                            transition={{ duration: 0.15 }}
+                            style={{ pointerEvents: editable ? 'auto' : 'none' }}
+                        >
+                            <X className="size-3" />
+                        </motion.button>
+                    )}
+
+                    <AnimatePresence>
+                        {confirmDelete && (
+                            <motion.div
+                                layoutId={`delete-btn-member-${member.id}`}
+                                className="absolute inset-0 flex items-center justify-center gap-2 bg-destructive p-1.5 rounded-lg"
+                                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                            >
+                                <button
+                                    type="button"
+                                    onClick={() => setConfirmDelete(false)}
+                                    className="flex h-6 w-6 items-center justify-center rounded-md bg-destructive-foreground/20 text-destructive-foreground transition-all hover:bg-destructive-foreground/30 active:scale-95"
+                                >
+                                    <X className="h-3 w-3" />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => onRemove(member.id)}
+                                    className="flex-1 h-6 flex items-center justify-center gap-1.5 rounded-md bg-destructive-foreground text-destructive text-xs font-semibold transition-all hover:bg-destructive-foreground/90 active:scale-[0.98]"
+                                >
+                                    <Trash2 className="h-3 w-3" />
+                                </button>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
             </div>
         </Reorder.Item>
@@ -110,18 +139,12 @@ export function AddMemberRow({
         return modelChannels.filter((mc) => mc.channel_id === +channelId);
     }, [modelChannels, channelId]);
 
-    const isDuplicate = useMemo(() => {
-        if (!channelId || !modelName) return false;
-        return selectedMembers.some((m) => m.channel_id === +channelId && m.name === modelName);
-    }, [selectedMembers, channelId, modelName]);
-
-    const canConfirm = channelId && modelName && !isDuplicate;
-
-    const handleConfirm = () => {
-        if (!canConfirm) return;
+    const { canConfirm, selectedChannel } = useMemo(() => {
+        if (!channelId || !modelName) return { canConfirm: false, selectedChannel: null };
+        const isDuplicate = selectedMembers.some((m) => m.channel_id === +channelId && m.name === modelName);
         const channel = modelChannels.find((mc) => mc.channel_id === +channelId && mc.name === modelName);
-        if (channel) onConfirm(channel);
-    };
+        return { canConfirm: !isDuplicate && !!channel, selectedChannel: channel };
+    }, [selectedMembers, channelId, modelName, modelChannels]);
 
     return (
         <div className="flex items-center gap-2 rounded-lg bg-background border-2 border-dashed border-primary/30 px-2.5 py-2">
@@ -163,7 +186,7 @@ export function AddMemberRow({
 
             <button
                 type="button"
-                onClick={handleConfirm}
+                onClick={() => selectedChannel && onConfirm(selectedChannel)}
                 disabled={!canConfirm}
                 className={cn(
                     'size-6 rounded-md grid place-items-center shrink-0 transition-colors',

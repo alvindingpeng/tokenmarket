@@ -117,11 +117,16 @@
         },
         "form": {
             "name": "分组名称",
-            "items": "路由规则",
-            "addItem": "添加规则",
-            "noItems": "暂无路由规则",
+            "items": "模型名称",
+            "addItem": "添加模型",
+            "noItems": "暂无规则",
             "selectChannel": "选择渠道",
             "selectModel": "选择模型"
+        },
+        "mode": {
+            "sequence": "顺序",
+            "random": "随机",
+            "priority": "优先级"
         },
         "empty": "暂无分组，点击左上角按钮创建"
     },

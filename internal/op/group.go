@@ -65,6 +65,14 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 		}
 	}
 
+	// 更新 group mode (仅在有变更时)
+	if req.Mode != nil {
+		if err := tx.Model(&model.Group{}).Where("id = ?", req.ID).Update("mode", *req.Mode).Error; err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("failed to update group mode: %w", err)
+		}
+	}
+
 	// 删除 items
 	if len(req.ItemsToDelete) > 0 {
 		if err := tx.Where("id IN ? AND group_id = ?", req.ItemsToDelete, req.ID).Delete(&model.GroupItem{}).Error; err != nil {

@@ -9,7 +9,7 @@ import {
     MorphingDialogDescription,
     useMorphingDialog,
 } from '@/components/ui/morphing-dialog';
-import { useCreateGroup, type GroupItem } from '@/api/endpoints/group';
+import { useCreateGroup, type GroupItem, type GroupMode } from '@/api/endpoints/group';
 import { useModelChannelList, type LLMChannel } from '@/api/endpoints/model';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
@@ -40,14 +40,7 @@ function MembersSection({
     t: (key: string) => string;
 }) {
     const [isAdding, setIsAdding] = useState(false);
-    const hasMembers = members.length > 0;
-    const visibleCount = members.filter((m) => !removingIds.has(m.id)).length;
-    const showEmpty = visibleCount === 0 && !isAdding;
-
-    const handleConfirmAdd = (channel: LLMChannel) => {
-        onAdd(channel);
-        setIsAdding(false);
-    };
+    const showEmpty = members.filter((m) => !removingIds.has(m.id)).length === 0 && !isAdding;
 
     return (
         <div className="rounded-xl border border-border/50 bg-muted/30 overflow-hidden">
@@ -100,7 +93,7 @@ function MembersSection({
                 >
                     <div className="p-2 flex flex-col gap-1.5">
                         {/* 已添加的成员列表 */}
-                        {hasMembers && (
+                        {members.length > 0 && (
                             <Reorder.Group
                                 axis="y"
                                 values={members}
@@ -126,7 +119,7 @@ function MembersSection({
                                 channels={channels}
                                 modelChannels={modelChannels}
                                 selectedMembers={members}
-                                onConfirm={handleConfirmAdd}
+                                onConfirm={(ch) => { onAdd(ch); setIsAdding(false); }}
                                 onCancel={() => setIsAdding(false)}
                                 t={t}
                             />
@@ -145,6 +138,7 @@ export function CreateDialogContent() {
     const t = useTranslations('group');
 
     const [groupName, setGroupName] = useState('');
+    const [mode, setMode] = useState<GroupMode>(1);
     const [selectedMembers, setSelectedMembers] = useState<SelectedMember[]>([]);
     const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
@@ -160,23 +154,14 @@ export function CreateDialogContent() {
     }, [modelChannels]);
 
     const handleAddMember = (channel: LLMChannel) => {
-        const newMember: SelectedMember = {
-            ...channel,
-            id: `${channel.channel_id}-${channel.name}-${Date.now()}`,
-        };
-        setSelectedMembers((prev) => [...prev, newMember]);
+        setSelectedMembers((prev) => [...prev, { ...channel, id: `${channel.channel_id}-${channel.name}-${Date.now()}` }]);
     };
 
     const handleRemoveMember = useCallback((id: string) => {
         setRemovingIds((prev) => new Set(prev).add(id));
-
         setTimeout(() => {
             setSelectedMembers((prev) => prev.filter((m) => m.id !== id));
-            setRemovingIds((prev) => {
-                const next = new Set(prev);
-                next.delete(id);
-                return next;
-            });
+            setRemovingIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
         }, 200);
     }, []);
 
@@ -192,6 +177,7 @@ export function CreateDialogContent() {
         createGroup.mutate(
             {
                 name: groupName,
+                mode,
                 items,
             },
             {
@@ -237,7 +223,24 @@ export function CreateDialogContent() {
                             />
                         </Field>
 
-                        {/* 路由规则区域（包含添加功能） */}
+                        {/* Mode */}
+                        <div className="flex gap-1">
+                            {([1, 2, 3] as const).map((m) => (
+                                <button
+                                    key={m}
+                                    type="button"
+                                    onClick={() => setMode(m)}
+                                    className={cn(
+                                        'flex-1 py-1 text-xs rounded-lg transition-colors',
+                                        mode === m ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
+                                    )}
+                                >
+                                    {t(`mode.${m === 1 ? 'sequence' : m === 2 ? 'random' : 'priority'}`)}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* 模型区域（包含添加功能） */}
                         <MembersSection
                             members={selectedMembers}
                             onReorder={setSelectedMembers}
