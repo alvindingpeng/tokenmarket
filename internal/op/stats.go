@@ -69,15 +69,13 @@ func StatsSaveDB(ctx context.Context) error {
 		return result.Error
 	}
 
-	// 保存所有24小时的数据（只保存有数据的小时）
+	// 保存所有24小时的数据
 	statsHourlyCacheLock.RLock()
+	todayDate := time.Now().Format("20060102")
 	hourlyStats := make([]model.StatsHourly, 0, 24)
 	for hour := 0; hour < 24; hour++ {
-		if statsHourlyCache[hour].Date != time.Now().Format("20060102") { // 只保存有实际数据的小时
-			statsHourlyCache[hour] = model.StatsHourly{
-				Hour: hour,
-				Date: time.Now().Format("20060102"),
-			}
+		if statsHourlyCache[hour].Date == todayDate {
+			hourlyStats = append(hourlyStats, statsHourlyCache[hour])
 		}
 	}
 	statsHourlyCacheLock.RUnlock()

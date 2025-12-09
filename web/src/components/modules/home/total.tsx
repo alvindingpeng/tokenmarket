@@ -145,7 +145,7 @@ export function Total() {
                                         <span className="text-xl">
                                             <AnimatedNumber value={item.value} />
                                         </span>
-                                        {item.unit && item.value && (
+                                        {item.unit && (
                                             <span className="text-sm text-muted-foreground">{item.unit}</span>
                                         )}
                                     </div>
