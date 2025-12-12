@@ -14,12 +14,14 @@ import (
 
 func init() {
 	router.NewGroupRouter("/api/v1/user").
+		Use(middleware.RequireJSON()).
 		AddRoute(
 			router.NewRoute("/login", http.MethodPost).
 				Handle(login),
 		)
 	router.NewGroupRouter("/api/v1/user").
 		Use(middleware.Auth()).
+		Use(middleware.RequireJSON()).
 		AddRoute(
 			router.NewRoute("/change-password", http.MethodPost).
 				Handle(changePassword),
