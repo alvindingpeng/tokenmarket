@@ -256,7 +256,6 @@ func statsRefreshCache(ctx context.Context) error {
 		return result.Error
 	}
 	if statsDailyCache.Date != time.Now().Format("20060102") {
-		log.Warnf("stats daily cache is not today, date: %s", statsDailyCache.Date)
 		statsDailyCache = model.StatsDaily{
 			Date: time.Now().Format("20060102"),
 		}

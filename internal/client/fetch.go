@@ -2,11 +2,13 @@ package client
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/transformer/outbound"
+	"github.com/bytedance/sonic"
 )
 
 func FetchLLMName(ctx context.Context, request model.Channel) ([]string, error) {
@@ -20,9 +22,9 @@ func FetchLLMName(ctx context.Context, request model.Channel) ([]string, error) 
 		return nil, err
 	}
 	switch request.Type {
-	case model.ChannelTypeOpenAIChat, model.ChannelTypeOpenAIResponse, model.ChannelTypeOneAPI:
+	case outbound.OutboundTypeOpenAIChat, outbound.OutboundTypeOpenAIResponse, outbound.OutboundTypeOneAPI:
 		req.Header.Set("Authorization", "Bearer "+request.Key)
-	case model.ChannelTypeAnthropic:
+	case outbound.OutboundTypeAnthropic:
 		req.Header.Set("Authorization", "Bearer "+request.Key)
 	}
 	resp, err := client.Do(req)
@@ -35,7 +37,11 @@ func FetchLLMName(ctx context.Context, request model.Channel) ([]string, error) 
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err := sonic.Unmarshal(body, &result); err != nil {
 		return nil, err
 	}
 	var models []string

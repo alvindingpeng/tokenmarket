@@ -120,6 +120,14 @@ func ChannelLLMList(ctx context.Context) ([]model.LLMChannel, error) {
 	return models, nil
 }
 
+func ChannelGet(id int, ctx context.Context) (*model.Channel, error) {
+	channel, ok := channelCache.Get(id)
+	if !ok {
+		return nil, fmt.Errorf("channel not found")
+	}
+	return &channel, nil
+}
+
 func channelRefreshCache(ctx context.Context) error {
 	channels := []model.Channel{}
 	if err := db.GetDB().WithContext(ctx).Find(&channels).Error; err != nil {

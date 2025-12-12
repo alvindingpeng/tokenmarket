@@ -11,6 +11,7 @@ import (
 )
 
 var groupCache = cache.New[int, model.Group](16)
+var groupMap = cache.New[string, model.Group](16)
 
 func GroupList(ctx context.Context) ([]model.Group, error) {
 	groups := make([]model.Group, 0, groupCache.Len())
@@ -36,11 +37,20 @@ func GroupGet(id int, ctx context.Context) (*model.Group, error) {
 	return &group, nil
 }
 
+func GroupGetMap(name string, ctx context.Context) (model.Group, error) {
+	items, ok := groupMap.Get(name)
+	if !ok {
+		return model.Group{}, fmt.Errorf("group not found")
+	}
+	return items, nil
+}
+
 func GroupCreate(group *model.Group, ctx context.Context) error {
 	if err := db.GetDB().WithContext(ctx).Create(group).Error; err != nil {
 		return err
 	}
 	groupCache.Set(group.ID, *group)
+	groupMap.Set(group.Name, *group)
 	return nil
 }
 
@@ -137,7 +147,7 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 }
 
 func GroupDel(id int, ctx context.Context) error {
-	_, ok := groupCache.Get(id)
+	group, ok := groupCache.Get(id)
 	if !ok {
 		return fmt.Errorf("group not found")
 	}
@@ -164,6 +174,7 @@ func GroupDel(id int, ctx context.Context) error {
 	}
 
 	groupCache.Del(id)
+	groupMap.Del(group.Name)
 	return nil
 }
 
@@ -222,6 +233,7 @@ func groupRefreshCache(ctx context.Context) error {
 	}
 	for _, group := range groups {
 		groupCache.Set(group.ID, group)
+		groupMap.Set(group.Name, group)
 	}
 	return nil
 }
@@ -234,5 +246,6 @@ func groupRefreshCacheByID(id int, ctx context.Context) error {
 		return err
 	}
 	groupCache.Set(group.ID, group)
+	groupMap.Set(group.Name, group)
 	return nil
 }

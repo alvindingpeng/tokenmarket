@@ -6,11 +6,65 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sync"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"golang.org/x/net/proxy"
 )
+
+var (
+	directClient *http.Client
+	proxyClient  *http.Client
+	clientLock   sync.RWMutex
+)
+
+// GetHTTPClient returns a cached http.Client or creates a new one.
+func GetHTTPClient(useProxy bool) (*http.Client, error) {
+	clientLock.RLock()
+	if useProxy && proxyClient != nil {
+		clientLock.RUnlock()
+		return proxyClient, nil
+	}
+	if !useProxy && directClient != nil {
+		clientLock.RUnlock()
+		return directClient, nil
+	}
+	clientLock.RUnlock()
+
+	clientLock.Lock()
+	defer clientLock.Unlock()
+
+	if useProxy {
+		if proxyClient != nil {
+			return proxyClient, nil
+		}
+		client, err := NewHTTPClient(true)
+		if err != nil {
+			return nil, err
+		}
+		proxyClient = client
+		return proxyClient, nil
+	}
+
+	if directClient != nil {
+		return directClient, nil
+	}
+	client, err := NewHTTPClient(false)
+	if err != nil {
+		return nil, err
+	}
+	directClient = client
+	return directClient, nil
+}
+
+// ClearHTTPClientPool clears the cached clients (useful when proxy settings change).
+func ClearHTTPClientPool() {
+	clientLock.Lock()
+	directClient = nil
+	proxyClient = nil
+	clientLock.Unlock()
+}
 
 // NewHTTPClient returns an http.Client that can optionally use a proxy based on the setting.
 // When useProxy is false, the client bypasses any proxy configuration.

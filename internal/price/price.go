@@ -2,8 +2,8 @@ package price
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -12,6 +12,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/utils/log"
+	"github.com/bytedance/sonic"
 )
 
 const llmPriceUrl = "https://models.dev/api.json"
@@ -71,7 +72,11 @@ func UpdateLLMPrice(ctx context.Context) error {
 			Cost model.LLMPrice `json:"cost"`
 		} `json:"models"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&rawPrice); err != nil {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+	if err := sonic.Unmarshal(body, &rawPrice); err != nil {
 		return fmt.Errorf("failed to parse LLM info: %w", err)
 	}
 	llmPriceLock.Lock()

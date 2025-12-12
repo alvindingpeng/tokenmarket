@@ -1,0 +1,165 @@
+package relay
+
+import (
+	"io"
+	"net/http"
+
+	"github.com/alvindingpeng/switchyard/internal/client"
+	"github.com/alvindingpeng/switchyard/internal/op"
+	"github.com/alvindingpeng/switchyard/internal/relay/balancer"
+	"github.com/alvindingpeng/switchyard/internal/server/resp"
+	"github.com/alvindingpeng/switchyard/internal/transformer/inbound"
+	"github.com/alvindingpeng/switchyard/internal/transformer/outbound"
+	"github.com/alvindingpeng/switchyard/internal/utils/log"
+	"github.com/gin-gonic/gin"
+	"github.com/tmaxmax/go-sse"
+)
+
+// 定义在函数外部或包级别
+var hopByHopHeaders = map[string]bool{
+	"Authorization":       true,
+	"x-api-key":           true,
+	"Connection":          true,
+	"Keep-Alive":          true,
+	"Proxy-Authenticate":  true,
+	"Proxy-Authorization": true,
+	"TE":                  true,
+	"Trailer":             true,
+	"Transfer-Encoding":   true,
+	"Upgrade":             true,
+	"Content-Length":      true,
+	"Host":                true,
+	"Accept-Encoding":     true,
+}
+
+func Handler(inboundType inbound.InboundType, c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	inAdapter := inbound.Get(inboundType)
+
+	internalRequest, err := inAdapter.TransformRequest(c.Request.Context(), body)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := internalRequest.Validate(); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	group, err := op.GroupGetMap(internalRequest.Model, c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, "model not found")
+		return
+	}
+	b := balancer.GetBalancer(group.Mode)
+	item := b.Select(group.Items)
+	if item == nil {
+		resp.Error(c, http.StatusServiceUnavailable, "no available channel")
+		return
+	}
+	for item != nil {
+		channel, err := op.ChannelGet(item.ChannelID, c.Request.Context())
+		if err != nil {
+			log.Warnf("failed to get channel: %v", err)
+			item = b.Next(group.Items, item)
+			continue
+		}
+		log.Infof("forwarding to channel: %s model: %s", channel.Name, item.ModelName)
+		outAdapter := outbound.Get(channel.Type)
+		internalRequest.Model = item.ModelName
+		success := func() bool {
+			outboundRequest, err := outAdapter.TransformRequest(c.Request.Context(), internalRequest, channel.BaseURL, channel.Key)
+			if err != nil {
+				log.Warnf("failed to create request: %v", err)
+				return false
+			}
+			for key, values := range c.Request.Header {
+				for _, value := range values {
+					if hopByHopHeaders[key] {
+						continue
+					}
+					outboundRequest.Header.Set(key, value)
+				}
+			}
+			httpClient, err := client.GetHTTPClient(channel.Proxy)
+			if err != nil {
+				log.Warnf("failed to get http client: %v", err)
+				return false
+			}
+			response, err := httpClient.Do(outboundRequest)
+			if err != nil {
+				log.Warnf("failed to send request: %v", err)
+				return false
+			}
+			defer response.Body.Close()
+
+			if response.StatusCode != http.StatusOK {
+				log.Warnf("upstream server error: %d", response.StatusCode)
+				body, err := io.ReadAll(response.Body)
+				if err != nil {
+					log.Warnf("failed to read response body: %v", err)
+					return false
+				}
+				log.Warnf("upstream server error: %s", string(body))
+				return false
+			}
+			if internalRequest.Stream != nil && *internalRequest.Stream {
+				c.Header("Content-Type", "text/event-stream")
+				c.Header("Cache-Control", "no-cache")
+				c.Header("Connection", "keep-alive")
+				c.Header("X-Accel-Buffering", "no")
+				ctx := c.Request.Context()
+				for ev, err := range sse.Read(response.Body, nil) {
+					select {
+					case <-ctx.Done():
+						log.Infof("client disconnected, stopping stream")
+						return true
+					default:
+					}
+					if err != nil {
+						break
+					}
+					log.Infof("received event: %s", ev.Data)
+					internalStream, err := outAdapter.TransformStream(ctx, []byte(ev.Data))
+					if err != nil {
+						log.Warnf("failed to transform stream: %v", err)
+						continue
+					}
+					inStream, err := inAdapter.TransformStream(ctx, internalStream)
+					if err != nil {
+						log.Warnf("failed to transform stream: %v", err)
+						continue
+					}
+					if len(inStream) == 0 {
+						continue
+					}
+					log.Infof("transformed stream: %s", string(inStream))
+					c.Writer.Write(inStream)
+					c.Writer.Flush()
+				}
+				return true
+			}
+			internalResponse, err := outAdapter.TransformResponse(c.Request.Context(), response)
+			if err != nil {
+				log.Warnf("failed to transform response: %v", err)
+				return false
+			}
+			inResponse, err := inAdapter.TransformResponse(c.Request.Context(), internalResponse)
+			if err != nil {
+				log.Warnf("failed to transform response: %v", err)
+				return false
+			}
+			c.Data(http.StatusOK, "application/json", inResponse)
+			return true
+		}()
+
+		if success {
+			return
+		}
+		item = b.Next(group.Items, item)
+	}
+	resp.Error(c, http.StatusBadGateway, "all channels failed")
+}
