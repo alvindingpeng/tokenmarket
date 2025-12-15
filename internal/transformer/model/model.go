@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-
-	"github.com/bytedance/sonic"
 )
 
 type APIFormat string
@@ -253,11 +251,11 @@ type Stop struct {
 
 func (s Stop) MarshalJSON() ([]byte, error) {
 	if s.Stop != nil {
-		return sonic.Marshal(s.Stop)
+		return json.Marshal(s.Stop)
 	}
 
 	if len(s.MultipleStop) > 0 {
-		return sonic.Marshal(s.MultipleStop)
+		return json.Marshal(s.MultipleStop)
 	}
 
 	return []byte("[]"), nil
@@ -266,7 +264,7 @@ func (s Stop) MarshalJSON() ([]byte, error) {
 func (s *Stop) UnmarshalJSON(data []byte) error {
 	var str string
 
-	err := sonic.Unmarshal(data, &str)
+	err := json.Unmarshal(data, &str)
 	if err == nil {
 		s.Stop = &str
 		return nil
@@ -274,7 +272,7 @@ func (s *Stop) UnmarshalJSON(data []byte) error {
 
 	var strs []string
 
-	err = sonic.Unmarshal(data, &strs)
+	err = json.Unmarshal(data, &strs)
 	if err == nil {
 		s.MultipleStop = strs
 		return nil
@@ -334,19 +332,19 @@ type MessageContent struct {
 func (c MessageContent) MarshalJSON() ([]byte, error) {
 	if len(c.MultipleContent) > 0 {
 		if len(c.MultipleContent) == 1 && c.MultipleContent[0].Type == "text" {
-			return sonic.Marshal(c.MultipleContent[0].Text)
+			return json.Marshal(c.MultipleContent[0].Text)
 		}
 
-		return sonic.Marshal(c.MultipleContent)
+		return json.Marshal(c.MultipleContent)
 	}
 
-	return sonic.Marshal(c.Content)
+	return json.Marshal(c.Content)
 }
 
 func (c *MessageContent) UnmarshalJSON(data []byte) error {
 	var str string
 
-	err := sonic.Unmarshal(data, &str)
+	err := json.Unmarshal(data, &str)
 	if err == nil {
 		c.Content = &str
 		return nil
@@ -354,7 +352,7 @@ func (c *MessageContent) UnmarshalJSON(data []byte) error {
 
 	var parts []MessageContentPart
 
-	err = sonic.Unmarshal(data, &parts)
+	err = json.Unmarshal(data, &parts)
 	if err == nil {
 		c.MultipleContent = parts
 		return nil
@@ -634,7 +632,7 @@ func (t Tool) MarshalJSON() ([]byte, error) {
 	// ImageGeneration is not a valid field for chat completion, so we should remove it from the request.
 	m.ImageGeneration = nil
 
-	return sonic.Marshal(m)
+	return json.Marshal(m)
 }
 
 // Function represents a function definition.
@@ -693,16 +691,16 @@ type NamedToolChoice struct {
 
 func (t ToolChoice) MarshalJSON() ([]byte, error) {
 	if t.ToolChoice != nil {
-		return sonic.Marshal(t.ToolChoice)
+		return json.Marshal(t.ToolChoice)
 	}
 
-	return sonic.Marshal(t.NamedToolChoice)
+	return json.Marshal(t.NamedToolChoice)
 }
 
 func (t *ToolChoice) UnmarshalJSON(data []byte) error {
 	var str string
 
-	err := sonic.Unmarshal(data, &str)
+	err := json.Unmarshal(data, &str)
 	if err == nil {
 		t.ToolChoice = &str
 		return nil
@@ -710,7 +708,7 @@ func (t *ToolChoice) UnmarshalJSON(data []byte) error {
 
 	var named NamedToolChoice
 
-	err = sonic.Unmarshal(data, &named)
+	err = json.Unmarshal(data, &named)
 	if err == nil {
 		t.NamedToolChoice = &named
 		return nil

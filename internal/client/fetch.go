@@ -2,13 +2,13 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/transformer/outbound"
-	"github.com/bytedance/sonic"
 )
 
 func FetchLLMName(ctx context.Context, request model.Channel) ([]string, error) {
@@ -41,7 +41,7 @@ func FetchLLMName(ctx context.Context, request model.Channel) ([]string, error) 
 	if err != nil {
 		return nil, err
 	}
-	if err := sonic.Unmarshal(body, &result); err != nil {
+	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, err
 	}
 	var models []string

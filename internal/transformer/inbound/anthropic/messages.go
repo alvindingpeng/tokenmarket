@@ -7,7 +7,6 @@ import (
 
 	"github.com/alvindingpeng/switchyard/internal/transformer/model"
 	"github.com/alvindingpeng/switchyard/internal/utils/xurl"
-	"github.com/bytedance/sonic"
 	"github.com/samber/lo"
 )
 
@@ -28,7 +27,7 @@ type MessagesInbound struct {
 
 func (i *MessagesInbound) TransformRequest(ctx context.Context, body []byte) (*model.InternalLLMRequest, error) {
 	var anthropicReq MessageRequest
-	if err := sonic.Unmarshal(body, &anthropicReq); err != nil {
+	if err := json.Unmarshal(body, &anthropicReq); err != nil {
 		return nil, err
 	}
 	chatReq := &model.InternalLLMRequest{
@@ -364,7 +363,7 @@ func (i *MessagesInbound) TransformResponse(ctx context.Context, response *model
 					var input json.RawMessage
 					if toolCall.Function.Arguments != "" {
 						// Attempt to use the provided arguments; repair if invalid, fallback to {}
-						if sonic.Valid([]byte(toolCall.Function.Arguments)) {
+						if json.Valid([]byte(toolCall.Function.Arguments)) {
 							input = json.RawMessage(toolCall.Function.Arguments)
 						} else {
 							input = json.RawMessage("{}")
@@ -416,7 +415,7 @@ func (i *MessagesInbound) TransformResponse(ctx context.Context, response *model
 		resp.Usage = usage
 	}
 
-	return sonic.Marshal(resp)
+	return json.Marshal(resp)
 }
 
 func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.InternalLLMResponse) ([]byte, error) {
@@ -459,7 +458,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 			},
 		}
 
-		data, err := sonic.Marshal(startEvent)
+		data, err := json.Marshal(startEvent)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal message_start event: %w", err)
 		}
@@ -480,7 +479,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 					Type:  "content_block_stop",
 					Index: &i.contentIndex,
 				}
-				data, err := sonic.Marshal(stopEvent)
+				data, err := json.Marshal(stopEvent)
 				if err != nil {
 					return nil, fmt.Errorf("failed to marshal content_block_stop event: %w", err)
 				}
@@ -502,7 +501,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 						Signature: lo.ToPtr(""),
 					},
 				}
-				data, err := sonic.Marshal(startEvent)
+				data, err := json.Marshal(startEvent)
 				if err != nil {
 					return nil, fmt.Errorf("failed to marshal content_block_start event: %w", err)
 				}
@@ -518,7 +517,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 					Thinking: choice.Delta.ReasoningContent,
 				},
 			}
-			data, err := sonic.Marshal(deltaEvent)
+			data, err := json.Marshal(deltaEvent)
 			if err != nil {
 				return nil, fmt.Errorf("failed to marshal content_block_delta event: %w", err)
 			}
@@ -535,7 +534,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 					Signature: choice.Delta.ReasoningSignature,
 				},
 			}
-			data, err := sonic.Marshal(sigEvent)
+			data, err := json.Marshal(sigEvent)
 			if err != nil {
 				return nil, fmt.Errorf("failed to marshal signature_delta event: %w", err)
 			}
@@ -552,7 +551,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 					Type:  "content_block_stop",
 					Index: &i.contentIndex,
 				}
-				data, err := sonic.Marshal(stopEvent)
+				data, err := json.Marshal(stopEvent)
 				if err != nil {
 					return nil, fmt.Errorf("failed to marshal content_block_stop event: %w", err)
 				}
@@ -569,7 +568,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 					Type:  "content_block_stop",
 					Index: &i.contentIndex,
 				}
-				data, err := sonic.Marshal(stopEvent)
+				data, err := json.Marshal(stopEvent)
 				if err != nil {
 					return nil, fmt.Errorf("failed to marshal content_block_stop event: %w", err)
 				}
@@ -590,7 +589,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 						Text: lo.ToPtr(""),
 					},
 				}
-				data, err := sonic.Marshal(startEvent)
+				data, err := json.Marshal(startEvent)
 				if err != nil {
 					return nil, fmt.Errorf("failed to marshal content_block_start event: %w", err)
 				}
@@ -606,7 +605,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 					Text: choice.Delta.Content.Content,
 				},
 			}
-			data, err := sonic.Marshal(deltaEvent)
+			data, err := json.Marshal(deltaEvent)
 			if err != nil {
 				return nil, fmt.Errorf("failed to marshal content_block_delta event: %w", err)
 			}
@@ -623,7 +622,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 					Type:  "content_block_stop",
 					Index: &i.contentIndex,
 				}
-				data, err := sonic.Marshal(stopEvent)
+				data, err := json.Marshal(stopEvent)
 				if err != nil {
 					return nil, fmt.Errorf("failed to marshal content_block_stop event: %w", err)
 				}
@@ -640,7 +639,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 					Type:  "content_block_stop",
 					Index: &i.contentIndex,
 				}
-				data, err := sonic.Marshal(stopEvent)
+				data, err := json.Marshal(stopEvent)
 				if err != nil {
 					return nil, fmt.Errorf("failed to marshal content_block_stop event: %w", err)
 				}
@@ -665,7 +664,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 							Type:  "content_block_stop",
 							Index: &i.contentIndex,
 						}
-						data, err := sonic.Marshal(stopEvent)
+						data, err := json.Marshal(stopEvent)
 						if err != nil {
 							return nil, fmt.Errorf("failed to marshal content_block_stop event: %w", err)
 						}
@@ -687,7 +686,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 							Input: json.RawMessage("{}"),
 						},
 					}
-					data, err := sonic.Marshal(startEvent)
+					data, err := json.Marshal(startEvent)
 					if err != nil {
 						return nil, fmt.Errorf("failed to marshal content_block_start event: %w", err)
 					}
@@ -703,7 +702,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 								PartialJSON: &deltaToolCall.Function.Arguments,
 							},
 						}
-						data, err := sonic.Marshal(deltaEvent)
+						data, err := json.Marshal(deltaEvent)
 						if err != nil {
 							return nil, fmt.Errorf("failed to marshal content_block_delta event: %w", err)
 						}
@@ -719,7 +718,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 							PartialJSON: &deltaToolCall.Function.Arguments,
 						},
 					}
-					data, err := sonic.Marshal(deltaEvent)
+					data, err := json.Marshal(deltaEvent)
 					if err != nil {
 						return nil, fmt.Errorf("failed to marshal content_block_delta event: %w", err)
 					}
@@ -736,7 +735,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 				Type:  "content_block_stop",
 				Index: &i.contentIndex,
 			}
-			data, err := sonic.Marshal(stopEvent)
+			data, err := json.Marshal(stopEvent)
 			if err != nil {
 				return nil, fmt.Errorf("failed to marshal content_block_stop event: %w", err)
 			}
@@ -775,7 +774,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 
 		msgDeltaEvent.Usage = i.convertUsage(stream.Usage)
 
-		data, err := sonic.Marshal(msgDeltaEvent)
+		data, err := json.Marshal(msgDeltaEvent)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal message_delta event: %w", err)
 		}
@@ -785,7 +784,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 		msgStopEvent := StreamEvent{
 			Type: "message_stop",
 		}
-		data, err = sonic.Marshal(msgStopEvent)
+		data, err = json.Marshal(msgStopEvent)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal message_stop event: %w", err)
 		}

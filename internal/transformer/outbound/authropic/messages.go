@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/bytedance/sonic"
 	"github.com/samber/lo"
 
 	anthropicModel "github.com/alvindingpeng/switchyard/internal/transformer/inbound/anthropic"
@@ -36,7 +35,7 @@ func (o *MessageOutbound) TransformRequest(ctx context.Context, request *model.I
 	// Convert to Anthropic request format
 	anthropicReq := convertToAnthropicRequest(request)
 
-	body, err := sonic.Marshal(anthropicReq)
+	body, err := json.Marshal(anthropicReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal anthropic request: %w", err)
 	}
@@ -81,7 +80,7 @@ func (o *MessageOutbound) TransformResponse(ctx context.Context, response *http.
 	// Check for error response
 	if response.StatusCode >= 400 {
 		var errResp anthropicModel.AnthropicError
-		if err := sonic.Unmarshal(body, &errResp); err == nil && errResp.Error.Message != "" {
+		if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error.Message != "" {
 			return nil, &model.ResponseError{
 				StatusCode: response.StatusCode,
 				Detail: model.ErrorDetail{
@@ -94,7 +93,7 @@ func (o *MessageOutbound) TransformResponse(ctx context.Context, response *http.
 	}
 
 	var anthropicResp anthropicModel.Message
-	if err := sonic.Unmarshal(body, &anthropicResp); err != nil {
+	if err := json.Unmarshal(body, &anthropicResp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal anthropic response: %w", err)
 	}
 
@@ -123,7 +122,7 @@ func (o *MessageOutbound) TransformStream(ctx context.Context, eventData []byte)
 
 	// Parse the streaming event
 	var streamEvent anthropicModel.StreamEvent
-	if err := sonic.Unmarshal(eventData, &streamEvent); err != nil {
+	if err := json.Unmarshal(eventData, &streamEvent); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal stream event: %w", err)
 	}
 
@@ -511,7 +510,7 @@ func convertAssistantWithToolCalls(msg model.Message) []anthropicModel.MessagePa
 	for _, toolCall := range msg.ToolCalls {
 		input := json.RawMessage("{}")
 		if toolCall.Function.Arguments != "" {
-			if sonic.Valid([]byte(toolCall.Function.Arguments)) {
+			if json.Valid([]byte(toolCall.Function.Arguments)) {
 				input = json.RawMessage(toolCall.Function.Arguments)
 			}
 		}
@@ -602,7 +601,7 @@ func convertMultiplePartContent(msg model.Message) anthropicModel.MessageContent
 	for _, toolCall := range msg.ToolCalls {
 		input := json.RawMessage("{}")
 		if toolCall.Function.Arguments != "" {
-			if sonic.Valid([]byte(toolCall.Function.Arguments)) {
+			if json.Valid([]byte(toolCall.Function.Arguments)) {
 				input = json.RawMessage(toolCall.Function.Arguments)
 			}
 		}

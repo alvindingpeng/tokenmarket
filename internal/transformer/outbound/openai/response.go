@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/bytedance/sonic"
 	"github.com/samber/lo"
 
 	"github.com/alvindingpeng/switchyard/internal/transformer/model"
@@ -33,7 +32,7 @@ func (o *ResponseOutbound) TransformRequest(ctx context.Context, request *model.
 	// Convert to Responses API request format
 	responsesReq := convertToResponsesRequest(request)
 
-	body, err := sonic.Marshal(responsesReq)
+	body, err := json.Marshal(responsesReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal responses api request: %w", err)
 	}
@@ -79,7 +78,7 @@ func (o *ResponseOutbound) TransformResponse(ctx context.Context, response *http
 		var errResp struct {
 			Error model.ErrorDetail `json:"error"`
 		}
-		if err := sonic.Unmarshal(body, &errResp); err == nil && errResp.Error.Message != "" {
+		if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error.Message != "" {
 			return nil, &model.ResponseError{
 				StatusCode: response.StatusCode,
 				Detail:     errResp.Error,
@@ -89,7 +88,7 @@ func (o *ResponseOutbound) TransformResponse(ctx context.Context, response *http
 	}
 
 	var resp ResponsesResponse
-	if err := sonic.Unmarshal(body, &resp); err != nil {
+	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal responses api response: %w", err)
 	}
 
@@ -116,7 +115,7 @@ func (o *ResponseOutbound) TransformStream(ctx context.Context, eventData []byte
 
 	// Parse the streaming event
 	var streamEvent ResponsesStreamEvent
-	if err := sonic.Unmarshal(eventData, &streamEvent); err != nil {
+	if err := json.Unmarshal(eventData, &streamEvent); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal stream event: %w", err)
 	}
 
@@ -280,19 +279,19 @@ type ResponsesInput struct {
 
 func (i ResponsesInput) MarshalJSON() ([]byte, error) {
 	if i.Text != nil {
-		return sonic.Marshal(i.Text)
+		return json.Marshal(i.Text)
 	}
-	return sonic.Marshal(i.Items)
+	return json.Marshal(i.Items)
 }
 
 func (i *ResponsesInput) UnmarshalJSON(data []byte) error {
 	var text string
-	if err := sonic.Unmarshal(data, &text); err == nil {
+	if err := json.Unmarshal(data, &text); err == nil {
 		i.Text = &text
 		return nil
 	}
 	var items []ResponsesItem
-	if err := sonic.Unmarshal(data, &items); err == nil {
+	if err := json.Unmarshal(data, &items); err == nil {
 		i.Items = items
 		return nil
 	}
@@ -368,11 +367,11 @@ type ResponsesToolChoice struct {
 func (t ResponsesToolChoice) MarshalJSON() ([]byte, error) {
 	// If only Mode is set and it's a simple mode like "auto", "none", "required"
 	if t.Mode != nil && t.Type == nil && t.Name == nil {
-		return sonic.Marshal(*t.Mode)
+		return json.Marshal(*t.Mode)
 	}
 	// Otherwise, serialize as an object
 	type Alias ResponsesToolChoice
-	return sonic.Marshal(Alias(t))
+	return json.Marshal(Alias(t))
 }
 
 type ResponsesTextOptions struct {
@@ -671,7 +670,7 @@ func convertToolsToResponses(tools []model.Tool) []ResponsesTool {
 			}
 			if len(tool.Function.Parameters) > 0 {
 				var params map[string]any
-				if err := sonic.Unmarshal(tool.Function.Parameters, &params); err == nil {
+				if err := json.Unmarshal(tool.Function.Parameters, &params); err == nil {
 					rt.Parameters = params
 				}
 			}

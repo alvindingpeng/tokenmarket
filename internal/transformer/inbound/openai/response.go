@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/bytedance/sonic"
 	"github.com/samber/lo"
 
 	"github.com/alvindingpeng/switchyard/internal/transformer/model"
@@ -49,7 +48,7 @@ type ResponseInbound struct {
 
 func (i *ResponseInbound) TransformRequest(ctx context.Context, body []byte) (*model.InternalLLMRequest, error) {
 	var req ResponsesRequest
-	if err := sonic.Unmarshal(body, &req); err != nil {
+	if err := json.Unmarshal(body, &req); err != nil {
 		return nil, fmt.Errorf("failed to decode responses api request: %w", err)
 	}
 
@@ -68,7 +67,7 @@ func (i *ResponseInbound) TransformResponse(ctx context.Context, response *model
 	// Convert to Responses API format
 	resp := convertToResponsesAPIResponse(response)
 
-	body, err := sonic.Marshal(resp)
+	body, err := json.Marshal(resp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal responses api response: %w", err)
 	}
@@ -199,7 +198,7 @@ func (i *ResponseInbound) enqueueEvent(ev *ResponsesStreamEvent) []byte {
 	ev.SequenceNumber = i.sequenceNumber
 	i.sequenceNumber++
 
-	data, err := sonic.Marshal(ev)
+	data, err := json.Marshal(ev)
 	if err != nil {
 		return nil
 	}
@@ -601,19 +600,19 @@ type ResponsesInput struct {
 
 func (i ResponsesInput) MarshalJSON() ([]byte, error) {
 	if i.Text != nil {
-		return sonic.Marshal(i.Text)
+		return json.Marshal(i.Text)
 	}
-	return sonic.Marshal(i.Items)
+	return json.Marshal(i.Items)
 }
 
 func (i *ResponsesInput) UnmarshalJSON(data []byte) error {
 	var text string
-	if err := sonic.Unmarshal(data, &text); err == nil {
+	if err := json.Unmarshal(data, &text); err == nil {
 		i.Text = &text
 		return nil
 	}
 	var items []ResponsesItem
-	if err := sonic.Unmarshal(data, &items); err == nil {
+	if err := json.Unmarshal(data, &items); err == nil {
 		i.Items = items
 		return nil
 	}
@@ -724,14 +723,14 @@ type ResponsesToolChoice struct {
 
 func (t *ResponsesToolChoice) UnmarshalJSON(data []byte) error {
 	var mode string
-	if err := sonic.Unmarshal(data, &mode); err == nil {
+	if err := json.Unmarshal(data, &mode); err == nil {
 		t.Mode = &mode
 		return nil
 	}
 
 	type Alias ResponsesToolChoice
 	var alias Alias
-	if err := sonic.Unmarshal(data, &alias); err == nil {
+	if err := json.Unmarshal(data, &alias); err == nil {
 		*t = ResponsesToolChoice(alias)
 		return nil
 	}

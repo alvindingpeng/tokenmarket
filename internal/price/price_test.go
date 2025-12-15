@@ -1,12 +1,12 @@
 package price
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
-	"github.com/bytedance/sonic"
 )
 
 func TestPrice(t *testing.T) {
@@ -21,7 +21,7 @@ func TestPrice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sonic.Unmarshal(data, &rawData); err != nil {
+	if err := json.Unmarshal(data, &rawData); err != nil {
 		t.Fatal(err)
 	}
 	for _, provider := range Provider {
@@ -30,7 +30,7 @@ func TestPrice(t *testing.T) {
 			llmPrice[model.ID] = model.Cost
 		}
 	}
-	data, err = sonic.Marshal(llmPrice)
+	data, err = json.Marshal(llmPrice)
 	if err != nil {
 		t.Fatal(err)
 	}

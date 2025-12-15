@@ -3,13 +3,12 @@ package openai
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/bytedance/sonic"
 
 	"github.com/alvindingpeng/switchyard/internal/transformer/model"
 )
@@ -19,7 +18,7 @@ type ChatOutbound struct{}
 func (o *ChatOutbound) TransformRequest(ctx context.Context, request *model.InternalLLMRequest, baseUrl, key string) (*http.Request, error) {
 	request.ClearHelpFields()
 
-	body, err := sonic.Marshal(request)
+	body, err := json.Marshal(request)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -53,7 +52,7 @@ func (o *ChatOutbound) TransformResponse(ctx context.Context, response *http.Res
 		return nil, fmt.Errorf("response body is empty")
 	}
 	var resp model.InternalLLMResponse
-	if err := sonic.Unmarshal(body, &resp); err != nil {
+	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 	return &resp, nil
@@ -69,14 +68,14 @@ func (o *ChatOutbound) TransformStream(ctx context.Context, eventData []byte) (*
 	var errCheck struct {
 		Error *model.ErrorDetail `json:"error"`
 	}
-	if err := sonic.Unmarshal(eventData, &errCheck); err == nil && errCheck.Error != nil {
+	if err := json.Unmarshal(eventData, &errCheck); err == nil && errCheck.Error != nil {
 		return nil, &model.ResponseError{
 			Detail: *errCheck.Error,
 		}
 	}
 
 	var resp model.InternalLLMResponse
-	if err := sonic.Unmarshal(eventData, &resp); err != nil {
+	if err := json.Unmarshal(eventData, &resp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal stream chunk: %w", err)
 	}
 	return &resp, nil
