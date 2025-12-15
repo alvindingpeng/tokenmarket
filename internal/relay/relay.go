@@ -60,6 +60,11 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		resp.Error(c, http.StatusServiceUnavailable, "no available channel")
 		return
 	}
+	stats := NewRelayStats(item.ChannelID, item.ModelName)
+	success := false
+	defer func() {
+		stats.Save(success)
+	}()
 	for item != nil {
 		channel, err := op.ChannelGet(item.ChannelID, c.Request.Context())
 		if err != nil {
@@ -70,7 +75,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		log.Infof("forwarding to channel: %s model: %s", channel.Name, item.ModelName)
 		outAdapter := outbound.Get(channel.Type)
 		internalRequest.Model = item.ModelName
-		success := func() bool {
+		ok := func() bool {
 			outboundRequest, err := outAdapter.TransformRequest(c.Request.Context(), internalRequest, channel.BaseURL, channel.Key)
 			if err != nil {
 				log.Warnf("failed to create request: %v", err)
@@ -120,12 +125,16 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 					default:
 					}
 					if err != nil {
+
 						break
 					}
 					internalStream, err := outAdapter.TransformStream(ctx, []byte(ev.Data))
 					if err != nil || internalStream == nil {
 						log.Warnf("failed to transform stream: %v", err)
 						continue
+					}
+					if internalStream.Usage != nil {
+						stats.UpdateUsage(*internalStream.Usage)
 					}
 					inStream, err := inAdapter.TransformStream(ctx, internalStream)
 					if err != nil || len(inStream) == 0 {
@@ -142,6 +151,9 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 				log.Warnf("failed to transform response: %v", err)
 				return false
 			}
+			if internalResponse.Usage != nil {
+				stats.UpdateUsage(*internalResponse.Usage)
+			}
 			inResponse, err := inAdapter.TransformResponse(c.Request.Context(), internalResponse)
 			if err != nil {
 				log.Warnf("failed to transform response: %v", err)
@@ -151,7 +163,8 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			return true
 		}()
 
-		if success {
+		if ok {
+			success = true
 			return
 		}
 		item = b.Next(group.Items, item)

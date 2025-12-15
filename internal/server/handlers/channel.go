@@ -74,9 +74,9 @@ func createChannel(c *gin.Context) {
 		defer cancel()
 		modelNames := strings.Split(channel.Model, ",")
 		for _, modelName := range modelNames {
-			_, err := price.GetLLMPrice(modelName)
-			if err != nil {
-				err = op.LLMCreate(
+			modelPrice := price.GetLLMPrice(modelName)
+			if modelPrice.Input != 0 && modelPrice.Output != 0 {
+				err := op.LLMCreate(
 					model.LLMInfo{
 						Name: modelName,
 						LLMPrice: model.LLMPrice{

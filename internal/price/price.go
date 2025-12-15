@@ -95,16 +95,16 @@ func GetLastUpdateTime() time.Time {
 	return lastUpdateTime
 }
 
-func GetLLMPrice(modelName string) (model.LLMPrice, error) {
+func GetLLMPrice(modelName string) model.LLMPrice {
 	price, err := op.LLMGet(modelName)
 	if err == nil {
-		return price, nil
+		return price
 	}
 	llmPriceLock.RLock()
 	defer llmPriceLock.RUnlock()
 	price, ok := llmPrice[modelName]
 	if !ok {
-		return model.LLMPrice{}, fmt.Errorf("model not found")
+		return model.LLMPrice{}
 	}
-	return price, nil
+	return price
 }
