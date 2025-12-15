@@ -497,8 +497,9 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 					Type:  "content_block_start",
 					Index: &i.contentIndex,
 					ContentBlock: &MessageContentBlock{
-						Type:     "thinking",
-						Thinking: lo.ToPtr(""),
+						Type:      "thinking",
+						Thinking:  lo.ToPtr(""),
+						Signature: lo.ToPtr(""),
 					},
 				}
 				data, err := sonic.Marshal(startEvent)

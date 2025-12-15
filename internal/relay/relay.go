@@ -3,6 +3,7 @@ package relay
 import (
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/alvindingpeng/switchyard/internal/client"
 	"github.com/alvindingpeng/switchyard/internal/op"
@@ -15,21 +16,20 @@ import (
 	"github.com/tmaxmax/go-sse"
 )
 
-// 定义在函数外部或包级别
 var hopByHopHeaders = map[string]bool{
-	"Authorization":       true,
+	"authorization":       true,
 	"x-api-key":           true,
-	"Connection":          true,
-	"Keep-Alive":          true,
-	"Proxy-Authenticate":  true,
-	"Proxy-Authorization": true,
-	"TE":                  true,
-	"Trailer":             true,
-	"Transfer-Encoding":   true,
-	"Upgrade":             true,
-	"Content-Length":      true,
-	"Host":                true,
-	"Accept-Encoding":     true,
+	"connection":          true,
+	"keep-alive":          true,
+	"proxy-authenticate":  true,
+	"proxy-authorization": true,
+	"te":                  true,
+	"trailer":             true,
+	"transfer-encoding":   true,
+	"upgrade":             true,
+	"content-length":      true,
+	"host":                true,
+	"accept-encoding":     true,
 }
 
 func Handler(inboundType inbound.InboundType, c *gin.Context) {
@@ -78,7 +78,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			}
 			for key, values := range c.Request.Header {
 				for _, value := range values {
-					if hopByHopHeaders[key] {
+					if hopByHopHeaders[strings.ToLower(key)] {
 						continue
 					}
 					outboundRequest.Header.Set(key, value)
@@ -124,16 +124,13 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 					}
 					log.Infof("received event: %s", ev.Data)
 					internalStream, err := outAdapter.TransformStream(ctx, []byte(ev.Data))
-					if err != nil {
+					if err != nil || internalStream == nil {
 						log.Warnf("failed to transform stream: %v", err)
 						continue
 					}
 					inStream, err := inAdapter.TransformStream(ctx, internalStream)
-					if err != nil {
+					if err != nil || len(inStream) == 0 {
 						log.Warnf("failed to transform stream: %v", err)
-						continue
-					}
-					if len(inStream) == 0 {
 						continue
 					}
 					log.Infof("transformed stream: %s", string(inStream))
