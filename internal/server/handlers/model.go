@@ -33,7 +33,7 @@ func init() {
 				Handle(updateLLM),
 		).
 		AddRoute(
-			router.NewRoute("/delete/:name", http.MethodDelete).
+			router.NewRoute("/delete", http.MethodPost).
 				Handle(deleteLLM),
 		).
 		AddRoute(
@@ -138,8 +138,14 @@ func updateLLM(c *gin.Context) {
 }
 
 func deleteLLM(c *gin.Context) {
-	modelName := c.Param("name")
-	if err := op.LLMDelete(modelName, c.Request.Context()); err != nil {
+	var req struct {
+		Name string `json:"name" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := op.LLMDelete(req.Name, c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}

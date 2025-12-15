@@ -145,7 +145,7 @@ export function useDeleteModel() {
 
     return useMutation({
         mutationFn: async (name: string) => {
-            return apiClient.delete<null>(`/api/v1/model/delete/${encodeURIComponent(name)}`);
+            return apiClient.post<null>('/api/v1/model/delete', { name });
         },
         onSuccess: () => {
             logger.log('模型删除成功');
