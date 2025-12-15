@@ -37,7 +37,7 @@ func (o *ChatOutbound) TransformRequest(ctx context.Context, request *model.Inte
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse base url: %w", err)
 	}
-	parsedUrl.Path = "/v1/chat/completions"
+	parsedUrl.Path = parsedUrl.Path + "/chat/completions"
 	req.URL = parsedUrl
 	req.Method = http.MethodPost
 	return req, nil

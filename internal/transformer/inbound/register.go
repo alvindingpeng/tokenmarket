@@ -16,8 +16,9 @@ const (
 )
 
 var inboundFactories = map[InboundType]func() model.Inbound{
-	InboundTypeOpenAIChat: func() model.Inbound { return &openai.ChatInbound{} },
-	InboundTypeAnthropic:  func() model.Inbound { return &anthropic.MessagesInbound{} },
+	InboundTypeOpenAIChat:     func() model.Inbound { return &openai.ChatInbound{} },
+	InboundTypeOpenAIResponse: func() model.Inbound { return &openai.ResponseInbound{} },
+	InboundTypeAnthropic:      func() model.Inbound { return &anthropic.MessagesInbound{} },
 }
 
 func Get(inboundType InboundType) model.Inbound {

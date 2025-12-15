@@ -16,7 +16,7 @@ func FetchLLMName(ctx context.Context, request model.Channel) ([]string, error) 
 	if err != nil {
 		return nil, err
 	}
-	base_url := fmt.Sprintf("%s/v1/models", request.BaseURL)
+	base_url := fmt.Sprintf("%s/models", request.BaseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base_url, nil)
 	if err != nil {
 		return nil, err

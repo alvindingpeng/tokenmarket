@@ -58,12 +58,7 @@ func (o *MessageOutbound) TransformRequest(ctx context.Context, request *model.I
 		return nil, fmt.Errorf("failed to parse base url: %w", err)
 	}
 
-	if strings.HasSuffix(parsedUrl.Path, "/v1") {
-		parsedUrl.Path = parsedUrl.Path + "/messages"
-	} else {
-		parsedUrl.Path = "/v1/messages"
-	}
-
+	parsedUrl.Path = parsedUrl.Path + "/messages"
 	req.URL = parsedUrl
 
 	return req, nil

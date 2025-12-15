@@ -16,8 +16,9 @@ const (
 )
 
 var outboundFactories = map[OutboundType]func() model.Outbound{
-	OutboundTypeOpenAIChat: func() model.Outbound { return &openai.ChatOutbound{} },
-	OutboundTypeAnthropic:  func() model.Outbound { return &authropic.MessageOutbound{} },
+	OutboundTypeOpenAIChat:     func() model.Outbound { return &openai.ChatOutbound{} },
+	OutboundTypeOpenAIResponse: func() model.Outbound { return &openai.ResponseOutbound{} },
+	OutboundTypeAnthropic:      func() model.Outbound { return &authropic.MessageOutbound{} },
 }
 
 func Get(outboundType OutboundType) model.Outbound {
