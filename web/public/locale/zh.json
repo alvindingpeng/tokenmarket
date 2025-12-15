@@ -99,6 +99,31 @@
             "neverUpdated": "从未更新",
             "updateSuccess": "价格更新成功",
             "updateFailed": "价格更新失败"
+        },
+        "account": {
+            "title": "账户设置",
+            "save": "保存",
+            "saving": "保存中...",
+            "username": {
+                "label": "修改用户名",
+                "placeholder": "请输入新用户名",
+                "empty": "用户名不能为空",
+                "success": "用户名修改成功",
+                "failed": "用户名修改失败"
+            },
+            "password": {
+                "label": "修改密码",
+                "oldPlaceholder": "请输入当前密码",
+                "newPlaceholder": "请输入新密码",
+                "confirmPlaceholder": "请确认新密码",
+                "oldEmpty": "请输入当前密码",
+                "newEmpty": "请输入新密码",
+                "mismatch": "两次输入的密码不一致",
+                "tooShort": "密码长度至少为6位",
+                "change": "修改密码",
+                "success": "密码修改成功",
+                "failed": "密码修改失败"
+            }
         }
     },
     "group": {

@@ -99,6 +99,31 @@
             "neverUpdated": "Never updated",
             "updateSuccess": "Price updated successfully",
             "updateFailed": "Failed to update price"
+        },
+        "account": {
+            "title": "Account Settings",
+            "save": "Save",
+            "saving": "Saving...",
+            "username": {
+                "label": "Change Username",
+                "placeholder": "Enter new username",
+                "empty": "Username cannot be empty",
+                "success": "Username changed successfully",
+                "failed": "Failed to change username"
+            },
+            "password": {
+                "label": "Change Password",
+                "oldPlaceholder": "Enter current password",
+                "newPlaceholder": "Enter new password",
+                "confirmPlaceholder": "Confirm new password",
+                "oldEmpty": "Please enter current password",
+                "newEmpty": "Please enter new password",
+                "mismatch": "Passwords do not match",
+                "tooShort": "Password must be at least 6 characters",
+                "change": "Change Password",
+                "success": "Password changed successfully",
+                "failed": "Failed to change password"
+            }
         }
     },
     "group": {
