@@ -97,7 +97,7 @@ export function ChannelForm({
             },
             {
                 onSuccess: (data) => {
-                    setModelList(data);
+                    setModelList(data ?? []);
                 },
             }
         );
