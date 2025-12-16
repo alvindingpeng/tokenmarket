@@ -147,19 +147,28 @@ export function AddMemberRow({
     t: (key: string) => string;
 }) {
     const [channelId, setChannelId] = useState('');
-    const [modelName, setModelName] = useState('');
+
+    // 过滤掉所有模型都已被选择的渠道
+    const availableChannels = useMemo(() => {
+        return channels.filter((c) => {
+            const channelModels = modelChannels.filter((mc) => mc.channel_id === c.id);
+            // 检查该渠道是否还有未被选择的模型
+            return channelModels.some((m) => !selectedMembers.some((s) => s.channel_id === m.channel_id && s.name === m.name));
+        });
+    }, [channels, modelChannels, selectedMembers]);
 
     const models = useMemo(() => {
         if (!channelId) return [];
         return modelChannels.filter((mc) => mc.channel_id === +channelId);
     }, [modelChannels, channelId]);
 
-    const { canConfirm, selectedChannel } = useMemo(() => {
-        if (!channelId || !modelName) return { canConfirm: false, selectedChannel: null };
-        const isDuplicate = selectedMembers.some((m) => m.channel_id === +channelId && m.name === modelName);
+    // 选择模型时直接确认
+    const handleModelSelect = (modelName: string) => {
         const channel = modelChannels.find((mc) => mc.channel_id === +channelId && mc.name === modelName);
-        return { canConfirm: !isDuplicate && !!channel, selectedChannel: channel };
-    }, [selectedMembers, channelId, modelName, modelChannels]);
+        if (channel) {
+            onConfirm(channel);
+        }
+    };
 
     return (
         <div className="flex items-center gap-2 rounded-lg bg-background border-2 border-dashed border-primary/30 px-2.5 py-2">
@@ -170,18 +179,18 @@ export function AddMemberRow({
                 <GripVertical className="size-3.5 text-muted-foreground/30" />
             </div>
 
-            <Select value={channelId} onValueChange={(v) => { setChannelId(v); setModelName(''); }}>
+            <Select value={channelId} onValueChange={setChannelId}>
                 <SelectTrigger className="flex-1 h-7 rounded-md text-xs min-w-0" size="sm">
                     <SelectValue placeholder={t('form.selectChannel')} />
                 </SelectTrigger>
                 <SelectContent>
-                    {channels.map((c) => (
+                    {availableChannels.map((c) => (
                         <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
                     ))}
                 </SelectContent>
             </Select>
 
-            <Select value={modelName} onValueChange={setModelName} disabled={!channelId}>
+            <Select value="" onValueChange={handleModelSelect} disabled={!channelId}>
                 <SelectTrigger className="flex-1 h-7 rounded-md text-xs min-w-0 [&_svg]:text-inherit!" size="sm">
                     <SelectValue placeholder={t('form.selectModel')} />
                 </SelectTrigger>
@@ -198,18 +207,6 @@ export function AddMemberRow({
                         })}
                 </SelectContent>
             </Select>
-
-            <button
-                type="button"
-                onClick={() => selectedChannel && onConfirm(selectedChannel)}
-                disabled={!canConfirm}
-                className={cn(
-                    'size-6 rounded-md grid place-items-center shrink-0 transition-colors',
-                    canConfirm ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'bg-muted text-muted-foreground cursor-not-allowed'
-                )}
-            >
-                <Check className="size-3.5" />
-            </button>
 
             <button
                 type="button"

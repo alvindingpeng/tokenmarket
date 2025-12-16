@@ -145,8 +145,8 @@
             "items": "模型名称",
             "addItem": "添加模型",
             "noItems": "暂无规则",
-            "selectChannel": "选择渠道",
-            "selectModel": "选择模型"
+            "selectChannel": "渠道",
+            "selectModel": "模型"
         },
         "mode": {
             "roundRobin": "轮询",

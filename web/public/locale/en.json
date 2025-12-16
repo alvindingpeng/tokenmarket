@@ -145,8 +145,8 @@
             "items": "Model Names",
             "addItem": "Add Model",
             "noItems": "No models",
-            "selectChannel": "Select channel",
-            "selectModel": "Select model"
+            "selectChannel": "Channel",
+            "selectModel": "Model"
         },
         "mode": {
             "roundRobin": "Round Robin",
