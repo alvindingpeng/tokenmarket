@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useTranslations } from 'next-intl';
 import { useState, useRef, useEffect } from 'react';
-import { RefreshCw, X } from 'lucide-react';
+import { RefreshCw, X, Search, Plus } from 'lucide-react';
 
 export interface ChannelFormData {
     name: string;
@@ -191,18 +191,34 @@ export function ChannelForm({
                 />
             </div>
 
-            <div className="space-y-2">
-                <label className="text-sm font-medium text-card-foreground">
-                    {t('model')}
-                </label>
+            <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-card-foreground">
+                        {t('model')}
+                    </label>
+                    {modelList.length > 0 && (
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleRefreshModels}
+                            disabled={!formData.base_url || !formData.key || fetchModel.isPending}
+                            className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                            <RefreshCw className={`h-3 w-3 mr-1 ${fetchModel.isPending ? 'animate-spin' : ''}`} />
+                            {t('modelRefresh')}
+                        </Button>
+                    )}
+                </div>
                 <input
                     type="hidden"
                     value={formData.model}
                     required
-                    className='rounded-xl'
                 />
-                {/* 自定义模型输入框 */}
-                <div className="flex gap-2">
+
+                {/* 搜索/添加模型输入框 */}
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                     <Input
                         ref={inputRef}
                         id={`${idPrefix}-model-custom`}
@@ -210,29 +226,98 @@ export function ChannelForm({
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
                         onKeyDown={handleInputKeyDown}
-                        placeholder={t('modelCustomPlaceholder')}
-                        className='rounded-xl'
+                        placeholder={t('modelSearchPlaceholder')}
+                        className="pl-9 pr-10 rounded-xl"
                     />
-                    <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => {
-                            if (inputValue.trim()) {
-                                handleAddModel(inputValue);
-                            }
-                        }}
-                        disabled={!inputValue.trim() || selectedModels.includes(inputValue.trim())}
-                        className="h-9 px-4 rounded-xl"
-                    >
-                        {t('modelAdd')}
-                    </Button>
+                    {inputValue.trim() && !selectedModels.includes(inputValue.trim()) && (
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleAddModel(inputValue)}
+                            className="absolute rounded-lg right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+                            title={t('modelAdd')}
+                        >
+                            <Plus className="h-4 w-4" />
+                        </Button>
+                    )}
                 </div>
+
+                {/* 可选模型列表（带搜索过滤） */}
+                {modelList.length > 0 ? (
+                    <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-muted-foreground">
+                            {t('modelAvailable')}
+                        </label>
+                        <div className="rounded-xl border border-border bg-muted/30 p-2.5 max-h-36 min-h-12 overflow-y-auto">
+                            {(() => {
+                                const searchTerm = inputValue.trim().toLowerCase();
+                                const filteredModels = modelList
+                                    .filter(model => !selectedModels.includes(model))
+                                    .filter(model => !searchTerm || model.toLowerCase().includes(searchTerm));
+
+                                if (filteredModels.length > 0) {
+                                    return (
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {filteredModels.map((model) => (
+                                                <Badge
+                                                    key={model}
+                                                    variant="secondary"
+                                                    className="cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors"
+                                                    onClick={() => handleAddModel(model)}
+                                                >
+                                                    {model}
+                                                </Badge>
+                                            ))}
+                                        </div>
+                                    );
+                                } else if (searchTerm && !selectedModels.includes(inputValue.trim())) {
+                                    return (
+                                        <div className="flex items-center justify-center h-8 text-xs text-muted-foreground">
+                                            <span>{t('modelNoMatch')}</span>
+                                            <Button
+                                                type="button"
+                                                variant="link"
+                                                size="sm"
+                                                onClick={() => handleAddModel(inputValue)}
+                                                className="h-auto p-0 ml-1 text-xs text-primary"
+                                            >
+                                                {t('modelAddCustom')}
+                                            </Button>
+                                        </div>
+                                    );
+                                } else {
+                                    return (
+                                        <div className="flex items-center justify-center h-8 text-xs text-muted-foreground">
+                                            {t('modelAllAdded')}
+                                        </div>
+                                    );
+                                }
+                            })()}
+                        </div>
+                    </div>
+                ) : (
+                    <button
+                        type="button"
+                        onClick={handleRefreshModels}
+                        disabled={!formData.base_url || !formData.key || fetchModel.isPending}
+                        className="w-full rounded-xl border border-dashed border-border bg-muted/20 p-5 transition-colors hover:bg-muted/40 hover:border-solid disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-muted/20"
+                    >
+                        <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                            <RefreshCw className={`h-5 w-5 ${fetchModel.isPending ? 'animate-spin' : ''}`} />
+                            <span className="text-sm">
+                                {fetchModel.isPending ? t('modelFetching') : t('modelFetchPrompt')}
+                            </span>
+                        </div>
+                    </button>
+                )}
+
                 {/* 已选模型列表 */}
                 <div className="space-y-1.5">
                     <label className="text-xs font-medium text-card-foreground">
                         {t('modelSelected')} {selectedModels.length > 0 && `(${selectedModels.length})`}
                     </label>
-                    <div className="rounded-xl border border-border bg-muted/30 p-2.5 max-h-32 min-h-16 overflow-y-auto">
+                    <div className="rounded-xl border border-border bg-muted/30 p-2.5 max-h-32 min-h-12 overflow-y-auto">
                         {selectedModels.length > 0 ? (
                             <div className="flex flex-wrap gap-1.5">
                                 {selectedModels.map((model) => (
@@ -249,51 +334,11 @@ export function ChannelForm({
                                 ))}
                             </div>
                         ) : (
-                            <div className="flex items-center justify-center h-[52px] text-xs text-muted-foreground">
+                            <div className="flex items-center justify-center h-8 text-xs text-muted-foreground">
                                 {t('modelNoSelected')}
                             </div>
                         )}
                     </div>
-                </div>
-
-                {/* 可选模型列表 */}
-                <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-muted-foreground">
-                        {t('modelAvailable')}
-                    </label>
-                    {modelList.length > 0 ? (
-                        <div className="rounded-2xl border border-border bg-muted/30 p-2.5 max-h-32 min-h-16 overflow-y-auto">
-                            <div className="flex flex-wrap gap-1.5">
-                                {modelList.filter(model => !selectedModels.includes(model)).map((model) => (
-                                    <Badge
-                                        key={model}
-                                        variant="secondary"
-                                        className="cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors"
-                                        onClick={() => handleAddModel(model)}
-                                    >
-                                        {model}
-                                    </Badge>
-                                ))}
-                                {modelList.filter(model => !selectedModels.includes(model)).length === 0 && (
-                                    <span className="text-xs text-muted-foreground">{t('modelAllAdded')}</span>
-                                )}
-                            </div>
-                        </div>
-                    ) : (
-                        <button
-                            type="button"
-                            onClick={handleRefreshModels}
-                            disabled={!formData.base_url || !formData.key || fetchModel.isPending}
-                            className="w-full rounded-xl border border-dashed border-border bg-muted/20 p-6 transition-colors hover:bg-muted/40 hover:border-solid disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-muted/20"
-                        >
-                            <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                                <RefreshCw className={`h-5 w-5 ${fetchModel.isPending ? 'animate-spin' : ''}`} />
-                                <span className="text-sm">
-                                    {fetchModel.isPending ? t('modelFetching') : t('modelFetchPrompt')}
-                                </span>
-                            </div>
-                        </button>
-                    )}
                 </div>
             </div>
 
