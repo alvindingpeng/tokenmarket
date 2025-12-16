@@ -1,0 +1,9 @@
+services:
+  switchyard:
+    image: bestrui/switchyard
+    ports:
+       - '8080:8080'
+    volumes:      
+       - '/path/to/data:/app/data'
+    container_name: switchyard
+    restart: unless-stopped
