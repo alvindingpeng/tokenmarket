@@ -127,6 +127,14 @@ export function ChannelForm({
         }
     };
 
+    // 全选模型
+    const handleSelectAll = () => {
+        const unselectedModels = modelList.filter(model => !selectedModels.includes(model));
+        if (unselectedModels.length > 0) {
+            setSelectedModels([...selectedModels, ...unselectedModels]);
+        }
+    };
+
     return (
         <form onSubmit={onSubmit} className="space-y-5 px-1">
             <div className="space-y-2">
@@ -203,7 +211,7 @@ export function ChannelForm({
                             size="sm"
                             onClick={handleRefreshModels}
                             disabled={!formData.base_url || !formData.key || fetchModel.isPending}
-                            className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                            className="h-6 px-2 text-xs text-muted-foreground/50 hover:text-muted-foreground hover:bg-transparent"
                         >
                             <RefreshCw className={`h-3 w-3 mr-1 ${fetchModel.isPending ? 'animate-spin' : ''}`} />
                             {t('modelRefresh')}
@@ -246,9 +254,21 @@ export function ChannelForm({
                 {/* 可选模型列表（带搜索过滤） */}
                 {modelList.length > 0 ? (
                     <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-muted-foreground">
-                            {t('modelAvailable')}
-                        </label>
+                        <div className="flex items-center justify-between">
+                            <label className="text-xs font-medium text-muted-foreground">
+                                {t('modelAvailable')}
+                            </label>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleSelectAll}
+                                disabled={modelList.filter(model => !selectedModels.includes(model)).length === 0}
+                                className="h-6 px-2 text-xs text-muted-foreground/50 hover:text-muted-foreground hover:bg-transparent"
+                            >
+                                {t('modelSelectAll')}
+                            </Button>
+                        </div>
                         <div className="rounded-xl border border-border bg-muted/30 p-2.5 max-h-36 min-h-12 overflow-y-auto">
                             {(() => {
                                 const searchTerm = inputValue.trim().toLowerCase();
