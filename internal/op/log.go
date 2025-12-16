@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"sync"
+	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
@@ -95,11 +96,28 @@ func RelayLogSaveDBTask(ctx context.Context) error {
 	relayLogCacheLock.Lock()
 	defer relayLogCacheLock.Unlock()
 
-	if len(relayLogCache) == 0 {
+	if len(relayLogCache) > 0 {
+		if err := relayLogSaveDBLocked(ctx); err != nil {
+			return err
+		}
+	}
+
+	// 清理历史日志
+	return relayLogCleanup(ctx)
+}
+
+func relayLogCleanup(ctx context.Context) error {
+	keepPeriod, err := SettingGetInt(model.SettingKeyRelayLogKeepPeriod)
+	if err != nil {
+		return err
+	}
+
+	if keepPeriod <= 0 {
 		return nil
 	}
 
-	return relayLogSaveDBLocked(ctx)
+	cutoffTime := time.Now().Add(-time.Duration(keepPeriod) * 24 * time.Hour).Unix()
+	return db.GetDB().WithContext(ctx).Where("time < ?", cutoffTime).Delete(&model.RelayLog{}).Error
 }
 
 func relayLogSaveDBLocked(ctx context.Context) error {
