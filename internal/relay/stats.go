@@ -31,6 +31,9 @@ func (r *RelayStats) UpdateUsage(usage transformerModel.Usage) {
 	modelPrice := price.GetLLMPrice(r.Model)
 	r.Stats.InputToken = usage.PromptTokens
 	r.Stats.OutputToken = usage.CompletionTokens
+	if modelPrice == nil {
+		return
+	}
 	if usage.PromptTokensDetails != nil {
 		r.Stats.InputCost = (float64(usage.PromptTokensDetails.CachedTokens)*modelPrice.CacheRead + float64(usage.PromptTokens-usage.PromptTokensDetails.CachedTokens)*modelPrice.Input) * 1e-6
 	} else {
