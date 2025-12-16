@@ -14,6 +14,11 @@ type Inbound interface {
 
 	// 将出站内部通用流式响应转为入站对应的流式响应格式
 	TransformStream(ctx context.Context, stream *InternalLLMResponse) ([]byte, error)
+
+	// 获取完整的内部响应，用于日志记录、数据统计等
+	// 流式场景：将储存的流式响应聚合为完整的响应
+	// 非流式场景：返回储存的完整响应
+	GetInternalResponse(ctx context.Context) (*InternalLLMResponse, error)
 }
 
 type Outbound interface {

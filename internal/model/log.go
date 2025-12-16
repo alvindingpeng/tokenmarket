@@ -13,4 +13,5 @@ type RelayLog struct {
 	Cost             float64 `json:"cost"`               // 消耗费用
 	RequestContent   string  `json:"request_content"`    // 请求内容
 	ResponseContent  string  `json:"response_content"`   // 响应内容
+	Error            string  `json:"error"`              // 错误信息
 }

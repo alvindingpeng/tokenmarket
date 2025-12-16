@@ -1,6 +1,7 @@
 package task
 
 import (
+	"context"
 	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/op"
@@ -13,6 +14,7 @@ func RUN() {
 	for {
 		price.UpdateLLMPriceTask()
 		op.StatsSaveDBTask()
+		op.RelayLogSaveDBTask(context.Background())
 		time.Sleep(taskInterval)
 	}
 }

@@ -1,21 +1,27 @@
 package relay
 
 import (
+	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/client"
+	dbmodel "github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/relay/balancer"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/alvindingpeng/switchyard/internal/transformer/inbound"
+	"github.com/alvindingpeng/switchyard/internal/transformer/model"
 	"github.com/alvindingpeng/switchyard/internal/transformer/outbound"
 	"github.com/alvindingpeng/switchyard/internal/utils/log"
 	"github.com/gin-gonic/gin"
 	"github.com/tmaxmax/go-sse"
 )
 
+// hopByHopHeaders 定义不应转发的 HTTP 头
 var hopByHopHeaders = map[string]bool{
 	"authorization":       true,
 	"x-api-key":           true,
@@ -32,149 +38,282 @@ var hopByHopHeaders = map[string]bool{
 	"accept-encoding":     true,
 }
 
-func Handler(inboundType inbound.InboundType, c *gin.Context) {
-	body, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	inAdapter := inbound.Get(inboundType)
+// relayContext 保存请求转发过程中的上下文信息
+type relayContext struct {
+	c               *gin.Context
+	inAdapter       model.Inbound
+	outAdapter      model.Outbound
+	internalRequest *model.InternalLLMRequest
+	channel         *dbmodel.Channel
+	metrics         *RelayMetrics
+}
 
-	internalRequest, err := inAdapter.TransformRequest(c.Request.Context(), body)
+// Handler 处理入站请求并转发到上游服务
+func Handler(inboundType inbound.InboundType, c *gin.Context) {
+	// 解析请求
+	internalRequest, inAdapter, err := parseRequest(inboundType, c)
 	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := internalRequest.Validate(); err != nil {
-		resp.Error(c, http.StatusBadRequest, err.Error())
-		return
-	}
+
+	// 初始化统计和日志
+	metrics := NewRelayMetrics(internalRequest.Model)
+	metrics.SetInternalRequest(internalRequest)
+
+	// 获取通道分组
 	group, err := op.GroupGetMap(internalRequest.Model, c.Request.Context())
 	if err != nil {
 		resp.Error(c, http.StatusNotFound, "model not found")
 		return
 	}
+
+	// 负载均衡选择通道
 	b := balancer.GetBalancer(group.Mode)
 	item := b.Select(group.Items)
 	if item == nil {
 		resp.Error(c, http.StatusServiceUnavailable, "no available channel")
 		return
 	}
-	stats := NewRelayStats(item.ChannelID, item.ModelName)
-	success := false
-	defer func() {
-		stats.Save(success)
-	}()
+
+	// 循环尝试各个通道
+	var lastErr error
 	for item != nil {
 		channel, err := op.ChannelGet(item.ChannelID, c.Request.Context())
 		if err != nil {
 			log.Warnf("failed to get channel: %v", err)
+			lastErr = err
 			item = b.Next(group.Items, item)
 			continue
 		}
+
 		log.Infof("forwarding to channel: %s model: %s", channel.Name, item.ModelName)
-		outAdapter := outbound.Get(channel.Type)
+
 		internalRequest.Model = item.ModelName
-		ok := func() bool {
-			outboundRequest, err := outAdapter.TransformRequest(c.Request.Context(), internalRequest, channel.BaseURL, channel.Key)
-			if err != nil {
-				log.Warnf("failed to create request: %v", err)
-				return false
-			}
-			for key, values := range c.Request.Header {
-				for _, value := range values {
-					if hopByHopHeaders[strings.ToLower(key)] {
-						continue
-					}
-					outboundRequest.Header.Set(key, value)
-				}
-			}
-			httpClient, err := client.GetHTTPClient(channel.Proxy)
-			if err != nil {
-				log.Warnf("failed to get http client: %v", err)
-				return false
-			}
-			response, err := httpClient.Do(outboundRequest)
-			if err != nil {
-				log.Warnf("failed to send request: %v", err)
-				return false
-			}
-			defer response.Body.Close()
+		metrics.SetChannel(channel.ID, item.ModelName)
 
-			if response.StatusCode != http.StatusOK {
-				log.Warnf("upstream server error: %d", response.StatusCode)
-				body, err := io.ReadAll(response.Body)
-				if err != nil {
-					log.Warnf("failed to read response body: %v", err)
-					return false
-				}
-				log.Warnf("upstream server error: %s", string(body))
-				return false
-			}
-			if internalRequest.Stream != nil && *internalRequest.Stream {
-				c.Header("Content-Type", "text/event-stream")
-				c.Header("Cache-Control", "no-cache")
-				c.Header("Connection", "keep-alive")
-				c.Header("X-Accel-Buffering", "no")
-				ctx := c.Request.Context()
-				for ev, err := range sse.Read(response.Body, nil) {
-					select {
-					case <-ctx.Done():
-						log.Infof("client disconnected, stopping stream")
-						return true
-					default:
-					}
-					if err != nil {
-						log.Warnf("failed to read event: %v", err)
-						break
-					}
-					internalStream, err := outAdapter.TransformStream(ctx, []byte(ev.Data))
-					if err != nil {
-						log.Warnf("failed to transform stream: %v", err)
-						continue
-					}
-					if internalStream == nil {
-						continue
-					}
-					if internalStream.Usage != nil {
-						stats.UpdateUsage(*internalStream.Usage)
-					}
-					inStream, err := inAdapter.TransformStream(ctx, internalStream)
-					if err != nil {
-						log.Warnf("failed to transform stream: %v", err)
-						continue
-					}
-					if len(inStream) == 0 {
-						continue
-					}
-					c.Writer.Write(inStream)
-					c.Writer.Flush()
-				}
-				log.Infof("stream end")
-				return true
-			}
-			internalResponse, err := outAdapter.TransformResponse(c.Request.Context(), response)
-			if err != nil {
-				log.Warnf("failed to transform response: %v", err)
-				return false
-			}
-			if internalResponse.Usage != nil {
-				stats.UpdateUsage(*internalResponse.Usage)
-			}
-			inResponse, err := inAdapter.TransformResponse(c.Request.Context(), internalResponse)
-			if err != nil {
-				log.Warnf("failed to transform response: %v", err)
-				return false
-			}
-			c.Data(http.StatusOK, "application/json", inResponse)
-			return true
-		}()
+		rc := &relayContext{
+			c:               c,
+			inAdapter:       inAdapter,
+			outAdapter:      outbound.Get(channel.Type),
+			internalRequest: internalRequest,
+			channel:         channel,
+			metrics:         metrics,
+		}
 
-		if ok {
-			success = true
+		if rc.forward() {
+			rc.collectResponse()
+			metrics.Save(c.Request.Context(), true, nil)
 			return
 		}
+
+		lastErr = fmt.Errorf("channel %s failed", channel.Name)
 		item = b.Next(group.Items, item)
 	}
+
+	// 所有通道都失败
+	metrics.Save(c.Request.Context(), false, lastErr)
 	resp.Error(c, http.StatusBadGateway, "all channels failed")
+}
+
+// parseRequest 解析并验证入站请求
+func parseRequest(inboundType inbound.InboundType, c *gin.Context) (*model.InternalLLMRequest, model.Inbound, error) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return nil, nil, err
+	}
+
+	inAdapter := inbound.Get(inboundType)
+	internalRequest, err := inAdapter.TransformRequest(c.Request.Context(), body)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return nil, nil, err
+	}
+
+	if err := internalRequest.Validate(); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return nil, nil, err
+	}
+
+	return internalRequest, inAdapter, nil
+}
+
+// forward 转发请求到上游服务
+func (rc *relayContext) forward() bool {
+	ctx := rc.c.Request.Context()
+
+	// 构建出站请求
+	outboundRequest, err := rc.outAdapter.TransformRequest(
+		ctx,
+		rc.internalRequest,
+		rc.channel.BaseURL,
+		rc.channel.Key,
+	)
+	if err != nil {
+		log.Warnf("failed to create request: %v", err)
+		return false
+	}
+
+	// 复制请求头
+	rc.copyHeaders(outboundRequest)
+
+	// 发送请求
+	response, err := rc.sendRequest(outboundRequest)
+	if err != nil {
+		return false
+	}
+	defer response.Body.Close()
+
+	// 检查响应状态
+	if response.StatusCode != http.StatusOK {
+		rc.logUpstreamError(response)
+		return false
+	}
+
+	// 处理响应
+	if rc.isStreamRequest() {
+		return rc.handleStreamResponse(ctx, response)
+	}
+	return rc.handleResponse(ctx, response)
+}
+
+// copyHeaders 复制请求头，过滤 hop-by-hop 头
+func (rc *relayContext) copyHeaders(outboundRequest *http.Request) {
+	for key, values := range rc.c.Request.Header {
+		if hopByHopHeaders[strings.ToLower(key)] {
+			continue
+		}
+		for _, value := range values {
+			outboundRequest.Header.Set(key, value)
+		}
+	}
+}
+
+// sendRequest 发送 HTTP 请求
+func (rc *relayContext) sendRequest(req *http.Request) (*http.Response, error) {
+	httpClient, err := client.GetHTTPClient(rc.channel.Proxy)
+	if err != nil {
+		log.Warnf("failed to get http client: %v", err)
+		return nil, err
+	}
+
+	response, err := httpClient.Do(req)
+	if err != nil {
+		log.Warnf("failed to send request: %v", err)
+		return nil, err
+	}
+
+	return response, nil
+}
+
+// logUpstreamError 记录上游错误日志
+func (rc *relayContext) logUpstreamError(response *http.Response) {
+	log.Warnf("upstream server error: %d", response.StatusCode)
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		log.Warnf("failed to read response body: %v", err)
+		return
+	}
+	log.Warnf("upstream server error: %s", string(body))
+}
+
+// isStreamRequest 判断是否为流式请求
+func (rc *relayContext) isStreamRequest() bool {
+	return rc.internalRequest.Stream != nil && *rc.internalRequest.Stream
+}
+
+// handleStreamResponse 处理流式响应
+func (rc *relayContext) handleStreamResponse(ctx context.Context, response *http.Response) bool {
+	// 设置 SSE 响应头
+	rc.c.Header("Content-Type", "text/event-stream")
+	rc.c.Header("Cache-Control", "no-cache")
+	rc.c.Header("Connection", "keep-alive")
+	rc.c.Header("X-Accel-Buffering", "no")
+
+	firstToken := true
+	for ev, err := range sse.Read(response.Body, nil) {
+		// 检查客户端是否断开
+		select {
+		case <-ctx.Done():
+			log.Infof("client disconnected, stopping stream")
+			return true
+		default:
+		}
+
+		if err != nil {
+			log.Warnf("failed to read event: %v", err)
+			break
+		}
+
+		// 转换流式数据
+		data, err := rc.transformStreamData(ctx, ev.Data)
+		if err != nil || len(data) == 0 {
+			continue
+		}
+
+		// 记录首个 Token 时间
+		if firstToken {
+			rc.metrics.SetFirstTokenTime(time.Now())
+			firstToken = false
+		}
+
+		rc.c.Writer.Write(data)
+		rc.c.Writer.Flush()
+	}
+
+	log.Infof("stream end")
+	return true
+}
+
+// transformStreamData 转换流式数据
+func (rc *relayContext) transformStreamData(ctx context.Context, data string) ([]byte, error) {
+	// 上游格式 → 内部格式
+	internalStream, err := rc.outAdapter.TransformStream(ctx, []byte(data))
+	if err != nil {
+		log.Warnf("failed to transform stream: %v", err)
+		return nil, err
+	}
+	if internalStream == nil {
+		return nil, nil
+	}
+
+	// 内部格式 → 入站格式
+	inStream, err := rc.inAdapter.TransformStream(ctx, internalStream)
+	if err != nil {
+		log.Warnf("failed to transform stream: %v", err)
+		return nil, err
+	}
+
+	return inStream, nil
+}
+
+// handleResponse 处理非流式响应
+func (rc *relayContext) handleResponse(ctx context.Context, response *http.Response) bool {
+	// 上游格式 → 内部格式
+	internalResponse, err := rc.outAdapter.TransformResponse(ctx, response)
+	if err != nil {
+		log.Warnf("failed to transform response: %v", err)
+		return false
+	}
+
+	// 内部格式 → 入站格式
+	inResponse, err := rc.inAdapter.TransformResponse(ctx, internalResponse)
+	if err != nil {
+		log.Warnf("failed to transform response: %v", err)
+		return false
+	}
+
+	rc.c.Data(http.StatusOK, "application/json", inResponse)
+	return true
+}
+
+// collectResponse 收集响应信息
+func (rc *relayContext) collectResponse() {
+	internalResponse, err := rc.inAdapter.GetInternalResponse(rc.c.Request.Context())
+	if err != nil || internalResponse == nil {
+		return
+	}
+
+	// 设置响应内容
+	rc.metrics.SetInternalResponse(internalResponse)
 }
