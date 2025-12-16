@@ -76,6 +76,7 @@ func createChannel(c *gin.Context) {
 		for _, modelName := range modelNames {
 			modelPrice := price.GetLLMPrice(modelName)
 			if modelPrice == nil {
+				log.Infof("model %s price not found,create", modelName)
 				err := op.LLMCreate(
 					model.LLMInfo{
 						Name: modelName,
@@ -113,6 +114,7 @@ func updateChannel(c *gin.Context) {
 		for _, modelName := range modelNames {
 			modelPrice := price.GetLLMPrice(modelName)
 			if modelPrice == nil {
+				log.Infof("model %s price not found,create", modelName)
 				err := op.LLMCreate(
 					model.LLMInfo{
 						Name: modelName,

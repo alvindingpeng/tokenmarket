@@ -125,25 +125,32 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 					default:
 					}
 					if err != nil {
-
+						log.Warnf("failed to read event: %v", err)
 						break
 					}
 					internalStream, err := outAdapter.TransformStream(ctx, []byte(ev.Data))
-					if err != nil || internalStream == nil {
+					if err != nil {
 						log.Warnf("failed to transform stream: %v", err)
+						continue
+					}
+					if internalStream == nil {
 						continue
 					}
 					if internalStream.Usage != nil {
 						stats.UpdateUsage(*internalStream.Usage)
 					}
 					inStream, err := inAdapter.TransformStream(ctx, internalStream)
-					if err != nil || len(inStream) == 0 {
+					if err != nil {
 						log.Warnf("failed to transform stream: %v", err)
+						continue
+					}
+					if len(inStream) == 0 {
 						continue
 					}
 					c.Writer.Write(inStream)
 					c.Writer.Flush()
 				}
+				log.Infof("stream end")
 				return true
 			}
 			internalResponse, err := outAdapter.TransformResponse(c.Request.Context(), response)
