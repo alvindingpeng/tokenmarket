@@ -38,8 +38,11 @@ export function Toolbar() {
     const [searchExpanded, setSearchExpanded] = useState(false);
 
     useEffect(() => {
-        queueMicrotask(() => setSearchExpanded(false));
-    }, [activeItem]);
+        queueMicrotask(() => {
+            setSearchExpanded(false);
+            setSearchTerm(activeItem, '');
+        });
+    }, [activeItem, setSearchTerm]);
 
     const showToolbar = TOOLBAR_PAGES.includes(activeItem);
 
