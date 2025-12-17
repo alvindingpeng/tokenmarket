@@ -86,10 +86,10 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			continue
 		}
 
-		log.Infof("forwarding to channel: %s model: %s", channel.Name, item.ModelName)
+		log.Infof("mode: %d, forwarding to channel: %s model: %s", group.Mode, channel.Name, item.ModelName)
 
 		internalRequest.Model = item.ModelName
-		metrics.SetChannel(channel.ID, item.ModelName)
+		metrics.SetChannel(channel.ID, channel.Name, item.ModelName)
 
 		rc := &relayContext{
 			c:               c,

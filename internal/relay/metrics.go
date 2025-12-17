@@ -16,6 +16,7 @@ import (
 type RelayMetrics struct {
 	// 基础信息
 	ChannelID      int
+	ChannelName    string // 渠道名称
 	RequestModel   string // 请求的模型名称
 	ActualModel    string // 实际使用的模型名称
 	StartTime      time.Time
@@ -38,8 +39,9 @@ func NewRelayMetrics(requestModel string) *RelayMetrics {
 }
 
 // SetChannel 设置通道信息
-func (m *RelayMetrics) SetChannel(channelID int, actualModel string) {
+func (m *RelayMetrics) SetChannel(channelID int, channelName string, actualModel string) {
 	m.ChannelID = channelID
+	m.ChannelName = channelName
 	m.ActualModel = actualModel
 }
 
@@ -121,6 +123,7 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 	relayLog := model.RelayLog{
 		Time:             m.StartTime.Unix(),
 		RequestModelName: m.RequestModel,
+		ChannelName:      m.ChannelName,
 		ChannelId:        m.ChannelID,
 		ActualModelName:  m.ActualModel,
 		UseTime:          int(duration.Milliseconds()),
