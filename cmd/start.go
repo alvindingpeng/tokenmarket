@@ -21,19 +21,19 @@ var startCmd = &cobra.Command{
 		conf.Load(cfgFile)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		sd := shutdown.New(log.Logger)
-		defer sd.Listen()
+		shutdown.Init(log.Logger)
+		defer shutdown.Listen()
 		if err := db.InitDB(conf.AppConfig.Database.Path, conf.IsDebug()); err != nil {
 			log.Errorf("database init error: %v", err)
 			return
 		}
-		sd.Register(db.Close)
+		shutdown.Register(db.Close)
 
 		if err := op.InitCache(); err != nil {
 			log.Errorf("cache init error: %v", err)
 			return
 		}
-		sd.Register(op.SaveCache)
+		shutdown.Register(op.SaveCache)
 
 		if err := op.UserInit(); err != nil {
 			log.Errorf("user init error: %v", err)
@@ -44,7 +44,7 @@ var startCmd = &cobra.Command{
 			log.Errorf("server start error: %v", err)
 			return
 		}
-		sd.Register(server.Close)
+		shutdown.Register(server.Close)
 
 		go task.RUN()
 	},

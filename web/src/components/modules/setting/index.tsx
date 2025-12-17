@@ -6,10 +6,14 @@ import { SettingSystem } from './System';
 import { SettingAPIKey } from './APIKey';
 import { SettingLLMPrice } from './LLMPrice';
 import { SettingAccount } from './Account';
+import { SettingInfo } from './Info';
 
 export function Setting() {
     return (
         <PageWrapper className="columns-1 md:columns-2 gap-4 [&>div]:mb-4 [&>div]:break-inside-avoid">
+            <div>
+                <SettingInfo key="setting-info" />
+            </div>
             <div>
                 <SettingAppearance key="setting-appearance" />
             </div>

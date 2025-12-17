@@ -13,33 +13,41 @@ type logger interface {
 	Debugf(template string, args ...interface{})
 }
 
-type ShutDown struct {
-	log   logger
-	funcs []func() error
+var ilog logger
+var funcs []func() error
+
+func Init(log logger) {
+	ilog = log
+	funcs = make([]func() error, 0)
 }
 
-func New(log logger) *ShutDown {
-	return &ShutDown{log: log}
+func Register(fn func() error) {
+	funcs = append(funcs, fn)
 }
 
-func (s *ShutDown) Register(fn func() error) {
-	s.funcs = append(s.funcs, fn)
-}
-
-func (s *ShutDown) Listen() {
+func Listen() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-	s.log.Infof("Program started, press Ctrl+C to exit")
+	ilog.Infof("Program started, press Ctrl+C to exit")
 	sig := <-quit
-	s.log.Warnf("Received exit signal: %v", sig)
-	if len(s.funcs) == 0 {
+	ilog.Warnf("Received exit signal: %v", sig)
+	if len(funcs) == 0 {
 		return
 	}
-	for i := len(s.funcs) - 1; i >= 0; i-- {
-		if err := s.funcs[i](); err != nil {
-			s.log.Errorf("Closing functions execution failed: %v", err)
+	for i := len(funcs) - 1; i >= 0; i-- {
+		if err := funcs[i](); err != nil {
+			ilog.Errorf("Closing functions execution failed: %v", err)
 		}
 	}
-	s.log.Infof("Shutdown completed successfully")
+	ilog.Infof("Shutdown completed successfully")
 	os.Exit(0)
+}
+
+func Shutdown() {
+	for i := len(funcs) - 1; i >= 0; i-- {
+		if err := funcs[i](); err != nil {
+			ilog.Errorf("Closing functions execution failed: %v", err)
+		}
+	}
+	ilog.Infof("Shutdown completed successfully")
 }

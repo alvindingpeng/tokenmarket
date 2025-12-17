@@ -87,18 +87,22 @@ go run main.go start
 <tr>
 <td align="center"><b>首页仪表盘</b></td>
 <td align="center"><b>渠道管理</b></td>
+<td align="center"><b>分组管理</b></td>
 </tr>
 <tr>
 <td><img src="web/public/screenshot/desktop-home.png" alt="首页" width="400"></td>
 <td><img src="web/public/screenshot/desktop-channel.png" alt="渠道" width="400"></td>
-</tr>
-<tr>
-<td align="center"><b>分组管理</b></td>
-<td align="center"><b>模型管理</b></td>
-</tr>
-<tr>
 <td><img src="web/public/screenshot/desktop-group.png" alt="分组" width="400"></td>
+</tr>
+<tr>
+<td align="center"><b>模型管理</b></td>
+<td align="center"><b>日志</b></td>
+<td align="center"><b>设置</b></td>
+</tr>
+<tr>
 <td><img src="web/public/screenshot/desktop-model.png" alt="模型" width="400"></td>
+<td><img src="web/public/screenshot/desktop-log.png" alt="日志" width="400"></td>
+<td><img src="web/public/screenshot/desktop-setting.png" alt="设置" width="400"></td>
 </tr>
 </table>
 </div>
@@ -112,6 +116,7 @@ go run main.go start
 <td align="center"><b>渠道</b></td>
 <td align="center"><b>分组</b></td>
 <td align="center"><b>模型</b></td>
+<td align="center"><b>日志</b></td>
 <td align="center"><b>设置</b></td>
 </tr>
 <tr>
@@ -119,6 +124,7 @@ go run main.go start
 <td><img src="web/public/screenshot/mobile-channel.png" alt="移动端渠道" width="140"></td>
 <td><img src="web/public/screenshot/mobile-group.png" alt="移动端分组" width="140"></td>
 <td><img src="web/public/screenshot/mobile-model.png" alt="移动端模型" width="140"></td>
+<td><img src="web/public/screenshot/mobile-log.png" alt="移动端日志" width="140"></td>
 <td><img src="web/public/screenshot/mobile-setting.png" alt="移动端设置" width="140"></td>
 </tr>
 </table>
