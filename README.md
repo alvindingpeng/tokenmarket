@@ -46,16 +46,37 @@ docker compose up -d
 
 ### 🛠️ 源码运行
 
+**环境要求：**
+- Go 1.24.4
+- Node.js 18+
+- npm 或 pnpm
+
 ```bash
 # 克隆项目
 git clone https://github.com/alvindingpeng/switchyard.git
-
-# 进入目录
 cd switchyard
 
-# 启动服务
-go run main.go start
+# 1. 构建前端
+cd web
+
+# 使用 npm
+npm install
+npm run build
+
+# 或者使用 pnpm
+pnpm install
+pnpm run build
+
+cd ..
+
+# 2. 移动前端产物到 static 目录
+mv web/out static/
+
+# 3. 启动后端服务
+go run . start
 ```
+
+> 💡 **提示**：前端构建产物会被嵌入到 Go 二进制文件中，所以必须先构建前端再启动后端。
 
 ### 🔐 默认账户
 

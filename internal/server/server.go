@@ -23,6 +23,15 @@ func Start() error {
 	}
 
 	r := gin.New()
+	r.Use(gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": gin.H{
+				"message": "internal server error",
+				"type":    "server_error",
+			},
+		})
+		c.Abort()
+	}))
 
 	if conf.IsDebug() {
 		r.Use(middleware.Cors())
