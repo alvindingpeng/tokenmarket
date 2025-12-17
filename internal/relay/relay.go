@@ -98,10 +98,18 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		internalRequest.Model = item.ModelName
 		metrics.SetChannel(channel.ID, channel.Name, item.ModelName)
 
+		outAdapter := outbound.Get(channel.Type)
+		if outAdapter == nil {
+			log.Warnf("unsupported channel type: %d for channel: %s", channel.Type, channel.Name)
+			lastErr = fmt.Errorf("unsupported channel type: %d", channel.Type)
+			item = b.Next(group.Items, item)
+			continue
+		}
+
 		rc := &relayContext{
 			c:               c,
 			inAdapter:       inAdapter,
-			outAdapter:      outbound.Get(channel.Type),
+			outAdapter:      outAdapter,
 			internalRequest: internalRequest,
 			channel:         channel,
 			metrics:         metrics,
