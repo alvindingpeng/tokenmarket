@@ -75,9 +75,16 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		return
 	}
 
-	// 循环尝试各个通道
+	const maxRetries = 3
 	var lastErr error
-	for item != nil {
+	for attempt := 0; item != nil && attempt < maxRetries; attempt++ {
+		select {
+		case <-c.Request.Context().Done():
+			log.Infof("request context canceled, stopping retry")
+			return
+		default:
+		}
+
 		channel, err := op.ChannelGet(item.ChannelID, c.Request.Context())
 		if err != nil {
 			log.Warnf("failed to get channel: %v", err)
@@ -86,7 +93,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			continue
 		}
 
-		log.Infof("mode: %d, forwarding to channel: %s model: %s", group.Mode, channel.Name, item.ModelName)
+		log.Infof("request model %s, mode: %d, forwarding to channel: %s model: %s (attempt %d/%d)", internalRequest.Model, group.Mode, channel.Name, item.ModelName, attempt+1, maxRetries)
 
 		internalRequest.Model = item.ModelName
 		metrics.SetChannel(channel.ID, channel.Name, item.ModelName)
@@ -100,13 +107,13 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			metrics:         metrics,
 		}
 
-		if rc.forward() {
+		if err := rc.forward(); err == nil {
 			rc.collectResponse()
 			metrics.Save(c.Request.Context(), true, nil)
 			return
+		} else {
+			lastErr = fmt.Errorf("channel %s failed: %v", channel.Name, err)
 		}
-
-		lastErr = fmt.Errorf("channel %s failed", channel.Name)
 		item = b.Next(group.Items, item)
 	}
 
@@ -139,7 +146,7 @@ func parseRequest(inboundType inbound.InboundType, c *gin.Context) (*model.Inter
 }
 
 // forward 转发请求到上游服务
-func (rc *relayContext) forward() bool {
+func (rc *relayContext) forward() error {
 	ctx := rc.c.Request.Context()
 
 	// 构建出站请求
@@ -151,7 +158,7 @@ func (rc *relayContext) forward() bool {
 	)
 	if err != nil {
 		log.Warnf("failed to create request: %v", err)
-		return false
+		return fmt.Errorf("failed to create request: %w", err)
 	}
 
 	// 复制请求头
@@ -160,14 +167,14 @@ func (rc *relayContext) forward() bool {
 	// 发送请求
 	response, err := rc.sendRequest(outboundRequest)
 	if err != nil {
-		return false
+		return fmt.Errorf("failed to send request: %w", err)
 	}
 	defer response.Body.Close()
 
 	// 检查响应状态
 	if response.StatusCode != http.StatusOK {
-		rc.logUpstreamError(response)
-		return false
+		errMsg := rc.readUpstreamError(response)
+		return fmt.Errorf("upstream error %d: %s", response.StatusCode, errMsg)
 	}
 
 	// 处理响应
@@ -206,15 +213,16 @@ func (rc *relayContext) sendRequest(req *http.Request) (*http.Response, error) {
 	return response, nil
 }
 
-// logUpstreamError 记录上游错误日志
-func (rc *relayContext) logUpstreamError(response *http.Response) {
-	log.Warnf("upstream server error: %d", response.StatusCode)
+// readUpstreamError 读取上游错误信息
+func (rc *relayContext) readUpstreamError(response *http.Response) string {
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		log.Warnf("failed to read response body: %v", err)
-		return
+		return "failed to read error body"
 	}
-	log.Warnf("upstream server error: %s", string(body))
+	errMsg := string(body)
+	log.Warnf("upstream server error: %d - %s", response.StatusCode, errMsg)
+	return errMsg
 }
 
 // isStreamRequest 判断是否为流式请求
@@ -223,7 +231,7 @@ func (rc *relayContext) isStreamRequest() bool {
 }
 
 // handleStreamResponse 处理流式响应
-func (rc *relayContext) handleStreamResponse(ctx context.Context, response *http.Response) bool {
+func (rc *relayContext) handleStreamResponse(ctx context.Context, response *http.Response) error {
 	// 设置 SSE 响应头
 	rc.c.Header("Content-Type", "text/event-stream")
 	rc.c.Header("Cache-Control", "no-cache")
@@ -236,7 +244,7 @@ func (rc *relayContext) handleStreamResponse(ctx context.Context, response *http
 		select {
 		case <-ctx.Done():
 			log.Infof("client disconnected, stopping stream")
-			return true
+			return nil
 		default:
 		}
 
@@ -250,7 +258,6 @@ func (rc *relayContext) handleStreamResponse(ctx context.Context, response *http
 		if err != nil || len(data) == 0 {
 			continue
 		}
-
 		// 记录首个 Token 时间
 		if firstToken {
 			rc.metrics.SetFirstTokenTime(time.Now())
@@ -262,7 +269,7 @@ func (rc *relayContext) handleStreamResponse(ctx context.Context, response *http
 	}
 
 	log.Infof("stream end")
-	return true
+	return nil
 }
 
 // transformStreamData 转换流式数据
@@ -288,23 +295,23 @@ func (rc *relayContext) transformStreamData(ctx context.Context, data string) ([
 }
 
 // handleResponse 处理非流式响应
-func (rc *relayContext) handleResponse(ctx context.Context, response *http.Response) bool {
+func (rc *relayContext) handleResponse(ctx context.Context, response *http.Response) error {
 	// 上游格式 → 内部格式
 	internalResponse, err := rc.outAdapter.TransformResponse(ctx, response)
 	if err != nil {
 		log.Warnf("failed to transform response: %v", err)
-		return false
+		return fmt.Errorf("failed to transform outbound response: %w", err)
 	}
 
 	// 内部格式 → 入站格式
 	inResponse, err := rc.inAdapter.TransformResponse(ctx, internalResponse)
 	if err != nil {
 		log.Warnf("failed to transform response: %v", err)
-		return false
+		return fmt.Errorf("failed to transform inbound response: %w", err)
 	}
 
 	rc.c.Data(http.StatusOK, "application/json", inResponse)
-	return true
+	return nil
 }
 
 // collectResponse 收集响应信息
