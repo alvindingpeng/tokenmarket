@@ -18,6 +18,7 @@
         "group": "分组",
         "key": "密钥",
         "model": "模型",
+        "log": "日志",
         "setting": "设置"
     },
     "home": {
@@ -170,6 +171,23 @@
             "cacheWrite": "缓存写入",
             "submit": "创建",
             "submitting": "创建中..."
+        }
+    },
+    "log": {
+        "card": {
+            "error": "错误",
+            "errorInfo": "错误信息",
+            "firstToken": "首字",
+            "totalTime": "总耗时",
+            "input": "输入",
+            "output": "输出",
+            "cost": "费用",
+            "requestContent": "请求内容",
+            "responseContent": "响应内容",
+            "noRequestContent": "(无请求内容)",
+            "noResponseContent": "(无响应内容)",
+            "firstTokenTime": "首字时间",
+            "tokens": "tokens"
         }
     },
     "channel": {

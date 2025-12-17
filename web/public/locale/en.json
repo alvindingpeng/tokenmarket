@@ -18,6 +18,7 @@
         "group": "Group",
         "key": "Key",
         "model": "Model",
+        "log": "Log",
         "setting": "Setting"
     },
     "home": {
@@ -170,6 +171,23 @@
             "cacheWrite": "Cache Write",
             "submit": "Create",
             "submitting": "Creating..."
+        }
+    },
+    "log": {
+        "card": {
+            "error": "Error",
+            "errorInfo": "Error Info",
+            "firstToken": "TTFT",
+            "totalTime": "Total",
+            "input": "Input",
+            "output": "Output",
+            "cost": "Cost",
+            "requestContent": "Request Content",
+            "responseContent": "Response Content",
+            "noRequestContent": "(No request content)",
+            "noResponseContent": "(No response content)",
+            "firstTokenTime": "First Token Time",
+            "tokens": "tokens"
         }
     },
     "channel": {

@@ -96,7 +96,6 @@ export function AppContainer() {
                                 className="flex items-center"
                             >
                                 <span className="text-3xl font-bold mt-1">{t(activeItem)}</span>
-                                {/* Header 插槽 - 子页面通过 Portal 渲染到这里 */}
                             </motion.div>
                         </AnimatePresence>
                     </div>

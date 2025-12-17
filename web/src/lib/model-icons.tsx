@@ -38,6 +38,7 @@ import {
     Stepfun,
     Gemma,
     Microsoft,
+    KwaiKAT,
 } from '@lobehub/icons';
 
 type AvatarComponent = typeof OpenAI.Avatar;
@@ -56,7 +57,7 @@ const MODEL_ICON_PATTERNS: ModelIconConfig[] = [
     // OpenAI - GPT series
     { prefixes: ['gpt-', 'o1', 'o3', 'o4', 'chatgpt', 'text-embedding', 'dall-e', 'openai'], Avatar: OpenAI.Avatar, color: '#10A37F' },
     // Anthropic - Claude series
-    { prefixes: ['claude', 'anthropic'], Avatar: Claude.Avatar, color: '#D97757' },
+    { prefixes: ['claude', 'anthropic'], Avatar: Claude.Avatar, color: '#D7765A' },
     // Google - Gemini series
     { prefixes: ['gemini'], Avatar: Gemini.Avatar, color: '#4285F4' },
     { prefixes: ['gemma'], Avatar: Gemma.Avatar, color: '#4285F4' },
@@ -68,7 +69,7 @@ const MODEL_ICON_PATTERNS: ModelIconConfig[] = [
     // Alibaba - Qwen series
     { prefixes: ['qwen', 'qwq', 'alibaba'], Avatar: Qwen.Avatar, color: '#6B4EFF' },
     // Zhipu - GLM series
-    { prefixes: ['glm', 'chatglm', 'zhipu'], Avatar: Zhipu.Avatar, color: '#3860F4' },
+    { prefixes: ['glm', 'chatglm', 'zhipu'], Avatar: Zhipu.Avatar, color: '#3C5BFC' },
     // MiniMax series
     { prefixes: ['minimax', 'abab'], Avatar: Minimax.Avatar, color: '#1A1A2E' },
     // Moonshot/Kimi series
@@ -113,6 +114,7 @@ const MODEL_ICON_PATTERNS: ModelIconConfig[] = [
     { prefixes: ['cohere', 'command'], Avatar: Cohere.Avatar, color: '#39594D' },
     { prefixes: ['perplexity'], Avatar: Perplexity.Avatar, color: '#20B8CD' },
     { prefixes: ['phi-'], Avatar: Microsoft.Avatar, color: '#00BCF2' },
+    { prefixes: ['kat'], Avatar: KwaiKAT.Avatar, color: '#1969FC' },
 ];
 
 // Default configuration

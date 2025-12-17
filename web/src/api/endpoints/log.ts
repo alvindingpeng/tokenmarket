@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { logger } from '@/lib/logger';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useLogStore } from '@/stores/log';
 
 /**
  * 日志数据
@@ -11,6 +12,7 @@ export interface RelayLog {
     time: number;                // 时间戳
     request_model_name: string;  // 请求模型名称
     channel: number;             // 实际使用的渠道ID
+    channel_name: string;        // 渠道名称
     actual_model_name: string;   // 实际使用模型名称
     input_tokens: number;        // 输入Token
     output_tokens: number;       // 输出Token
@@ -19,6 +21,7 @@ export interface RelayLog {
     cost: number;                // 消耗费用
     request_content: string;     // 请求内容
     response_content: string;    // 响应内容
+    error: string;                // 错误信息
 }
 
 /**
@@ -90,6 +93,7 @@ export function useClearLogs() {
 
 /**
  * SSE 实时日志流 Hook
+ * 使用全局 store 缓存日志，切换页面不会丢失
  * 
  * @example
  * const { logs, isConnected, error, clear } = useLogStream();
@@ -100,15 +104,13 @@ export function useClearLogs() {
  * // 清空当前接收的日志
  * clear();
  */
-export function useLogStream(maxLogs: number = 100) {
-    const [logs, setLogs] = useState<RelayLog[]>([]);
+export function useLogStream(maxLogs: number = 500) {
     const [isConnected, setIsConnected] = useState(false);
     const [error, setError] = useState<Error | null>(null);
     const eventSourceRef = useRef<EventSource | null>(null);
 
-    const clear = useCallback(() => {
-        setLogs([]);
-    }, []);
+    // 使用全局 store 存储日志
+    const { streamLogs, addStreamLog, clearStreamLogs } = useLogStore();
 
     useEffect(() => {
         let eventSource: EventSource | null = null;
@@ -119,7 +121,7 @@ export function useLogStream(maxLogs: number = 100) {
                 const { token } = await apiClient.get<{ token: string }>('/api/v1/log/stream-token');
 
                 // 使用临时 token 连接 SSE
-                eventSource = new EventSource(`/api/v1/log/stream?token=${token}`);
+                eventSource = new EventSource(`${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/v1/log/stream?token=${token}`);
                 eventSourceRef.current = eventSource;
 
                 eventSource.onopen = () => {
@@ -130,13 +132,7 @@ export function useLogStream(maxLogs: number = 100) {
                 eventSource.onmessage = (event) => {
                     try {
                         const log: RelayLog = JSON.parse(event.data);
-                        setLogs((prevLogs) => {
-                            const newLogs = [log, ...prevLogs];
-                            if (newLogs.length > maxLogs) {
-                                return newLogs.slice(0, maxLogs);
-                            }
-                            return newLogs;
-                        });
+                        addStreamLog(log, maxLogs);
                     } catch (e) {
                         logger.error('解析日志数据失败:', e);
                     }
@@ -160,12 +156,12 @@ export function useLogStream(maxLogs: number = 100) {
             eventSourceRef.current = null;
             setIsConnected(false);
         };
-    }, [maxLogs]);
+    }, [maxLogs, addStreamLog]);
 
     return {
-        logs,
+        logs: streamLogs,
         isConnected,
         error,
-        clear,
+        clear: clearStreamLogs,
     };
 }
