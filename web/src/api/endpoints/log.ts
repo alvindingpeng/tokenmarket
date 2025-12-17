@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { logger } from '@/lib/logger';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLogStore } from '@/stores/log';
 
 /**
@@ -92,35 +92,79 @@ export function useClearLogs() {
 }
 
 /**
- * SSE 实时日志流 Hook
- * 使用全局 store 缓存日志，切换页面不会丢失
+ * 日志管理 Hook
+ * 整合初始加载、SSE 实时推送、滚动加载更多
  * 
  * @example
- * const { logs, isConnected, error, clear } = useLogStream();
+ * const { logs, isConnected, hasMore, isLoadingMore, loadMore, clear } = useLogs();
  * 
- * // logs 会实时更新
+ * // logs 自动包含历史日志和实时日志，按时间倒序
  * logs.forEach(log => console.log(log.request_model_name));
  * 
- * // 清空当前接收的日志
- * clear();
+ * // 滚动到底部时加载更多
+ * if (hasMore && !isLoadingMore) loadMore();
  */
-export function useLogStream(maxLogs: number = 500) {
+export function useLogs(options: { pageSize?: number } = {}) {
+    const { pageSize = 20 } = options;
+
     const [isConnected, setIsConnected] = useState(false);
     const [error, setError] = useState<Error | null>(null);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
     const eventSourceRef = useRef<EventSource | null>(null);
+    const initializedRef = useRef(false);
+    const pageRef = useRef(1);
 
-    // 使用全局 store 存储日志
-    const { streamLogs, addStreamLog, clearStreamLogs } = useLogStore();
+    // 使用全局 store
+    const { logs, hasMore, initializeLogs, appendLogs, addLog, clearLogs } = useLogStore();
 
+    // 初始加载历史日志
+    const { data: initialLogs, isLoading: isInitialLoading } = useQuery({
+        queryKey: ['logs', 'initial', pageSize],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            params.set('page', '1');
+            params.set('page_size', String(pageSize));
+            return apiClient.get<RelayLog[]>(`/api/v1/log/list?${params.toString()}`);
+        },
+        staleTime: Infinity,
+    });
+
+    // 将初始日志添加到 store
+    useEffect(() => {
+        if (initialLogs && !initializedRef.current) {
+            initializeLogs(initialLogs, pageSize);
+            initializedRef.current = true;
+        }
+    }, [initialLogs, initializeLogs, pageSize]);
+
+    // 加载更多历史日志
+    const loadMore = useCallback(async () => {
+        if (isLoadingMore || !hasMore) return;
+
+        setIsLoadingMore(true);
+        try {
+            const nextPage = pageRef.current + 1;
+            const params = new URLSearchParams();
+            params.set('page', String(nextPage));
+            params.set('page_size', String(pageSize));
+
+            const moreLogs = await apiClient.get<RelayLog[]>(`/api/v1/log/list?${params.toString()}`);
+            appendLogs(moreLogs, pageSize);
+            pageRef.current = nextPage;
+        } catch (e) {
+            logger.error('加载更多日志失败:', e);
+        } finally {
+            setIsLoadingMore(false);
+        }
+    }, [isLoadingMore, hasMore, pageSize, appendLogs]);
+
+    // SSE 连接
     useEffect(() => {
         let eventSource: EventSource | null = null;
 
         const connect = async () => {
             try {
-                // 先获取临时 token
                 const { token } = await apiClient.get<{ token: string }>('/api/v1/log/stream-token');
-
-                // 使用临时 token 连接 SSE
                 eventSource = new EventSource(`${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/v1/log/stream?token=${token}`);
                 eventSourceRef.current = eventSource;
 
@@ -132,7 +176,7 @@ export function useLogStream(maxLogs: number = 500) {
                 eventSource.onmessage = (event) => {
                     try {
                         const log: RelayLog = JSON.parse(event.data);
-                        addStreamLog(log, maxLogs);
+                        addLog(log);
                     } catch (e) {
                         logger.error('解析日志数据失败:', e);
                     }
@@ -156,12 +200,23 @@ export function useLogStream(maxLogs: number = 500) {
             eventSourceRef.current = null;
             setIsConnected(false);
         };
-    }, [maxLogs, addStreamLog]);
+    }, [addLog]);
+
+    // 清空时重置分页
+    const clear = useCallback(() => {
+        clearLogs();
+        pageRef.current = 1;
+        initializedRef.current = false;
+    }, [clearLogs]);
 
     return {
-        logs: streamLogs,
+        logs,
         isConnected,
         error,
-        clear: clearStreamLogs,
+        hasMore,
+        isLoading: isInitialLoading,
+        isLoadingMore,
+        loadMore,
+        clear,
     };
 }
