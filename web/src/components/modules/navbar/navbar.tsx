@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { motion } from "motion/react"
 import { cn } from "@/lib/utils"
 import { useNavStore, type NavItem } from "@/components/modules/navbar"
@@ -7,9 +8,32 @@ import { ROUTES } from "@/route/config"
 import { usePreload } from "@/route/use-preload"
 import { ENTRANCE_VARIANTS } from "@/lib/animations/fluid-transitions"
 
+// 尺寸配置 - 按钮 = padding*2 + icon(24px)
+const MOBILE = { size: 40, gap: 4 }   // p-2 (8*2) + icon 24 = 40, gap-1 = 4
+const DESKTOP = { size: 48, gap: 12 } // p-3 (12*2) + icon 24 = 48, gap-3 = 12
+
 export function NavBar() {
     const { activeItem, setActiveItem } = useNavStore()
     const { preload } = usePreload()
+
+    // 检测是否为桌面端
+    const [isDesktop, setIsDesktop] = useState(false)
+
+    useEffect(() => {
+        const mediaQuery = window.matchMedia('(min-width: 768px)')
+        setIsDesktop(mediaQuery.matches)
+
+        const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
+        mediaQuery.addEventListener('change', handler)
+        return () => mediaQuery.removeEventListener('change', handler)
+    }, [])
+
+    // 计算当前选中项的索引
+    const activeIndex = ROUTES.findIndex(route => route.id === activeItem)
+
+    // 计算指示器的偏移量
+    const config = isDesktop ? DESKTOP : MOBILE
+    const offset = activeIndex * (config.size + config.gap)
 
     return (
         <div className="relative z-50 md:min-h-screen">
@@ -25,38 +49,50 @@ export function NavBar() {
                 initial="initial"
                 animate="animate"
             >
-                {ROUTES.map((route, index) => (
-                    <motion.button
-                        key={route.id}
-                        type="button"
-                        onClick={() => setActiveItem(route.id as NavItem)}
-                        onMouseEnter={() => preload(route.id)}
-                        className={cn(
-                            "relative p-2 md:p-3 rounded-2xl",
-                            activeItem === route.id ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/60 hover:bg-sidebar-accent"
-                        )}
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{
-                            opacity: 1,
-                            scale: 1,
-                            transition: {
-                                delay: index * 0.05,
-                                duration: 0.3,
-                            }
-                        }}
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.95 }}
-                    >
-                        {activeItem === route.id && (
-                            <motion.div
-                                layoutId="active-nav"
-                                className="transition-none absolute inset-0 bg-sidebar-primary rounded-2xl"
-                                transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                            />
-                        )}
-                        <route.icon strokeWidth={2} className="relative" />
-                    </motion.button>
-                ))}
+                {/* 选中指示器 - 使用 Framer Motion 动画 */}
+                <motion.div
+                    className={cn(
+                        "absolute bg-sidebar-primary rounded-2xl pointer-events-none",
+                        "w-10 h-10 md:w-12 md:h-12",  // 40px / 48px 匹配按钮尺寸
+                        "top-3 left-3",  // p-3 = 12px，与第一个按钮对齐
+                        "z-10"  // 在 hover 背景之上
+                    )}
+                    initial={false}
+                    animate={{
+                        x: isDesktop ? 0 : offset,
+                        y: isDesktop ? offset : 0,
+                    }}
+                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                />
+
+                {ROUTES.map((route, index) => {
+                    const isActive = activeItem === route.id
+                    return (
+                        <motion.button
+                            key={route.id}
+                            type="button"
+                            onClick={() => setActiveItem(route.id as NavItem)}
+                            onMouseEnter={() => preload(route.id)}
+                            className={cn(
+                                "relative p-2 md:p-3 rounded-2xl z-20",
+                                isActive ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/60 hover:bg-sidebar-accent"
+                            )}
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{
+                                opacity: 1,
+                                scale: 1,
+                                transition: {
+                                    delay: index * 0.05,
+                                    duration: 0.3,
+                                }
+                            }}
+                            whileHover={{ scale: 1.1, zIndex: 30 }}
+                            whileTap={{ scale: 0.95 }}
+                        >
+                            <route.icon strokeWidth={2} />
+                        </motion.button>
+                    )
+                })}
             </motion.nav>
         </div>
     )
