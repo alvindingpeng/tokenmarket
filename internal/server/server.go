@@ -7,6 +7,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/conf"
 	_ "github.com/alvindingpeng/switchyard/internal/server/handlers"
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
+	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/alvindingpeng/switchyard/internal/server/router"
 	"github.com/alvindingpeng/switchyard/internal/utils/log"
 	"github.com/alvindingpeng/switchyard/static"
@@ -24,12 +25,7 @@ func Start() error {
 
 	r := gin.New()
 	r.Use(gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": gin.H{
-				"message": "internal server error",
-				"type":    "server_error",
-			},
-		})
+		resp.Error(c, http.StatusInternalServerError, resp.ErrInternalServer)
 		c.Abort()
 	}))
 
