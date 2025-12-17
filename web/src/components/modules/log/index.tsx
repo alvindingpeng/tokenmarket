@@ -13,17 +13,16 @@ import { Loader2 } from 'lucide-react';
  * - 滚动自动加载更多
  */
 export function Log() {
-    const { logs, hasMore, isLoadingMore, loadMore } = useLogs({ pageSize: 20 });
+    const { logs, hasMore, isLoading, isLoadingMore, loadMore } = useLogs({ pageSize: 20 });
     const loadMoreRef = useRef<HTMLDivElement>(null);
 
-    // Intersection Observer 监听滚动到底部
     useEffect(() => {
         const target = loadMoreRef.current;
         if (!target) return;
 
         const observer = new IntersectionObserver(
             (entries) => {
-                if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
+                if (entries[0].isIntersecting && hasMore && !isLoadingMore && !isLoading && logs.length > 0) {
                     loadMore();
                 }
             },
@@ -32,7 +31,7 @@ export function Log() {
 
         observer.observe(target);
         return () => observer.disconnect();
-    }, [hasMore, isLoadingMore, loadMore]);
+    }, [hasMore, isLoading, isLoadingMore, loadMore, logs.length]);
 
     return (
         <PageWrapper className="grid grid-cols-1 gap-4">
@@ -40,7 +39,6 @@ export function Log() {
                 <LogCard key={`log-${log.id}`} log={log} />
             ))}
 
-            {/* 加载更多触发器 */}
             <div ref={loadMoreRef} className="flex justify-center py-4">
                 {isLoadingMore && (
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
