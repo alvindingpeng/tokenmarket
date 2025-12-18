@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Trash2, Layers, X, Plus, Check, Copy, Loader2 } from 'lucide-react';
 import { Reorder, motion, AnimatePresence } from 'motion/react';
 import { type Group, useDeleteGroup, useUpdateGroup } from '@/api/endpoints/group';
-import { useModelChannelList, type LLMChannel } from '@/api/endpoints/model';
+import { type LLMChannel } from '@/api/endpoints/model';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/common/Toast';
@@ -14,7 +14,6 @@ export function GroupCard({ group }: { group: Group }) {
     const t = useTranslations('group');
     const updateGroup = useUpdateGroup();
     const deleteGroup = useDeleteGroup();
-    const { data: modelChannels = [] } = useModelChannelList();
 
     const [members, setMembers] = useState<SelectedMember[]>([]);
     const [isAdding, setIsAdding] = useState(false);
@@ -23,18 +22,6 @@ export function GroupCard({ group }: { group: Group }) {
     const isDragging = useRef(false);
     const weightTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-    const { channelMap, channels } = useMemo(() => {
-        const map = new Map<number, string>();
-        const list: { id: number; name: string }[] = [];
-        modelChannels.forEach((mc) => {
-            if (!map.has(mc.channel_id)) {
-                map.set(mc.channel_id, mc.channel_name);
-                list.push({ id: mc.channel_id, name: mc.channel_name });
-            }
-        });
-        return { channelMap: map, channels: list };
-    }, [modelChannels]);
-
     const displayMembers = useMemo(() =>
         [...(group.items || [])]
             .sort((a, b) => a.priority - b.priority)
@@ -42,11 +29,11 @@ export function GroupCard({ group }: { group: Group }) {
                 id: `${item.channel_id}-${item.model_name}-${item.id || 0}`,
                 name: item.model_name,
                 channel_id: item.channel_id,
-                channel_name: channelMap.get(item.channel_id) || `Channel ${item.channel_id}`,
+                channel_name: `Channel ${item.channel_id}`,
                 item_id: item.id,
                 weight: item.weight,
             })),
-        [group.items, channelMap]
+        [group.items]
     );
 
     useEffect(() => {
@@ -172,20 +159,21 @@ export function GroupCard({ group }: { group: Group }) {
                 ))}
             </div>
 
-            <section className="flex-1 rounded-xl border border-border/50 bg-muted/30 overflow-hidden relative min-h-0">
+            {/* Member list: fixed height with internal scroll */}
+            <section className="h-96 rounded-xl border border-border/50 bg-muted/30 overflow-hidden relative">
                 <div className={cn('absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground transition-opacity duration-200', isEmpty ? 'opacity-100' : 'opacity-0 pointer-events-none')}>
                     <Layers className="size-8 opacity-40" />
                     <span className="text-xs">{t('card.empty')}</span>
                 </div>
 
-                <div className={cn('min-h-100 overflow-y-auto transition-opacity duration-200', isEmpty && 'opacity-0')}>
+                <div className={cn('h-full overflow-y-auto transition-opacity duration-200', isEmpty && 'opacity-0')}>
                     <div className="p-2 flex flex-col gap-1.5">
                         <Reorder.Group axis="y" values={members} onReorder={setMembers} className="flex flex-col gap-1.5">
                             {members.map((m, i) => (
                                 <MemberItem key={m.id} member={m} onRemove={handleRemoveMember} onWeightChange={handleWeightChange} onDragStart={handleDragStart} onDragEnd={handleDragEnd} index={i} editable showWeight={group.mode === 4} />
                             ))}
                         </Reorder.Group>
-                        {isAdding && <AddMemberRow index={members.length} channels={channels} modelChannels={modelChannels} selectedMembers={members} onConfirm={handleAddMember} onCancel={() => setIsAdding(false)} />}
+                        {isAdding && <AddMemberRow index={members.length} selectedMembers={members} onConfirm={handleAddMember} onCancel={() => setIsAdding(false)} />}
                     </div>
                 </div>
             </section>
