@@ -233,14 +233,7 @@ export function LogCard({ log }: { log: RelayLog }) {
                                         </Badge>
                                     )}
                                 </div>
-                                {hasError && (
-                                    <Badge variant="destructive" className="shrink-0 gap-1">
-                                        <AlertCircle className="h-3 w-3" />
-                                        {t('error')}
-                                    </Badge>
-                                )}
                             </div>
-
                             <div className="grid grid-cols-2 md:grid-cols-6 gap-x-4 gap-y-2">
                                 <div className="flex items-center gap-1.5">
                                     <Clock className="h-3.5 w-3.5 shrink-0" style={{ color: brandColor }} />

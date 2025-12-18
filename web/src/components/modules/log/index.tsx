@@ -3,8 +3,9 @@
 import { useEffect, useRef } from 'react';
 import { useLogs } from '@/api/endpoints/log';
 import { PageWrapper } from '@/components/common/PageWrapper';
-import { LogCard } from './Card';
+import { LogCard } from './Item';
 import { Loader2 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 /**
  * 日志页面组件
@@ -13,8 +14,10 @@ import { Loader2 } from 'lucide-react';
  * - 滚动自动加载更多
  */
 export function Log() {
-    const { logs, hasMore, isLoading, isLoadingMore, loadMore } = useLogs({ pageSize: 20 });
+    const t = useTranslations('log');
+    const { logs, hasMore, isLoading, isLoadingMore, loadMore } = useLogs({ pageSize: 10 });
     const loadMoreRef = useRef<HTMLDivElement>(null);
+    const armedRef = useRef(true);
 
     useEffect(() => {
         const target = loadMoreRef.current;
@@ -22,9 +25,19 @@ export function Log() {
 
         const observer = new IntersectionObserver(
             (entries) => {
-                if (entries[0].isIntersecting && hasMore && !isLoadingMore && !isLoading && logs.length > 0) {
-                    loadMore();
+                const entry = entries[0];
+                if (!entry) return;
+
+                if (!entry.isIntersecting) {
+                    armedRef.current = true;
+                    return;
                 }
+
+                if (!armedRef.current) return;
+                if (!hasMore || isLoading || isLoadingMore || logs.length === 0) return;
+
+                armedRef.current = false;
+                loadMore();
             },
             { rootMargin: '100px' }
         );
@@ -40,11 +53,11 @@ export function Log() {
             ))}
 
             <div ref={loadMoreRef} className="flex justify-center py-4">
-                {isLoadingMore && (
+                {hasMore && (isLoadingMore || isLoading) && (
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 )}
                 {!hasMore && logs.length > 0 && (
-                    <span className="text-sm text-muted-foreground">没有更多日志了</span>
+                    <span className="text-sm text-muted-foreground">{t('list.noMore')}</span>
                 )}
             </div>
         </PageWrapper>

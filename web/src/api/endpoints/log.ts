@@ -1,8 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { InfiniteData } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { logger } from '@/lib/logger';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useLogStore } from '@/stores/log';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /**
  * 日志数据
@@ -83,13 +83,15 @@ export function useClearLogs() {
         },
         onSuccess: () => {
             logger.log('日志清空成功');
-            queryClient.invalidateQueries({ queryKey: ['logs', 'list'] });
+            queryClient.invalidateQueries({ queryKey: ['logs'] });
         },
         onError: (error) => {
             logger.error('日志清空失败:', error);
         },
     });
 }
+
+const logsInfiniteQueryKey = (pageSize: number) => ['logs', 'infinite', pageSize] as const;
 
 /**
  * 日志管理 Hook
@@ -109,56 +111,54 @@ export function useLogs(options: { pageSize?: number } = {}) {
 
     const [isConnected, setIsConnected] = useState(false);
     const [error, setError] = useState<Error | null>(null);
-    const [isLoadingMore, setIsLoadingMore] = useState(false);
     const eventSourceRef = useRef<EventSource | null>(null);
-    const initializedRef = useRef(false);
-    const pageRef = useRef(1);
 
-    // 使用全局 store
-    const { logs, hasMore, initializeLogs, appendLogs, addLog, clearLogs } = useLogStore();
+    const queryClient = useQueryClient();
 
-    // 初始加载历史日志
-    const { data: initialLogs, isLoading: isInitialLoading } = useQuery({
-        queryKey: ['logs', 'initial', pageSize],
-        queryFn: async () => {
+    const logsQuery = useInfiniteQuery({
+        queryKey: logsInfiniteQueryKey(pageSize),
+        initialPageParam: 1,
+        queryFn: async ({ pageParam }) => {
             const params = new URLSearchParams();
-            params.set('page', '1');
+            params.set('page', String(pageParam));
             params.set('page_size', String(pageSize));
             return apiClient.get<RelayLog[]>(`/api/v1/log/list?${params.toString()}`);
+        },
+        getNextPageParam: (lastPage, allPages) => {
+            if (!lastPage || lastPage.length < pageSize) return undefined;
+            return allPages.length + 1;
         },
         staleTime: Infinity,
     });
 
-    // 将初始日志添加到 store
-    useEffect(() => {
-        if (initialLogs && !initializedRef.current) {
-            initializeLogs(initialLogs, pageSize);
-            initializedRef.current = true;
+    const logs = useMemo(() => {
+        const pages = logsQuery.data?.pages ?? [];
+        const seen = new Set<number>();
+        const merged: RelayLog[] = [];
+
+        for (const page of pages) {
+            for (const log of page) {
+                if (seen.has(log.id)) continue;
+                seen.add(log.id);
+                merged.push(log);
+            }
         }
-    }, [initialLogs, initializeLogs, pageSize]);
 
-    // 加载更多历史日志
+        merged.sort((a, b) => b.time - a.time);
+        return merged;
+    }, [logsQuery.data]);
+
     const loadMore = useCallback(async () => {
-        if (isLoadingMore || !hasMore) return;
+        if (!logsQuery.hasNextPage) return;
+        if (logsQuery.isFetchingNextPage) return;
 
-        setIsLoadingMore(true);
         try {
-            const nextPage = pageRef.current + 1;
-            const params = new URLSearchParams();
-            params.set('page', String(nextPage));
-            params.set('page_size', String(pageSize));
-
-            const moreLogs = await apiClient.get<RelayLog[]>(`/api/v1/log/list?${params.toString()}`);
-            appendLogs(moreLogs, pageSize);
-            pageRef.current = nextPage;
+            await logsQuery.fetchNextPage();
         } catch (e) {
             logger.error('加载更多日志失败:', e);
-        } finally {
-            setIsLoadingMore(false);
         }
-    }, [isLoadingMore, hasMore, pageSize, appendLogs]);
+    }, [logsQuery.hasNextPage, logsQuery.isFetchingNextPage, logsQuery.fetchNextPage]);
 
-    // SSE 连接
     useEffect(() => {
         let eventSource: EventSource | null = null;
 
@@ -176,7 +176,20 @@ export function useLogs(options: { pageSize?: number } = {}) {
                 eventSource.onmessage = (event) => {
                     try {
                         const log: RelayLog = JSON.parse(event.data);
-                        addLog(log);
+                        queryClient.setQueryData(
+                            logsInfiniteQueryKey(pageSize),
+                            (old: InfiniteData<RelayLog[], number> | undefined) => {
+                                if (!old) {
+                                    return { pages: [[log]], pageParams: [1] };
+                                }
+
+                                const exists = old.pages.some((p) => p.some((x) => x.id === log.id));
+                                if (exists) return old;
+
+                                const firstPage = old.pages[0] ?? [];
+                                return { ...old, pages: [[log, ...firstPage], ...old.pages.slice(1)] };
+                            }
+                        );
                     } catch (e) {
                         logger.error('解析日志数据失败:', e);
                     }
@@ -200,22 +213,19 @@ export function useLogs(options: { pageSize?: number } = {}) {
             eventSourceRef.current = null;
             setIsConnected(false);
         };
-    }, [addLog]);
+    }, [pageSize, queryClient]);
 
-    // 清空时重置分页
     const clear = useCallback(() => {
-        clearLogs();
-        pageRef.current = 1;
-        initializedRef.current = false;
-    }, [clearLogs]);
+        queryClient.removeQueries({ queryKey: logsInfiniteQueryKey(pageSize) });
+    }, [pageSize, queryClient]);
 
     return {
         logs,
         isConnected,
         error,
-        hasMore,
-        isLoading: isInitialLoading,
-        isLoadingMore,
+        hasMore: !!logsQuery.hasNextPage,
+        isLoading: logsQuery.isLoading,
+        isLoadingMore: logsQuery.isFetchingNextPage,
         loadMore,
         clear,
     };

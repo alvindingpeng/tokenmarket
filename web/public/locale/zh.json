@@ -191,6 +191,9 @@
         }
     },
     "log": {
+        "list": {
+            "noMore": "没有更多日志了"
+        },
         "card": {
             "error": "错误",
             "errorInfo": "错误信息",
@@ -277,7 +280,9 @@
             "typeOpenAIChat": "OpenAI Chat",
             "typeOpenAIResponse": "OpenAI Response",
             "typeAnthropic": "Anthropic",
-            "typeOneAPI": "OneAPI"
+            "typeOneAPI": "OneAPI",
+            "autoSync": "自动同步",
+            "autoGroup": "自动分组"
         }
     }
 }
