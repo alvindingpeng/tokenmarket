@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
-import { Plus, Layers } from 'lucide-react';
+import { useMemo, useState, useCallback, type FormEvent } from 'react';
+import { Plus, Layers, Sparkles } from 'lucide-react';
 import { Reorder } from 'motion/react';
 import {
     MorphingDialogClose,
@@ -18,32 +18,54 @@ import { Field, FieldLabel, FieldGroup } from '@/components/ui/field';
 import { cn } from '@/lib/utils';
 import { MemberItem, AddMemberRow, type SelectedMember } from './components';
 
+function normalizeKey(value: string) {
+    return value.trim().toLowerCase();
+}
+
+function memberKey(member: Pick<SelectedMember, 'channel_id' | 'name'>) {
+    return `${member.channel_id}-${member.name}`;
+}
+
+function matchesGroupName(modelName: string, groupKey: string) {
+    if (!groupKey) return false;
+    return modelName.toLowerCase().includes(groupKey);
+}
+
 function MembersSection({
     members,
     onReorder,
     onRemove,
     onWeightChange,
     onAdd,
+    onAutoAdd,
     removingIds,
     emptyText,
-    channels,
-    modelChannels,
     showWeight,
+    autoAddDisabled,
 }: {
     members: SelectedMember[];
     onReorder: (members: SelectedMember[]) => void;
     onRemove: (id: string) => void;
     onWeightChange: (id: string, weight: number) => void;
     onAdd: (channel: LLMChannel) => void;
+    onAutoAdd: () => void;
     removingIds: Set<string>;
     emptyText: string;
-    channels: { id: number; name: string }[];
-    modelChannels: LLMChannel[];
     showWeight: boolean;
+    autoAddDisabled: boolean;
 }) {
     const t = useTranslations('group');
     const [isAdding, setIsAdding] = useState(false);
     const showEmpty = members.filter((m) => !removingIds.has(m.id)).length === 0 && !isAdding;
+
+    const handleConfirmAdd = useCallback((channel: LLMChannel) => {
+        onAdd(channel);
+        setIsAdding(false);
+    }, [onAdd]);
+
+    const handleCancelAdd = useCallback(() => {
+        setIsAdding(false);
+    }, []);
 
     return (
         <div className="rounded-xl border border-border/50 bg-muted/30 overflow-hidden">
@@ -57,20 +79,37 @@ function MembersSection({
                         </span>
                     )}
                 </span>
-                <button
-                    type="button"
-                    onClick={() => setIsAdding(true)}
-                    className={cn(
-                        'flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors',
-                        isAdding
-                            ? 'bg-primary/10 text-primary cursor-default'
-                            : 'hover:bg-muted text-muted-foreground hover:text-foreground'
-                    )}
-                    disabled={isAdding}
-                >
-                    <Plus className="size-3.5" />
-                    <span>{t('form.addItem')}</span>
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={onAutoAdd}
+                        className={cn(
+                            'flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors',
+                            autoAddDisabled
+                                ? 'text-muted-foreground/50 cursor-not-allowed'
+                                : 'hover:bg-muted text-muted-foreground hover:text-foreground'
+                        )}
+                        disabled={autoAddDisabled}
+                        title={t('form.autoAdd')}
+                    >
+                        <Sparkles className="size-3.5" />
+                        <span>{t('form.autoAdd')}</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setIsAdding(true)}
+                        className={cn(
+                            'flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors',
+                            isAdding
+                                ? 'bg-primary/10 text-primary cursor-default'
+                                : 'hover:bg-muted text-muted-foreground hover:text-foreground'
+                        )}
+                        disabled={isAdding}
+                    >
+                        <Plus className="size-3.5" />
+                        <span>{t('form.addItem')}</span>
+                    </button>
+                </div>
             </div>
 
             {/* 内容区域 */}
@@ -121,11 +160,9 @@ function MembersSection({
                         {isAdding && (
                             <AddMemberRow
                                 index={members.length}
-                                channels={channels}
-                                modelChannels={modelChannels}
                                 selectedMembers={members}
-                                onConfirm={(ch) => { onAdd(ch); setIsAdding(false); }}
-                                onCancel={() => setIsAdding(false)}
+                                onConfirm={handleConfirmAdd}
+                                onCancel={handleCancelAdd}
                             />
                         )}
                     </div>
@@ -138,28 +175,49 @@ function MembersSection({
 export function CreateDialogContent() {
     const { setIsOpen } = useMorphingDialog();
     const createGroup = useCreateGroup();
-    const { data: modelChannels = [] } = useModelChannelList();
     const t = useTranslations('group');
+    const { data: modelChannels = [] } = useModelChannelList();
 
     const [groupName, setGroupName] = useState('');
     const [mode, setMode] = useState<GroupMode>(1);
     const [selectedMembers, setSelectedMembers] = useState<SelectedMember[]>([]);
     const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
-    // 获取唯一的渠道列表
-    const channels = useMemo(() => {
-        const channelMap = new Map<number, { id: number; name: string }>();
-        modelChannels.forEach((mc) => {
-            if (!channelMap.has(mc.channel_id)) {
-                channelMap.set(mc.channel_id, { id: mc.channel_id, name: mc.channel_name });
-            }
-        });
-        return Array.from(channelMap.values());
-    }, [modelChannels]);
+    const groupKey = useMemo(() => normalizeKey(groupName), [groupName]);
 
-    const handleAddMember = (channel: LLMChannel) => {
-        setSelectedMembers((prev) => [...prev, { ...channel, id: `${channel.channel_id}-${channel.name}-${Date.now()}`, weight: 1 }]);
-    };
+    const handleAddMember = useCallback((channel: LLMChannel) => {
+        const key = memberKey(channel);
+        setSelectedMembers((prev) => {
+            if (prev.some((m) => memberKey(m) === key)) return prev;
+            return [...prev, { ...channel, id: key, weight: 1 }];
+        });
+    }, []);
+
+    const autoAddDisabled = useMemo(() => {
+        if (!groupKey) return true;
+        const existing = new Set(selectedMembers.map(memberKey));
+        return !modelChannels.some((mc) => matchesGroupName(mc.name, groupKey) && !existing.has(memberKey(mc)));
+    }, [groupKey, modelChannels, selectedMembers]);
+
+    const handleAutoAdd = useCallback(() => {
+        if (!groupKey) return;
+
+        const matched = modelChannels.filter((mc) => matchesGroupName(mc.name, groupKey));
+        if (matched.length === 0) return;
+
+        setSelectedMembers((prev) => {
+            const existing = new Set(prev.map(memberKey));
+            const toAdd: SelectedMember[] = [];
+            matched.forEach((mc) => {
+                const k = memberKey(mc);
+                if (!existing.has(k)) {
+                    existing.add(k);
+                    toAdd.push({ ...mc, id: k, weight: 1 });
+                }
+            });
+            return toAdd.length ? [...prev, ...toAdd] : prev;
+        });
+    }, [groupKey, modelChannels]);
 
     const handleWeightChange = useCallback((id: string, weight: number) => {
         setSelectedMembers((prev) => prev.map((m) => m.id === id ? { ...m, weight } : m));
@@ -173,7 +231,7 @@ export function CreateDialogContent() {
         }, 200);
     }, []);
 
-    const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
 
         const items: GroupItem[] = selectedMembers.map((member, index) => ({
@@ -199,7 +257,7 @@ export function CreateDialogContent() {
         );
     };
 
-    const isValid = groupName.trim() && selectedMembers.length > 0;
+    const isValid = groupKey.length > 0 && selectedMembers.length > 0;
 
     return (
         <>
@@ -256,11 +314,11 @@ export function CreateDialogContent() {
                             onRemove={handleRemoveMember}
                             onWeightChange={handleWeightChange}
                             onAdd={handleAddMember}
+                            onAutoAdd={handleAutoAdd}
                             removingIds={removingIds}
                             emptyText={t('form.noItems')}
-                            channels={channels}
-                            modelChannels={modelChannels}
                             showWeight={mode === 4}
+                            autoAddDisabled={autoAddDisabled}
                         />
 
                         {/* Submit Button */}

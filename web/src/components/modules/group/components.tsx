@@ -10,7 +10,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { type LLMChannel } from '@/api/endpoints/model';
+import { useModelChannelList, type LLMChannel } from '@/api/endpoints/model';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { getModelIcon } from '@/lib/model-icons';
@@ -138,21 +138,28 @@ export function MemberItem({
 // 添加成员行
 export function AddMemberRow({
     index,
-    channels,
-    modelChannels,
     selectedMembers,
     onConfirm,
     onCancel,
 }: {
     index: number;
-    channels: { id: number; name: string }[];
-    modelChannels: LLMChannel[];
     selectedMembers: SelectedMember[];
     onConfirm: (channel: LLMChannel) => void;
     onCancel: () => void;
 }) {
     const t = useTranslations('group');
     const [channelId, setChannelId] = useState('');
+    const { data: modelChannels = [] } = useModelChannelList();
+
+    const channels = useMemo(() => {
+        const channelMap = new Map<number, { id: number; name: string }>();
+        modelChannels.forEach((mc) => {
+            if (!channelMap.has(mc.channel_id)) {
+                channelMap.set(mc.channel_id, { id: mc.channel_id, name: mc.channel_name });
+            }
+        });
+        return Array.from(channelMap.values());
+    }, [modelChannels]);
 
     // 过滤掉所有模型都已被选择的渠道
     const availableChannels = useMemo(() => {

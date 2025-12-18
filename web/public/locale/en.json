@@ -182,6 +182,7 @@
             "name": "Group Name",
             "items": "Model Names",
             "addItem": "Add Model",
+            "autoAdd": "Auto Add",
             "noItems": "No models",
             "selectChannel": "Channel",
             "selectModel": "Model"

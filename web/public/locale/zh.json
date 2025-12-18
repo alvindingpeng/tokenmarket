@@ -182,6 +182,7 @@
             "name": "分组名称",
             "items": "模型名称",
             "addItem": "添加模型",
+            "autoAdd": "自动添加",
             "noItems": "暂无规则",
             "selectChannel": "渠道",
             "selectModel": "模型"
