@@ -38,7 +38,9 @@ func init() {
 		AddRoute(
 			router.NewRoute("/fetch-model", http.MethodPost).
 				Handle(fetchModel),
-		).
+		)
+	router.NewGroupRouter("/api/v1/channel").
+		Use(middleware.Auth()).
 		AddRoute(
 			router.NewRoute("/sync", http.MethodPost).
 				Handle(syncChannel),
