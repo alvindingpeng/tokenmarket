@@ -18,6 +18,9 @@ export function CreateDialogContent() {
         base_url: '',
         key: '',
         model: '',
+        custom_model: '',
+        auto_sync: false,
+        auto_group: false,
         enabled: true,
         proxy: false,
     });
@@ -33,6 +36,9 @@ export function CreateDialogContent() {
                     base_url: '',
                     key: '',
                     model: '',
+                    custom_model: '',
+                    auto_sync: false,
+                    auto_group: false,
                     enabled: true,
                     proxy: false,
                 });

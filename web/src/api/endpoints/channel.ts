@@ -10,7 +10,6 @@ export enum ChannelType {
     OpenAIChat = 0,
     OpenAIResponse = 1,
     Anthropic = 2,
-    OneAPI = 3,
 }
 
 
@@ -25,7 +24,10 @@ export interface Channel {
     base_url: string;
     key: string;
     model: string;
+    custom_model: string;
     proxy: boolean;
+    auto_sync: boolean;
+    auto_group: boolean;
     stats: StatsChannel;
 }
 
@@ -45,7 +47,10 @@ export interface CreateChannelRequest {
     base_url: string;
     key: string;
     model: string;
+    custom_model?: string;
     proxy?: boolean;
+    auto_sync?: boolean;
+    auto_group?: boolean;
 }
 
 /**
@@ -59,7 +64,10 @@ export interface UpdateChannelRequest {
     base_url: string;
     key: string;
     model: string;
+    custom_model: string;
     proxy: boolean;
+    auto_sync: boolean;
+    auto_group: boolean;
 }
 
 /**
@@ -95,6 +103,7 @@ export function useChannelList() {
             }
         })),
         refetchInterval: 30000,
+        refetchOnMount: 'always',
     });
 }
 
@@ -220,6 +229,49 @@ export function useFetchModel() {
         },
         onError: (error) => {
             logger.error('模型列表获取失败:', error);
+        },
+    });
+}
+
+/**
+ * 获取渠道最后同步时间 Hook
+ * 
+ * @example
+ * const lastSyncTime = useLastSyncTime();
+ * 
+ * if (lastSyncTime) {
+ *   console.log('最后同步时间:', new Date(lastSyncTime).toLocaleString());
+ * }
+ */
+export function useLastSyncTime() {
+    return useQuery({
+        queryKey: ['channels', 'last-sync-time'],
+        queryFn: async () => {
+            return apiClient.get<string>('/api/v1/channel/last-sync-time');
+        },
+        refetchInterval: 30000,
+    });
+}
+/**
+ * 同步渠道 Hook
+ * 
+ * @example
+ * const syncChannel = useSyncChannel();
+ * 
+ * syncChannel.mutate();
+ */
+export function useSyncChannel() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async () => {
+            return apiClient.post<null>('/api/v1/channel/sync');
+        },
+        onSuccess: () => {
+            logger.log('渠道同步成功');
+            queryClient.invalidateQueries({ queryKey: ['channels', 'last-sync-time'] });
+        },
+        onError: (error) => {
+            logger.error('渠道同步失败:', error);
         },
     });
 }

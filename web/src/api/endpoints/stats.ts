@@ -63,6 +63,7 @@ export function useStatsToday() {
             return apiClient.get<StatsDaily>('/api/v1/stats/today');
         },
         refetchInterval: 30000,
+        refetchOnMount: 'always',
     });
 }
 
@@ -89,6 +90,7 @@ export function useStatsDaily() {
             date: item.date,
         })),
         refetchInterval: 3600000, // 1 小时
+        refetchOnMount: 'always',
     });
 }
 /**
@@ -115,6 +117,7 @@ export function useStatsHourly() {
             request_count: formatCount(item.request_success + item.request_failed),
         })),
         refetchInterval: 10000,// 10 秒
+        refetchOnMount: 'always',
     });
 }
 
@@ -137,5 +140,6 @@ export function useStatsTotal() {
             request_count: formatCount(data.request_success + data.request_failed),
         }),
         refetchInterval: 10000,// 10 秒
+        refetchOnMount: 'always',
     });
 }

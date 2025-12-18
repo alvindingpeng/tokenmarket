@@ -107,8 +107,11 @@ func ChannelLLMList(ctx context.Context) ([]model.LLMChannel, error) {
 	models := []model.LLMChannel{}
 	for _, channel := range channelCache.GetAll() {
 		if channel.Enabled {
-			modelNames := strings.Split(channel.Model, ",")
+			modelNames := strings.Split(channel.Model+","+channel.CustomModel, ",")
 			for _, modelName := range modelNames {
+				if modelName == "" {
+					continue
+				}
 				models = append(models, model.LLMChannel{
 					Name:        modelName,
 					ChannelID:   channel.ID,

@@ -46,6 +46,7 @@ export function useModelList() {
             return apiClient.get<LLMInfo[]>('/api/v1/model/list');
         },
         refetchInterval: 30000,
+        refetchOnMount: 'always',
     });
 }
 
@@ -174,7 +175,6 @@ export function useUpdateModelPrice() {
         },
         onSuccess: () => {
             logger.log('模型价格更新成功');
-            queryClient.invalidateQueries({ queryKey: ['models', 'list'] });
             queryClient.invalidateQueries({ queryKey: ['models', 'last-update-time'] });
         },
         onError: (error) => {

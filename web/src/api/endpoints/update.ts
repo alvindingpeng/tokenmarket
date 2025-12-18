@@ -32,6 +32,7 @@ export function useVersionInfo() {
             return apiClient.get<SysVersionInfo>('/api/v1/update');
         },
         refetchInterval: 3600000, // 1 小时
+        refetchOnMount: 'always',
     });
 }
 

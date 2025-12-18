@@ -101,6 +101,22 @@
             "updateSuccess": "价格更新成功",
             "updateFailed": "价格更新失败"
         },
+        "llmSync": {
+            "title": "渠道同步",
+            "syncInterval": {
+                "label": "自动同步间隔（小时）",
+                "placeholder": "请输入间隔（小时）"
+            },
+            "manualSync": {
+                "label": "手动同步渠道",
+                "button": "立即同步",
+                "syncing": "同步中..."
+            },
+            "lastSync": "上次同步",
+            "neverSynced": "从未同步",
+            "syncSuccess": "渠道同步成功",
+            "syncFailed": "渠道同步失败"
+        },
         "account": {
             "title": "账户设置",
             "save": "保存",

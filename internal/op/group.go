@@ -213,6 +213,49 @@ func GroupItemDel(id int, ctx context.Context) error {
 	return groupRefreshCacheByID(item.GroupID, ctx)
 }
 
+// GroupItemDelKey 批量删除的键
+type GroupItemDelKey struct {
+	ChannelID int
+	ModelName string
+}
+
+// GroupItemBatchDelByChannelAndModels 根据渠道ID和模型名称批量删除分组项
+func GroupItemBatchDelByChannelAndModels(keys []GroupItemDelKey, ctx context.Context) error {
+	if len(keys) == 0 {
+		return nil
+	}
+
+	conditions := make([][]interface{}, len(keys))
+	for i, key := range keys {
+		conditions[i] = []interface{}{key.ChannelID, key.ModelName}
+	}
+
+	var groupIDs []int
+	if err := db.GetDB().WithContext(ctx).
+		Model(&model.GroupItem{}).
+		Distinct("group_id").
+		Where("(channel_id, model_name) IN ?", conditions).
+		Pluck("group_id", &groupIDs).Error; err != nil {
+		return fmt.Errorf("failed to find group ids: %w", err)
+	}
+
+	if len(groupIDs) == 0 {
+		return nil
+	}
+
+	if err := db.GetDB().WithContext(ctx).
+		Where("(channel_id, model_name) IN ?", conditions).
+		Delete(&model.GroupItem{}).Error; err != nil {
+		return fmt.Errorf("failed to delete group items: %w", err)
+	}
+
+	if err := groupRefreshCacheByIDs(groupIDs, ctx); err != nil {
+		return fmt.Errorf("failed to refresh group cache: %w", err)
+	}
+
+	return nil
+}
+
 func GroupItemList(groupID int, ctx context.Context) ([]model.GroupItem, error) {
 	var items []model.GroupItem
 	if err := db.GetDB().WithContext(ctx).
@@ -247,5 +290,23 @@ func groupRefreshCacheByID(id int, ctx context.Context) error {
 	}
 	groupCache.Set(group.ID, group)
 	groupMap.Set(group.Name, group)
+	return nil
+}
+
+func groupRefreshCacheByIDs(ids []int, ctx context.Context) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	var groups []model.Group
+	if err := db.GetDB().WithContext(ctx).
+		Preload("Items").
+		Where("id IN ?", ids).
+		Find(&groups).Error; err != nil {
+		return err
+	}
+	for _, group := range groups {
+		groupCache.Set(group.ID, group)
+		groupMap.Set(group.Name, group)
+	}
 	return nil
 }

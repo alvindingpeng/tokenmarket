@@ -35,7 +35,10 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         base_url: channel.base_url,
         key: channel.key,
         model: channel.model,
+        custom_model: channel.custom_model,
         proxy: channel.proxy,
+        auto_sync: channel.auto_sync,
+        auto_group: channel.auto_group,
     });
     const t = useTranslations('channel.detail');
 

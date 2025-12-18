@@ -101,6 +101,22 @@
             "updateSuccess": "Price updated successfully",
             "updateFailed": "Failed to update price"
         },
+        "llmSync": {
+            "title": "Channel Sync",
+            "syncInterval": {
+                "label": "Auto Sync Interval (hours)",
+                "placeholder": "Enter interval in hours"
+            },
+            "manualSync": {
+                "label": "Manual Channel Sync",
+                "button": "Sync Now",
+                "syncing": "Syncing..."
+            },
+            "lastSync": "Last Sync",
+            "neverSynced": "Never synced",
+            "syncSuccess": "Channel synced successfully",
+            "syncFailed": "Failed to sync channel"
+        },
         "account": {
             "title": "Account Settings",
             "save": "Save",

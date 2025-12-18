@@ -7,6 +7,7 @@ import { SettingAPIKey } from './APIKey';
 import { SettingLLMPrice } from './LLMPrice';
 import { SettingAccount } from './Account';
 import { SettingInfo } from './Info';
+import { SettingLLMSync } from './LLMSync';
 
 export function Setting() {
     return (
@@ -28,6 +29,9 @@ export function Setting() {
             </div>
             <div>
                 <SettingLLMPrice key="setting-llmprice" />
+            </div>
+            <div>
+                <SettingLLMSync key="setting-llmsync" />
             </div>
         </PageWrapper>
     );

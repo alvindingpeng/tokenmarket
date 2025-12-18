@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useTranslations } from 'next-intl';
 import { useState, useRef, useEffect } from 'react';
-import { RefreshCw, X, Search, Plus } from 'lucide-react';
+import { RefreshCw, X, Plus } from 'lucide-react';
 
 export interface ChannelFormData {
     name: string;
@@ -20,8 +20,11 @@ export interface ChannelFormData {
     base_url: string;
     key: string;
     model: string;
+    custom_model: string;
     enabled: boolean;
     proxy: boolean;
+    auto_sync: boolean;
+    auto_group: boolean;
 }
 
 export interface ChannelFormProps {
@@ -49,42 +52,38 @@ export function ChannelForm({
 }: ChannelFormProps) {
     const t = useTranslations('channel.form');
 
-    const [modelList, setModelList] = useState<string[]>([]);
-    const [selectedModels, setSelectedModels] = useState<string[]>(
+    const [autoModels, setAutoModels] = useState<string[]>(
         formData.model ? formData.model.split(',').filter(m => m.trim()) : []
+    );
+    const [customModels, setCustomModels] = useState<string[]>(
+        formData.custom_model ? formData.custom_model.split(',').filter(m => m.trim()) : []
     );
     const [inputValue, setInputValue] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
 
     const fetchModel = useFetchModel();
 
-    // 同步外部 formData.model 变化到 selectedModels
     useEffect(() => {
-        const modelsFromProps = formData.model ? formData.model.split(',').filter(m => m.trim()) : [];
-        const currentModels = selectedModels.join(',');
-        const propsModels = modelsFromProps.join(',');
-
-        if (currentModels !== propsModels) {
-            setSelectedModels(modelsFromProps);
+        const autoFromProps = formData.model ? formData.model.split(',').filter(m => m.trim()) : [];
+        const customFromProps = formData.custom_model ? formData.custom_model.split(',').filter(m => m.trim()) : [];
+        if (autoModels.join(',') !== autoFromProps.join(',')) {
+            setAutoModels(autoFromProps);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [formData.model]);
+        if (customModels.join(',') !== customFromProps.join(',')) {
+            setCustomModels(customFromProps);
+        }
+    }, [formData.model, formData.custom_model]);
 
-    // 更新表单数据
     useEffect(() => {
-        const newModelString = selectedModels.join(',');
-        if (formData.model !== newModelString) {
-            onFormDataChange({ ...formData, model: newModelString });
+        const newModel = autoModels.join(',');
+        const newCustomModel = customModels.join(',');
+        if (formData.model !== newModel || formData.custom_model !== newCustomModel) {
+            onFormDataChange({ ...formData, model: newModel, custom_model: newCustomModel });
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedModels]);
+    }, [autoModels, customModels]);
 
-    // 刷新模型列表
     const handleRefreshModels = async () => {
-        if (!formData.base_url || !formData.key) {
-            return;
-        }
-
+        if (!formData.base_url || !formData.key) return;
         fetchModel.mutate(
             {
                 name: formData.name,
@@ -97,41 +96,34 @@ export function ChannelForm({
             },
             {
                 onSuccess: (data) => {
-                    setModelList(data ?? []);
+                    if (data && data.length > 0) {
+                        setAutoModels([...new Set([...autoModels, ...data])]);
+                    }
                 },
             }
         );
     };
 
-    // 添加模型
     const handleAddModel = (model: string) => {
         const trimmedModel = model.trim();
-        if (trimmedModel && !selectedModels.includes(trimmedModel)) {
-            setSelectedModels([...selectedModels, trimmedModel]);
+        if (trimmedModel && !customModels.includes(trimmedModel) && !autoModels.includes(trimmedModel)) {
+            setCustomModels([...customModels, trimmedModel]);
         }
         setInputValue('');
     };
 
-    // 移除模型
-    const handleRemoveModel = (model: string) => {
-        setSelectedModels(selectedModels.filter(m => m !== model));
+    const handleRemoveAutoModel = (model: string) => {
+        setAutoModels(autoModels.filter(m => m !== model));
     };
 
-    // 处理回车
+    const handleRemoveCustomModel = (model: string) => {
+        setCustomModels(customModels.filter(m => m !== model));
+    };
+
     const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             e.preventDefault();
-            if (inputValue.trim()) {
-                handleAddModel(inputValue);
-            }
-        }
-    };
-
-    // 全选模型
-    const handleSelectAll = () => {
-        const unselectedModels = modelList.filter(model => !selectedModels.includes(model));
-        if (unselectedModels.length > 0) {
-            setSelectedModels([...selectedModels, ...unselectedModels]);
+            if (inputValue.trim()) handleAddModel(inputValue);
         }
     };
 
@@ -166,7 +158,6 @@ export function ChannelForm({
                         <SelectItem className='rounded-xl' value={String(ChannelType.OpenAIChat)}>{t('typeOpenAIChat')}</SelectItem>
                         <SelectItem className='rounded-xl' value={String(ChannelType.OpenAIResponse)}>{t('typeOpenAIResponse')}</SelectItem>
                         <SelectItem className='rounded-xl' value={String(ChannelType.Anthropic)}>{t('typeAnthropic')}</SelectItem>
-                        <SelectItem className='rounded-xl' value={String(ChannelType.OneAPI)}>{t('typeOneAPI')}</SelectItem>
                     </SelectContent>
                 </Select>
             </div>
@@ -201,32 +192,22 @@ export function ChannelForm({
 
             <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium text-card-foreground">
-                        {t('model')}
-                    </label>
-                    {modelList.length > 0 && (
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={handleRefreshModels}
-                            disabled={!formData.base_url || !formData.key || fetchModel.isPending}
-                            className="h-6 px-2 text-xs text-muted-foreground/50 hover:text-muted-foreground hover:bg-transparent"
-                        >
-                            <RefreshCw className={`h-3 w-3 mr-1 ${fetchModel.isPending ? 'animate-spin' : ''}`} />
-                            {t('modelRefresh')}
-                        </Button>
-                    )}
+                    <label className="text-sm font-medium text-card-foreground">{t('model')}</label>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleRefreshModels}
+                        disabled={!formData.base_url || !formData.key || fetchModel.isPending}
+                        className="h-6 px-2 text-xs text-muted-foreground/50 hover:text-muted-foreground hover:bg-transparent"
+                    >
+                        <RefreshCw className={`h-3 w-3 mr-1 ${fetchModel.isPending ? 'animate-spin' : ''}`} />
+                        {t('modelRefresh')}
+                    </Button>
                 </div>
-                <input
-                    type="hidden"
-                    value={formData.model}
-                    required
-                />
+                <input type="hidden" value={formData.model} required />
 
-                {/* 搜索/添加模型输入框 */}
                 <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                     <Input
                         ref={inputRef}
                         id={`${idPrefix}-model-custom`}
@@ -234,10 +215,10 @@ export function ChannelForm({
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
                         onKeyDown={handleInputKeyDown}
-                        placeholder={t('modelSearchPlaceholder')}
-                        className="pl-9 pr-10 rounded-xl"
+                        placeholder={t('modelCustomPlaceholder')}
+                        className="pr-10 rounded-xl"
                     />
-                    {inputValue.trim() && !selectedModels.includes(inputValue.trim()) && (
+                    {inputValue.trim() && !customModels.includes(inputValue.trim()) && !autoModels.includes(inputValue.trim()) && (
                         <Button
                             type="button"
                             variant="ghost"
@@ -251,101 +232,31 @@ export function ChannelForm({
                     )}
                 </div>
 
-                {/* 可选模型列表（带搜索过滤） */}
-                {modelList.length > 0 ? (
-                    <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                            <label className="text-xs font-medium text-muted-foreground">
-                                {t('modelAvailable')}
-                            </label>
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={handleSelectAll}
-                                disabled={modelList.filter(model => !selectedModels.includes(model)).length === 0}
-                                className="h-6 px-2 text-xs text-muted-foreground/50 hover:text-muted-foreground hover:bg-transparent"
-                            >
-                                {t('modelSelectAll')}
-                            </Button>
-                        </div>
-                        <div className="rounded-xl border border-border bg-muted/30 p-2.5 max-h-36 min-h-12 overflow-y-auto">
-                            {(() => {
-                                const searchTerm = inputValue.trim().toLowerCase();
-                                const filteredModels = modelList
-                                    .filter(model => !selectedModels.includes(model))
-                                    .filter(model => !searchTerm || model.toLowerCase().includes(searchTerm));
-
-                                if (filteredModels.length > 0) {
-                                    return (
-                                        <div className="flex flex-wrap gap-1.5">
-                                            {filteredModels.map((model) => (
-                                                <Badge
-                                                    key={model}
-                                                    variant="secondary"
-                                                    className="cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors"
-                                                    onClick={() => handleAddModel(model)}
-                                                >
-                                                    {model}
-                                                </Badge>
-                                            ))}
-                                        </div>
-                                    );
-                                } else if (searchTerm && !selectedModels.includes(inputValue.trim())) {
-                                    return (
-                                        <div className="flex items-center justify-center h-8 text-xs text-muted-foreground">
-                                            <span>{t('modelNoMatch')}</span>
-                                            <Button
-                                                type="button"
-                                                variant="link"
-                                                size="sm"
-                                                onClick={() => handleAddModel(inputValue)}
-                                                className="h-auto p-0 ml-1 text-xs text-primary"
-                                            >
-                                                {t('modelAddCustom')}
-                                            </Button>
-                                        </div>
-                                    );
-                                } else {
-                                    return (
-                                        <div className="flex items-center justify-center h-8 text-xs text-muted-foreground">
-                                            {t('modelAllAdded')}
-                                        </div>
-                                    );
-                                }
-                            })()}
-                        </div>
-                    </div>
-                ) : (
-                    <button
-                        type="button"
-                        onClick={handleRefreshModels}
-                        disabled={!formData.base_url || !formData.key || fetchModel.isPending}
-                        className="w-full rounded-xl border border-dashed border-border bg-muted/20 p-5 transition-colors hover:bg-muted/40 hover:border-solid disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-muted/20"
-                    >
-                        <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                            <RefreshCw className={`h-5 w-5 ${fetchModel.isPending ? 'animate-spin' : ''}`} />
-                            <span className="text-sm">
-                                {fetchModel.isPending ? t('modelFetching') : t('modelFetchPrompt')}
-                            </span>
-                        </div>
-                    </button>
-                )}
-
-                {/* 已选模型列表 */}
                 <div className="space-y-1.5">
                     <label className="text-xs font-medium text-card-foreground">
-                        {t('modelSelected')} {selectedModels.length > 0 && `(${selectedModels.length})`}
+                        {t('modelSelected')} {(autoModels.length + customModels.length) > 0 && `(${autoModels.length + customModels.length})`}
                     </label>
-                    <div className="rounded-xl border border-border bg-muted/30 p-2.5 max-h-32 min-h-12 overflow-y-auto">
-                        {selectedModels.length > 0 ? (
+                    <div className="rounded-xl border border-border bg-muted/30 p-2.5 max-h-40 min-h-12 overflow-y-auto">
+                        {(autoModels.length + customModels.length) > 0 ? (
                             <div className="flex flex-wrap gap-1.5">
-                                {selectedModels.map((model) => (
+                                {autoModels.map((model) => (
+                                    <Badge key={model} variant="secondary" className="bg-muted hover:bg-muted/80">
+                                        {model}
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRemoveAutoModel(model)}
+                                            className="ml-1 rounded-sm opacity-70 hover:opacity-100 focus:outline-none focus:ring-1 focus:ring-ring"
+                                        >
+                                            <X className="h-3 w-3" />
+                                        </button>
+                                    </Badge>
+                                ))}
+                                {customModels.map((model) => (
                                     <Badge key={model} className="bg-primary hover:bg-primary/90">
                                         {model}
                                         <button
                                             type="button"
-                                            onClick={() => handleRemoveModel(model)}
+                                            onClick={() => handleRemoveCustomModel(model)}
                                             className="ml-1 rounded-sm opacity-70 hover:opacity-100 focus:outline-none focus:ring-1 focus:ring-ring"
                                         >
                                             <X className="h-3 w-3" />
@@ -370,13 +281,26 @@ export function ChannelForm({
                     />
                     <span className="text-sm text-card-foreground">{t('enabled')}</span>
                 </label>
-
                 <label className="flex items-center gap-2">
                     <Switch
                         checked={formData.proxy}
                         onCheckedChange={(checked) => onFormDataChange({ ...formData, proxy: checked })}
                     />
                     <span className="text-sm text-card-foreground">{t('proxy')}</span>
+                </label>
+                <label className="flex items-center gap-2">
+                    <Switch
+                        checked={formData.auto_sync}
+                        onCheckedChange={(checked) => onFormDataChange({ ...formData, auto_sync: checked })}
+                    />
+                    <span className="text-sm text-card-foreground">{t('autoSync')}</span>
+                </label>
+                <label className="flex items-center gap-2">
+                    <Switch
+                        checked={formData.auto_group}
+                        onCheckedChange={(checked) => onFormDataChange({ ...formData, auto_group: checked })}
+                    />
+                    <span className="text-sm text-card-foreground">{t('autoGroup')}</span>
                 </label>
             </div>
 

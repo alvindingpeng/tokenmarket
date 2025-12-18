@@ -1,20 +1,17 @@
 package handlers
 
 import (
-	"context"
 	"net/http"
 	"strconv"
-	"strings"
-	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/client"
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
-	"github.com/alvindingpeng/switchyard/internal/price"
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/alvindingpeng/switchyard/internal/server/router"
-	"github.com/alvindingpeng/switchyard/internal/utils/log"
+	"github.com/alvindingpeng/switchyard/internal/server/worker"
+	"github.com/alvindingpeng/switchyard/internal/task"
 	"github.com/gin-gonic/gin"
 )
 
@@ -41,6 +38,14 @@ func init() {
 		AddRoute(
 			router.NewRoute("/fetch-model", http.MethodPost).
 				Handle(fetchModel),
+		).
+		AddRoute(
+			router.NewRoute("/sync", http.MethodPost).
+				Handle(syncChannel),
+		).
+		AddRoute(
+			router.NewRoute("/last-sync-time", http.MethodGet).
+				Handle(getLastSyncTime),
 		)
 }
 
@@ -69,29 +74,10 @@ func createChannel(c *gin.Context) {
 	}
 	stats := op.StatsChannelGet(channel.ID)
 	channel.Stats = &stats
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		modelNames := strings.Split(channel.Model, ",")
-		for _, modelName := range modelNames {
-			modelPrice := price.GetLLMPrice(modelName)
-			if modelPrice == nil {
-				log.Infof("model %s price not found,create", modelName)
-				err := op.LLMCreate(
-					model.LLMInfo{
-						Name: modelName,
-						LLMPrice: model.LLMPrice{
-							Input:  0,
-							Output: 0,
-						}},
-					ctx,
-				)
-				if err != nil {
-					log.Errorf("create model: %s", modelName)
-				}
-			}
-		}
-	}()
+	worker.CheckAndAddLLMPrice(channel.Model, channel.CustomModel)
+	if channel.AutoGroup {
+		worker.AutoGroup(channel.ID, channel.Name, channel.Model, channel.CustomModel)
+	}
 	resp.Success(c, channel)
 }
 
@@ -107,29 +93,10 @@ func updateChannel(c *gin.Context) {
 	}
 	stats := op.StatsChannelGet(channel.ID)
 	channel.Stats = &stats
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		modelNames := strings.Split(channel.Model, ",")
-		for _, modelName := range modelNames {
-			modelPrice := price.GetLLMPrice(modelName)
-			if modelPrice == nil {
-				log.Infof("model %s price not found,create", modelName)
-				err := op.LLMCreate(
-					model.LLMInfo{
-						Name: modelName,
-						LLMPrice: model.LLMPrice{
-							Input:  0,
-							Output: 0,
-						}},
-					ctx,
-				)
-				if err != nil {
-					log.Errorf("create model: %s", modelName)
-				}
-			}
-		}
-	}()
+	worker.CheckAndAddLLMPrice(channel.Model, channel.CustomModel)
+	if channel.AutoGroup {
+		worker.AutoGroup(channel.ID, channel.Name, channel.Model, channel.CustomModel)
+	}
 	resp.Success(c, channel)
 }
 
@@ -158,4 +125,14 @@ func fetchModel(c *gin.Context) {
 		return
 	}
 	resp.Success(c, models)
+}
+
+func syncChannel(c *gin.Context) {
+	task.SyncLLMTask()
+	resp.Success(c, nil)
+}
+
+func getLastSyncTime(c *gin.Context) {
+	time := task.GetLastSyncTime()
+	resp.Success(c, time)
 }

@@ -14,6 +14,7 @@ export const SettingKey = {
     ProxyURL: 'proxy_url',
     StatsSaveInterval: 'stats_save_interval',
     ModelInfoUpdateInterval: 'model_info_update_interval',
+    SyncLLMInterval: 'sync_llm_interval',
 } as const;
 
 /**
@@ -34,6 +35,7 @@ export function useSettingList() {
             return apiClient.get<Setting[]>('/api/v1/setting/list');
         },
         refetchInterval: 30000,
+        refetchOnMount: 'always',
     });
 }
 
