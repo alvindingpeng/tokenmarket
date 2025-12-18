@@ -1,5 +1,11 @@
 package model
 
+import (
+	"fmt"
+	"net/url"
+	"strconv"
+)
+
 type SettingKey string
 
 const (
@@ -21,4 +27,43 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyModelInfoUpdateInterval, Value: "24"}, // 默认24小时更新一次模型信息
 		{Key: SettingKeySyncLLMInterval, Value: "24"},         // 默认24小时同步一次LLM
 	}
+}
+
+func (s *Setting) Validate() error {
+	switch s.Key {
+	case SettingKeyModelInfoUpdateInterval:
+		_, err := strconv.Atoi(s.Value)
+		if err != nil {
+			return fmt.Errorf("model info update interval must be an integer")
+		}
+		return nil
+	case SettingKeySyncLLMInterval:
+		_, err := strconv.Atoi(s.Value)
+		if err != nil {
+			return fmt.Errorf("sync LLM interval must be an integer")
+		}
+		return nil
+	case SettingKeyProxyURL:
+		if s.Value == "" {
+			return nil
+		}
+		parsedURL, err := url.Parse(s.Value)
+		if err != nil {
+			return fmt.Errorf("proxy URL is invalid: %w", err)
+		}
+		validSchemes := map[string]bool{
+			"http":  true,
+			"https": true,
+			"socks": true,
+		}
+		if !validSchemes[parsedURL.Scheme] {
+			return fmt.Errorf("proxy URL scheme must be http, https, or socks")
+		}
+		if parsedURL.Host == "" {
+			return fmt.Errorf("proxy URL must have a host")
+		}
+		return nil
+	}
+
+	return nil
 }

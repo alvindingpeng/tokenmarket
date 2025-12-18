@@ -41,8 +41,7 @@ func setSetting(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	hours, err := strconv.Atoi(setting.Value)
-	if err != nil {
+	if err := setting.Validate(); err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -52,8 +51,18 @@ func setSetting(c *gin.Context) {
 	}
 	switch setting.Key {
 	case model.SettingKeyModelInfoUpdateInterval:
+		hours, err := strconv.Atoi(setting.Value)
+		if err != nil {
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
 		task.Update(string(setting.Key), time.Duration(hours)*time.Hour)
 	case model.SettingKeySyncLLMInterval:
+		hours, err := strconv.Atoi(setting.Value)
+		if err != nil {
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
 		task.Update(string(setting.Key), time.Duration(hours)*time.Hour)
 	}
 	resp.Success(c, setting)
