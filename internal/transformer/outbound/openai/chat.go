@@ -18,6 +18,14 @@ type ChatOutbound struct{}
 func (o *ChatOutbound) TransformRequest(ctx context.Context, request *model.InternalLLMRequest, baseUrl, key string) (*http.Request, error) {
 	request.ClearHelpFields()
 
+	if request.Stream != nil && *request.Stream {
+		if request.StreamOptions == nil {
+			request.StreamOptions = &model.StreamOptions{IncludeUsage: true}
+		} else if !request.StreamOptions.IncludeUsage {
+			request.StreamOptions.IncludeUsage = true
+		}
+	}
+
 	body, err := json.Marshal(request)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
