@@ -163,7 +163,8 @@
     "group": {
         "toast": {
             "updated": "更新成功",
-            "deleted": "删除成功"
+            "deleted": "删除成功",
+            "autoAddFailed": "自动添加失败"
         },
         "create": {
             "title": "创建分组",

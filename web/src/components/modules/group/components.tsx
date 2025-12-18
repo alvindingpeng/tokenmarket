@@ -14,6 +14,7 @@ import { useModelChannelList, type LLMChannel } from '@/api/endpoints/model';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { getModelIcon } from '@/lib/model-icons';
+import { memberKey } from './utils';
 
 export interface SelectedMember extends LLMChannel {
     id: string;
@@ -151,33 +152,43 @@ export function AddMemberRow({
     const [channelId, setChannelId] = useState('');
     const { data: modelChannels = [] } = useModelChannelList();
 
-    const channels = useMemo(() => {
-        const channelMap = new Map<number, { id: number; name: string }>();
+    const selectedKeys = useMemo(() => new Set(selectedMembers.map(memberKey)), [selectedMembers]);
+
+    const channelIndex = useMemo(() => {
+        const byId = new Map<number, { id: number; name: string; models: LLMChannel[] }>();
         modelChannels.forEach((mc) => {
-            if (!channelMap.has(mc.channel_id)) {
-                channelMap.set(mc.channel_id, { id: mc.channel_id, name: mc.channel_name });
+            const existing = byId.get(mc.channel_id);
+            if (existing) {
+                existing.models.push(mc);
+            } else {
+                byId.set(mc.channel_id, { id: mc.channel_id, name: mc.channel_name, models: [mc] });
             }
         });
-        return Array.from(channelMap.values());
+        return byId;
     }, [modelChannels]);
+
+    const channels = useMemo(() => {
+        return Array.from(channelIndex.values()).map(({ id, name }) => ({ id, name }));
+    }, [channelIndex]);
 
     // 过滤掉所有模型都已被选择的渠道
     const availableChannels = useMemo(() => {
         return channels.filter((c) => {
-            const channelModels = modelChannels.filter((mc) => mc.channel_id === c.id);
-            // 检查该渠道是否还有未被选择的模型
-            return channelModels.some((m) => !selectedMembers.some((s) => s.channel_id === m.channel_id && s.name === m.name));
+            const entry = channelIndex.get(c.id);
+            if (!entry) return false;
+            // 该渠道是否还有未被选择的模型
+            return entry.models.some((m) => !selectedKeys.has(memberKey(m)));
         });
-    }, [channels, modelChannels, selectedMembers]);
+    }, [channels, channelIndex, selectedKeys]);
 
     const models = useMemo(() => {
         if (!channelId) return [];
-        return modelChannels.filter((mc) => mc.channel_id === +channelId);
-    }, [modelChannels, channelId]);
+        return channelIndex.get(+channelId)?.models ?? [];
+    }, [channelIndex, channelId]);
 
     // 选择模型时直接确认
     const handleModelSelect = (modelName: string) => {
-        const channel = modelChannels.find((mc) => mc.channel_id === +channelId && mc.name === modelName);
+        const channel = channelIndex.get(+channelId)?.models.find((mc) => mc.name === modelName);
         if (channel) {
             onConfirm(channel);
         }
@@ -209,7 +220,7 @@ export function AddMemberRow({
                 </SelectTrigger>
                 <SelectContent>
                     {models
-                        .filter((m) => !selectedMembers.some((s) => s.channel_id === m.channel_id && s.name === m.name))
+                        .filter((m) => !selectedKeys.has(memberKey(m)))
                         .map((m) => {
                             const { Avatar } = getModelIcon(m.name);
                             return (

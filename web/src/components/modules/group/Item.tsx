@@ -1,19 +1,22 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Trash2, Layers, X, Plus, Check, Copy, Loader2 } from 'lucide-react';
+import { Trash2, Layers, X, Plus, Check, Copy, Loader2, Wand2 } from 'lucide-react';
 import { Reorder, motion, AnimatePresence } from 'motion/react';
-import { type Group, useDeleteGroup, useUpdateGroup } from '@/api/endpoints/group';
-import { type LLMChannel } from '@/api/endpoints/model';
+import { type Group, useAutoAddGroupItem, useDeleteGroup, useUpdateGroup } from '@/api/endpoints/group';
+import { useModelChannelList, type LLMChannel } from '@/api/endpoints/model';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/common/Toast';
 import { MemberItem, AddMemberRow, type SelectedMember } from './components';
+import { buildChannelNameByModelKey, modelChannelKey } from './utils';
 
 export function GroupCard({ group }: { group: Group }) {
     const t = useTranslations('group');
     const updateGroup = useUpdateGroup();
     const deleteGroup = useDeleteGroup();
+    const autoAddGroupItem = useAutoAddGroupItem();
+    const { data: modelChannels = [] } = useModelChannelList();
 
     const [members, setMembers] = useState<SelectedMember[]>([]);
     const [isAdding, setIsAdding] = useState(false);
@@ -21,6 +24,9 @@ export function GroupCard({ group }: { group: Group }) {
     const [copied, setCopied] = useState(false);
     const isDragging = useRef(false);
     const weightTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const membersRef = useRef<SelectedMember[]>([]);
+
+    const channelNameByKey = useMemo(() => buildChannelNameByModelKey(modelChannels), [modelChannels]);
 
     const displayMembers = useMemo(() =>
         [...(group.items || [])]
@@ -29,11 +35,11 @@ export function GroupCard({ group }: { group: Group }) {
                 id: `${item.channel_id}-${item.model_name}-${item.id || 0}`,
                 name: item.model_name,
                 channel_id: item.channel_id,
-                channel_name: `Channel ${item.channel_id}`,
+                channel_name: channelNameByKey.get(modelChannelKey(item.channel_id, item.model_name)) ?? `Channel ${item.channel_id}`,
                 item_id: item.id,
                 weight: item.weight,
             })),
-        [group.items]
+        [group.items, channelNameByKey]
     );
 
     useEffect(() => {
@@ -41,11 +47,23 @@ export function GroupCard({ group }: { group: Group }) {
     }, [displayMembers]);
 
     useEffect(() => {
+        membersRef.current = members;
+    }, [members]);
+
+    useEffect(() => {
         return () => { if (weightTimerRef.current) clearTimeout(weightTimerRef.current); };
     }, []);
 
     const isEmpty = members.length === 0 && !isAdding;
     const onSuccess = useCallback(() => toast.success(t('toast.updated')), [t]);
+
+    const priorityByItemId = useMemo(() => {
+        const map = new Map<number, number>();
+        (group.items || []).forEach((item) => {
+            if (item.id !== undefined) map.set(item.id, item.priority);
+        });
+        return map;
+    }, [group.items]);
 
     const handleAddMember = useCallback((channel: LLMChannel) => {
         setMembers((prev) => [...prev, { ...channel, id: `${channel.channel_id}-${channel.name}-${Date.now()}`, weight: 1 }]);
@@ -57,11 +75,16 @@ export function GroupCard({ group }: { group: Group }) {
         setMembers((prev) => prev.map((m) => m.id === id ? { ...m, weight } : m));
         if (weightTimerRef.current) clearTimeout(weightTimerRef.current);
         weightTimerRef.current = setTimeout(() => {
-            const member = members.find((m) => m.id === id);
-            const item = member?.item_id !== undefined ? group.items?.find((i) => i.id === member.item_id) : undefined;
-            if (item) updateGroup.mutate({ id: group.id!, items_to_update: [{ id: member!.item_id!, priority: item.priority, weight }] }, { onSuccess });
+            const member = membersRef.current.find((m) => m.id === id);
+            if (!member?.item_id) return;
+            const priority = priorityByItemId.get(member.item_id);
+            if (!priority) return;
+            updateGroup.mutate(
+                { id: group.id!, items_to_update: [{ id: member.item_id, priority, weight }] },
+                { onSuccess }
+            );
         }, 500);
-    }, [members, group.id, group.items, updateGroup, onSuccess]);
+    }, [group.id, priorityByItemId, updateGroup, onSuccess]);
 
     const handleRemoveMember = useCallback((id: string) => {
         const member = members.find((m) => m.id === id);
@@ -79,12 +102,13 @@ export function GroupCard({ group }: { group: Group }) {
         const itemsToUpdate = members
             .map((m, i) => ({ member: m, newPriority: i + 1 }))
             .filter(({ member, newPriority }) => {
-                const orig = group.items?.find((item) => item.id === member.item_id);
-                return member.item_id !== undefined && orig && orig.priority !== newPriority;
+                if (!member.item_id) return false;
+                const origPriority = priorityByItemId.get(member.item_id);
+                return origPriority !== undefined && origPriority !== newPriority;
             })
             .map(({ member, newPriority }) => ({ id: member.item_id!, priority: newPriority, weight: member.weight ?? 1 }));
         if (itemsToUpdate.length > 0) updateGroup.mutate({ id: group.id!, items_to_update: itemsToUpdate }, { onSuccess });
-    }, [members, group.id, group.items, updateGroup, onSuccess]);
+    }, [members, group.id, priorityByItemId, updateGroup, onSuccess]);
 
     const handleCopy = async () => {
         try {
@@ -118,6 +142,28 @@ export function GroupCard({ group }: { group: Group }) {
                     <button type="button" onClick={() => setIsAdding(true)} disabled={isAdding} className={cn('p-1.5 rounded-lg transition-colors', isAdding ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground hover:text-foreground')}>
                         <Plus className="size-4" />
                     </button>
+                    <button
+                        type="button"
+                        onClick={() => group.id && autoAddGroupItem.mutate(group.id, {
+                            onSuccess,
+                            onError: (error: any) => toast.error(t('toast.autoAddFailed'), { description: error?.message }),
+                        })}
+                        disabled={isAdding || autoAddGroupItem.isPending}
+                        className={cn(
+                            'p-1.5 rounded-lg transition-colors',
+                            autoAddGroupItem.isPending
+                                ? 'bg-primary/10 text-primary'
+                                : 'hover:bg-muted text-muted-foreground hover:text-foreground',
+                            (isAdding || autoAddGroupItem.isPending) && 'disabled:opacity-50 disabled:cursor-not-allowed'
+                        )}
+                    >
+                        {autoAddGroupItem.isPending ? (
+                            <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                            <Wand2 className="size-4" />
+                        )}
+                    </button>
+
                     {updateGroup.isPending ? (
                         <div className="p-1.5 text-primary"><Loader2 className="size-4 animate-spin" /></div>
                     ) : (

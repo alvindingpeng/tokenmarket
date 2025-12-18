@@ -17,19 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Field, FieldLabel, FieldGroup } from '@/components/ui/field';
 import { cn } from '@/lib/utils';
 import { MemberItem, AddMemberRow, type SelectedMember } from './components';
-
-function normalizeKey(value: string) {
-    return value.trim().toLowerCase();
-}
-
-function memberKey(member: Pick<SelectedMember, 'channel_id' | 'name'>) {
-    return `${member.channel_id}-${member.name}`;
-}
-
-function matchesGroupName(modelName: string, groupKey: string) {
-    if (!groupKey) return false;
-    return modelName.toLowerCase().includes(groupKey);
-}
+import { matchesGroupName, memberKey, normalizeKey } from './utils';
 
 function MembersSection({
     members,
@@ -185,30 +173,33 @@ export function CreateDialogContent() {
 
     const groupKey = useMemo(() => normalizeKey(groupName), [groupName]);
 
+    const matchedModelChannels = useMemo(() => {
+        if (!groupKey) return [];
+        return modelChannels.filter((mc) => matchesGroupName(mc.name, groupKey));
+    }, [groupKey, modelChannels]);
+
     const handleAddMember = useCallback((channel: LLMChannel) => {
         const key = memberKey(channel);
         setSelectedMembers((prev) => {
-            if (prev.some((m) => memberKey(m) === key)) return prev;
+            if (prev.some((m) => m.id === key)) return prev;
             return [...prev, { ...channel, id: key, weight: 1 }];
         });
     }, []);
 
     const autoAddDisabled = useMemo(() => {
         if (!groupKey) return true;
-        const existing = new Set(selectedMembers.map(memberKey));
-        return !modelChannels.some((mc) => matchesGroupName(mc.name, groupKey) && !existing.has(memberKey(mc)));
-    }, [groupKey, modelChannels, selectedMembers]);
+        const existing = new Set(selectedMembers.map((m) => m.id));
+        return matchedModelChannels.length === 0 || !matchedModelChannels.some((mc) => !existing.has(memberKey(mc)));
+    }, [groupKey, matchedModelChannels, selectedMembers]);
 
     const handleAutoAdd = useCallback(() => {
         if (!groupKey) return;
-
-        const matched = modelChannels.filter((mc) => matchesGroupName(mc.name, groupKey));
-        if (matched.length === 0) return;
+        if (matchedModelChannels.length === 0) return;
 
         setSelectedMembers((prev) => {
-            const existing = new Set(prev.map(memberKey));
+            const existing = new Set(prev.map((m) => m.id));
             const toAdd: SelectedMember[] = [];
-            matched.forEach((mc) => {
+            matchedModelChannels.forEach((mc) => {
                 const k = memberKey(mc);
                 if (!existing.has(k)) {
                     existing.add(k);
@@ -217,7 +208,7 @@ export function CreateDialogContent() {
             });
             return toAdd.length ? [...prev, ...toAdd] : prev;
         });
-    }, [groupKey, modelChannels]);
+    }, [groupKey, matchedModelChannels]);
 
     const handleWeightChange = useCallback((id: string, weight: number) => {
         setSelectedMembers((prev) => prev.map((m) => m.id === id ? { ...m, weight } : m));

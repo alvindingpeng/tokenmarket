@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/client"
+	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/server/worker"
 	"github.com/alvindingpeng/switchyard/internal/utils/log"
@@ -54,9 +55,9 @@ func SyncLLMTask() {
 		// 批量删除消失的模型对应的 GroupItem
 		if len(disappearedModels) > 0 {
 			log.Infof("deleted channel %s models: %v", channel.Name, disappearedModels)
-			keys := make([]op.GroupItemDelKey, len(disappearedModels))
+			keys := make([]model.GroupIDAndLLMName, len(disappearedModels))
 			for i, m := range disappearedModels {
-				keys[i] = op.GroupItemDelKey{ChannelID: channel.ID, ModelName: m}
+				keys[i] = model.GroupIDAndLLMName{ChannelID: channel.ID, ModelName: m}
 			}
 			if err := op.GroupItemBatchDelByChannelAndModels(keys, ctx); err != nil {
 				log.Errorf("failed to batch delete group items for channel %d: %v", channel.ID, err)

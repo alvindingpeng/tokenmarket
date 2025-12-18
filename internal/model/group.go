@@ -49,3 +49,7 @@ type GroupItemUpdateRequest struct {
 	Priority int `json:"priority,omitempty"`
 	Weight   int `json:"weight,omitempty"`
 }
+type GroupIDAndLLMName struct {
+	ChannelID int
+	ModelName string
+}

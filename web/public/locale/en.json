@@ -163,7 +163,8 @@
     "group": {
         "toast": {
             "updated": "Updated successfully",
-            "deleted": "Deleted successfully"
+            "deleted": "Deleted successfully",
+            "autoAddFailed": "Auto add failed"
         },
         "create": {
             "title": "Create Group",

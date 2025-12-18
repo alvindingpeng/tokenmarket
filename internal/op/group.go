@@ -8,6 +8,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/utils/cache"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var groupCache = cache.New[int, model.Group](16)
@@ -190,6 +191,64 @@ func GroupItemAdd(item *model.GroupItem, ctx context.Context) error {
 	return groupRefreshCacheByID(item.GroupID, ctx)
 }
 
+func GroupItemBatchAdd(groupID int, items []model.GroupIDAndLLMName, ctx context.Context) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	group, ok := groupCache.Get(groupID)
+	if !ok {
+		return fmt.Errorf("group not found")
+	}
+
+	seen := make(map[string]struct{}, len(items))
+	uniq := make([]model.GroupIDAndLLMName, 0, len(items))
+	for _, it := range items {
+		if it.ChannelID == 0 || it.ModelName == "" {
+			continue
+		}
+		k := fmt.Sprintf("%d|%s", it.ChannelID, it.ModelName)
+		if _, exists := seen[k]; exists {
+			continue
+		}
+		seen[k] = struct{}{}
+		uniq = append(uniq, it)
+	}
+	if len(uniq) == 0 {
+		return nil
+	}
+
+	nextPriority := 1
+	for _, gi := range group.Items {
+		if gi.Priority >= nextPriority {
+			nextPriority = gi.Priority + 1
+		}
+	}
+
+	newItems := make([]model.GroupItem, 0, len(uniq))
+	for _, it := range uniq {
+		newItems = append(newItems, model.GroupItem{
+			GroupID:   groupID,
+			ChannelID: it.ChannelID,
+			ModelName: it.ModelName,
+			Priority:  nextPriority,
+			Weight:    1,
+		})
+		nextPriority++
+	}
+
+	if err := db.GetDB().WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "group_id"}, {Name: "channel_id"}, {Name: "model_name"}},
+			DoNothing: true,
+		}).
+		Create(&newItems).Error; err != nil {
+		return fmt.Errorf("failed to create group items: %w", err)
+	}
+
+	return groupRefreshCacheByID(groupID, ctx)
+}
+
 func GroupItemUpdate(item *model.GroupItem, ctx context.Context) error {
 	if err := db.GetDB().WithContext(ctx).Model(item).
 		Select("ModelName", "Priority", "Weight").
@@ -213,14 +272,8 @@ func GroupItemDel(id int, ctx context.Context) error {
 	return groupRefreshCacheByID(item.GroupID, ctx)
 }
 
-// GroupItemDelKey 批量删除的键
-type GroupItemDelKey struct {
-	ChannelID int
-	ModelName string
-}
-
 // GroupItemBatchDelByChannelAndModels 根据渠道ID和模型名称批量删除分组项
-func GroupItemBatchDelByChannelAndModels(keys []GroupItemDelKey, ctx context.Context) error {
+func GroupItemBatchDelByChannelAndModels(keys []model.GroupIDAndLLMName, ctx context.Context) error {
 	if len(keys) == 0 {
 		return nil
 	}
