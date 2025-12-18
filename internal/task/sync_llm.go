@@ -66,9 +66,7 @@ func SyncLLMTask() {
 		// 自动分组新增的模型
 		if len(addedModels) > 0 {
 			log.Infof("added channel %s models: %v", channel.Name, addedModels)
-			if channel.AutoGroup {
-				worker.AutoGroup(channel.ID, channel.Name, strings.Join(addedModels, ","), "")
-			}
+			worker.AutoGroup(channel.ID, channel.Name, strings.Join(addedModels, ","), "", channel.AutoGroup)
 		}
 	}
 	lastSyncTime = time.Now()

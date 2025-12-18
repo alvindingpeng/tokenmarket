@@ -77,9 +77,7 @@ func createChannel(c *gin.Context) {
 	stats := op.StatsChannelGet(channel.ID)
 	channel.Stats = &stats
 	worker.CheckAndAddLLMPrice(channel.Model, channel.CustomModel)
-	if channel.AutoGroup {
-		worker.AutoGroup(channel.ID, channel.Name, channel.Model, channel.CustomModel)
-	}
+	worker.AutoGroup(channel.ID, channel.Name, channel.Model, channel.CustomModel, channel.AutoGroup)
 	resp.Success(c, channel)
 }
 
@@ -96,9 +94,7 @@ func updateChannel(c *gin.Context) {
 	stats := op.StatsChannelGet(channel.ID)
 	channel.Stats = &stats
 	worker.CheckAndAddLLMPrice(channel.Model, channel.CustomModel)
-	if channel.AutoGroup {
-		worker.AutoGroup(channel.ID, channel.Name, channel.Model, channel.CustomModel)
-	}
+	worker.AutoGroup(channel.ID, channel.Name, channel.Model, channel.CustomModel, channel.AutoGroup)
 	resp.Success(c, channel)
 }
 

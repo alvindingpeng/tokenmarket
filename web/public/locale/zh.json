@@ -298,7 +298,10 @@
             "typeAnthropic": "Anthropic",
             "typeOneAPI": "OneAPI",
             "autoSync": "自动同步",
-            "autoGroup": "自动分组"
+            "autoGroup": "自动分组",
+            "autoGroupNone": "不自动分组",
+            "autoGroupFuzzy": "模糊匹配",
+            "autoGroupExact": "准确匹配"
         }
     }
 }

@@ -12,12 +12,19 @@ export enum ChannelType {
     Anthropic = 2,
 }
 
+/**
+ * 自动分组类型枚举
+ */
+export enum AutoGroupType {
+    None = 0,   // 不自动分组
+    Fuzzy = 1,  // 模糊匹配
+    Exact = 2,  // 准确匹配
+}
 
 /**
- * 渠道数据
+ * 渠道基础字段（不含 id 和 stats）
  */
-export interface Channel {
-    id: number;
+interface ChannelBase {
     name: string;
     type: ChannelType;
     enabled: boolean;
@@ -27,7 +34,14 @@ export interface Channel {
     custom_model: string;
     proxy: boolean;
     auto_sync: boolean;
-    auto_group: boolean;
+    auto_group: AutoGroupType;
+}
+
+/**
+ * 渠道完整数据
+ */
+export interface Channel extends ChannelBase {
+    id: number;
     stats: StatsChannel;
 }
 
@@ -36,39 +50,17 @@ export interface ChannelData {
     formatted: StatsMetricsFormatted;
 }
 
+/**
+ * 创建渠道请求：必填字段 + 可选字段
+ */
+export type CreateChannelRequest =
+    Pick<ChannelBase, 'name' | 'type' | 'base_url' | 'key' | 'model'> &
+    Partial<Pick<ChannelBase, 'enabled' | 'custom_model' | 'proxy' | 'auto_sync' | 'auto_group'>>;
 
 /**
- * 创建渠道请求
+ * 更新渠道请求：id + 所有基础字段
  */
-export interface CreateChannelRequest {
-    name: string;
-    type: ChannelType;
-    enabled?: boolean;
-    base_url: string;
-    key: string;
-    model: string;
-    custom_model?: string;
-    proxy?: boolean;
-    auto_sync?: boolean;
-    auto_group?: boolean;
-}
-
-/**
- * 更新渠道请求
- */
-export interface UpdateChannelRequest {
-    id: number;
-    name: string;
-    type: ChannelType;
-    enabled: boolean;
-    base_url: string;
-    key: string;
-    model: string;
-    custom_model: string;
-    proxy: boolean;
-    auto_sync: boolean;
-    auto_group: boolean;
-}
+export type UpdateChannelRequest = Pick<Channel, 'id'> & ChannelBase;
 
 /**
  * 获取渠道列表 Hook

@@ -1,4 +1,4 @@
-import { ChannelType, useFetchModel } from '@/api/endpoints/channel';
+import { AutoGroupType, ChannelType, useFetchModel } from '@/api/endpoints/channel';
 import {
     Select,
     SelectContent,
@@ -24,7 +24,7 @@ export interface ChannelFormData {
     enabled: boolean;
     proxy: boolean;
     auto_sync: boolean;
-    auto_group: boolean;
+    auto_group: AutoGroupType;
 }
 
 export interface ChannelFormProps {
@@ -273,7 +273,26 @@ export function ChannelForm({
                 </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+                <label htmlFor={`${idPrefix}-auto-group`} className="text-sm font-medium text-card-foreground">
+                    {t('autoGroup')}
+                </label>
+                <Select
+                    value={String(formData.auto_group)}
+                    onValueChange={(value) => onFormDataChange({ ...formData, auto_group: Number(value) as AutoGroupType })}
+                >
+                    <SelectTrigger id={`${idPrefix}-auto-group`} className="rounded-xl w-full border border-border px-4 py-2 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className='rounded-xl'>
+                        <SelectItem className='rounded-xl' value={String(AutoGroupType.None)}>{t('autoGroupNone')}</SelectItem>
+                        <SelectItem className='rounded-xl' value={String(AutoGroupType.Fuzzy)}>{t('autoGroupFuzzy')}</SelectItem>
+                        <SelectItem className='rounded-xl' value={String(AutoGroupType.Exact)}>{t('autoGroupExact')}</SelectItem>
+                    </SelectContent>
+                </Select>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-3">
                 <label className="flex items-center gap-2">
                     <Switch
                         checked={formData.enabled}
@@ -294,13 +313,6 @@ export function ChannelForm({
                         onCheckedChange={(checked) => onFormDataChange({ ...formData, auto_sync: checked })}
                     />
                     <span className="text-sm text-card-foreground">{t('autoSync')}</span>
-                </label>
-                <label className="flex items-center gap-2">
-                    <Switch
-                        checked={formData.auto_group}
-                        onCheckedChange={(checked) => onFormDataChange({ ...formData, auto_group: checked })}
-                    />
-                    <span className="text-sm text-card-foreground">{t('autoGroup')}</span>
                 </label>
             </div>
 

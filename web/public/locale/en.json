@@ -298,7 +298,10 @@
             "typeAnthropic": "Anthropic",
             "typeOneAPI": "OneAPI",
             "autoSync": "Auto Sync",
-            "autoGroup": "Auto Group"
+            "autoGroup": "Auto Group",
+            "autoGroupNone": "None",
+            "autoGroupFuzzy": "Fuzzy",
+            "autoGroupExact": "Exact"
         }
     }
 }
