@@ -61,7 +61,8 @@ export function useLogList(params: LogListParams = {}) {
     return useQuery({
         queryKey: ['logs', 'list', page, page_size, start_time, end_time],
         queryFn: async () => {
-            return apiClient.get<RelayLog[]>(`/api/v1/log/list?${queryParams.toString()}`);
+            const result = await apiClient.get<RelayLog[] | null>(`/api/v1/log/list?${queryParams.toString()}`);
+            return result ?? [];
         },
     });
 }
@@ -122,7 +123,8 @@ export function useLogs(options: { pageSize?: number } = {}) {
             const params = new URLSearchParams();
             params.set('page', String(pageParam));
             params.set('page_size', String(pageSize));
-            return apiClient.get<RelayLog[]>(`/api/v1/log/list?${params.toString()}`);
+            const result = await apiClient.get<RelayLog[] | null>(`/api/v1/log/list?${params.toString()}`);
+            return result ?? [];
         },
         getNextPageParam: (lastPage, allPages) => {
             if (!lastPage || lastPage.length < pageSize) return undefined;
@@ -183,7 +185,7 @@ export function useLogs(options: { pageSize?: number } = {}) {
                                     return { pages: [[log]], pageParams: [1] };
                                 }
 
-                                const exists = old.pages.some((p) => p.some((x) => x.id === log.id));
+                                const exists = old.pages.some((p) => p?.some((x) => x.id === log.id));
                                 if (exists) return old;
 
                                 const firstPage = old.pages[0] ?? [];
