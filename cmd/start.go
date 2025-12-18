@@ -46,6 +46,7 @@ var startCmd = &cobra.Command{
 		}
 		shutdown.Register(server.Close)
 
+		task.Init()
 		go task.RUN()
 	},
 }

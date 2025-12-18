@@ -2,12 +2,15 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/alvindingpeng/switchyard/internal/server/router"
+	"github.com/alvindingpeng/switchyard/internal/task"
 	"github.com/gin-gonic/gin"
 )
 
@@ -38,9 +41,20 @@ func setSetting(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	hours, err := strconv.Atoi(setting.Value)
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := op.SettingSetString(setting.Key, setting.Value); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
+	}
+	switch setting.Key {
+	case model.SettingKeyModelInfoUpdateInterval:
+		task.Update(string(setting.Key), time.Duration(hours)*time.Hour)
+	case model.SettingKeySyncLLMInterval:
+		task.Update(string(setting.Key), time.Duration(hours)*time.Hour)
 	}
 	resp.Success(c, setting)
 }

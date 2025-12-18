@@ -33,15 +33,6 @@ var Provider = []string{
 var lastUpdateTime time.Time
 
 func UpdateLLMPriceTask() {
-	intervalHours, err := op.SettingGetInt(model.SettingKeyModelInfoUpdateInterval)
-	if err != nil {
-		log.Errorf("failed to get model info update interval: %v", err)
-		return
-	}
-	interval := time.Duration(intervalHours) * time.Hour
-	if time.Since(lastUpdateTime) < interval {
-		return
-	}
 	if err := UpdateLLMPrice(context.Background()); err != nil {
 		log.Warnf("failed to update price info: %v", err)
 		return

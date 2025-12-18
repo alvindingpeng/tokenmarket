@@ -1,0 +1,48 @@
+package task
+
+import (
+	"context"
+	"time"
+
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/op"
+	"github.com/alvindingpeng/switchyard/internal/price"
+	"github.com/alvindingpeng/switchyard/internal/utils/log"
+)
+
+const (
+	TaskPriceUpdate  = "price_update"
+	TaskStatsSave    = "stats_save"
+	TaskRelayLogSave = "relay_log_save"
+	TaskSyncLLM      = "sync_llm"
+)
+
+func Init() {
+	priceUpdateIntervalHours, err := op.SettingGetInt(model.SettingKeyModelInfoUpdateInterval)
+	if err != nil {
+		log.Errorf("failed to get model info update interval: %v", err)
+		return
+	}
+	priceUpdateInterval := time.Duration(priceUpdateIntervalHours) * time.Hour
+	// 注册价格更新任务
+	Register(string(model.SettingKeyModelInfoUpdateInterval), priceUpdateInterval, true, price.UpdateLLMPriceTask)
+
+	// 注册LLM同步任务
+	syncLLMIntervalHours, err := op.SettingGetInt(model.SettingKeySyncLLMInterval)
+	if err != nil {
+		log.Warnf("failed to get sync LLM interval: %v", err)
+		return
+	}
+	syncLLMInterval := time.Duration(syncLLMIntervalHours) * time.Hour
+	Register(string(model.SettingKeySyncLLMInterval), syncLLMInterval, true, SyncLLMTask)
+
+	// 注册统计保存任务
+	Register(TaskStatsSave, 10*time.Minute, false, op.StatsSaveDBTask)
+	// 注册中继日志保存任务
+	Register(TaskRelayLogSave, 10*time.Minute, false, func() {
+		if err := op.RelayLogSaveDBTask(context.Background()); err != nil {
+			log.Warnf("relay log save db task failed: %v", err)
+		}
+	})
+
+}

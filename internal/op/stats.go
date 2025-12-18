@@ -27,19 +27,7 @@ var statsChannelCacheNeedUpdate = make(map[int]struct{})
 var statsModelCache = cache.New[int, model.StatsModel](16)
 var statsModelCacheNeedUpdate = make(map[int]struct{})
 
-var statsLastSaveTime = time.Now()
-
 func StatsSaveDBTask() {
-	interval, err := SettingGetInt(model.SettingKeyStatsSaveInterval)
-	if err != nil {
-		log.Errorf("failed to get stats save interval: %v", err)
-		return
-	}
-
-	if time.Since(statsLastSaveTime) < time.Duration(interval)*time.Minute {
-		return
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := StatsSaveDB(ctx); err != nil {
@@ -47,7 +35,6 @@ func StatsSaveDBTask() {
 		return
 	}
 	log.Infof("stats saved successfully")
-	statsLastSaveTime = time.Now()
 }
 
 func StatsSaveDB(ctx context.Context) error {
