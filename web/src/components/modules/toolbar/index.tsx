@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Search, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
     MorphingDialog,
@@ -15,6 +15,7 @@ import { CreateDialogContent as ChannelCreateContent } from '@/components/module
 import { CreateDialogContent as GroupCreateContent } from '@/components/modules/group/Create';
 import { CreateDialogContent as ModelCreateContent } from '@/components/modules/model/Create';
 import { useSearchStore } from './search-store';
+import { usePaginationStore } from './pagination-store';
 
 const TOOLBAR_PAGES: NavItem[] = ['channel', 'group', 'model'];
 
@@ -35,14 +36,20 @@ export function Toolbar() {
     const { activeItem } = useNavStore();
     const searchTerm = useSearchStore((s) => s.searchTerms[activeItem] || '');
     const setSearchTerm = useSearchStore((s) => s.setSearchTerm);
+    const page = usePaginationStore((s) => s.getPage(activeItem));
+    const totalPages = usePaginationStore((s) => s.getTotalPages(activeItem));
+    const prevPage = usePaginationStore((s) => s.prevPage);
+    const nextPage = usePaginationStore((s) => s.nextPage);
+    const setPage = usePaginationStore((s) => s.setPage);
     const [searchExpanded, setSearchExpanded] = useState(false);
 
     useEffect(() => {
         queueMicrotask(() => {
             setSearchExpanded(false);
             setSearchTerm(activeItem, '');
+            setPage(activeItem, 1);
         });
-    }, [activeItem, setSearchTerm]);
+    }, [activeItem, setSearchTerm, setPage]);
 
     const showToolbar = TOOLBAR_PAGES.includes(activeItem);
 
@@ -94,6 +101,37 @@ export function Toolbar() {
                         )}
                     </div>
 
+                    {/* 页码指示器 */}
+                    <div className="flex items-center h-9 rounded-xl border">
+                        <button
+                            type="button"
+                            aria-label="Previous page"
+                            onClick={() => prevPage(activeItem)}
+                            disabled={page <= 1}
+                            className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:text-muted-foreground"
+                        >
+                            <ChevronLeft className="size-4" />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setPage(activeItem, 1)}
+                            className="px-2 text-sm tabular-nums text-muted-foreground hover:text-foreground"
+                            aria-label="Page indicator"
+                            title="Click to go to first page"
+                        >
+                            {page}/{totalPages}
+                        </button>
+                        <button
+                            type="button"
+                            aria-label="Next page"
+                            onClick={() => nextPage(activeItem)}
+                            disabled={page >= totalPages}
+                            className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:text-muted-foreground"
+                        >
+                            <ChevronRight className="size-4" />
+                        </button>
+                    </div>
+
                     {/* 创建按钮 */}
                     <MorphingDialog>
                         <MorphingDialogTrigger className={buttonVariants({ variant: "ghost", size: "icon", className: "rounded-xl transition-none hover:bg-transparent text-muted-foreground hover:text-foreground" })}>
@@ -113,3 +151,4 @@ export function Toolbar() {
 }
 
 export { useSearchStore } from './search-store';
+export { usePaginationStore } from './pagination-store';

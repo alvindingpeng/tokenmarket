@@ -1,14 +1,23 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useChannelList } from '@/api/endpoints/channel';
-import { PageWrapper } from '@/components/common/PageWrapper';
 import { Card } from './Card';
-import { useSearchStore } from '@/components/modules/toolbar';
+import { usePaginationStore, useSearchStore } from '@/components/modules/toolbar';
+import { EASING } from '@/lib/animations/fluid-transitions';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 export function Channel() {
     const { data: channelsData } = useChannelList();
-    const searchTerm = useSearchStore((s) => s.getSearchTerm('channel'));
+    const pageKey = 'channel' as const;
+    const isMobile = useIsMobile();
+    const searchTerm = useSearchStore((s) => s.getSearchTerm(pageKey));
+    const page = usePaginationStore((s) => s.getPage(pageKey));
+    const setTotalItems = usePaginationStore((s) => s.setTotalItems);
+    const setPage = usePaginationStore((s) => s.setPage);
+    const pageSize = usePaginationStore((s) => s.getPageSize(pageKey));
+    const setPageSize = usePaginationStore((s) => s.setPageSize);
 
     const filteredChannels = useMemo(() => {
         if (!channelsData) return [];
@@ -18,11 +27,70 @@ export function Channel() {
         return sorted.filter((c) => c.raw.name.toLowerCase().includes(term));
     }, [channelsData, searchTerm]);
 
+    useEffect(() => {
+        setTotalItems(pageKey, filteredChannels.length);
+    }, [filteredChannels.length, setTotalItems]);
+
+    useEffect(() => {
+        setPage(pageKey, 1);
+    }, [searchTerm, setPage]);
+
+    useEffect(() => {
+        setPageSize(pageKey, isMobile ? 3 : 12);
+    }, [isMobile, setPageSize]);
+
+    const pagedChannels = useMemo(() => {
+        const start = (page - 1) * pageSize;
+        const end = start + pageSize;
+        return filteredChannels.slice(start, end);
+    }, [filteredChannels, page, pageSize]);
+
+    const prevPageRef = useRef(page);
+    const direction = page > prevPageRef.current ? 1 : page < prevPageRef.current ? -1 : 1;
+    useEffect(() => {
+        prevPageRef.current = page;
+    }, [page]);
+
     return (
-        <PageWrapper className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filteredChannels.map((channel) => (
-                <Card key={"channel-" + channel.raw.id} channel={channel.raw} stats={channel.formatted} />
-            ))}
-        </PageWrapper>
+        <AnimatePresence mode="popLayout" initial={false} custom={direction}>
+            <motion.div
+                key={`channel-page-${page}`}
+                custom={direction}
+                variants={{
+                    enter: (d: number) => ({ x: d >= 0 ? 24 : -24, opacity: 0 }),
+                    center: { x: 0, opacity: 1 },
+                    exit: (d: number) => ({ x: d >= 0 ? -24 : 24, opacity: 0 }),
+                }}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{ duration: 0.25, ease: EASING.easeOutExpo }}
+            >
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    <AnimatePresence mode="popLayout">
+                        {pagedChannels.map((channel, index) => (
+                            <motion.div
+                                key={"channel-" + channel.raw.id}
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{
+                                    opacity: 0,
+                                    scale: 0.95,
+                                    transition: { duration: 0.2 }
+                                }}
+                                transition={{
+                                    duration: 0.45,
+                                    ease: EASING.easeOutExpo,
+                                    delay: index === 0 ? 0 : Math.min(0.08 * Math.log2(index + 1), 0.4),
+                                }}
+                                layout={!searchTerm.trim()}
+                            >
+                                <Card channel={channel.raw} stats={channel.formatted} />
+                            </motion.div>
+                        ))}
+                    </AnimatePresence>
+                </div>
+            </motion.div>
+        </AnimatePresence>
     );
 }

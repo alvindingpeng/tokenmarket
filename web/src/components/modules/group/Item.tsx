@@ -8,6 +8,7 @@ import { useModelChannelList, type LLMChannel } from '@/api/endpoints/model';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/common/Toast';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/animate-ui/components/animate/tooltip';
 import { MemberItem, AddMemberRow, type SelectedMember } from './components';
 import { buildChannelNameByModelKey, modelChannelKey } from './utils';
 
@@ -139,46 +140,75 @@ export function GroupCard({ group }: { group: Group }) {
                 </h3>
 
                 <div className="flex items-center gap-1 shrink-0">
-                    <button type="button" onClick={() => setIsAdding(true)} disabled={isAdding} className={cn('p-1.5 rounded-lg transition-colors', isAdding ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground hover:text-foreground')}>
-                        <Plus className="size-4" />
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => group.id && autoAddGroupItem.mutate(group.id, {
-                            onSuccess,
-                            onError: (error: any) => toast.error(t('toast.autoAddFailed'), { description: error?.message }),
-                        })}
-                        disabled={isAdding || autoAddGroupItem.isPending}
-                        className={cn(
-                            'p-1.5 rounded-lg transition-colors',
-                            autoAddGroupItem.isPending
-                                ? 'bg-primary/10 text-primary'
-                                : 'hover:bg-muted text-muted-foreground hover:text-foreground',
-                            (isAdding || autoAddGroupItem.isPending) && 'disabled:opacity-50 disabled:cursor-not-allowed'
-                        )}
-                    >
-                        {autoAddGroupItem.isPending ? (
-                            <Loader2 className="size-4 animate-spin" />
-                        ) : (
-                            <Wand2 className="size-4" />
-                        )}
-                    </button>
+                    <Tooltip side="top" sideOffset={10} align="center">
+                        <TooltipTrigger>
+                            <button
+                                type="button"
+                                onClick={() => setIsAdding(true)}
+                                disabled={isAdding}
+                                className={cn(
+                                    'p-1.5 rounded-lg transition-colors',
+                                    isAdding ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground hover:text-foreground'
+                                )}
+                            >
+                                <Plus className="size-4" />
+                            </button>
+                        </TooltipTrigger>
+                        <TooltipContent>{t('form.addItem')}</TooltipContent>
+                    </Tooltip>
+
+                    <Tooltip side="top" sideOffset={10} align="center">
+                        <TooltipTrigger>
+                            <button
+                                type="button"
+                                onClick={() => group.id && autoAddGroupItem.mutate(group.id, {
+                                    onSuccess,
+                                    onError: (error: any) => toast.error(t('toast.autoAddFailed'), { description: error?.message }),
+                                })}
+                                disabled={isAdding || autoAddGroupItem.isPending}
+                                className={cn(
+                                    'p-1.5 rounded-lg transition-colors',
+                                    autoAddGroupItem.isPending
+                                        ? 'bg-primary/10 text-primary'
+                                        : 'hover:bg-muted text-muted-foreground hover:text-foreground',
+                                    (isAdding || autoAddGroupItem.isPending) && 'disabled:opacity-50 disabled:cursor-not-allowed'
+                                )}
+                            >
+                                {autoAddGroupItem.isPending ? (
+                                    <Loader2 className="size-4 animate-spin" />
+                                ) : (
+                                    <Wand2 className="size-4" />
+                                )}
+                            </button>
+                        </TooltipTrigger>
+                        <TooltipContent>{t('form.autoAdd')}</TooltipContent>
+                    </Tooltip>
 
                     {updateGroup.isPending ? (
                         <div className="p-1.5 text-primary"><Loader2 className="size-4 animate-spin" /></div>
                     ) : (
-                        <button type="button" onClick={handleCopy} className="p-1.5 rounded-lg transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
-                            <AnimatePresence mode="wait">
-                                <motion.div key={copied ? 'check' : 'copy'} initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}>
-                                    {copied ? <Check className="size-4 text-primary" /> : <Copy className="size-4" />}
-                                </motion.div>
-                            </AnimatePresence>
-                        </button>
+                        <Tooltip side="top" sideOffset={10} align="center">
+                            <TooltipTrigger>
+                                <button type="button" onClick={handleCopy} className="p-1.5 rounded-lg transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
+                                    <AnimatePresence mode="wait">
+                                        <motion.div key={copied ? 'check' : 'copy'} initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}>
+                                            {copied ? <Check className="size-4 text-primary" /> : <Copy className="size-4" />}
+                                        </motion.div>
+                                    </AnimatePresence>
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent>{t('detail.actions.copyName')}</TooltipContent>
+                        </Tooltip>
                     )}
                     {!confirmDelete && (
-                        <motion.button layoutId={`delete-btn-group-${group.id}`} type="button" onClick={() => setConfirmDelete(true)} className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors">
-                            <Trash2 className="size-4" />
-                        </motion.button>
+                        <Tooltip side="top" sideOffset={10} align="center">
+                            <TooltipTrigger>
+                                <motion.button layoutId={`delete-btn-group-${group.id}`} type="button" onClick={() => setConfirmDelete(true)} className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors">
+                                    <Trash2 className="size-4" />
+                                </motion.button>
+                            </TooltipTrigger>
+                            <TooltipContent>{t('detail.actions.delete')}</TooltipContent>
+                        </Tooltip>
                     )}
                 </div>
 

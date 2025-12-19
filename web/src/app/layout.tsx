@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/sonner"
 import { LocaleProvider } from "@/provider/locale";
 import QueryProvider from "@/provider/query";
 import { ServiceWorkerRegister } from "@/components/sw-register";
+import { TooltipProvider } from "@/components/animate-ui/components/animate/tooltip";
 
 
 
@@ -32,8 +33,10 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <QueryProvider>
             <LocaleProvider>
-              {children}
-              <Toaster />
+              <TooltipProvider>
+                {children}
+                <Toaster />
+              </TooltipProvider>
             </LocaleProvider>
           </QueryProvider>
         </ThemeProvider>

@@ -35,14 +35,6 @@ function mergeRefs<T>(
   };
 }
 
-const motionCache = new Map<React.ElementType, React.ElementType>();
-function getMotionComponent(type: React.ElementType): React.ElementType {
-  if (!motionCache.has(type)) {
-    motionCache.set(type, motion(type));
-  }
-  return motionCache.get(type)!;
-}
-
 function mergeProps<T extends HTMLElement>(
   childProps: AnyProps,
   slotProps: DOMMotionProps<T>,
@@ -76,8 +68,13 @@ function Slot<T extends HTMLElement = HTMLElement>({
     children.type !== null &&
     isMotionComponent(children.type);
 
-  const childType = children.type as React.ElementType;
-  const Base = isAlreadyMotion ? childType : getMotionComponent(childType);
+  const Base = React.useMemo(
+    () =>
+      isAlreadyMotion
+        ? (children.type as React.ElementType)
+        : motion.create(children.type as React.ElementType),
+    [isAlreadyMotion, children.type],
+  );
 
   if (!React.isValidElement(children)) return null;
 
@@ -86,7 +83,6 @@ function Slot<T extends HTMLElement = HTMLElement>({
   const mergedProps = mergeProps(childProps, props);
 
   return (
-    // eslint-disable-next-line react-hooks/static-components -- Base is cached via getMotionComponent
     <Base {...mergedProps} ref={mergeRefs(childRef as React.Ref<T>, ref)} />
   );
 }

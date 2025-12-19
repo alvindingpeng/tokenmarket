@@ -1,14 +1,23 @@
 'use client';
 
-import { useMemo } from 'react';
-import { PageWrapper } from '@/components/common/PageWrapper';
+import { useEffect, useMemo, useRef } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { GroupCard } from './Item';
 import { useGroupList } from '@/api/endpoints/group';
-import { useSearchStore } from '@/components/modules/toolbar';
+import { usePaginationStore, useSearchStore } from '@/components/modules/toolbar';
+import { EASING } from '@/lib/animations/fluid-transitions';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 export function Group() {
     const { data: groups } = useGroupList();
-    const searchTerm = useSearchStore((s) => s.getSearchTerm('group'));
+    const pageKey = 'group' as const;
+    const isMobile = useIsMobile();
+    const searchTerm = useSearchStore((s) => s.getSearchTerm(pageKey));
+    const page = usePaginationStore((s) => s.getPage(pageKey));
+    const setTotalItems = usePaginationStore((s) => s.setTotalItems);
+    const setPage = usePaginationStore((s) => s.setPage);
+    const pageSize = usePaginationStore((s) => s.getPageSize(pageKey));
+    const setPageSize = usePaginationStore((s) => s.setPageSize);
 
     const filteredGroups = useMemo(() => {
         if (!groups) return [];
@@ -18,11 +27,70 @@ export function Group() {
         return sorted.filter((g) => g.name.toLowerCase().includes(term));
     }, [groups, searchTerm]);
 
+    useEffect(() => {
+        setTotalItems(pageKey, filteredGroups.length);
+    }, [filteredGroups.length, setTotalItems]);
+
+    useEffect(() => {
+        setPage(pageKey, 1);
+    }, [searchTerm, setPage]);
+
+    useEffect(() => {
+        setPageSize(pageKey, isMobile ? 1 : 6);
+    }, [isMobile, setPageSize]);
+
+    const pagedGroups = useMemo(() => {
+        const start = (page - 1) * pageSize;
+        const end = start + pageSize;
+        return filteredGroups.slice(start, end);
+    }, [filteredGroups, page, pageSize]);
+
+    const prevPageRef = useRef(page);
+    const direction = page > prevPageRef.current ? 1 : page < prevPageRef.current ? -1 : 1;
+    useEffect(() => {
+        prevPageRef.current = page;
+    }, [page]);
+
     return (
-        <PageWrapper className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredGroups.map((group) => (
-                <GroupCard key={group.id} group={group} />
-            ))}
-        </PageWrapper>
+        <AnimatePresence mode="popLayout" initial={false} custom={direction}>
+            <motion.div
+                key={`group-page-${page}`}
+                custom={direction}
+                variants={{
+                    enter: (d: number) => ({ x: d >= 0 ? 24 : -24, opacity: 0 }),
+                    center: { x: 0, opacity: 1 },
+                    exit: (d: number) => ({ x: d >= 0 ? -24 : 24, opacity: 0 }),
+                }}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{ duration: 0.25, ease: EASING.easeOutExpo }}
+            >
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <AnimatePresence mode="popLayout">
+                        {pagedGroups.map((group, index) => (
+                            <motion.div
+                                key={group.id}
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{
+                                    opacity: 0,
+                                    scale: 0.95,
+                                    transition: { duration: 0.2 }
+                                }}
+                                transition={{
+                                    duration: 0.45,
+                                    ease: EASING.easeOutExpo,
+                                    delay: index === 0 ? 0 : Math.min(0.08 * Math.log2(index + 1), 0.4),
+                                }}
+                                layout={!searchTerm.trim()}
+                            >
+                                <GroupCard group={group} />
+                            </motion.div>
+                        ))}
+                    </AnimatePresence>
+                </div>
+            </motion.div>
+        </AnimatePresence>
     );
 }
