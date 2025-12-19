@@ -103,13 +103,21 @@ export function AppContainer() {
                         <Toolbar />
                     </div>
                 </header>
-                <motion.div
-                    variants={ENTRANCE_VARIANTS.content}
-                    initial="initial"
-                    animate="animate"
-                >
-                    <ContentLoader activeRoute={activeItem} />
-                </motion.div>
+                <AnimatePresence mode="wait" initial={false}>
+                    <motion.div
+                        key={activeItem}
+                        variants={ENTRANCE_VARIANTS.content}
+                        initial="initial"
+                        animate="animate"
+                        exit={{
+                            opacity: 0,
+                            scale: 0.98,
+                        }}
+                        transition={{ duration: 0.25 }}
+                    >
+                        <ContentLoader activeRoute={activeItem} />
+                    </motion.div>
+                </AnimatePresence>
             </main>
         </motion.div>
     );
