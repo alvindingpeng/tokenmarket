@@ -37,12 +37,12 @@ func (o *MessagesOutbound) TransformRequest(ctx context.Context, request *model.
 		method = "streamGenerateContent"
 	}
 
-	// Build path: /v1beta/models/{model}:{method}
+	// Build path: /models/{model}:{method}
 	modelName := request.Model
 	if !strings.Contains(modelName, "/") {
 		modelName = "models/" + modelName
 	}
-	parsedUrl.Path = fmt.Sprintf("%s/v1beta/%s:%s", parsedUrl.Path, modelName, method)
+	parsedUrl.Path = fmt.Sprintf("%s/%s:%s", parsedUrl.Path, modelName, method)
 
 	// Add API key as query parameter
 	q := parsedUrl.Query()
