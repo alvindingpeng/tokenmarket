@@ -322,6 +322,7 @@
             "typeOpenAIChat": "OpenAI Chat",
             "typeOpenAIResponse": "OpenAI Response",
             "typeAnthropic": "Anthropic",
+            "typeGemini": "Gemini",
             "typeOneAPI": "OneAPI",
             "autoSync": "自动同步",
             "autoGroup": "自动分组",
