@@ -109,7 +109,7 @@ type GeminiThinkingConfig struct {
 	IncludeThoughts bool `json:"includeThoughts,omitempty"`
 
 	// ThinkingBudget is the thinking budget in tokens
-	ThinkingBudget *int64 `json:"thinkingBudget,omitempty"`
+	ThinkingBudget *int32 `json:"thinkingBudget,omitempty"`
 
 	// ThinkingLevel is the level of thoughts tokens that the model should generate
 	ThinkingLevel string `json:"thinkingLevel,omitempty"`

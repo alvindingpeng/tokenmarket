@@ -102,6 +102,22 @@ func (o *MessagesOutbound) TransformStream(ctx context.Context, eventData []byte
 
 // Helper functions
 
+// reasoningToThinkingBudget maps reasoning effort levels to thinking budget in tokens
+// https://ai.google.dev/gemini-api/docs/thinking
+func reasoningToThinkingBudget(effort string) int32 {
+	switch strings.ToLower(effort) {
+	case "low":
+		return 1024
+	case "medium":
+		return 4096
+	case "high":
+		return 24576
+	default:
+		// 防御性：未知值走动态
+		return -1
+	}
+}
+
 func convertLLMToGeminiRequest(request *model.InternalLLMRequest) *model.GeminiGenerateContentRequest {
 	geminiReq := &model.GeminiGenerateContentRequest{
 		Contents: []*model.GeminiContent{},
@@ -215,6 +231,16 @@ func convertLLMToGeminiRequest(request *model.InternalLLMRequest) *model.GeminiG
 		hasConfig = true
 	}
 
+	if request.ReasoningEffort != "" {
+		budget := reasoningToThinkingBudget(request.ReasoningEffort)
+
+		config.ThinkingConfig = &model.GeminiThinkingConfig{
+			ThinkingBudget:  &budget,
+			IncludeThoughts: true,
+		}
+		hasConfig = true
+	}
+
 	if hasConfig {
 		geminiReq.GenerationConfig = config
 	}
@@ -282,9 +308,15 @@ func convertGeminiToLLMResponse(geminiResp *model.GeminiGenerateContentResponse,
 			// Extract text and function calls from parts
 			var textParts []string
 			var toolCalls []model.ToolCall
+			var reasoningContent *string
 
 			for idx, part := range candidate.Content.Parts {
-				if part.Text != "" {
+				if part.Thought {
+					// Handle thinking/reasoning content
+					if part.Text != "" && reasoningContent == nil {
+						reasoningContent = &part.Text
+					}
+				} else if part.Text != "" {
 					textParts = append(textParts, part.Text)
 				}
 				if part.FunctionCall != nil {
@@ -308,6 +340,11 @@ func convertGeminiToLLMResponse(geminiResp *model.GeminiGenerateContentResponse,
 				msg.Content = model.MessageContent{
 					Content: &text,
 				}
+			}
+
+			// Set reasoning content
+			if reasoningContent != nil {
+				msg.ReasoningContent = reasoningContent
 			}
 
 			// Set tool calls
