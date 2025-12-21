@@ -22,7 +22,7 @@ func FetchLLMName(ctx context.Context, request model.Channel) ([]string, error) 
 		return nil, err
 	}
 	switch request.Type {
-	case outbound.OutboundTypeOpenAIChat, outbound.OutboundTypeOpenAIResponse, outbound.OutboundTypeOneAPI:
+	case outbound.OutboundTypeOpenAIChat, outbound.OutboundTypeOpenAIResponse:
 		req.Header.Set("Authorization", "Bearer "+request.Key)
 	case outbound.OutboundTypeAnthropic:
 		req.Header.Set("Authorization", "Bearer "+request.Key)

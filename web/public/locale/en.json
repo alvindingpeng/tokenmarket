@@ -323,7 +323,6 @@
             "typeOpenAIResponse": "OpenAI Response",
             "typeAnthropic": "Anthropic",
             "typeGemini": "Gemini",
-            "typeOneAPI": "OneAPI",
             "autoSync": "Auto Sync",
             "autoGroup": "Auto Group",
             "autoGroupNone": "None",

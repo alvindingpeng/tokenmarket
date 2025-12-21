@@ -13,7 +13,6 @@ const (
 	OutboundTypeOpenAIChat OutboundType = iota
 	OutboundTypeOpenAIResponse
 	OutboundTypeAnthropic
-	OutboundTypeOneAPI
 	OutboundTypeGemini
 )
 
