@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/alvindingpeng/switchyard/internal/transformer/model"
+	"github.com/samber/lo"
 )
 
 type MessagesOutbound struct{}
@@ -125,6 +126,7 @@ func convertLLMToGeminiRequest(request *model.InternalLLMRequest) *model.GeminiG
 
 	// Convert messages
 	var systemInstruction *model.GeminiContent
+
 	for _, msg := range request.Messages {
 		switch msg.Role {
 		case "system", "developer":
@@ -180,20 +182,7 @@ func convertLLMToGeminiRequest(request *model.InternalLLMRequest) *model.GeminiG
 
 		case "tool":
 			// Tool result
-			content := &model.GeminiContent{
-				Role:  "function",
-				Parts: []*model.GeminiPart{},
-			}
-			if msg.ToolCallID != nil && msg.Content.Content != nil {
-				var response map[string]interface{}
-				_ = json.Unmarshal([]byte(*msg.Content.Content), &response)
-				content.Parts = append(content.Parts, &model.GeminiPart{
-					FunctionResponse: &model.GeminiFunctionResponse{
-						Name:     *msg.ToolCallID,
-						Response: response,
-					},
-				})
-			}
+			content := convertLLMToolResultToGeminiContent(&msg)
 			geminiReq.Contents = append(geminiReq.Contents, content)
 		}
 	}
@@ -254,6 +243,8 @@ func convertLLMToGeminiRequest(request *model.InternalLLMRequest) *model.GeminiG
 			if tool.Type == "function" {
 				var params map[string]interface{}
 				_ = json.Unmarshal(tool.Function.Parameters, &params)
+				// Remove $schema property if present
+				delete(params, "$schema")
 				funcDecl := &model.GeminiFunctionDeclaration{
 					Name:        tool.Function.Name,
 					Description: tool.Function.Description,
@@ -274,6 +265,32 @@ func convertLLMToGeminiRequest(request *model.InternalLLMRequest) *model.GeminiG
 
 	return geminiReq
 
+}
+
+func convertLLMToolResultToGeminiContent(msg *model.Message) *model.GeminiContent {
+	content := &model.GeminiContent{
+		Role: "user", // Function responses come from user role in Gemini
+	}
+
+	var responseData map[string]any
+	if msg.Content.Content != nil {
+		_ = json.Unmarshal([]byte(*msg.Content.Content), &responseData)
+	}
+
+	if responseData == nil {
+		responseData = map[string]any{"result": lo.FromPtrOr(msg.Content.Content, "")}
+	}
+
+	fp := &model.GeminiFunctionResponse{
+		Name:     lo.FromPtrOr(msg.ToolCallID, ""),
+		Response: responseData,
+	}
+
+	content.Parts = []*model.GeminiPart{
+		{FunctionResponse: fp},
+	}
+
+	return content
 }
 
 func convertGeminiToLLMResponse(geminiResp *model.GeminiGenerateContentResponse, isStream bool) *model.InternalLLMResponse {
