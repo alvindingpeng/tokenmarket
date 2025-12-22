@@ -53,14 +53,16 @@ export function NavBar() {
                 <motion.div
                     className={cn(
                         "absolute bg-sidebar-primary rounded-2xl pointer-events-none",
-                        "w-10 h-10 md:w-12 md:h-12",  // 40px / 48px 匹配按钮尺寸
-                        "top-3 left-3",  // p-3 = 12px，与第一个按钮对齐
                         "z-10"  // 在 hover 背景之上
                     )}
+                    style={{
+                        width: config.size,
+                        height: config.size,
+                    }}
                     initial={false}
                     animate={{
-                        x: isDesktop ? 0 : offset,
-                        y: isDesktop ? offset : 0,
+                        left: isDesktop ? 12 : 12 + offset,
+                        top: isDesktop ? 12 + offset : 12,
                     }}
                     transition={{ type: "spring", stiffness: 300, damping: 30 }}
                 />
