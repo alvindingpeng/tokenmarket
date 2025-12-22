@@ -1,43 +1,59 @@
 'use client';
 
 import { useEffect } from 'react';
-import { toast } from 'sonner';
+import { SW_MESSAGE_TYPE } from '@/lib/sw';
 
 export function ServiceWorkerRegister() {
     useEffect(() => {
-        if (typeof window !== 'undefined' && 'serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
-            navigator.serviceWorker
-                .register('/sw.js', { scope: '/' })
-                .then((registration) => {
-                    registration.update();
-                    registration.addEventListener('updatefound', () => {
-                        const newWorker = registration.installing;
-                        if (newWorker) {
-                            newWorker.addEventListener('statechange', () => {
-                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                                    toast.info('发现新版本', {
-                                        description: '点击刷新按钮更新到最新版本',
-                                        duration: Infinity,
-                                        action: {
-                                            label: '刷新',
-                                            onClick: () => {
-                                                newWorker.postMessage({ type: 'SKIP_WAITING' });
-                                                window.location.reload();
-                                            },
-                                        },
-                                    });
-                                }
-                            });
+        if (typeof window === 'undefined') return;
+        if (!('serviceWorker' in navigator)) return;
+        if (process.env.NODE_ENV !== 'production') return;
+
+        let hasRefreshed = false;
+        const onControllerChange = () => {
+            if (hasRefreshed) return;
+            hasRefreshed = true;
+            window.location.reload();
+        };
+
+        const activateUpdate = (registration: ServiceWorkerRegistration) => {
+            // First install: no existing controller, so no need to force activation/reload.
+            if (!navigator.serviceWorker.controller) return;
+
+            // Prefer `waiting` worker (already installed & waiting to activate).
+            const worker = registration.waiting || registration.installing;
+            worker?.postMessage({ type: SW_MESSAGE_TYPE.SKIP_WAITING });
+        };
+
+        navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
+
+        navigator.serviceWorker
+            .register('/sw.js', { scope: '/' })
+            .then((registration) => {
+                // If an update is already waiting, activate it immediately.
+                if (registration.waiting) {
+                    activateUpdate(registration);
+                }
+
+                registration.update();
+                registration.addEventListener('updatefound', () => {
+                    const installing = registration.installing;
+                    if (!installing) return;
+                    installing.addEventListener('statechange', () => {
+                        if (installing.state === 'installed') {
+                            // When installed + controller exists => an update is ready (likely in `waiting`)
+                            activateUpdate(registration);
                         }
                     });
-                })
-                .catch(() => {
                 });
-
-            navigator.serviceWorker.addEventListener('controllerchange', () => {
-                window.location.reload();
+            })
+            .catch(() => {
+                // ignore
             });
-        }
+
+        return () => {
+            navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
+        };
     }, []);
 
     return null;

@@ -6,6 +6,7 @@ import { APP_VERSION, GITHUB_REPO } from '@/lib/info';
 import { useVersionInfo, useUpdateCore } from '@/api/endpoints/update';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/common/Toast';
+import { isSwitchyardCacheName, SW_MESSAGE_TYPE } from '@/lib/sw';
 
 export function SettingInfo() {
     const t = useTranslations('setting');
@@ -16,26 +17,43 @@ export function SettingInfo() {
     const latestVersion = versionInfo?.latest_version || '';
 
     // 前端版本与后端当前版本不一致 → 浏览器缓存问题
-    const isCacheMismatch = backendNowVersion !== APP_VERSION;
+    const isCacheMismatch = !!backendNowVersion && backendNowVersion !== APP_VERSION;
     // 最新版本与后端当前版本不一致 → 有新版本可更新
     const hasNewVersion = latestVersion && backendNowVersion && latestVersion !== backendNowVersion;
 
-    const handleForceRefresh = () => {
-        // 强制刷新浏览器缓存
-        if ('caches' in window) {
-            caches.keys().then((names) => {
-                names.forEach(name => {
-                    caches.delete(name);
-                });
-            });
+    const clearCacheAndReload = async () => {
+        // 通知 Service Worker 清理缓存
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({ type: SW_MESSAGE_TYPE.CLEAR_CACHE });
         }
+        // 同时也从主线程清理（双保险）
+        if ('caches' in window) {
+            const names = await caches.keys();
+            await Promise.all(names.filter(isSwitchyardCacheName).map((name) => caches.delete(name)));
+        }
+        // 注销当前 SW，下次加载会重新注册
+        if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(registrations.map((reg) => reg.unregister()));
+        }
+        // 强制刷新（跳过缓存）
         window.location.reload();
+    };
+
+    const handleForceRefresh = () => {
+        clearCacheAndReload();
     };
 
     const handleUpdate = () => {
         updateCore.mutate(undefined, {
             onSuccess: () => {
-                toast.success(t('info.updateSuccess'));
+                toast.success(t('info.updateSuccess'), {
+                    description: t('info.reloading'),
+                });
+                // 更新成功后清理缓存并刷新
+                setTimeout(() => {
+                    clearCacheAndReload();
+                }, 1500);
             },
             onError: () => {
                 toast.error(t('info.updateFailed'));

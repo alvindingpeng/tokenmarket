@@ -1,141 +1,191 @@
 // Service Worker for Switchyard PWA
+// Next.js: hashed assets under /_next/static/ are immutable (Cache First)
+
+/**
+ * Cache naming
+ * - Prefix MUST match `web/src/lib/sw.ts` (SWITCHYARD_CACHE_PREFIX)
+ * - Bump CACHE_VERSION when you change caching behavior in this file
+ */
+const CACHE_PREFIX = 'switchyard';
 const CACHE_VERSION = 'v1';
-const CACHE_NAME = `switchyard-cache-${CACHE_VERSION}`;
-const RUNTIME_CACHE = `switchyard-runtime-${CACHE_VERSION}`;
+const CACHE_NAMES = {
+    static: `${CACHE_PREFIX}-static-${CACHE_VERSION}`,
+    app: `${CACHE_PREFIX}-app-${CACHE_VERSION}`,
+};
 
-// 需要预缓存的静态资源
-const PRECACHE_URLS = [
-    '/',
-    '/manifest.json',
-    '/web-app-manifest-192x192.png',
-    '/web-app-manifest-512x512.png',
-    '/logo-dark.svg',
-];
+const SW_MESSAGE_TYPE = {
+    SKIP_WAITING: 'SKIP_WAITING',
+    CLEAR_CACHE: 'CLEAR_CACHE',
+    CACHE_CLEARED: 'CACHE_CLEARED',
+};
 
-// 安装事件 - 预缓存资源
+// Precache (PWA essentials)
+const PRECACHE_URLS = ['/', '/manifest.json', '/web-app-manifest-192x192.png', '/web-app-manifest-512x512.png', '/logo-dark.svg'];
+
+// ============ 安装事件 ============
 self.addEventListener('install', (event) => {
-    console.log('[SW] Install event');
     event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => {
-            console.log('[SW] Precaching static resources');
-            return cache.addAll(PRECACHE_URLS).catch((err) => {
-                console.error('[SW] Precache failed:', err);
-            });
-        }).then(() => {
-            // 强制跳过等待，立即激活
-            return self.skipWaiting();
-        })
+        (async () => {
+            // Best-effort precache: if one asset fails, we still want the SW to install.
+            try {
+                const cache = await caches.open(CACHE_NAMES.app);
+                await cache.addAll(PRECACHE_URLS);
+            } catch (e) {
+                // ignore
+            }
+            await self.skipWaiting();
+        })()
     );
 });
 
-// 激活事件 - 清理旧缓存
+// ============ 激活事件 ============
 self.addEventListener('activate', (event) => {
-    console.log('[SW] Activate event');
     event.waitUntil(
-        caches.keys().then((cacheNames) => {
-            return Promise.all(
-                cacheNames.map((cacheName) => {
-                    // 删除旧版本的缓存
-                    if (cacheName !== CACHE_NAME && cacheName !== RUNTIME_CACHE) {
-                        console.log('[SW] Deleting old cache:', cacheName);
-                        return caches.delete(cacheName);
-                    }
-                })
-            );
-        }).then(() => {
-            // 立即接管所有页面
-            return self.clients.claim();
-        })
+        (async () => {
+            // Clean up old Switchyard caches (previous versions), then take control.
+            await deleteSwitchyardCaches({ keep: new Set(Object.values(CACHE_NAMES)) });
+            await self.clients.claim();
+        })()
     );
 });
 
-// Fetch 事件 - 网络请求拦截
+// ============ Fetch 事件 ============
 self.addEventListener('fetch', (event) => {
     const { request } = event;
     const url = new URL(request.url);
 
-    // 只处理同源请求
-    if (url.origin !== location.origin) {
+    // 只处理同源 GET 请求
+    if (url.origin !== location.origin || request.method !== 'GET') {
         return;
     }
 
-    // 跳过某些请求
-    if (
-        request.method !== 'GET' ||
-        url.pathname.startsWith('/api/') ||
-        url.pathname.startsWith('/_next/webpack-hmr')
-    ) {
+    // 跳过 API 请求和开发环境 HMR
+    if (url.pathname.startsWith('/api/') || url.pathname.includes('webpack-hmr')) {
         return;
     }
 
-    event.respondWith(
-        caches.match(request).then((cachedResponse) => {
-            // 如果缓存中有，先返回缓存
-            if (cachedResponse) {
-                // 同时在后台更新缓存 (Stale-While-Revalidate 策略)
-                fetch(request).then((networkResponse) => {
-                    if (networkResponse && networkResponse.status === 200) {
-                        caches.open(RUNTIME_CACHE).then((cache) => {
-                            cache.put(request, networkResponse);
-                        });
-                    }
-                }).catch(() => {
-                    // 网络请求失败时忽略
-                });
+    // /_next/static/ 资源：Cache First（带哈希，永不变）
+    if (url.pathname.startsWith('/_next/static/')) {
+        event.respondWith(cacheFirst(request, CACHE_NAMES.static));
+        return;
+    }
 
-                return cachedResponse;
+    // /_next/data/ (预取数据)：Network First
+    if (url.pathname.startsWith('/_next/data/')) {
+        event.respondWith(networkFirst(request, CACHE_NAMES.app));
+        return;
+    }
+
+    // 页面导航：Network First，离线时返回缓存
+    if (request.mode === 'navigate') {
+        event.respondWith(networkFirst(request, CACHE_NAMES.app, { fallbackUrl: '/' }));
+        return;
+    }
+
+    // 其他静态资源（public 目录）：Stale While Revalidate
+    event.respondWith(staleWhileRevalidate(request, CACHE_NAMES.app));
+});
+
+// ============ 缓存策略 ============
+
+/**
+ * Cache First：优先缓存，适用于带哈希的不变资源
+ */
+async function cacheFirst(request, cacheName) {
+    const cache = await caches.open(cacheName);
+    const cached = await cache.match(request);
+    if (cached) {
+        return cached;
+    }
+
+    try {
+        const response = await fetch(request);
+        if (response.ok) {
+            cache.put(request, response.clone());
+        }
+        return response;
+    } catch (error) {
+        // 离线且无缓存
+        return new Response('Offline', { status: 503 });
+    }
+}
+
+/**
+ * Network First：优先网络，适用于需要最新内容的资源
+ */
+async function networkFirst(request, cacheName, { fallbackUrl = null } = {}) {
+    const cache = await caches.open(cacheName);
+    try {
+        const response = await fetch(request);
+        if (response.ok) {
+            cache.put(request, response.clone());
+        }
+        return response;
+    } catch (error) {
+        const cached = await cache.match(request);
+        if (cached) {
+            return cached;
+        }
+        // 如果有 fallback（通常是首页），返回 fallback
+        if (fallbackUrl) {
+            const fallback = await cache.match(fallbackUrl);
+            if (fallback) return fallback;
+        }
+        return new Response('Offline', { status: 503 });
+    }
+}
+
+/**
+ * Stale While Revalidate：返回缓存同时后台更新
+ */
+async function staleWhileRevalidate(request, cacheName) {
+    const cache = await caches.open(cacheName);
+    const cached = await cache.match(request);
+
+    const fetchPromise = fetch(request)
+        .then((response) => {
+            if (response.ok) {
+                cache.put(request, response.clone());
             }
-
-            // 缓存中没有，从网络获取
-            return fetch(request).then((networkResponse) => {
-                // 检查是否是有效响应
-                if (!networkResponse || networkResponse.status !== 200 || networkResponse.type === 'error') {
-                    return networkResponse;
-                }
-
-                // 克隆响应，因为响应流只能使用一次
-                const responseToCache = networkResponse.clone();
-
-                // 缓存资源（仅缓存页面和静态资源）
-                const isFont = request.destination === 'font' || /\.(woff2?|ttf|otf|eot)$/i.test(url.pathname);
-                if (
-                    request.destination === 'document' ||
-                    request.destination === 'script' ||
-                    request.destination === 'style' ||
-                    request.destination === 'image' ||
-                    request.destination === 'font'
-                ) {
-                    caches.open(RUNTIME_CACHE).then((cache) => {
-                        cache.put(request, responseToCache);
-                    });
-                }
-
-                return networkResponse;
-            }).catch((error) => {
-                console.error('[SW] Fetch failed:', error);
-
-                // 如果是导航请求（页面），返回离线页面
-                if (request.destination === 'document') {
-                    return caches.match('/');
-                }
-
-                throw error;
-            });
+            return response;
         })
-    );
-});
+        .catch(() => cached || new Response('Offline', { status: 503 }));
 
-// 消息事件 - 支持手动触发缓存更新
+    return cached || fetchPromise;
+}
+
+// ============ 消息事件 ============
 self.addEventListener('message', (event) => {
-    if (event.data && event.data.type === 'SKIP_WAITING') {
-        self.skipWaiting();
-    }
+    const { type } = event.data || {};
 
-    if (event.data && event.data.type === 'CACHE_URLS') {
-        event.waitUntil(
-            caches.open(RUNTIME_CACHE).then((cache) => {
-                return cache.addAll(event.data.payload);
-            })
-        );
+    switch (type) {
+        case SW_MESSAGE_TYPE.SKIP_WAITING:
+            self.skipWaiting();
+            break;
+
+        case SW_MESSAGE_TYPE.CLEAR_CACHE:
+            // Only clear Switchyard caches (avoid nuking other same-origin caches).
+            event.waitUntil(
+                (async () => {
+                    await deleteSwitchyardCaches();
+                    const clients = await self.clients.matchAll();
+                    clients.forEach((client) => client.postMessage({ type: SW_MESSAGE_TYPE.CACHE_CLEARED }));
+                })()
+            );
+            break;
     }
 });
+
+// ========= Helpers =========
+function isSwitchyardCacheName(name) {
+    return name.startsWith(`${CACHE_PREFIX}-`);
+}
+
+async function deleteSwitchyardCaches({ keep } = {}) {
+    const names = await caches.keys();
+    const deletions = names
+        .filter((name) => isSwitchyardCacheName(name))
+        .filter((name) => !(keep && keep.has(name)))
+        .map((name) => caches.delete(name));
+    await Promise.all(deletions);
+}

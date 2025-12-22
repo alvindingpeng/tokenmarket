@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from "react"
+import { motion } from "motion/react"
 import { useTranslations } from 'next-intl'
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
@@ -35,7 +36,13 @@ export function LoginForm({ onLoginSuccess }: { onLoginSuccess?: () => void }) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-6 text-foreground">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.3 }}
+      className="min-h-screen flex items-center justify-center px-6 text-foreground"
+    >
       <div className="w-full max-w-sm space-y-8">
         <header className="flex flex-col items-center gap-3">
           <Logo size={48} />
@@ -76,6 +83,6 @@ export function LoginForm({ onLoginSuccess }: { onLoginSuccess?: () => void }) {
           </Button>
         </form>
       </div>
-    </div>
+    </motion.div>
   )
 }
