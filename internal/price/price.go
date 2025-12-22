@@ -32,15 +32,12 @@ var Provider = []string{
 
 var lastUpdateTime time.Time
 
-func UpdateLLMPriceTask() {
-	if err := UpdateLLMPrice(context.Background()); err != nil {
-		log.Warnf("failed to update price info: %v", err)
-		return
-	}
-	log.Infof("LLM price updated successfully")
-}
-
 func UpdateLLMPrice(ctx context.Context) error {
+	log.Debugf("update LLM price task started")
+	startTime := time.Now()
+	defer func() {
+		log.Debugf("update LLM price task finished, update time: %s", time.Since(startTime))
+	}()
 	client, err := client.NewHTTPClient(false)
 	if err != nil {
 		return err

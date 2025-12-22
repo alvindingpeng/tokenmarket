@@ -15,9 +15,12 @@ import (
 var lastSyncTime = time.Now()
 
 func SyncLLMTask() {
-	log.Infof("sync llm task started")
+	log.Debugf("sync LLM task started")
+	startTime := time.Now()
+	defer func() {
+		log.Debugf("sync LLM task finished, sync time: %s", time.Since(startTime))
+	}()
 	ctx := context.Background()
-
 	channels, err := op.ChannelList(ctx)
 	if err != nil {
 		log.Errorf("failed to list channels: %v", err)
@@ -30,7 +33,7 @@ func SyncLLMTask() {
 		}
 		models, err := client.FetchLLMName(ctx, channel)
 		if err != nil {
-			log.Warnf("failed to fetch models for channel %d: %v", channel.ID, err)
+			log.Warnf("failed to fetch models for channel %s: %v", channel.Name, err)
 			continue
 		}
 
@@ -49,7 +52,7 @@ func SyncLLMTask() {
 		// 更新渠道模型
 		channel.Model = newModelStr
 		if err := op.ChannelUpdate(&channel, ctx); err != nil {
-			log.Errorf("failed to update channel %d: %v", channel.ID, err)
+			log.Errorf("failed to update channel %s: %v", channel.Name, err)
 			continue
 		}
 		// 批量删除消失的模型对应的 GroupItem
@@ -60,7 +63,7 @@ func SyncLLMTask() {
 				keys[i] = model.GroupIDAndLLMName{ChannelID: channel.ID, ModelName: m}
 			}
 			if err := op.GroupItemBatchDelByChannelAndModels(keys, ctx); err != nil {
-				log.Errorf("failed to batch delete group items for channel %d: %v", channel.ID, err)
+				log.Errorf("failed to batch delete group items for channel %s: %v", channel.Name, err)
 			}
 		}
 

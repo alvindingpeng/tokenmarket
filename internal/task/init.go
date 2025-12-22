@@ -25,7 +25,11 @@ func Init() {
 	}
 	priceUpdateInterval := time.Duration(priceUpdateIntervalHours) * time.Hour
 	// 注册价格更新任务
-	Register(string(model.SettingKeyModelInfoUpdateInterval), priceUpdateInterval, true, price.UpdateLLMPriceTask)
+	Register(string(model.SettingKeyModelInfoUpdateInterval), priceUpdateInterval, true, func() {
+		if err := price.UpdateLLMPrice(context.Background()); err != nil {
+			log.Warnf("failed to update price info: %v", err)
+		}
+	})
 
 	// 注册LLM同步任务
 	syncLLMIntervalHours, err := op.SettingGetInt(model.SettingKeySyncLLMInterval)

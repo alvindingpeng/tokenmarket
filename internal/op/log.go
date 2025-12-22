@@ -9,6 +9,7 @@ import (
 
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/utils/log"
 	"github.com/alvindingpeng/switchyard/internal/utils/snowflake"
 )
 
@@ -106,6 +107,11 @@ func RelayLogAdd(ctx context.Context, relayLog model.RelayLog) error {
 }
 
 func RelayLogSaveDBTask(ctx context.Context) error {
+	log.Debugf("relay log save db task started")
+	startTime := time.Now()
+	defer func() {
+		log.Debugf("relay log save db task finished, save time: %s", time.Since(startTime))
+	}()
 	enabled, err := SettingGetBool(model.SettingKeyRelayLogKeepEnabled)
 	if err != nil {
 		return err

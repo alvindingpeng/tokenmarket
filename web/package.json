@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "devs": "next dev --experimental-https --experimental-https-key /workplace/code/switchyard/build/localhost-key.pem --experimental-https-cert /workplace/code/switchyard/build/localhost.pem",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

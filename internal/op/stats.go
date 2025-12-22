@@ -28,13 +28,17 @@ var statsModelCache = cache.New[int, model.StatsModel](16)
 var statsModelCacheNeedUpdate = make(map[int]struct{})
 
 func StatsSaveDBTask() {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+	log.Debugf("stats save db task started")
+	startTime := time.Now()
+	defer func() {
+		log.Debugf("stats save db task finished, save time: %s", time.Since(startTime))
+	}()
 	if err := StatsSaveDB(ctx); err != nil {
 		log.Errorf("stats save db error: %v", err)
 		return
 	}
-	log.Infof("stats saved successfully")
 }
 
 func StatsSaveDB(ctx context.Context) error {

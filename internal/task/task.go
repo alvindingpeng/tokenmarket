@@ -41,7 +41,7 @@ func Register(name string, interval time.Duration, runOnStart bool, fn func()) {
 		stopCh:     make(chan struct{}),
 		updateCh:   make(chan time.Duration),
 	}
-	log.Infof("task %s registered with interval %v, runOnStart: %v", name, interval, runOnStart)
+	log.Debugf("task %s registered with interval %v, runOnStart: %v", name, interval, runOnStart)
 }
 
 // Update 更新任务的执行间隔

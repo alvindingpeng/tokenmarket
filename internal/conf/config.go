@@ -10,23 +10,23 @@ import (
 )
 
 type Server struct {
-	Host string `json:"host"`
-	Port int    `json:"port"`
+	Host string `mapstructure:"host"`
+	Port int    `mapstructure:"port"`
 }
 
 type Log struct {
-	Level string `json:"level"`
+	Level string `mapstructure:"level"`
 }
 
 type Database struct {
-	Type string `json:"type"`
-	Path string `json:"path"`
+	Type string `mapstructure:"type"`
+	Path string `mapstructure:"path"`
 }
 
 type Config struct {
-	Server   Server
-	Log      Log
-	Database Database
+	Server   Server   `mapstructure:"server"`
+	Log      Log      `mapstructure:"log"`
+	Database Database `mapstructure:"database"`
 }
 
 var AppConfig Config
@@ -73,5 +73,5 @@ func setDefaults() {
 	viper.SetDefault("server.port", 8080)
 	viper.SetDefault("database.type", "sqlite")
 	viper.SetDefault("database.path", "data/data.db")
-	viper.SetDefault("logging.level", "info")
+	viper.SetDefault("log.level", "info")
 }

@@ -19,6 +19,7 @@ var startCmd = &cobra.Command{
 	PreRun: func(cmd *cobra.Command, args []string) {
 		conf.PrintBanner()
 		conf.Load(cfgFile)
+		log.SetLevel(conf.AppConfig.Log.Level)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		shutdown.Init(log.Logger)

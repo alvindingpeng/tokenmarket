@@ -8,7 +8,7 @@ import (
 )
 
 var Logger *zap.SugaredLogger
-
+var atomicLevel = zap.NewAtomicLevelAt(zap.InfoLevel)
 var consoleEncoder = zapcore.EncoderConfig{
 	TimeKey:       "time",
 	LevelKey:      "level",
@@ -24,7 +24,7 @@ func init() {
 	core := zapcore.NewCore(
 		zapcore.NewConsoleEncoder(consoleEncoder),
 		zapcore.AddSync(os.Stdout),
-		zap.NewAtomicLevelAt(zap.InfoLevel),
+		atomicLevel,
 	)
 	opts := []zap.Option{
 		zap.AddCaller(),
@@ -32,6 +32,15 @@ func init() {
 		zap.AddStacktrace(zap.ErrorLevel),
 	}
 	Logger = zap.New(core, opts...).Sugar()
+}
+
+func SetLevel(level string) {
+	var lvl zapcore.Level
+	err := lvl.UnmarshalText([]byte(level))
+	if err != nil {
+		return
+	}
+	atomicLevel.SetLevel(lvl)
 }
 
 func Infof(template string, args ...interface{}) {
