@@ -144,7 +144,7 @@ export function GroupCard({ group }: { group: Group }) {
                         suppressContentEditableWarning
                         onBlur={(e) => handleNameChange(e.currentTarget.textContent || '')}
                         className={cn(
-                            "text-lg font-bold outline-none truncate absolute inset-0",
+                            "text-lg font-bold outline-none truncate absolute inset-0 rounded-lg",
                             "transition-all duration-200 ease-out origin-left",
                             "group-hover/title:whitespace-normal group-hover/title:wrap-break-word group-hover/title:overflow-visible group-hover/title:bottom-auto",
                             "group-hover/title:bg-popover group-hover/title:backdrop-blur-md group-hover/title:shadow-xl group-hover/title:rounded-2xl",
