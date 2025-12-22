@@ -10,6 +10,7 @@ export enum ChannelType {
     OpenAIChat = 0,
     OpenAIResponse = 1,
     Anthropic = 2,
+    Gemini = 3,
 }
 
 /**

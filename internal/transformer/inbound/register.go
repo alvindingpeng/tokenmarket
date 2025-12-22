@@ -9,10 +9,13 @@ import (
 type InboundType int
 
 const (
-	InboundTypeOpenAI InboundType = iota
-	InboundTypeOpenAIChat
+	InboundTypeOpenAIChat InboundType = iota
 	InboundTypeOpenAIResponse
 	InboundTypeAnthropic
+	InboundTypeGemini
+
+	// Compatibility alias for legacy naming
+	InboundTypeOpenAI = InboundTypeOpenAIChat
 )
 
 var inboundFactories = map[InboundType]func() model.Inbound{
