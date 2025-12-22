@@ -158,9 +158,11 @@ func convertLLMToGeminiRequest(request *model.InternalLLMRequest) *model.GeminiG
 				for _, part := range msg.Content.MultipleContent {
 					switch part.Type {
 					case "text":
-						content.Parts = append(content.Parts, &model.GeminiPart{
-							Text: *part.Text,
-						})
+						if part.Text != nil {
+							content.Parts = append(content.Parts, &model.GeminiPart{
+								Text: *part.Text,
+							})
+						}
 					case "image_url":
 						// get mime type from url extension
 						dataurl := xurl.ParseDataURL(part.ImageURL.URL)
