@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/alvindingpeng/switchyard/internal/transformer/model"
+	"github.com/alvindingpeng/switchyard/internal/utils/xurl"
 	"github.com/samber/lo"
 )
 
@@ -152,6 +153,32 @@ func convertLLMToGeminiRequest(request *model.InternalLLMRequest) *model.GeminiG
 					Text: *msg.Content.Content,
 				})
 			}
+
+			if msg.Content.MultipleContent != nil {
+				for _, part := range msg.Content.MultipleContent {
+					switch part.Type {
+					case "text":
+						if part.Text != nil {
+							content.Parts = append(content.Parts, &model.GeminiPart{
+								Text: *part.Text,
+							})
+						}
+					case "image_url":
+						// get mime type from url extension
+						dataurl := xurl.ParseDataURL(part.ImageURL.URL)
+						if dataurl != nil && dataurl.IsBase64 {
+							content.Parts = append(content.Parts, &model.GeminiPart{
+								InlineData: &model.GeminiBlob{
+									MimeType: dataurl.MediaType,
+									Data:     dataurl.Data,
+								},
+							})
+						}
+
+					}
+				}
+			}
+
 			geminiReq.Contents = append(geminiReq.Contents, content)
 
 		case "assistant":
@@ -230,8 +257,38 @@ func convertLLMToGeminiRequest(request *model.InternalLLMRequest) *model.GeminiG
 		hasConfig = true
 	}
 
+	// Convert ResponseFormat to ResponseMimeType and ResponseSchema
+	if request.ResponseFormat != nil {
+		switch request.ResponseFormat.Type {
+		case "json_object":
+			config.ResponseMimeType = "application/json"
+			hasConfig = true
+		case "json_schema":
+			config.ResponseMimeType = "application/json"
+			// TODO: Convert JSON schema to Gemini schema format if schema is provided
+			hasConfig = true
+		case "text":
+			config.ResponseMimeType = "text/plain"
+			hasConfig = true
+		}
+	}
+
+	// Convert Modalities to ResponseModalities
+	if len(request.Modalities) > 0 {
+		config.ResponseModalities = request.Modalities
+		hasConfig = true
+	}
+
 	if hasConfig {
 		geminiReq.GenerationConfig = config
+	}
+
+	// Convert SafetySettings from metadata if present
+	if safetyJSON, ok := request.TransformerMetadata["gemini_safety_settings"]; ok {
+		var safetySettings []*model.GeminiSafetySetting
+		if err := json.Unmarshal([]byte(safetyJSON), &safetySettings); err == nil {
+			geminiReq.SafetySettings = safetySettings
+		}
 	}
 
 	// Convert tools
@@ -385,11 +442,29 @@ func convertGeminiToLLMResponse(geminiResp *model.GeminiGenerateContentResponse,
 
 	// Convert usage metadata
 	if geminiResp.UsageMetadata != nil {
-		resp.Usage = &model.Usage{
+		usage := &model.Usage{
 			PromptTokens:     int64(geminiResp.UsageMetadata.PromptTokenCount),
 			CompletionTokens: int64(geminiResp.UsageMetadata.CandidatesTokenCount),
 			TotalTokens:      int64(geminiResp.UsageMetadata.TotalTokenCount),
 		}
+
+		// Add cached tokens to prompt tokens details if present
+		if geminiResp.UsageMetadata.CachedContentTokenCount > 0 {
+			if usage.PromptTokensDetails == nil {
+				usage.PromptTokensDetails = &model.PromptTokensDetails{}
+			}
+			usage.PromptTokensDetails.CachedTokens = int64(geminiResp.UsageMetadata.CachedContentTokenCount)
+		}
+
+		// Add thoughts tokens to completion tokens details if present
+		if geminiResp.UsageMetadata.ThoughtsTokenCount > 0 {
+			if usage.CompletionTokensDetails == nil {
+				usage.CompletionTokensDetails = &model.CompletionTokensDetails{}
+			}
+			usage.CompletionTokensDetails.ReasoningTokens = int64(geminiResp.UsageMetadata.ThoughtsTokenCount)
+		}
+
+		resp.Usage = usage
 	}
 
 	return resp
