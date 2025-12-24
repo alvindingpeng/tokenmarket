@@ -92,6 +92,12 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			item = b.Next(group.Items, item)
 			continue
 		}
+		if channel.Enabled == false {
+			log.Warnf("channel %s is disabled", channel.Name)
+			lastErr = fmt.Errorf("channel %s is disabled", channel.Name)
+			item = b.Next(group.Items, item)
+			continue
+		}
 
 		log.Infof("request model %s, mode: %d, forwarding to channel: %s model: %s (attempt %d/%d)", internalRequest.Model, group.Mode, channel.Name, item.ModelName, attempt+1, maxRetries)
 
