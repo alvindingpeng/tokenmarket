@@ -24,7 +24,7 @@ var startCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		shutdown.Init(log.Logger)
 		defer shutdown.Listen()
-		if err := db.InitDB(conf.AppConfig.Database.Path, conf.IsDebug()); err != nil {
+		if err := db.InitDB(conf.AppConfig.Database.Type, conf.AppConfig.Database.Path, conf.IsDebug()); err != nil {
 			log.Errorf("database init error: %v", err)
 			return
 		}

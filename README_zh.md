@@ -20,6 +20,7 @@
 - 🔃 **模型同步** - 自动与渠道同步可用模型列表，省心省力
 - 📊 **数据统计** - 全面的请求统计、Token 消耗、费用追踪
 - 🎨 **优雅界面** - 简洁美观的 Web 管理面板
+- 🗄️ **多数据库支持** - 支持 SQLite、MySQL、PostgreSQL
 
 
 ## 🚀 快速开始
@@ -91,16 +92,83 @@ go run . start
 
 > ⚠️ **安全提示**：请在首次登录后立即修改默认密码。
 
-### 🌐 环境变量
+### 📝 配置文件
 
-支持通过环境变量自定义配置：
+配置文件默认位于 `data/config.json`，首次启动时自动生成。
 
-| 环境变量 | 说明 | 默认值 |
-|----------|------|--------|
-| `SWITCHYARD_SERVER_PORT` | 服务端口 | `8080` |
-| `SWITCHYARD_SERVER_HOST` | 监听地址 | `0.0.0.0` |
-| `SWITCHYARD_DATABASE_PATH` | 数据库路径 | `data/data.db` |
-| `SWITCHYARD_LOGGING_LEVEL` | 日志级别 | `info` |
+**完整配置示例：**
+
+```json
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080
+  },
+  "database": {
+    "type": "sqlite",
+    "path": "data/data.db"
+  },
+  "log": {
+    "level": "info"
+  }
+}
+```
+
+**配置项说明：**
+
+| 配置项 | 说明 | 默认值 |
+|--------|------|--------|
+| `server.host` | 监听地址 | `0.0.0.0` |
+| `server.port` | 服务端口 | `8080` |
+| `database.type` | 数据库类型 | `sqlite` |
+| `database.path` | 数据库连接地址 | `data/data.db` |
+| `log.level` | 日志级别 | `info` |
+
+**数据库配置：**
+
+支持三种数据库：
+
+| 类型 | `database.type` | `database.path` 格式 |
+|------|-----------------|---------------------|
+| SQLite | `sqlite` | `data/data.db` |
+| MySQL | `mysql` | `user:password@tcp(host:port)/dbname` |
+| PostgreSQL | `postgres` | `postgresql://user:password@host:port/dbname?sslmode=disable` |
+
+**MySQL 配置示例：**
+
+```json
+{
+  "database": {
+    "type": "mysql",
+    "path": "root:password@tcp(127.0.0.1:3306)/switchyard"
+  }
+}
+```
+
+**PostgreSQL 配置示例：**
+
+```json
+{
+  "database": {
+    "type": "postgres",
+    "path": "postgresql://user:password@localhost:5432/switchyard?sslmode=disable"
+  }
+}
+```
+
+> 💡 **提示**：MySQL 和 PostgreSQL 需要先手动创建数据库，程序会自动创建表结构。
+
+**环境变量：**
+
+所有配置项均可通过环境变量覆盖，格式为 `SWITCHYARD_` + 配置路径（用 `_` 连接）：
+
+| 环境变量 | 对应配置项 |
+|----------|-----------|
+| `SWITCHYARD_SERVER_PORT` | `server.port` |
+| `SWITCHYARD_SERVER_HOST` | `server.host` |
+| `SWITCHYARD_DATABASE_TYPE` | `database.type` |
+| `SWITCHYARD_DATABASE_PATH` | `database.path` |
+| `SWITCHYARD_LOG_LEVEL` | `log.level` |
 
 
 ## 📸 界面预览
@@ -171,6 +239,7 @@ go run . start
 | OpenAI Chat | `/chat/completions` | `https://api.openai.com/v1` | `https://api.openai.com/v1/chat/completions` |
 | OpenAI Responses | `/responses` | `https://api.openai.com/v1` | `https://api.openai.com/v1/responses` |
 | Anthropic | `/messages` | `https://api.anthropic.com/v1` | `https://api.anthropic.com/v1/messages` |
+| Gemini | `/models/:model:generateContent` | `https://generativelanguage.googleapis.com/v1beta` | `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent` |
 
 > 💡 **提示**：填写 Base URL 时无需包含具体的 API 端点路径，程序会自动处理。
 
