@@ -19,6 +19,8 @@ const relayLogMaxSizeNoDB = 100 // 当不保存到数据库时，允许更大的
 var relayLogCache = make([]model.RelayLog, 0, relayLogMaxSize)
 var relayLogCacheLock sync.Mutex
 
+var relayLogFlushLock sync.Mutex
+
 var relayLogSubscribers = make(map[chan model.RelayLog]struct{})
 var relayLogSubscribersLock sync.RWMutex
 
@@ -79,6 +81,39 @@ func notifySubscribers(relayLog model.RelayLog) {
 	}
 }
 
+func relayLogFlushToDB(ctx context.Context) error {
+	relayLogFlushLock.Lock()
+	defer relayLogFlushLock.Unlock()
+
+	relayLogCacheLock.Lock()
+	if len(relayLogCache) == 0 {
+		relayLogCacheLock.Unlock()
+		return nil
+	}
+	batch := make([]model.RelayLog, len(relayLogCache))
+	copy(batch, relayLogCache)
+	flushedUpto := len(batch)
+	relayLogCacheLock.Unlock()
+
+	result := db.GetDB().WithContext(ctx).Create(&batch)
+	if result.Error != nil {
+		return result.Error
+	}
+
+	relayLogCacheLock.Lock()
+	if len(relayLogCache) >= flushedUpto {
+		relayLogCache = relayLogCache[flushedUpto:]
+	} else {
+		relayLogCache = relayLogCache[:0]
+	}
+	if len(relayLogCache) == 0 {
+		relayLogCache = make([]model.RelayLog, 0, relayLogMaxSize)
+	}
+	relayLogCacheLock.Unlock()
+
+	return nil
+}
+
 func RelayLogAdd(ctx context.Context, relayLog model.RelayLog) error {
 	enabled, err := SettingGetBool(model.SettingKeyRelayLogKeepEnabled)
 	if err != nil {
@@ -90,12 +125,13 @@ func RelayLogAdd(ctx context.Context, relayLog model.RelayLog) error {
 	}
 	relayLog.ID = snowflake.GenerateID()
 	go notifySubscribers(relayLog)
+
 	relayLogCacheLock.Lock()
-	defer relayLogCacheLock.Unlock()
 	relayLogCache = append(relayLogCache, relayLog)
 	if len(relayLogCache) >= maxSize {
 		if enabled {
-			return relayLogSaveDBLocked(ctx)
+			relayLogCacheLock.Unlock()
+			return relayLogFlushToDB(ctx)
 		}
 		// 如果未启用日志保存，移除最旧的日志，保留最新的日志用于实时查询
 		keepSize := maxSize / 2
@@ -103,6 +139,7 @@ func RelayLogAdd(ctx context.Context, relayLog model.RelayLog) error {
 			relayLogCache = relayLogCache[len(relayLogCache)-keepSize:]
 		}
 	}
+	relayLogCacheLock.Unlock()
 	return nil
 }
 
@@ -117,23 +154,20 @@ func RelayLogSaveDBTask(ctx context.Context) error {
 		return err
 	}
 
-	relayLogCacheLock.Lock()
-	defer relayLogCacheLock.Unlock()
-
 	if enabled {
-		if len(relayLogCache) > 0 {
-			if err := relayLogSaveDBLocked(ctx); err != nil {
-				return err
-			}
+		if err := relayLogFlushToDB(ctx); err != nil {
+			return err
 		}
 		return relayLogCleanup(ctx)
 	}
 
 	// 如果未启用日志保存，检查缓存大小，如果超过限制则清理旧日志
+	relayLogCacheLock.Lock()
 	if len(relayLogCache) > relayLogMaxSizeNoDB {
 		keepSize := relayLogMaxSizeNoDB / 2
 		relayLogCache = relayLogCache[len(relayLogCache)-keepSize:]
 	}
+	relayLogCacheLock.Unlock()
 
 	return nil
 }
@@ -150,20 +184,6 @@ func relayLogCleanup(ctx context.Context) error {
 
 	cutoffTime := time.Now().Add(-time.Duration(keepPeriod) * 24 * time.Hour).Unix()
 	return db.GetDB().WithContext(ctx).Where("time < ?", cutoffTime).Delete(&model.RelayLog{}).Error
-}
-
-func relayLogSaveDBLocked(ctx context.Context) error {
-	if len(relayLogCache) == 0 {
-		return nil
-	}
-
-	result := db.GetDB().WithContext(ctx).Create(&relayLogCache)
-	if result.Error != nil {
-		return result.Error
-	}
-
-	relayLogCache = make([]model.RelayLog, 0, relayLogMaxSize)
-	return nil
 }
 
 // RelayLogList 查询日志列表，支持可选的时间范围过滤
