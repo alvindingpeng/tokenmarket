@@ -25,6 +25,11 @@ var (
 // Register 注册一个定时任务
 // runOnStart: 是否在启动时立即执行一次
 func Register(name string, interval time.Duration, runOnStart bool, fn func()) {
+	if interval <= 0 {
+		log.Debugf("task %s not registered: interval is 0", name)
+		return
+	}
+
 	tasksMu.Lock()
 	defer tasksMu.Unlock()
 
@@ -45,15 +50,24 @@ func Register(name string, interval time.Duration, runOnStart bool, fn func()) {
 }
 
 // Update 更新任务的执行间隔
+// 当 interval 为 0 时，删除任务
 func Update(name string, interval time.Duration) {
-	tasksMu.RLock()
+	tasksMu.Lock()
 	entry, exists := tasks[name]
-	tasksMu.RUnlock()
-
 	if !exists {
+		tasksMu.Unlock()
 		log.Warnf("task %s not found", name)
 		return
 	}
+
+	if interval <= 0 {
+		delete(tasks, name)
+		tasksMu.Unlock()
+		close(entry.stopCh)
+		log.Infof("task %s removed: interval is 0", name)
+		return
+	}
+	tasksMu.Unlock()
 
 	select {
 	case entry.updateCh <- interval:
