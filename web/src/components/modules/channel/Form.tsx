@@ -234,9 +234,25 @@ export function ChannelForm({
                 </div>
 
                 <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-card-foreground">
-                        {t('modelSelected')} {(autoModels.length + customModels.length) > 0 && `(${autoModels.length + customModels.length})`}
-                    </label>
+                    <div className="flex items-center justify-between">
+                        <label className="text-xs font-medium text-card-foreground">
+                            {t('modelSelected')} {(autoModels.length + customModels.length) > 0 && `(${autoModels.length + customModels.length})`}
+                        </label>
+                        {(autoModels.length + customModels.length) > 0 && (
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                    setAutoModels([]);
+                                    setCustomModels([]);
+                                }}
+                                className="h-6 px-2 text-xs text-muted-foreground/50 hover:text-muted-foreground hover:bg-transparent"
+                            >
+                                {t('modelClearAll')}
+                            </Button>
+                        )}
+                    </div>
                     <div className="rounded-xl border border-border bg-muted/30 p-2.5 max-h-40 min-h-12 overflow-y-auto">
                         {(autoModels.length + customModels.length) > 0 ? (
                             <div className="flex flex-wrap gap-1.5">

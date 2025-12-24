@@ -358,6 +358,7 @@
             "modelNoSelected": "暂未选择模型",
             "modelAvailable": "可选模型",
             "modelSelectAll": "全选",
+            "modelClearAll": "清除全部",
             "modelAllAdded": "所有模型已添加",
             "modelNoMatch": "无匹配模型",
             "modelAddCustom": "添加为自定义",
