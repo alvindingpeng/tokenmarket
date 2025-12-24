@@ -28,6 +28,10 @@ func init() {
 		AddRoute(
 			router.NewRoute("/total", http.MethodGet).
 				Handle(getStatsTotal),
+		).
+		AddRoute(
+			router.NewRoute("/apikey", http.MethodGet).
+				Handle(getStatsAPIKey),
 		)
 }
 
@@ -50,4 +54,8 @@ func getStatsHourly(c *gin.Context) {
 
 func getStatsTotal(c *gin.Context) {
 	resp.Success(c, op.StatsTotalGet())
+}
+
+func getStatsAPIKey(c *gin.Context) {
+	resp.Success(c, op.StatsAPIKeyList())
 }

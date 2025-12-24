@@ -82,8 +82,35 @@
         "saved": "已保存",
         "apiKey": {
             "title": "API 密钥",
-            "placeholder": "输入密钥名称",
-            "empty": "暂无 API 密钥"
+            "empty": "暂无 API 密钥",
+            "add": "添加密钥",
+            "loadFailed": "加载失败",
+            "form": {
+                "name": "名称",
+                "maxCost": "最大金额",
+                "maxCostPlaceholder": "请输入金额",
+                "unlimited": "无限制",
+                "expireAt": "过期日期",
+                "selectDate": "选择日期",
+                "neverExpire": "永不过期",
+                "supportedModels": "支持的模型",
+                "noModels": "暂无可选模型",
+                "modelsHint": "不选择则为无限制",
+                "enabled": "是否启用",
+                "cancel": "取消",
+                "create": "创建",
+                "save": "保存",
+                "confirm": "确认"
+            },
+            "stats": {
+                "noData": "暂无统计数据",
+                "inputToken": "输入 Token",
+                "outputToken": "输出 Token",
+                "inputCost": "输入费用",
+                "outputCost": "输出费用",
+                "requestSuccess": "成功请求",
+                "requestFailed": "失败请求"
+            }
         },
         "llmPrice": {
             "title": "模型价格",

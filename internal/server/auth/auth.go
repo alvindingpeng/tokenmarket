@@ -1,10 +1,8 @@
 package auth
 
 import (
-	"context"
 	"crypto/rand"
 	"math/big"
-	"strings"
 	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/conf"
@@ -59,14 +57,4 @@ func GenerateAPIKey() string {
 		b[i] = keyChars[n.Int64()]
 	}
 	return "sk-" + conf.APP_NAME + "-" + string(b)
-}
-
-func VerifyAPIKey(apiKey string, ctx context.Context) bool {
-	if !strings.HasPrefix(apiKey, "sk-"+conf.APP_NAME+"-") {
-		return false
-	}
-	if !op.APIKeyVerify(apiKey, ctx) {
-		return false
-	}
-	return true
 }

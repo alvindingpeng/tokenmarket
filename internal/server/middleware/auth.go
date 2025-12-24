@@ -3,7 +3,10 @@ package middleware
 import (
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/alvindingpeng/switchyard/internal/conf"
+	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/server/auth"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/gin-gonic/gin"
@@ -45,13 +48,36 @@ func APIKeyAuth() gin.HandlerFunc {
 			return
 		}
 
-		if !auth.VerifyAPIKey(apiKey, c.Request.Context()) {
+		if !strings.HasPrefix(apiKey, "sk-"+conf.APP_NAME+"-") {
 			resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
 			c.Abort()
 			return
 		}
-
+		apiKeyObj, err := op.APIKeyGetByAPIKey(apiKey, c.Request.Context())
+		if err != nil {
+			resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
+			c.Abort()
+			return
+		}
+		if !apiKeyObj.Enabled {
+			resp.Error(c, http.StatusUnauthorized, "API key is disabled")
+			c.Abort()
+			return
+		}
+		if apiKeyObj.ExpireAt > 0 && apiKeyObj.ExpireAt < time.Now().Unix() {
+			resp.Error(c, http.StatusUnauthorized, "API key has expired")
+			c.Abort()
+			return
+		}
+		statsAPIKey := op.StatsAPIKeyGet(apiKeyObj.ID)
+		if apiKeyObj.MaxCost > 0 && apiKeyObj.MaxCost < statsAPIKey.StatsMetrics.OutputCost+statsAPIKey.StatsMetrics.InputCost {
+			resp.Error(c, http.StatusUnauthorized, "API key has reached the max cost")
+			c.Abort()
+			return
+		}
 		c.Set("request_type", requestType)
+		c.Set("supported_models", apiKeyObj.SupportedModels)
+		c.Set("api_key_id", apiKeyObj.ID)
 		c.Next()
 	}
 }

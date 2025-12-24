@@ -82,8 +82,35 @@
         "saved": "Saved",
         "apiKey": {
             "title": "API Keys",
-            "placeholder": "Enter key name",
-            "empty": "No API keys"
+            "empty": "No API keys",
+            "add": "Add Key",
+            "loadFailed": "Failed to load",
+            "form": {
+                "name": "Name",
+                "maxCost": "Max Cost",
+                "maxCostPlaceholder": "Enter amount",
+                "unlimited": "Unlimited",
+                "expireAt": "Expire Date",
+                "selectDate": "Select date",
+                "neverExpire": "Never Expire",
+                "supportedModels": "Supported Models",
+                "noModels": "No models available",
+                "modelsHint": "Leave empty for unlimited",
+                "enabled": "Enabled",
+                "cancel": "Cancel",
+                "create": "Create",
+                "save": "Save",
+                "confirm": "Confirm"
+            },
+            "stats": {
+                "noData": "No statistics available",
+                "inputToken": "Input Token",
+                "outputToken": "Output Token",
+                "inputCost": "Input Cost",
+                "outputCost": "Output Cost",
+                "requestSuccess": "Request Success",
+                "requestFailed": "Request Failed"
+            }
         },
         "llmPrice": {
             "title": "Model Pricing",

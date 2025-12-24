@@ -54,6 +54,16 @@ export interface StatsHourlyFormatted extends StatsMetricsFormatted {
     date: string;
 }
 /**
+ * API Key 统计数据
+ */
+export interface StatsAPIKey extends StatsMetrics {
+    api_key_id: number;
+}
+
+export interface StatsAPIKeyFormatted extends StatsMetricsFormatted {
+    api_key_id: number;
+}
+/**
  * 获取今日统计数据 Hook
  */
 export function useStatsToday() {
@@ -140,6 +150,35 @@ export function useStatsTotal() {
             request_count: formatCount(data.request_success + data.request_failed),
         }),
         refetchInterval: 10000,// 10 秒
+        refetchOnMount: 'always',
+    });
+}
+
+
+
+/**
+ * 获取 API Key 统计数据列表 Hook
+ */
+export function useStatsAPIKey() {
+    return useQuery({
+        queryKey: ['stats', 'apikey'],
+        queryFn: async () => {
+            return apiClient.get<StatsAPIKey[]>('/api/v1/stats/apikey');
+        },
+        select: (data) => data.map((item): StatsAPIKeyFormatted => ({
+            api_key_id: item.api_key_id,
+            input_token: formatCount(item.input_token),
+            output_token: formatCount(item.output_token),
+            total_token: formatCount(item.input_token + item.output_token),
+            input_cost: formatMoney(item.input_cost),
+            output_cost: formatMoney(item.output_cost),
+            total_cost: formatMoney(item.input_cost + item.output_cost),
+            wait_time: formatTime(item.wait_time),
+            request_success: formatCount(item.request_success),
+            request_failed: formatCount(item.request_failed),
+            request_count: formatCount(item.request_success + item.request_failed),
+        })),
+        refetchInterval: 30000,
         refetchOnMount: 'always',
     });
 }

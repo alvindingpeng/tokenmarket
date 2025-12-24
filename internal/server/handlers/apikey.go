@@ -26,8 +26,18 @@ func init() {
 				Handle(listAPIKey),
 		).
 		AddRoute(
+			router.NewRoute("/update", http.MethodPost).
+				Handle(updateAPIKey),
+		).
+		AddRoute(
 			router.NewRoute("/delete/:id", http.MethodDelete).
 				Handle(deleteAPIKey),
+		)
+	router.NewGroupRouter("/api/v1/apikey").
+		Use(middleware.APIKeyAuth()).
+		AddRoute(
+			router.NewRoute("/stats", http.MethodGet).
+				Handle(getStatsAPIKeyById),
 		)
 }
 
@@ -54,6 +64,19 @@ func listAPIKey(c *gin.Context) {
 	resp.Success(c, apiKeys)
 }
 
+func updateAPIKey(c *gin.Context) {
+	var req model.APIKey
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	if err := op.APIKeyUpdate(&req, c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, req)
+}
+
 func deleteAPIKey(c *gin.Context) {
 	id := c.Param("id")
 	idNum, err := strconv.Atoi(id)
@@ -66,4 +89,9 @@ func deleteAPIKey(c *gin.Context) {
 		return
 	}
 	resp.Success(c, nil)
+}
+
+func getStatsAPIKeyById(c *gin.Context) {
+	id := c.GetInt("api_key_id")
+	resp.Success(c, op.StatsAPIKeyGet(id))
 }

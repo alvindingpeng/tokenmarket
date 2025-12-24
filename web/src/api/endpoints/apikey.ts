@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { logger } from '@/lib/logger';
+import { StatsAPIKey, StatsAPIKeyFormatted } from './stats';
+import { formatCount, formatMoney, formatTime } from '@/lib/utils';
 
 /**
  * API Key 数据
@@ -9,14 +11,21 @@ export interface APIKey {
     id: number;
     name: string;
     api_key: string;
+    enabled: boolean;
+    expire_at?: number; // Unix 时间戳（秒），不传表示永不过期
+    max_cost?: number; // 不传表示无限制
+    supported_models?: string; // 不传表示支持所有模型
 }
 
 /**
  * 创建 API Key 请求
  */
-export interface CreateAPIKeyRequest {
-    name: string;
-}
+export type CreateAPIKeyRequest = Omit<APIKey, 'id' | 'api_key'> & { enabled?: boolean };
+
+/**
+ * 更新 API Key 请求
+ */
+export type UpdateAPIKeyRequest = Pick<APIKey, 'id'> & CreateAPIKeyRequest;
 
 /**
  * 获取 API Key 列表 Hook
@@ -67,6 +76,35 @@ export function useCreateAPIKey() {
 }
 
 /**
+ * 更新 API Key Hook
+ * 
+ * @example
+ * const updateAPIKey = useUpdateAPIKey();
+ * 
+ * updateAPIKey.mutate({
+ *   id: 1,
+ *   name: 'Updated API Key',
+ *   enabled: false,
+ * });
+ */
+export function useUpdateAPIKey() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (data: UpdateAPIKeyRequest) => {
+            return apiClient.post<APIKey>('/api/v1/apikey/update', data);
+        },
+        onSuccess: (data) => {
+            logger.log('API Key 更新成功:', data);
+            queryClient.invalidateQueries({ queryKey: ['apikeys', 'list'] });
+        },
+        onError: (error) => {
+            logger.error('API Key 更新失败:', error);
+        },
+    });
+}
+
+/**
  * 删除 API Key Hook
  * 
  * @example
@@ -91,3 +129,34 @@ export function useDeleteAPIKey() {
     });
 }
 
+/**
+ * 获取当前 API Key 的统计数据 Hook
+ * 
+ * 此接口使用 API Key 认证，通过 API Key 获取对应的统计数据
+ * 
+ * @example
+ * const { data: stats, isLoading } = useAPIKeyStats();
+ */
+export function useAPIKeyStats() {
+    return useQuery({
+        queryKey: ['apikey', 'stats'],
+        queryFn: async () => {
+            return apiClient.get<StatsAPIKey>('/api/v1/apikey/stats');
+        },
+        select: (data): StatsAPIKeyFormatted => ({
+            api_key_id: data.api_key_id,
+            input_token: formatCount(data.input_token),
+            output_token: formatCount(data.output_token),
+            total_token: formatCount(data.input_token + data.output_token),
+            input_cost: formatMoney(data.input_cost),
+            output_cost: formatMoney(data.output_cost),
+            total_cost: formatMoney(data.input_cost + data.output_cost),
+            wait_time: formatTime(data.wait_time),
+            request_success: formatCount(data.request_success),
+            request_failed: formatCount(data.request_failed),
+            request_count: formatCount(data.request_success + data.request_failed),
+        }),
+        refetchInterval: 30000,
+        refetchOnMount: 'always',
+    });
+}
