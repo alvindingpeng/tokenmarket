@@ -35,39 +35,6 @@ export interface LogListParams {
 }
 
 /**
- * 获取日志列表 Hook
- * 
- * @example
- * const { data: logs, isLoading, error } = useLogList({ page: 1, page_size: 20 });
- * 
- * if (isLoading) return <Loading />;
- * if (error) return <Error message={error.message} />;
- * 
- * logs?.forEach(log => console.log(log.request_model_name));
- */
-export function useLogList(params: LogListParams = {}) {
-    const { page = 1, page_size = 20, start_time, end_time } = params;
-
-    const queryParams = new URLSearchParams();
-    queryParams.set('page', String(page));
-    queryParams.set('page_size', String(page_size));
-    if (start_time !== undefined) {
-        queryParams.set('start_time', String(start_time));
-    }
-    if (end_time !== undefined) {
-        queryParams.set('end_time', String(end_time));
-    }
-
-    return useQuery({
-        queryKey: ['logs', 'list', page, page_size, start_time, end_time],
-        queryFn: async () => {
-            const result = await apiClient.get<RelayLog[] | null>(`/api/v1/log/list?${queryParams.toString()}`);
-            return result ?? [];
-        },
-    });
-}
-
-/**
  * 清空日志 Hook
  * 
  * @example
@@ -131,6 +98,7 @@ export function useLogs(options: { pageSize?: number } = {}) {
             return allPages.length + 1;
         },
         staleTime: Infinity,
+        refetchOnMount: 'always',
     });
 
     const logs = useMemo(() => {
