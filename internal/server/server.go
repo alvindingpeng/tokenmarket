@@ -29,9 +29,9 @@ func Start() error {
 		c.Abort()
 	}))
 
-	r.Use(middleware.Cors())
 	if conf.IsDebug() {
 		r.Use(middleware.Logger())
+		r.Use(middleware.Cors())
 	}
 	r.Use(middleware.StaticEmbed("/", static.StaticFS))
 

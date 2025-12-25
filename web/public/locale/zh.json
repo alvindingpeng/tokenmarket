@@ -111,6 +111,27 @@
             "placeholder": "请输入周期（分钟）"
         },
         "saved": "已保存",
+        "backup": {
+            "title": "备份 / 恢复",
+            "export": {
+                "title": "导出",
+                "includeLogs": "包含日志",
+                "includeStats": "包含统计",
+                "button": "下载 JSON",
+                "exporting": "导出中...",
+                "success": "开始导出"
+            },
+            "import": {
+                "title": "导入（增量）",
+                "selected": "已选择文件",
+                "button": "导入 JSON",
+                "importing": "导入中...",
+                "noFile": "请先选择 JSON 文件",
+                "success": "导入成功",
+                "failed": "导入失败",
+                "result": "导入结果"
+            }
+        },
         "apiKey": {
             "title": "API 密钥",
             "empty": "暂无 API 密钥",

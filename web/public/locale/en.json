@@ -111,6 +111,27 @@
             "placeholder": "Enter interval in minutes"
         },
         "saved": "Saved",
+        "backup": {
+            "title": "Backup / Restore",
+            "export": {
+                "title": "Export",
+                "includeLogs": "Include Logs",
+                "includeStats": "Include Stats",
+                "button": "Download JSON",
+                "exporting": "Exporting...",
+                "success": "Export started"
+            },
+            "import": {
+                "title": "Import (Incremental)",
+                "selected": "File selected",
+                "button": "Import JSON",
+                "importing": "Importing...",
+                "noFile": "Please select a JSON file first",
+                "success": "Import successful",
+                "failed": "Import failed",
+                "result": "Import result"
+            }
+        },
         "apiKey": {
             "title": "API Keys",
             "empty": "No API keys",

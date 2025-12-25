@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '../client';
+import { apiClient, API_BASE_URL } from '../client';
 import { logger } from '@/lib/logger';
+import { useAuthStore } from './user';
 
 /**
  * Setting 数据
@@ -65,6 +66,125 @@ export function useSetSetting() {
         },
         onError: (error) => {
             logger.error('Setting 设置失败:', error);
+        },
+    });
+}
+
+/**
+ * 数据库导入/导出
+ */
+export interface DBImportResult {
+    rows_affected: Record<string, number>;
+}
+
+export interface DBExportOptions {
+    include_logs?: boolean;
+    include_stats?: boolean;
+}
+
+function getAuthHeader(): string {
+    const token = useAuthStore.getState().token;
+    if (!token) throw new Error('Not authenticated');
+    return `Bearer ${token}`;
+}
+
+function parseFilename(contentDisposition: string | null): string | null {
+    if (!contentDisposition) return null;
+    // e.g. attachment; filename="switchyard-export-20250101120000.json"
+    const match = contentDisposition.match(/filename="([^"]+)"/i);
+    return match?.[1] ?? null;
+}
+
+function exportFallbackFilename() {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    return `switchyard-export-${ts}.json`;
+}
+
+async function downloadBlob(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    try {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    } finally {
+        URL.revokeObjectURL(url);
+    }
+}
+
+/**
+ * 导出数据库（下载 JSON 文件）
+ */
+export function useExportDB() {
+    return useMutation({
+        mutationFn: async (options: DBExportOptions = {}) => {
+            const params = new URLSearchParams();
+            params.set('include_logs', String(!!options.include_logs));
+            params.set('include_stats', String(!!options.include_stats));
+
+            const res = await fetch(`${API_BASE_URL}/api/v1/setting/export?${params.toString()}`, {
+                method: 'GET',
+                headers: {
+                    Authorization: getAuthHeader(),
+                },
+            });
+
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(text || res.statusText);
+            }
+
+            const blob = await res.blob();
+            const filename = parseFilename(res.headers.get('content-disposition')) || exportFallbackFilename();
+            await downloadBlob(blob, filename);
+            return { filename };
+        },
+        onError: (error) => {
+            logger.error('导出数据库失败:', error);
+        },
+    });
+}
+
+/**
+ * 导入数据库（上传 JSON 文件，增量导入）
+ */
+export function useImportDB() {
+    return useMutation({
+        mutationFn: async (file: File) => {
+            const form = new FormData();
+            form.append('file', file);
+
+            const res = await fetch(`${API_BASE_URL}/api/v1/setting/import`, {
+                method: 'POST',
+                headers: {
+                    Authorization: getAuthHeader(),
+                },
+                body: form,
+            });
+
+            const contentType = res.headers.get('content-type') || '';
+            const isJson = contentType.includes('application/json');
+            const data = isJson ? await res.json() : await res.text();
+
+            if (!res.ok) {
+                const message = (data && typeof data === 'object' && 'message' in data && typeof (data as any).message === 'string')
+                    ? (data as any).message
+                    : (typeof data === 'string' ? data : res.statusText);
+                throw new Error(message);
+            }
+
+            // 支持后端标准 ApiResponse：{code,message,data:{...}}
+            if (data && typeof data === 'object' && 'data' in data) {
+                return (data as any).data as DBImportResult;
+            }
+            return data as DBImportResult;
+        },
+        onError: (error) => {
+            logger.error('导入数据库失败:', error);
         },
     });
 }
