@@ -325,7 +325,7 @@ function TabsContent({
       role="tabpanel"
       data-slot="tabs-content"
       inert={!isActive}
-      style={{ overflow: 'hidden', ...style }}
+      style={{ ...style }}
       initial={{ filter: 'blur(0px)' }}
       animate={{ filter: isActive ? 'blur(0px)' : 'blur(4px)' }}
       exit={{ filter: 'blur(0px)' }}

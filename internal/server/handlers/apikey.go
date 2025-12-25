@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
@@ -11,6 +12,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/alvindingpeng/switchyard/internal/server/router"
 	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
 )
 
 func init() {
@@ -38,6 +40,10 @@ func init() {
 		AddRoute(
 			router.NewRoute("/stats", http.MethodGet).
 				Handle(getStatsAPIKeyById),
+		).
+		AddRoute(
+			router.NewRoute("/login", http.MethodGet).
+				Handle(loginAPIKey),
 		)
 }
 
@@ -93,5 +99,36 @@ func deleteAPIKey(c *gin.Context) {
 
 func getStatsAPIKeyById(c *gin.Context) {
 	id := c.GetInt("api_key_id")
-	resp.Success(c, op.StatsAPIKeyGet(id))
+	stats := op.StatsAPIKeyGet(id)
+	info, err := op.APIKeyGet(id, c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	models, err := op.GroupListModel(c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	var modelsString string
+	if info.SupportedModels == "" {
+		modelsString = strings.Join(models, ", ")
+	} else {
+		supportedModels := lo.Map(strings.Split(info.SupportedModels, ","), func(s string, _ int) string {
+			return strings.TrimSpace(s)
+		})
+		models = lo.Filter(models, func(m string, _ int) bool {
+			return lo.Contains(supportedModels, m)
+		})
+		modelsString = strings.Join(models, ", ")
+	}
+	info.SupportedModels = modelsString
+	resp.Success(c, map[string]any{
+		"stats": stats,
+		"info":  info,
+	})
+}
+
+func loginAPIKey(c *gin.Context) {
+	resp.Success(c, nil)
 }

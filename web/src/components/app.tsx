@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from "motion/react"
 import { useAuth } from '@/api/endpoints/user';
 import { LoginForm } from '@/components/modules/login';
+import { APIKeyDashboard } from '@/components/modules/apikey-dashboard';
 import { ContentLoader } from '@/route/content-loader';
 import { NavBar, useNavStore } from '@/components/modules/navbar';
 import { useTranslations } from 'next-intl'
@@ -21,7 +22,7 @@ function timeout(ms: number) {
 }
 
 export function AppContainer() {
-    const { isAuthenticated, isLoading: authLoading } = useAuth();
+    const { isAuthenticated, isAPIKeyAuth, isLoading: authLoading } = useAuth();
     const { activeItem, direction } = useNavStore();
     const t = useTranslations('navbar');
     const queryClient = useQueryClient();
@@ -62,83 +63,94 @@ export function AppContainer() {
             try {
                 const prefetches: Array<Promise<unknown>> = [];
 
-                const component = CONTENT_MAP[activeItem];
-                if (component?.preload) {
-                    prefetches.push(component.preload());
-                }
+                // API Key 认证模式：预取 dashboard stats
+                if (isAPIKeyAuth) {
+                    prefetches.push(
+                        queryClient.prefetchQuery({
+                            queryKey: ['apikey', 'dashboard', 'stats'],
+                            queryFn: async () => apiClient.get('/api/v1/apikey/stats'),
+                        })
+                    );
+                } else {
+                    // 普通用户认证模式：预取对应页面数据
+                    const component = CONTENT_MAP[activeItem];
+                    if (component?.preload) {
+                        prefetches.push(component.preload());
+                    }
 
-                switch (activeItem) {
-                    case 'home': {
-                        prefetches.push(
-                            queryClient.prefetchQuery({
-                                queryKey: ['stats', 'total'],
-                                queryFn: async () => apiClient.get('/api/v1/stats/total'),
-                            })
-                        );
-                        prefetches.push(
-                            queryClient.prefetchQuery({
-                                queryKey: ['stats', 'daily'],
-                                queryFn: async () => apiClient.get('/api/v1/stats/daily'),
-                            })
-                        );
-                        prefetches.push(
-                            queryClient.prefetchQuery({
-                                queryKey: ['stats', 'hourly'],
-                                queryFn: async () => apiClient.get('/api/v1/stats/hourly'),
-                            })
-                        );
-                        prefetches.push(
-                            queryClient.prefetchQuery({
-                                queryKey: ['channels', 'list'],
-                                queryFn: async () => apiClient.get('/api/v1/channel/list'),
-                            })
-                        );
-                        break;
+                    switch (activeItem) {
+                        case 'home': {
+                            prefetches.push(
+                                queryClient.prefetchQuery({
+                                    queryKey: ['stats', 'total'],
+                                    queryFn: async () => apiClient.get('/api/v1/stats/total'),
+                                })
+                            );
+                            prefetches.push(
+                                queryClient.prefetchQuery({
+                                    queryKey: ['stats', 'daily'],
+                                    queryFn: async () => apiClient.get('/api/v1/stats/daily'),
+                                })
+                            );
+                            prefetches.push(
+                                queryClient.prefetchQuery({
+                                    queryKey: ['stats', 'hourly'],
+                                    queryFn: async () => apiClient.get('/api/v1/stats/hourly'),
+                                })
+                            );
+                            prefetches.push(
+                                queryClient.prefetchQuery({
+                                    queryKey: ['channels', 'list'],
+                                    queryFn: async () => apiClient.get('/api/v1/channel/list'),
+                                })
+                            );
+                            break;
+                        }
+                        case 'channel': {
+                            prefetches.push(
+                                queryClient.prefetchQuery({
+                                    queryKey: ['channels', 'list'],
+                                    queryFn: async () => apiClient.get('/api/v1/channel/list'),
+                                })
+                            );
+                            break;
+                        }
+                        case 'group': {
+                            prefetches.push(
+                                queryClient.prefetchQuery({
+                                    queryKey: ['groups', 'list'],
+                                    queryFn: async () => apiClient.get('/api/v1/group/list'),
+                                })
+                            );
+                            prefetches.push(
+                                queryClient.prefetchQuery({
+                                    queryKey: ['models', 'channel'],
+                                    queryFn: async () => apiClient.get('/api/v1/model/channel'),
+                                })
+                            );
+                            break;
+                        }
+                        case 'model': {
+                            prefetches.push(
+                                queryClient.prefetchQuery({
+                                    queryKey: ['models', 'list'],
+                                    queryFn: async () => apiClient.get('/api/v1/model/list'),
+                                })
+                            );
+                            break;
+                        }
+                        case 'setting': {
+                            prefetches.push(
+                                queryClient.prefetchQuery({
+                                    queryKey: ['apikeys', 'list'],
+                                    queryFn: async () => apiClient.get('/api/v1/apikey/list'),
+                                })
+                            );
+                            break;
+                        }
+                        default:
+                            break;
                     }
-                    case 'channel': {
-                        prefetches.push(
-                            queryClient.prefetchQuery({
-                                queryKey: ['channels', 'list'],
-                                queryFn: async () => apiClient.get('/api/v1/channel/list'),
-                            })
-                        );
-                        break;
-                    }
-                    case 'group': {
-                        prefetches.push(
-                            queryClient.prefetchQuery({
-                                queryKey: ['groups', 'list'],
-                                queryFn: async () => apiClient.get('/api/v1/group/list'),
-                            })
-                        );
-                        prefetches.push(
-                            queryClient.prefetchQuery({
-                                queryKey: ['models', 'channel'],
-                                queryFn: async () => apiClient.get('/api/v1/model/channel'),
-                            })
-                        );
-                        break;
-                    }
-                    case 'model': {
-                        prefetches.push(
-                            queryClient.prefetchQuery({
-                                queryKey: ['models', 'list'],
-                                queryFn: async () => apiClient.get('/api/v1/model/list'),
-                            })
-                        );
-                        break;
-                    }
-                    case 'setting': {
-                        prefetches.push(
-                            queryClient.prefetchQuery({
-                                queryKey: ['apikeys', 'list'],
-                                queryFn: async () => apiClient.get('/api/v1/apikey/list'),
-                            })
-                        );
-                        break;
-                    }
-                    default:
-                        break;
                 }
 
                 await Promise.race([
@@ -170,6 +182,15 @@ export function AppContainer() {
             <div className="min-h-screen flex items-center justify-center bg-background">
                 <Logo size={120} animate />
             </div>
+        );
+    }
+
+    // API Key 认证模式 - 显示 API Key Dashboard
+    if (isAPIKeyAuth) {
+        return (
+            <AnimatePresence mode="wait">
+                <APIKeyDashboard key="apikey-dashboard" />
+            </AnimatePresence>
         );
     }
 
