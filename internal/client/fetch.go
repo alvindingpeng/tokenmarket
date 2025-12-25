@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -12,93 +11,148 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/transformer/outbound"
 )
 
-// Gemini Models List Refer：https://ai.google.dev/api/models?hl=zh_cn
-
 func FetchLLMName(ctx context.Context, request model.Channel) ([]string, error) {
+
 	client, err := NewHTTPClient(request.Proxy)
 	if err != nil {
 		return nil, err
 	}
 
-	var allModels []string
+	switch request.Type {
+	case outbound.OutboundTypeOpenAIChat, outbound.OutboundTypeOpenAIResponse:
+		return fetchOpenAIModels(client, ctx, request)
+	case outbound.OutboundTypeAnthropic:
+		return fetchAnthropicModels(client, ctx, request)
+	case outbound.OutboundTypeGemini:
+		return fetchGeminiModels(client, ctx, request)
+	default:
+		return nil, fmt.Errorf("unsupported provider: %v", request.Type)
+	}
+
+}
+
+// refer: https://platform.openai.com/docs/api-reference/models/list
+func fetchOpenAIModels(client *http.Client, ctx context.Context, request model.Channel) ([]string, error) {
+	req, _ := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		request.BaseURL+"/models",
+		nil,
+	)
+	req.Header.Set("Authorization", "Bearer "+request.Key)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result model.OpenAIModelList
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	models := make([]string, 0, len(result.Data))
+	for _, m := range result.Data {
+		models = append(models, m.ID)
+	}
+	return models, nil
+}
+
+// refer: ttps://ai.google.dev/api/models
+func fetchGeminiModels(client *http.Client, ctx context.Context, request model.Channel) ([]string, error) {
+	var models []string
 	pageToken := ""
 
-	// 循环获取所有分页数据
 	for {
-		base_url := fmt.Sprintf("%s/models", request.BaseURL)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, base_url, nil)
-		if err != nil {
-			return nil, err
-		}
+		req, _ := http.NewRequestWithContext(
+			ctx,
+			http.MethodGet,
+			request.BaseURL+"/models",
+			nil,
+		)
+		req.Header.Set("X-Goog-Api-Key", request.Key)
+		req.Header.Set("Authorization", "Bearer "+request.Key)
 
-		// 如果有 pageToken，添加到查询参数
 		if pageToken != "" {
 			q := req.URL.Query()
 			q.Add("pageToken", pageToken)
 			req.URL.RawQuery = q.Encode()
 		}
 
-		switch request.Type {
-		case outbound.OutboundTypeOpenAIChat, outbound.OutboundTypeOpenAIResponse:
-			req.Header.Set("Authorization", "Bearer "+request.Key)
-		case outbound.OutboundTypeAnthropic:
-			req.Header.Set("Authorization", "Bearer "+request.Key)
-		case outbound.OutboundTypeGemini:
-			//req.Header.Set("Authorization", "Bearer "+request.Key)
-			req.Header.Set("X-Goog-Api-Key", request.Key)
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, err
 		}
+		defer resp.Body.Close()
+
+		var result model.GeminiModelList
+
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return nil, err
+		}
+
+		for _, m := range result.Models {
+			name := strings.TrimPrefix(m.Name, "models/")
+			models = append(models, name)
+		}
+
+		if result.NextPageToken == "" {
+			break
+		}
+		pageToken = result.NextPageToken
+	}
+
+	return models, nil
+}
+
+// refer: https://platform.claude.com/docs
+func fetchAnthropicModels(client *http.Client, ctx context.Context, request model.Channel) ([]string, error) {
+
+	var allModels []string
+	var afterID string
+	for {
+
+		req, _ := http.NewRequestWithContext(
+			ctx,
+			http.MethodGet,
+			request.BaseURL+"/models",
+			nil,
+		)
+		req.Header.Set("X-Api-Key", request.Key)
+		req.Header.Set("Authorization", "Bearer "+request.Key) // 对部分聚合API的兼容
+		req.Header.Set("Anthropic-Version", "2023-06-01")
+
+		// 设置多页参数
+		q := req.URL.Query()
+
+		if afterID != "" {
+			q.Set("after_id", afterID)
+		}
+		req.URL.RawQuery = q.Encode()
 
 		resp, err := client.Do(req)
 		if err != nil {
 			return nil, err
 		}
+		defer resp.Body.Close()
 
-		var result struct {
-			Data []struct {
-				ID string `json:"id"`
-			} `json:"data"`
-			// 兼容Gemini格式
-			Models []struct {
-				Name string `json:"name"`
-			} `json:"models"`
-			// Gemini格式下的分页字段
-			NextPageToken string `json:"nextPageToken"`
-		}
+		var result model.AnthropicModelList
 
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return nil, err
 		}
 
-		if err := json.Unmarshal(body, &result); err != nil {
-			return nil, err
+		for _, m := range result.Data {
+			allModels = append(allModels, m.ID)
 		}
 
-		// 收集当前页的模型
-		if len(result.Data) > 0 {
-			// OpenAI 格式
-			for _, model := range result.Data {
-				allModels = append(allModels, model.ID)
-			}
-		} else if len(result.Models) > 0 {
-			// Gemini 格式
-			for _, model := range result.Models {
-				modelName := model.Name // 因为发送请求的时候自动添加了models/前缀，这里去掉
-				if after, ok := strings.CutPrefix(modelName, "models/"); ok {
-					modelName = after
-				}
-				allModels = append(allModels, modelName)
-			}
-		}
-
-		// 如果没有下一页，退出循环
-		if result.NextPageToken == "" {
+		if !result.HasMore {
 			break
 		}
 
-		pageToken = result.NextPageToken
+		afterID = result.LastID
 	}
-
 	return allModels, nil
 }
