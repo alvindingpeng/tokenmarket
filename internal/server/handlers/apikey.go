@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
@@ -38,6 +39,10 @@ func init() {
 		AddRoute(
 			router.NewRoute("/stats", http.MethodGet).
 				Handle(getStatsAPIKeyById),
+		).
+		AddRoute(
+			router.NewRoute("/login", http.MethodGet).
+				Handle(loginAPIKey),
 		)
 }
 
@@ -93,5 +98,25 @@ func deleteAPIKey(c *gin.Context) {
 
 func getStatsAPIKeyById(c *gin.Context) {
 	id := c.GetInt("api_key_id")
-	resp.Success(c, op.StatsAPIKeyGet(id))
+	stats := op.StatsAPIKeyGet(id)
+	info, err := op.APIKeyGet(id, c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	models, err := op.GroupListModel(c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	modelsString := strings.Join(models, ", ")
+	info.SupportedModels = modelsString
+	resp.Success(c, map[string]any{
+		"stats": stats,
+		"info":  info,
+	})
+}
+
+func loginAPIKey(c *gin.Context) {
+	resp.Success(c, nil)
 }

@@ -4,13 +4,44 @@
         "usernamePlaceholder": "Enter your username",
         "password": "Password",
         "passwordPlaceholder": "Enter your password",
+        "apikey": "API Key",
+        "apikeyPlaceholder": "Enter your API Key (sk-switchyard-...)",
+        "mode": {
+            "user": "Account",
+            "apikey": "API Key"
+        },
         "error": {
-            "generic": "Login failed, please check your username and password"
+            "generic": "Login failed, please check your credentials"
         },
         "button": {
             "loading": "Logging in...",
             "submit": "Login"
         }
+    },
+    "apiKeyDashboard": {
+        "error": "Failed to load data",
+        "logout": "Logout",
+        "requestStats": "Request Stats",
+        "totalStats": "Total Stats",
+        "inputStats": "Input Stats",
+        "outputStats": "Output Stats",
+        "requestCount": "Requests",
+        "timeConsumed": "Time Consumed",
+        "totalToken": "Tokens Used",
+        "totalCost": "Total Cost",
+        "inputTokens": "Input Tokens",
+        "inputCost": "Input Cost",
+        "outputTokens": "Output Tokens",
+        "outputCost": "Output Cost",
+        "successRequests": "Successful",
+        "failedRequests": "Failed",
+        "quota": "Remaining Quota",
+        "unlimited": "Unlimited",
+        "expireAt": "Expires",
+        "neverExpire": "Never",
+        "daysLeft": "days left",
+        "expired": "Expired",
+        "supportedModels": "Supported Models"
     },
     "navbar": {
         "home": "Home",

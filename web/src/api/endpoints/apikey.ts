@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { logger } from '@/lib/logger';
+import { useAuthStore } from './user';
 import { StatsAPIKey, StatsAPIKeyFormatted } from './stats';
 import { formatCount, formatMoney, formatTime } from '@/lib/utils';
 
@@ -15,6 +16,69 @@ export interface APIKey {
     expire_at?: number; // Unix 时间戳（秒），不传表示永不过期
     max_cost?: number; // 不传表示无限制
     supported_models?: string; // 不传表示支持所有模型
+}
+
+/**
+ * API Key Stats 响应（包含 stats 和 info）
+ */
+export interface APIKeyStatsResponse {
+    stats: StatsAPIKey;
+    info: APIKey;
+}
+
+export interface APIKeyStatsResponseFormatted {
+    stats: StatsAPIKeyFormatted;
+    info: APIKey;
+}
+
+/**
+ * API Key 登录 Hook（仅校验 key 是否有效）
+ */
+export function useAPIKeyLogin() {
+    const { setAPIKeyAuth, logout } = useAuthStore();
+
+    return useMutation({
+        mutationFn: async (apiKey: string) => {
+            // 先设置以便 apiClient 发送请求时带上 token
+            setAPIKeyAuth(apiKey);
+            await apiClient.get<null>('/api/v1/apikey/login');
+            return apiKey;
+        },
+        onError: (error) => {
+            logout();
+            logger.error('API Key 登录失败:', error);
+        },
+    });
+}
+
+/**
+ * 获取当前 API Key 的详细统计数据 Hook（仅 API Key 登录用户使用）
+ */
+export function useAPIKeyDashboardStats() {
+    const { isAPIKeyAuth, isAuthenticated } = useAuthStore();
+
+    return useQuery({
+        queryKey: ['apikey', 'dashboard', 'stats'],
+        queryFn: () => apiClient.get<APIKeyStatsResponse>('/api/v1/apikey/stats'),
+        select: (data): APIKeyStatsResponseFormatted => ({
+            stats: {
+                api_key_id: data.stats.api_key_id,
+                input_token: formatCount(data.stats.input_token),
+                output_token: formatCount(data.stats.output_token),
+                total_token: formatCount(data.stats.input_token + data.stats.output_token),
+                input_cost: formatMoney(data.stats.input_cost),
+                output_cost: formatMoney(data.stats.output_cost),
+                total_cost: formatMoney(data.stats.input_cost + data.stats.output_cost),
+                wait_time: formatTime(data.stats.wait_time),
+                request_success: formatCount(data.stats.request_success),
+                request_failed: formatCount(data.stats.request_failed),
+                request_count: formatCount(data.stats.request_success + data.stats.request_failed),
+            },
+            info: data.info,
+        }),
+        enabled: isAPIKeyAuth && isAuthenticated,
+        refetchInterval: 30000,
+    });
 }
 
 /**

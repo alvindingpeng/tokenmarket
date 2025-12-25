@@ -43,11 +43,13 @@ export interface ChangeUsernameRequest {
 interface AuthState {
     isAuthenticated: boolean;
     isLoading: boolean;
+    isAPIKeyAuth: boolean;
     token: string | null;
     expireAt: string | null;
 
     // Actions
     setAuth: (token: string, expireAt: string) => void;
+    setAPIKeyAuth: (apiKey: string) => void;
     checkAuth: () => Promise<void>;
     logout: () => void;
 }
@@ -55,44 +57,58 @@ interface AuthState {
 /**
  * 认证状态管理 Store（使用 zustand + persist）
  */
-const useAuthStore = create<AuthState>()(
+export const useAuthStore = create<AuthState>()(
     persist(
         (set, get) => ({
             isAuthenticated: false,
             isLoading: true,
+            isAPIKeyAuth: false,
             token: null,
             expireAt: null,
 
             setAuth: (token: string, expireAt: string) => {
                 set({
                     isAuthenticated: true,
+                    isAPIKeyAuth: false,
                     token,
                     expireAt,
                     isLoading: false
                 });
             },
 
-            checkAuth: async () => {
-                const { token, expireAt } = get();
+            setAPIKeyAuth: (apiKey: string) => {
+                set({
+                    isAuthenticated: true,
+                    isAPIKeyAuth: true,
+                    token: apiKey,
+                    expireAt: null,
+                    isLoading: false
+                });
+            },
 
-                if (!token || !expireAt) {
+            checkAuth: async () => {
+                const { token, expireAt, isAPIKeyAuth } = get();
+
+                if (!token) {
                     set({ isAuthenticated: false, isLoading: false });
                     return;
                 }
 
-                const expireTime = new Date(expireAt).getTime();
-                const now = Date.now();
-
-                if (now >= expireTime) {
-                    get().logout();
-                    return;
+                // API Key 不检查本地过期时间
+                if (!isAPIKeyAuth) {
+                    if (!expireAt || Date.now() >= new Date(expireAt).getTime()) {
+                        get().logout();
+                        return;
+                    }
                 }
 
                 try {
-                    await apiClient.get<string>('/api/v1/user/status');
+                    // API Key 模式只需校验 key 是否有效即可
+                    const endpoint = isAPIKeyAuth ? '/api/v1/apikey/login' : '/api/v1/user/status';
+                    await apiClient.get<unknown>(endpoint);
                     set({ isAuthenticated: true, isLoading: false });
                 } catch (error) {
-                    logger.error('Token 验证失败:', error);
+                    logger.error('认证验证失败:', error);
                     get().logout();
                 }
             },
@@ -100,6 +116,7 @@ const useAuthStore = create<AuthState>()(
             logout: () => {
                 set({
                     isAuthenticated: false,
+                    isAPIKeyAuth: false,
                     token: null,
                     expireAt: null,
                     isLoading: false
@@ -111,6 +128,7 @@ const useAuthStore = create<AuthState>()(
             partialize: (state) => ({
                 token: state.token,
                 expireAt: state.expireAt,
+                isAPIKeyAuth: state.isAPIKeyAuth,
             })
         }
     )
@@ -229,6 +247,7 @@ export function useAuth() {
 
     return {
         isAuthenticated: store.isAuthenticated,
+        isAPIKeyAuth: store.isAPIKeyAuth,
         isLoading: store.isLoading,
         logout: store.logout,
     };
