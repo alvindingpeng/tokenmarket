@@ -47,9 +47,7 @@ export function SettingInfo() {
     const handleUpdate = () => {
         updateCore.mutate(undefined, {
             onSuccess: () => {
-                toast.success(t('info.updateSuccess'), {
-                    description: t('info.reloading'),
-                });
+                toast.success(t('info.updateSuccess'));
                 // 更新成功后清理缓存并刷新
                 setTimeout(() => {
                     clearCacheAndReload();
