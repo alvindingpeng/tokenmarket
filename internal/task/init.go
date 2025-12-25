@@ -15,6 +15,7 @@ const (
 	TaskStatsSave    = "stats_save"
 	TaskRelayLogSave = "relay_log_save"
 	TaskSyncLLM      = "sync_llm"
+	TaskCleanLLM     = "clean_llm"
 )
 
 func Init() {
@@ -48,5 +49,6 @@ func Init() {
 			log.Warnf("relay log save db task failed: %v", err)
 		}
 	})
-
+	// 注册LLM清理任务
+	Register(TaskCleanLLM, 1*time.Hour, true, CleanLLMTask)
 }

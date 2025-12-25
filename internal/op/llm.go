@@ -45,7 +45,16 @@ func LLMDelete(modelName string, ctx context.Context) error {
 	llmModelCache.Del(modelName)
 	return nil
 }
-
+func LLMBatchDelete(modelNames []string, ctx context.Context) error {
+	if len(modelNames) == 0 {
+		return nil
+	}
+	if err := db.GetDB().WithContext(ctx).Where("name IN ?", modelNames).Delete(&model.LLMInfo{}).Error; err != nil {
+		return err
+	}
+	llmModelCache.Del(modelNames...)
+	return nil
+}
 func LLMCreate(model model.LLMInfo, ctx context.Context) error {
 	_, ok := llmModelCache.Get(model.Name)
 	if ok {
@@ -57,7 +66,30 @@ func LLMCreate(model model.LLMInfo, ctx context.Context) error {
 	llmModelCache.Set(model.Name, model.LLMPrice)
 	return nil
 }
-
+func LLMBatchCreate(names []string, ctx context.Context) error {
+	if len(names) == 0 {
+		return nil
+	}
+	models := make([]model.LLMInfo, len(names))
+	for i, name := range names {
+		if _, ok := llmModelCache.Get(name); ok {
+			continue
+		}
+		models[i] = model.LLMInfo{Name: name}
+	}
+	if err := db.GetDB().WithContext(ctx).Create(&models).Error; err != nil {
+		return err
+	}
+	for _, name := range names {
+		llmModelCache.Set(name, model.LLMPrice{
+			Input:      0,
+			Output:     0,
+			CacheRead:  0,
+			CacheWrite: 0,
+		})
+	}
+	return nil
+}
 func LLMGet(name string) (model.LLMPrice, error) {
 	price, ok := llmModelCache.Get(name)
 	if !ok {

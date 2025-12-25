@@ -75,17 +75,20 @@ func CheckAndAddLLMPrice(channelModel, customModel string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		modelNames := strings.Split(channelModel+","+customModel, ",")
+		var newModels []string
 		for _, modelName := range modelNames {
 			if modelName == "" {
 				continue
 			}
 			modelPrice := price.GetLLMPrice(modelName)
 			if modelPrice == nil {
-				log.Infof("model %s price not found,create", modelName)
-				err := op.LLMCreate(model.LLMInfo{Name: modelName}, ctx)
-				if err != nil {
-					log.Errorf("create model: %s", modelName)
-				}
+				newModels = append(newModels, modelName)
+			}
+		}
+		if len(newModels) > 0 {
+			log.Infof("create models: %v", newModels)
+			if err := op.LLMBatchCreate(newModels, ctx); err != nil {
+				log.Errorf("failed to batch create models: %v", err)
 			}
 		}
 	}()
