@@ -12,6 +12,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/alvindingpeng/switchyard/internal/server/router"
 	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
 )
 
 func init() {
@@ -109,7 +110,18 @@ func getStatsAPIKeyById(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	modelsString := strings.Join(models, ", ")
+	var modelsString string
+	if info.SupportedModels == "" {
+		modelsString = strings.Join(models, ", ")
+	} else {
+		supportedModels := lo.Map(strings.Split(info.SupportedModels, ","), func(s string, _ int) string {
+			return strings.TrimSpace(s)
+		})
+		models = lo.Filter(models, func(m string, _ int) bool {
+			return lo.Contains(supportedModels, m)
+		})
+		modelsString = strings.Join(models, ", ")
+	}
 	info.SupportedModels = modelsString
 	resp.Success(c, map[string]any{
 		"stats": stats,
