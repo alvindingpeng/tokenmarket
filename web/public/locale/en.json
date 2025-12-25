@@ -389,6 +389,7 @@
             "modelNoSelected": "No models selected",
             "modelAvailable": "Available Models",
             "modelSelectAll": "Select All",
+            "modelClearAll": "Clear All",
             "modelAllAdded": "All models added",
             "modelNoMatch": "No matching models.",
             "modelAddCustom": "Add as custom",
