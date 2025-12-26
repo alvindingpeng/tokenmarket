@@ -18,28 +18,28 @@ export const toast = {
     success: (message: string, options?: ToastOptions) => {
         sonnerToast(message, {
             icon: icons.success,
-            position: 'top-right',
+            position: 'top-left',
             ...options,
         });
     },
     error: (message: string, options?: ToastOptions) => {
         sonnerToast(message, {
             icon: icons.error,
-            position: 'top-right',
+            position: 'top-left',
             ...options,
         });
     },
     warning: (message: string, options?: ToastOptions) => {
         sonnerToast(message, {
             icon: icons.warning,
-            position: 'top-right',
+            position: 'top-left',
             ...options,
         });
     },
     info: (message: string, options?: ToastOptions) => {
         sonnerToast(message, {
             icon: icons.info,
-            position: 'top-right',
+            position: 'top-left',
             ...options,
         });
     },
@@ -47,7 +47,7 @@ export const toast = {
         return sonnerToast(message, {
             icon: icons.loading,
             duration: Infinity,
-            position: 'top-right',
+            position: 'top-left',
             ...options,
         });
     },
