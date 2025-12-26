@@ -34,8 +34,10 @@ body:
   - type: textarea
     attributes:
       label: 相关日志
-      description: 如有相关日志或报错信息，请粘贴在下方
+      description: WEB端的请求日志和后端控制台日志
       render: shell
+    validations:
+      required: true
   - type: textarea
     attributes:
       label: 环境信息
@@ -44,3 +46,5 @@ body:
         - 浏览器: Chrome 120.0.xxx
         - 操作系统: Windows 11 / macOS 14.x / Ubuntu 22.04
       render: shell
+    validations:
+      required: true
