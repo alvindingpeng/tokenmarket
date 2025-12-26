@@ -2,10 +2,11 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useTranslations } from 'next-intl';
-import { Monitor, Globe, Clock } from 'lucide-react';
+import { Monitor, Globe, Clock, Shield, HelpCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useSettingList, useSetSetting, SettingKey } from '@/api/endpoints/setting';
 import { toast } from '@/components/common/Toast';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/animate-ui/components/animate/tooltip';
 
 export function SettingSystem() {
     const t = useTranslations('setting');
@@ -14,14 +15,17 @@ export function SettingSystem() {
 
     const [proxyUrl, setProxyUrl] = useState('');
     const [statsSaveInterval, setStatsSaveInterval] = useState('');
+    const [corsAllowOrigins, setCorsAllowOrigins] = useState('');
 
     const initialProxyUrl = useRef('');
     const initialStatsSaveInterval = useRef('');
+    const initialCorsAllowOrigins = useRef('');
 
     useEffect(() => {
         if (settings) {
             const proxy = settings.find(s => s.key === SettingKey.ProxyURL);
             const interval = settings.find(s => s.key === SettingKey.StatsSaveInterval);
+            const cors = settings.find(s => s.key === SettingKey.CORSAllowOrigins);
             if (proxy) {
                 queueMicrotask(() => setProxyUrl(proxy.value));
                 initialProxyUrl.current = proxy.value;
@@ -29,6 +33,10 @@ export function SettingSystem() {
             if (interval) {
                 queueMicrotask(() => setStatsSaveInterval(interval.value));
                 initialStatsSaveInterval.current = interval.value;
+            }
+            if (cors) {
+                queueMicrotask(() => setCorsAllowOrigins(cors.value));
+                initialCorsAllowOrigins.current = cors.value;
             }
         }
     }, [settings]);
@@ -41,8 +49,10 @@ export function SettingSystem() {
                 toast.success(t('saved'));
                 if (key === SettingKey.ProxyURL) {
                     initialProxyUrl.current = value;
-                } else {
+                } else if (key === SettingKey.StatsSaveInterval) {
                     initialStatsSaveInterval.current = value;
+                } else if (key === SettingKey.CORSAllowOrigins) {
+                    initialCorsAllowOrigins.current = value;
                 }
             }
         });
@@ -82,6 +92,32 @@ export function SettingSystem() {
                     onChange={(e) => setStatsSaveInterval(e.target.value)}
                     onBlur={() => handleSave('stats_save_interval', statsSaveInterval, initialStatsSaveInterval.current)}
                     placeholder={t('statsSaveInterval.placeholder')}
+                    className="w-48 rounded-xl"
+                />
+            </div>
+
+            {/* CORS 跨域白名单 */}
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                    <Shield className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-sm font-medium">{t('corsAllowOrigins.label')}</span>
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                {t('corsAllowOrigins.hint')}
+                                <br />
+                                {t('corsAllowOrigins.example')}
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                </div>
+                <Input
+                    value={corsAllowOrigins}
+                    onChange={(e) => setCorsAllowOrigins(e.target.value)}
+                    onBlur={() => handleSave(SettingKey.CORSAllowOrigins, corsAllowOrigins, initialCorsAllowOrigins.current)}
                     className="w-48 rounded-xl"
                 />
             </div>

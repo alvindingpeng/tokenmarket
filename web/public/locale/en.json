@@ -110,6 +110,11 @@
             "label": "Stats Save Interval",
             "placeholder": "Enter interval in minutes"
         },
+        "corsAllowOrigins": {
+            "label": "CORS Allowed Origins",
+            "hint": "Empty = deny all, * = allow all",
+            "example": "Only allow specific domains: https://example.com,https://example2.com"
+        },
         "saved": "Saved",
         "backup": {
             "title": "Backup / Restore",

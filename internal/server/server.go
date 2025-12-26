@@ -31,8 +31,8 @@ func Start() error {
 
 	if conf.IsDebug() {
 		r.Use(middleware.Logger())
-		r.Use(middleware.Cors())
 	}
+	r.Use(middleware.Cors())
 	r.Use(middleware.StaticEmbed("/", static.StaticFS))
 
 	router.RegisterAll(r)
