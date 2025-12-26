@@ -1,5 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query';
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { logger } from '@/lib/logger';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -127,7 +127,7 @@ export function useLogs(options: { pageSize?: number } = {}) {
         } catch (e) {
             logger.error('加载更多日志失败:', e);
         }
-    }, [logsQuery.hasNextPage, logsQuery.isFetchingNextPage, logsQuery.fetchNextPage]);
+    }, [logsQuery]);
 
     useEffect(() => {
         let cancelled = false;

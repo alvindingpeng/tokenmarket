@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useModelList } from '@/api/endpoints/model';
 import { ModelItem } from './Item';
@@ -18,6 +18,7 @@ export function Model() {
     const setPage = usePaginationStore((s) => s.setPage);
     const pageSize = usePaginationStore((s) => s.getPageSize(pageKey));
     const setPageSize = usePaginationStore((s) => s.setPageSize);
+    const direction = usePaginationStore((s) => s.getDirection(pageKey));
 
     const filteredModels = useMemo(() => {
         if (!models) return [];
@@ -44,12 +45,6 @@ export function Model() {
         const end = start + pageSize;
         return filteredModels.slice(start, end);
     }, [filteredModels, page, pageSize]);
-
-    const prevPageRef = useRef(page);
-    const direction = page > prevPageRef.current ? 1 : page < prevPageRef.current ? -1 : 1;
-    useEffect(() => {
-        prevPageRef.current = page;
-    }, [page]);
 
     return (
         <AnimatePresence mode="popLayout" initial={false} custom={direction}>

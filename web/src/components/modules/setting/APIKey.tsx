@@ -17,7 +17,7 @@ import {
     type APIKey,
 } from '@/api/endpoints/apikey';
 import { useGroupList } from '@/api/endpoints/group';
-import { useStatsAPIKey, type StatsAPIKeyFormatted } from '@/api/endpoints/stats';
+import { useStatsAPIKey } from '@/api/endpoints/stats';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/common/Toast';
 import type { ApiError } from '@/api/types';

@@ -82,6 +82,27 @@ export interface DBExportOptions {
     include_stats?: boolean;
 }
 
+type ApiResponse<T> = {
+    code?: number;
+    message?: string;
+    data?: T;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function getMessageField(value: unknown): string | undefined {
+    if (!isRecord(value)) return undefined;
+    const msg = value.message;
+    return typeof msg === 'string' ? msg : undefined;
+}
+
+function getDataField<T>(value: unknown): T | undefined {
+    if (!isRecord(value)) return undefined;
+    return (value as ApiResponse<T>).data;
+}
+
 function getAuthHeader(): string {
     const token = useAuthStore.getState().token;
     if (!token) throw new Error('Not authenticated');
@@ -171,17 +192,13 @@ export function useImportDB() {
             const data = isJson ? await res.json() : await res.text();
 
             if (!res.ok) {
-                const message = (data && typeof data === 'object' && 'message' in data && typeof (data as any).message === 'string')
-                    ? (data as any).message
-                    : (typeof data === 'string' ? data : res.statusText);
+                const message = getMessageField(data) ?? (typeof data === 'string' ? data : res.statusText);
                 throw new Error(message);
             }
 
             // 支持后端标准 ApiResponse：{code,message,data:{...}}
-            if (data && typeof data === 'object' && 'data' in data) {
-                return (data as any).data as DBImportResult;
-            }
-            return data as DBImportResult;
+            const nested = getDataField<DBImportResult>(data);
+            return nested ?? (data as DBImportResult);
         },
         onError: (error) => {
             logger.error('导入数据库失败:', error);

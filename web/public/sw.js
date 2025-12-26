@@ -30,7 +30,7 @@ self.addEventListener('install', (event) => {
             try {
                 const cache = await caches.open(CACHE_NAMES.app);
                 await cache.addAll(PRECACHE_URLS);
-            } catch (e) {
+            } catch {
                 // ignore
             }
             await self.skipWaiting();
@@ -104,7 +104,7 @@ async function cacheFirst(request, cacheName) {
             cache.put(request, response.clone());
         }
         return response;
-    } catch (error) {
+    } catch {
         // 离线且无缓存
         return new Response('Offline', { status: 503 });
     }
@@ -121,7 +121,7 @@ async function networkFirst(request, cacheName, { fallbackUrl = null } = {}) {
             cache.put(request, response.clone());
         }
         return response;
-    } catch (error) {
+    } catch {
         const cached = await cache.match(request);
         if (cached) {
             return cached;

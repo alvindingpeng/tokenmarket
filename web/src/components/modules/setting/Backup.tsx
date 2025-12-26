@@ -41,7 +41,7 @@ export function SettingBackup() {
         try {
             await importDB.mutateAsync(file);
             toast.success(t('backup.import.success'));
-            fileInputRef.current && (fileInputRef.current.value = '');
+            if (fileInputRef.current) fileInputRef.current.value = '';
             setFile(null);
         } catch (e) {
             toast.error(e instanceof Error ? e.message : t('backup.import.failed'));

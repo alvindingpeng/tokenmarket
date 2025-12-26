@@ -257,6 +257,9 @@ function TooltipOverlay() {
       }),
       flip(),
       shift({ padding: 8 }),
+      // `arrowRef` is a ref object; Floating UI accepts refs and reads `.current` internally.
+      // The hook lint rule (`react-hooks/refs`) flags passing refs during render, but this is safe here.
+      // eslint-disable-next-line react-hooks/refs
       floatingArrow({ element: arrowRef }),
     ],
   });
@@ -321,10 +324,10 @@ function TooltipOverlay() {
                     rendered.open
                       ? { opacity: 1, scale: 1, x: 0, y: 0 }
                       : {
-                          opacity: 0,
-                          scale: 0,
-                          ...initialFromSide(rendered.data.side),
-                        }
+                        opacity: 0,
+                        scale: 0,
+                        ...initialFromSide(rendered.data.side),
+                      }
                   }
                   exit={{
                     opacity: 0,

@@ -20,6 +20,7 @@ export enum AutoGroupType {
     None = 0,   // 不自动分组
     Fuzzy = 1,  // 模糊匹配
     Exact = 2,  // 准确匹配
+    Regex = 3,  // 正则匹配
 }
 
 /**

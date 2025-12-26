@@ -44,6 +44,41 @@ export function APIKeyDashboard() {
     const [copiedApiKey, setCopiedApiKey] = useState(false);
     const copyTimerRef = useRef<number | null>(null);
 
+    const copyToClipboard = useCallback(
+        async (text: string, label: string) => {
+            try {
+                if (navigator.clipboard && window.isSecureContext) {
+                    await navigator.clipboard.writeText(text);
+                } else {
+                    const textArea = document.createElement('textarea');
+                    textArea.value = text;
+                    textArea.style.position = 'fixed';
+                    textArea.style.left = '-9999px';
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                }
+                toast.success(`${label} copied`);
+                return true;
+            } catch {
+                toast.error(t('error'));
+                return false;
+            }
+        },
+        [t]
+    );
+
+    const handleCopyApiKey = useCallback(async () => {
+        const apiKey = data?.info.api_key;
+        if (!apiKey) return;
+        const ok = await copyToClipboard(apiKey, 'API Key');
+        if (!ok) return;
+        setCopiedApiKey(true);
+        if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = window.setTimeout(() => setCopiedApiKey(false), 2000);
+    }, [copyToClipboard, data?.info.api_key]);
+
     useEffect(() => {
         return () => {
             if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
@@ -81,53 +116,17 @@ export function APIKeyDashboard() {
             .filter(Boolean)
         : [];
 
-    const supportedModelButtons: JSX.Element[] = [];
-    for (const model of supportedModels) {
-        supportedModelButtons.push(
-            <Button
-                key={model}
-                variant="secondary"
-                size="sm"
-                className="h-8 rounded-lg px-3 text-sm transition-colors hover:bg-primary hover:text-primary-foreground"
-                onClick={() => void copyToClipboard(model, model)}
-            >
-                {model}
-            </Button>
-        );
-    }
-
-    const copyToClipboard = useCallback(
-        async (text: string, label: string) => {
-            try {
-                if (navigator.clipboard && window.isSecureContext) {
-                    await navigator.clipboard.writeText(text);
-                } else {
-                    const textArea = document.createElement('textarea');
-                    textArea.value = text;
-                    textArea.style.position = 'fixed';
-                    textArea.style.left = '-9999px';
-                    document.body.appendChild(textArea);
-                    textArea.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(textArea);
-                }
-                toast.success(`${label} copied`);
-                return true;
-            } catch {
-                toast.error(t('error'));
-                return false;
-            }
-        },
-        [t]
-    );
-
-    const handleCopyApiKey = useCallback(async () => {
-        const ok = await copyToClipboard(data.info.api_key, 'API Key');
-        if (!ok) return;
-        setCopiedApiKey(true);
-        if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
-        copyTimerRef.current = window.setTimeout(() => setCopiedApiKey(false), 2000);
-    }, [copyToClipboard, data.info.api_key]);
+    const supportedModelButtons: JSX.Element[] = supportedModels.map((model) => (
+        <Button
+            key={model}
+            variant="secondary"
+            size="sm"
+            className="h-8 rounded-lg px-3 text-sm transition-colors hover:bg-primary hover:text-primary-foreground"
+            onClick={() => void copyToClipboard(model, model)}
+        >
+            {model}
+        </Button>
+    ));
 
     const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
     const toggleLanguage = () => setLocale(locale === 'zh' ? 'en' : 'zh');

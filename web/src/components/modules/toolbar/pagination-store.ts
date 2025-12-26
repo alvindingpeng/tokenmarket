@@ -5,10 +5,12 @@ interface PaginationState {
     pages: Partial<Record<NavItem, number>>;
     pageSizes: Partial<Record<NavItem, number>>;
     totalItems: Partial<Record<NavItem, number>>;
+    directions: Partial<Record<NavItem, 1 | -1>>;
 
     getPage: (page: NavItem) => number;
     getPageSize: (page: NavItem) => number;
     getTotalPages: (page: NavItem) => number;
+    getDirection: (page: NavItem) => 1 | -1;
 
     setPage: (page: NavItem, value: number) => void;
     setPageSize: (page: NavItem, value: number) => void;
@@ -22,6 +24,7 @@ export const usePaginationStore = create<PaginationState>((set, get) => ({
     pages: {},
     pageSizes: {},
     totalItems: {},
+    directions: {},
 
     getPage: (page) => get().pages[page] || 1,
     getPageSize: (page) => get().pageSizes[page] || 12,
@@ -29,13 +32,18 @@ export const usePaginationStore = create<PaginationState>((set, get) => ({
         const total = get().totalItems[page] || 0;
         return Math.max(1, Math.ceil(total / (get().pageSizes[page] || 12)));
     },
+    getDirection: (page) => get().directions[page] || 1,
 
     setPage: (page, value) => {
         const totalPages = get().getTotalPages(page);
         const next = Math.min(totalPages, Math.max(1, Number.isFinite(value) ? Math.trunc(value) : 1));
         const current = get().pages[page] || 1;
         if (current === next) return;
-        set((state) => ({ pages: { ...state.pages, [page]: next } }));
+        const direction: 1 | -1 = next >= current ? 1 : -1;
+        set((state) => ({
+            pages: { ...state.pages, [page]: next },
+            directions: { ...state.directions, [page]: direction },
+        }));
     },
     setPageSize: (page, value) => {
         const next = Math.min(500, Math.max(1, Number.isFinite(value) ? Math.trunc(value) : 12));

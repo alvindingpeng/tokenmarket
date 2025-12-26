@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useChannelList } from '@/api/endpoints/channel';
 import { Card } from './Card';
@@ -18,6 +18,7 @@ export function Channel() {
     const setPage = usePaginationStore((s) => s.setPage);
     const pageSize = usePaginationStore((s) => s.getPageSize(pageKey));
     const setPageSize = usePaginationStore((s) => s.setPageSize);
+    const direction = usePaginationStore((s) => s.getDirection(pageKey));
 
     const filteredChannels = useMemo(() => {
         if (!channelsData) return [];
@@ -29,27 +30,21 @@ export function Channel() {
 
     useEffect(() => {
         setTotalItems(pageKey, filteredChannels.length);
-    }, [filteredChannels.length, setTotalItems]);
+    }, [filteredChannels.length, pageKey, setTotalItems]);
 
     useEffect(() => {
         setPage(pageKey, 1);
-    }, [searchTerm, setPage]);
+    }, [pageKey, searchTerm, setPage]);
 
     useEffect(() => {
         setPageSize(pageKey, isMobile ? 3 : 12);
-    }, [isMobile, setPageSize]);
+    }, [isMobile, pageKey, setPageSize]);
 
     const pagedChannels = useMemo(() => {
         const start = (page - 1) * pageSize;
         const end = start + pageSize;
         return filteredChannels.slice(start, end);
     }, [filteredChannels, page, pageSize]);
-
-    const prevPageRef = useRef(page);
-    const direction = page > prevPageRef.current ? 1 : page < prevPageRef.current ? -1 : 1;
-    useEffect(() => {
-        prevPageRef.current = page;
-    }, [page]);
 
     return (
         <AnimatePresence mode="popLayout" initial={false} custom={direction}>

@@ -150,12 +150,12 @@ function DeferredJsonContent({
         if (isOpen) {
             const timer = setTimeout(() => setShouldRender(true), 300);
             return () => clearTimeout(timer);
-        } else {
-            setShouldRender(false);
         }
     }, [isOpen]);
 
     if (!isOpen) {
+        // Ensure we reset render state without triggering `setState` inside an effect.
+        if (shouldRender) setShouldRender(false);
         return null;
     }
 

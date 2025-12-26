@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useSyncExternalStore } from "react"
 import { motion } from "motion/react"
 import { cn } from "@/lib/utils"
 import { useNavStore, type NavItem } from "@/components/modules/navbar"
@@ -12,21 +12,31 @@ import { ENTRANCE_VARIANTS } from "@/lib/animations/fluid-transitions"
 const MOBILE = { size: 40, gap: 4 }   // p-2 (8*2) + icon 24 = 40, gap-1 = 4
 const DESKTOP = { size: 48, gap: 12 } // p-3 (12*2) + icon 24 = 48, gap-3 = 12
 
+function subscribeMediaQuery(query: string, cb: () => void) {
+    const mql = window.matchMedia(query)
+    const handler = () => cb()
+    mql.addEventListener('change', handler)
+    return () => mql.removeEventListener('change', handler)
+}
+
+function getMediaSnapshot(query: string) {
+    return window.matchMedia(query).matches
+}
+
+function useMediaQuery(query: string) {
+    return useSyncExternalStore(
+        (cb) => subscribeMediaQuery(query, cb),
+        () => getMediaSnapshot(query),
+        () => false,
+    )
+}
+
 export function NavBar() {
     const { activeItem, setActiveItem } = useNavStore()
     const { preload } = usePreload()
 
     // 检测是否为桌面端
-    const [isDesktop, setIsDesktop] = useState(false)
-
-    useEffect(() => {
-        const mediaQuery = window.matchMedia('(min-width: 768px)')
-        setIsDesktop(mediaQuery.matches)
-
-        const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
-        mediaQuery.addEventListener('change', handler)
-        return () => mediaQuery.removeEventListener('change', handler)
-    }, [])
+    const isDesktop = useMediaQuery('(min-width: 768px)')
 
     // 计算当前选中项的索引
     const activeIndex = ROUTES.findIndex(route => route.id === activeItem)

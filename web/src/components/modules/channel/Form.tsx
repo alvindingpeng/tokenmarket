@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/common/Toast';
 import { useTranslations } from 'next-intl';
-import { useState, useRef, useEffect } from 'react';
+import { useRef, useState } from 'react';
 import { RefreshCw, X, Plus } from 'lucide-react';
 
 export interface ChannelFormData {
@@ -53,35 +53,23 @@ export function ChannelForm({
 }: ChannelFormProps) {
     const t = useTranslations('channel.form');
 
-    const [autoModels, setAutoModels] = useState<string[]>(
-        formData.model ? formData.model.split(',').filter(m => m.trim()) : []
-    );
-    const [customModels, setCustomModels] = useState<string[]>(
-        formData.custom_model ? formData.custom_model.split(',').filter(m => m.trim()) : []
-    );
+    const autoModels = formData.model
+        ? formData.model.split(',').map((m) => m.trim()).filter(Boolean)
+        : [];
+    const customModels = formData.custom_model
+        ? formData.custom_model.split(',').map((m) => m.trim()).filter(Boolean)
+        : [];
     const [inputValue, setInputValue] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
 
     const fetchModel = useFetchModel();
 
-    useEffect(() => {
-        const autoFromProps = formData.model ? formData.model.split(',').filter(m => m.trim()) : [];
-        const customFromProps = formData.custom_model ? formData.custom_model.split(',').filter(m => m.trim()) : [];
-        if (autoModels.join(',') !== autoFromProps.join(',')) {
-            setAutoModels(autoFromProps);
-        }
-        if (customModels.join(',') !== customFromProps.join(',')) {
-            setCustomModels(customFromProps);
-        }
-    }, [formData.model, formData.custom_model]);
-
-    useEffect(() => {
-        const newModel = autoModels.join(',');
-        const newCustomModel = customModels.join(',');
-        if (formData.model !== newModel || formData.custom_model !== newCustomModel) {
-            onFormDataChange({ ...formData, model: newModel, custom_model: newCustomModel });
-        }
-    }, [autoModels, customModels]);
+    const updateModels = (nextAuto: string[], nextCustom: string[]) => {
+        const model = nextAuto.join(',');
+        const custom_model = nextCustom.join(',');
+        if (formData.model === model && formData.custom_model === custom_model) return;
+        onFormDataChange({ ...formData, model, custom_model });
+    };
 
     const handleRefreshModels = async () => {
         if (!formData.base_url || !formData.key) return;
@@ -98,7 +86,8 @@ export function ChannelForm({
             {
                 onSuccess: (data) => {
                     if (data && data.length > 0) {
-                        setAutoModels([...new Set([...autoModels, ...data])]);
+                        const nextAuto = Array.from(new Set([...autoModels, ...data].map((m) => m.trim()).filter(Boolean)));
+                        updateModels(nextAuto, customModels);
                         toast.success(t('modelRefreshSuccess'));
                     } else {
                         toast.warning(t('modelRefreshEmpty'));
@@ -115,17 +104,17 @@ export function ChannelForm({
     const handleAddModel = (model: string) => {
         const trimmedModel = model.trim();
         if (trimmedModel && !customModels.includes(trimmedModel) && !autoModels.includes(trimmedModel)) {
-            setCustomModels([...customModels, trimmedModel]);
+            updateModels(autoModels, [...customModels, trimmedModel]);
         }
         setInputValue('');
     };
 
     const handleRemoveAutoModel = (model: string) => {
-        setAutoModels(autoModels.filter(m => m !== model));
+        updateModels(autoModels.filter(m => m !== model), customModels);
     };
 
     const handleRemoveCustomModel = (model: string) => {
-        setCustomModels(customModels.filter(m => m !== model));
+        updateModels(autoModels, customModels.filter(m => m !== model));
     };
 
     const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -252,8 +241,7 @@ export function ChannelForm({
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => {
-                                    setAutoModels([]);
-                                    setCustomModels([]);
+                                    updateModels([], []);
                                 }}
                                 className="h-6 px-2 text-xs text-muted-foreground/50 hover:text-muted-foreground hover:bg-transparent"
                             >
@@ -313,6 +301,7 @@ export function ChannelForm({
                         <SelectItem className='rounded-xl' value={String(AutoGroupType.None)}>{t('autoGroupNone')}</SelectItem>
                         <SelectItem className='rounded-xl' value={String(AutoGroupType.Fuzzy)}>{t('autoGroupFuzzy')}</SelectItem>
                         <SelectItem className='rounded-xl' value={String(AutoGroupType.Exact)}>{t('autoGroupExact')}</SelectItem>
+                        <SelectItem className='rounded-xl' value={String(AutoGroupType.Regex)}>{t('autoGroupRegex')}</SelectItem>
                     </SelectContent>
                 </Select>
             </div>
