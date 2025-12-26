@@ -17,7 +17,7 @@ import { matchesGroupName, memberKey, normalizeKey, MODE_LABELS } from './utils'
 
 
 
-type GroupEditorValues = {
+export type GroupEditorValues = {
     name: string;
     match_regex: string;
     mode: GroupMode;

@@ -11,9 +11,9 @@ import { toast } from '@/components/common/Toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/animate-ui/components/animate/tooltip';
 import type { SelectedMember } from './ItemList';
 import { MemberList } from './ItemList';
-import { GroupEditor } from './Editor';
+import { GroupEditor, type GroupEditorValues } from './Editor';
 import { buildChannelNameByModelKey, modelChannelKey, MODE_LABELS } from './utils';
-import { GroupMode } from '@/api/endpoints/group';
+import { GroupMode, type GroupUpdateRequest } from '@/api/endpoints/group';
 import {
     MorphingDialog,
     MorphingDialogClose,
@@ -69,8 +69,12 @@ export function GroupCard({ group }: { group: Group }) {
     const onSuccess = useCallback(() => toast.success(t('toast.updated')), [t]);
 
     // Avoid UI flicker: drag-reorder also uses the same mutation, so only "mode switch" should lock mode buttons.
-    const isUpdatingMode =
-        updateGroup.isPending && typeof (updateGroup.variables as any)?.mode === 'number';
+    const isUpdatingMode = (() => {
+        if (!updateGroup.isPending) return false;
+        const v = updateGroup.variables;
+        if (typeof v !== 'object' || v === null) return false;
+        return 'mode' in v && typeof (v as { mode?: unknown }).mode === 'number';
+    })();
 
     const priorityByItemId = useMemo(() => {
         const map = new Map<number, number>();
@@ -136,10 +140,7 @@ export function GroupCard({ group }: { group: Group }) {
         }
     };
 
-    const handleSubmitEdit = useCallback((
-        values: { name: string; match_regex: string; mode: Group['mode']; members: SelectedMember[] },
-        onDone?: () => void
-    ) => {
+    const handleSubmitEdit = useCallback((values: GroupEditorValues, onDone?: () => void) => {
         if (!group.id) return;
 
         const originalItems = [...(group.items || [])].sort((a, b) => a.priority - b.priority);
@@ -180,7 +181,7 @@ export function GroupCard({ group }: { group: Group }) {
             })
             .filter((x): x is { id: number; priority: number; weight: number } => x !== null);
 
-        const payload: any = { id: group.id };
+        const payload: GroupUpdateRequest = { id: group.id };
         const nextName = values.name.trim();
         const nextRegex = (values.match_regex ?? '').trim();
 
@@ -230,7 +231,7 @@ export function GroupCard({ group }: { group: Group }) {
                         submittingText={t('create.submitting')}
                         isSubmitting={updateGroup.isPending}
                         onCancel={() => setIsOpen(false)}
-                        onSubmit={(v) => handleSubmitEdit(v as any, () => setIsOpen(false))}
+                        onSubmit={(v) => handleSubmitEdit(v, () => setIsOpen(false))}
                     />
                 </MorphingDialogDescription>
             </div>
@@ -334,6 +335,7 @@ export function GroupCard({ group }: { group: Group }) {
                     onDragStart={handleDragStart}
                     onDrop={handleDropReorder}
                     onDragFinish={handleDragFinish}
+                    autoScrollOnAdd={false}
                     showWeight={group.mode === GroupMode.Weighted}
                     layoutScope={`card-${group.id ?? 'unknown'}`}
                 />

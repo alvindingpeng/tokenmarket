@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Layers, GripVertical, X, Trash2 } from 'lucide-react';
 import {
     DragDropContext,
@@ -60,11 +60,18 @@ function MemberItem({
 
     return (
         <div
+            // DnD libraries provide imperative refs/props; the hook lint rule (`react-hooks/refs`)
+            // flags this pattern, but it's safe and required for correct drag behavior.
+            // eslint-disable-next-line react-hooks/refs
             ref={dnd.innerRef}
+            // eslint-disable-next-line react-hooks/refs
             {...dnd.draggableProps}
             className={cn('rounded-lg grid transition-[grid-template-rows] duration-200', isRemoving ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]')}
+            // eslint-disable-next-line react-hooks/refs
             style={{
+                /* eslint-disable-next-line react-hooks/refs */
                 ...(dnd.draggableProps?.style ?? {}),
+                /* eslint-disable-next-line react-hooks/refs */
                 ...(dnd.isDragging ? { zIndex: 50, boxShadow: '0 8px 32px rgba(0,0,0,0.15)' } : null),
             }}
         >
@@ -78,6 +85,7 @@ function MemberItem({
 
                 <div
                     className="p-0.5 rounded cursor-grab active:cursor-grabbing hover:bg-muted touch-none transition-colors"
+                    // eslint-disable-next-line react-hooks/refs
                     {...dnd.dragHandleProps}
                 >
                     <GripVertical className="size-3.5 text-muted-foreground" />
@@ -152,6 +160,11 @@ export interface MemberListProps {
     onReorder: (members: SelectedMember[]) => void;
     onRemove: (id: string) => void;
     onWeightChange?: (id: string, weight: number) => void;
+    /**
+     * When true, auto-scroll the list to bottom when a *new visible* member appears
+     * (i.e. a new member id is added). Useful in "editor" flows. Defaults to true.
+     */
+    autoScrollOnAdd?: boolean;
     onDragStart?: () => void;
     /**
      * Called only when a drop results in a different order (i.e. commit reorder).
@@ -173,6 +186,7 @@ export function MemberList({
     onReorder,
     onRemove,
     onWeightChange,
+    autoScrollOnAdd = true,
     onDragStart,
     onDrop,
     onDragFinish,
@@ -183,9 +197,41 @@ export function MemberList({
     const internalLayoutScope = useId();
     const layoutScope = externalLayoutScope ?? internalLayoutScope;
 
+    const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+    const prevMemberCountRef = useRef<number>(0);
+    const hasMountedRef = useRef(false);
+
     const visibleCount = members.filter((m) => !removingIds.has(m.id)).length;
     const isEmpty = visibleCount === 0;
     const t = useTranslations('group');
+
+    useEffect(() => {
+        // Skip the initial mount so we don't auto-scroll on first render / initial data load.
+        if (!hasMountedRef.current) {
+            hasMountedRef.current = true;
+            prevMemberCountRef.current = members.length;
+            return;
+        }
+
+        if (!autoScrollOnAdd) {
+            prevMemberCountRef.current = members.length;
+            return;
+        }
+
+        const hasNewMember = members.length > prevMemberCountRef.current;
+
+        // Auto-scroll only when member count increases (i.e. added; not reorder / not "unhide").
+        if (hasNewMember) {
+            // Wait a tick for DOM/placeholder/layout to settle.
+            requestAnimationFrame(() => {
+                const el = scrollContainerRef.current;
+                if (!el) return;
+                el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+            });
+        }
+
+        prevMemberCountRef.current = members.length;
+    }, [members.length, autoScrollOnAdd]);
 
     const handleDragEnd = (result: DropResult) => {
         try {
@@ -220,6 +266,7 @@ export function MemberList({
                     'h-full overflow-y-auto transition-opacity duration-200',
                     isEmpty ? 'opacity-0' : 'opacity-100'
                 )}
+                ref={scrollContainerRef}
             >
                 <DragDropContext
                     onDragStart={() => onDragStart?.()}

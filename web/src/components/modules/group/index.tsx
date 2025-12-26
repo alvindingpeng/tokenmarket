@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { GroupCard } from './Card';
 import { useGroupList } from '@/api/endpoints/group';
@@ -18,6 +18,7 @@ export function Group() {
     const setPage = usePaginationStore((s) => s.setPage);
     const pageSize = usePaginationStore((s) => s.getPageSize(pageKey));
     const setPageSize = usePaginationStore((s) => s.setPageSize);
+    const direction = usePaginationStore((s) => s.getDirection(pageKey));
 
     const filteredGroups = useMemo(() => {
         if (!groups) return [];
@@ -44,12 +45,6 @@ export function Group() {
         const end = start + pageSize;
         return filteredGroups.slice(start, end);
     }, [filteredGroups, page, pageSize]);
-
-    const prevPageRef = useRef(page);
-    const direction = page > prevPageRef.current ? 1 : page < prevPageRef.current ? -1 : 1;
-    useEffect(() => {
-        prevPageRef.current = page;
-    }, [page]);
 
     return (
         <AnimatePresence mode="popLayout" initial={false} custom={direction}>
