@@ -48,7 +48,7 @@ export function CreateDialogContent() {
     };
 
     return (
-        <>
+        <div className="w-screen max-w-full md:max-w-xl">
             <MorphingDialogTitle>
                 <header className="mb-6 flex items-center justify-between">
                     <h2 className="text-2xl font-bold text-card-foreground">{t('dialogTitle')}</h2>
@@ -73,6 +73,6 @@ export function CreateDialogContent() {
                     idPrefix="new-channel"
                 />
             </MorphingDialogDescription>
-        </>
+        </div>
     );
 }

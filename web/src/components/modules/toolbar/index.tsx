@@ -139,7 +139,7 @@ export function Toolbar() {
                         </MorphingDialogTrigger>
 
                         <MorphingDialogContainer>
-                            <MorphingDialogContent className="w-full max-w-xl bg-card text-card-foreground px-6 py-4 rounded-3xl custom-shadow max-h-[90vh] overflow-y-auto">
+                            <MorphingDialogContent className="w-fit max-w-full bg-card text-card-foreground px-6 py-4 rounded-3xl custom-shadow max-h-[90vh] overflow-y-auto">
                                 <CreateDialogContent activeItem={activeItem} />
                             </MorphingDialogContent>
                         </MorphingDialogContainer>
