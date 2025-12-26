@@ -1,17 +1,19 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Trash2, Layers, X, Check, Copy, Pencil } from 'lucide-react';
-import { Reorder, motion, AnimatePresence } from 'motion/react';
+import { Trash2, X, Check, Copy, Pencil } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { type Group, useDeleteGroup, useUpdateGroup } from '@/api/endpoints/group';
 import { useModelChannelList } from '@/api/endpoints/model';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/common/Toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/animate-ui/components/animate/tooltip';
-import { MemberItem, type SelectedMember } from './Item';
+import type { SelectedMember } from './ItemList';
+import { MemberList } from './ItemList';
 import { GroupEditor } from './Editor';
-import { buildChannelNameByModelKey, modelChannelKey } from './utils';
+import { buildChannelNameByModelKey, modelChannelKey, MODE_LABELS } from './utils';
+import { GroupMode } from '@/api/endpoints/group';
 import {
     MorphingDialog,
     MorphingDialogClose,
@@ -64,8 +66,11 @@ export function GroupCard({ group }: { group: Group }) {
         return () => { if (weightTimerRef.current) clearTimeout(weightTimerRef.current); };
     }, []);
 
-    const isEmpty = members.length === 0;
     const onSuccess = useCallback(() => toast.success(t('toast.updated')), [t]);
+
+    // Avoid UI flicker: drag-reorder also uses the same mutation, so only "mode switch" should lock mode buttons.
+    const isUpdatingMode =
+        updateGroup.isPending && typeof (updateGroup.variables as any)?.mode === 'number';
 
     const priorityByItemId = useMemo(() => {
         const map = new Map<number, number>();
@@ -76,10 +81,10 @@ export function GroupCard({ group }: { group: Group }) {
     }, [group.items]);
 
     const handleDragStart = useCallback(() => { isDragging.current = true; }, []);
+    const handleDragFinish = useCallback(() => { isDragging.current = false; }, []);
 
-    const handleDragEnd = useCallback(() => {
-        isDragging.current = false;
-        const itemsToUpdate = members
+    const handleDropReorder = useCallback((nextMembers: SelectedMember[]) => {
+        const itemsToUpdate = nextMembers
             .map((m, i) => ({ member: m, newPriority: i + 1 }))
             .filter(({ member, newPriority }) => {
                 if (!member.item_id) return false;
@@ -88,7 +93,7 @@ export function GroupCard({ group }: { group: Group }) {
             })
             .map(({ member, newPriority }) => ({ id: member.item_id!, priority: newPriority, weight: member.weight ?? 1 }));
         if (itemsToUpdate.length > 0) updateGroup.mutate({ id: group.id!, items_to_update: itemsToUpdate }, { onSuccess });
-    }, [members, group.id, priorityByItemId, updateGroup, onSuccess]);
+    }, [group.id, priorityByItemId, updateGroup, onSuccess]);
 
     const handleRemoveMember = useCallback((id: string) => {
         const member = members.find((m) => m.id === id);
@@ -298,50 +303,41 @@ export function GroupCard({ group }: { group: Group }) {
 
             {/* Mode: quick switch (no need to enter Edit) */}
             <div className="flex gap-1 mb-3">
-                {([1, 2, 3, 4] as const).map((m) => (
+                {([GroupMode.RoundRobin, GroupMode.Random, GroupMode.Failover, GroupMode.Weighted] as const).map((m) => (
                     <button
                         key={m}
                         type="button"
-                        onClick={() => m !== group.mode && updateGroup.mutate({ id: group.id!, mode: m }, { onSuccess })}
-                        disabled={updateGroup.isPending || !group.id}
+                        aria-disabled={isUpdatingMode || !group.id}
+                        onClick={() => {
+                            if (isUpdatingMode || !group.id) return;
+                            if (m === group.mode) return;
+                            updateGroup.mutate({ id: group.id!, mode: m }, { onSuccess });
+                        }}
                         className={cn(
                             'flex-1 py-1 text-xs rounded-lg transition-colors',
                             group.mode === m ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80',
-                            (updateGroup.isPending || !group.id) && 'disabled:opacity-50 disabled:cursor-not-allowed'
+                            // Keep visuals stable (no opacity/disabled flicker) while still preventing double-submit via onClick guard.
+                            (!group.id) && 'cursor-not-allowed opacity-50'
                         )}
                     >
-                        {t(`mode.${m === 1 ? 'roundRobin' : m === 2 ? 'random' : m === 3 ? 'failover' : 'weighted'}`)}
+                        {t(`mode.${MODE_LABELS[m]}`)}
                     </button>
                 ))}
             </div>
 
-            <section className="h-96 rounded-xl border border-border/50 bg-muted/30 overflow-hidden relative">
-                <div className={cn('absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground transition-opacity duration-200', isEmpty ? 'opacity-100' : 'opacity-0 pointer-events-none')}>
-                    <Layers className="size-8 opacity-40" />
-                    <span className="text-xs">{t('card.empty')}</span>
-                </div>
-
-                <div className={cn('h-full overflow-y-auto transition-opacity duration-200', isEmpty && 'opacity-0')}>
-                    <div className="p-2 flex flex-col gap-1.5">
-                        <Reorder.Group axis="y" values={members} onReorder={setMembers} className="flex flex-col gap-1.5">
-                            {members.map((m, i) => (
-                                <MemberItem
-                                    key={m.id}
-                                    member={m}
-                                    onRemove={handleRemoveMember}
-                                    onWeightChange={handleWeightChange}
-                                    onDragStart={handleDragStart}
-                                    onDragEnd={handleDragEnd}
-                                    index={i}
-                                    editable
-                                    showWeight={group.mode === 4}
-                                    layoutScope={`card-${group.id ?? 'unknown'}`}
-                                />
-                            ))}
-                        </Reorder.Group>
-                    </div>
-                </div>
+            <section className="rounded-xl border border-border/50 bg-muted/30 overflow-hidden relative">
+                <MemberList
+                    members={members}
+                    onReorder={setMembers}
+                    onRemove={handleRemoveMember}
+                    onWeightChange={handleWeightChange}
+                    onDragStart={handleDragStart}
+                    onDrop={handleDropReorder}
+                    onDragFinish={handleDragFinish}
+                    showWeight={group.mode === GroupMode.Weighted}
+                    layoutScope={`card-${group.id ?? 'unknown'}`}
+                />
             </section>
-        </article>
+        </article >
     );
 }

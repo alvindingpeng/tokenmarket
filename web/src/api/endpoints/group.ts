@@ -17,7 +17,12 @@ export interface GroupItem {
 /**
  * 分组模式
  */
-export type GroupMode = 1 | 2 | 3 | 4; // 1: 轮询, 2: 随机, 3: 故障转移, 4: 加权分配
+export enum GroupMode {
+    RoundRobin = 1,
+    Random = 2,
+    Failover = 3,
+    Weighted = 4,
+}
 
 /**
  * 分组信息

@@ -1,4 +1,12 @@
 import type { LLMChannel } from '@/api/endpoints/model';
+import { GroupMode } from '@/api/endpoints/group';
+
+export const MODE_LABELS: Record<GroupMode, string> = {
+    [GroupMode.RoundRobin]: 'roundRobin',
+    [GroupMode.Random]: 'random',
+    [GroupMode.Failover]: 'failover',
+    [GroupMode.Weighted]: 'weighted',
+} as const;
 
 export function normalizeKey(value: string) {
     return value.trim().toLowerCase();

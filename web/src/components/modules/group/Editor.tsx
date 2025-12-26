@@ -1,8 +1,7 @@
 'use client';
 
-import { useCallback, useId, useMemo, useState, type FormEvent } from 'react';
-import { Check, Layers, Plus, Sparkles, Trash2 } from 'lucide-react';
-import { Reorder } from 'motion/react';
+import { useCallback, useMemo, useState, type FormEvent } from 'react';
+import { Check, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useModelChannelList, type LLMChannel } from '@/api/endpoints/model';
 import { Button } from '@/components/ui/button';
@@ -12,8 +11,9 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { cn } from '@/lib/utils';
 import { getModelIcon } from '@/lib/model-icons';
 import type { GroupMode } from '@/api/endpoints/group';
-import { MemberItem, type SelectedMember } from './Item';
-import { matchesGroupName, memberKey, normalizeKey } from './utils';
+import type { SelectedMember } from './ItemList';
+import { MemberList } from './ItemList';
+import { matchesGroupName, memberKey, normalizeKey, MODE_LABELS } from './utils';
 
 
 
@@ -161,8 +161,6 @@ function SortSection({
     onClear: () => void;
 }) {
     const t = useTranslations('group');
-    const layoutScope = useId();
-    const showEmpty = members.filter((m) => !removingIds.has(m.id)).length === 0;
 
     return (
         <div className="rounded-xl border border-border/50 bg-muted/30">
@@ -192,49 +190,14 @@ function SortSection({
                 </button>
             </div>
 
-            <div className="relative h-96">
-                <div
-                    className={cn(
-                        'absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground',
-                        'transition-opacity duration-200 ease-out',
-                        showEmpty ? 'opacity-100' : 'opacity-0 pointer-events-none'
-                    )}
-                >
-                    <Layers className="size-10 opacity-40" />
-                    <span className="text-sm">{t('form.noItems')}</span>
-                </div>
-
-                <div
-                    className={cn(
-                        'h-full overflow-y-auto transition-opacity duration-200',
-                        showEmpty ? 'opacity-0' : 'opacity-100'
-                    )}
-                >
-                    <div className="p-2 flex flex-col gap-1.5">
-                        {members.length > 0 && (
-                            <Reorder.Group
-                                axis="y"
-                                values={members}
-                                onReorder={onReorder}
-                                className="flex flex-col gap-1.5"
-                            >
-                                {members.map((member, index) => (
-                                    <MemberItem
-                                        key={member.id}
-                                        member={member}
-                                        onRemove={onRemove}
-                                        onWeightChange={onWeightChange}
-                                        isRemoving={removingIds.has(member.id)}
-                                        index={index}
-                                        showWeight={showWeight}
-                                        layoutScope={layoutScope}
-                                    />
-                                ))}
-                            </Reorder.Group>
-                        )}
-                    </div>
-                </div>
-            </div>
+            <MemberList
+                members={members}
+                onReorder={onReorder}
+                onRemove={onRemove}
+                onWeightChange={onWeightChange}
+                removingIds={removingIds}
+                showWeight={showWeight}
+            />
         </div>
     );
 }
@@ -333,12 +296,7 @@ export function GroupEditor({
             members: selectedMembers,
         });
     };
-    const MODE_LABELS: Record<GroupMode, string> = {
-        1: 'roundRobin',
-        2: 'random',
-        3: 'failover',
-        4: 'weighted',
-    } as const;
+
 
     return (
         <form onSubmit={handleSubmit}>

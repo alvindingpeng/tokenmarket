@@ -1,0 +1,269 @@
+'use client';
+
+import { useId, useState } from 'react';
+import { Layers, GripVertical, X, Trash2 } from 'lucide-react';
+import {
+    DragDropContext,
+    Draggable,
+    Droppable,
+    type DraggableProvided,
+    type DropResult,
+} from '@hello-pangea/dnd';
+import { motion, AnimatePresence } from 'motion/react';
+import { cn } from '@/lib/utils';
+import { getModelIcon } from '@/lib/model-icons';
+import type { LLMChannel } from '@/api/endpoints/model';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/animate-ui/components/animate/tooltip';
+import { useTranslations } from 'next-intl';
+
+export interface SelectedMember extends LLMChannel {
+    id: string;
+    item_id?: number;
+    weight?: number;
+}
+
+function reorderList<T>(list: T[], startIndex: number, endIndex: number): T[] {
+    const result = [...list];
+    const [removed] = result.splice(startIndex, 1);
+    result.splice(endIndex, 0, removed);
+    return result;
+}
+
+type MemberItemDnd = {
+    innerRef: DraggableProvided['innerRef'];
+    draggableProps: DraggableProvided['draggableProps'];
+    dragHandleProps: DraggableProvided['dragHandleProps'];
+    isDragging: boolean;
+};
+
+function MemberItem({
+    member,
+    onRemove,
+    onWeightChange,
+    isRemoving,
+    index,
+    showWeight = false,
+    layoutScope,
+    dnd,
+}: {
+    member: SelectedMember;
+    onRemove: (id: string) => void;
+    onWeightChange?: (id: string, weight: number) => void;
+    isRemoving?: boolean;
+    index: number;
+    showWeight?: boolean;
+    layoutScope?: string;
+    dnd: MemberItemDnd;
+}) {
+    const { Avatar: ModelAvatar } = getModelIcon(member.name);
+    const [confirmDelete, setConfirmDelete] = useState(false);
+
+    return (
+        <div
+            ref={dnd.innerRef}
+            {...dnd.draggableProps}
+            className={cn('rounded-lg grid transition-[grid-template-rows] duration-200', isRemoving ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]')}
+            style={{
+                ...(dnd.draggableProps?.style ?? {}),
+                ...(dnd.isDragging ? { zIndex: 50, boxShadow: '0 8px 32px rgba(0,0,0,0.15)' } : null),
+            }}
+        >
+            <div className={cn(
+                'flex items-center gap-2 rounded-lg bg-background border border-border/50 px-2.5 py-2 select-none transition-opacity duration-200 relative overflow-hidden',
+                isRemoving && 'opacity-0'
+            )}>
+                <span className="size-5 rounded-md bg-primary/10 text-primary text-xs font-bold grid place-items-center shrink-0">
+                    {index + 1}
+                </span>
+
+                <div
+                    className="p-0.5 rounded cursor-grab active:cursor-grabbing hover:bg-muted touch-none transition-colors"
+                    {...dnd.dragHandleProps}
+                >
+                    <GripVertical className="size-3.5 text-muted-foreground" />
+                </div>
+
+                <ModelAvatar size={18} />
+
+                <div className="flex flex-col min-w-0 flex-1">
+                    <Tooltip side="top" sideOffset={10} align="start">
+                        <TooltipTrigger className="text-sm font-medium truncate leading-tight">{member.name}</TooltipTrigger>
+                        <TooltipContent>{member.name}</TooltipContent>
+                    </Tooltip>
+                    <span className="text-[10px] text-muted-foreground truncate leading-tight">{member.channel_name}</span>
+                </div>
+
+                {showWeight && (
+                    <input
+                        type="number"
+                        min={1}
+                        value={member.weight ?? 1}
+                        onChange={(e) => onWeightChange?.(member.id, Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-12 h-6 text-xs text-center rounded border border-border bg-muted/50 focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                )}
+
+                {!confirmDelete && (
+                    <motion.button
+                        layoutId={`delete-btn-member-${layoutScope ?? 'default'}-${member.id}`}
+                        type="button"
+                        onClick={() => setConfirmDelete(true)}
+                        className="p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-colors"
+                        initial={false}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.15 }}
+                        style={{ pointerEvents: 'auto' }}
+                    >
+                        <X className="size-3" />
+                    </motion.button>
+                )}
+
+                <AnimatePresence>
+                    {confirmDelete && (
+                        <motion.div
+                            layoutId={`delete-btn-member-${layoutScope ?? 'default'}-${member.id}`}
+                            className="absolute inset-0 flex items-center justify-center gap-2 bg-destructive p-1.5 rounded-lg"
+                            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                        >
+                            <button
+                                type="button"
+                                onClick={() => setConfirmDelete(false)}
+                                className="flex h-6 w-6 items-center justify-center rounded-md bg-destructive-foreground/20 text-destructive-foreground transition-all hover:bg-destructive-foreground/30 active:scale-95"
+                            >
+                                <X className="h-3 w-3" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => onRemove(member.id)}
+                                className="flex-1 h-6 flex items-center justify-center gap-1.5 rounded-md bg-destructive-foreground text-destructive text-xs font-semibold transition-all hover:bg-destructive-foreground/90 active:scale-[0.98]"
+                            >
+                                <Trash2 className="h-3 w-3" />
+                            </button>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
+        </div>
+    );
+}
+
+export interface MemberListProps {
+    members: SelectedMember[];
+    onReorder: (members: SelectedMember[]) => void;
+    onRemove: (id: string) => void;
+    onWeightChange?: (id: string, weight: number) => void;
+    onDragStart?: () => void;
+    /**
+     * Called only when a drop results in a different order (i.e. commit reorder).
+     * Useful for persisting the new order.
+     */
+    onDrop?: (members: SelectedMember[]) => void;
+    /**
+     * Called whenever a drag ends (including cancel / same-index drop).
+     * Useful for lifecycle cleanup (e.g. clearing "isDragging" flags).
+     */
+    onDragFinish?: () => void;
+    removingIds?: Set<string>;
+    showWeight?: boolean;
+    layoutScope?: string;
+}
+
+export function MemberList({
+    members,
+    onReorder,
+    onRemove,
+    onWeightChange,
+    onDragStart,
+    onDrop,
+    onDragFinish,
+    removingIds = new Set(),
+    showWeight = false,
+    layoutScope: externalLayoutScope,
+}: MemberListProps) {
+    const internalLayoutScope = useId();
+    const layoutScope = externalLayoutScope ?? internalLayoutScope;
+
+    const visibleCount = members.filter((m) => !removingIds.has(m.id)).length;
+    const isEmpty = visibleCount === 0;
+    const t = useTranslations('group');
+
+    const handleDragEnd = (result: DropResult) => {
+        try {
+            const { destination, source } = result;
+            if (!destination) return;
+            if (destination.index === source.index) return;
+
+            const next = reorderList(members, source.index, destination.index);
+            onReorder(next);
+            onDrop?.(next);
+        } finally {
+            // Ensure drag lifecycle always finishes, even when drop is canceled.
+            onDragFinish?.();
+        }
+    };
+
+    return (
+        <div className="relative h-101">
+            <div
+                className={cn(
+                    'absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground',
+                    'transition-opacity duration-200 ease-out',
+                    isEmpty ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                )}
+            >
+                <Layers className="size-10 opacity-40" />
+                <span className="text-sm">{t('card.empty')}</span>
+            </div>
+
+            <div
+                className={cn(
+                    'h-full overflow-y-auto transition-opacity duration-200',
+                    isEmpty ? 'opacity-0' : 'opacity-100'
+                )}
+            >
+                <DragDropContext
+                    onDragStart={() => onDragStart?.()}
+                    onDragEnd={handleDragEnd}
+                >
+                    <Droppable droppableId={`members-${layoutScope}`}>
+                        {(droppableProvided) => (
+                            <div
+                                ref={droppableProvided.innerRef}
+                                {...droppableProvided.droppableProps}
+                                className="p-2 flex flex-col space-y-1.5"
+                            >
+                                {members.map((member, index) => (
+                                    <Draggable
+                                        key={member.id}
+                                        draggableId={member.id}
+                                        index={index}
+                                        isDragDisabled={removingIds.has(member.id)}
+                                    >
+                                        {(draggableProvided, snapshot) => (
+                                            <MemberItem
+                                                member={member}
+                                                onRemove={onRemove}
+                                                onWeightChange={onWeightChange}
+                                                isRemoving={removingIds.has(member.id)}
+                                                index={index}
+                                                showWeight={showWeight}
+                                                layoutScope={layoutScope}
+                                                dnd={{
+                                                    innerRef: draggableProvided.innerRef,
+                                                    draggableProps: draggableProvided.draggableProps,
+                                                    dragHandleProps: draggableProvided.dragHandleProps,
+                                                    isDragging: snapshot.isDragging,
+                                                }}
+                                            />
+                                        )}
+                                    </Draggable>
+                                ))}
+                                {droppableProvided.placeholder}
+                            </div>
+                        )}
+                    </Droppable>
+                </DragDropContext>
+            </div>
+        </div>
+    );
+}
