@@ -162,6 +162,16 @@
                 "outputCost": "输出费用",
                 "requestSuccess": "成功请求",
                 "requestFailed": "失败请求"
+            },
+            "toast": {
+                "createSuccess": "API 密钥创建成功",
+                "createError": "API 密钥创建失败",
+                "updateSuccess": "API 密钥更新成功",
+                "updateError": "API 密钥更新失败",
+                "deleteSuccess": "API 密钥删除成功",
+                "deleteError": "API 密钥删除失败",
+                "copySuccess": "API 密钥已复制",
+                "copyError": "API 密钥复制失败"
             }
         },
         "llmPrice": {
@@ -434,7 +444,8 @@
             "autoGroup": "自动分组",
             "autoGroupNone": "不自动分组",
             "autoGroupFuzzy": "模糊匹配",
-            "autoGroupExact": "准确匹配"
+            "autoGroupExact": "准确匹配",
+            "autoGroupRegex": "正则匹配"
         }
     }
 }

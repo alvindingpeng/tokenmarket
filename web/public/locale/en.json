@@ -162,6 +162,16 @@
                 "outputCost": "Output Cost",
                 "requestSuccess": "Request Success",
                 "requestFailed": "Request Failed"
+            },
+            "toast": {
+                "createSuccess": "API key created",
+                "createError": "Failed to create API key",
+                "updateSuccess": "API key updated",
+                "updateError": "Failed to update API key",
+                "deleteSuccess": "API key deleted",
+                "deleteError": "Failed to delete API key",
+                "copySuccess": "API key copied",
+                "copyError": "Failed to copy API key"
             }
         },
         "llmPrice": {
@@ -434,7 +444,8 @@
             "autoGroup": "Auto Group",
             "autoGroupNone": "None",
             "autoGroupFuzzy": "Fuzzy",
-            "autoGroupExact": "Exact"
+            "autoGroupExact": "Exact",
+            "autoGroupRegex": "Regex"
         }
     }
 }

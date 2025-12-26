@@ -19,6 +19,8 @@ import {
 import { useGroupList } from '@/api/endpoints/group';
 import { useStatsAPIKey, type StatsAPIKeyFormatted } from '@/api/endpoints/stats';
 import { cn } from '@/lib/utils';
+import { toast } from '@/components/common/Toast';
+import type { ApiError } from '@/api/types';
 
 function toExpireAt(date: Date, time: string): number {
     const t = /^\d{2}:\d{2}$/.test(time) ? time : '00:00';
@@ -345,8 +347,17 @@ function APIKeyAddOverlay({
     const createAPIKey = useCreateAPIKey();
 
     const handleSubmit = useCallback((data: Omit<APIKey, 'id' | 'api_key'>) => {
-        createAPIKey.mutate(data, { onSuccess: onClose });
-    }, [createAPIKey, onClose]);
+        createAPIKey.mutate(data, {
+            onSuccess: () => {
+                toast.success(t('apiKey.toast.createSuccess'));
+                onClose();
+            },
+            onError: (error) => {
+                const msg = (error as unknown as ApiError)?.message;
+                toast.error(t('apiKey.toast.createError'), { description: msg });
+            },
+        });
+    }, [createAPIKey, onClose, t]);
 
     return (
         <motion.div
@@ -377,8 +388,17 @@ function APIKeyEditOverlay({
     const updateAPIKey = useUpdateAPIKey();
 
     const handleSubmit = useCallback((data: Omit<APIKey, 'id' | 'api_key'>) => {
-        updateAPIKey.mutate({ id: apiKey.id, ...data }, { onSuccess: onClose });
-    }, [updateAPIKey, apiKey.id, onClose]);
+        updateAPIKey.mutate({ id: apiKey.id, ...data }, {
+            onSuccess: () => {
+                toast.success(t('apiKey.toast.updateSuccess'));
+                onClose();
+            },
+            onError: (error) => {
+                const msg = (error as unknown as ApiError)?.message;
+                toast.error(t('apiKey.toast.updateError'), { description: msg });
+            },
+        });
+    }, [updateAPIKey, apiKey.id, onClose, t]);
 
     return (
         <motion.div
@@ -524,12 +544,15 @@ function KeyItem({
                 document.body.removeChild(textArea);
             }
             setCopied(true);
+            toast.success(t('apiKey.toast.copySuccess'));
             if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
             copyTimerRef.current = window.setTimeout(() => setCopied(false), 2000);
         } catch (err) {
             console.error('Failed to copy:', err);
+            const msg = err instanceof Error ? err.message : String(err);
+            toast.error(t('apiKey.toast.copyError'), { description: msg });
         }
-    }, [apiKey.api_key]);
+    }, [apiKey.api_key, t]);
 
     return (
         <motion.div
@@ -651,9 +674,16 @@ export function SettingAPIKey() {
     const handleDelete = useCallback((id: number) => {
         setDeletingId(id);
         deleteAPIKey.mutate(id, {
+            onSuccess: () => {
+                toast.success(t('apiKey.toast.deleteSuccess'));
+            },
+            onError: (error) => {
+                const msg = (error as unknown as ApiError)?.message;
+                toast.error(t('apiKey.toast.deleteError'), { description: msg });
+            },
             onSettled: () => setDeletingId((cur) => (cur === id ? null : cur)),
         });
-    }, [deleteAPIKey]);
+    }, [deleteAPIKey, t]);
 
     const closeAllOverlays = useCallback(() => {
         setIsAdding(false);
