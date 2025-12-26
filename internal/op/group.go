@@ -56,10 +56,11 @@ func GroupCreate(group *model.Group, ctx context.Context) error {
 }
 
 func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Group, error) {
-	_, ok := groupCache.Get(req.ID)
+	oldGroup, ok := groupCache.Get(req.ID)
 	if !ok {
 		return nil, fmt.Errorf("group not found")
 	}
+	oldName := oldGroup.Name
 
 	tx := db.GetDB().WithContext(ctx).Begin()
 	defer func() {
@@ -81,6 +82,14 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 		if err := tx.Model(&model.Group{}).Where("id = ?", req.ID).Update("mode", *req.Mode).Error; err != nil {
 			tx.Rollback()
 			return nil, fmt.Errorf("failed to update group mode: %w", err)
+		}
+	}
+
+	// 更新 match_regex (仅在有变更时)
+	if req.MatchRegex != nil {
+		if err := tx.Model(&model.Group{}).Where("id = ?", req.ID).Update("match_regex", *req.MatchRegex).Error; err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("failed to update group match_regex: %w", err)
 		}
 	}
 
@@ -144,6 +153,9 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 	}
 
 	group, _ := groupCache.Get(req.ID)
+	if oldName != "" && oldName != group.Name {
+		groupMap.Del(oldName)
+	}
 	return &group, nil
 }
 

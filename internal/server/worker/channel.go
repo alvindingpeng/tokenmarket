@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"time"
 
@@ -39,6 +40,19 @@ func AutoGroup(channelID int, channelName, channelModel, customModel string, aut
 			case model.AutoGroupTypeFuzzy:
 				// 模糊匹配：模型名称包含分组名称
 				matched = strings.Contains(strings.ToLower(modelName), strings.ToLower(group.Name))
+			case model.AutoGroupTypeRegex:
+				if group.MatchRegex == "" {
+					// 如果匹配正则为空，则使用模糊匹配
+					matched = strings.EqualFold(modelName, group.Name)
+					continue
+				}
+				// 正则匹配：模型名称与分组名称匹配
+				re, err := regexp.Compile(group.MatchRegex)
+				if err != nil {
+					log.Warnf("compile regex failed: %v", err)
+					continue
+				}
+				matched = re.MatchString(modelName)
 			}
 
 			if matched {

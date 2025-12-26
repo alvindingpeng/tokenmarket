@@ -8,6 +8,7 @@ const (
 	AutoGroupTypeNone  AutoGroupType = 0 //不自动分组
 	AutoGroupTypeFuzzy AutoGroupType = 1 //模糊匹配
 	AutoGroupTypeExact AutoGroupType = 2 //准确匹配
+	AutoGroupTypeRegex AutoGroupType = 3 //正则匹配
 )
 
 type Channel struct {

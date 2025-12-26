@@ -10,10 +10,11 @@ const (
 )
 
 type Group struct {
-	ID    int         `json:"id" gorm:"primaryKey"`
-	Name  string      `json:"name" gorm:"unique;not null"`
-	Mode  GroupMode   `json:"mode" gorm:"not null"`
-	Items []GroupItem `json:"items,omitempty" gorm:"foreignKey:GroupID"`
+	ID         int         `json:"id" gorm:"primaryKey"`
+	Name       string      `json:"name" gorm:"unique;not null"`
+	Mode       GroupMode   `json:"mode" gorm:"not null"`
+	MatchRegex string      `json:"match_regex"`
+	Items      []GroupItem `json:"items,omitempty" gorm:"foreignKey:GroupID"`
 }
 
 type GroupItem struct {
@@ -30,6 +31,7 @@ type GroupUpdateRequest struct {
 	ID            int                      `json:"id" binding:"required"`
 	Name          *string                  `json:"name,omitempty"`            // 仅在名称变更时发送
 	Mode          *GroupMode               `json:"mode,omitempty"`            // 仅在模式变更时发送
+	MatchRegex    *string                  `json:"match_regex,omitempty"`     // 仅在匹配正则变更时发送
 	ItemsToAdd    []GroupItemAddRequest    `json:"items_to_add,omitempty"`    // 新增的 items
 	ItemsToUpdate []GroupItemUpdateRequest `json:"items_to_update,omitempty"` // 更新的 items (priority 变更)
 	ItemsToDelete []int                    `json:"items_to_delete,omitempty"` // 删除的 item IDs
