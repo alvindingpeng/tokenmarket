@@ -272,6 +272,9 @@
         },
         "detail": {
             "actions": {
+                "edit": "Edit",
+                "cancel": "Cancel",
+                "save": "Save",
                 "copyName": "Copy Name",
                 "delete": "Delete",
                 "confirmDelete": "Confirm Delete"
@@ -279,9 +282,13 @@
         },
         "form": {
             "name": "Group Name",
-            "items": "Model Names",
+            "matchRegex": "Match Regex",
+            "matchRegexPlaceholder": "Leave empty to use default fuzzy match by group name",
+            "matchRegexInvalid": "Invalid regex",
+            "items": "Selected Models",
             "addItem": "Add Model",
             "autoAdd": "Auto Add",
+            "clear": "Clear",
             "noItems": "No models",
             "selectChannel": "Channel",
             "selectModel": "Model"

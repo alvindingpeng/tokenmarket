@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { GroupCard } from './Item';
+import { GroupCard } from './Card';
 import { useGroupList } from '@/api/endpoints/group';
 import { usePaginationStore, useSearchStore } from '@/components/modules/toolbar';
 import { EASING } from '@/lib/animations/fluid-transitions';
@@ -29,15 +29,15 @@ export function Group() {
 
     useEffect(() => {
         setTotalItems(pageKey, filteredGroups.length);
-    }, [filteredGroups.length, setTotalItems]);
+    }, [filteredGroups.length, pageKey, setTotalItems]);
 
     useEffect(() => {
         setPage(pageKey, 1);
-    }, [searchTerm, setPage]);
+    }, [pageKey, searchTerm, setPage]);
 
     useEffect(() => {
         setPageSize(pageKey, isMobile ? 1 : 6);
-    }, [isMobile, setPageSize]);
+    }, [isMobile, pageKey, setPageSize]);
 
     const pagedGroups = useMemo(() => {
         const start = (page - 1) * pageSize;
