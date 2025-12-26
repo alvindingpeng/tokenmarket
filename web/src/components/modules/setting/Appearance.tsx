@@ -25,27 +25,21 @@ export function SettingAppearance() {
                     <span className="text-sm font-medium">{t('theme.label')}</span>
                 </div>
                 <Select value={theme} onValueChange={setTheme}>
-                    <SelectTrigger className="w-28 rounded-xl">
+                    <SelectTrigger className="w-36 rounded-xl">
                         <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                         <SelectItem value="light">
-                            <div className="flex items-center gap-2">
-                                <Sun className="h-4 w-4" />
-                                {t('theme.light')}
-                            </div>
+                            <Sun className="h-4 w-4" />
+                            {t('theme.light')}
                         </SelectItem>
                         <SelectItem value="dark">
-                            <div className="flex items-center gap-2">
-                                <Moon className="h-4 w-4" />
-                                {t('theme.dark')}
-                            </div>
+                            <Moon className="h-4 w-4" />
+                            {t('theme.dark')}
                         </SelectItem>
                         <SelectItem value="system">
-                            <div className="flex items-center gap-2">
-                                <Monitor className="h-4 w-4" />
-                                {t('theme.system')}
-                            </div>
+                            <Monitor className="h-4 w-4" />
+                            {t('theme.system')}
                         </SelectItem>
                     </SelectContent>
                 </Select>
@@ -58,7 +52,7 @@ export function SettingAppearance() {
                     <span className="text-sm font-medium">{t('language.label')}</span>
                 </div>
                 <Select value={locale} onValueChange={(v) => setLocale(v as Locale)}>
-                    <SelectTrigger className="w-28 rounded-xl">
+                    <SelectTrigger className="w-36 rounded-xl">
                         <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
