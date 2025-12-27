@@ -12,7 +12,6 @@ import (
 )
 
 func FetchLLMName(ctx context.Context, request model.Channel) ([]string, error) {
-
 	client, err := NewHTTPClient(request.Proxy)
 	if err != nil {
 		return nil, err
@@ -151,6 +150,9 @@ func fetchAnthropicModels(client *http.Client, ctx context.Context, request mode
 		}
 
 		afterID = result.LastID
+	}
+	if len(allModels) == 0 {
+		return fetchOpenAIModels(client, ctx, request)
 	}
 	return allModels, nil
 }
