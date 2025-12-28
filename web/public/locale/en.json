@@ -274,7 +274,10 @@
     },
     "group": {
         "toast": {
+            "created": "Created successfully",
+            "createFailed": "Create failed",
             "updated": "Updated successfully",
+            "updateFailed": "Update failed",
             "deleted": "Deleted successfully",
             "autoAddFailed": "Auto add failed"
         },

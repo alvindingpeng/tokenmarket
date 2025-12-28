@@ -67,6 +67,7 @@ export function GroupCard({ group }: { group: Group }) {
     }, []);
 
     const onSuccess = useCallback(() => toast.success(t('toast.updated')), [t]);
+    const onError = useCallback((error: Error) => toast.error(t('toast.updateFailed'), { description: error.message }), [t]);
 
     // Avoid UI flicker: drag-reorder also uses the same mutation, so only "mode switch" should lock mode buttons.
     const isUpdatingMode = (() => {
@@ -96,13 +97,13 @@ export function GroupCard({ group }: { group: Group }) {
                 return origPriority !== undefined && origPriority !== newPriority;
             })
             .map(({ member, newPriority }) => ({ id: member.item_id!, priority: newPriority, weight: member.weight ?? 1 }));
-        if (itemsToUpdate.length > 0) updateGroup.mutate({ id: group.id!, items_to_update: itemsToUpdate }, { onSuccess });
-    }, [group.id, priorityByItemId, updateGroup, onSuccess]);
+        if (itemsToUpdate.length > 0) updateGroup.mutate({ id: group.id!, items_to_update: itemsToUpdate }, { onSuccess, onError });
+    }, [group.id, priorityByItemId, updateGroup, onSuccess, onError]);
 
     const handleRemoveMember = useCallback((id: string) => {
         const member = members.find((m) => m.id === id);
-        if (member?.item_id !== undefined) updateGroup.mutate({ id: group.id!, items_to_delete: [member.item_id] }, { onSuccess });
-    }, [members, group.id, updateGroup, onSuccess]);
+        if (member?.item_id !== undefined) updateGroup.mutate({ id: group.id!, items_to_delete: [member.item_id] }, { onSuccess, onError });
+    }, [members, group.id, updateGroup, onSuccess, onError]);
 
     const handleWeightChange = useCallback((id: string, weight: number) => {
         setMembers((prev) => prev.map((m) => m.id === id ? { ...m, weight } : m));
@@ -114,10 +115,10 @@ export function GroupCard({ group }: { group: Group }) {
             if (!priority) return;
             updateGroup.mutate(
                 { id: group.id!, items_to_update: [{ id: member.item_id, priority, weight }] },
-                { onSuccess }
+                { onSuccess, onError }
             );
         }, 500);
-    }, [group.id, priorityByItemId, updateGroup, onSuccess]);
+    }, [group.id, priorityByItemId, updateGroup, onSuccess, onError]);
 
     const handleCopy = async () => {
         try {
@@ -202,8 +203,9 @@ export function GroupCard({ group }: { group: Group }) {
                 onSuccess();
                 onDone?.();
             },
+            onError,
         });
-    }, [group.id, group.items, group.match_regex, group.mode, group.name, onSuccess, updateGroup]);
+    }, [group.id, group.items, group.match_regex, group.mode, group.name, onSuccess, onError, updateGroup]);
 
     function EditDialogContent() {
         const { setIsOpen } = useMorphingDialog();
@@ -317,7 +319,7 @@ export function GroupCard({ group }: { group: Group }) {
                         onClick={() => {
                             if (isUpdatingMode || !group.id) return;
                             if (m === group.mode) return;
-                            updateGroup.mutate({ id: group.id!, mode: m }, { onSuccess });
+                            updateGroup.mutate({ id: group.id!, mode: m }, { onSuccess, onError });
                         }}
                         className={cn(
                             'flex-1 py-1 text-xs rounded-lg transition-colors',

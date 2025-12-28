@@ -274,7 +274,10 @@
     },
     "group": {
         "toast": {
+            "created": "创建成功",
+            "createFailed": "创建失败",
             "updated": "更新成功",
+            "updateFailed": "更新失败",
             "deleted": "删除成功",
             "autoAddFailed": "自动添加失败"
         },

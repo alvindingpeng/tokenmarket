@@ -4,6 +4,7 @@ go 1.24.4
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0
+	github.com/dlclark/regexp2 v1.11.5
 	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-gonic/gin v1.11.0
 	github.com/glebarez/sqlite v1.11.0

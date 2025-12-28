@@ -10,6 +10,7 @@ import {
 import { useCreateGroup } from '@/api/endpoints/group';
 import { useTranslations } from 'next-intl';
 import { GroupEditor } from './Editor';
+import { toast } from '@/components/common/Toast';
 
 export function CreateDialogContent() {
     const { setIsOpen } = useMorphingDialog();
@@ -48,7 +49,10 @@ export function CreateDialogContent() {
 
                         createGroup.mutate(
                             { name, mode, match_regex: match_regex ?? '', items },
-                            { onSuccess: () => setIsOpen(false) }
+                            {
+                                onSuccess: () => setIsOpen(false),
+                                onError: (error) => toast.error(t('toast.createFailed'), { description: error.message }),
+                            }
                         );
                     }}
                 />

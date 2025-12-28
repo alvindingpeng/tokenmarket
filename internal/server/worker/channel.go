@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"regexp"
 	"strings"
 	"time"
 
@@ -10,6 +9,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/price"
 	"github.com/alvindingpeng/switchyard/internal/utils/log"
+	"github.com/dlclark/regexp2"
 )
 
 func AutoGroup(channelID int, channelName, channelModel, customModel string, autoGroupType model.AutoGroupType) {
@@ -44,15 +44,19 @@ func AutoGroup(channelID int, channelName, channelModel, customModel string, aut
 				if group.MatchRegex == "" {
 					// 如果匹配正则为空，则使用模糊匹配
 					matched = strings.EqualFold(modelName, group.Name)
-					continue
+				} else {
+					// 正则匹配：模型名称与分组名称匹配
+					re, err := regexp2.Compile(group.MatchRegex, regexp2.ECMAScript)
+					if err != nil {
+						log.Warnf("compile regex failed: %v", err)
+						continue
+					}
+					matched, err = re.MatchString(modelName)
+					if err != nil {
+						log.Warnf("match regex failed: %v", err)
+						continue
+					}
 				}
-				// 正则匹配：模型名称与分组名称匹配
-				re, err := regexp.Compile(group.MatchRegex)
-				if err != nil {
-					log.Warnf("compile regex failed: %v", err)
-					continue
-				}
-				matched = re.MatchString(modelName)
 			}
 
 			if matched {
@@ -64,7 +68,7 @@ func AutoGroup(channelID int, channelName, channelModel, customModel string, aut
 					}
 				}
 				if exists {
-					break
+					continue
 				}
 				err := op.GroupItemAdd(&model.GroupItem{
 					GroupID:   group.ID,
@@ -78,7 +82,6 @@ func AutoGroup(channelID int, channelName, channelModel, customModel string, aut
 				} else {
 					log.Infof("channel %s: model [%s] added to group [%s]", channelName, modelName, group.Name)
 				}
-				break
 			}
 		}
 	}
