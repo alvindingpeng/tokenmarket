@@ -246,7 +246,7 @@ export function GroupCard({ group }: { group: Group }) {
                         <TooltipTrigger asChild>
                             <h3 className="text-lg font-bold truncate">{group.name}</h3>
                         </TooltipTrigger>
-                        <TooltipContent>{group.name}</TooltipContent>
+                        <TooltipContent key={group.name}>{group.name}</TooltipContent>
                     </Tooltip>
                 </div>
 

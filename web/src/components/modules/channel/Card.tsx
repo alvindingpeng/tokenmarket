@@ -24,7 +24,7 @@ export function Card({ channel, stats }: { channel: Channel; stats: StatsMetrics
                             <TooltipTrigger asChild>
                                 <h3 className="text-lg font-bold truncate min-w-0">{channel.name}</h3>
                             </TooltipTrigger>
-                            <TooltipContent>{channel.name}</TooltipContent>
+                            <TooltipContent key={channel.name}>{channel.name}</TooltipContent>
                         </Tooltip>
                         <p className={`shrink-0 rounded-xl px-3 py-1 text-xs ${statusClasses}`}>
                             {channel.enabled ? t('status.enabled') : t('status.disabled')}

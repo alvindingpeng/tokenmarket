@@ -96,7 +96,7 @@ function MemberItem({
                 <div className="flex flex-col min-w-0 flex-1">
                     <Tooltip side="top" sideOffset={10} align="start">
                         <TooltipTrigger className="text-sm font-medium truncate leading-tight">{member.name}</TooltipTrigger>
-                        <TooltipContent>{member.name}</TooltipContent>
+                        <TooltipContent key={member.name}>{member.name}</TooltipContent>
                     </Tooltip>
                     <span className="text-[10px] text-muted-foreground truncate leading-tight">{member.channel_name}</span>
                 </div>

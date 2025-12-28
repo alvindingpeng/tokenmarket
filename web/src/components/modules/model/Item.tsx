@@ -99,7 +99,7 @@ export const ModelItem = memo(function ModelItem({ model }: ModelItemProps) {
                     <TooltipTrigger className='text-base font-semibold text-card-foreground leading-tight truncate'>
                         {model.name}
                     </TooltipTrigger>
-                    <TooltipContent>
+                    <TooltipContent key={model.name}>
                         {model.name}
                     </TooltipContent>
                 </Tooltip>
