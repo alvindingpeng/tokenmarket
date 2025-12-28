@@ -3,18 +3,19 @@
 import { useTranslations } from 'next-intl';
 import { Info, Tag, Github, RefreshCw, AlertTriangle, Download, Loader2 } from 'lucide-react';
 import { APP_VERSION, GITHUB_REPO } from '@/lib/info';
-import { useVersionInfo, useUpdateCore } from '@/api/endpoints/update';
+import { useLatestInfo, useNowVersion, useUpdateCore } from '@/api/endpoints/update';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/common/Toast';
 import { isSwitchyardCacheName, SW_MESSAGE_TYPE } from '@/lib/sw';
 
 export function SettingInfo() {
     const t = useTranslations('setting');
-    const { data: versionInfo, isLoading } = useVersionInfo();
+    const latestInfoQuery = useLatestInfo();
+    const nowVersionQuery = useNowVersion();
     const updateCore = useUpdateCore();
 
-    const backendNowVersion = versionInfo?.now_version || '';
-    const latestVersion = versionInfo?.latest_version || '';
+    const backendNowVersion = nowVersionQuery.data || '';
+    const latestVersion = latestInfoQuery.data?.tag_name || '';
 
     // 前端版本与后端当前版本不一致 → 浏览器缓存问题
     const isCacheMismatch = !!backendNowVersion && backendNowVersion !== APP_VERSION;
@@ -87,7 +88,7 @@ export function SettingInfo() {
                     <span className="text-sm font-medium">{t('info.currentVersion')}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                    {isLoading ? (
+                    {nowVersionQuery.isLoading ? (
                         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                     ) : (
                         <code className="text-sm font-mono text-muted-foreground">
@@ -103,9 +104,15 @@ export function SettingInfo() {
                     <Download className="h-5 w-5 text-muted-foreground" />
                     <span className="text-sm font-medium">{t('info.latestVersion')}</span>
                 </div>
-                <code className="text-sm font-mono text-muted-foreground">
-                    {isLoading ? '...' : (latestVersion || t('info.unknown'))}
-                </code>
+                <div className="flex items-center gap-2">
+                    {latestInfoQuery.isLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    ) : (
+                        <code className="text-sm font-mono text-muted-foreground">
+                            {latestVersion || t('info.unknown')}
+                        </code>
+                    )}
+                </div>
             </div>
 
             {/* 浏览器缓存问题警告 */}

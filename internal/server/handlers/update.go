@@ -19,17 +19,13 @@ func init() {
 				Handle(latest),
 		).
 		AddRoute(
+			router.NewRoute("/now-version", http.MethodGet).
+				Handle(getNowVersion),
+		).
+		AddRoute(
 			router.NewRoute("", http.MethodPost).
 				Handle(updateFunc),
 		)
-}
-
-type SysVersionInfo struct {
-	NowVersion        string `json:"now_version"`
-	LatestVersion     string `json:"latest_version"`
-	LatestPublishedAt string `json:"latest_published_at"`
-	LatestBody        string `json:"latest_body"`
-	LatestMessage     string `json:"latest_message"`
 }
 
 func latest(c *gin.Context) {
@@ -38,14 +34,11 @@ func latest(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	resp.Success(c, *latestInfo)
+}
 
-	resp.Success(c, SysVersionInfo{
-		NowVersion:        conf.Version,
-		LatestVersion:     latestInfo.TagName,
-		LatestPublishedAt: latestInfo.PublishedAt,
-		LatestBody:        latestInfo.Body,
-		LatestMessage:     latestInfo.Message,
-	})
+func getNowVersion(c *gin.Context) {
+	resp.Success(c, conf.Version)
 }
 
 func updateFunc(c *gin.Context) {

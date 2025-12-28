@@ -3,33 +3,47 @@ import { apiClient } from '../client';
 import { logger } from '@/lib/logger';
 
 /**
- * 系统版本信息
+ * 后端 /api/v1/update 返回的最新发布信息
  */
-export interface SysVersionInfo {
-    now_version: string;
-    latest_version: string;
-    latest_published_at: string;
-    latest_body: string;
-    latest_message: string;
+export interface LatestInfo {
+    tag_name: string;
+    published_at: string;
+    body: string;
+    message: string;
 }
 
 /**
- * 获取系统版本信息 Hook
+ * 获取最新发布信息 Hook
  * 
  * @example
- * const { data: versionInfo, isLoading, error } = useVersionInfo();
+ * const { data: latestInfo, isLoading, error } = useLatestInfo();
  * 
  * if (isLoading) return <Loading />;
  * if (error) return <Error message={error.message} />;
  * 
- * console.log('Current version:', versionInfo?.now_version);
- * console.log('Latest version:', versionInfo?.latest_version);
+ * console.log('Latest tag:', latestInfo?.tag_name);
  */
-export function useVersionInfo() {
+export function useLatestInfo() {
     return useQuery({
-        queryKey: ['update', 'version'],
+        queryKey: ['update', 'latest'],
         queryFn: async () => {
-            return apiClient.get<SysVersionInfo>('/api/v1/update');
+            return apiClient.get<LatestInfo>('/api/v1/update');
+        },
+        refetchInterval: 3600000, // 1 小时
+        refetchOnMount: 'always',
+    });
+}
+
+/**
+ * 获取后端当前版本 Hook
+ *
+ * 后端: GET /api/v1/update/now-version -> string
+ */
+export function useNowVersion() {
+    return useQuery({
+        queryKey: ['update', 'now-version'],
+        queryFn: async () => {
+            return apiClient.get<string>('/api/v1/update/now-version');
         },
         refetchInterval: 3600000, // 1 小时
         refetchOnMount: 'always',
@@ -57,7 +71,8 @@ export function useUpdateCore() {
         },
         onSuccess: (data) => {
             logger.log('更新成功:', data);
-            queryClient.invalidateQueries({ queryKey: ['update', 'version'] });
+            queryClient.invalidateQueries({ queryKey: ['update', 'latest'] });
+            queryClient.invalidateQueries({ queryKey: ['update', 'now-version'] });
         },
         onError: (error) => {
             logger.error('更新失败:', error);
