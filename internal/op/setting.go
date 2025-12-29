@@ -39,7 +39,7 @@ func SettingSetString(key model.SettingKey, value string) error {
 	if valueCache == value {
 		return nil
 	}
-	result := db.GetDB().Model(&model.Setting{}).Where("`key` = ?", key).Update("`value`", value)
+	result := db.GetDB().Model(&model.Setting{Key: key}).Update("Value", value)
 	if result.Error != nil {
 		return fmt.Errorf("failed to set setting: %w", result.Error)
 	}
@@ -78,7 +78,7 @@ func SettingSetInt(key model.SettingKey, value int) error {
 	if valueCacheNum == value {
 		return nil
 	}
-	result := db.GetDB().Model(&model.Setting{}).Where("`key` = ?", key).Update("`value`", value)
+	result := db.GetDB().Model(&model.Setting{Key: key}).Update("Value", value)
 	if result.Error != nil {
 		return fmt.Errorf("failed to set setting: %w", result.Error)
 	}

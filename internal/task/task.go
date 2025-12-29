@@ -80,11 +80,10 @@ func Update(name string, interval time.Duration) {
 // RUN 启动所有注册的任务
 func RUN() {
 	tasksMu.RLock()
-	defer tasksMu.RUnlock()
-
 	for _, entry := range tasks {
 		go runTask(entry)
 	}
+	tasksMu.RUnlock()
 
 	// 阻塞主协程
 	select {}
