@@ -169,7 +169,7 @@ All configuration options can be overridden via environment variables using the 
 | `SWITCHYARD_DATABASE_TYPE` | `database.type` |
 | `SWITCHYARD_DATABASE_PATH` | `database.path` |
 | `SWITCHYARD_LOG_LEVEL` | `log.level` |
-
+| `SWITCHYARD_GITHUB_PAT` | For rate limiting when getting the latest version (optional) |
 
 ## 📸 Screenshots
 

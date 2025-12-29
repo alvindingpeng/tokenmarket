@@ -169,7 +169,7 @@ go run . start
 | `SWITCHYARD_DATABASE_TYPE` | `database.type` |
 | `SWITCHYARD_DATABASE_PATH` | `database.path` |
 | `SWITCHYARD_LOG_LEVEL` | `log.level` |
-
+| `SWITCHYARD_GITHUB_PAT` | 用于获取最新版本时的速率限制(可选) |
 
 ## 📸 界面预览
 
