@@ -43,6 +43,7 @@ function MemberItem({
     isRemoving,
     index,
     showWeight = false,
+    showConfirmDelete = true,
     layoutScope,
     dnd,
 }: {
@@ -52,6 +53,7 @@ function MemberItem({
     isRemoving?: boolean;
     index: number;
     showWeight?: boolean;
+    showConfirmDelete?: boolean;
     layoutScope?: string;
     dnd: MemberItemDnd;
 }) {
@@ -111,11 +113,11 @@ function MemberItem({
                     />
                 )}
 
-                {!confirmDelete && (
+                {(!showConfirmDelete || !confirmDelete) && (
                     <motion.button
                         layoutId={`delete-btn-member-${layoutScope ?? 'default'}-${member.id}`}
                         type="button"
-                        onClick={() => setConfirmDelete(true)}
+                        onClick={() => showConfirmDelete ? setConfirmDelete(true) : onRemove(member.id)}
                         className="p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-colors"
                         initial={false}
                         animate={{ opacity: 1, x: 0 }}
@@ -127,7 +129,7 @@ function MemberItem({
                 )}
 
                 <AnimatePresence>
-                    {confirmDelete && (
+                    {showConfirmDelete && confirmDelete && (
                         <motion.div
                             layoutId={`delete-btn-member-${layoutScope ?? 'default'}-${member.id}`}
                             className="absolute inset-0 flex items-center justify-center gap-2 bg-destructive p-1.5 rounded-lg"
@@ -178,6 +180,12 @@ export interface MemberListProps {
     onDragFinish?: () => void;
     removingIds?: Set<string>;
     showWeight?: boolean;
+    /**
+     * When true, show a confirmation overlay before removing an item.
+     * When false, clicking the delete button removes the item immediately.
+     * Defaults to true.
+     */
+    showConfirmDelete?: boolean;
     layoutScope?: string;
 }
 
@@ -192,6 +200,7 @@ export function MemberList({
     onDragFinish,
     removingIds = new Set(),
     showWeight = false,
+    showConfirmDelete = true,
     layoutScope: externalLayoutScope,
 }: MemberListProps) {
     const internalLayoutScope = useId();
@@ -294,6 +303,7 @@ export function MemberList({
                                                 isRemoving={removingIds.has(member.id)}
                                                 index={index}
                                                 showWeight={showWeight}
+                                                showConfirmDelete={showConfirmDelete}
                                                 layoutScope={layoutScope}
                                                 dnd={{
                                                     innerRef: draggableProvided.innerRef,

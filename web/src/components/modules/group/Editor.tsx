@@ -197,6 +197,7 @@ function SortSection({
                 onWeightChange={onWeightChange}
                 removingIds={removingIds}
                 showWeight={showWeight}
+                showConfirmDelete={false}
             />
         </div>
     );
