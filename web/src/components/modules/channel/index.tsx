@@ -6,17 +6,23 @@ import { useChannelList } from '@/api/endpoints/channel';
 import { Card } from './Card';
 import { usePaginationStore, useSearchStore } from '@/components/modules/toolbar';
 import { EASING } from '@/lib/animations/fluid-transitions';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useGridPageSize } from '@/hooks/use-grid-page-size';
+
+/** Channel card height: h-54 = 216px */
+const CHANNEL_CARD_HEIGHT = 216;
 
 export function Channel() {
     const { data: channelsData } = useChannelList();
     const pageKey = 'channel' as const;
-    const isMobile = useIsMobile();
+    const pageSize = useGridPageSize({
+        itemHeight: CHANNEL_CARD_HEIGHT,
+        gap: 16,
+        columns: { default: 1, md: 2, lg: 3, xl: 4 },
+    });
     const searchTerm = useSearchStore((s) => s.getSearchTerm(pageKey));
     const page = usePaginationStore((s) => s.getPage(pageKey));
-    const setTotalItems = usePaginationStore((s) => s.setTotalItems);
     const setPage = usePaginationStore((s) => s.setPage);
-    const pageSize = usePaginationStore((s) => s.getPageSize(pageKey));
+    const setTotalItems = usePaginationStore((s) => s.setTotalItems);
     const setPageSize = usePaginationStore((s) => s.setPageSize);
     const direction = usePaginationStore((s) => s.getDirection(pageKey));
 
@@ -28,22 +34,20 @@ export function Channel() {
         return sorted.filter((c) => c.raw.name.toLowerCase().includes(term));
     }, [channelsData, searchTerm]);
 
+    // Sync to store for Toolbar to display pagination info
     useEffect(() => {
         setTotalItems(pageKey, filteredChannels.length);
-    }, [filteredChannels.length, pageKey, setTotalItems]);
+        setPageSize(pageKey, pageSize);
+    }, [filteredChannels.length, pageSize, pageKey, setTotalItems, setPageSize]);
 
+    // Reset to page 1 when search term changes
     useEffect(() => {
         setPage(pageKey, 1);
-    }, [pageKey, searchTerm, setPage]);
-
-    useEffect(() => {
-        setPageSize(pageKey, isMobile ? 3 : 12);
-    }, [isMobile, pageKey, setPageSize]);
+    }, [searchTerm, pageKey, setPage]);
 
     const pagedChannels = useMemo(() => {
         const start = (page - 1) * pageSize;
-        const end = start + pageSize;
-        return filteredChannels.slice(start, end);
+        return filteredChannels.slice(start, start + pageSize);
     }, [filteredChannels, page, pageSize]);
 
     return (

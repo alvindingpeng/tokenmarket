@@ -6,17 +6,23 @@ import { useModelList } from '@/api/endpoints/model';
 import { ModelItem } from './Item';
 import { usePaginationStore, useSearchStore } from '@/components/modules/toolbar';
 import { EASING } from '@/lib/animations/fluid-transitions';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useGridPageSize } from '@/hooks/use-grid-page-size';
+
+/** Model item height: h-28 = 112px */
+const MODEL_ITEM_HEIGHT = 112;
 
 export function Model() {
     const { data: models } = useModelList();
     const pageKey = 'model' as const;
-    const isMobile = useIsMobile();
+    const pageSize = useGridPageSize({
+        itemHeight: MODEL_ITEM_HEIGHT,
+        gap: 16,
+        columns: { default: 1, md: 2, xl: 3 },
+    });
     const searchTerm = useSearchStore((s) => s.getSearchTerm(pageKey));
     const page = usePaginationStore((s) => s.getPage(pageKey));
-    const setTotalItems = usePaginationStore((s) => s.setTotalItems);
     const setPage = usePaginationStore((s) => s.setPage);
-    const pageSize = usePaginationStore((s) => s.getPageSize(pageKey));
+    const setTotalItems = usePaginationStore((s) => s.setTotalItems);
     const setPageSize = usePaginationStore((s) => s.setPageSize);
     const direction = usePaginationStore((s) => s.getDirection(pageKey));
 
@@ -28,22 +34,20 @@ export function Model() {
         return sortedModels.filter((m) => m.name.toLowerCase().includes(term));
     }, [models, searchTerm]);
 
+    // Sync to store for Toolbar to display pagination info
     useEffect(() => {
         setTotalItems(pageKey, filteredModels.length);
-    }, [filteredModels.length, pageKey, setTotalItems]);
+        setPageSize(pageKey, pageSize);
+    }, [filteredModels.length, pageSize, pageKey, setTotalItems, setPageSize]);
 
+    // Reset to page 1 when search term changes
     useEffect(() => {
         setPage(pageKey, 1);
-    }, [pageKey, searchTerm, setPage]);
-
-    useEffect(() => {
-        setPageSize(pageKey, isMobile ? 6 : 18);
-    }, [isMobile, pageKey, setPageSize]);
+    }, [searchTerm, pageKey, setPage]);
 
     const pagedModels = useMemo(() => {
         const start = (page - 1) * pageSize;
-        const end = start + pageSize;
-        return filteredModels.slice(start, end);
+        return filteredModels.slice(start, start + pageSize);
     }, [filteredModels, page, pageSize]);
 
     return (

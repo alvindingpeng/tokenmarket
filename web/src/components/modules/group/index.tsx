@@ -6,17 +6,23 @@ import { GroupCard } from './Card';
 import { useGroupList } from '@/api/endpoints/group';
 import { usePaginationStore, useSearchStore } from '@/components/modules/toolbar';
 import { EASING } from '@/lib/animations/fluid-transitions';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useGridPageSize } from '@/hooks/use-grid-page-size';
+
+/** Group card approximate height (variable due to content) */
+const GROUP_CARD_HEIGHT = 280;
 
 export function Group() {
     const { data: groups } = useGroupList();
     const pageKey = 'group' as const;
-    const isMobile = useIsMobile();
+    const pageSize = useGridPageSize({
+        itemHeight: GROUP_CARD_HEIGHT,
+        gap: 16,
+        columns: { default: 1, md: 2, lg: 3 },
+    });
     const searchTerm = useSearchStore((s) => s.getSearchTerm(pageKey));
     const page = usePaginationStore((s) => s.getPage(pageKey));
-    const setTotalItems = usePaginationStore((s) => s.setTotalItems);
     const setPage = usePaginationStore((s) => s.setPage);
-    const pageSize = usePaginationStore((s) => s.getPageSize(pageKey));
+    const setTotalItems = usePaginationStore((s) => s.setTotalItems);
     const setPageSize = usePaginationStore((s) => s.setPageSize);
     const direction = usePaginationStore((s) => s.getDirection(pageKey));
 
@@ -28,22 +34,20 @@ export function Group() {
         return sorted.filter((g) => g.name.toLowerCase().includes(term));
     }, [groups, searchTerm]);
 
+    // Sync to store for Toolbar to display pagination info
     useEffect(() => {
         setTotalItems(pageKey, filteredGroups.length);
-    }, [filteredGroups.length, pageKey, setTotalItems]);
+        setPageSize(pageKey, pageSize);
+    }, [filteredGroups.length, pageSize, pageKey, setTotalItems, setPageSize]);
 
+    // Reset to page 1 when search term changes
     useEffect(() => {
         setPage(pageKey, 1);
-    }, [pageKey, searchTerm, setPage]);
-
-    useEffect(() => {
-        setPageSize(pageKey, isMobile ? 1 : 6);
-    }, [isMobile, pageKey, setPageSize]);
+    }, [searchTerm, pageKey, setPage]);
 
     const pagedGroups = useMemo(() => {
         const start = (page - 1) * pageSize;
-        const end = start + pageSize;
-        return filteredGroups.slice(start, end);
+        return filteredGroups.slice(start, start + pageSize);
     }, [filteredGroups, page, pageSize]);
 
     return (
