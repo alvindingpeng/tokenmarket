@@ -85,6 +85,9 @@
             }
         },
         "rank": {
+            "title": "Ranking",
+            "sortByCost": "Cost",
+            "sortByCount": "Count",
             "noData": "No ranking data"
         }
     },
