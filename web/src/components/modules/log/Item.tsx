@@ -113,7 +113,6 @@ function JsonContent({
                         }}
                         displayDataTypes={false}
                         displayObjectSize={false}
-                        enableClipboard={false}
                         collapsed={false}
                     />
                 </motion.div>
