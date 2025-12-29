@@ -3,7 +3,16 @@
 
 @custom-variant dark (&:is(.dark *, html.dark *));
 
+@font-face {
+  font-family: 'MiSans';
+  src: url('/MiSans-Normal.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
+  --font-misans: 'MiSans';
   --background: oklch(0.9331 0.0081 98.8844);
   --foreground: oklch(0.3514 0.0250 84.4589);
   --card: oklch(0.9891 0.0017 325.5900);
@@ -58,7 +67,8 @@
   --spacing: 0.25rem;
 }
 
-html.dark, .dark {
+html.dark,
+.dark {
   --background: oklch(0.2809 0.0264 153.4040);
   --foreground: oklch(0.9200 0.0104 81.7947);
   --card: oklch(0.3196 0.0217 150.3385);

@@ -5,12 +5,15 @@
  * Cache naming
  * - Prefix MUST match `web/src/lib/sw.ts` (SWITCHYARD_CACHE_PREFIX)
  * - Bump CACHE_VERSION when you change caching behavior in this file
+ * - FONT cache is version-independent (fonts persist across updates)
  */
 const CACHE_PREFIX = 'switchyard';
 const CACHE_VERSION = 'v1';
 const CACHE_NAMES = {
     static: `${CACHE_PREFIX}-static-${CACHE_VERSION}`,
     app: `${CACHE_PREFIX}-app-${CACHE_VERSION}`,
+    // Font cache is NOT versioned - persists across app updates
+    font: `${CACHE_PREFIX}-font`,
 };
 
 const SW_MESSAGE_TYPE = {
@@ -61,6 +64,12 @@ self.addEventListener('fetch', (event) => {
 
     // 跳过 API 请求和开发环境 HMR
     if (url.pathname.startsWith('/api/') || url.pathname.includes('webpack-hmr')) {
+        return;
+    }
+
+    // 字体资源：Cache First（永久缓存，跨版本持久化）
+    if (url.pathname.endsWith('.woff2') || url.pathname.endsWith('.woff') || url.pathname.endsWith('.ttf')) {
+        event.respondWith(cacheFirst(request, CACHE_NAMES.font));
         return;
     }
 
@@ -165,9 +174,10 @@ self.addEventListener('message', (event) => {
 
         case SW_MESSAGE_TYPE.CLEAR_CACHE:
             // Only clear Switchyard caches (avoid nuking other same-origin caches).
+            // PRESERVE font cache - fonts should persist across updates.
             event.waitUntil(
                 (async () => {
-                    await deleteSwitchyardCaches();
+                    await deleteSwitchyardCaches({ keep: new Set([CACHE_NAMES.font]) });
                     const clients = await self.clients.matchAll();
                     clients.forEach((client) => client.postMessage({ type: SW_MESSAGE_TYPE.CACHE_CLEARED }));
                 })()
