@@ -5,6 +5,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/transformer/outbound/authropic"
 	"github.com/alvindingpeng/switchyard/internal/transformer/outbound/gemini"
 	"github.com/alvindingpeng/switchyard/internal/transformer/outbound/openai"
+	"github.com/alvindingpeng/switchyard/internal/transformer/outbound/volcengine"
 )
 
 type OutboundType int
@@ -14,6 +15,7 @@ const (
 	OutboundTypeOpenAIResponse
 	OutboundTypeAnthropic
 	OutboundTypeGemini
+	OutboundTypeVolcengine
 )
 
 var outboundFactories = map[OutboundType]func() model.Outbound{
@@ -21,6 +23,7 @@ var outboundFactories = map[OutboundType]func() model.Outbound{
 	OutboundTypeOpenAIResponse: func() model.Outbound { return &openai.ResponseOutbound{} },
 	OutboundTypeAnthropic:      func() model.Outbound { return &authropic.MessageOutbound{} },
 	OutboundTypeGemini:         func() model.Outbound { return &gemini.MessagesOutbound{} },
+	OutboundTypeVolcengine:     func() model.Outbound { return &volcengine.ResponseOutbound{} },
 }
 
 func Get(outboundType OutboundType) model.Outbound {

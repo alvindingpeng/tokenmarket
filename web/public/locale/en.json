@@ -451,6 +451,7 @@
             "typeOpenAIResponse": "OpenAI Response",
             "typeAnthropic": "Anthropic",
             "typeGemini": "Gemini",
+            "typeVolcengine": "Volcengine",
             "autoSync": "Auto Sync",
             "autoGroup": "Auto Group",
             "autoGroupNone": "None",
