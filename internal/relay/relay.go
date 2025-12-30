@@ -198,7 +198,7 @@ func (rc *relayContext) forward() error {
 	defer response.Body.Close()
 
 	// 检查响应状态
-	if response.StatusCode != http.StatusOK {
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		errMsg := rc.readUpstreamError(response)
 		return fmt.Errorf("upstream error %d: %s", response.StatusCode, errMsg)
 	}
