@@ -18,7 +18,7 @@ func FetchLLMName(ctx context.Context, request model.Channel) ([]string, error) 
 	}
 
 	switch request.Type {
-	case outbound.OutboundTypeOpenAIChat, outbound.OutboundTypeOpenAIResponse:
+	case outbound.OutboundTypeOpenAIChat, outbound.OutboundTypeOpenAIResponse, outbound.OutboundTypeVolcengine:
 		return fetchOpenAIModels(client, ctx, request)
 	case outbound.OutboundTypeAnthropic:
 		return fetchAnthropicModels(client, ctx, request)

@@ -30,7 +30,7 @@ func (o *ResponseOutbound) TransformRequest(ctx context.Context, request *model.
 	}
 
 	// Convert to Responses API request format
-	responsesReq := convertToResponsesRequest(request)
+	responsesReq := ConvertToResponsesRequest(request)
 
 	body, err := json.Marshal(responsesReq)
 	if err != nil {
@@ -438,7 +438,7 @@ type ResponsesStreamEvent struct {
 
 // Conversion functions
 
-func convertToResponsesRequest(req *model.InternalLLMRequest) *ResponsesRequest {
+func ConvertToResponsesRequest(req *model.InternalLLMRequest) *ResponsesRequest {
 	result := &ResponsesRequest{
 		Model:             req.Model,
 		Temperature:       req.Temperature,
