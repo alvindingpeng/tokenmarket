@@ -380,6 +380,9 @@ type MessageContentPart struct {
 	// Audio is the audio content, required when type is "input_audio"
 	Audio *Audio `json:"input_audio,omitempty"`
 
+	// File is the file content, required when type is "file"
+	File *File `json:"file,omitempty"`
+
 	// CacheControl is used for provider-specific cache control (e.g., Anthropic).
 	// This field is not serialized in JSON.
 	CacheControl *CacheControl `json:"-"`
@@ -404,6 +407,13 @@ type Audio struct {
 	Format string `json:"format"`
 
 	// Base64 encoded audio data.
+	Data string `json:"data"`
+}
+
+type File struct {
+	// The filename of the file.
+	Filename string `json:"filename"`
+	// The base64 encoded data of the file.
 	Data string `json:"data"`
 }
 
