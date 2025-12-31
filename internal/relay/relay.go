@@ -163,6 +163,9 @@ func parseRequest(inboundType inbound.InboundType, c *gin.Context) (*model.Inter
 		return nil, nil, err
 	}
 
+	// Pass through the original query parameters
+	internalRequest.Query = c.Request.URL.Query()
+
 	if err := internalRequest.Validate(); err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return nil, nil, err
@@ -199,12 +202,15 @@ func (rc *relayContext) forward() error {
 
 	// 检查响应状态
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		errMsg := rc.readUpstreamError(response)
-		return fmt.Errorf("upstream error %d: %s", response.StatusCode, errMsg)
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			return fmt.Errorf("failed to read response body: %w", err)
+		}
+		return fmt.Errorf("upstream error: %d: %s", response.StatusCode, string(body))
 	}
 
 	// 处理响应
-	if rc.isStreamRequest() {
+	if rc.internalRequest.Stream != nil && *rc.internalRequest.Stream {
 		return rc.handleStreamResponse(ctx, response)
 	}
 	return rc.handleResponse(ctx, response)
@@ -237,23 +243,6 @@ func (rc *relayContext) sendRequest(req *http.Request) (*http.Response, error) {
 	}
 
 	return response, nil
-}
-
-// readUpstreamError 读取上游错误信息
-func (rc *relayContext) readUpstreamError(response *http.Response) string {
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		log.Warnf("failed to read response body: %v", err)
-		return "failed to read error body"
-	}
-	errMsg := string(body)
-	log.Warnf("upstream server error: %d - %s", response.StatusCode, errMsg)
-	return errMsg
-}
-
-// isStreamRequest 判断是否为流式请求
-func (rc *relayContext) isStreamRequest() bool {
-	return rc.internalRequest.Stream != nil && *rc.internalRequest.Stream
 }
 
 // handleStreamResponse 处理流式响应

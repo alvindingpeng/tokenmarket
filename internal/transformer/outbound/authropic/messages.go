@@ -58,6 +58,10 @@ func (o *MessageOutbound) TransformRequest(ctx context.Context, request *model.I
 	}
 
 	parsedUrl.Path = parsedUrl.Path + "/messages"
+	// Pass through the original query parameters exactly as-is
+	if request.Query != nil {
+		parsedUrl.RawQuery = request.Query.Encode()
+	}
 	req.URL = parsedUrl
 
 	return req, nil
@@ -816,20 +820,17 @@ func convertAnthropicUsage(usage *anthropicModel.Usage) *model.Usage {
 	}
 
 	result := &model.Usage{
-		PromptTokens:     usage.InputTokens,
-		CompletionTokens: usage.OutputTokens,
-		TotalTokens:      usage.InputTokens + usage.OutputTokens,
+		PromptTokens:             usage.InputTokens,
+		CompletionTokens:         usage.OutputTokens,
+		TotalTokens:              usage.InputTokens + usage.OutputTokens + usage.CacheReadInputTokens + usage.CacheCreationInputTokens,
+		CacheCreationInputTokens: usage.CacheCreationInputTokens,
+		AnthropicUsage:           true,
 	}
 
-	if usage.CacheReadInputTokens > 0 || usage.CachedTokens > 0 {
-		cachedTokens := usage.CacheReadInputTokens
-		if usage.CachedTokens > 0 {
-			cachedTokens = usage.CachedTokens
-		}
+	if usage.CacheReadInputTokens > 0 {
 		result.PromptTokensDetails = &model.PromptTokensDetails{
-			CachedTokens: cachedTokens,
+			CachedTokens: usage.CacheReadInputTokens,
 		}
 	}
-
 	return result
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 )
@@ -210,6 +211,10 @@ type InternalLLMRequest struct {
 	// This is a help field and will not be sent to the llm service.
 	// e.g., "file_search_call.results", "message.input_image.image_url", "reasoning.encrypted_content"
 	Include []string `json:"-"`
+
+	// Query stores the original query parameters from the inbound request.
+	// This is a help field and will not be sent to the llm service.
+	Query url.Values `json:"-"`
 }
 
 func (r *InternalLLMRequest) Validate() error {
@@ -520,6 +525,9 @@ type Usage struct {
 	PromptModalityTokenDetails []ModalityTokenCount `json:"-"`
 	// Output only. A detailed breakdown of the token count for each modality in the candidates.
 	CompletionModalityTokenDetails []ModalityTokenCount `json:"-"`
+	// Anthropic specific fields
+	AnthropicUsage           bool  `json:"-"`
+	CacheCreationInputTokens int64 `json:"-"`
 }
 
 func (u *Usage) GetCompletionTokens() *int64 {

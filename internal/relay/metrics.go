@@ -3,6 +3,8 @@ package relay
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
@@ -78,11 +80,17 @@ func (m *RelayMetrics) SetInternalResponse(resp *transformerModel.InternalLLMRes
 	if modelPrice == nil {
 		return
 	}
-	if usage.PromptTokensDetails != nil {
+	if usage.PromptTokensDetails == nil {
+		usage.PromptTokensDetails = &transformerModel.PromptTokensDetails{
+			CachedTokens: 0,
+		}
+	}
+	if usage.AnthropicUsage {
 		m.Stats.InputCost = (float64(usage.PromptTokensDetails.CachedTokens)*modelPrice.CacheRead +
-			float64(usage.PromptTokens-usage.PromptTokensDetails.CachedTokens)*modelPrice.Input) * 1e-6
+			float64(usage.PromptTokens)*modelPrice.Input +
+			float64(usage.CacheCreationInputTokens)*modelPrice.CacheWrite) * 1e-6
 	} else {
-		m.Stats.InputCost = float64(usage.PromptTokens) * modelPrice.Input * 1e-6
+		m.Stats.InputCost = (float64(usage.PromptTokensDetails.CachedTokens)*modelPrice.CacheRead + float64(usage.PromptTokens-usage.PromptTokensDetails.CachedTokens)*modelPrice.Input) * 1e-6
 	}
 	m.Stats.OutputCost = float64(usage.CompletionTokens) * modelPrice.Output * 1e-6
 }
@@ -154,6 +162,13 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 	// 设置响应内容
 	if m.InternalResponse != nil {
 		if respJSON, jsonErr := json.Marshal(m.InternalResponse); jsonErr == nil {
+			// 如果是 Anthropic 响应，补充 cache_creation_input_tokens 字段
+			if m.InternalResponse.Usage != nil && m.InternalResponse.Usage.AnthropicUsage {
+				respStr := string(respJSON)
+				old := `"usage":{`
+				insert := fmt.Sprintf(`"usage":{"cache_creation_input_tokens":%d,`, m.InternalResponse.Usage.CacheCreationInputTokens)
+				respJSON = []byte(strings.Replace(respStr, old, insert, 1))
+			}
 			relayLog.ResponseContent = string(respJSON)
 		}
 	}

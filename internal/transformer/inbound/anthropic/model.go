@@ -407,7 +407,4 @@ type Usage struct {
 
 	// Available options: standard, priority, batch
 	ServiceTier string `json:"service_tier,omitempty"`
-
-	// For moonshot anthropic endpoint, it uses cached tokens instead of cache read input tokens.
-	CachedTokens int64 `json:"cached_tokens,omitempty"`
 }
