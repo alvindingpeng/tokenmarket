@@ -99,17 +99,7 @@ export function SettingLLMSync() {
                     disabled={syncChannel.isPending}
                     className="rounded-xl"
                 >
-                    {syncChannel.isPending ? (
-                        <>
-                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                            {t('llmSync.manualSync.syncing')}
-                        </>
-                    ) : (
-                        <>
-                            <RefreshCw className="h-4 w-4 mr-2" />
-                            {t('llmSync.manualSync.button')}
-                        </>
-                    )}
+                    {syncChannel.isPending ? t('llmSync.manualSync.syncing') : t('llmSync.manualSync.button')}
                 </Button>
             </div>
         </div>

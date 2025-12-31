@@ -104,12 +104,6 @@ export function SettingBackup() {
                     className="rounded-xl"
                 />
 
-                {file && (
-                    <div className="text-xs text-muted-foreground">
-                        {t('backup.import.selected')}: {file.name} ({Math.ceil(file.size / 1024)} KB)
-                    </div>
-                )}
-
                 <Button
                     type="button"
                     variant="destructive"

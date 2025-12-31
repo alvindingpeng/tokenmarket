@@ -99,17 +99,7 @@ export function SettingLLMPrice() {
                     disabled={updatePrice.isPending}
                     className="rounded-xl"
                 >
-                    {updatePrice.isPending ? (
-                        <>
-                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                            {t('llmPrice.manualUpdate.updating')}
-                        </>
-                    ) : (
-                        <>
-                            <RefreshCw className="h-4 w-4 mr-2" />
-                            {t('llmPrice.manualUpdate.button')}
-                        </>
-                    )}
+                    {updatePrice.isPending ? t('llmPrice.manualUpdate.updating') : t('llmPrice.manualUpdate.button')}
                 </Button>
             </div>
         </div>
