@@ -197,6 +197,32 @@ export function useDeleteChannel() {
 }
 
 /**
+ * 启用/禁用渠道 Hook
+ * 
+ * @example
+ * const enableChannel = useEnableChannel();
+ * 
+ * enableChannel.mutate({ id: 1, enabled: true }); // 启用 ID 为 1 的渠道
+ * enableChannel.mutate({ id: 1, enabled: false }); // 禁用 ID 为 1 的渠道
+ */
+export function useEnableChannel() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (data: { id: number; enabled: boolean }) => {
+            return apiClient.post<null>('/api/v1/channel/enable', data);
+        },
+        onSuccess: () => {
+            logger.log('渠道状态更新成功');
+            queryClient.invalidateQueries({ queryKey: ['channels', 'list'] });
+        },
+        onError: (error) => {
+            logger.error('渠道状态更新失败:', error);
+        },
+    });
+}
+
+/**
  * 获取渠道模型列表 Hook
  * 
  * @example

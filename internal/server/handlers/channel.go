@@ -32,6 +32,10 @@ func init() {
 				Handle(updateChannel),
 		).
 		AddRoute(
+			router.NewRoute("/enable", http.MethodPost).
+				Handle(enableChannel),
+		).
+		AddRoute(
 			router.NewRoute("/delete/:id", http.MethodDelete).
 				Handle(deleteChannel),
 		).
@@ -96,6 +100,22 @@ func updateChannel(c *gin.Context) {
 	worker.CheckAndAddLLMPrice(channel.Model, channel.CustomModel)
 	worker.AutoGroup(channel.ID, channel.Name, channel.Model, channel.CustomModel, channel.AutoGroup)
 	resp.Success(c, channel)
+}
+
+func enableChannel(c *gin.Context) {
+	var request struct {
+		ID      int  `json:"id"`
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	if err := op.ChannelEnabled(request.ID, request.Enabled, c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, nil)
 }
 
 func deleteChannel(c *gin.Context) {

@@ -378,12 +378,12 @@
     },
     "channel": {
         "card": {
-            "status": {
-                "enabled": "Enabled",
-                "disabled": "Disabled"
-            },
             "requestCount": "Requests",
-            "totalCost": "Total Cost"
+            "totalCost": "Total Cost",
+            "toast": {
+                "enabled": "Channel enabled",
+                "disabled": "Channel disabled"
+            }
         },
         "detail": {
             "title": {

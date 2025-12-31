@@ -378,12 +378,12 @@
     },
     "channel": {
         "card": {
-            "status": {
-                "enabled": "启用",
-                "disabled": "禁用"
-            },
             "requestCount": "请求次数",
-            "totalCost": "总成本"
+            "totalCost": "总成本",
+            "toast": {
+                "enabled": "渠道已启用",
+                "disabled": "渠道已禁用"
+            }
         },
         "detail": {
             "title": {
