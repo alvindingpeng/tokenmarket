@@ -2,13 +2,20 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { KeyRound, Plus, Loader, Copy, Trash2, Check, X, Info, CalendarDays, Pencil } from 'lucide-react';
+import { KeyRound, Plus, Loader, Copy, Trash2, Check, X, Info, CalendarDays, Pencil, Maximize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Input } from '@/components/ui/input';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import {
+    MorphingDialog,
+    MorphingDialogContainer,
+    MorphingDialogContent,
+    MorphingDialogTrigger,
+    useMorphingDialog,
+} from '@/components/ui/morphing-dialog';
 import {
     useAPIKeyList,
     useCreateAPIKey,
@@ -255,7 +262,7 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
                         disabled={isPending}
                         aria-pressed={neverExpire}
                         className={cn(
-                            'h-9 px-3 rounded-xl border text-sm transition-colors',
+                            'h-9 px-3 rounded-xl border text-sm transition-colors whitespace-nowrap shrink-0',
                             neverExpire
                                 ? 'bg-primary text-primary-foreground border-primary/30'
                                 : 'border-border bg-muted/20 text-foreground hover:bg-muted/30',
@@ -336,88 +343,39 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
     );
 }
 
-function APIKeyAddOverlay({
-    layoutId,
-    onClose,
-}: {
-    layoutId: string;
-    onClose: () => void;
-}) {
-    const t = useTranslations('setting');
-    const createAPIKey = useCreateAPIKey();
-
-    const handleSubmit = useCallback((data: Omit<APIKey, 'id' | 'api_key'>) => {
-        createAPIKey.mutate(data, {
-            onSuccess: () => {
-                toast.success(t('apiKey.toast.createSuccess'));
-                onClose();
-            },
-            onError: (error) => {
-                const msg = (error as unknown as ApiError)?.message;
-                toast.error(t('apiKey.toast.createError'), { description: msg });
-            },
-        });
-    }, [createAPIKey, onClose, t]);
-
-    return (
-        <motion.div
-            layoutId={layoutId}
-            className="absolute inset-x-0 top-0 z-20 bg-card p-5 rounded-3xl border border-border custom-shadow"
-            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-        >
-            <APIKeyForm
-                isPending={createAPIKey.isPending}
-                submitLabel={t('apiKey.form.create')}
-                onSubmit={handleSubmit}
-                onClose={onClose}
-            />
-        </motion.div>
-    );
-}
-
-function APIKeyEditOverlay({
+function APIKeyFormOverlay({
     layoutId,
     apiKey,
+    isPending,
+    submitLabel,
+    onSubmit,
     onClose,
 }: {
     layoutId: string;
-    apiKey: APIKey;
+    apiKey?: APIKey;
+    isPending: boolean;
+    submitLabel: string;
+    onSubmit: (data: Omit<APIKey, 'id' | 'api_key'>) => void;
     onClose: () => void;
 }) {
-    const t = useTranslations('setting');
-    const updateAPIKey = useUpdateAPIKey();
-
-    const handleSubmit = useCallback((data: Omit<APIKey, 'id' | 'api_key'>) => {
-        updateAPIKey.mutate({ id: apiKey.id, ...data }, {
-            onSuccess: () => {
-                toast.success(t('apiKey.toast.updateSuccess'));
-                onClose();
-            },
-            onError: (error) => {
-                const msg = (error as unknown as ApiError)?.message;
-                toast.error(t('apiKey.toast.updateError'), { description: msg });
-            },
-        });
-    }, [updateAPIKey, apiKey.id, onClose, t]);
-
     return (
         <motion.div
             layoutId={layoutId}
-            className="absolute inset-x-0 top-0 z-20 bg-card p-5 rounded-3xl border border-border custom-shadow"
+            className="absolute left-1/2 top-1/2 z-20 w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 bg-card p-5 rounded-3xl border border-border custom-shadow max-h-[80vh] overflow-auto"
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
         >
             <APIKeyForm
                 apiKey={apiKey}
-                isPending={updateAPIKey.isPending}
-                submitLabel={t('apiKey.form.save')}
-                onSubmit={handleSubmit}
+                isPending={isPending}
+                submitLabel={submitLabel}
+                onSubmit={onSubmit}
                 onClose={onClose}
             />
         </motion.div>
     );
 }
 
-function APIKeyStatsOverlay({
+function APIKeyStatsCard({
     layoutId,
     apiKey,
     onClose,
@@ -433,7 +391,7 @@ function APIKeyStatsOverlay({
     return (
         <motion.div
             layoutId={layoutId}
-            className="absolute inset-x-0 top-0 z-30 flex flex-col bg-card p-5 rounded-3xl border border-border custom-shadow"
+            className="absolute left-1/2 top-1/2 z-30 w-[min(320px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex flex-col bg-card p-5 rounded-3xl border border-border custom-shadow max-h-[80vh] overflow-auto"
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
         >
             <div className="flex items-center justify-between gap-2 mb-3">
@@ -501,10 +459,11 @@ function APIKeyStatsOverlay({
     );
 }
 
-function KeyItem({
+function APIKeyKeyItem({
     apiKey,
     statsLayoutId,
     editLayoutId,
+    deleteLayoutId,
     onViewStats,
     onEdit,
     onDelete,
@@ -513,6 +472,7 @@ function KeyItem({
     apiKey: APIKey;
     statsLayoutId: string;
     editLayoutId: string;
+    deleteLayoutId: string;
     onViewStats: () => void;
     onEdit: () => void;
     onDelete: () => void;
@@ -613,7 +573,7 @@ function KeyItem({
 
                 {!confirmDelete && (
                     <motion.button
-                        layoutId={`delete-btn-${apiKey.id}`}
+                        layoutId={deleteLayoutId}
                         onClick={() => setConfirmDelete(true)}
                         className="flex h-8 w-8 items-center justify-center rounded-lg bg-destructive/10 text-destructive transition-colors hover:bg-destructive hover:text-destructive-foreground"
                     >
@@ -625,7 +585,7 @@ function KeyItem({
             <AnimatePresence>
                 {confirmDelete && (
                     <motion.div
-                        layoutId={`delete-btn-${apiKey.id}`}
+                        layoutId={deleteLayoutId}
                         className="absolute inset-0 flex items-center justify-center gap-2 bg-destructive p-3 rounded-xl"
                         transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                     >
@@ -650,16 +610,31 @@ function KeyItem({
     );
 }
 
-export function SettingAPIKey() {
+function APIKeyPanelBase({
+    idPrefix,
+    containerClassName,
+    listClassName,
+    renderHeaderExtra,
+}: {
+    idPrefix: string;
+    containerClassName: string;
+    listClassName: string;
+    renderHeaderExtra?: (ctx: {
+        disabled: boolean;
+        onCloseAllOverlays: () => void;
+    }) => React.ReactNode;
+}) {
     const t = useTranslations('setting');
     const { data: apiKeys, isLoading: apiKeysLoading, error: apiKeysError } = useAPIKeyList();
     const createAPIKey = useCreateAPIKey();
+    const updateAPIKey = useUpdateAPIKey();
     const deleteAPIKey = useDeleteAPIKey();
 
     const instanceId = useId();
-    const addLayoutId = `add-btn-apikey-${instanceId}`;
-    const statsPrefix = `apikey-stats-${instanceId}`;
-    const editPrefix = `apikey-edit-${instanceId}`;
+    const addLayoutId = `add-btn-${idPrefix}-${instanceId}`;
+    const statsPrefix = `${idPrefix}-stats-${instanceId}`;
+    const editPrefix = `${idPrefix}-edit-${instanceId}`;
+    const deletePrefix = `${idPrefix}-delete-`;
 
     const [isAdding, setIsAdding] = useState(false);
     const [viewingStats, setViewingStats] = useState<{ apiKey: APIKey; layoutId: string } | null>(null);
@@ -691,29 +666,63 @@ export function SettingAPIKey() {
         setEditingKey(null);
     }, []);
 
+    const disabledHeaderActions = createAPIKey.isPending || isAdding || !!viewingStats || !!editingKey;
+
+    const handleCreate = useCallback((data: Omit<APIKey, 'id' | 'api_key'>) => {
+        createAPIKey.mutate(data, {
+            onSuccess: () => {
+                toast.success(t('apiKey.toast.createSuccess'));
+                setIsAdding(false);
+            },
+            onError: (error) => {
+                const msg = (error as unknown as ApiError)?.message;
+                toast.error(t('apiKey.toast.createError'), { description: msg });
+            },
+        });
+    }, [createAPIKey, t]);
+
+    const handleUpdate = useCallback((apiKey: APIKey, data: Omit<APIKey, 'id' | 'api_key'>) => {
+        updateAPIKey.mutate({ id: apiKey.id, ...data }, {
+            onSuccess: () => {
+                toast.success(t('apiKey.toast.updateSuccess'));
+                setEditingKey(null);
+            },
+            onError: (error) => {
+                const msg = (error as unknown as ApiError)?.message;
+                toast.error(t('apiKey.toast.updateError'), { description: msg });
+            },
+        });
+    }, [t, updateAPIKey]);
+
     return (
-        <div className="rounded-3xl border border-border bg-card p-6 custom-shadow space-y-5 relative">
+        <div className={containerClassName}>
             <div className="flex items-center justify-between gap-3">
                 <h2 className="text-lg font-bold text-card-foreground flex items-center gap-2">
                     <KeyRound className="h-5 w-5" />
                     {t('apiKey.title')}
                 </h2>
-                <motion.button
-                    layoutId={addLayoutId}
-                    type="button"
-                    onClick={() => setIsAdding(true)}
-                    disabled={createAPIKey.isPending || isAdding || !!viewingStats || !!editingKey}
-                    className="h-9 w-9 flex items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
-                    title={t('apiKey.add') ?? '添加'}
-                >
-                    <Plus className="h-4 w-4" />
-                </motion.button>
+                <div className="flex items-center gap-2">
+                    <motion.button
+                        layoutId={addLayoutId}
+                        type="button"
+                        onClick={() => setIsAdding(true)}
+                        disabled={disabledHeaderActions}
+                        className="h-9 w-9 flex items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                        title={t('apiKey.add')}
+                    >
+                        <Plus className="h-4 w-4" />
+                    </motion.button>
+                    {renderHeaderExtra?.({ disabled: disabledHeaderActions, onCloseAllOverlays: closeAllOverlays })}
+                </div>
             </div>
 
             <AnimatePresence>
                 {isAdding && (
-                    <APIKeyAddOverlay
+                    <APIKeyFormOverlay
                         layoutId={addLayoutId}
+                        isPending={createAPIKey.isPending}
+                        submitLabel={t('apiKey.form.create')}
+                        onSubmit={handleCreate}
                         onClose={() => setIsAdding(false)}
                     />
                 )}
@@ -721,7 +730,7 @@ export function SettingAPIKey() {
 
             <AnimatePresence>
                 {viewingStats && (
-                    <APIKeyStatsOverlay
+                    <APIKeyStatsCard
                         layoutId={viewingStats.layoutId}
                         apiKey={viewingStats.apiKey}
                         onClose={() => setViewingStats(null)}
@@ -731,15 +740,18 @@ export function SettingAPIKey() {
 
             <AnimatePresence>
                 {editingKey && (
-                    <APIKeyEditOverlay
+                    <APIKeyFormOverlay
                         layoutId={editingKey.layoutId}
                         apiKey={editingKey.apiKey}
+                        isPending={updateAPIKey.isPending}
+                        submitLabel={t('apiKey.form.save')}
+                        onSubmit={(data) => handleUpdate(editingKey.apiKey, data)}
                         onClose={() => setEditingKey(null)}
                     />
                 )}
             </AnimatePresence>
 
-            <div className="space-y-2 h-32 overflow-y-auto">
+            <div className={listClassName}>
                 {apiKeysLoading ? (
                     <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
                         <Loader className="h-4 w-4 animate-spin" />
@@ -757,12 +769,14 @@ export function SettingAPIKey() {
                         {sortedApiKeys.map((apiKey) => {
                             const statsLayoutId = `${statsPrefix}-${apiKey.id}`;
                             const editLayoutId = `${editPrefix}-${apiKey.id}`;
+                            const deleteLayoutId = `${deletePrefix}${apiKey.id}`;
                             return (
-                                <KeyItem
+                                <APIKeyKeyItem
                                     key={apiKey.id}
                                     apiKey={apiKey}
                                     statsLayoutId={statsLayoutId}
                                     editLayoutId={editLayoutId}
+                                    deleteLayoutId={deleteLayoutId}
                                     onViewStats={() => {
                                         closeAllOverlays();
                                         setViewingStats({ apiKey, layoutId: statsLayoutId });
@@ -780,5 +794,48 @@ export function SettingAPIKey() {
                 )}
             </div>
         </div>
+    );
+}
+
+function APIKeyDialogPanel() {
+    const { setIsOpen } = useMorphingDialog();
+    return (
+        <APIKeyPanelBase
+            idPrefix="apikey-dialog"
+            containerClassName="rounded-3xl border border-border bg-card p-6 space-y-5 relative w-screen max-w-full md:max-w-xl"
+            listClassName="space-y-2 max-h-[70vh] overflow-y-auto"
+            renderHeaderExtra={() => (
+                <button
+                    type="button"
+                    onClick={() => setIsOpen(false)}
+                    className="h-9 w-9 flex items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors hover:bg-muted"
+                    title="Close"
+                >
+                    <X className="h-4 w-4" />
+                </button>
+            )}
+        />
+    );
+}
+
+export function SettingAPIKey() {
+    return (
+        <APIKeyPanelBase
+            idPrefix="apikey"
+            containerClassName="rounded-3xl border border-border bg-card p-6 custom-shadow space-y-5 relative"
+            listClassName="space-y-2 h-32 overflow-y-auto"
+            renderHeaderExtra={() => (
+                <MorphingDialog>
+                    <MorphingDialogTrigger className="h-9 w-9 flex items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors hover:bg-muted">
+                        <Maximize2 className="h-4 w-4" />
+                    </MorphingDialogTrigger>
+                    <MorphingDialogContainer>
+                        <MorphingDialogContent className="relative">
+                            <APIKeyDialogPanel />
+                        </MorphingDialogContent>
+                    </MorphingDialogContainer>
+                </MorphingDialog>
+            )}
+        />
     );
 }

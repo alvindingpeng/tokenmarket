@@ -113,6 +113,23 @@ function MorphingDialogTrigger({
     [isOpen, setIsOpen]
   );
 
+  // Important: when dialog is open, framer-motion shared-layout can temporarily
+  // "flash" the trigger back into its original position during internal re-layouts.
+  // To make this robust, we render a non-motion placeholder (still in layout flow)
+  // instead of the motion trigger while open.
+  if (isOpen) {
+    return (
+      <div
+        ref={triggerRefProp ?? triggerRef}
+        className={cn('relative', className)}
+        style={{ ...style, visibility: 'hidden', pointerEvents: 'none' }}
+        aria-hidden
+      >
+        {children}
+      </div>
+    );
+  }
+
   return (
     <motion.div
       ref={triggerRefProp ?? triggerRef}
@@ -209,6 +226,13 @@ function MorphingDialogContent({
       }
       const openSelectContent = document.querySelector('[data-slot="select-content"]');
       if (openSelectContent) {
+        return true;
+      }
+      if (target?.closest('[data-slot="popover-content"]')) {
+        return true;
+      }
+      const openPopoverContent = document.querySelector('[data-slot="popover-content"]');
+      if (openPopoverContent) {
         return true;
       }
       return false;
