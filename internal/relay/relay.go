@@ -5,14 +5,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/client"
-	dbmodel "github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/relay/balancer"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
@@ -23,44 +20,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/tmaxmax/go-sse"
 )
-
-const defaultMaxSSEEventSize = 2 * 1024 * 1024
-
-func maxSSEEventSize() int {
-	if raw := strings.TrimSpace(os.Getenv("SWITCHYARD_RELAY_MAX_SSE_EVENT_SIZE")); raw != "" {
-		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
-			return v
-		}
-	}
-	return defaultMaxSSEEventSize
-}
-
-// hopByHopHeaders 定义不应转发的 HTTP 头
-var hopByHopHeaders = map[string]bool{
-	"authorization":       true,
-	"x-api-key":           true,
-	"connection":          true,
-	"keep-alive":          true,
-	"proxy-authenticate":  true,
-	"proxy-authorization": true,
-	"te":                  true,
-	"trailer":             true,
-	"transfer-encoding":   true,
-	"upgrade":             true,
-	"content-length":      true,
-	"host":                true,
-	"accept-encoding":     true,
-}
-
-// relayContext 保存请求转发过程中的上下文信息
-type relayContext struct {
-	c               *gin.Context
-	inAdapter       model.Inbound
-	outAdapter      model.Outbound
-	internalRequest *model.InternalLLMRequest
-	channel         *dbmodel.Channel
-	metrics         *RelayMetrics
-}
 
 // Handler 处理入站请求并转发到上游服务
 func Handler(inboundType inbound.InboundType, c *gin.Context) {
@@ -273,7 +232,7 @@ func (rc *relayContext) handleStreamResponse(ctx context.Context, response *http
 	rc.c.Header("X-Accel-Buffering", "no")
 
 	firstToken := true
-	readCfg := &sse.ReadConfig{MaxEventSize: maxSSEEventSize()}
+	readCfg := &sse.ReadConfig{MaxEventSize: maxSSEEventSize}
 	for ev, err := range sse.Read(response.Body, readCfg) {
 		// 检查客户端是否断开
 		select {
