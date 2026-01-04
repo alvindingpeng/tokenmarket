@@ -13,6 +13,8 @@ body:
           required: true
         - label: 如果是前端问题，我已在无痕模式（禁用所有扩展）下复现，问题仍然存在
           required: true
+        - label: 此Issue仅包含一个Bug反馈，而不是多个Bug反馈
+          required: true
   - type: textarea
     attributes:
       label: 问题描述
