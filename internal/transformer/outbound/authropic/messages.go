@@ -427,12 +427,38 @@ func convertToolMessage(msg model.Message, allMessages []model.Message, processe
 		contentBlocks = append(contentBlocks, convertToolResultBlock(tm))
 	}
 
+	// Merge the associated user message content (if any) into the same Anthropic user message.
+	// In Anthropic Messages, tool_result blocks live inside a user message's content array.
+	// Our internal format represents tool results as separate "tool" role messages, but the
+	// original Anthropic request may also include additional user content alongside tool_result.
+	if userMsg := findUserMessageByIndex(allMessages, *msg.MessageIndex); userMsg != nil {
+		userContent := buildMessageContent(*userMsg)
+		if len(userContent.MultipleContent) > 0 {
+			contentBlocks = append(contentBlocks, userContent.MultipleContent...)
+		} else if userContent.Content != nil && *userContent.Content != "" {
+			contentBlocks = append(contentBlocks, anthropicModel.MessageContentBlock{
+				Type: "text",
+				Text: userContent.Content,
+			})
+		}
+	}
+
 	processedIndexes[*msg.MessageIndex] = true
 
 	return []anthropicModel.MessageParam{{
 		Role:    "user",
 		Content: anthropicModel.MessageContent{MultipleContent: contentBlocks},
 	}}
+}
+
+func findUserMessageByIndex(allMessages []model.Message, messageIndex int) *model.Message {
+	for i := range allMessages {
+		m := &allMessages[i]
+		if m.Role == "user" && m.MessageIndex != nil && *m.MessageIndex == messageIndex {
+			return m
+		}
+	}
+	return nil
 }
 
 func convertToolResultBlock(msg model.Message) anthropicModel.MessageContentBlock {
