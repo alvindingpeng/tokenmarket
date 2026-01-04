@@ -54,34 +54,31 @@ Download the binary for your platform from [Releases](https://github.com/alvindi
 **Requirements:**
 - Go 1.24.4
 - Node.js 18+
-- npm or pnpm
+- pnpm
 
 ```bash
 # Clone the repository
 git clone https://github.com/alvindingpeng/switchyard.git
 cd switchyard
-
-# 1. Build frontend
-cd web
-
-# Using npm
-npm install
-npm run build
-
-# Or using pnpm
-pnpm install
-pnpm run build
-
-cd ..
-
-# 2. Move frontend assets to static directory
+# Build frontend
+cd web && pnpm install && pnpm run build && cd ..
+# Move frontend assets to static directory
 mv web/out static/
-
-# 3. Start the backend service
-go run . start
+# Start the backend service
+go run main.go start 
 ```
 
 > 💡 **Tip**: The frontend build artifacts are embedded into the Go binary, so you must build the frontend before starting the backend.
+
+**Development Mode**
+
+```bash
+cd web && pnpm install && NEXT_PUBLIC_API_BASE_URL="http://127.0.0.1:8080" pnpm run dev
+## Open a new terminal, start the backend service
+go run main.go start
+## Access the frontend at
+http://localhost:3000
+```
 
 ### 🔐 Default Credentials
 
@@ -170,6 +167,7 @@ All configuration options can be overridden via environment variables using the 
 | `SWITCHYARD_DATABASE_PATH` | `database.path` |
 | `SWITCHYARD_LOG_LEVEL` | `log.level` |
 | `SWITCHYARD_GITHUB_PAT` | For rate limiting when getting the latest version (optional) |
+| `SWITCHYARD_RELAY_MAX_SSE_EVENT_SIZE` | Maximum SSE event size (optional) |
 
 ## 📸 Screenshots
 
@@ -300,6 +298,71 @@ Since the program handles numerous statistics, writing to the database on every 
 - Periodically **batch-written** to the database at the configured interval
 
 > ⚠️ **Important**: When exiting the program, use proper shutdown methods (like `Ctrl+C` or sending `SIGTERM` signal) to ensure in-memory statistics are correctly written to the database. **Do NOT use `kill -9` or other forced termination methods**, as this may result in statistics data loss.
+
+---
+
+## 🔌 Client Integration
+
+### OpenAI SDK
+
+```python
+from openai import OpenAI
+import os
+
+client = OpenAI(   
+    base_url="http://127.0.0.1:8080/v1",   
+    api_key="sk-switchyard-P48ROljwJmWBYVARjwQM8Nkiezlg7WOrXXOWDYY8TI5p9Mzg", 
+)
+completion = client.chat.completions.create(
+    model="switchyard-openai",  # Use the correct group name
+    messages = [
+        {"role": "user", "content": "Hello"},
+    ],
+)
+print(completion.choices[0].message.content)
+```
+
+### Claude Code
+
+Edit `~/.claude/settings.json`
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8080",
+    "ANTHROPIC_AUTH_TOKEN": "sk-switchyard-P48ROljwJmWBYVARjwQM8Nkiezlg7WOrXXOWDYY8TI5p9Mzg",
+    "API_TIMEOUT_MS": "3000000",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "ANTHROPIC_MODEL": "switchyard-sonnet-4-5",
+    "ANTHROPIC_SMALL_FAST_MODEL": "switchyard-haiku-4-5",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "switchyard-sonnet-4-5",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "switchyard-sonnet-4-5",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "switchyard-haiku-4-5"
+  }
+}
+```
+
+### Codex
+
+Edit `~/.codex/config.toml`
+
+```toml
+model = "switchyard-codex" # Use the correct group name
+
+model_provider = "switchyard"
+
+[model_providers.switchyard]
+name = "switchyard"
+base_url = "http://127.0.0.1:8080/v1"
+```
+
+Edit `~/.codex/auth.json`
+
+```json
+{
+  "OPENAI_API_KEY": "sk-switchyard-P48ROljwJmWBYVARjwQM8Nkiezlg7WOrXXOWDYY8TI5p9Mzg"
+}
+```
 
 ---
 

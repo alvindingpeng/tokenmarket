@@ -54,34 +54,31 @@ docker compose up -d
 **环境要求：**
 - Go 1.24.4
 - Node.js 18+
-- npm 或 pnpm
+- pnpm
 
 ```bash
 # 克隆项目
 git clone https://github.com/alvindingpeng/switchyard.git
 cd switchyard
-
-# 1. 构建前端
-cd web
-
-# 使用 npm
-npm install
-npm run build
-
-# 或者使用 pnpm
-pnpm install
-pnpm run build
-
-cd ..
-
-# 2. 移动前端产物到 static 目录
+# 构建前端
+cd web && pnpm install && pnpm run build && cd ..
+# 移动前端产物到 static 目录
 mv web/out static/
-
-# 3. 启动后端服务
-go run . start
+# 启动后端服务
+go run main.go start 
 ```
 
 > 💡 **提示**：前端构建产物会被嵌入到 Go 二进制文件中，所以必须先构建前端再启动后端。
+
+**开发模式**
+
+```bash
+cd web && pnpm install && NEXT_PUBLIC_API_BASE_URL="http://127.0.0.1:8080" pnpm run dev
+## 新建终端,启动后端服务
+go run main.go start
+## 访问前端地址
+http://localhost:3000
+```
 
 ### 🔐 默认账户
 
@@ -170,6 +167,8 @@ go run . start
 | `SWITCHYARD_DATABASE_PATH` | `database.path` |
 | `SWITCHYARD_LOG_LEVEL` | `log.level` |
 | `SWITCHYARD_GITHUB_PAT` | 用于获取最新版本时的速率限制(可选) |
+| `SWITCHYARD_RELAY_MAX_SSE_EVENT_SIZE` | 最大 SSE 事件大小(可选) |
+
 
 ## 📸 界面预览
 
@@ -300,6 +299,72 @@ go run . start
 - 按设定的周期 **定期批量写入** 数据库
 
 > ⚠️ **重要提示**：退出程序时，请使用正常的关闭方式（如 `Ctrl+C` 或发送 `SIGTERM` 信号），以确保内存中的统计数据能正确写入数据库。**请勿使用 `kill -9` 等强制终止方式**，否则可能导致统计数据丢失。
+
+
+
+
+## 🔌 客户端接入
+
+### OpenAI SDK
+
+```python
+from openai import OpenAI
+import os
+
+client = OpenAI(   
+    base_url="http://127.0.0.1:8080/v1",   
+    api_key="sk-switchyard-P48ROljwJmWBYVARjwQM8Nkiezlg7WOrXXOWDYY8TI5p9Mzg", 
+)
+completion = client.chat.completions.create(
+    model="switchyard-openai",  // 填写正确的分组名称
+    messages = [
+        {"role": "user", "content": "Hello"},
+    ],
+)
+print(completion.choices[0].message.content)
+```
+
+### Claude Code
+
+编辑 `~/.claude/settings.json`
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8080",
+    "ANTHROPIC_AUTH_TOKEN": "sk-switchyard-P48ROljwJmWBYVARjwQM8Nkiezlg7WOrXXOWDYY8TI5p9Mzg",
+    "API_TIMEOUT_MS": "3000000",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "ANTHROPIC_MODEL": "switchyard-sonnet-4-5",
+    "ANTHROPIC_SMALL_FAST_MODEL": "switchyard-haiku-4-5",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "switchyard-sonnet-4-5",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "switchyard-sonnet-4-5",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "switchyard-haiku-4-5"
+  }
+}
+```
+
+### Codex
+
+编辑 `~/.codex/config.toml`
+
+```toml
+model = "switchyard-codex" # 填写正确的分组名称
+
+model_provider = "switchyard"
+
+[model_providers.switchyard]
+name = "switchyard"
+base_url = "http://127.0.0.1:8080/v1"
+```
+编辑 `~/.codex/auth.json`
+
+```json
+{
+  "OPENAI_API_KEY": "sk-switchyard-P48ROljwJmWBYVARjwQM8Nkiezlg7WOrXXOWDYY8TI5p9Mzg"
+}
+```
+
 
 ---
 
