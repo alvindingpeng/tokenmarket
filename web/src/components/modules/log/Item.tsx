@@ -219,7 +219,7 @@ export function LogCard({ log }: { log: RelayLog }) {
                     <MorphingDialogDescription className="flex-1 min-h-0">
                         <div className="flex flex-col min-h-0 h-full gap-4">
                             {hasError && (
-                                <div className="basis-1/4 min-h-0 p-2.5 md:p-3 rounded-xl bg-destructive/10 border border-destructive/20 overflow-auto">
+                                <div className="flex-initial max-h-[25%] min-h-0 p-2.5 md:p-3 rounded-xl bg-destructive/10 border border-destructive/20 overflow-auto">
                                     <div className="flex items-center gap-2 mb-1">
                                         <AlertCircle className="size-4 text-destructive shrink-0" />
                                         <span className="text-sm font-medium text-destructive">{t('errorInfo')}</span>
@@ -233,7 +233,7 @@ export function LogCard({ log }: { log: RelayLog }) {
                                     <p className="text-sm text-destructive whitespace-pre-wrap wrap-break-word">{log.error}</p>
                                 </div>
                             )}
-                            <div className={(hasError ? 'basis-3/4' : 'flex-1') + ' min-h-0 overflow-hidden'}>
+                            <div className="flex-1 min-h-0 overflow-hidden">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full min-h-0">
                                     <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
                                         <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-border bg-muted/50 shrink-0">
