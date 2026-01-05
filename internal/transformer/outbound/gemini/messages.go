@@ -242,6 +242,7 @@ func convertLLMToGeminiRequest(request *model.InternalLLMRequest) *model.GeminiG
 							Name: toolCall.Function.Name,
 							Args: args,
 						},
+						ThoughtSignature: "skip_thought_signature_validator",
 					})
 				}
 			}
