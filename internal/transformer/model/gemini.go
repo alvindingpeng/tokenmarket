@@ -6,8 +6,23 @@ type GeminiGenerateContentRequest struct {
 	Contents          []*GeminiContent        `json:"contents"`
 	SystemInstruction *GeminiContent          `json:"system_instruction,omitempty"`
 	Tools             []*GeminiTool           `json:"tools,omitempty"`
+	ToolConfig        *GeminiToolConfig       `json:"toolConfig,omitempty"`
 	GenerationConfig  *GeminiGenerationConfig `json:"generationConfig,omitempty"`
 	SafetySettings    []*GeminiSafetySetting  `json:"safetySettings,omitempty"`
+}
+
+// GeminiToolConfig configures tool/function calling behavior.
+// See Gemini "toolConfig.functionCallingConfig".
+type GeminiToolConfig struct {
+	FunctionCallingConfig *GeminiFunctionCallingConfig `json:"functionCallingConfig,omitempty"`
+}
+
+// GeminiFunctionCallingConfig controls function calling mode and allowed functions.
+type GeminiFunctionCallingConfig struct {
+	// Mode is typically one of: AUTO, ANY, NONE.
+	Mode string `json:"mode,omitempty"`
+	// AllowedFunctionNames restricts which functions can be called when mode is ANY.
+	AllowedFunctionNames []string `json:"allowedFunctionNames,omitempty"`
 }
 
 // GeminiContent represents a message content in Gemini format
