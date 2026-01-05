@@ -200,7 +200,7 @@ export function LogCard({ log }: { log: RelayLog }) {
             </MorphingDialogTrigger>
 
             <MorphingDialogContainer>
-                <MorphingDialogContent className="relative w-[calc(100vw-2rem)] md:w-[80vw] bg-card text-card-foreground px-6 py-4 rounded-3xl custom-shadow max-h-[calc(100vh-2rem)] overflow-y-auto">
+                <MorphingDialogContent className="relative w-[calc(100vw-2rem)] md:w-[80vw] bg-card text-card-foreground px-6 py-4 rounded-3xl custom-shadow h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
                     <MorphingDialogClose className="top-4 right-5 text-muted-foreground hover:text-foreground transition-colors" />
                     <MorphingDialogTitle className="flex items-center gap-2 mb-3 text-sm">
                         <ModelAvatar size={28} />
@@ -216,51 +216,55 @@ export function LogCard({ log }: { log: RelayLog }) {
                         <span className="text-muted-foreground">{log.actual_model_name}</span>
                     </MorphingDialogTitle>
 
-                    <MorphingDialogDescription>
-                        {hasError && (
-                            <div className="mb-4 p-2.5 md:p-3 rounded-xl bg-destructive/10 border border-destructive/20 overflow-y-auto max-h-[120px] md:max-h-[160px]">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <AlertCircle className="size-4 text-destructive shrink-0" />
-                                    <span className="text-sm font-medium text-destructive">{t('errorInfo')}</span>
-                                    <CopyIconButton
-                                        text={log.error ?? ''}
-                                        className="ml-auto p-1 rounded-md text-destructive/60 hover:text-destructive hover:bg-destructive/10 transition-colors"
-                                        copyIconClassName="size-4"
-                                        checkIconClassName="size-4"
-                                    />
+                    <MorphingDialogDescription className="flex-1 min-h-0">
+                        <div className="flex flex-col min-h-0 h-full gap-4">
+                            {hasError && (
+                                <div className="basis-1/4 min-h-0 p-2.5 md:p-3 rounded-xl bg-destructive/10 border border-destructive/20 overflow-auto">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <AlertCircle className="size-4 text-destructive shrink-0" />
+                                        <span className="text-sm font-medium text-destructive">{t('errorInfo')}</span>
+                                        <CopyIconButton
+                                            text={log.error ?? ''}
+                                            className="ml-auto p-1 rounded-md text-destructive/60 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                                            copyIconClassName="size-4"
+                                            checkIconClassName="size-4"
+                                        />
+                                    </div>
+                                    <p className="text-sm text-destructive whitespace-pre-wrap wrap-break-word">{log.error}</p>
                                 </div>
-                                <p className="text-sm text-destructive whitespace-pre-wrap wrap-break-word">{log.error}</p>
-                            </div>
-                        )}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden h-[35vh] md:h-[50vh]">
-                                <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-border bg-muted/50 shrink-0">
-                                    <Send className="size-4 text-green-500" />
-                                    <span className="text-sm font-medium text-card-foreground">{t('requestContent')}</span>
-                                    <Badge variant="secondary" className="ml-auto text-xs">
-                                        {log.input_tokens.toLocaleString()} {t('tokens')}
-                                    </Badge>
-                                </div>
-                                <div className="flex-1 overflow-auto min-h-0">
-                                    <DeferredJsonContent content={log.request_content} fallbackText={t('noRequestContent')} />
-                                </div>
-                            </div>
-                            <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden h-[35vh] md:h-[50vh]">
-                                <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-border bg-muted/50 shrink-0">
-                                    <MessageSquare className="size-4 text-purple-500" />
-                                    <span className="text-sm font-medium text-card-foreground">{t('responseContent')}</span>
-                                    <Badge variant="secondary" className="ml-auto text-xs">
-                                        {log.output_tokens.toLocaleString()} {t('tokens')}
-                                    </Badge>
-                                </div>
-                                <div className="flex-1 overflow-auto min-h-0">
-                                    <DeferredJsonContent content={log.response_content} fallbackText={t('noResponseContent')} />
+                            )}
+                            <div className={(hasError ? 'basis-3/4' : 'flex-1') + ' min-h-0 overflow-hidden'}>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full min-h-0">
+                                    <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
+                                        <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-border bg-muted/50 shrink-0">
+                                            <Send className="size-4 text-green-500" />
+                                            <span className="text-sm font-medium text-card-foreground">{t('requestContent')}</span>
+                                            <Badge variant="secondary" className="ml-auto text-xs">
+                                                {log.input_tokens.toLocaleString()} {t('tokens')}
+                                            </Badge>
+                                        </div>
+                                        <div className="flex-1 overflow-auto min-h-0">
+                                            <DeferredJsonContent content={log.request_content} fallbackText={t('noRequestContent')} />
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
+                                        <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-border bg-muted/50 shrink-0">
+                                            <MessageSquare className="size-4 text-purple-500" />
+                                            <span className="text-sm font-medium text-card-foreground">{t('responseContent')}</span>
+                                            <Badge variant="secondary" className="ml-auto text-xs">
+                                                {log.output_tokens.toLocaleString()} {t('tokens')}
+                                            </Badge>
+                                        </div>
+                                        <div className="flex-1 overflow-auto min-h-0">
+                                            <DeferredJsonContent content={log.response_content} fallbackText={t('noResponseContent')} />
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </MorphingDialogDescription>
 
-                    <div className="flex flex-wrap items-center gap-3 md:gap-4 mt-4 text-xs text-muted-foreground shrink-0">
+                    <div className="flex flex-wrap items-center gap-3 md:gap-4 pt-4 mt-auto text-xs text-muted-foreground shrink-0">
                         <div className="flex items-center gap-1.5">
                             <Clock className="size-3.5" style={{ color: brandColor }} />
                             <span className="tabular-nums">{formatTime(log.time)}</span>
