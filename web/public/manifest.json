@@ -2,9 +2,9 @@
   "name": "Switchyard",
   "short_name": "Switchyard",
   "description": "为个人打造的简单、美观、优雅的 LLM API 聚合与负载均衡服务",
-  "id": "/",
-  "start_url": "/",
-  "scope": "/",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
   "lang": "zh-CN",
   "dir": "ltr",
   "display": "standalone",
@@ -18,19 +18,19 @@
   ],
   "icons": [
     {
-      "src": "/web-app-manifest-192x192.png",
+      "src": "./web-app-manifest-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/web-app-manifest-512x512.png",
+      "src": "./web-app-manifest-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/web-app-manifest-512x512.png",
+      "src": "./web-app-manifest-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
@@ -38,28 +38,28 @@
   ],
   "screenshots": [
     {
-      "src": "/screenshot/desktop-home.png",
+      "src": "./screenshot/desktop-home.png",
       "sizes": "1437x918",
       "type": "image/png",
       "form_factor": "wide",
       "label": "首页仪表盘"
     },
     {
-      "src": "/screenshot/desktop-channel.png",
+      "src": "./screenshot/desktop-channel.png",
       "sizes": "1437x918",
       "type": "image/png",
       "form_factor": "wide",
       "label": "渠道管理"
     },
     {
-      "src": "/screenshot/mobile-home.png",
+      "src": "./screenshot/mobile-home.png",
       "sizes": "1290x2796",
       "type": "image/png",
       "form_factor": "narrow",
       "label": "移动端首页"
     },
     {
-      "src": "/screenshot/mobile-channel.png",
+      "src": "./screenshot/mobile-channel.png",
       "sizes": "1290x2796",
       "type": "image/png",
       "form_factor": "narrow",
@@ -70,10 +70,10 @@
     {
       "name": "渠道管理",
       "short_name": "渠道",
-      "url": "/channel",
+      "url": "./",
       "icons": [
         {
-          "src": "/web-app-manifest-192x192.png",
+          "src": "./web-app-manifest-192x192.png",
           "sizes": "192x192",
           "type": "image/png"
         }
@@ -82,10 +82,10 @@
     {
       "name": "模型价格管理",
       "short_name": "价格",
-      "url": "/model",
+      "url": "./",
       "icons": [
         {
-          "src": "/web-app-manifest-192x192.png",
+          "src": "./web-app-manifest-192x192.png",
           "sizes": "192x192",
           "type": "image/png"
         }
@@ -94,10 +94,10 @@
     {
       "name": "分组管理",
       "short_name": "分组",
-      "url": "/group",
+      "url": "./",
       "icons": [
         {
-          "src": "/web-app-manifest-192x192.png",
+          "src": "./web-app-manifest-192x192.png",
           "sizes": "192x192",
           "type": "image/png"
         }

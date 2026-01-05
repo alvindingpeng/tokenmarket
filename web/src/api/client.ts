@@ -1,7 +1,7 @@
 import type { ApiError } from './types';
 import { HttpStatus } from './types';
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '.';
 
 /**
  * 获取认证 Store（延迟导入以避免循环依赖）
