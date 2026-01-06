@@ -86,12 +86,13 @@ func createChannel(c *gin.Context) {
 }
 
 func updateChannel(c *gin.Context) {
-	var channel model.Channel
-	if err := c.ShouldBindJSON(&channel); err != nil {
+	var req model.ChannelUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
-	if err := op.ChannelUpdate(&channel, c.Request.Context()); err != nil {
+	channel, err := op.ChannelUpdate(&req, c.Request.Context())
+	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
