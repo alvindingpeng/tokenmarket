@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alvindingpeng/switchyard/internal/db/migrate"
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/glebarez/sqlite"
 	"gorm.io/driver/mysql"
@@ -47,9 +48,13 @@ func InitDB(dbType, dsn string, debug bool) error {
 	sqlDB.SetConnMaxLifetime(time.Hour)
 	sqlDB.SetConnMaxIdleTime(10 * time.Minute)
 
-	return db.AutoMigrate(
+	if err := migrate.BeforeAutoMigrate(db); err != nil {
+		return err
+	}
+	if err := db.AutoMigrate(
 		&model.User{},
 		&model.Channel{},
+		&model.ChannelKey{},
 		&model.Group{},
 		&model.GroupItem{},
 		&model.LLMInfo{},
@@ -62,7 +67,20 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.StatsChannel{},
 		&model.StatsAPIKey{},
 		&model.RelayLog{},
-	)
+		&migrate.MigrationRecord{},
+	); err != nil {
+		return err
+	}
+	if err := migrate.AfterAutoMigrate(db); err != nil {
+		return err
+	}
+	// Postgres: schema changes during migrations can invalidate cached prepared plans
+	// (e.g. "cached plan must not change result type"). Clear them.
+	if db.Dialector != nil && db.Dialector.Name() == "postgres" {
+		db.Exec("DEALLOCATE ALL")
+		db.Exec("DISCARD ALL")
+	}
+	return nil
 }
 
 func initSQLite(path string, config *gorm.Config) (*gorm.DB, error) {
