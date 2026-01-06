@@ -16,6 +16,11 @@ export function StatsChart() {
     const [period, setPeriod] = useState<typeof PERIODS[number]>('1');
     const t = useTranslations('home.chart');
 
+    const sortedDaily = useMemo(() => {
+        if (!statsDaily) return [];
+        return [...statsDaily].sort((a, b) => a.date.localeCompare(b.date));
+    }, [statsDaily]);
+
     const chartData = useMemo(() => {
         if (period === '1') {
             if (!statsHourly) return [];
@@ -26,16 +31,15 @@ export function StatsChart() {
                 };
             });
         } else {
-            if (!statsDaily) return [];
             const days = parseInt(period);
-            return statsDaily.slice(-days).map((stat) => {
+            return sortedDaily.slice(-days).map((stat) => {
                 return {
                     date: dayjs(stat.date).format('MM/DD'),
                     total_cost: stat.total_cost.raw,
                 };
             });
         }
-    }, [statsDaily, statsHourly, period]);
+    }, [sortedDaily, statsHourly, period]);
 
     const totals = useMemo(() => {
         if (period === '1') {
@@ -45,15 +49,14 @@ export function StatsChart() {
                 cost: statsHourly.reduce((acc, stat) => acc + stat.total_cost.raw, 0),
             };
         } else {
-            if (!statsDaily) return { requests: 0, cost: 0 };
             const days = parseInt(period);
-            const recentStats = statsDaily.slice(-days);
+            const recentStats = sortedDaily.slice(-days);
             return {
                 requests: recentStats.reduce((acc, stat) => acc + stat.request_success.raw + stat.request_failed.raw, 0),
                 cost: recentStats.reduce((acc, stat) => acc + stat.total_cost.raw, 0),
             };
         }
-    }, [statsDaily, statsHourly, period]);
+    }, [sortedDaily, statsHourly, period]);
 
     const chartConfig = {
         total_cost: { label: t('totalCost') },
