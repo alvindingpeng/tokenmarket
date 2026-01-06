@@ -1,4 +1,4 @@
-import { AutoGroupType, ChannelType, useFetchModel } from '@/api/endpoints/channel';
+import { AutoGroupType, ChannelType, type Channel, useFetchModel } from '@/api/endpoints/channel';
 import {
     Select,
     SelectContent,
@@ -12,14 +12,26 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/common/Toast';
 import { useTranslations } from 'next-intl';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { RefreshCw, X, Plus } from 'lucide-react';
+
+export interface ChannelKeyFormItem {
+    id?: number;
+    enabled: boolean;
+    channel_key: string;
+    status_code?: number;
+    last_use_time_stamp?: number;
+    total_cost?: number;
+}
 
 export interface ChannelFormData {
     name: string;
     type: ChannelType;
-    base_url: string;
-    key: string;
+    base_urls: Channel['base_urls'];
+    custom_header: Channel['custom_header'];
+    channel_proxy: string;
+    param_override: string;
+    keys: ChannelKeyFormItem[];
     model: string;
     custom_model: string;
     enabled: boolean;
@@ -40,6 +52,13 @@ export interface ChannelFormProps {
     idPrefix?: string;
 }
 
+import {
+    Accordion,
+    AccordionContent,
+    AccordionItem,
+    AccordionTrigger,
+} from "@/components/ui/accordion";
+
 export function ChannelForm({
     formData,
     onFormDataChange,
@@ -53,6 +72,22 @@ export function ChannelForm({
 }: ChannelFormProps) {
     const t = useTranslations('channel.form');
 
+    // Ensure the form always shows at least 1 row for base_urls / keys / custom_header.
+    // This avoids "empty list" UI and also keeps URL + APIKEY layout consistent.
+    useEffect(() => {
+        if (!formData.base_urls || formData.base_urls.length === 0) {
+            onFormDataChange({ ...formData, base_urls: [{ url: '', delay: 0 }] });
+            return;
+        }
+        if (!formData.keys || formData.keys.length === 0) {
+            onFormDataChange({ ...formData, keys: [{ enabled: true, channel_key: '' }] });
+            return;
+        }
+        if (!formData.custom_header || formData.custom_header.length === 0) {
+            onFormDataChange({ ...formData, custom_header: [{ header_key: '', header_value: '' }] });
+        }
+    }, [formData, onFormDataChange]);
+
     const autoModels = formData.model
         ? formData.model.split(',').map((m) => m.trim()).filter(Boolean)
         : [];
@@ -64,6 +99,9 @@ export function ChannelForm({
 
     const fetchModel = useFetchModel();
 
+    const effectiveKey =
+        formData.keys.find((k) => k.enabled && k.channel_key.trim())?.channel_key.trim() || '';
+
     const updateModels = (nextAuto: string[], nextCustom: string[]) => {
         const model = nextAuto.join(',');
         const custom_model = nextCustom.join(',');
@@ -72,15 +110,14 @@ export function ChannelForm({
     };
 
     const handleRefreshModels = async () => {
-        if (!formData.base_url || !formData.key) return;
+        if (!formData.base_urls?.[0]?.url || !effectiveKey) return;
         fetchModel.mutate(
             {
-                name: formData.name,
                 type: formData.type,
-                base_url: formData.base_url,
-                key: formData.key,
-                model: formData.model,
-                enabled: formData.enabled,
+                base_urls: formData.base_urls,
+                keys: formData.keys
+                    .filter((k) => k.channel_key.trim())
+                    .map((k) => ({ enabled: k.enabled, channel_key: k.channel_key.trim() })),
                 proxy: formData.proxy,
             },
             {
@@ -124,72 +161,192 @@ export function ChannelForm({
         }
     };
 
+    const handleAddKey = () => {
+        onFormDataChange({
+            ...formData,
+            keys: [...formData.keys, { enabled: true, channel_key: '' }],
+        });
+    };
+
+    const handleUpdateKey = (idx: number, patch: Partial<ChannelKeyFormItem>) => {
+        const next = formData.keys.map((k, i) => (i === idx ? { ...k, ...patch } : k));
+        onFormDataChange({ ...formData, keys: next });
+    };
+
+    const handleRemoveKey = (idx: number) => {
+        const curr = formData.keys ?? [];
+        if (curr.length <= 1) return;
+        const next = curr.filter((_, i) => i !== idx);
+        onFormDataChange({ ...formData, keys: next });
+    };
+
+    const handleAddBaseUrl = () => {
+        onFormDataChange({
+            ...formData,
+            base_urls: [...(formData.base_urls ?? []), { url: '', delay: 0 }],
+        });
+    };
+
+    const handleUpdateBaseUrl = (idx: number, patch: Partial<Channel['base_urls'][number]>) => {
+        const next = (formData.base_urls ?? []).map((u, i) => (i === idx ? { ...u, ...patch } : u));
+        onFormDataChange({ ...formData, base_urls: next });
+    };
+
+    const handleRemoveBaseUrl = (idx: number) => {
+        const curr = formData.base_urls ?? [];
+        if (curr.length <= 1) return;
+        onFormDataChange({ ...formData, base_urls: curr.filter((_, i) => i !== idx) });
+    };
+
+    const handleAddHeader = () => {
+        onFormDataChange({
+            ...formData,
+            custom_header: [...(formData.custom_header ?? []), { header_key: '', header_value: '' }],
+        });
+    };
+
+    const handleUpdateHeader = (idx: number, patch: Partial<Channel['custom_header'][number]>) => {
+        const next = (formData.custom_header ?? []).map((h, i) => (i === idx ? { ...h, ...patch } : h));
+        onFormDataChange({ ...formData, custom_header: next });
+    };
+
+    const handleRemoveHeader = (idx: number) => {
+        const curr = formData.custom_header ?? [];
+        if (curr.length <= 1) return;
+        onFormDataChange({ ...formData, custom_header: curr.filter((_, i) => i !== idx) });
+    };
+
     return (
-        <form onSubmit={onSubmit} className="space-y-5 px-1">
-            <div className="space-y-2">
-                <label htmlFor={`${idPrefix}-name`} className="text-sm font-medium text-card-foreground">
-                    {t('name')}
-                </label>
-                <Input
-                    className='rounded-xl'
-                    id={`${idPrefix}-name`}
-                    type="text"
-                    value={formData.name}
-                    onChange={(event) => onFormDataChange({ ...formData, name: event.target.value })}
-                    required
-                />
+        <form onSubmit={onSubmit} className="space-y-4 px-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                    <label htmlFor={`${idPrefix}-name`} className="text-sm font-medium text-card-foreground">
+                        {t('name')}
+                    </label>
+                    <Input
+                        className='rounded-xl'
+                        id={`${idPrefix}-name`}
+                        type="text"
+                        value={formData.name}
+                        onChange={(event) => onFormDataChange({ ...formData, name: event.target.value })}
+                        required
+                    />
+                </div>
+
+                <div className="space-y-2">
+                    <label htmlFor={`${idPrefix}-type`} className="text-sm font-medium text-card-foreground">
+                        {t('type')}
+                    </label>
+                    <Select
+                        value={String(formData.type)}
+                        onValueChange={(value) => onFormDataChange({ ...formData, type: Number(value) as ChannelType })}
+                    >
+                        <SelectTrigger id={`${idPrefix}-type`} className="rounded-xl w-full border border-border px-4 py-2 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className='rounded-xl'>
+                            <SelectItem className='rounded-xl' value={String(ChannelType.OpenAIChat)}>{t('typeOpenAIChat')}</SelectItem>
+                            <SelectItem className='rounded-xl' value={String(ChannelType.OpenAIResponse)}>{t('typeOpenAIResponse')}</SelectItem>
+                            <SelectItem className='rounded-xl' value={String(ChannelType.Anthropic)}>{t('typeAnthropic')}</SelectItem>
+                            <SelectItem className='rounded-xl' value={String(ChannelType.Gemini)}>{t('typeGemini')}</SelectItem>
+                            <SelectItem className='rounded-xl' value={String(ChannelType.Volcengine)}>{t('typeVolcengine')}</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
             </div>
 
             <div className="space-y-2">
-                <label htmlFor={`${idPrefix}-type`} className="text-sm font-medium text-card-foreground">
-                    {t('type')}
-                </label>
-                <Select
-                    value={String(formData.type)}
-                    onValueChange={(value) => onFormDataChange({ ...formData, type: Number(value) as ChannelType })}
-                >
-                    <SelectTrigger id={`${idPrefix}-type`} className="rounded-xl w-full border border-border px-4 py-2 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className='rounded-xl'>
-                        <SelectItem className='rounded-xl' value={String(ChannelType.OpenAIChat)}>{t('typeOpenAIChat')}</SelectItem>
-                        <SelectItem className='rounded-xl' value={String(ChannelType.OpenAIResponse)}>{t('typeOpenAIResponse')}</SelectItem>
-                        <SelectItem className='rounded-xl' value={String(ChannelType.Anthropic)}>{t('typeAnthropic')}</SelectItem>
-                        <SelectItem className='rounded-xl' value={String(ChannelType.Gemini)}>{t('typeGemini')}</SelectItem>
-                        <SelectItem className='rounded-xl' value={String(ChannelType.Volcengine)}>{t('typeVolcengine')}</SelectItem>
-                    </SelectContent>
-                </Select>
+                <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-card-foreground">
+                        {t('baseUrls')} {formData.base_urls.length > 0 ? `(${formData.base_urls.length})` : ''}
+                    </label>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleAddBaseUrl}
+                        className="h-6 px-2 text-xs text-muted-foreground/70 hover:text-muted-foreground hover:bg-transparent"
+                    >
+                        <Plus className="h-3 w-3 mr-1" />
+                        {t('add')}
+                    </Button>
+                </div>
+                <div className="space-y-2">
+                    {(formData.base_urls ?? []).map((u, idx) => (
+                        <div key={`baseurl-${idx}`} className="flex items-center gap-2">
+                            <Input
+                                id={`${idPrefix}-base-${idx}`}
+                                type="url"
+                                value={u.url}
+                                onChange={(e) => handleUpdateBaseUrl(idx, { url: e.target.value })}
+                                placeholder={t('baseUrlUrl')}
+                                required={idx === 0}
+                                className="rounded-xl flex-1"
+                            />
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRemoveBaseUrl(idx)}
+                                disabled={(formData.base_urls ?? []).length <= 1}
+                                className="h-8 w-8 p-0 rounded-xl text-muted-foreground hover:text-destructive disabled:opacity-40 hover:bg-transparent"
+                                title="Remove"
+                            >
+                                <X className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    ))}
+                </div>
             </div>
 
             <div className="space-y-2">
-                <label htmlFor={`${idPrefix}-base`} className="text-sm font-medium text-card-foreground">
-                    {t('baseUrl')}
-                </label>
-                <Input
-                    id={`${idPrefix}-base`}
-                    type="url"
-                    value={formData.base_url}
-                    onChange={(event) => onFormDataChange({ ...formData, base_url: event.target.value })}
-                    required
-                    className='rounded-xl'
-                />
+                <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-card-foreground">
+                        {t('apiKey')} {formData.keys.length > 0 ? `(${formData.keys.length})` : ''}
+                    </label>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleAddKey}
+                        className="h-6 px-2 text-xs text-muted-foreground/70 hover:text-muted-foreground hover:bg-transparent"
+                    >
+                        <Plus className="h-3 w-3 mr-1" />
+                        {t('add')}
+                    </Button>
+                </div>
+                <div className="space-y-2">
+                    {(formData.keys ?? []).map((k, idx) => (
+                        <div key={k.id ?? `new-${idx}`} className="flex items-center gap-2">
+                            <Input
+                                type="text"
+                                value={k.channel_key}
+                                onChange={(e) => handleUpdateKey(idx, { channel_key: e.target.value })}
+                                placeholder={t('apiKey')}
+                                required={idx === 0}
+                                className="rounded-xl"
+                            />
+                            <Switch
+                                checked={k.enabled}
+                                onCheckedChange={(checked) => handleUpdateKey(idx, { enabled: checked })}
+                            />
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRemoveKey(idx)}
+                                disabled={(formData.keys ?? []).length <= 1}
+                                className="h-8 w-8 p-0 rounded-xl text-muted-foreground hover:text-destructive hover:bg-transparent disabled:opacity-40"
+                                title="Remove"
+                            >
+                                <X className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    ))}
+                </div>
             </div>
 
             <div className="space-y-2">
-                <label htmlFor={`${idPrefix}-key`} className="text-sm font-medium text-card-foreground">
-                    {t('apiKey')}
-                </label>
-                <Input
-                    id={`${idPrefix}-key`}
-                    type="text"
-                    value={formData.key}
-                    onChange={(event) => onFormDataChange({ ...formData, key: event.target.value })}
-                    required
-                    className='rounded-xl'
-                />
-            </div>
-
-            <div className="space-y-3">
                 <div className="flex items-center justify-between">
                     <label className="text-sm font-medium text-card-foreground">{t('model')}</label>
                     <Button
@@ -197,7 +354,7 @@ export function ChannelForm({
                         variant="ghost"
                         size="sm"
                         onClick={handleRefreshModels}
-                        disabled={!formData.base_url || !formData.key || fetchModel.isPending}
+                        disabled={!formData.base_urls?.[0]?.url || !effectiveKey || fetchModel.isPending}
                         className="h-6 px-2 text-xs text-muted-foreground/50 hover:text-muted-foreground hover:bg-transparent"
                     >
                         <RefreshCw className={`h-3 w-3 mr-1 ${fetchModel.isPending ? 'animate-spin' : ''}`} />
@@ -231,7 +388,7 @@ export function ChannelForm({
                     )}
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                     <div className="flex items-center justify-between">
                         <label className="text-xs font-medium text-card-foreground">
                             {t('modelSelected')} {(autoModels.length + customModels.length) > 0 && `(${autoModels.length + customModels.length})`}
@@ -287,48 +444,137 @@ export function ChannelForm({
                 </div>
             </div>
 
-            <div className="space-y-2">
-                <label htmlFor={`${idPrefix}-auto-group`} className="text-sm font-medium text-card-foreground">
-                    {t('autoGroup')}
-                </label>
-                <Select
-                    value={String(formData.auto_group)}
-                    onValueChange={(value) => onFormDataChange({ ...formData, auto_group: Number(value) as AutoGroupType })}
-                >
-                    <SelectTrigger id={`${idPrefix}-auto-group`} className="rounded-xl w-full border border-border px-4 py-2 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className='rounded-xl'>
-                        <SelectItem className='rounded-xl' value={String(AutoGroupType.None)}>{t('autoGroupNone')}</SelectItem>
-                        <SelectItem className='rounded-xl' value={String(AutoGroupType.Fuzzy)}>{t('autoGroupFuzzy')}</SelectItem>
-                        <SelectItem className='rounded-xl' value={String(AutoGroupType.Exact)}>{t('autoGroupExact')}</SelectItem>
-                        <SelectItem className='rounded-xl' value={String(AutoGroupType.Regex)}>{t('autoGroupRegex')}</SelectItem>
-                    </SelectContent>
-                </Select>
-            </div>
+            <Accordion type="single" collapsible className="w-full border rounded-xl bg-card">
+                <AccordionItem value="advanced" className="border-none">
+                    <AccordionTrigger className="text-sm font-medium text-card-foreground py-3 px-4 hover:no-underline hover:bg-muted/30 rounded-xl transition-colors">
+                        {t('advanced')}
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-4 px-4 pb-4 space-y-4 border-t">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <label htmlFor={`${idPrefix}-auto-group`} className="text-sm font-medium text-card-foreground">
+                                    {t('autoGroup')}
+                                </label>
+                                <Select
+                                    value={String(formData.auto_group)}
+                                    onValueChange={(value) => onFormDataChange({ ...formData, auto_group: Number(value) as AutoGroupType })}
+                                >
+                                    <SelectTrigger id={`${idPrefix}-auto-group`} className="rounded-xl w-full border border-border px-4 py-2 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent className='rounded-xl'>
+                                        <SelectItem className='rounded-xl' value={String(AutoGroupType.None)}>{t('autoGroupNone')}</SelectItem>
+                                        <SelectItem className='rounded-xl' value={String(AutoGroupType.Fuzzy)}>{t('autoGroupFuzzy')}</SelectItem>
+                                        <SelectItem className='rounded-xl' value={String(AutoGroupType.Exact)}>{t('autoGroupExact')}</SelectItem>
+                                        <SelectItem className='rounded-xl' value={String(AutoGroupType.Regex)}>{t('autoGroupRegex')}</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
 
-            <div className="grid gap-4 sm:grid-cols-3">
-                <label className="flex items-center gap-2">
+                            <div className="space-y-2">
+                                <label htmlFor={`${idPrefix}-channel-proxy`} className="text-sm font-medium text-card-foreground">
+                                    {t('channelProxy')}
+                                </label>
+                                <Input
+                                    id={`${idPrefix}-channel-proxy`}
+                                    type="text"
+                                    value={formData.channel_proxy}
+                                    onChange={(e) => onFormDataChange({ ...formData, channel_proxy: e.target.value })}
+                                    placeholder={t('channelProxyPlaceholder')}
+                                    className="rounded-xl"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                                <label className="text-sm font-medium text-card-foreground">
+                                    {t('customHeader')} {formData.custom_header.length > 0 ? `(${formData.custom_header.length})` : ''}
+                                </label>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={handleAddHeader}
+                                    className="h-6 px-2 text-xs text-muted-foreground/70 hover:text-muted-foreground hover:bg-transparent"
+                                >
+                                    <Plus className="h-3 w-3 mr-1" />
+                                    {t('customHeaderAdd')}
+                                </Button>
+                            </div>
+                            <div className="space-y-2">
+                                {(formData.custom_header ?? []).map((h, idx) => (
+                                    <div key={`hdr-${idx}`} className="flex items-center gap-2">
+                                        <Input
+                                            type="text"
+                                            value={h.header_key}
+                                            onChange={(e) => handleUpdateHeader(idx, { header_key: e.target.value })}
+                                            placeholder={t('customHeaderKey')}
+                                            className="rounded-xl flex-1"
+                                        />
+                                        <Input
+                                            type="text"
+                                            value={h.header_value}
+                                            onChange={(e) => handleUpdateHeader(idx, { header_value: e.target.value })}
+                                            placeholder={t('customHeaderValue')}
+                                            className="rounded-xl flex-1"
+                                        />
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => handleRemoveHeader(idx)}
+                                            disabled={(formData.custom_header ?? []).length <= 1}
+                                            className="h-8 w-8 p-0 rounded-xl text-muted-foreground hover:text-destructive hover:bg-transparent disabled:opacity-40"
+                                            title="Remove"
+                                        >
+                                            <X className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label htmlFor={`${idPrefix}-param-override`} className="text-sm font-medium text-card-foreground">
+                                {t('paramOverride')}
+                            </label>
+                            <textarea
+                                id={`${idPrefix}-param-override`}
+                                value={formData.param_override}
+                                onChange={(e) => onFormDataChange({ ...formData, param_override: e.target.value })}
+                                placeholder={t('paramOverridePlaceholder')}
+                                className="min-h-28 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            />
+                        </div>
+                    </AccordionContent>
+                </AccordionItem>
+            </Accordion>
+
+            <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-muted/20 border border-border/50">
+                <label className="flex items-center gap-2 cursor-pointer">
                     <Switch
                         checked={formData.enabled}
                         onCheckedChange={(checked) => onFormDataChange({ ...formData, enabled: checked })}
                     />
-                    <span className="text-sm text-card-foreground">{t('enabled')}</span>
+                    <span className="text-sm font-medium text-card-foreground">{t('enabled')}</span>
                 </label>
-                <label className="flex items-center gap-2">
-                    <Switch
-                        checked={formData.proxy}
-                        onCheckedChange={(checked) => onFormDataChange({ ...formData, proxy: checked })}
-                    />
-                    <span className="text-sm text-card-foreground">{t('proxy')}</span>
-                </label>
-                <label className="flex items-center gap-2">
-                    <Switch
-                        checked={formData.auto_sync}
-                        onCheckedChange={(checked) => onFormDataChange({ ...formData, auto_sync: checked })}
-                    />
-                    <span className="text-sm text-card-foreground">{t('autoSync')}</span>
-                </label>
+                <div className="flex items-center gap-6">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <Switch
+                            checked={formData.proxy}
+                            onCheckedChange={(checked) => onFormDataChange({ ...formData, proxy: checked })}
+                        />
+                        <span className="text-sm text-card-foreground">{t('proxy')}</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <Switch
+                            checked={formData.auto_sync}
+                            onCheckedChange={(checked) => onFormDataChange({ ...formData, auto_sync: checked })}
+                        />
+                        <span className="text-sm text-card-foreground">{t('autoSync')}</span>
+                    </label>
+                </div>
             </div>
 
             <div className={`flex flex-col gap-3 pt-2 ${onCancel ? 'sm:flex-row' : ''}`}>

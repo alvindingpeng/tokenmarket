@@ -4,10 +4,10 @@ import { useChannelList } from '@/api/endpoints/channel';
 import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { TrendingUp } from 'lucide-react';
-import { type ChannelData } from '@/api/endpoints/channel';
 import { Tabs, TabsList, TabsTrigger, TabsContents, TabsContent } from '@/components/animate-ui/components/animate/tabs';
 
 type SortMode = 'cost' | 'count';
+type ChannelData = NonNullable<ReturnType<typeof useChannelList>['data']>[number];
 
 export function Rank() {
     const { data: channelData } = useChannelList();

@@ -15,8 +15,11 @@ export function CreateDialogContent() {
     const [formData, setFormData] = useState<ChannelFormData>({
         name: '',
         type: ChannelType.OpenAIChat,
-        base_url: '',
-        key: '',
+        base_urls: [{ url: '', delay: 0 }],
+        custom_header: [],
+        channel_proxy: '',
+        param_override: '',
+        keys: [{ enabled: true, channel_key: '' }],
         model: '',
         custom_model: '',
         auto_sync: false,
@@ -28,23 +31,55 @@ export function CreateDialogContent() {
 
     const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        createChannel.mutate(formData, {
-            onSuccess: () => {
-                setFormData({
-                    name: '',
-                    type: ChannelType.OpenAIChat,
-                    base_url: '',
-                    key: '',
-                    model: '',
-                    custom_model: '',
-                    auto_sync: false,
-                    auto_group: AutoGroupType.None,
-                    enabled: true,
-                    proxy: false,
-                });
-                setIsOpen(false);
-            }
-        });
+        const normalizedBaseUrls = (formData.base_urls ?? []).filter((u) => u.url.trim()).map((u) => ({
+            url: u.url.trim(),
+            delay: Number(u.delay || 0),
+        }));
+        const normalizedKeys = formData.keys
+            .filter((k) => k.channel_key.trim())
+            .map((k) => ({ enabled: k.enabled, channel_key: k.channel_key }));
+        const normalizedHeaders = (formData.custom_header ?? [])
+            .map((h) => ({ header_key: h.header_key.trim(), header_value: h.header_value }))
+            .filter((h) => h.header_key && h.header_value !== '');
+
+        const channelProxy = formData.channel_proxy.trim();
+        const paramOverride = formData.param_override.trim();
+        createChannel.mutate(
+            {
+                name: formData.name,
+                type: formData.type,
+                enabled: formData.enabled,
+                base_urls: normalizedBaseUrls,
+                keys: normalizedKeys,
+                model: formData.model,
+                custom_model: formData.custom_model,
+                proxy: formData.proxy,
+                auto_sync: formData.auto_sync,
+                auto_group: formData.auto_group,
+                custom_header: normalizedHeaders,
+                channel_proxy: channelProxy ? channelProxy : null,
+                param_override: paramOverride ? paramOverride : null,
+            },
+            {
+                onSuccess: () => {
+                    setFormData({
+                        name: '',
+                        type: ChannelType.OpenAIChat,
+                        base_urls: [{ url: '', delay: 0 }],
+                        custom_header: [],
+                        channel_proxy: '',
+                        param_override: '',
+                        keys: [{ enabled: true, channel_key: '' }],
+                        model: '',
+                        custom_model: '',
+                        auto_sync: false,
+                        auto_group: AutoGroupType.None,
+                        enabled: true,
+                        proxy: false,
+                    });
+                    setIsOpen(false);
+                }
+            });
     };
 
     return (
@@ -62,7 +97,7 @@ export function CreateDialogContent() {
                     />
                 </header>
             </MorphingDialogTitle>
-            <MorphingDialogDescription>
+            <MorphingDialogDescription disableLayoutAnimation>
                 <ChannelForm
                     formData={formData}
                     onFormDataChange={setFormData}
