@@ -31,10 +31,10 @@ func fetchOpenAIModels(client *http.Client, ctx context.Context, request model.C
 	req, _ := http.NewRequestWithContext(
 		ctx,
 		http.MethodGet,
-		request.BaseURL+"/models",
+		request.GetBaseUrl()+"/models",
 		nil,
 	)
-	req.Header.Set("Authorization", "Bearer "+request.Key)
+	req.Header.Set("Authorization", "Bearer "+request.GetChannelKey().ChannelKey)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -64,10 +64,10 @@ func fetchGeminiModels(client *http.Client, ctx context.Context, request model.C
 		req, _ := http.NewRequestWithContext(
 			ctx,
 			http.MethodGet,
-			request.BaseURL+"/models",
+			request.GetBaseUrl()+"/models",
 			nil,
 		)
-		req.Header.Set("X-Goog-Api-Key", request.Key)
+		req.Header.Set("X-Goog-Api-Key", request.GetChannelKey().ChannelKey)
 
 		if pageToken != "" {
 			q := req.URL.Query()
@@ -113,10 +113,10 @@ func fetchAnthropicModels(client *http.Client, ctx context.Context, request mode
 		req, _ := http.NewRequestWithContext(
 			ctx,
 			http.MethodGet,
-			request.BaseURL+"/models",
+			request.GetBaseUrl()+"/models",
 			nil,
 		)
-		req.Header.Set("X-Api-Key", request.Key)
+		req.Header.Set("X-Api-Key", request.GetChannelKey().ChannelKey)
 		req.Header.Set("Anthropic-Version", "2023-06-01")
 
 		// 设置多页参数

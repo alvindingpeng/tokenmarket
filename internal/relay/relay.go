@@ -102,13 +102,21 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 				internalRequest: internalRequest,
 				channel:         channel,
 				metrics:         metrics,
+				usedKey:         channel.GetChannelKey(),
 			}
 
-			if err := rc.forward(); err == nil {
+			if statusCode, err := rc.forward(); err == nil {
 				rc.collectResponse()
+				rc.usedKey.StatusCode = statusCode
+				rc.usedKey.LastUseTimeStamp = time.Now().Unix()
+				rc.usedKey.TotalCost += metrics.Stats.InputCost + metrics.Stats.OutputCost
+				op.ChannelKeyUpdate(rc.usedKey)
 				metrics.Save(c.Request.Context(), true, nil)
 				return
 			} else {
+				rc.usedKey.StatusCode = statusCode
+				rc.usedKey.LastUseTimeStamp = time.Now().Unix()
+				op.ChannelKeyUpdate(rc.usedKey)
 				if c.Writer.Written() {
 					// Streaming responses may have already started; retrying would corrupt the client stream.
 					rc.collectResponse()
@@ -153,19 +161,19 @@ func parseRequest(inboundType inbound.InboundType, c *gin.Context) (*model.Inter
 }
 
 // forward 转发请求到上游服务
-func (rc *relayContext) forward() error {
+func (rc *relayContext) forward() (int, error) {
 	ctx := rc.c.Request.Context()
 
 	// 构建出站请求
 	outboundRequest, err := rc.outAdapter.TransformRequest(
 		ctx,
 		rc.internalRequest,
-		rc.channel.BaseURL,
-		rc.channel.Key,
+		rc.channel.GetBaseUrl(),
+		rc.usedKey.ChannelKey,
 	)
 	if err != nil {
 		log.Warnf("failed to create request: %v", err)
-		return fmt.Errorf("failed to create request: %w", err)
+		return 0, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	// 复制请求头
@@ -174,7 +182,7 @@ func (rc *relayContext) forward() error {
 	// 发送请求
 	response, err := rc.sendRequest(outboundRequest)
 	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
+		return 0, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer response.Body.Close()
 
@@ -182,16 +190,22 @@ func (rc *relayContext) forward() error {
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		body, err := io.ReadAll(response.Body)
 		if err != nil {
-			return fmt.Errorf("failed to read response body: %w", err)
+			return 0, fmt.Errorf("failed to read response body: %w", err)
 		}
-		return fmt.Errorf("upstream error: %d: %s", response.StatusCode, string(body))
+		return 0, fmt.Errorf("upstream error: %d: %s", response.StatusCode, string(body))
 	}
 
 	// 处理响应
 	if rc.internalRequest.Stream != nil && *rc.internalRequest.Stream {
-		return rc.handleStreamResponse(ctx, response)
+		if err := rc.handleStreamResponse(ctx, response); err != nil {
+			return 0, err
+		}
+		return response.StatusCode, nil
 	}
-	return rc.handleResponse(ctx, response)
+	if err := rc.handleResponse(ctx, response); err != nil {
+		return 0, err
+	}
+	return response.StatusCode, nil
 }
 
 // copyHeaders 复制请求头，过滤 hop-by-hop 头

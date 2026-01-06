@@ -46,4 +46,6 @@ type relayContext struct {
 	internalRequest *model.InternalLLMRequest
 	channel         *dbmodel.Channel
 	metrics         *RelayMetrics
+
+	usedKey dbmodel.ChannelKey
 }
