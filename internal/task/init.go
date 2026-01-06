@@ -16,6 +16,7 @@ const (
 	TaskRelayLogSave = "relay_log_save"
 	TaskSyncLLM      = "sync_llm"
 	TaskCleanLLM     = "clean_llm"
+	TaskBaseUrlDelay = "base_url_delay"
 )
 
 func Init() {
@@ -31,6 +32,9 @@ func Init() {
 			log.Warnf("failed to update price info: %v", err)
 		}
 	})
+
+	// 注册基础URL延迟任务
+	Register(TaskBaseUrlDelay, 1*time.Hour, true, ChannelBaseUrlDelayTask)
 
 	// 注册LLM同步任务
 	syncLLMIntervalHours, err := op.SettingGetInt(model.SettingKeySyncLLMInterval)
