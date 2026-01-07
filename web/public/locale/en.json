@@ -398,8 +398,12 @@
             "sections": {
                 "requests": "Request Details",
                 "tokens": "Token Usage",
-                "costs": "Cost Details"
+                "costs": "Cost Details",
+                "baseUrls": "Base URLs",
+                "keys": "Keys"
             },
+            "noBaseUrls": "No Base URLs",
+            "noKeys": "No Keys",
             "metrics": {
                 "totalRequests": "Total Requests",
                 "totalToken": "Total Tokens",
@@ -410,7 +414,7 @@
                 "outputToken": "Output Tokens",
                 "inputCost": "Input Cost",
                 "outputCost": "Output Cost",
-                "avgWaitTime": "Avg Wait Time"
+                "avgWaitTime": "Wait Time"
             },
             "actions": {
                 "edit": "Edit",
@@ -433,6 +437,7 @@
             "type": "Channel Type",
             "baseUrls": "Base URLs",
             "baseUrlUrl": "URL",
+            "baseUrlDelay": "Delay(ms)",
             "advanced": "Advanced Settings",
             "apiKey": "API Key",
             "customHeader": "Custom Headers",

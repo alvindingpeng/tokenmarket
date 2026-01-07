@@ -7,7 +7,9 @@ import {
     DollarSign,
     Clock,
     Activity,
-    TrendingUp
+    TrendingUp,
+    Globe,
+    Key
 } from 'lucide-react';
 import { useUpdateChannel, useDeleteChannel, type Channel, type UpdateChannelRequest } from '@/api/endpoints/channel';
 import {
@@ -21,6 +23,9 @@ import { type StatsMetricsFormatted } from '@/api/endpoints/stats';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { ChannelForm, type ChannelFormData } from './Form';
+import { formatMoney } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 export function CardContent({ channel, stats }: { channel: Channel; stats: StatsMetricsFormatted }) {
     const { setIsOpen } = useMorphingDialog();
@@ -294,6 +299,95 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                                             </dd>
                                         </div>
                                     </dl>
+                                </section>
+
+                                {/* Base URLs */}
+                                <section className="space-y-3">
+                                    <h4 className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                        <Globe className="size-3.5" />
+                                        {t('sections.baseUrls')}
+                                    </h4>
+                                    <div className="rounded-2xl border bg-card overflow-hidden">
+                                        {channel.base_urls?.map((url, i) => (
+                                            <div key={i} className="flex items-center justify-between p-3 sm:p-4 border-b last:border-0 hover:bg-accent/5 transition-colors">
+                                                <div className="flex flex-col gap-1 min-w-0">
+                                                    <span className="font-mono text-sm truncate select-all">{url.url}</span>
+                                                </div>
+                                                <Badge
+                                                    variant="secondary"
+                                                    className={cn(
+                                                        "h-5 px-1.5 text-xs",
+                                                        url.delay < 300
+                                                            ? "bg-green-500/15 text-green-700 dark:text-green-400"
+                                                            : url.delay < 1000
+                                                                ? "bg-orange-500/15 text-orange-700 dark:text-orange-400"
+                                                                : "bg-red-500/15 text-red-700 dark:text-red-400"
+                                                    )}
+                                                >
+                                                    {url.delay}ms
+                                                </Badge>
+                                            </div>
+                                        ))}
+                                        {(!channel.base_urls || channel.base_urls.length === 0) && (
+                                            <div className="p-4 text-sm text-muted-foreground text-center">{t('noBaseUrls')}</div>
+                                        )}
+                                    </div>
+                                </section>
+
+                                {/* Keys */}
+                                <section className="space-y-3">
+                                    <h4 className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                        <Key className="size-3.5" />
+                                        {t('sections.keys')}
+                                    </h4>
+                                    <div className="rounded-2xl border bg-card overflow-hidden">
+                                        {channel.keys?.map((key) => (
+                                            <div key={key.id} className="flex items-center gap-3 p-3 sm:p-4 border-b last:border-0 hover:bg-accent/5 transition-colors">
+                                                <div className={cn("size-2 shrink-0 rounded-full", key.enabled ? "bg-emerald-500" : "bg-destructive")} />
+
+                                                <span className="font-mono text-sm truncate min-w-0 flex-1">
+                                                    {key.channel_key.length > 10
+                                                        ? `${key.channel_key.slice(0, 4)}...${key.channel_key.slice(-4)}`
+                                                        : key.channel_key}
+                                                </span>
+
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    {key.last_use_time_stamp > 0 && (
+                                                        <span className="text-xs text-muted-foreground whitespace-nowrap hidden sm:inline-block">
+                                                            {new Date(key.last_use_time_stamp * 1000).toLocaleString()}
+                                                        </span>
+                                                    )}
+
+                                                    {key.status_code !== 0 && (
+                                                        <Badge
+                                                            variant="secondary"
+                                                            className={cn(
+                                                                "h-5 px-1.5 text-[10px]",
+                                                                key.status_code === 200
+                                                                    ? "bg-green-500/15 text-green-700 dark:text-green-400"
+                                                                    : key.status_code === 401 ||
+                                                                        key.status_code === 403 ||
+                                                                        key.status_code === 429 ||
+                                                                        key.status_code >= 500
+                                                                        ? "bg-red-500/15 text-red-700 dark:text-red-400"
+                                                                        : "bg-orange-500/15 text-orange-700 dark:text-orange-400"
+                                                            )}
+                                                        >
+                                                            {key.status_code}
+                                                        </Badge>
+                                                    )}
+
+                                                    <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                                                        {formatMoney(key.total_cost).formatted.value}
+                                                        {formatMoney(key.total_cost).formatted.unit}
+                                                    </Badge>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {(!channel.keys || channel.keys.length === 0) && (
+                                            <div className="p-4 text-sm text-muted-foreground text-center">{t('noKeys')}</div>
+                                        )}
+                                    </div>
                                 </section>
 
                                 {/* 等待时间 */}

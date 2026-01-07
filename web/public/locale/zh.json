@@ -398,8 +398,12 @@
             "sections": {
                 "requests": "请求详情",
                 "tokens": "Token 使用",
-                "costs": "成本详情"
+                "costs": "成本详情",
+                "baseUrls": "Base URLs",
+                "keys": "密钥"
             },
+            "noBaseUrls": "暂无 Base URL",
+            "noKeys": "暂无密钥",
             "metrics": {
                 "totalRequests": "总请求",
                 "totalToken": "总 Token",
@@ -410,7 +414,7 @@
                 "outputToken": "输出 Token",
                 "inputCost": "输入成本",
                 "outputCost": "输出成本",
-                "avgWaitTime": "平均等待时间"
+                "avgWaitTime": "等待时间"
             },
             "actions": {
                 "edit": "编辑",
@@ -433,6 +437,7 @@
             "type": "渠道类型",
             "baseUrls": "Base URLs",
             "baseUrlUrl": "地址",
+            "baseUrlDelay": "延迟(ms)",
             "advanced": "高级设置",
             "apiKey": "API Key",
             "customHeader": "自定义 Header",
