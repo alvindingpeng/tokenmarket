@@ -751,7 +751,7 @@ function APIKeyDialogPanel() {
         <APIKeyPanelBase
             idPrefix="apikey-dialog"
             containerClassName="rounded-3xl border border-border bg-card p-6 space-y-5 relative w-screen max-w-full md:max-w-xl"
-            listClassName="space-y-2 max-h-[70vh] overflow-y-auto"
+            listClassName="space-y-2 h-[calc(100vh-10rem)] overflow-y-auto"
             renderHeaderExtra={() => (
                 <button
                     type="button"
