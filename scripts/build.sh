@@ -86,6 +86,15 @@ prepare_environment() {
     local go_version=$(go version 2>/dev/null | grep -o 'go[0-9]\+\.[0-9]\+' | head -1)
     log_success "Go version: $go_version"
 
+    # Check Python
+    if ! command_exists python3; then
+        log_error "Python is not installed. Please install Python from https://www.python.org/downloads/"
+        return 1
+    fi
+
+    local python_version=$(python3 --version 2>/dev/null)
+    log_success "Python version: $python_version"
+
     # Check Node.js
     if ! command_exists node; then
         log_error "Node.js is not installed. Please install Node.js from https://nodejs.org/"
@@ -242,6 +251,16 @@ build_frontend() {
 
     return 0
 }
+
+update_price() {
+    log_step "Updating price"
+    if ! python3 scripts/updatePrice.py; then
+        log_error "Failed to update price"
+        return 1
+    fi
+    log_success "Price updated"
+}
+
 
 get_go_arch() {
     case "$1" in
@@ -515,6 +534,12 @@ main() {
             exit 1
         fi
 
+        # Update price
+        if ! update_price; then
+            log_error "Failed to update price"
+            exit 1
+        fi
+
         # Build for specified platform
         log_step "Building binary"
 
@@ -540,6 +565,12 @@ main() {
         # Build frontend
         if ! build_frontend; then
             log_error "Failed to build frontend"
+            exit 1
+        fi
+
+        # Update price
+        if ! update_price; then
+            log_error "Failed to update price"
             exit 1
         fi
 
