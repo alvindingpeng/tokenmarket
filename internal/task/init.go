@@ -43,7 +43,7 @@ func Init() {
 		return
 	}
 	syncLLMInterval := time.Duration(syncLLMIntervalHours) * time.Hour
-	Register(string(model.SettingKeySyncLLMInterval), syncLLMInterval, true, SyncLLMTask)
+	Register(string(model.SettingKeySyncLLMInterval), syncLLMInterval, true, SyncModelsTask)
 
 	// 注册统计保存任务
 	statsSaveIntervalMinutes, err := op.SettingGetInt(model.SettingKeyStatsSaveInterval)
@@ -59,6 +59,4 @@ func Init() {
 			log.Warnf("relay log save db task failed: %v", err)
 		}
 	})
-	// 注册LLM清理任务
-	Register(TaskCleanLLM, 1*time.Hour, true, CleanLLMTask)
 }

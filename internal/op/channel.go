@@ -137,7 +137,6 @@ func ChannelUpdate(req *model.ChannelUpdateRequest, ctx context.Context) (*model
 		updates.Enabled = *req.Enabled
 	}
 	if req.BaseUrls != nil {
-		log.Infof("update channel %d base_urls: %v", req.ID, *req.BaseUrls)
 		selectFields = append(selectFields, "base_urls")
 		updates.BaseUrls = *req.BaseUrls
 	}
@@ -317,7 +316,7 @@ func ChannelDel(id int, ctx context.Context) error {
 	// 刷新受影响的分组缓存
 	for _, groupID := range affectedGroupIDs {
 		if err := groupRefreshCacheByID(groupID, ctx); err != nil {
-			log.Errorf("failed to refresh group cache for group %d: %v", groupID, err)
+			log.Warnf("failed to refresh group cache for group %d: %v", groupID, err)
 		}
 	}
 
@@ -358,7 +357,7 @@ func channelRefreshCache(ctx context.Context) error {
 		Preload("Keys").
 		Preload("Stats").
 		Find(&channels).Error; err != nil {
-		log.Errorf("failed to get channels: %v", err)
+		log.Warnf("failed to get channels: %v", err)
 		return err
 	}
 	channelKeyCache.Clear()

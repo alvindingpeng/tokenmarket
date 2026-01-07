@@ -84,6 +84,7 @@ func GetLastUpdateTime() time.Time {
 }
 
 func GetLLMPrice(modelName string) *model.LLMPrice {
+	modelName = strings.ToLower(modelName)
 	price, err := op.LLMGet(modelName)
 	if err == nil {
 		return &price

@@ -3,6 +3,7 @@ package op
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
@@ -12,7 +13,7 @@ import (
 var llmModelCache = cache.New[string, model.LLMPrice](16)
 
 func LLMList(ctx context.Context) ([]model.LLMInfo, error) {
-	models := []model.LLMInfo{}
+	models := make([]model.LLMInfo, 0, llmModelCache.Len())
 	for m, cost := range llmModelCache.GetAll() {
 		models = append(models, model.LLMInfo{
 			Name:     m,
@@ -56,6 +57,7 @@ func LLMBatchDelete(modelNames []string, ctx context.Context) error {
 	return nil
 }
 func LLMCreate(model model.LLMInfo, ctx context.Context) error {
+	model.Name = strings.ToLower(model.Name)
 	_, ok := llmModelCache.Get(model.Name)
 	if ok {
 		return fmt.Errorf("model already exists")
@@ -66,27 +68,31 @@ func LLMCreate(model model.LLMInfo, ctx context.Context) error {
 	llmModelCache.Set(model.Name, model.LLMPrice)
 	return nil
 }
-func LLMBatchCreate(names []string, ctx context.Context) error {
-	if len(names) == 0 {
+func LLMBatchCreate(llmInfos []model.LLMInfo, ctx context.Context) error {
+	if len(llmInfos) == 0 {
 		return nil
 	}
-	models := make([]model.LLMInfo, len(names))
-	for i, name := range names {
-		if _, ok := llmModelCache.Get(name); ok {
+	seen := make(map[string]struct{}, len(llmInfos))
+	newLLMInfos := make([]model.LLMInfo, 0, len(llmInfos))
+	for _, llmInfo := range llmInfos {
+		llmInfo.Name = strings.ToLower(llmInfo.Name)
+		if _, ok := seen[llmInfo.Name]; ok {
 			continue
 		}
-		models[i] = model.LLMInfo{Name: name}
+		if _, ok := llmModelCache.Get(llmInfo.Name); ok {
+			continue
+		}
+		seen[llmInfo.Name] = struct{}{}
+		newLLMInfos = append(newLLMInfos, llmInfo)
 	}
-	if err := db.GetDB().WithContext(ctx).Create(&models).Error; err != nil {
+	if len(newLLMInfos) == 0 {
+		return nil
+	}
+	if err := db.GetDB().WithContext(ctx).Create(&newLLMInfos).Error; err != nil {
 		return err
 	}
-	for _, name := range names {
-		llmModelCache.Set(name, model.LLMPrice{
-			Input:      0,
-			Output:     0,
-			CacheRead:  0,
-			CacheWrite: 0,
-		})
+	for _, llmInfo := range newLLMInfos {
+		llmModelCache.Set(llmInfo.Name, llmInfo.LLMPrice)
 	}
 	return nil
 }

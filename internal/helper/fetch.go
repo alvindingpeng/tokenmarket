@@ -1,4 +1,4 @@
-package client
+package helper
 
 import (
 	"context"
@@ -10,12 +10,11 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/transformer/outbound"
 )
 
-func FetchLLMName(ctx context.Context, request model.Channel) ([]string, error) {
-	client, err := GetHTTPClientSystemProxy(request.Proxy)
+func FetchModels(ctx context.Context, request model.Channel) ([]string, error) {
+	client, err := ChannelHttpClient(&request)
 	if err != nil {
 		return nil, err
 	}
-
 	switch request.Type {
 	case outbound.OutboundTypeAnthropic:
 		return fetchAnthropicModels(client, ctx, request)

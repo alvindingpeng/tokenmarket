@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
-	"github.com/alvindingpeng/switchyard/internal/client"
+	"github.com/alvindingpeng/switchyard/internal/helper"
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
@@ -80,7 +83,14 @@ func createChannel(c *gin.Context) {
 	}
 	stats := op.StatsChannelGet(channel.ID)
 	channel.Stats = &stats
-	worker.CheckAndAddLLMPrice(channel.Model, channel.CustomModel)
+	go func(channel model.Channel) {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		modelStr := channel.Model + "," + channel.CustomModel
+		modelArray := strings.Split(modelStr, ",")
+		helper.LLMPriceAddToDB(modelArray, ctx)
+		helper.ChannelBaseUrlDelayUpdate(channel)
+	}(channel)
 	worker.AutoGroup(channel.ID, channel.Name, channel.Model, channel.CustomModel, channel.AutoGroup)
 	resp.Success(c, channel)
 }
@@ -98,7 +108,14 @@ func updateChannel(c *gin.Context) {
 	}
 	stats := op.StatsChannelGet(channel.ID)
 	channel.Stats = &stats
-	worker.CheckAndAddLLMPrice(channel.Model, channel.CustomModel)
+	go func(channel model.Channel) {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		modelStr := channel.Model + "," + channel.CustomModel
+		modelArray := strings.Split(modelStr, ",")
+		helper.LLMPriceAddToDB(modelArray, ctx)
+		helper.ChannelBaseUrlDelayUpdate(channel)
+	}(*channel)
 	worker.AutoGroup(channel.ID, channel.Name, channel.Model, channel.CustomModel, channel.AutoGroup)
 	resp.Success(c, channel)
 }
@@ -138,7 +155,7 @@ func fetchModel(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
-	models, err := client.FetchLLMName(c.Request.Context(), request)
+	models, err := helper.FetchModels(c.Request.Context(), request)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -147,11 +164,11 @@ func fetchModel(c *gin.Context) {
 }
 
 func syncChannel(c *gin.Context) {
-	task.SyncLLMTask()
+	task.SyncModelsTask()
 	resp.Success(c, nil)
 }
 
 func getLastSyncTime(c *gin.Context) {
-	time := task.GetLastSyncTime()
+	time := task.GetLastSyncModelsTime()
 	resp.Success(c, time)
 }

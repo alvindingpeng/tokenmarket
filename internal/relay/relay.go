@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alvindingpeng/switchyard/internal/client"
+	"github.com/alvindingpeng/switchyard/internal/helper"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/relay/balancer"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
@@ -222,7 +222,7 @@ func (rc *relayContext) copyHeaders(outboundRequest *http.Request) {
 
 // sendRequest 发送 HTTP 请求
 func (rc *relayContext) sendRequest(req *http.Request) (*http.Response, error) {
-	httpClient, err := client.GetHTTPClientSystemProxy(rc.channel.Proxy)
+	httpClient, err := helper.ChannelHttpClient(rc.channel)
 	if err != nil {
 		log.Warnf("failed to get http client: %v", err)
 		return nil, err

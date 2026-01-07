@@ -7,11 +7,12 @@ import (
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
-	"github.com/alvindingpeng/switchyard/internal/price"
 	"github.com/alvindingpeng/switchyard/internal/utils/log"
+	"github.com/alvindingpeng/switchyard/internal/utils/xstrings"
 	"github.com/dlclark/regexp2"
 )
 
+// TODO 删除此文件,重构到helper
 func AutoGroup(channelID int, channelName, channelModel, customModel string, autoGroupType model.AutoGroupType) {
 	if autoGroupType == model.AutoGroupTypeNone {
 		return
@@ -26,11 +27,8 @@ func AutoGroup(channelID int, channelName, channelModel, customModel string, aut
 		return
 	}
 
-	modelNames := strings.Split(channelModel+","+customModel, ",")
+	modelNames := xstrings.SplitTrimCompact(",", channelModel, customModel)
 	for _, modelName := range modelNames {
-		if modelName == "" {
-			continue
-		}
 		for _, group := range groups {
 			var matched bool
 			switch autoGroupType {
@@ -85,28 +83,4 @@ func AutoGroup(channelID int, channelName, channelModel, customModel string, aut
 			}
 		}
 	}
-}
-
-func CheckAndAddLLMPrice(channelModel, customModel string) {
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		modelNames := strings.Split(channelModel+","+customModel, ",")
-		var newModels []string
-		for _, modelName := range modelNames {
-			if modelName == "" {
-				continue
-			}
-			modelPrice := price.GetLLMPrice(modelName)
-			if modelPrice == nil {
-				newModels = append(newModels, modelName)
-			}
-		}
-		if len(newModels) > 0 {
-			log.Infof("create models: %v", newModels)
-			if err := op.LLMBatchCreate(newModels, ctx); err != nil {
-				log.Errorf("failed to batch create models: %v", err)
-			}
-		}
-	}()
 }
