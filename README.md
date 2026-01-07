@@ -14,6 +14,8 @@
 ## ✨ Features
 
 - 🔀 **Multi-Channel Aggregation** - Connect multiple LLM provider channels with unified management
+- 🔑 **Multi-Key Support** - Support multiple API keys for a single channel
+- ⚡ **Smart Selection** - Multiple endpoints per channel, smart selection of the endpoint with the shortest delay
 - ⚖️ **Load Balancing** - Automatic request distribution for stable and efficient service
 - 🔄 **Protocol Conversion** - Seamless conversion between OpenAI Chat / OpenAI Responses / Anthropic API formats
 - 💰 **Price Sync** - Automatic model pricing updates
