@@ -218,6 +218,11 @@ func (rc *relayContext) copyHeaders(outboundRequest *http.Request) {
 			outboundRequest.Header.Set(key, value)
 		}
 	}
+	if len(rc.channel.CustomHeader) > 0 {
+		for _, header := range rc.channel.CustomHeader {
+			outboundRequest.Header.Set(header.HeaderKey, header.HeaderValue)
+		}
+	}
 }
 
 // sendRequest 发送 HTTP 请求
