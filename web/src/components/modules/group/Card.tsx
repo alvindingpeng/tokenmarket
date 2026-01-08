@@ -37,16 +37,16 @@ function EditDialogContent({ group, displayMembers, isSubmitting, onSubmit }: Ed
     const { setIsOpen } = useMorphingDialog();
     const t = useTranslations('group');
     return (
-        <div className="w-screen max-w-full md:max-w-4xl">
-            <MorphingDialogTitle>
-                <header className="mb-5 flex items-center justify-between">
+        <>
+            <MorphingDialogTitle className="shrink-0">
+                <header className="mb-3 flex items-center justify-between">
                     <h2 className="text-2xl font-bold text-card-foreground">
                         {t('detail.actions.edit')}
                     </h2>
                     <MorphingDialogClose className="relative right-0 top-0" />
                 </header>
             </MorphingDialogTitle>
-            <MorphingDialogDescription>
+            <MorphingDialogDescription className="flex-1 min-h-0 overflow-hidden">
                 <GroupEditor
                     key={`edit-group-${group.id}`}
                     initial={{
@@ -63,7 +63,7 @@ function EditDialogContent({ group, displayMembers, isSubmitting, onSubmit }: Ed
                     onSubmit={(v) => onSubmit(v, () => setIsOpen(false))}
                 />
             </MorphingDialogDescription>
-        </div>
+        </>
     );
 }
 
@@ -261,7 +261,7 @@ export function GroupCard({ group }: { group: Group }) {
                         </MorphingDialogTrigger>
 
                         <MorphingDialogContainer>
-                            <MorphingDialogContent className="w-fit max-w-full bg-card text-card-foreground px-6 py-4 rounded-3xl custom-shadow max-h-[90vh] overflow-y-auto">
+                            <MorphingDialogContent className="relative w-screen max-w-full md:max-w-4xl bg-card text-card-foreground px-6 py-4 rounded-3xl custom-shadow h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
                                 <EditDialogContent
                                     group={group}
                                     displayMembers={displayMembers}
@@ -334,7 +334,7 @@ export function GroupCard({ group }: { group: Group }) {
                 ))}
             </div>
 
-            <section className="rounded-xl border border-border/50 bg-muted/30 overflow-hidden relative">
+            <section className="rounded-xl border border-border/50 bg-muted/30 overflow-hidden relative h-101">
                 <MemberList
                     members={members}
                     onReorder={setMembers}

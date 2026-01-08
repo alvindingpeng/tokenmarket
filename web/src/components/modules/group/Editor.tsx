@@ -59,7 +59,7 @@ function ModelPickerSection({
     }, [modelChannels]);
 
     return (
-        <div className="rounded-xl border border-border/50 bg-muted/30">
+        <div className="rounded-xl border border-border/50 bg-muted/30 flex flex-col min-h-0">
             <div className="flex items-center justify-between px-3 py-2 border-b border-border/30 bg-muted/50">
                 <span className="text-sm font-medium text-foreground">
                     {t('form.addItem')}
@@ -85,7 +85,7 @@ function ModelPickerSection({
                 </button>
             </div>
 
-            <div className="h-96 overflow-y-auto p-2">
+            <div className="flex-1 min-h-0 overflow-y-auto p-2">
                 <Accordion type="multiple" className="w-full space-y-2">
                     {channels.map((channel) => {
                         const total = channel.models.length;
@@ -168,7 +168,7 @@ function SortSection({
     const t = useTranslations('group');
 
     return (
-        <div className="rounded-xl border border-border/50 bg-muted/30">
+        <div className="rounded-xl border border-border/50 bg-muted/30 flex flex-col min-h-0">
             <div className="flex items-center justify-between px-3 py-2 border-b border-border/30 bg-muted/50">
                 <span className="text-sm font-medium text-foreground">
                     {t('form.items')}
@@ -195,15 +195,17 @@ function SortSection({
                 </button>
             </div>
 
-            <MemberList
-                members={members}
-                onReorder={onReorder}
-                onRemove={onRemove}
-                onWeightChange={onWeightChange}
-                removingIds={removingIds}
-                showWeight={showWeight}
-                showConfirmDelete={false}
-            />
+            <div className="flex-1 min-h-0">
+                <MemberList
+                    members={members}
+                    onReorder={onReorder}
+                    onRemove={onRemove}
+                    onWeightChange={onWeightChange}
+                    removingIds={removingIds}
+                    showWeight={showWeight}
+                    showConfirmDelete={false}
+                />
+            </div>
         </div>
     );
 }
@@ -307,106 +309,111 @@ export function GroupEditor({
 
 
     return (
-        <form onSubmit={handleSubmit}>
-            <FieldGroup className="gap-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <Field>
-                        <FieldLabel htmlFor="group-name">{t('form.name')}</FieldLabel>
-                        <Input
-                            id="group-name"
-                            value={groupName}
-                            onChange={(e) => setGroupName(e.target.value)}
-                            className="rounded-xl"
-                        />
-                    </Field>
-                    <Field>
-                        <FieldLabel htmlFor="group-match-regex">{t('form.matchRegex')}</FieldLabel>
-                        <Input
-                            id="group-match-regex"
-                            value={matchRegex}
-                            onChange={(e) => setMatchRegex(e.target.value)}
-                            className="rounded-xl"
-                            placeholder={t('form.matchRegexPlaceholder')}
-                        />
-                        {regexError && (
-                            <p className="mt-1 text-xs text-destructive">
-                                {t('form.matchRegexInvalid')}: {regexError}
-                            </p>
-                        )}
-                    </Field>
-
-                    <Field>
-                        <FieldLabel htmlFor="group-first-token-time-out">
-                            {t('form.firstTokenTimeOut')}
-                            <TooltipProvider>
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <HelpCircle className="size-4 text-muted-foreground cursor-help" />
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                        {t('form.firstTokenTimeOutHint')}
-                                    </TooltipContent>
-                                </Tooltip>
-                            </TooltipProvider>
-                        </FieldLabel>
-                        <Input
-                            id="group-first-token-time-out"
-                            type="number"
-                            inputMode="numeric"
-                            min={0}
-                            step={1}
-                            value={String(firstTokenTimeOut)}
-                            onChange={(e) => {
-                                const raw = e.target.value;
-                                if (raw.trim() === '') {
-                                    setFirstTokenTimeOut(0);
-                                    return;
-                                }
-                                const n = Number.parseInt(raw, 10);
-                                setFirstTokenTimeOut(Number.isFinite(n) && n > 0 ? n : 0);
-                            }}
-                            className="rounded-xl"
-                        />
-                    </Field>
-                </div>
-
-
-                {/* Mode */}
-                <div className="flex gap-1">
-                    {([1, 2, 3, 4] as const).map((m) => (
-                        <button
-                            key={m}
-                            type="button"
-                            onClick={() => setMode(m)}
-                            className={cn(
-                                'flex-1 py-1 text-xs rounded-lg transition-colors',
-                                mode === m ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
+        <form onSubmit={handleSubmit} className="flex flex-col h-full min-h-0 ">
+            <div className="flex-1 min-h-0 overflow-hidden pr-1">
+                <FieldGroup className="gap-4 flex flex-col min-h-0 h-full">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <Field>
+                            <FieldLabel htmlFor="group-name">{t('form.name')}</FieldLabel>
+                            <Input
+                                id="group-name"
+                                value={groupName}
+                                onChange={(e) => setGroupName(e.target.value)}
+                                className="rounded-xl"
+                            />
+                        </Field>
+                        <Field>
+                            <FieldLabel htmlFor="group-match-regex">{t('form.matchRegex')}</FieldLabel>
+                            <Input
+                                id="group-match-regex"
+                                value={matchRegex}
+                                onChange={(e) => setMatchRegex(e.target.value)}
+                                className="rounded-xl"
+                                placeholder={t('form.matchRegexPlaceholder')}
+                            />
+                            {regexError && (
+                                <p className="mt-1 text-xs text-destructive">
+                                    {t('form.matchRegexInvalid')}: {regexError}
+                                </p>
                             )}
-                        >
-                            {t(`mode.${MODE_LABELS[m]}`)}
-                        </button>
-                    ))}
-                </div>
+                        </Field>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <ModelPickerSection
-                        modelChannels={modelChannels}
-                        selectedMembers={selectedMembers}
-                        onAdd={handleAddMember}
-                        onAutoAdd={handleAutoAdd}
-                        autoAddDisabled={autoAddDisabled}
-                    />
-                    <SortSection
-                        members={selectedMembers}
-                        onReorder={setSelectedMembers}
-                        onRemove={handleRemoveMember}
-                        onWeightChange={handleWeightChange}
-                        removingIds={removingIds}
-                        showWeight={mode === 4}
-                        onClear={handleClearMembers}
-                    />
-                </div>
+                        <Field>
+                            <FieldLabel htmlFor="group-first-token-time-out">
+                                {t('form.firstTokenTimeOut')}
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                            {t('form.firstTokenTimeOutHint')}
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
+                            </FieldLabel>
+                            <Input
+                                id="group-first-token-time-out"
+                                type="number"
+                                inputMode="numeric"
+                                min={0}
+                                step={1}
+                                value={String(firstTokenTimeOut)}
+                                onChange={(e) => {
+                                    const raw = e.target.value;
+                                    if (raw.trim() === '') {
+                                        setFirstTokenTimeOut(0);
+                                        return;
+                                    }
+                                    const n = Number.parseInt(raw, 10);
+                                    setFirstTokenTimeOut(Number.isFinite(n) && n > 0 ? n : 0);
+                                }}
+                                className="rounded-xl"
+                            />
+                        </Field>
+                    </div>
 
+                    {/* Mode */}
+                    <div className="flex gap-1">
+                        {([1, 2, 3, 4] as const).map((m) => (
+                            <button
+                                key={m}
+                                type="button"
+                                onClick={() => setMode(m)}
+                                className={cn(
+                                    'flex-1 py-1 text-xs rounded-lg transition-colors',
+                                    mode === m ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
+                                )}
+                            >
+                                {t(`mode.${MODE_LABELS[m]}`)}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="flex-1 min-h-0">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full min-h-0">
+                            <ModelPickerSection
+                                modelChannels={modelChannels}
+                                selectedMembers={selectedMembers}
+                                onAdd={handleAddMember}
+                                onAutoAdd={handleAutoAdd}
+                                autoAddDisabled={autoAddDisabled}
+                            />
+                            <SortSection
+                                members={selectedMembers}
+                                onReorder={setSelectedMembers}
+                                onRemove={handleRemoveMember}
+                                onWeightChange={handleWeightChange}
+                                removingIds={removingIds}
+                                showWeight={mode === 4}
+                                onClear={handleClearMembers}
+                            />
+                        </div>
+                    </div>
+                </FieldGroup>
+            </div>
+
+            <div className="pt-4 mt-auto shrink-0">
                 <div className="flex gap-2">
                     {onCancel && (
                         <Button type="button" variant="secondary" className="flex-1 rounded-xl h-11" onClick={onCancel}>
@@ -421,7 +428,7 @@ export function GroupEditor({
                         {isSubmitting ? submittingText : submitText}
                     </Button>
                 </div>
-            </FieldGroup>
+            </div>
         </form>
     );
 }

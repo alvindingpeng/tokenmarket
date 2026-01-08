@@ -278,7 +278,7 @@ export function MemberList({
     };
 
     return (
-        <div className="relative h-101">
+        <div className="relative h-full min-h-0">
             <div
                 className={cn(
                     'absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground',
