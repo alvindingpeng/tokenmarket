@@ -29,6 +29,7 @@ func ChannelCreate(channel *model.Channel, ctx context.Context) error {
 	if err := db.GetDB().WithContext(ctx).Create(channel).Error; err != nil {
 		return err
 	}
+	channelCache.Set(channel.ID, *channel)
 	for _, k := range channel.Keys {
 		if k.ID != 0 {
 			channelKeyCache.Set(k.ID, k)
