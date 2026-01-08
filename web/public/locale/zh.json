@@ -312,6 +312,8 @@
             "matchRegex": "匹配正则",
             "matchRegexPlaceholder": "留空则默认按分组名称模糊匹配",
             "matchRegexInvalid": "正则无效",
+            "firstTokenTimeOut": "首字超时",
+            "firstTokenTimeOutHint": "单位秒，仅流式响应起效，0 表示不限制",
             "items": "已选模型",
             "addItem": "添加模型",
             "autoAdd": "自动添加",

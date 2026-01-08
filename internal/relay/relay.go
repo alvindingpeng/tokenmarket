@@ -96,13 +96,14 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			}
 
 			rc := &relayContext{
-				c:               c,
-				inAdapter:       inAdapter,
-				outAdapter:      outAdapter,
-				internalRequest: internalRequest,
-				channel:         channel,
-				metrics:         metrics,
-				usedKey:         channel.GetChannelKey(),
+				c:                    c,
+				inAdapter:            inAdapter,
+				outAdapter:           outAdapter,
+				internalRequest:      internalRequest,
+				channel:              channel,
+				metrics:              metrics,
+				usedKey:              channel.GetChannelKey(),
+				firstTokenTimeOutSec: group.FirstTokenTimeOut,
 			}
 
 			if statusCode, err := rc.forward(); err == nil {
@@ -251,38 +252,85 @@ func (rc *relayContext) handleStreamResponse(ctx context.Context, response *http
 	rc.c.Header("X-Accel-Buffering", "no")
 
 	firstToken := true
-	readCfg := &sse.ReadConfig{MaxEventSize: maxSSEEventSize}
-	for ev, err := range sse.Read(response.Body, readCfg) {
+
+	// Streaming "time to first token" timeout: only applies before we write anything to the client.
+	// We read SSE events in a goroutine so we can race the first meaningful output against a timer.
+	type sseReadResult struct {
+		data string
+		err  error
+	}
+	results := make(chan sseReadResult, 1)
+	go func() {
+		defer close(results)
+		readCfg := &sse.ReadConfig{MaxEventSize: maxSSEEventSize}
+		for ev, err := range sse.Read(response.Body, readCfg) {
+			if err != nil {
+				results <- sseReadResult{err: err}
+				return
+			}
+			results <- sseReadResult{data: ev.Data}
+		}
+	}()
+
+	var firstTokenTimer *time.Timer
+	var firstTokenC <-chan time.Time
+	if firstToken && rc.firstTokenTimeOutSec > 0 {
+		firstTokenTimer = time.NewTimer(time.Duration(rc.firstTokenTimeOutSec) * time.Second)
+		firstTokenC = firstTokenTimer.C
+		defer func() {
+			if firstTokenTimer != nil {
+				firstTokenTimer.Stop()
+			}
+		}()
+	}
+
+	for {
 		// 检查客户端是否断开
 		select {
 		case <-ctx.Done():
 			log.Infof("client disconnected, stopping stream")
 			return nil
-		default:
-		}
+		case <-firstTokenC:
+			// Abort upstream stream before any client writes; caller will retry next channel.
+			log.Warnf("first token timeout (%ds), switching channel", rc.firstTokenTimeOutSec)
+			_ = response.Body.Close()
+			return fmt.Errorf("first token timeout (%ds)", rc.firstTokenTimeOutSec)
+		case r, ok := <-results:
+			if !ok {
+				log.Infof("stream end")
+				return nil
+			}
+			if r.err != nil {
+				log.Warnf("failed to read event: %v", r.err)
+				return fmt.Errorf("failed to read stream event: %w", r.err)
+			}
 
-		if err != nil {
-			log.Warnf("failed to read event: %v", err)
-			return fmt.Errorf("failed to read stream event: %w", err)
-		}
+			// 转换流式数据
+			data, err := rc.transformStreamData(ctx, r.data)
+			if err != nil || len(data) == 0 {
+				continue
+			}
+			// 记录首个 Token 时间
+			if firstToken {
+				rc.metrics.SetFirstTokenTime(time.Now())
+				firstToken = false
+				// Disable the first-token timer once we have meaningful output.
+				if firstTokenTimer != nil {
+					if !firstTokenTimer.Stop() {
+						select {
+						case <-firstTokenTimer.C:
+						default:
+						}
+					}
+					firstTokenTimer = nil
+					firstTokenC = nil
+				}
+			}
 
-		// 转换流式数据
-		data, err := rc.transformStreamData(ctx, ev.Data)
-		if err != nil || len(data) == 0 {
-			continue
+			rc.c.Writer.Write(data)
+			rc.c.Writer.Flush()
 		}
-		// 记录首个 Token 时间
-		if firstToken {
-			rc.metrics.SetFirstTokenTime(time.Now())
-			firstToken = false
-		}
-
-		rc.c.Writer.Write(data)
-		rc.c.Writer.Flush()
 	}
-
-	log.Infof("stream end")
-	return nil
 }
 
 // transformStreamData 转换流式数据

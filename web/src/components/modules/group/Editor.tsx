@@ -15,6 +15,8 @@ import type { GroupMode } from '@/api/endpoints/group';
 import type { SelectedMember } from './ItemList';
 import { MemberList } from './ItemList';
 import { matchesGroupName, memberKey, normalizeKey, MODE_LABELS } from './utils';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/animate-ui/components/animate/tooltip';
+import { HelpCircle } from 'lucide-react';
 
 
 
@@ -22,6 +24,7 @@ export type GroupEditorValues = {
     name: string;
     match_regex: string;
     mode: GroupMode;
+    first_token_time_out: number;
     members: SelectedMember[];
 };
 
@@ -226,6 +229,7 @@ export function GroupEditor({
     const [groupName, setGroupName] = useState(initial?.name ?? '');
     const [matchRegex, setMatchRegex] = useState(initial?.match_regex ?? '');
     const [mode, setMode] = useState<GroupMode>((initial?.mode ?? 1) as GroupMode);
+    const [firstTokenTimeOut, setFirstTokenTimeOut] = useState<number>(initial?.first_token_time_out ?? 0);
     const [selectedMembers, setSelectedMembers] = useState<SelectedMember[]>(initial?.members ?? []);
     const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
@@ -296,6 +300,7 @@ export function GroupEditor({
             name: groupName,
             match_regex: regexKey,
             mode,
+            first_token_time_out: firstTokenTimeOut,
             members: selectedMembers,
         });
     };
@@ -304,7 +309,7 @@ export function GroupEditor({
     return (
         <form onSubmit={handleSubmit}>
             <FieldGroup className="gap-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <Field>
                         <FieldLabel htmlFor="group-name">{t('form.name')}</FieldLabel>
                         <Input
@@ -329,7 +334,42 @@ export function GroupEditor({
                             </p>
                         )}
                     </Field>
+
+                    <Field>
+                        <FieldLabel htmlFor="group-first-token-time-out">
+                            {t('form.firstTokenTimeOut')}
+                            <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        {t('form.firstTokenTimeOutHint')}
+                                    </TooltipContent>
+                                </Tooltip>
+                            </TooltipProvider>
+                        </FieldLabel>
+                        <Input
+                            id="group-first-token-time-out"
+                            type="number"
+                            inputMode="numeric"
+                            min={0}
+                            step={1}
+                            value={String(firstTokenTimeOut)}
+                            onChange={(e) => {
+                                const raw = e.target.value;
+                                if (raw.trim() === '') {
+                                    setFirstTokenTimeOut(0);
+                                    return;
+                                }
+                                const n = Number.parseInt(raw, 10);
+                                setFirstTokenTimeOut(Number.isFinite(n) && n > 0 ? n : 0);
+                            }}
+                            className="rounded-xl"
+                        />
+                    </Field>
                 </div>
+
 
                 {/* Mode */}
                 <div className="flex gap-1">
