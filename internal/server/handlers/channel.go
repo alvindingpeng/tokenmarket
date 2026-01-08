@@ -13,7 +13,6 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/alvindingpeng/switchyard/internal/server/router"
-	"github.com/alvindingpeng/switchyard/internal/server/worker"
 	"github.com/alvindingpeng/switchyard/internal/task"
 	"github.com/gin-gonic/gin"
 )
@@ -83,15 +82,15 @@ func createChannel(c *gin.Context) {
 	}
 	stats := op.StatsChannelGet(channel.ID)
 	channel.Stats = &stats
-	go func(channel model.Channel) {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	go func(channel *model.Channel) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		modelStr := channel.Model + "," + channel.CustomModel
 		modelArray := strings.Split(modelStr, ",")
 		helper.LLMPriceAddToDB(modelArray, ctx)
-		helper.ChannelBaseUrlDelayUpdate(channel)
-	}(channel)
-	worker.AutoGroup(channel.ID, channel.Name, channel.Model, channel.CustomModel, channel.AutoGroup)
+		helper.ChannelBaseUrlDelayUpdate(channel, ctx)
+		helper.ChannelAutoGroup(channel, ctx)
+	}(&channel)
 	resp.Success(c, channel)
 }
 
@@ -108,15 +107,15 @@ func updateChannel(c *gin.Context) {
 	}
 	stats := op.StatsChannelGet(channel.ID)
 	channel.Stats = &stats
-	go func(channel model.Channel) {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	go func(channel *model.Channel) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		modelStr := channel.Model + "," + channel.CustomModel
 		modelArray := strings.Split(modelStr, ",")
 		helper.LLMPriceAddToDB(modelArray, ctx)
-		helper.ChannelBaseUrlDelayUpdate(channel)
-	}(*channel)
-	worker.AutoGroup(channel.ID, channel.Name, channel.Model, channel.CustomModel, channel.AutoGroup)
+		helper.ChannelBaseUrlDelayUpdate(channel, ctx)
+		helper.ChannelAutoGroup(channel, ctx)
+	}(channel)
 	resp.Success(c, channel)
 }
 

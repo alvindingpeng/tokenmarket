@@ -8,7 +8,6 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/helper"
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
-	"github.com/alvindingpeng/switchyard/internal/server/worker"
 	"github.com/alvindingpeng/switchyard/internal/utils/diff"
 	"github.com/alvindingpeng/switchyard/internal/utils/log"
 	"github.com/alvindingpeng/switchyard/internal/utils/xstrings"
@@ -23,7 +22,8 @@ func SyncModelsTask() {
 	defer func() {
 		log.Debugf("sync models task finished, sync time: %s", time.Since(startTime))
 	}()
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
 	channels, err := op.ChannelList(ctx)
 	if err != nil {
 		log.Errorf("failed to list channels: %v", err)
@@ -77,10 +77,9 @@ func SyncModelsTask() {
 			}
 		}
 
-		// 自动分组新增的模型
-		if len(addedModels) > 0 {
-			log.Infof("added channel %s models: %v", channel.Name, addedModels)
-			worker.AutoGroup(channel.ID, channel.Name, strings.Join(addedModels, ","), "", channel.AutoGroup)
+		// 自动分组
+		if len(newModels) > 0 {
+			helper.ChannelAutoGroup(&channel, ctx)
 		}
 	}
 	llmPrice, err := op.LLMList(ctx)

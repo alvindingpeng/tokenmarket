@@ -6,9 +6,7 @@ import (
 	"time"
 )
 
-func GetUrlDelay(httpClient *http.Client, url string, timeout time.Duration) (int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
+func GetUrlDelay(httpClient *http.Client, url string, ctx context.Context) (int, error) {
 	start := time.Now()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
 	resp, err := httpClient.Do(req)

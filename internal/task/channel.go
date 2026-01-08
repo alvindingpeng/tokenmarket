@@ -15,12 +15,14 @@ func ChannelBaseUrlDelayTask() {
 	defer func() {
 		log.Debugf("channel base url delay task finished, update time: %s", time.Since(startTime))
 	}()
-	channels, err := op.ChannelList(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	channels, err := op.ChannelList(ctx)
 	if err != nil {
 		log.Errorf("failed to list channels: %v", err)
 		return
 	}
 	for _, channel := range channels {
-		helper.ChannelBaseUrlDelayUpdate(channel)
+		helper.ChannelBaseUrlDelayUpdate(&channel, ctx)
 	}
 }
