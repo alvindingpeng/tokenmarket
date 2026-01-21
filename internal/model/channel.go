@@ -31,6 +31,7 @@ type Channel struct {
 	ParamOverride *string               `json:"param_override"`
 	ChannelProxy  *string               `json:"channel_proxy"`
 	Stats         *StatsChannel         `json:"stats,omitempty" gorm:"foreignKey:ChannelID"`
+	MatchRegex    *string               `json:"match_regex"`
 }
 
 type BaseUrl struct {
@@ -51,6 +52,7 @@ type ChannelKey struct {
 	StatusCode       int     `json:"status_code"`
 	LastUseTimeStamp int64   `json:"last_use_time_stamp"`
 	TotalCost        float64 `json:"total_cost"`
+	Remark           string  `json:"remark"`
 }
 
 // ChannelUpdateRequest 渠道更新请求 - 仅包含变更的数据

@@ -26,6 +26,7 @@ export function CreateDialogContent() {
         auto_group: AutoGroupType.None,
         enabled: true,
         proxy: false,
+        match_regex: '',
     });
     const t = useTranslations('channel.create');
 
@@ -59,6 +60,7 @@ export function CreateDialogContent() {
                 custom_header: normalizedHeaders,
                 channel_proxy: channelProxy ? channelProxy : null,
                 param_override: paramOverride ? paramOverride : null,
+                match_regex: formData.match_regex.trim() ? formData.match_regex.trim() : null,
             },
             {
                 onSuccess: () => {
@@ -76,6 +78,7 @@ export function CreateDialogContent() {
                         auto_group: AutoGroupType.None,
                         enabled: true,
                         proxy: false,
+                        match_regex: '',
                     });
                     setIsOpen(false);
                 }

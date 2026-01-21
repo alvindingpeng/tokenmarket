@@ -38,6 +38,7 @@ export interface ChannelFormData {
     proxy: boolean;
     auto_sync: boolean;
     auto_group: AutoGroupType;
+    match_regex: string;
 }
 
 export interface ChannelFormProps {
@@ -119,6 +120,7 @@ export function ChannelForm({
                     .filter((k) => k.channel_key.trim())
                     .map((k) => ({ enabled: k.enabled, channel_key: k.channel_key.trim() })),
                 proxy: formData.proxy,
+                match_regex: formData.match_regex.trim() || null,
             },
             {
                 onSuccess: (data) => {
@@ -534,6 +536,20 @@ export function ChannelForm({
                                     </div>
                                 ))}
                             </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label htmlFor={`${idPrefix}-match-regex`} className="text-sm font-medium text-card-foreground">
+                                {t('matchRegex')}
+                            </label>
+                            <Input
+                                id={`${idPrefix}-match-regex`}
+                                type="text"
+                                value={formData.match_regex}
+                                onChange={(e) => onFormDataChange({ ...formData, match_regex: e.target.value })}
+                                placeholder={t('matchRegexPlaceholder')}
+                                className="rounded-xl"
+                            />
                         </div>
 
                         <div className="space-y-2">

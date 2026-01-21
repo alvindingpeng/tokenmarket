@@ -56,6 +56,7 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         proxy: channel.proxy,
         auto_sync: channel.auto_sync,
         auto_group: channel.auto_group,
+        match_regex: channel.match_regex ?? '',
     });
     const t = useTranslations('channel.detail');
 
@@ -102,6 +103,12 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         const curParamOverride = channel.param_override ?? '';
         if (nextParamOverride !== curParamOverride) {
             req.param_override = nextParamOverride ? nextParamOverride : null;
+        }
+
+        const nextMatchRegex = formData.match_regex.trim();
+        const curMatchRegex = channel.match_regex ?? '';
+        if (nextMatchRegex !== curMatchRegex) {
+            req.match_regex = nextMatchRegex ? nextMatchRegex : null;
         }
 
         const originalKeys = channel.keys;
