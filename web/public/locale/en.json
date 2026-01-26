@@ -381,7 +381,6 @@
             "noResponseContent": "(No response content)",
             "firstTokenTime": "First Token Time",
             "tokens": "tokens",
-            "retryProcess": "Retry Process",
             "retryDetails": "Retry Details",
             "attempts": "attempts",
             "success": "Success",
