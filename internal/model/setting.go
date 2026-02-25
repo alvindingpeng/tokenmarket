@@ -66,7 +66,6 @@ func (s *Setting) Validate() error {
 		validSchemes := map[string]bool{
 			"http":   true,
 			"https":  true,
-			"socks":  true,
 			"socks5": true,
 		}
 		if !validSchemes[parsedURL.Scheme] {
