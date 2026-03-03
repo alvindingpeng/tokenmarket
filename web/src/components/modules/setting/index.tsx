@@ -14,7 +14,7 @@ import { SettingCircuitBreaker } from './CircuitBreaker';
 
 export function Setting() {
     return (
-        <PageWrapper className="columns-1 md:columns-2 gap-4 [&>div]:mb-4 [&>div]:break-inside-avoid">
+        <PageWrapper className="h-full min-h-0 overflow-y-auto overscroll-contain columns-1 md:columns-2 gap-4 [&>div]:mb-4 [&>div]:break-inside-avoid">
             <div>
                 <SettingInfo key="setting-info" />
             </div>
