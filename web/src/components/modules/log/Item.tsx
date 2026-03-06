@@ -201,7 +201,6 @@ export function LogCard({ log }: { log: RelayLog }) {
                 <MorphingDialogTrigger
                     className={cn(
                         "rounded-3xl border bg-card w-full text-left",
-                        "hover:shadow-md transition-shadow duration-200",
                         hasError ? "border-destructive/40" : "border-border",
                     )}
                 >

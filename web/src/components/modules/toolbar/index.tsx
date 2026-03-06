@@ -16,6 +16,7 @@ import { useNavStore, type NavItem } from '@/components/modules/navbar';
 import { CreateDialogContent as ChannelCreateContent } from '@/components/modules/channel/Create';
 import { CreateDialogContent as GroupCreateContent } from '@/components/modules/group/Create';
 import { CreateDialogContent as ModelCreateContent } from '@/components/modules/model/Create';
+import { useTranslations } from 'next-intl';
 import { useSearchStore } from './search-store';
 import {
     useToolbarViewOptionsStore,
@@ -26,21 +27,9 @@ import {
     type ModelFilter,
 } from './view-options-store';
 
-const CHANNEL_FILTER_OPTIONS: Array<{ value: ChannelFilter; label: string }> = [
-    { value: 'all', label: 'All channels' },
-    { value: 'enabled', label: 'Enabled only' },
-    { value: 'disabled', label: 'Disabled only' },
-];
-const GROUP_FILTER_OPTIONS: Array<{ value: GroupFilter; label: string }> = [
-    { value: 'all', label: 'All groups' },
-    { value: 'with-members', label: 'With members' },
-    { value: 'empty', label: 'Empty groups' },
-];
-const MODEL_FILTER_OPTIONS: Array<{ value: ModelFilter; label: string }> = [
-    { value: 'all', label: 'All models' },
-    { value: 'priced', label: 'Priced only' },
-    { value: 'free', label: 'Free only' },
-];
+const CHANNEL_FILTER_OPTIONS: ChannelFilter[] = ['all', 'enabled', 'disabled'];
+const GROUP_FILTER_OPTIONS: GroupFilter[] = ['all', 'with-members', 'empty'];
+const MODEL_FILTER_OPTIONS: ModelFilter[] = ['all', 'priced', 'free'];
 
 function isToolbarPage(item: NavItem): item is ToolbarPage {
     return (TOOLBAR_PAGES as readonly NavItem[]).includes(item);
@@ -58,6 +47,7 @@ function CreateDialogContent({ activeItem }: { activeItem: ToolbarPage }) {
 }
 
 export function Toolbar() {
+    const t = useTranslations('toolbar');
     const { activeItem } = useNavStore();
     const toolbarItem = isToolbarPage(activeItem) ? activeItem : null;
     const searchTerm = useSearchStore((s) => (toolbarItem ? s.searchTerms[toolbarItem] || '' : ''));
@@ -77,11 +67,36 @@ export function Toolbar() {
 
     if (!toolbarItem) return null;
 
+    const channelFilterLabelKeys: Record<ChannelFilter, string> = {
+        all: 'popover.filter.channel.all',
+        enabled: 'popover.filter.channel.enabled',
+        disabled: 'popover.filter.channel.disabled',
+    };
+    const groupFilterLabelKeys: Record<GroupFilter, string> = {
+        all: 'popover.filter.group.all',
+        'with-members': 'popover.filter.group.withMembers',
+        empty: 'popover.filter.group.empty',
+    };
+    const modelFilterLabelKeys: Record<ModelFilter, string> = {
+        all: 'popover.filter.model.all',
+        priced: 'popover.filter.model.priced',
+        free: 'popover.filter.model.free',
+    };
+
     const filterOptions = toolbarItem === 'channel'
-        ? CHANNEL_FILTER_OPTIONS
+        ? CHANNEL_FILTER_OPTIONS.map((value) => ({
+            value,
+            label: t(channelFilterLabelKeys[value]),
+        }))
         : toolbarItem === 'group'
-            ? GROUP_FILTER_OPTIONS
-            : MODEL_FILTER_OPTIONS;
+            ? GROUP_FILTER_OPTIONS.map((value) => ({
+                value,
+                label: t(groupFilterLabelKeys[value]),
+            }))
+            : MODEL_FILTER_OPTIONS.map((value) => ({
+                value,
+                label: t(modelFilterLabelKeys[value]),
+            }));
 
     const activeFilter = toolbarItem === 'channel'
         ? channelFilter
@@ -154,7 +169,7 @@ export function Toolbar() {
                     <PopoverTrigger asChild>
                         <button
                             type="button"
-                            aria-label="View options"
+                            aria-label={t('popover.ariaLabel')}
                             className={buttonVariants({
                                 variant: 'ghost',
                                 size: 'icon',
@@ -172,7 +187,7 @@ export function Toolbar() {
                     >
                         <div className="grid gap-3">
                             <div className="grid gap-2">
-                                <p className="text-xs font-medium text-muted-foreground">Layout</p>
+                                <p className="text-xs font-medium text-muted-foreground">{t('popover.layout')}</p>
                                 <div className="grid grid-cols-2 gap-2">
                                     <button
                                         type="button"
@@ -185,7 +200,7 @@ export function Toolbar() {
                                         )}
                                     >
                                         <LayoutGrid className="size-3.5" />
-                                        Grid
+                                        {t('popover.grid')}
                                     </button>
                                     <button
                                         type="button"
@@ -198,13 +213,13 @@ export function Toolbar() {
                                         )}
                                     >
                                         <List className="size-3.5" />
-                                        List
+                                        {t('popover.list')}
                                     </button>
                                 </div>
                             </div>
 
                             <div className="grid gap-2">
-                                <p className="text-xs font-medium text-muted-foreground">Sort</p>
+                                <p className="text-xs font-medium text-muted-foreground">{t('popover.sort')}</p>
                                 <div className="grid grid-cols-2 gap-2">
                                     <button
                                         type="button"
@@ -217,7 +232,7 @@ export function Toolbar() {
                                         )}
                                     >
                                         <ArrowDownUp className="size-3.5" />
-                                        Asc
+                                        {t('popover.asc')}
                                     </button>
                                     <button
                                         type="button"
@@ -230,13 +245,13 @@ export function Toolbar() {
                                         )}
                                     >
                                         <ArrowDownUp className="size-3.5 rotate-180" />
-                                        Desc
+                                        {t('popover.desc')}
                                     </button>
                                 </div>
                             </div>
 
                             <div className="grid gap-2">
-                                <p className="text-xs font-medium text-muted-foreground">Filter</p>
+                                <p className="text-xs font-medium text-muted-foreground">{t('popover.filter.title')}</p>
                                 <div className="grid gap-2">
                                     {filterOptions.map((option) => (
                                         <button
