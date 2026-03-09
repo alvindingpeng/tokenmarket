@@ -34,9 +34,9 @@ export function Channel() {
             items={visibleChannels}
             layout={layout}
             columns={{ default: 1, md: 2, lg: 3 }}
-            estimateItemHeight={216}
+            estimateItemHeight={layout === 'list' ? 184 : 216}
             getItemKey={(item) => `channel-${item.raw.id}`}
-            renderItem={(item) => <Card channel={item.raw} stats={item.formatted} />}
+            renderItem={(item) => <Card channel={item.raw} stats={item.formatted} layout={layout} />}
         />
     );
 }
