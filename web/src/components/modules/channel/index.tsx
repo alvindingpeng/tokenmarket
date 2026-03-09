@@ -11,13 +11,19 @@ export function Channel() {
     const pageKey = 'channel' as const;
     const searchTerm = useSearchStore((s) => s.getSearchTerm(pageKey));
     const layout = useToolbarViewOptionsStore((s) => s.getLayout(pageKey));
+    const sortField = useToolbarViewOptionsStore((s) => s.getSortField(pageKey));
     const sortOrder = useToolbarViewOptionsStore((s) => s.getSortOrder(pageKey));
     const filter = useToolbarViewOptionsStore((s) => s.channelFilter);
 
     const sortedChannels = useMemo(() => {
         if (!channelsData) return [];
-        return [...channelsData].sort((a, b) => (sortOrder === 'asc' ? a.raw.id - b.raw.id : b.raw.id - a.raw.id));
-    }, [channelsData, sortOrder]);
+        return [...channelsData].sort((a, b) => {
+            const diff = sortField === 'name'
+                ? a.raw.name.localeCompare(b.raw.name)
+                : a.raw.id - b.raw.id;
+            return sortOrder === 'asc' ? diff : -diff;
+        });
+    }, [channelsData, sortField, sortOrder]);
 
     const visibleChannels = useMemo(() => {
         const term = searchTerm.toLowerCase().trim();
@@ -34,7 +40,7 @@ export function Channel() {
             items={visibleChannels}
             layout={layout}
             columns={{ default: 1, md: 2, lg: 3 }}
-            estimateItemHeight={layout === 'list' ? 184 : 216}
+            estimateItemHeight={216}
             getItemKey={(item) => `channel-${item.raw.id}`}
             renderItem={(item) => <Card channel={item.raw} stats={item.formatted} layout={layout} />}
         />

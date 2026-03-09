@@ -59,6 +59,10 @@
             "sort": "Sort",
             "grid": "Grid",
             "list": "List",
+            "nameAsc": "Name Asc",
+            "nameDesc": "Name Desc",
+            "createdAsc": "Time Asc",
+            "createdDesc": "Time Desc",
             "asc": "Asc",
             "desc": "Desc",
             "filter": {
