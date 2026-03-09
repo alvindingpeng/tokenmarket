@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 export type ToolbarLayout = 'grid' | 'list';
 export type ToolbarSortOrder = 'asc' | 'desc';
@@ -26,24 +27,38 @@ interface ToolbarViewOptionsState {
     setModelFilter: (value: ModelFilter) => void;
 }
 
-export const useToolbarViewOptionsStore = create<ToolbarViewOptionsState>((set, get) => ({
-    layouts: {},
-    sortOrders: {},
-    channelFilter: 'all',
-    groupFilter: 'all',
-    modelFilter: 'all',
+export const useToolbarViewOptionsStore = create<ToolbarViewOptionsState>()(
+    persist(
+        (set, get) => ({
+            layouts: {},
+            sortOrders: {},
+            channelFilter: 'all',
+            groupFilter: 'all',
+            modelFilter: 'all',
 
-    getLayout: (item) => get().layouts[item] || 'grid',
-    setLayout: (item, value) => {
-        set((state) => ({ layouts: { ...state.layouts, [item]: value } }));
-    },
+            getLayout: (item) => get().layouts[item] || 'grid',
+            setLayout: (item, value) => {
+                set((state) => ({ layouts: { ...state.layouts, [item]: value } }));
+            },
 
-    getSortOrder: (item) => get().sortOrders[item] || 'asc',
-    setSortOrder: (item, value) => {
-        set((state) => ({ sortOrders: { ...state.sortOrders, [item]: value } }));
-    },
+            getSortOrder: (item) => get().sortOrders[item] || 'asc',
+            setSortOrder: (item, value) => {
+                set((state) => ({ sortOrders: { ...state.sortOrders, [item]: value } }));
+            },
 
-    setChannelFilter: (value) => set({ channelFilter: value }),
-    setGroupFilter: (value) => set({ groupFilter: value }),
-    setModelFilter: (value) => set({ modelFilter: value }),
-}));
+            setChannelFilter: (value) => set({ channelFilter: value }),
+            setGroupFilter: (value) => set({ groupFilter: value }),
+            setModelFilter: (value) => set({ modelFilter: value }),
+        }),
+        {
+            name: 'toolbar-view-options-storage',
+            partialize: (state) => ({
+                layouts: state.layouts,
+                sortOrders: state.sortOrders,
+                channelFilter: state.channelFilter,
+                groupFilter: state.groupFilter,
+                modelFilter: state.modelFilter,
+            }),
+        }
+    )
+);
