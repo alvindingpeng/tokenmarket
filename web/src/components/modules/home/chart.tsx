@@ -8,24 +8,19 @@ import { useTranslations } from 'next-intl';
 import { formatCount, formatMoney } from '@/lib/utils';
 import dayjs from 'dayjs';
 import { AnimatedNumber } from '@/components/common/AnimatedNumber';
-import { Tabs, TabsList, TabsTrigger, TabsContents, TabsContent } from '@/components/animate-ui/components/animate/tabs';
-import { useToolbarViewOptionsStore, type ChartMetricType } from '@/components/modules/toolbar/view-options-store';
-
-const PERIODS = ['1', '7', '30'] as const;
-const METRIC_TYPES: ChartMetricType[] = ['cost', 'count', 'tokens'];
+import { Tabs, TabsList, TabsTrigger } from '@/components/animate-ui/components/animate/tabs';
+import { useHomeViewStore, type ChartMetricType, type ChartPeriod } from '@/components/modules/home/store';
 
 export function StatsChart() {
+    const PERIODS: readonly ChartPeriod[] = ['1', '7', '30'];
     const { data: statsDaily } = useStatsDaily();
     const { data: statsHourly } = useStatsHourly();
     const t = useTranslations('home.chart');
-    
-    const chartMetricType = useToolbarViewOptionsStore((state) => state.chartMetricType);
-    const setChartMetricType = useToolbarViewOptionsStore((state) => state.setChartMetricType);
-    const period = useToolbarViewOptionsStore((state) => {
-        if (!state.chartPeriod) return '1';
-        return state.chartPeriod;
-    });
-    const setChartPeriod = useToolbarViewOptionsStore((state) => state.setChartPeriod);
+
+    const chartMetricType = useHomeViewStore((state) => state.chartMetricType);
+    const setChartMetricType = useHomeViewStore((state) => state.setChartMetricType);
+    const period = useHomeViewStore((state) => state.chartPeriod);
+    const setChartPeriod = useHomeViewStore((state) => state.setChartPeriod);
 
     const sortedDaily = useMemo(() => {
         if (!statsDaily) return [];
@@ -42,51 +37,49 @@ export function StatsChart() {
             if (!statsHourly) return [];
             return statsHourly.map((stat) => ({
                 date: `${stat.hour}:00`,
-                [dataKey]: chartMetricType === 'cost' 
-                    ? stat.total_cost.raw 
+                [dataKey]: chartMetricType === 'cost'
+                    ? stat.total_cost.raw
                     : chartMetricType === 'count'
-                    ? stat.request_count.raw
-                    : (stat.input_token.raw + stat.output_token.raw),
+                        ? stat.request_count.raw
+                        : (stat.input_token.raw + stat.output_token.raw),
             }));
         } else {
-            const days = parseInt(period);
+            const days = Number(period);
             return sortedDaily.slice(-days).map((stat) => ({
                 date: dayjs(stat.date).format('MM/DD'),
                 [dataKey]: chartMetricType === 'cost'
                     ? stat.total_cost.raw
                     : chartMetricType === 'count'
-                    ? (stat.request_success.raw + stat.request_failed.raw)
-                    : (stat.input_token.raw + stat.output_token.raw),
+                        ? (stat.request_success.raw + stat.request_failed.raw)
+                        : (stat.input_token.raw + stat.output_token.raw),
             }));
         }
     }, [sortedDaily, statsHourly, period, chartMetricType]);
 
     const totals = useMemo(() => {
         if (period === '1') {
-            if (!statsHourly) return { primary: 0, requests: 0, cost: 0, tokens: 0 };
+            if (!statsHourly) return { requests: 0, cost: 0, tokens: 0 };
             const requests = statsHourly.reduce((acc, stat) => acc + stat.request_count.raw, 0);
             const cost = statsHourly.reduce((acc, stat) => acc + stat.total_cost.raw, 0);
             const tokens = statsHourly.reduce((acc, stat) => acc + stat.input_token.raw + stat.output_token.raw, 0);
             return {
-                primary: chartMetricType === 'cost' ? cost : chartMetricType === 'count' ? requests : tokens,
                 requests,
                 cost,
                 tokens,
             };
         } else {
-            const days = parseInt(period);
+            const days = Number(period);
             const recentStats = sortedDaily.slice(-days);
             const requests = recentStats.reduce((acc, stat) => acc + stat.request_success.raw + stat.request_failed.raw, 0);
             const cost = recentStats.reduce((acc, stat) => acc + stat.total_cost.raw, 0);
             const tokens = recentStats.reduce((acc, stat) => acc + stat.input_token.raw + stat.output_token.raw, 0);
             return {
-                primary: chartMetricType === 'cost' ? cost : chartMetricType === 'count' ? requests : tokens,
                 requests,
                 cost,
                 tokens,
             };
         }
-    }, [sortedDaily, statsHourly, period, chartMetricType]);
+    }, [sortedDaily, statsHourly, period]);
 
     const chartConfig = useMemo(() => {
         const dataKey = getChartDataKey(chartMetricType);
@@ -100,7 +93,7 @@ export function StatsChart() {
         };
     }, [chartMetricType, t]);
 
-    const getPeriodLabel = (p: typeof period) => {
+    const getPeriodLabel = (p: ChartPeriod) => {
         const labels = {
             '1': t('period.today'),
             '7': t('period.last7Days'),
@@ -109,26 +102,13 @@ export function StatsChart() {
         return labels[p];
     };
 
-    const getMetricLabel = (type: ChartMetricType) => {
-        const labels = {
-            'cost': t('metricType.cost'),
-            'count': t('metricType.count'),
-            'tokens': t('metricType.tokens'),
-        };
-        return labels[type];
-    };
 
     const handlePeriodClick = () => {
-        const currentIndex = PERIODS.indexOf(period as typeof PERIODS[number]);
+        const currentIndex = PERIODS.indexOf(period);
         const nextIndex = (currentIndex + 1) % PERIODS.length;
         setChartPeriod(PERIODS[nextIndex]);
     };
 
-    const getMetricValue = (type: ChartMetricType) => {
-        if (type === 'cost') return formatMoney(totals.cost);
-        if (type === 'count') return formatCount(totals.requests);
-        return formatCount(totals.tokens);
-    };
 
     const getChartStroke = (type: ChartMetricType) => {
         if (type === 'cost') return 'var(--chart-1)';
@@ -144,8 +124,7 @@ export function StatsChart() {
 
     return (
         <div className="rounded-3xl bg-card border-card-border border pt-4 pb-0 text-card-foreground custom-shadow">
-            <div className="px-4 pb-2 space-y-4">
-                {/* 第一行：标题 + 类型选择 */}
+            <div className="px-4 pb-2 space-y-2">
                 <div className="flex justify-between items-center">
                     <h3 className="font-semibold text-base">{t('title')}</h3>
                     <Tabs value={chartMetricType} onValueChange={(value) => setChartMetricType(value as ChartMetricType)}>
@@ -156,7 +135,7 @@ export function StatsChart() {
                         </TabsList>
                     </Tabs>
                 </div>
-                
+
                 {/* 第二行：汇总统计 + 周期选择 */}
                 <div className="flex justify-between items-start">
                     <div className="flex gap-2 text-sm">
@@ -190,7 +169,7 @@ export function StatsChart() {
                     >
                         <div>
                             <div className="text-xs text-muted-foreground">{t('timePeriod')}</div>
-                            <div className="text-base font-semibold">{getPeriodLabel(period as typeof PERIODS[number])}</div>
+                            <div className="text-base font-semibold">{getPeriodLabel(period)}</div>
                         </div>
                     </div>
                 </div>
@@ -228,11 +207,11 @@ export function StatsChart() {
                         }}
                     />
                     <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" />} />
-                    <Area 
-                        type="monotone" 
-                        dataKey={getChartDataKey(chartMetricType)} 
-                        stroke={getChartStroke(chartMetricType)} 
-                        fill={getChartFill(chartMetricType)} 
+                    <Area
+                        type="monotone"
+                        dataKey={getChartDataKey(chartMetricType)}
+                        stroke={getChartStroke(chartMetricType)}
+                        fill={getChartFill(chartMetricType)}
                     />
                 </AreaChart>
             </ChartContainer>
