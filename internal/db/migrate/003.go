@@ -3,7 +3,6 @@ package migrate
 import (
 	"fmt"
 
-	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/looplj/axonhub/llm"
 	"gorm.io/gorm"
 )
@@ -60,7 +59,7 @@ END
 		llm.APIFormatOpenAIResponse.String(),
 		llm.APIFormatAnthropicMessage.String(),
 		llm.APIFormatGeminiContents.String(),
-		model.ChannelTypeDoubao.String(),
+		"doubao",
 		llm.APIFormatOpenAIEmbedding.String()).Error; err != nil {
 		return fmt.Errorf("failed to migrate channels.type: %w", err)
 	}

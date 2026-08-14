@@ -13,6 +13,7 @@ import (
 	"github.com/dlclark/regexp2"
 )
 
+// ChannelHttpClient 根据渠道代理配置创建 HTTP 客户端。
 func ChannelHttpClient(channel *model.Channel) (*http.Client, error) {
 	if !channel.Proxy {
 		return client.GetHTTPClientSystemProxy(false)
@@ -23,35 +24,7 @@ func ChannelHttpClient(channel *model.Channel) (*http.Client, error) {
 	return client.GetHTTPClientCustomProxy(strings.TrimSpace(*channel.ChannelProxy))
 }
 
-func ChannelBaseUrlDelayUpdate(channel *model.Channel, ctx context.Context) {
-	if channel == nil {
-		return
-	}
-	httpClient, err := ChannelHttpClient(channel)
-	if err != nil {
-		log.Warnf("failed to get http client (channel=%d): %v", channel.ID, err)
-		return
-	}
-	newBaseUrls := make([]model.BaseUrl, 0, len(channel.BaseUrls))
-	for _, baseUrl := range channel.BaseUrls {
-		if baseUrl.URL == "" {
-			continue
-		}
-		delay, err := GetUrlDelay(httpClient, baseUrl.URL, ctx)
-		if err != nil {
-			log.Warnf("failed to get url delay (channel=%d): %v", channel.ID, err)
-			continue
-		}
-		newBaseUrls = append(newBaseUrls, model.BaseUrl{
-			URL:   baseUrl.URL,
-			Delay: delay,
-		})
-	}
-	if len(newBaseUrls) > 0 {
-		op.ChannelBaseUrlUpdate(channel.ID, newBaseUrls)
-	}
-}
-
+// ChannelAutoGroup 根据渠道模型和分组规则补充分组成员。
 func ChannelAutoGroup(channel *model.Channel, ctx context.Context) {
 	if channel == nil {
 		return

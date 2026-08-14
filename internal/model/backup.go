@@ -3,16 +3,15 @@ package model
 import "time"
 
 // DBDump is a full-database JSON export format for Switchyard.
-// Import uses incremental semantics (insert new rows, and upsert on certain key-based tables).
+// Import uses incremental semantics (insert new rows, and upsert on tables with natural keys).
 type DBDump struct {
 	Version      int       `json:"version"`
 	ExportedAt   time.Time `json:"exported_at"`
 	IncludeLogs  bool      `json:"include_logs"`
 	IncludeStats bool      `json:"include_stats"`
 
-	Channels    []Channel    `json:"channels,omitempty"`
-	ChannelKeys []ChannelKey `json:"channel_keys,omitempty"`
-	Groups      []Group      `json:"groups,omitempty"`
+	Channels   []Channel   `json:"channels,omitempty"`
+	Groups     []Group     `json:"groups,omitempty"`
 	GroupItems []GroupItem `json:"group_items,omitempty"`
 	LLMInfos   []LLMInfo   `json:"llm_infos,omitempty"`
 	APIKeys    []APIKey    `json:"api_keys,omitempty"`

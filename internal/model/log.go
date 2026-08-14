@@ -12,15 +12,14 @@ const (
 
 // ChannelAttempt 记录单次渠道尝试的决策和结果
 type ChannelAttempt struct {
-	ChannelID    int           `json:"channel_id"`
-	ChannelKeyID int           `json:"channel_key_id,omitempty"`
-	ChannelName  string        `json:"channel_name"`
-	ModelName    string        `json:"model_name"`
-	AttemptNum   int           `json:"attempt_num"`
-	Status       AttemptStatus `json:"status"`
-	Duration     int           `json:"duration"`
-	Sticky       bool          `json:"sticky,omitempty"`
-	Msg          string        `json:"msg,omitempty"`
+	ChannelID   int           `json:"channel_id"`      // ChannelID 是尝试使用的渠道主键。
+	ChannelName string        `json:"channel_name"`    // ChannelName 是尝试使用的渠道名称。
+	ModelName   string        `json:"model_name"`      // ModelName 是尝试使用的上游模型。
+	AttemptNum  int           `json:"attempt_num"`     // AttemptNum 是本次请求中的尝试序号。
+	Status      AttemptStatus `json:"status"`          // Status 是尝试结果。
+	Duration    int           `json:"duration"`        // Duration 是尝试耗时，单位为毫秒。
+	Sticky      bool          `json:"sticky,omitempty"` // Sticky 表示是否命中会话保持渠道。
+	Msg         string        `json:"msg,omitempty"`   // Msg 是跳过或失败原因。
 }
 
 type RelayLog struct {
