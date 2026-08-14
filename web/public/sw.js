@@ -1,199 +1,144 @@
-// Service Worker for Switchyard PWA
-// Vite: hashed assets under /assets/ are immutable (Cache First)
-
-/**
- * Cache naming
- * - Prefix MUST match `web/src/lib/sw.ts` (SWITCHYARD_CACHE_PREFIX)
- * - Bump CACHE_VERSION when you change caching behavior in this file
- * - FONT cache is version-independent (fonts persist across updates)
- */
-const CACHE_PREFIX = 'switchyard';
-const CACHE_VERSION = 'v1';
+// 缓存策略或预缓存结构变化时递增版本，以便激活阶段清理旧缓存。
+const CACHE_VERSION = 'v2';
 const CACHE_NAMES = {
-    static: `${CACHE_PREFIX}-static-${CACHE_VERSION}`,
-    app: `${CACHE_PREFIX}-app-${CACHE_VERSION}`,
-    // Font cache is NOT versioned - persists across app updates
-    font: `${CACHE_PREFIX}-font`,
+    shell: `switchyard-shell-${CACHE_VERSION}`,
+    static: `switchyard-static-${CACHE_VERSION}`,
 };
 
-const SW_MESSAGE_TYPE = {
-    SKIP_WAITING: 'SKIP_WAITING',
-    CLEAR_CACHE: 'CLEAR_CACHE',
-    CACHE_CLEARED: 'CACHE_CLEARED',
-};
+// 应用壳除构建入口外还必须包含的固定 PWA 资源。
+const CORE_ASSETS = [
+    '/manifest.json',
+    '/favicon.ico',
+    '/apple-icon.png',
+    '/web-app-manifest-192x192.png',
+    '/web-app-manifest-512x512.png',
+];
 
-// Precache (PWA essentials)
-const PRECACHE_URLS = ['/', '/manifest.json', '/web-app-manifest-192x192.png', '/web-app-manifest-512x512.png', '/logo-dark.svg'];
+// extractShellAssets 从构建后的 HTML 中提取根路径和相对路径资源。
+function extractShellAssets(html) {
+    const assets = new Set(CORE_ASSETS);
+    for (const match of html.matchAll(/\b(?:href|src)=["']((?:\/|\.\/)[^"'#]+)["']/g)) {
+        const url = new URL(match[1], `${self.location.origin}/`);
+        assets.add(`${url.pathname}${url.search}`);
+    }
+    return [...assets];
+}
 
-// ============ 安装事件 ============
-self.addEventListener('install', (event) => {
-    event.waitUntil(
-        (async () => {
-            // Best-effort precache: if one asset fails, we still want the SW to install.
-            try {
-                const cache = await caches.open(CACHE_NAMES.app);
-                await cache.addAll(PRECACHE_URLS);
-            } catch {
-                // ignore
-            }
-            await self.skipWaiting();
-        })()
-    );
-});
-
-// ============ 激活事件 ============
-self.addEventListener('activate', (event) => {
-    event.waitUntil(
-        (async () => {
-            // Clean up old Switchyard caches (previous versions), then take control.
-            await deleteSwitchyardCaches({ keep: new Set(Object.values(CACHE_NAMES)) });
-            await self.clients.claim();
-        })()
-    );
-});
-
-// ============ Fetch 事件 ============
-self.addEventListener('fetch', (event) => {
-    const { request } = event;
-    const url = new URL(request.url);
-
-    // 只处理同源 GET 请求
-    if (url.origin !== location.origin || request.method !== 'GET') {
-        return;
+// cacheAppShell 缓存首页、当前构建的哈希入口和固定 PWA 资源。
+async function cacheAppShell() {
+    const response = await fetch('/', { cache: 'no-store' });
+    if (!response.ok) {
+        throw new Error(`Failed to fetch app shell: ${response.status}`);
     }
 
-    // 跳过 API 请求和 Vite 开发环境资源
+    const assets = extractShellAssets(await response.clone().text());
+    const shellCache = await caches.open(CACHE_NAMES.shell);
+    const staticCache = await caches.open(CACHE_NAMES.static);
+    await shellCache.put('/', response);
+    await Promise.all([
+        shellCache.addAll(assets.filter((asset) => !asset.startsWith('/assets/'))),
+        staticCache.addAll(assets.filter((asset) => asset.startsWith('/assets/'))),
+    ]);
+}
+
+self.addEventListener('install', (event) => {
+    event.waitUntil((async () => {
+        await cacheAppShell();
+        await self.skipWaiting();
+    })());
+});
+
+self.addEventListener('activate', (event) => {
+    event.waitUntil((async () => {
+        const currentCaches = new Set(Object.values(CACHE_NAMES));
+        const cacheNames = await caches.keys();
+        await Promise.all(
+            cacheNames
+                .filter((name) => name.startsWith('switchyard-') && !currentCaches.has(name))
+                .map((name) => caches.delete(name)),
+        );
+        await self.clients.claim();
+    })());
+});
+
+self.addEventListener('fetch', (event) => {
+    const { request } = event;
+    if (request.method !== 'GET') return;
+
+    const url = new URL(request.url);
+    if (url.origin !== self.location.origin) return;
     if (
+        url.pathname === '/sw.js' ||
+        url.pathname === '/api' ||
         url.pathname.startsWith('/api/') ||
+        url.pathname === '/v1' ||
+        url.pathname.startsWith('/v1/') ||
         url.pathname.startsWith('/@vite') ||
         url.pathname.startsWith('/@react-refresh')
     ) {
         return;
     }
 
-    // 字体资源：Cache First（永久缓存，跨版本持久化）
-    if (url.pathname.endsWith('.woff2') || url.pathname.endsWith('.woff') || url.pathname.endsWith('.ttf')) {
-        event.respondWith(cacheFirst(request, CACHE_NAMES.font));
-        return;
-    }
-
-    // /assets/ 资源：Cache First（带哈希，永不变）
-    if (url.pathname.startsWith('/assets/')) {
-        event.respondWith(cacheFirst(request, CACHE_NAMES.static));
-        return;
-    }
-
-    // 页面导航：Network First，离线时返回缓存
     if (request.mode === 'navigate') {
-        event.respondWith(networkFirst(request, CACHE_NAMES.app, { fallbackUrl: '/' }));
+        event.respondWith(networkFirst(request));
         return;
     }
 
-    // 其他静态资源（public 目录）：Stale While Revalidate
-    event.respondWith(staleWhileRevalidate(request, CACHE_NAMES.app));
-});
-
-// ============ 缓存策略 ============
-
-/**
- * Cache First：优先缓存，适用于带哈希的不变资源
- */
-async function cacheFirst(request, cacheName) {
-    const cache = await caches.open(cacheName);
-    const cached = await cache.match(request);
-    if (cached) {
-        return cached;
+    if (url.pathname.startsWith('/assets/')) {
+        event.respondWith(cacheFirst(request));
+        return;
     }
 
-    try {
-        const response = await fetch(request);
-        if (response.ok) {
-            cache.put(request, response.clone());
-        }
-        return response;
-    } catch {
-        // 离线且无缓存
-        return new Response('Offline', { status: 503 });
+    if (
+        !['script', 'style', 'image', 'font', 'manifest'].includes(request.destination) &&
+        !/\.(?:css|js|mjs|png|jpg|jpeg|webp|gif|svg|ico|woff2?|ttf|otf|json)$/i.test(url.pathname)
+    ) {
+        return;
     }
-}
 
-/**
- * Network First：优先网络，适用于需要最新内容的资源
- */
-async function networkFirst(request, cacheName, { fallbackUrl = null } = {}) {
-    const cache = await caches.open(cacheName);
-    try {
-        const response = await fetch(request);
+    const updatePromise = fetch(request).then(async (response) => {
         if (response.ok) {
-            cache.put(request, response.clone());
+            const cache = await caches.open(CACHE_NAMES.shell);
+            await cache.put(request, response.clone());
         }
         return response;
-    } catch {
+    });
+    event.waitUntil(updatePromise.then(() => undefined).catch(() => undefined));
+    event.respondWith((async () => {
+        const cache = await caches.open(CACHE_NAMES.shell);
         const cached = await cache.match(request);
-        if (cached) {
-            return cached;
+        if (cached) return cached;
+        try {
+            return await updatePromise;
+        } catch {
+            return new Response('Offline', { status: 503 });
         }
-        // 如果有 fallback（通常是首页），返回 fallback
-        if (fallbackUrl) {
-            const fallback = await cache.match(fallbackUrl);
-            if (fallback) return fallback;
-        }
+    })());
+});
+
+// cacheFirst 优先返回不可变哈希资源的缓存，未命中时请求并持久化网络响应。
+async function cacheFirst(request) {
+    const cache = await caches.open(CACHE_NAMES.static);
+    const cached = await cache.match(request);
+    if (cached) return cached;
+
+    try {
+        const response = await fetch(request);
+        if (response.ok) await cache.put(request, response.clone());
+        return response;
+    } catch {
         return new Response('Offline', { status: 503 });
     }
 }
 
-/**
- * Stale While Revalidate：返回缓存同时后台更新
- */
-async function staleWhileRevalidate(request, cacheName) {
-    const cache = await caches.open(cacheName);
-    const cached = await cache.match(request);
-
-    const fetchPromise = fetch(request)
-        .then((response) => {
-            if (response.ok) {
-                cache.put(request, response.clone());
-            }
-            return response;
-        })
-        .catch(() => cached || new Response('Offline', { status: 503 }));
-
-    return cached || fetchPromise;
-}
-
-// ============ 消息事件 ============
-self.addEventListener('message', (event) => {
-    const { type } = event.data || {};
-
-    switch (type) {
-        case SW_MESSAGE_TYPE.SKIP_WAITING:
-            self.skipWaiting();
-            break;
-
-        case SW_MESSAGE_TYPE.CLEAR_CACHE:
-            // Only clear Switchyard caches (avoid nuking other same-origin caches).
-            // PRESERVE font cache - fonts should persist across updates.
-            event.waitUntil(
-                (async () => {
-                    await deleteSwitchyardCaches({ keep: new Set([CACHE_NAMES.font]) });
-                    const clients = await self.clients.matchAll();
-                    clients.forEach((client) => client.postMessage({ type: SW_MESSAGE_TYPE.CACHE_CLEARED }));
-                })()
-            );
-            break;
+// networkFirst 优先返回最新页面，断网时回退到预缓存首页。
+async function networkFirst(request) {
+    const cache = await caches.open(CACHE_NAMES.shell);
+    try {
+        const response = await fetch(request);
+        if (response.ok) await cache.put('/', response.clone());
+        return response;
+    } catch {
+        return (await cache.match(request)) || (await cache.match('/')) || new Response('Offline', { status: 503 });
     }
-});
-
-// ========= Helpers =========
-function isSwitchyardCacheName(name) {
-    return name.startsWith(`${CACHE_PREFIX}-`);
-}
-
-async function deleteSwitchyardCaches({ keep } = {}) {
-    const names = await caches.keys();
-    const deletions = names
-        .filter((name) => isSwitchyardCacheName(name))
-        .filter((name) => !(keep && keep.has(name)))
-        .map((name) => caches.delete(name));
-    await Promise.all(deletions);
 }
