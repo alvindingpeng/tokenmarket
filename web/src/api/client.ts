@@ -6,9 +6,9 @@ export const API_BASE_URL = '.'; // API 请求固定使用当前站点，由 Vit
 /**
  * 获取认证 Store（延迟导入以避免循环依赖）
  */
-let getAuthStore: (() => { token: string | null; logout: () => void }) | null = null;
+let getAuthStore: (() => { token: string | null; isAPIKeyAuth: boolean; logout: () => void }) | null = null;
 
-export function setAuthStoreGetter(getter: () => { token: string | null; logout: () => void }) {
+export function setAuthStoreGetter(getter: () => { token: string | null; isAPIKeyAuth: boolean; logout: () => void }) {
     getAuthStore = getter;
 }
 
@@ -84,10 +84,10 @@ async function request<T>(
         headers.set('Content-Type', 'application/json');
     }
 
-    // 添加 Authorization - 从 zustand store 获取 token
+    // API Key 模式继续使用 Authorization，用户登录由浏览器自动携带 Cookie
     if (typeof window !== 'undefined' && getAuthStore) {
         const store = getAuthStore();
-        if (store.token) {
+        if (store.isAPIKeyAuth && store.token) {
             headers.set('Authorization', `Bearer ${store.token}`);
         }
     }
@@ -97,6 +97,7 @@ async function request<T>(
         method,
         headers,
         body,
+        credentials: 'same-origin',
     });
 
     return handleResponse<T>(response);
@@ -106,7 +107,7 @@ async function request<T>(
  * API 客户端 - 基础 HTTP 方法
  */
 export const apiClient = {
-    /**
+    /** 
      * GET 请求
      */
     get: <T>(path: string, params?: Record<string, string | number | boolean>): Promise<T> =>

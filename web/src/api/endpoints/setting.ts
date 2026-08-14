@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, API_BASE_URL } from '../client';
 import { logger } from '@/lib/logger';
-import { useAuthStore } from './user';
 
 /**
  * Setting 数据
@@ -107,12 +106,6 @@ function getDataField<T>(value: unknown): T | undefined {
     return (value as ApiResponse<T>).data;
 }
 
-function getAuthHeader(): string {
-    const token = useAuthStore.getState().token;
-    if (!token) throw new Error('Not authenticated');
-    return `Bearer ${token}`;
-}
-
 function parseFilename(contentDisposition: string | null): string | null {
     if (!contentDisposition) return null;
     // e.g. attachment; filename="switchyard-export-20250101120000.json"
@@ -153,9 +146,7 @@ export function useExportDB() {
 
             const res = await fetch(`${API_BASE_URL}/api/v1/setting/export?${params.toString()}`, {
                 method: 'GET',
-                headers: {
-                    Authorization: getAuthHeader(),
-                },
+                credentials: 'same-origin',
             });
 
             if (!res.ok) {
@@ -185,10 +176,8 @@ export function useImportDB() {
 
             const res = await fetch(`${API_BASE_URL}/api/v1/setting/import`, {
                 method: 'POST',
-                headers: {
-                    Authorization: getAuthHeader(),
-                },
                 body: form,
+                credentials: 'same-origin',
             });
 
             const contentType = res.headers.get('content-type') || '';
@@ -209,4 +198,3 @@ export function useImportDB() {
         },
     });
 }
-

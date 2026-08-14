@@ -11,15 +11,7 @@ import { logger } from '@/lib/logger';
 export interface UserLoginRequest {
     username: string;
     password: string;
-    expire: number; // token 过期时间（秒）
-}
-
-/**
- * 用户登录响应
- */
-export interface UserLoginResponse {
-    token: string;
-    expire_at: string; // ISO 8601 格式
+    expire: number; // 登录状态过期时间（秒）
 }
 
 /**
@@ -45,10 +37,9 @@ interface AuthState {
     isLoading: boolean;
     isAPIKeyAuth: boolean;
     token: string | null;
-    expireAt: string | null;
 
     // Actions
-    setAuth: (token: string, expireAt: string) => void;
+    setAuth: () => void;
     setAPIKeyAuth: (apiKey: string) => void;
     checkAuth: () => Promise<void>;
     logout: () => void;
@@ -64,14 +55,12 @@ export const useAuthStore = create<AuthState>()(
             isLoading: true,
             isAPIKeyAuth: false,
             token: null,
-            expireAt: null,
 
-            setAuth: (token: string, expireAt: string) => {
+            setAuth: () => {
                 set({
                     isAuthenticated: true,
                     isAPIKeyAuth: false,
-                    token,
-                    expireAt,
+                    token: null,
                     isLoading: false
                 });
             },
@@ -81,32 +70,26 @@ export const useAuthStore = create<AuthState>()(
                     isAuthenticated: true,
                     isAPIKeyAuth: true,
                     token: apiKey,
-                    expireAt: null,
                     isLoading: false
                 });
             },
 
             checkAuth: async () => {
-                const { token, expireAt, isAPIKeyAuth } = get();
+                const { token, isAPIKeyAuth } = get();
 
-                if (!token) {
+                if (isAPIKeyAuth && !token) {
                     set({ isAuthenticated: false, isLoading: false });
                     return;
                 }
 
-                // API Key 不检查本地过期时间
-                if (!isAPIKeyAuth) {
-                    if (!expireAt || Date.now() >= new Date(expireAt).getTime()) {
-                        get().logout();
-                        return;
-                    }
-                }
-
                 try {
-                    // API Key 模式只需校验 key 是否有效即可
                     const endpoint = isAPIKeyAuth ? '/api/v1/apikey/login' : '/api/v1/user/status';
                     await apiClient.get<unknown>(endpoint);
-                    set({ isAuthenticated: true, isLoading: false });
+                    set({
+                        isAuthenticated: true,
+                        isLoading: false,
+                        token: isAPIKeyAuth ? token : null
+                    });
                 } catch (error) {
                     logger.error('认证验证失败:', error);
                     get().logout();
@@ -118,16 +101,17 @@ export const useAuthStore = create<AuthState>()(
                     isAuthenticated: false,
                     isAPIKeyAuth: false,
                     token: null,
-                    expireAt: null,
                     isLoading: false
                 });
+                if (typeof document !== 'undefined') {
+                    document.cookie = 'auth=; Max-Age=0; Path=/; SameSite=Lax';
+                }
             }
         }),
         {
             name: 'auth-storage',
             partialize: (state) => ({
                 token: state.token,
-                expireAt: state.expireAt,
                 isAPIKeyAuth: state.isAPIKeyAuth,
             })
         }
@@ -140,6 +124,7 @@ if (typeof window !== 'undefined') {
         const state = useAuthStore.getState();
         return {
             token: state.token,
+            isAPIKeyAuth: state.isAPIKeyAuth,
             logout: state.logout
         };
     });
@@ -160,11 +145,10 @@ export function useLogin() {
 
     return useMutation({
         mutationFn: async (data: UserLoginRequest) => {
-            return apiClient.post<UserLoginResponse>('/api/v1/user/login', data);
+            return apiClient.post<string>('/api/v1/user/login', data);
         },
-        onSuccess: (data) => {
-            // 保存到 zustand store
-            setAuth(data.token, data.expire_at);
+        onSuccess: () => {
+            setAuth();
         },
         onError: (error) => {
             logger.error('登录失败:', error);
@@ -252,4 +236,3 @@ export function useAuth() {
         logout: store.logout,
     };
 }
-

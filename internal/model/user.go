@@ -27,11 +27,6 @@ type UserChangeUsername struct {
 	NewUsername string `json:"new_username"`
 }
 
-type UserLoginResponse struct {
-	Token    string `json:"token"`
-	ExpireAt string `json:"expire_at"`
-}
-
 func (u *User) HashPassword() error {
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
 	if err != nil {

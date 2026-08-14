@@ -46,12 +46,13 @@ func login(c *gin.Context) {
 		resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
 		return
 	}
-	token, expire, err := auth.GenerateJWTToken(user.Expire)
+	token, maxAge, err := auth.GenerateJWTToken(user.Expire)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, resp.ErrInternalServer)
 		return
 	}
-	resp.Success(c, model.UserLoginResponse{Token: token, ExpireAt: expire})
+	c.SetCookie("auth", token, maxAge, "/", "", false, false)
+	resp.Success(c, "login successfully")
 }
 
 func changePassword(c *gin.Context) {
