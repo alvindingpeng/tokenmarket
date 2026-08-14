@@ -25,12 +25,6 @@ func init() {
 				Handle(clearLog),
 		).
 		AddRoute(
-			router.NewRoute("/stream-token", http.MethodGet).
-				Handle(getStreamToken),
-		)
-
-	router.NewGroupRouter("/api/v1/log").
-		AddRoute(
 			router.NewRoute("/stream", http.MethodGet).
 				Handle(streamLog),
 		)
@@ -82,24 +76,7 @@ func clearLog(c *gin.Context) {
 	resp.Success(c, nil)
 }
 
-func getStreamToken(c *gin.Context) {
-	token, err := op.RelayLogStreamTokenCreate()
-	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	resp.Success(c, gin.H{"token": token})
-}
-
 func streamLog(c *gin.Context) {
-	token := c.Query("token")
-	if token == "" || !op.RelayLogStreamTokenVerify(token) {
-		resp.Error(c, http.StatusUnauthorized, "invalid stream token")
-		return
-	}
-
-	op.RelayLogStreamTokenRevoke(token)
-
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
