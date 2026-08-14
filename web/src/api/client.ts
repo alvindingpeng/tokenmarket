@@ -1,139 +1,45 @@
-import type { ApiError } from './types';
-import { HttpStatus } from './types';
-
-export const API_BASE_URL = '.'; // API 请求固定使用当前站点，由 Vite 开发代理转发。
-
-/**
- * 获取认证 Store（延迟导入以避免循环依赖）
- */
-let getAuthStore: (() => { token: string | null; isAPIKeyAuth: boolean; logout: () => void }) | null = null;
-
-export function setAuthStoreGetter(getter: () => { token: string | null; isAPIKeyAuth: boolean; logout: () => void }) {
-    getAuthStore = getter;
-}
-
-/**
- * 全局错误处理
- */
-const handleError = (error: ApiError) => {
-    console.error('API Error:', error);
-
-    // 401 未授权，调用 store 的 logout
-    if (error.code === HttpStatus.UNAUTHORIZED) {
-        if (getAuthStore) {
-            const store = getAuthStore();
-            store.logout();
-        }
-    }
+type RequestOptions = {
+    method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+    body?: unknown;
+    dispatchUnauthorized?: boolean;
+    signal?: AbortSignal;
 };
 
-/**
- * 处理响应
- */
-async function handleResponse<T>(response: Response): Promise<T> {
-    const contentType = response.headers.get('content-type');
-    const isJson = contentType?.includes('application/json');
+export class ApiError extends Error {
+    status: number;
 
-    let data: unknown;
-    if (isJson) {
-        data = await response.json();
-    } else {
-        data = await response.text();
+    constructor(status: number, message: string) {
+        super(message);
+        this.name = 'ApiError';
+        this.status = status;
     }
-
-    if (!response.ok) {
-        const error: ApiError = {
-            code: response.status,
-            message: (data && typeof data === 'object' && 'message' in data && typeof data.message === 'string')
-                ? data.message
-                : (typeof data === 'string' ? data : response.statusText),
-        };
-
-        handleError(error);
-        throw error;
-    }
-
-    // 如果是标准的 ApiResponse 格式，返回 data 字段
-    if (data && typeof data === 'object' && 'data' in data) {
-        return data.data as T;
-    }
-
-    return data as T;
 }
 
-/**
- * 发送请求
- */
-async function request<T>(
-    method: string,
-    path: string,
-    body?: BodyInit,
-    params?: Record<string, string | number | boolean>
-): Promise<T> {
-    // 构建 URL
-    const searchParams = params ? new URLSearchParams(
-        Object.entries(params).map(([k, v]) => [k, String(v)])
-    ).toString() : '';
-    const url = `${API_BASE_URL}${path}${searchParams ? `?${searchParams}` : ''}`;
+export const apiUnauthorizedEvent = 'api:unauthorized';
 
-    // 构建请求头
-    const headers = new Headers();
+let apiKey: string | null = null;
 
-    // 只在有 body 时设置 Content-Type
-    if (body) {
-        headers.set('Content-Type', 'application/json');
-    }
+export function setAPIKey(value: string | null) {
+    apiKey = value;
+}
 
-    // API Key 模式继续使用 Authorization，用户登录由浏览器自动携带 Cookie
-    if (typeof window !== 'undefined' && getAuthStore) {
-        const store = getAuthStore();
-        if (store.isAPIKeyAuth && store.token) {
-            headers.set('Authorization', `Bearer ${store.token}`);
-        }
-    }
+export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+    const headers = new Headers(options.body === undefined ? undefined : { 'Content-Type': 'application/json' });
+    if (apiKey) headers.set('Authorization', `Bearer ${apiKey}`);
 
-    // 发送请求
-    const response = await fetch(url.toString(), {
-        method,
+    const response = await fetch(path, {
+        method: options.method ?? 'GET',
         headers,
-        body,
-        credentials: 'same-origin',
+        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        credentials: 'include',
+        signal: options.signal,
     });
-
-    return handleResponse<T>(response);
+    const data = await response.json().catch(() => null) as { message?: string; data?: T } | null;
+    if (!response.ok) {
+        if (response.status === 401 && options.dispatchUnauthorized !== false && typeof window !== 'undefined') {
+            window.dispatchEvent(new Event(apiUnauthorizedEvent));
+        }
+        throw new ApiError(response.status, data?.message || `Request failed: ${response.status}`);
+    }
+    return data?.data as T;
 }
-
-/**
- * API 客户端 - 基础 HTTP 方法
- */
-export const apiClient = {
-    /** 
-     * GET 请求
-     */
-    get: <T>(path: string, params?: Record<string, string | number | boolean>): Promise<T> =>
-        request<T>('GET', path, undefined, params),
-
-    /**
-     * POST 请求
-     */
-    post: <T>(path: string, data?: unknown, params?: Record<string, string | number | boolean>): Promise<T> =>
-        request<T>('POST', path, data ? JSON.stringify(data) : undefined, params),
-
-    /**
-     * PUT 请求
-     */
-    put: <T>(path: string, data?: unknown, params?: Record<string, string | number | boolean>): Promise<T> =>
-        request<T>('PUT', path, data ? JSON.stringify(data) : undefined, params),
-
-    /**
-     * DELETE 请求
-     */
-    delete: <T>(path: string, params?: Record<string, string | number | boolean>): Promise<T> =>
-        request<T>('DELETE', path, undefined, params),
-
-    /**
-     * PATCH 请求
-     */
-    patch: <T>(path: string, data?: unknown, params?: Record<string, string | number | boolean>): Promise<T> =>
-        request<T>('PATCH', path, data ? JSON.stringify(data) : undefined, params),
-};

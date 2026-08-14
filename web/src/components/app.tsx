@@ -12,7 +12,7 @@ import { Toolbar } from '@/components/modules/toolbar';
 import { ENTRANCE_VARIANTS } from '@/lib/animations/fluid-transitions';
 import { useQueryClient } from '@tanstack/react-query';
 import { CONTENT_MAP } from '@/route';
-import { apiClient } from '@/api/client';
+import { apiRequest } from '@/api/client';
 import { logger } from '@/lib/logger';
 
 function timeout(ms: number) {
@@ -66,7 +66,7 @@ export function AppContainer() {
                     prefetches.push(
                         queryClient.prefetchQuery({
                             queryKey: ['apikey', 'dashboard', 'stats'],
-                            queryFn: async () => apiClient.get('/api/v1/apikey/stats'),
+                            queryFn: () => apiRequest('/api/v1/apikey/stats'),
                         })
                     );
                 } else {
@@ -81,25 +81,25 @@ export function AppContainer() {
                             prefetches.push(
                                 queryClient.prefetchQuery({
                                     queryKey: ['stats', 'total'],
-                                    queryFn: async () => apiClient.get('/api/v1/stats/total'),
+                                    queryFn: () => apiRequest('/api/v1/stats/total'),
                                 })
                             );
                             prefetches.push(
                                 queryClient.prefetchQuery({
                                     queryKey: ['stats', 'daily'],
-                                    queryFn: async () => apiClient.get('/api/v1/stats/daily'),
+                                    queryFn: () => apiRequest('/api/v1/stats/daily'),
                                 })
                             );
                             prefetches.push(
                                 queryClient.prefetchQuery({
                                     queryKey: ['stats', 'hourly'],
-                                    queryFn: async () => apiClient.get('/api/v1/stats/hourly'),
+                                    queryFn: () => apiRequest('/api/v1/stats/hourly'),
                                 })
                             );
                             prefetches.push(
                                 queryClient.prefetchQuery({
                                     queryKey: ['channels', 'list'],
-                                    queryFn: async () => apiClient.get('/api/v1/channel/list'),
+                                    queryFn: () => apiRequest('/api/v1/channel/list'),
                                 })
                             );
                             break;
@@ -108,7 +108,7 @@ export function AppContainer() {
                             prefetches.push(
                                 queryClient.prefetchQuery({
                                     queryKey: ['channels', 'list'],
-                                    queryFn: async () => apiClient.get('/api/v1/channel/list'),
+                                    queryFn: () => apiRequest('/api/v1/channel/list'),
                                 })
                             );
                             break;
@@ -117,13 +117,13 @@ export function AppContainer() {
                             prefetches.push(
                                 queryClient.prefetchQuery({
                                     queryKey: ['groups', 'list'],
-                                    queryFn: async () => apiClient.get('/api/v1/group/list'),
+                                    queryFn: () => apiRequest('/api/v1/group/list'),
                                 })
                             );
                             prefetches.push(
                                 queryClient.prefetchQuery({
                                     queryKey: ['models', 'channel'],
-                                    queryFn: async () => apiClient.get('/api/v1/model/channel'),
+                                    queryFn: () => apiRequest('/api/v1/model/channel'),
                                 })
                             );
                             break;
@@ -132,7 +132,7 @@ export function AppContainer() {
                             prefetches.push(
                                 queryClient.prefetchQuery({
                                     queryKey: ['models', 'list'],
-                                    queryFn: async () => apiClient.get('/api/v1/model/list'),
+                                    queryFn: () => apiRequest('/api/v1/model/list'),
                                 })
                             );
                             break;
@@ -141,7 +141,7 @@ export function AppContainer() {
                             prefetches.push(
                                 queryClient.prefetchQuery({
                                     queryKey: ['apikeys', 'list'],
-                                    queryFn: async () => apiClient.get('/api/v1/apikey/list'),
+                                    queryFn: () => apiRequest('/api/v1/apikey/list'),
                                 })
                             );
                             break;

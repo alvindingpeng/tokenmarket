@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '../client';
-import { logger } from '@/lib/logger';
+import { apiRequest } from '../client';
 import { useAuthStore } from './user';
 import { StatsAPIKey, StatsAPIKeyFormatted } from './stats';
 import { formatCount, formatMoney, formatTime } from '@/lib/utils';
@@ -39,14 +38,12 @@ export function useAPIKeyLogin() {
 
     return useMutation({
         mutationFn: async (apiKey: string) => {
-            // 先设置以便 apiClient 发送请求时带上 token
             setAPIKeyAuth(apiKey);
-            await apiClient.get<null>('/api/v1/apikey/login');
+            await apiRequest<null>('/api/v1/apikey/login', { dispatchUnauthorized: false });
             return apiKey;
         },
-        onError: (error) => {
+        onError: () => {
             logout();
-            logger.error('API Key 登录失败:', error);
         },
     });
 }
@@ -59,7 +56,7 @@ export function useAPIKeyDashboardStats() {
 
     return useQuery({
         queryKey: ['apikey', 'dashboard', 'stats'],
-        queryFn: () => apiClient.get<APIKeyStatsResponse>('/api/v1/apikey/stats'),
+        queryFn: () => apiRequest<APIKeyStatsResponse>('/api/v1/apikey/stats'),
         select: (data): APIKeyStatsResponseFormatted => ({
             stats: {
                 api_key_id: data.stats.api_key_id,
@@ -105,9 +102,7 @@ export type UpdateAPIKeyRequest = Pick<APIKey, 'id'> & CreateAPIKeyRequest;
 export function useAPIKeyList() {
     return useQuery({
         queryKey: ['apikeys', 'list'],
-        queryFn: async () => {
-            return apiClient.get<APIKey[]>('/api/v1/apikey/list');
-        },
+        queryFn: () => apiRequest<APIKey[]>('/api/v1/apikey/list'),
         refetchInterval: 30000,
     });
 }
@@ -126,16 +121,9 @@ export function useCreateAPIKey() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (data: CreateAPIKeyRequest) => {
-            return apiClient.post<APIKey>('/api/v1/apikey/create', data);
-        },
-        onSuccess: (data) => {
-            logger.log('API Key 创建成功:', data);
-            queryClient.invalidateQueries({ queryKey: ['apikeys', 'list'] });
-        },
-        onError: (error) => {
-            logger.error('API Key 创建失败:', error);
-        },
+        mutationFn: (data: CreateAPIKeyRequest) =>
+            apiRequest<APIKey>('/api/v1/apikey/create', { method: 'POST', body: data }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['apikeys', 'list'] }),
     });
 }
 
@@ -155,16 +143,9 @@ export function useUpdateAPIKey() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (data: UpdateAPIKeyRequest) => {
-            return apiClient.post<APIKey>('/api/v1/apikey/update', data);
-        },
-        onSuccess: (data) => {
-            logger.log('API Key 更新成功:', data);
-            queryClient.invalidateQueries({ queryKey: ['apikeys', 'list'] });
-        },
-        onError: (error) => {
-            logger.error('API Key 更新失败:', error);
-        },
+        mutationFn: (data: UpdateAPIKeyRequest) =>
+            apiRequest<APIKey>('/api/v1/apikey/update', { method: 'POST', body: data }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['apikeys', 'list'] }),
     });
 }
 
@@ -180,16 +161,9 @@ export function useDeleteAPIKey() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (id: number) => {
-            return apiClient.delete<null>(`/api/v1/apikey/delete/${id}`);
-        },
-        onSuccess: () => {
-            logger.log('API Key 删除成功');
-            queryClient.invalidateQueries({ queryKey: ['apikeys', 'list'] });
-        },
-        onError: (error) => {
-            logger.error('API Key 删除失败:', error);
-        },
+        mutationFn: (id: number) =>
+            apiRequest<null>(`/api/v1/apikey/delete/${id}`, { method: 'DELETE' }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['apikeys', 'list'] }),
     });
 }
 
@@ -204,9 +178,7 @@ export function useDeleteAPIKey() {
 export function useAPIKeyStats() {
     return useQuery({
         queryKey: ['apikey', 'stats'],
-        queryFn: async () => {
-            return apiClient.get<StatsAPIKey>('/api/v1/apikey/stats');
-        },
+        queryFn: () => apiRequest<StatsAPIKey>('/api/v1/apikey/stats'),
         select: (data): StatsAPIKeyFormatted => ({
             api_key_id: data.api_key_id,
             input_token: formatCount(data.input_token),

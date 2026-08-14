@@ -1,18 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '../client';
-import { logger } from '@/lib/logger';
+import { apiRequest } from '../client';
 import { formatCount, formatMoney, formatTime } from '@/lib/utils';
 import { StatsChannel, type StatsMetricsFormatted } from './stats';
 /**
  * 渠道类型枚举
  */
 export enum ChannelType {
-    OpenAIChat = 'openai/chat_completions',
-    OpenAIResponse = 'openai/responses',
-    Anthropic = 'anthropic/messages',
-    Gemini = 'gemini/contents',
-    Volcengine = 'doubao',
-    OpenAIEmbedding = 'openai/embeddings',
+    OpenAIChat = 'openai',
+    OpenAIResponse = 'openai_responses',
+    Anthropic = 'anthropic',
+    Gemini = 'gemini',
+    Volcengine = 'volcengine',
 }
 
 /**
@@ -143,9 +141,7 @@ export type FetchModelRequest = {
 export function useChannelList() {
     return useQuery({
         queryKey: ['channels', 'list'],
-        queryFn: async () => {
-            return apiClient.get<ChannelServer[]>('/api/v1/channel/list');
-        },
+        queryFn: () => apiRequest<ChannelServer[]>('/api/v1/channel/list'),
         select: (data) => data.map((item) => ({
             raw: ({
                 ...item,
@@ -189,17 +185,12 @@ export function useCreateChannel() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (data: CreateChannelRequest) => {
-            return apiClient.post<ChannelServer>('/api/v1/channel/create', data);
-        },
-        onSuccess: (data) => {
-            logger.log('渠道创建成功:', data);
+        mutationFn: (data: CreateChannelRequest) =>
+            apiRequest<ChannelServer>('/api/v1/channel/create', { method: 'POST', body: data }),
+        onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['channels', 'list'] });
             queryClient.invalidateQueries({ queryKey: ['models', 'list'] });
             queryClient.invalidateQueries({ queryKey: ['models', 'channel'] });
-        },
-        onError: (error) => {
-            logger.error('渠道创建失败:', error);
         },
     });
 }
@@ -225,16 +216,11 @@ export function useUpdateChannel() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (data: UpdateChannelRequest) => {
-            return apiClient.post<ChannelServer>('/api/v1/channel/update', data);
-        },
-        onSuccess: (data) => {
-            logger.log('渠道更新成功:', data);
+        mutationFn: (data: UpdateChannelRequest) =>
+            apiRequest<ChannelServer>('/api/v1/channel/update', { method: 'POST', body: data }),
+        onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['channels', 'list'] });
             queryClient.invalidateQueries({ queryKey: ['models', 'channel'] });
-        },
-        onError: (error) => {
-            logger.error('渠道更新失败:', error);
         },
     });
 }
@@ -251,16 +237,11 @@ export function useDeleteChannel() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (id: number) => {
-            return apiClient.delete<null>(`/api/v1/channel/delete/${id}`);
-        },
+        mutationFn: (id: number) =>
+            apiRequest<null>(`/api/v1/channel/delete/${id}`, { method: 'DELETE' }),
         onSuccess: () => {
-            logger.log('渠道删除成功');
             queryClient.invalidateQueries({ queryKey: ['channels', 'list'] });
             queryClient.invalidateQueries({ queryKey: ['models', 'channel'] });
-        },
-        onError: (error) => {
-            logger.error('渠道删除失败:', error);
         },
     });
 }
@@ -278,16 +259,9 @@ export function useEnableChannel() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (data: { id: number; enabled: boolean }) => {
-            return apiClient.post<null>('/api/v1/channel/enable', data);
-        },
-        onSuccess: () => {
-            logger.log('渠道状态更新成功');
-            queryClient.invalidateQueries({ queryKey: ['channels', 'list'] });
-        },
-        onError: (error) => {
-            logger.error('渠道状态更新失败:', error);
-        },
+        mutationFn: (data: { id: number; enabled: boolean }) =>
+            apiRequest<null>('/api/v1/channel/enable', { method: 'POST', body: data }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['channels', 'list'] }),
     });
 }
 
@@ -309,15 +283,8 @@ export function useEnableChannel() {
  */
 export function useFetchModel() {
     return useMutation({
-        mutationFn: async (data: FetchModelRequest) => {
-            return apiClient.post<string[]>('/api/v1/channel/fetch-model', data);
-        },
-        onSuccess: (data) => {
-            logger.log('模型列表获取成功:', data);
-        },
-        onError: (error) => {
-            logger.error('模型列表获取失败:', error);
-        },
+        mutationFn: (data: FetchModelRequest) =>
+            apiRequest<string[]>('/api/v1/channel/fetch-model', { method: 'POST', body: data }),
     });
 }
 
@@ -334,9 +301,7 @@ export function useFetchModel() {
 export function useLastSyncTime() {
     return useQuery({
         queryKey: ['channels', 'last-sync-time'],
-        queryFn: async () => {
-            return apiClient.get<string>('/api/v1/channel/last-sync-time');
-        },
+        queryFn: () => apiRequest<string>('/api/v1/channel/last-sync-time'),
         refetchInterval: 30000,
     });
 }
@@ -351,15 +316,7 @@ export function useLastSyncTime() {
 export function useSyncChannel() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: async () => {
-            return apiClient.post<null>('/api/v1/channel/sync');
-        },
-        onSuccess: () => {
-            logger.log('渠道同步成功');
-            queryClient.invalidateQueries({ queryKey: ['channels', 'last-sync-time'] });
-        },
-        onError: (error) => {
-            logger.error('渠道同步失败:', error);
-        },
+        mutationFn: () => apiRequest<null>('/api/v1/channel/sync', { method: 'POST' }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['channels', 'last-sync-time'] }),
     });
 }

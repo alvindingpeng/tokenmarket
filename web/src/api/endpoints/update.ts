@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '../client';
-import { logger } from '@/lib/logger';
+import { apiRequest } from '../client';
 
 /**
  * 后端 /api/v1/update 返回的最新发布信息
@@ -26,9 +25,7 @@ export interface LatestInfo {
 export function useLatestInfo() {
     return useQuery({
         queryKey: ['update', 'latest'],
-        queryFn: async () => {
-            return apiClient.get<LatestInfo>('/api/v1/update');
-        },
+        queryFn: () => apiRequest<LatestInfo>('/api/v1/update'),
         refetchInterval: 3600000, // 1 小时
         refetchOnMount: 'always',
     });
@@ -42,9 +39,7 @@ export function useLatestInfo() {
 export function useNowVersion() {
     return useQuery({
         queryKey: ['update', 'now-version'],
-        queryFn: async () => {
-            return apiClient.get<string>('/api/v1/update/now-version');
-        },
+        queryFn: () => apiRequest<string>('/api/v1/update/now-version'),
         refetchInterval: 3600000, // 1 小时
         refetchOnMount: 'always',
     });
@@ -66,17 +61,10 @@ export function useUpdateCore() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async () => {
-            return apiClient.post<string>('/api/v1/update');
-        },
-        onSuccess: (data) => {
-            logger.log('更新成功:', data);
+        mutationFn: () => apiRequest<string>('/api/v1/update', { method: 'POST' }),
+        onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['update', 'latest'] });
             queryClient.invalidateQueries({ queryKey: ['update', 'now-version'] });
         },
-        onError: (error) => {
-            logger.error('更新失败:', error);
-        },
     });
 }
-

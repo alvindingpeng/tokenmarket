@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '../client';
-import { logger } from '@/lib/logger';
+import { apiRequest } from '../client';
 
 /**
  * 分组项信息
@@ -22,6 +21,7 @@ export enum GroupMode {
     Random = 2,
     Failover = 3,
     Weighted = 4,
+    Manual = 5,
 }
 
 /**
@@ -85,9 +85,7 @@ export interface GroupUpdateRequest {
 export function useGroupList() {
     return useQuery({
         queryKey: ['groups', 'list'],
-        queryFn: async () => {
-            return apiClient.get<Group[]>('/api/v1/group/list');
-        },
+        queryFn: () => apiRequest<Group[]>('/api/v1/group/list'),
         refetchInterval: 30000,
         refetchOnMount: 'always',
     });
@@ -110,16 +108,9 @@ export function useCreateGroup() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (data: Group) => {
-            return apiClient.post<Group>('/api/v1/group/create', data);
-        },
-        onSuccess: (data) => {
-            logger.log('分组创建成功:', data);
-            queryClient.invalidateQueries({ queryKey: ['groups', 'list'] });
-        },
-        onError: (error) => {
-            logger.error('分组创建失败:', error);
-        },
+        mutationFn: (data: Group) =>
+            apiRequest<Group>('/api/v1/group/create', { method: 'POST', body: data }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['groups', 'list'] }),
     });
 }
 
@@ -141,16 +132,9 @@ export function useUpdateGroup() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (data: GroupUpdateRequest) => {
-            return apiClient.post<Group>('/api/v1/group/update', data);
-        },
-        onSuccess: (data) => {
-            logger.log('分组更新成功:', data);
-            queryClient.invalidateQueries({ queryKey: ['groups', 'list'] });
-        },
-        onError: (error) => {
-            logger.error('分组更新失败:', error);
-        },
+        mutationFn: (data: GroupUpdateRequest) =>
+            apiRequest<Group>('/api/v1/group/update', { method: 'POST', body: data }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['groups', 'list'] }),
     });
 }
 
@@ -166,43 +150,8 @@ export function useDeleteGroup() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (id: number) => {
-            return apiClient.delete<null>(`/api/v1/group/delete/${id}`);
-        },
-        onSuccess: () => {
-            logger.log('分组删除成功');
-            queryClient.invalidateQueries({ queryKey: ['groups', 'list'] });
-        },
-        onError: (error) => {
-            logger.error('分组删除失败:', error);
-        },
+        mutationFn: (id: number) =>
+            apiRequest<null>(`/api/v1/group/delete/${id}`, { method: 'DELETE' }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['groups', 'list'] }),
     });
 }
-
-/**
- * 自动添加分组 item Hook
- *
- * 后端路由: POST /api/v1/group/auto-add-item
- * Body: { id: number }
- *
- * @example
- * const autoAdd = useAutoAddGroupItem();
- * autoAdd.mutate(1); // 为 groupId=1 自动添加匹配的 items
- */
-// export function useAutoAddGroupItem() {
-//     const queryClient = useQueryClient();
-
-//     return useMutation({
-//         mutationFn: async (groupId: number) => {
-//             return apiClient.post<null>(`/api/v1/group/auto-add-item`, { id: groupId });
-//         },
-//         onSuccess: () => {
-//             logger.log('自动添加分组 item 成功');
-//             queryClient.invalidateQueries({ queryKey: ['groups', 'list'] });
-//         },
-//         onError: (error) => {
-//             logger.error('自动添加分组 item 失败:', error);
-//         },
-//     });
-// }
-

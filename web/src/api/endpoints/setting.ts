@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, API_BASE_URL } from '../client';
-import { logger } from '@/lib/logger';
+import { ApiError, apiRequest } from '../client';
 
 /**
  * Setting 数据
@@ -37,9 +36,7 @@ export const SettingKey = {
 export function useSettingList() {
     return useQuery({
         queryKey: ['settings', 'list'],
-        queryFn: async () => {
-            return apiClient.get<Setting[]>('/api/v1/setting/list');
-        },
+        queryFn: () => apiRequest<Setting[]>('/api/v1/setting/list'),
         refetchInterval: 30000,
         refetchOnMount: 'always',
     });
@@ -60,16 +57,9 @@ export function useSetSetting() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (data: Setting) => {
-            return apiClient.post<Setting>('/api/v1/setting/set', data);
-        },
-        onSuccess: (data) => {
-            logger.log('Setting 设置成功:', data);
-            queryClient.invalidateQueries({ queryKey: ['settings', 'list'] });
-        },
-        onError: (error) => {
-            logger.error('Setting 设置失败:', error);
-        },
+        mutationFn: (data: Setting) =>
+            apiRequest<Setting>('/api/v1/setting/set', { method: 'POST', body: data }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', 'list'] }),
     });
 }
 
@@ -83,27 +73,6 @@ export interface DBImportResult {
 export interface DBExportOptions {
     include_logs?: boolean;
     include_stats?: boolean;
-}
-
-type ApiResponse<T> = {
-    code?: number;
-    message?: string;
-    data?: T;
-};
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null;
-}
-
-function getMessageField(value: unknown): string | undefined {
-    if (!isRecord(value)) return undefined;
-    const msg = value.message;
-    return typeof msg === 'string' ? msg : undefined;
-}
-
-function getDataField<T>(value: unknown): T | undefined {
-    if (!isRecord(value)) return undefined;
-    return (value as ApiResponse<T>).data;
 }
 
 function parseFilename(contentDisposition: string | null): string | null {
@@ -144,23 +113,20 @@ export function useExportDB() {
             params.set('include_logs', String(!!options.include_logs));
             params.set('include_stats', String(!!options.include_stats));
 
-            const res = await fetch(`${API_BASE_URL}/api/v1/setting/export?${params.toString()}`, {
+            const res = await fetch(`/api/v1/setting/export?${params.toString()}`, {
                 method: 'GET',
-                credentials: 'same-origin',
+                credentials: 'include',
             });
 
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || res.statusText);
+                const data = await res.json().catch(() => null) as { message?: string } | null;
+                throw new ApiError(res.status, data?.message || `Request failed: ${res.status}`);
             }
 
             const blob = await res.blob();
             const filename = parseFilename(res.headers.get('content-disposition')) || exportFallbackFilename();
             await downloadBlob(blob, filename);
             return { filename };
-        },
-        onError: (error) => {
-            logger.error('导出数据库失败:', error);
         },
     });
 }
@@ -174,27 +140,25 @@ export function useImportDB() {
             const form = new FormData();
             form.append('file', file);
 
-            const res = await fetch(`${API_BASE_URL}/api/v1/setting/import`, {
+            const res = await fetch('/api/v1/setting/import', {
                 method: 'POST',
                 body: form,
-                credentials: 'same-origin',
+                credentials: 'include',
             });
 
             const contentType = res.headers.get('content-type') || '';
             const isJson = contentType.includes('application/json');
-            const data = isJson ? await res.json() : await res.text();
+            const data = isJson
+                ? await res.json() as { message?: string; data?: DBImportResult }
+                : await res.text();
 
             if (!res.ok) {
-                const message = getMessageField(data) ?? (typeof data === 'string' ? data : res.statusText);
-                throw new Error(message);
+                const message = typeof data === 'string' ? data : data.message;
+                throw new ApiError(res.status, message || `Request failed: ${res.status}`);
             }
 
             // 支持后端标准 ApiResponse：{code,message,data:{...}}
-            const nested = getDataField<DBImportResult>(data);
-            return nested ?? (data as DBImportResult);
-        },
-        onError: (error) => {
-            logger.error('导入数据库失败:', error);
+            return typeof data === 'string' ? data as unknown as DBImportResult : data.data as DBImportResult;
         },
     });
 }

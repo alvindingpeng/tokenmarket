@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '../client';
-import { logger } from '@/lib/logger';
+import { apiRequest } from '../client';
 
 /**
  * LLM 价格信息
@@ -43,9 +42,7 @@ export interface LLMChannel {
 export function useModelList() {
     return useQuery({
         queryKey: ['models', 'list'],
-        queryFn: async () => {
-            return apiClient.get<LLMInfo[]>('/api/v1/model/list');
-        },
+        queryFn: () => apiRequest<LLMInfo[]>('/api/v1/model/list'),
         refetchInterval: 30000,
         refetchOnMount: 'always',
     });
@@ -65,9 +62,7 @@ export function useModelList() {
 export function useModelChannelList() {
     return useQuery({
         queryKey: ['models', 'channel'],
-        queryFn: async () => {
-            return apiClient.get<LLMChannel[]>('/api/v1/model/channel');
-        },
+        queryFn: () => apiRequest<LLMChannel[]>('/api/v1/model/channel'),
         refetchInterval: 30000,
     });
 }
@@ -90,16 +85,9 @@ export function useUpdateModel() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (data: LLMInfo) => {
-            return apiClient.post<LLMInfo>('/api/v1/model/update', data);
-        },
-        onSuccess: (data) => {
-            logger.log('模型更新成功:', data);
-            queryClient.invalidateQueries({ queryKey: ['models', 'list'] });
-        },
-        onError: (error) => {
-            logger.error('模型更新失败:', error);
-        },
+        mutationFn: (data: LLMInfo) =>
+            apiRequest<LLMInfo>('/api/v1/model/update', { method: 'POST', body: data }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['models', 'list'] }),
     });
 }
 
@@ -121,16 +109,9 @@ export function useCreateModel() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (data: LLMInfo) => {
-            return apiClient.post<LLMInfo>('/api/v1/model/create', data);
-        },
-        onSuccess: (data) => {
-            logger.log('模型创建成功:', data);
-            queryClient.invalidateQueries({ queryKey: ['models', 'list'] });
-        },
-        onError: (error) => {
-            logger.error('模型创建失败:', error);
-        },
+        mutationFn: (data: LLMInfo) =>
+            apiRequest<LLMInfo>('/api/v1/model/create', { method: 'POST', body: data }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['models', 'list'] }),
     });
 }
 
@@ -146,16 +127,9 @@ export function useDeleteModel() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (name: string) => {
-            return apiClient.post<null>('/api/v1/model/delete', { name });
-        },
-        onSuccess: () => {
-            logger.log('模型删除成功');
-            queryClient.invalidateQueries({ queryKey: ['models', 'list'] });
-        },
-        onError: (error) => {
-            logger.error('模型删除失败:', error);
-        },
+        mutationFn: (name: string) =>
+            apiRequest<null>('/api/v1/model/delete', { method: 'POST', body: { name } }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['models', 'list'] }),
     });
 }
 
@@ -171,16 +145,8 @@ export function useUpdateModelPrice() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async () => {
-            return apiClient.post<null>('/api/v1/model/update-price', {});
-        },
-        onSuccess: () => {
-            logger.log('模型价格更新成功');
-            queryClient.invalidateQueries({ queryKey: ['models', 'last-update-time'] });
-        },
-        onError: (error) => {
-            logger.error('模型价格更新失败:', error);
-        },
+        mutationFn: () => apiRequest<null>('/api/v1/model/update-price', { method: 'POST', body: {} }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['models', 'last-update-time'] }),
     });
 }
 
@@ -197,9 +163,7 @@ export function useUpdateModelPrice() {
 export function useLastUpdateTime() {
     return useQuery({
         queryKey: ['models', 'last-update-time'],
-        queryFn: async () => {
-            return apiClient.get<string>('/api/v1/model/last-update-time');
-        },
+        queryFn: () => apiRequest<string>('/api/v1/model/last-update-time'),
         refetchInterval: 30000,
     });
 }

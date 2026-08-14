@@ -2,8 +2,7 @@ import { useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { apiClient, setAuthStoreGetter } from '../client';
-import { logger } from '@/lib/logger';
+import { apiRequest, apiUnauthorizedEvent, setAPIKey } from '../client';
 
 /**
  * 用户登录请求
@@ -12,21 +11,6 @@ export interface UserLoginRequest {
     username: string;
     password: string;
     expire: number; // 登录状态过期时间（秒）
-}
-
-/**
- * 修改密码请求
- */
-export interface ChangePasswordRequest {
-    old_password: string;
-    new_password: string;
-}
-
-/**
- * 修改用户名请求
- */
-export interface ChangeUsernameRequest {
-    new_username: string;
 }
 
 /**
@@ -57,6 +41,7 @@ export const useAuthStore = create<AuthState>()(
             token: null,
 
             setAuth: () => {
+                setAPIKey(null);
                 set({
                     isAuthenticated: true,
                     isAPIKeyAuth: false,
@@ -66,6 +51,7 @@ export const useAuthStore = create<AuthState>()(
             },
 
             setAPIKeyAuth: (apiKey: string) => {
+                setAPIKey(apiKey);
                 set({
                     isAuthenticated: true,
                     isAPIKeyAuth: true,
@@ -76,6 +62,7 @@ export const useAuthStore = create<AuthState>()(
 
             checkAuth: async () => {
                 const { token, isAPIKeyAuth } = get();
+                setAPIKey(isAPIKeyAuth ? token : null);
 
                 if (isAPIKeyAuth && !token) {
                     set({ isAuthenticated: false, isLoading: false });
@@ -84,19 +71,19 @@ export const useAuthStore = create<AuthState>()(
 
                 try {
                     const endpoint = isAPIKeyAuth ? '/api/v1/apikey/login' : '/api/v1/user/status';
-                    await apiClient.get<unknown>(endpoint);
+                    await apiRequest<unknown>(endpoint, { dispatchUnauthorized: false });
                     set({
                         isAuthenticated: true,
                         isLoading: false,
                         token: isAPIKeyAuth ? token : null
                     });
-                } catch (error) {
-                    logger.error('认证验证失败:', error);
+                } catch {
                     get().logout();
                 }
             },
 
             logout: () => {
+                setAPIKey(null);
                 set({
                     isAuthenticated: false,
                     isAPIKeyAuth: false,
@@ -118,18 +105,6 @@ export const useAuthStore = create<AuthState>()(
     )
 );
 
-// 注册 auth store getter 到 apiClient
-if (typeof window !== 'undefined') {
-    setAuthStoreGetter(() => {
-        const state = useAuthStore.getState();
-        return {
-            token: state.token,
-            isAPIKeyAuth: state.isAPIKeyAuth,
-            logout: state.logout
-        };
-    });
-}
-
 /**
  * 用户登录 Hook
  * 
@@ -145,13 +120,15 @@ export function useLogin() {
 
     return useMutation({
         mutationFn: async (data: UserLoginRequest) => {
-            return apiClient.post<string>('/api/v1/user/login', data);
+            setAPIKey(null);
+            return apiRequest<string>('/api/v1/user/login', {
+                method: 'POST',
+                body: data,
+                dispatchUnauthorized: false,
+            });
         },
         onSuccess: () => {
             setAuth();
-        },
-        onError: (error) => {
-            logger.error('登录失败:', error);
         },
     });
 }
@@ -165,19 +142,14 @@ export function useLogin() {
  */
 export function useChangePassword() {
     return useMutation({
-        mutationFn: async (data: { oldPassword: string; newPassword: string }) => {
-            const payload: ChangePasswordRequest = {
-                old_password: data.oldPassword,
-                new_password: data.newPassword,
-            };
-            return apiClient.post<string>('/api/v1/user/change-password', payload);
-        },
-        onSuccess: (message) => {
-            logger.log('密码修改成功:', message);
-        },
-        onError: (error) => {
-            logger.error('密码修改失败:', error);
-        },
+        mutationFn: (data: { oldPassword: string; newPassword: string }) =>
+            apiRequest<string>('/api/v1/user/change-password', {
+                method: 'POST',
+                body: {
+                    old_password: data.oldPassword,
+                    new_password: data.newPassword,
+                },
+            }),
     });
 }
 
@@ -190,18 +162,11 @@ export function useChangePassword() {
  */
 export function useChangeUsername() {
     return useMutation({
-        mutationFn: async (data: { newUsername: string }) => {
-            const payload: ChangeUsernameRequest = {
-                new_username: data.newUsername,
-            };
-            return apiClient.post<string>('/api/v1/user/change-username', payload);
-        },
-        onSuccess: (message) => {
-            logger.log('用户名修改成功:', message);
-        },
-        onError: (error) => {
-            logger.error('用户名修改失败:', error);
-        },
+        mutationFn: (data: { newUsername: string }) =>
+            apiRequest<string>('/api/v1/user/change-username', {
+                method: 'POST',
+                body: { new_username: data.newUsername },
+            }),
     });
 }
 
@@ -223,9 +188,12 @@ export function useAuth() {
 
     // 只在首次挂载时检查认证状态
     useEffect(() => {
+        const handleUnauthorized = () => useAuthStore.getState().logout();
+        window.addEventListener(apiUnauthorizedEvent, handleUnauthorized);
         if (isLoading) {
-            checkAuth();
+            void checkAuth();
         }
+        return () => window.removeEventListener(apiUnauthorizedEvent, handleUnauthorized);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // 有意只在挂载时执行一次
 

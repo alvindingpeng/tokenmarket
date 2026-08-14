@@ -1,7 +1,6 @@
 import type { InfiniteData } from '@tanstack/react-query';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiClient, API_BASE_URL } from '../client';
-import { logger } from '@/lib/logger';
+import { apiRequest } from '../client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /**
@@ -69,16 +68,8 @@ export function useClearLogs() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async () => {
-            return apiClient.delete<null>('/api/v1/log/clear');
-        },
-        onSuccess: () => {
-            logger.log('日志清空成功');
-            queryClient.invalidateQueries({ queryKey: ['logs'] });
-        },
-        onError: (error) => {
-            logger.error('日志清空失败:', error);
-        },
+        mutationFn: () => apiRequest<null>('/api/v1/log/clear', { method: 'DELETE' }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['logs'] }),
     });
 }
 
@@ -113,7 +104,7 @@ export function useLogs(options: { pageSize?: number } = {}) {
             const params = new URLSearchParams();
             params.set('page', String(pageParam));
             params.set('page_size', String(pageSize));
-            const result = await apiClient.get<RelayLog[] | null>(`/api/v1/log/list?${params.toString()}`);
+            const result = await apiRequest<RelayLog[] | null>(`/api/v1/log/list?${params.toString()}`);
             return result ?? [];
         },
         getNextPageParam: (lastPage, allPages) => {
@@ -145,11 +136,7 @@ export function useLogs(options: { pageSize?: number } = {}) {
         if (!logsQuery.hasNextPage) return;
         if (logsQuery.isFetchingNextPage) return;
 
-        try {
-            await logsQuery.fetchNextPage();
-        } catch (e) {
-            logger.error('加载更多日志失败:', e);
-        }
+        await logsQuery.fetchNextPage();
     }, [logsQuery]);
 
     useEffect(() => {
@@ -157,10 +144,10 @@ export function useLogs(options: { pageSize?: number } = {}) {
 
         const connect = async () => {
             try {
-                const { token } = await apiClient.get<{ token: string }>('/api/v1/log/stream-token');
+                const { token } = await apiRequest<{ token: string }>('/api/v1/log/stream-token');
                 if (cancelled) return;
 
-                const eventSource = new EventSource(`${API_BASE_URL}/api/v1/log/stream?token=${token}`);
+                const eventSource = new EventSource(`/api/v1/log/stream?token=${token}`);
                 eventSourceRef.current = eventSource;
 
                 eventSource.onopen = () => {
@@ -185,9 +172,7 @@ export function useLogs(options: { pageSize?: number } = {}) {
                                 return { ...old, pages: [[log, ...firstPage], ...old.pages.slice(1)] };
                             }
                         );
-                    } catch (e) {
-                        logger.error('解析日志数据失败:', e);
-                    }
+                    } catch { }
                 };
 
                 eventSource.onerror = () => {
@@ -199,7 +184,6 @@ export function useLogs(options: { pageSize?: number } = {}) {
             } catch (e) {
                 if (cancelled) return;
                 setError(e instanceof Error ? e : new Error('获取 stream token 失败'));
-                logger.error('获取 stream token 失败:', e);
             }
         };
 
