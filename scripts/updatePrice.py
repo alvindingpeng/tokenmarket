@@ -5,29 +5,24 @@
 """
 
 import json
-import re
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
 LLM_PRICE_URL = "https://models.dev/api.json"
 
-PROVIDERS = [
-    "openai",      # GPT 系列
-    "anthropic",   # Claude 系列
-    "google",      # Gemini 系列
-    "deepseek",    # DeepSeek 系列
-    "xai",         # Grok 系列
-    "alibaba",     # Qwen 系列
-    "zhipuai",     # GLM 系列
-    "minimax",     # MiniMax 系列
-    "moonshotai",  # Kimi/Moonshot
-    "v0",          # v0 系列
-]
-
-# 其他模型别名映射 (非 Claude)
-MODEL_ALIASES: dict[str, list[str]] = {
-    # 在这里添加其他模型的别名
+# 研发商及其自研模型系列前缀，过滤同一平台提供的第三方模型。
+DEVELOPERS: dict[str, tuple[str, ...]] = {
+    "openai": ("gpt", "o"),
+    "anthropic": ("claude",),
+    "google": ("gemini", "gemma", "lyria", "veo"),
+    "deepseek": ("deepseek",),
+    "xai": ("grok",),
+    "alibaba": ("qwen", "qvq"),
+    "zhipuai": ("glm",),
+    "minimax": ("minimax",),
+    "moonshotai": ("kimi",),
+    "v0": ("v0",),
 }
 
 PRESETS_GO_TEMPLATE = '''package price
@@ -70,72 +65,6 @@ def format_price(value: float | None) -> str:
     return formatted
 
 
-def generate_claude_aliases(model_id: str) -> list[str]:
-    """
-    为 Claude 模型自动生成别名
-    
-    规则:
-    1. claude-{type}-{major}-{minor}[-suffix] -> claude-{type}-{major}.{minor}[-suffix]
-       例: claude-opus-4-5 -> claude-opus-4.5
-    2. claude-{type}-{major}-{minor}[-suffix] -> claude-{major}.{minor}-{type}[-suffix]
-       例: claude-opus-4-5 -> claude-4.5-opus
-    3. claude-{major}-{minor}-{type}[-suffix] -> claude-{major}.{minor}-{type}[-suffix]
-       例: claude-3-5-sonnet-20241022 -> claude-3.5-sonnet-20241022
-    """
-    if not model_id.startswith("claude-"):
-        return []
-    
-    aliases = []
-    
-    # 模式1: claude-{type}-{major}-{minor}[-suffix]
-    # 匹配: claude-opus-4-5, claude-opus-4-5-20251101, claude-sonnet-4-0, claude-haiku-4-5
-    # 注意: minor 版本号只能是单个数字，避免把日期当成版本号
-    pattern1 = re.compile(r"^claude-(opus|sonnet|haiku)-(\d)-(\d)(-.*)?$")
-    match1 = pattern1.match(model_id)
-    if match1:
-        model_type = match1.group(1)
-        major = match1.group(2)
-        minor = match1.group(3)
-        suffix = match1.group(4) or ""
-        
-        # 别名1: claude-{type}-{major}.{minor}[-suffix]
-        alias1 = f"claude-{model_type}-{major}.{minor}{suffix}"
-        aliases.append(alias1)
-        
-        # 别名2: claude-{major}.{minor}-{type}[-suffix]
-        alias2 = f"claude-{major}.{minor}-{model_type}{suffix}"
-        aliases.append(alias2)
-        
-        # 别名3: claude-{major}-{minor}-{type}[-suffix]
-        alias3 = f"claude-{major}-{minor}-{model_type}{suffix}"
-        aliases.append(alias3)
-        
-        return aliases
-    
-    # 模式2: claude-{major}-{minor}-{type}[-suffix]
-    # 匹配: claude-3-5-sonnet-20241022, claude-3-7-sonnet-latest, claude-3-5-haiku-20241022
-    # 注意: major/minor 版本号只能是单个数字
-    pattern2 = re.compile(r"^claude-(\d)-(\d)-(opus|sonnet|haiku)(-.*)?$")
-    match2 = pattern2.match(model_id)
-    if match2:
-        major = match2.group(1)
-        minor = match2.group(2)
-        model_type = match2.group(3)
-        suffix = match2.group(4) or ""
-        
-        # 别名1: claude-{major}.{minor}-{type}[-suffix]
-        alias1 = f"claude-{major}.{minor}-{model_type}{suffix}"
-        aliases.append(alias1)
-        
-        # 别名2: claude-{type}-{major}.{minor}[-suffix]
-        alias2 = f"claude-{model_type}-{major}.{minor}{suffix}"
-        aliases.append(alias2)
-        
-        return aliases
-    
-    return aliases
-
-
 def generate_entry(model_id: str, cost: dict) -> str:
     """生成单个模型的 Go map entry"""
     input_price = format_price(cost.get("input"))
@@ -151,9 +80,10 @@ def main():
     raw_price = fetch_price_data()
     
     entries = []
+    generated_model_ids = set()
     model_count = 0
     
-    for provider in PROVIDERS:
+    for provider, family_prefixes in DEVELOPERS.items():
         if provider not in raw_price:
             print(f"  Provider '{provider}' not found, skipping...")
             continue
@@ -163,29 +93,26 @@ def main():
         
         for model_data in models.values():
             model_id = model_data.get("id", "").lower()
+            model_family = model_data.get("family", "").lower()
+            output_modalities = model_data.get("modalities", {}).get("output", [])
             cost = model_data.get("cost", {})
             
-            if not model_id:
+            if (
+                not model_id
+                or not model_family.startswith(family_prefixes)
+                or "text" not in output_modalities
+                or "embed" in model_id
+                or "embed" in model_family
+            ):
                 continue
+
+            if model_id in generated_model_ids:
+                raise ValueError(f"Duplicate model ID after developer filtering: {model_id}")
             
             # 添加原始模型
             entries.append(generate_entry(model_id, cost))
+            generated_model_ids.add(model_id)
             provider_count += 1
-            
-            # 收集所有别名
-            aliases = []
-            
-            # 1. Claude 模型自动生成别名
-            aliases.extend(generate_claude_aliases(model_id))
-            
-            # 2. 静态别名映射
-            if model_id in MODEL_ALIASES:
-                aliases.extend(MODEL_ALIASES[model_id])
-            
-            # 添加别名 (去重)
-            for alias in set(aliases):
-                entries.append(generate_entry(alias.lower(), cost))
-                provider_count += 1
             
         print(f"  {provider}: {provider_count} models")
         model_count += provider_count
@@ -207,4 +134,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

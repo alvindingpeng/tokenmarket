@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,21 +18,23 @@ import (
 
 const llmPriceUrl = "https://models.dev/api.json"
 
-var Provider = []string{
-	"openai",     // GPT 系列
-	"anthropic",  // Claude 系列
-	"google",     // Gemini 系列
-	"deepseek",   // DeepSeek 系列
-	"xai",        // Grok 系列
-	"alibaba",    // Qwen 系列
-	"zhipuai",    // GLM 系列
-	"minimax",    // MiniMax 系列
-	"moonshotai", // Kimi/Moonshot
-	"v0",         // v0 系列
+// developerFamilies 定义研发商及其自研模型系列前缀。
+var developerFamilies = map[string][]string{
+	"openai":     {"gpt", "o"},
+	"anthropic":  {"claude"},
+	"google":     {"gemini", "gemma", "lyria", "veo"},
+	"deepseek":   {"deepseek"},
+	"xai":        {"grok"},
+	"alibaba":    {"qwen", "qvq"},
+	"zhipuai":    {"glm"},
+	"minimax":    {"minimax"},
+	"moonshotai": {"kimi"},
+	"v0":         {"v0"},
 }
 
-var lastUpdateTime time.Time
+var lastUpdateTime time.Time // lastUpdateTime 记录最近一次成功更新时间。
 
+// UpdateLLMPrice 从 models.dev 更新自研文本输出模型的价格。
 func UpdateLLMPrice(ctx context.Context) error {
 	log.Debugf("update LLM price task started")
 	startTime := time.Now()
@@ -57,8 +60,12 @@ func UpdateLLMPrice(ctx context.Context) error {
 	}
 	var rawPrice map[string]struct {
 		Models map[string]struct {
-			ID   string         `json:"id"`
-			Cost model.LLMPrice `json:"cost"`
+			ID         string `json:"id"`     // ID 是模型标识。
+			Family     string `json:"family"` // Family 是模型所属系列。
+			Modalities struct {
+				Output []string `json:"output"` // Output 是模型支持的输出类型。
+			} `json:"modalities"`
+			Cost model.LLMPrice `json:"cost"` // Cost 是模型价格。
 		} `json:"models"`
 	}
 	body, err := io.ReadAll(resp.Body)
@@ -69,10 +76,29 @@ func UpdateLLMPrice(ctx context.Context) error {
 		return fmt.Errorf("failed to parse LLM info: %w", err)
 	}
 	llmPriceLock.Lock()
-	for _, provider := range Provider {
-		for _, model := range rawPrice[provider].Models {
-			model.ID = strings.ToLower(model.ID)
-			llmPrice[model.ID] = model.Cost
+	for provider, familyPrefixes := range developerFamilies {
+		for _, priceModel := range rawPrice[provider].Models {
+			modelID := strings.ToLower(priceModel.ID)
+			modelFamily := strings.ToLower(priceModel.Family)
+
+			// 仅保留包含文本输出的非嵌入模型。
+			if modelID == "" || !slices.Contains(priceModel.Modalities.Output, "text") || strings.Contains(modelID, "embed") || strings.Contains(modelFamily, "embed") {
+				continue
+			}
+
+			// 云平台可能同时托管第三方模型，仅接受该研发商的自研系列。
+			isDeveloperModel := false
+			for _, familyPrefix := range familyPrefixes {
+				if strings.HasPrefix(modelFamily, familyPrefix) {
+					isDeveloperModel = true
+					break
+				}
+			}
+			if !isDeveloperModel {
+				continue
+			}
+
+			llmPrice[modelID] = priceModel.Cost
 		}
 	}
 	llmPriceLock.Unlock()
@@ -80,10 +106,12 @@ func UpdateLLMPrice(ctx context.Context) error {
 	return nil
 }
 
+// GetLastUpdateTime 返回最近一次价格更新时间。
 func GetLastUpdateTime() time.Time {
 	return lastUpdateTime
 }
 
+// GetLLMPrice 返回指定模型的自定义价格或预设价格。
 func GetLLMPrice(modelName string) *model.LLMPrice {
 	modelName = strings.ToLower(modelName)
 	price, err := op.LLMGet(modelName)
