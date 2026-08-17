@@ -1,8 +1,8 @@
-import { useChannelList } from '@/api/endpoints/channel';
+import { useChannelList } from '@/api/channel';
 import { useMemo } from 'react';
 import { useTranslations } from 'use-intl';
 import { TrendingUp } from 'lucide-react';
-import { Tabs, TabsList, TabsTrigger, TabsContents, TabsContent } from '@/components/animate-ui/components/animate/tabs';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useHomeViewStore, type RankSortMode } from '@/components/modules/home/store';
 
 type ChannelData = NonNullable<ReturnType<typeof useChannelList>['data']>[number];
@@ -28,15 +28,6 @@ export function Rank() {
         return [...channelData].sort((a, b) => b.formatted.total_token.raw - a.formatted.total_token.raw);
     }, [channelData]);
 
-    const getMedalEmoji = (rank: number): string => {
-        switch (rank) {
-            case 1: return '🥇';
-            case 2: return '🥈';
-            case 3: return '🥉';
-            default: return '';
-        }
-    };
-
     const renderList = (channels: ChannelData[], mode: RankSortMode) => {
         if (channels.length === 0) {
             return (
@@ -50,18 +41,17 @@ export function Rank() {
             <div className="space-y-3 max-h-[300px] overflow-y-auto">
                 {channels.map((channel, index) => {
                     const rank = index + 1;
-                    const medal = getMedalEmoji(rank);
 
                     return (
                         <div
                             key={channel.raw.id}
-                            className="flex items-center gap-3 p-3 rounded-2xl hover:bg-accent/5 transition-colors"
+                            className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-3"
                         >
-                            <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-lg shrink-0">
-                                {medal || rank}
+                            <div className="flex items-center justify-center font-bold text-lg">
+                                {rank}
                             </div>
 
-                            <div className="flex-1 min-w-0">
+                            <div className="min-w-0">
                                 <p className="font-medium text-sm truncate">{channel.raw.name}</p>
                                 {mode === 'count' && (() => {
                                     const successCount = channel.formatted.request_success.raw;
@@ -78,7 +68,7 @@ export function Rank() {
                                 })()}
                             </div>
 
-                            <div className="flex items-center gap-1 text-right shrink-0">
+                            <div className="flex items-center gap-1 text-right">
                                 {mode === 'count' ? (
                                     <div className="flex items-center gap-1 text-sm font-medium tabular-nums">
                                         <span className="text-accent">
@@ -119,27 +109,27 @@ export function Rank() {
     };
 
     return (
-        <div className="rounded-3xl bg-card text-card-foreground border-card-border border p-4">
+        <div className="rounded-3xl bg-card text-card-foreground border-border border pt-2 px-4">
             <Tabs value={rankSortMode} onValueChange={(value) => setRankSortMode(value as RankSortMode)}>
                 <div className="flex items-center justify-between">
                     <h3 className="font-semibold text-base">{t('title')}</h3>
-                    <TabsList>
-                        <TabsTrigger value="cost">{t('sortByCost')}</TabsTrigger>
-                        <TabsTrigger value="count">{t('sortByCount')}</TabsTrigger>
-                        <TabsTrigger value="tokens">{t('sortByTokens')}</TabsTrigger>
+                    <TabsList variant="text" className="p-0">
+                        <TabsTrigger value="cost" className="pr-0">{t('sortByCost')}</TabsTrigger>
+                        <span aria-hidden="true" className="mx-1 inline-flex h-full -translate-y-px items-center text-sm font-medium leading-none text-muted-foreground/50">/</span>
+                        <TabsTrigger value="count" className="px-0">{t('sortByCount')}</TabsTrigger>
+                        <span aria-hidden="true" className="mx-1 inline-flex h-full -translate-y-px items-center text-sm font-medium leading-none text-muted-foreground/50">/</span>
+                        <TabsTrigger value="tokens" className="pl-0">{t('sortByTokens')}</TabsTrigger>
                     </TabsList>
                 </div>
-                <TabsContents>
-                    <TabsContent value="cost">
-                        {renderList(rankedByCost, 'cost')}
-                    </TabsContent>
-                    <TabsContent value="count">
-                        {renderList(rankedByCount, 'count')}
-                    </TabsContent>
-                    <TabsContent value="tokens">
-                        {renderList(rankedByTokens, 'tokens')}
-                    </TabsContent>
-                </TabsContents>
+                <TabsContent value="cost">
+                    {renderList(rankedByCost, 'cost')}
+                </TabsContent>
+                <TabsContent value="count">
+                    {renderList(rankedByCount, 'count')}
+                </TabsContent>
+                <TabsContent value="tokens">
+                    {renderList(rankedByTokens, 'tokens')}
+                </TabsContent>
             </Tabs>
         </div>
     );

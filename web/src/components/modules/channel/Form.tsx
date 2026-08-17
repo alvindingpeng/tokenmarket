@@ -1,4 +1,4 @@
-import { AutoGroupType, ChannelType, type Channel, useFetchModel } from '@/api/endpoints/channel';
+import { ChannelType, type Channel, useFetchModel } from '@/api/channel';
 import {
     Select,
     SelectContent,
@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/common/Toast';
 import { useTranslations } from 'use-intl';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { RefreshCw, X, Plus } from 'lucide-react';
 
 export interface ChannelFormData {
@@ -28,11 +28,10 @@ export interface ChannelFormData {
     enabled: boolean;
     proxy: boolean;
     auto_sync: boolean;
-    auto_group: AutoGroupType;
     match_regex: string;
 }
 
-export interface ChannelFormProps {
+interface ChannelFormProps {
     formData: ChannelFormData;
     onFormDataChange: (data: ChannelFormData) => void;
     onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
@@ -77,8 +76,8 @@ export function ChannelForm({
     const customModels = formData.custom_model
         ? formData.custom_model.split(',').map((m) => m.trim()).filter(Boolean)
         : [];
+    const hasModels = autoModels.length + customModels.length > 0;
     const [inputValue, setInputValue] = useState('');
-    const inputRef = useRef<HTMLInputElement>(null);
 
     const fetchModel = useFetchModel();
 
@@ -89,7 +88,7 @@ export function ChannelForm({
         onFormDataChange({ ...formData, model, custom_model });
     };
 
-    const handleRefreshModels = async () => {
+    const handleRefreshModels = () => {
         if (!formData.base_url || !formData.key) return;
         fetchModel.mutate(
             {
@@ -161,7 +160,16 @@ export function ChannelForm({
     };
 
     return (
-        <form onSubmit={onSubmit} className="space-y-4 px-1">
+        <form
+            onSubmit={(event) => {
+                if (!hasModels) {
+                    event.preventDefault();
+                    return;
+                }
+                onSubmit(event);
+            }}
+            className="space-y-4 px-1"
+        >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                     <label htmlFor={`${idPrefix}-name`} className="text-sm font-medium text-card-foreground">
@@ -244,11 +252,8 @@ export function ChannelForm({
                         {t('modelRefresh')}
                     </Button>
                 </div>
-                <input type="hidden" value={formData.model} required />
-
                 <div className="relative">
                     <Input
-                        ref={inputRef}
                         id={`${idPrefix}-model-custom`}
                         type="text"
                         value={inputValue}
@@ -333,40 +338,18 @@ export function ChannelForm({
                         {t('advanced')}
                     </AccordionTrigger>
                     <AccordionContent className="pt-4 px-4 pb-4 space-y-4 border-t">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <label htmlFor={`${idPrefix}-auto-group`} className="text-sm font-medium text-card-foreground">
-                                    {t('autoGroup')}
-                                </label>
-                                <Select
-                                    value={String(formData.auto_group)}
-                                    onValueChange={(value) => onFormDataChange({ ...formData, auto_group: Number(value) as AutoGroupType })}
-                                >
-                                    <SelectTrigger id={`${idPrefix}-auto-group`} className="rounded-xl w-full border border-border px-4 py-2 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent className='rounded-xl'>
-                                        <SelectItem className='rounded-xl' value={String(AutoGroupType.None)}>{t('autoGroupNone')}</SelectItem>
-                                        <SelectItem className='rounded-xl' value={String(AutoGroupType.Fuzzy)}>{t('autoGroupFuzzy')}</SelectItem>
-                                        <SelectItem className='rounded-xl' value={String(AutoGroupType.Exact)}>{t('autoGroupExact')}</SelectItem>
-                                        <SelectItem className='rounded-xl' value={String(AutoGroupType.Regex)}>{t('autoGroupRegex')}</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            <div className="space-y-2">
-                                <label htmlFor={`${idPrefix}-channel-proxy`} className="text-sm font-medium text-card-foreground">
-                                    {t('channelProxy')}
-                                </label>
-                                <Input
-                                    id={`${idPrefix}-channel-proxy`}
-                                    type="text"
-                                    value={formData.channel_proxy}
-                                    onChange={(e) => onFormDataChange({ ...formData, channel_proxy: e.target.value })}
-                                    placeholder={t('channelProxyPlaceholder')}
-                                    className="rounded-xl"
-                                />
-                            </div>
+                        <div className="space-y-2">
+                            <label htmlFor={`${idPrefix}-channel-proxy`} className="text-sm font-medium text-card-foreground">
+                                {t('channelProxy')}
+                            </label>
+                            <Input
+                                id={`${idPrefix}-channel-proxy`}
+                                type="text"
+                                value={formData.channel_proxy}
+                                onChange={(e) => onFormDataChange({ ...formData, channel_proxy: e.target.value })}
+                                placeholder={t('channelProxyPlaceholder')}
+                                className="rounded-xl"
+                            />
                         </div>
 
                         <div className="space-y-2">
@@ -487,7 +470,7 @@ export function ChannelForm({
                 )}
                 <Button
                     type="submit"
-                    disabled={isPending}
+                    disabled={isPending || !hasModels}
                     className="w-full sm:flex-1 rounded-2xl h-12"
                 >
                     {isPending ? pendingText : submitText}

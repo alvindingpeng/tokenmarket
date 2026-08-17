@@ -3,7 +3,7 @@ import { useTranslations } from 'use-intl';
 import { User, KeyRound, Lock, Eye, EyeOff } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { useChangeUsername, useChangePassword, useAuth } from '@/api/endpoints/user';
+import { useChangeUsername, useChangePassword, useAuth } from '@/api/user';
 import { toast } from '@/components/common/Toast';
 
 export function SettingAccount() {

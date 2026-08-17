@@ -6,7 +6,7 @@ import { useTranslations } from 'use-intl';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/common/Toast';
 
-export type CopyIconButtonProps = {
+type CopyIconButtonProps = {
     text: string;
     className?: string;
     copyIconClassName?: string;
@@ -75,4 +75,3 @@ export function CopyIconButton({
         </button>
     );
 }
-

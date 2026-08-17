@@ -21,10 +21,6 @@
     "apiKeyDashboard": {
         "error": "載入資料失敗",
         "logout": "登出",
-        "requestStats": "請求統計",
-        "totalStats": "全部統計",
-        "inputStats": "輸入統計",
-        "outputStats": "輸出統計",
         "requestCount": "請求次數",
         "timeConsumed": "消耗時間",
         "totalToken": "消耗 Token",
@@ -35,8 +31,6 @@
         "outputCost": "輸出費用",
         "successRequests": "成功請求",
         "failedRequests": "失敗請求",
-        "quota": "剩餘額度",
-        "unlimited": "無限制",
         "expireAt": "過期時間",
         "neverExpire": "永不過期",
         "daysLeft": "天後到期",
@@ -47,7 +41,6 @@
         "home": "主頁",
         "channel": "供應源",
         "group": "分組",
-        "key": "金鑰",
         "model": "價格",
         "log": "日誌",
         "setting": "設定"
@@ -61,10 +54,6 @@
             "list": "清單",
             "nameAsc": "名稱正序",
             "nameDesc": "名稱倒序",
-            "createdAsc": "時間正序",
-            "createdDesc": "時間倒序",
-            "asc": "升序",
-            "desc": "降序",
             "filter": {
                 "title": "篩選",
                 "channel": {
@@ -95,7 +84,7 @@
     "home": {
         "activity": {
             "requestCount": "請求次數",
-            "waitTime": "等待時間",
+            "waitTime": "消耗時間",
             "totalToken": "消耗 Token",
             "totalCost": "消耗費用",
             "noData": "無數據"
@@ -189,7 +178,6 @@
             "title": "備份 / 復原",
             "export": {
                 "title": "匯出",
-                "includeLogs": "包含日誌",
                 "includeStats": "包含統計",
                 "button": "下載 JSON",
                 "exporting": "匯出中...",
@@ -197,7 +185,6 @@
             },
             "import": {
                 "title": "匯入（增量）",
-                "selected": "已選擇檔案",
                 "button": "匯入 JSON",
                 "importing": "匯入中...",
                 "noFile": "請先選擇 JSON 檔案",
@@ -307,8 +294,6 @@
             "title": "版本資訊",
             "currentVersion": "當前版本",
             "latestVersion": "最新版本",
-            "buildTime": "建構時間",
-            "publishedAt": "發布時間",
             "github": "GitHub 倉庫",
             "unknown": "未知",
             "versionMismatch": "版本不匹配",
@@ -323,13 +308,6 @@
         },
         "log": {
             "title": "日誌設定",
-            "enabled": {
-                "label": "啟用歷史日誌"
-            },
-            "keepPeriod": {
-                "label": "日誌保存天數",
-                "placeholder": "請輸入天數"
-            },
             "clear": {
                 "label": "清空歷史日誌",
                 "button": "清空",
@@ -341,12 +319,10 @@
     },
     "group": {
         "toast": {
-            "created": "建立成功",
             "createFailed": "建立失敗",
             "updated": "更新成功",
             "updateFailed": "更新失敗",
-            "deleted": "刪除成功",
-            "autoAddFailed": "自動新增失敗"
+            "deleted": "刪除成功"
         },
         "create": {
             "title": "建立分組",
@@ -354,7 +330,9 @@
             "submitting": "建立中..."
         },
         "card": {
-            "empty": "暫無規則"
+            "empty": "暫無規則",
+            "active": "目前活動項",
+            "activate": "設為活動項"
         },
         "detail": {
             "actions": {
@@ -368,27 +346,12 @@
         },
         "form": {
             "name": "分組名稱",
-            "matchRegex": "匹配正規",
-            "matchRegexPlaceholder": "留空則預設按分組名稱模糊比對",
-            "matchRegexInvalid": "正規無效",
-            "firstTokenTimeOut": "首字逾時",
-            "firstTokenTimeOutHint": "單位秒，僅串流響應起效，0 表示不限制",
-            "sessionKeepTime": "會話保持",
-            "sessionKeepTimeHint": "單位秒，會話期間保持使用同一供應源，0 表示停用",
+            "retryInterval": "重試間隔",
             "items": "已選模型",
             "addItem": "新增模型",
             "autoAdd": "自動新增",
-            "clear": "清空",
-            "selectChannel": "供應源",
-            "selectModel": "模型"
-        },
-        "mode": {
-            "roundRobin": "輪詢",
-            "random": "隨機",
-            "failover": "故障轉移",
-            "weighted": "加權分配"
-        },
-        "empty": "暫無分組，點擊左上角按鈕建立"
+            "clear": "清空"
+        }
     },
     "model": {
         "create": {
@@ -426,26 +389,34 @@
     },
     "log": {
         "list": {
-            "noMore": "沒有更多日誌了"
+            "empty": "暫無日誌",
+            "disconnected": "日誌連線已中斷，正在重新連線"
+        },
+        "status": {
+            "running": "處理中",
+            "committed": "回應中"
         },
         "card": {
-            "error": "錯誤",
             "errorInfo": "錯誤訊息",
-            "firstToken": "首字",
-            "totalTime": "總耗時",
-            "input": "輸入",
-            "output": "輸出",
-            "cost": "費用",
-            "requestContent": "請求內容",
-            "responseContent": "響應內容",
+            "unknownModel": "未知模型",
+            "retryIndex": "重試 {index}",
+            "detailUnavailable": "詳情連線不可用",
+            "noDetail": "暫無詳情",
+            "requestContent": "請求體",
+            "group": "分組",
+            "groupUnavailable": "目前請求模型沒有對應分組",
+            "noGroupItems": "目前分組沒有可用供應源",
+            "channelChanged": "供應源已切換",
+            "channelChangeFailed": "供應源切換失敗",
+            "responseContent": "回應內容",
             "noRequestContent": "(無請求內容)",
-            "noResponseContent": "(無響應內容)",
-            "firstTokenTime": "首字時間",
+            "noResponseContent": "(無回應內容)",
             "tokens": "tokens",
             "retryDetails": "重試詳情",
-            "attempts": "次嘗試",
-            "success": "成功",
-            "failed": "失敗"
+            "stopAttempt": "停止本次嘗試",
+            "stopFailed": "停止失敗",
+            "waitingResponse": "正在等待上游回應",
+            "responseStreaming": "上游已回應，串流傳輸正在進行"
         }
     },
     "channel": {
@@ -465,12 +436,8 @@
             "sections": {
                 "requests": "請求詳情",
                 "tokens": "Token 使用",
-                "costs": "成本詳情",
-                "baseUrls": "Base URLs",
-                "keys": "金鑰"
+                "costs": "成本詳情"
             },
-            "noBaseUrls": "暫無 Base URL",
-            "noKeys": "暫無金鑰",
             "metrics": {
                 "totalRequests": "總請求",
                 "totalToken": "總 Token",
@@ -499,12 +466,10 @@
             "submitting": "建立中..."
         },
         "form": {
-            "add": "新增",
             "name": "供應源名稱",
             "type": "供應源類型",
-            "baseUrls": "Base URLs",
+            "baseUrl": "Base URL",
             "baseUrlUrl": "地址",
-            "baseUrlDelay": "延遲(ms)",
             "advanced": "進階設定",
             "apiKey": "API Key",
             "customHeader": "自定義 Header",
@@ -529,19 +494,12 @@
             "modelClearAll": "清除全部",
             "typeOpenAIChat": "OpenAI Chat",
             "typeOpenAIResponse": "OpenAI Response",
-            "typeOpenAIEmbedding": "OpenAI Embedding",
             "typeAnthropic": "Anthropic",
             "typeGemini": "Gemini",
             "typeVolcengine": "火山引擎",
             "autoSync": "自動同步",
-            "autoGroup": "自動分組",
-            "autoGroupNone": "不自動分組",
-            "autoGroupFuzzy": "模糊比對",
-            "autoGroupExact": "準確比對",
-            "autoGroupRegex": "正規比對",
             "matchRegex": "匹配正規",
-            "matchRegexPlaceholder": "可選：用於匹配請求模型名稱的正規表示式",
-            "remark": "備註"
+            "matchRegexPlaceholder": "可選：用於匹配請求模型名稱的正規表示式"
         }
     }
 }

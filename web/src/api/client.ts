@@ -1,3 +1,15 @@
+import { QueryClient } from '@tanstack/react-query';
+
+// queryClient 管理整个前端应用共享的查询缓存和请求状态。
+export const queryClient = new QueryClient({
+    defaultOptions: {
+        queries: {
+            staleTime: 60 * 1000,
+            refetchOnWindowFocus: false,
+        },
+    },
+});
+
 type RequestOptions = {
     method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
     body?: unknown;

@@ -9,15 +9,15 @@ import {
     Activity,
     TrendingUp
 } from 'lucide-react';
-import { useUpdateChannel, useDeleteChannel, type Channel, type UpdateChannelRequest } from '@/api/endpoints/channel';
+import { useUpdateChannel, useDeleteChannel, type Channel, type UpdateChannelRequest } from '@/api/channel';
 import {
     MorphingDialogTitle,
     MorphingDialogDescription,
     MorphingDialogClose,
     useMorphingDialog,
 } from '@/components/ui/morphing-dialog';
-import { Tabs, TabsContents, TabsContent } from '@/components/animate-ui/primitives/animate/tabs';
-import { type StatsMetricsFormatted } from '@/api/endpoints/stats';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
+import { type StatsMetricsFormatted } from '@/api/stats';
 import { useTranslations } from 'use-intl';
 import { Button } from '@/components/ui/button';
 import { ChannelForm, type ChannelFormData } from './Form';
@@ -41,7 +41,6 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         custom_model: channel.custom_model,
         proxy: channel.proxy,
         auto_sync: channel.auto_sync,
-        auto_group: channel.auto_group,
         match_regex: channel.match_regex ?? '',
     });
     const t = useTranslations('channel.detail');
@@ -65,7 +64,6 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         if (formData.custom_model !== channel.custom_model) req.custom_model = formData.custom_model;
         if (formData.proxy !== channel.proxy) req.proxy = formData.proxy;
         if (formData.auto_sync !== channel.auto_sync) req.auto_sync = formData.auto_sync;
-        if (formData.auto_group !== channel.auto_group) req.auto_group = formData.auto_group;
 
         if (!headersEqual(formData.custom_header, channel.custom_header)) {
             req.custom_header = (formData.custom_header ?? [])
@@ -134,8 +132,7 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
 
             <MorphingDialogDescription>
                 <Tabs value={currentView}>
-                    <TabsContents>
-                        <TabsContent value="viewing" >
+                    <TabsContent value="viewing" >
                             <div className="max-h-[60vh] overflow-y-auto space-y-4 sm:space-y-5">
                                 <dl className="grid gap-3 grid-cols-1 sm:grid-cols-3">
                                     <div className="rounded-2xl border bg-linear-to-br from-chart-1/10 to-chart-1/5 p-3 sm:p-4">
@@ -301,22 +298,21 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                                             : t('actions.delete')}
                                 </Button>
                             </div>
-                        </TabsContent>
+                    </TabsContent>
 
-                        <TabsContent value="editing">
-                            <ChannelForm
-                                formData={formData}
-                                onFormDataChange={setFormData}
-                                onSubmit={handleUpdate}
-                                isPending={updateChannel.isPending}
-                                submitText={t('actions.save')}
-                                pendingText={t('actions.saving')}
-                                onCancel={() => setIsEditing(false)}
-                                cancelText={t('actions.cancel')}
-                                idPrefix="channel"
-                            />
-                        </TabsContent>
-                    </TabsContents>
+                    <TabsContent value="editing">
+                        <ChannelForm
+                            formData={formData}
+                            onFormDataChange={setFormData}
+                            onSubmit={handleUpdate}
+                            isPending={updateChannel.isPending}
+                            submitText={t('actions.save')}
+                            pendingText={t('actions.saving')}
+                            onCancel={() => setIsEditing(false)}
+                            cancelText={t('actions.cancel')}
+                            idPrefix="channel"
+                        />
+                    </TabsContent>
                 </Tabs>
             </MorphingDialogDescription>
         </>

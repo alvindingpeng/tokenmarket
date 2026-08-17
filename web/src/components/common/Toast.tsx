@@ -1,56 +1,33 @@
 import { toast as sonnerToast } from 'sonner';
-import { CircleCheck, CircleX, AlertTriangle, Info, Loader2 } from 'lucide-react';
+import { CircleCheck, CircleX, AlertTriangle } from 'lucide-react';
 
+// ToastOptions 定义通知的可选显示参数。
 type ToastOptions = {
-    description?: string;
-    duration?: number;
+    description?: string; // 通知的补充说明。
+    duration?: number; // 通知的显示时长。
 };
 
-const icons = {
-    success: <CircleCheck className="size-5 text-primary" />,
-    error: <CircleX className="size-5 text-destructive" />,
-    warning: <AlertTriangle className="size-5 text-destructive/70" />,
-    info: <Info className="size-5 text-accent" />,
-    loading: <Loader2 className="size-5 text-muted-foreground animate-spin" />,
-};
-
+// toast 封装项目统一的通知入口。
 export const toast = {
     success: (message: string, options?: ToastOptions) => {
         sonnerToast(message, {
-            icon: icons.success,
+            icon: <CircleCheck className="size-5 text-primary" />,
             position: 'top-left',
             ...options,
         });
     },
     error: (message: string, options?: ToastOptions) => {
         sonnerToast(message, {
-            icon: icons.error,
+            icon: <CircleX className="size-5 text-destructive" />,
             position: 'top-left',
             ...options,
         });
     },
     warning: (message: string, options?: ToastOptions) => {
         sonnerToast(message, {
-            icon: icons.warning,
+            icon: <AlertTriangle className="size-5 text-destructive/70" />,
             position: 'top-left',
             ...options,
         });
     },
-    info: (message: string, options?: ToastOptions) => {
-        sonnerToast(message, {
-            icon: icons.info,
-            position: 'top-left',
-            ...options,
-        });
-    },
-    loading: (message: string, options?: ToastOptions) => {
-        return sonnerToast(message, {
-            icon: icons.loading,
-            duration: Infinity,
-            position: 'top-left',
-            ...options,
-        });
-    },
-    dismiss: sonnerToast.dismiss,
 };
-

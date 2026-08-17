@@ -7,7 +7,6 @@ import "time"
 type DBDump struct {
 	Version      int       `json:"version"`
 	ExportedAt   time.Time `json:"exported_at"`
-	IncludeLogs  bool      `json:"include_logs"`
 	IncludeStats bool      `json:"include_stats"`
 
 	Channels   []Channel   `json:"channels,omitempty"`
@@ -23,8 +22,6 @@ type DBDump struct {
 	StatsModel   []StatsModel   `json:"stats_model,omitempty"`
 	StatsChannel []StatsChannel `json:"stats_channel,omitempty"`
 	StatsAPIKey  []StatsAPIKey  `json:"stats_api_key,omitempty"`
-
-	RelayLogs []RelayLog `json:"relay_logs,omitempty"`
 }
 
 type DBImportResult struct {

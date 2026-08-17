@@ -1,15 +1,15 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
-export type Theme = 'light' | 'dark' | 'system';
+type Theme = 'light' | 'dark' | 'system';
 type ResolvedTheme = Exclude<Theme, 'system'>;
 
 interface ThemeContextValue {
-    theme: Theme; // 用户选择的主题模式。
-    resolvedTheme: ResolvedTheme; // 结合系统偏好后实际生效的主题。
-    setTheme: (theme: string) => void; // 设置并持久化主题模式。
+    theme: Theme;
+    resolvedTheme: ResolvedTheme;
+    setTheme: (theme: string) => void;
 }
 
-const ThemeContext = createContext<ThemeContextValue | null>(null); // 全局主题状态上下文。
+const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
     const [theme, setThemeState] = useState<Theme>(() => {
@@ -35,7 +35,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }, []);
 
     useEffect(() => {
-        document.documentElement.classList.toggle('dark', resolvedTheme === 'dark');
+        const root = document.documentElement;
+        root.classList.toggle('dark', resolvedTheme === 'dark');
+        root.style.colorScheme = resolvedTheme;
         document.querySelector('meta[name="theme-color"]')?.setAttribute(
             'content',
             resolvedTheme === 'dark' ? '#413a2c' : '#eae9e3'

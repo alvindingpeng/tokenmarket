@@ -82,10 +82,9 @@ func setSetting(c *gin.Context) {
 }
 
 func exportDB(c *gin.Context) {
-	includeLogs, _ := strconv.ParseBool(c.DefaultQuery("include_logs", "false"))
 	includeStats, _ := strconv.ParseBool(c.DefaultQuery("include_stats", "false"))
 
-	dump, err := op.DBExportAll(c.Request.Context(), includeLogs, includeStats)
+	dump, err := op.DBExportAll(c.Request.Context(), includeStats)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -160,7 +159,6 @@ func decodeDBDump(body []byte, dump *model.DBDump) error {
 		len(dump.Settings) == 0 &&
 		len(dump.APIKeys) == 0 &&
 		len(dump.LLMInfos) == 0 &&
-		len(dump.RelayLogs) == 0 &&
 		len(dump.StatsDaily) == 0 &&
 		len(dump.StatsHourly) == 0 &&
 		len(dump.StatsTotal) == 0 &&

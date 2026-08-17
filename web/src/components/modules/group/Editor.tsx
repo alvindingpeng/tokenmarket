@@ -2,28 +2,20 @@ import { useCallback, useMemo, useState, type FormEvent } from 'react';
 import { Check, ChevronDownIcon, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
-import { useModelChannelList, type LLMChannel } from '@/api/endpoints/model';
+import { useModelChannelList, type LLMChannel } from '@/api/model';
 import { Button } from '@/components/ui/button';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Accordion, AccordionContent, AccordionItem } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
 import { getModelIcon } from '@/lib/model-icons';
-import type { GroupMode } from '@/api/endpoints/group';
 import type { SelectedMember } from './ItemList';
 import { MemberList } from './ItemList';
-import { matchesGroupName, memberKey, normalizeKey, MODE_LABELS } from './utils';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/animate-ui/components/animate/tooltip';
-import { HelpCircle } from 'lucide-react';
-
-
+import { matchesGroupName, memberKey, normalizeKey } from './utils';
 
 export type GroupEditorValues = {
     name: string;
-    match_regex: string;
-    mode: GroupMode;
-    first_token_time_out: number;
-    session_keep_time: number;
+    retry_interval: number;
     members: SelectedMember[];
 };
 
@@ -132,7 +124,7 @@ function ModelPickerSection({
                                     <div className="flex flex-col gap-1.5">
                                         {channel.models.map((m) => {
                                             const isSelected = selectedKeys.has(memberKey(m));
-                                            const { Avatar } = getModelIcon(m.name);
+                                            const { Icon, className: iconClassName } = getModelIcon(m.name);
                                             return (
                                                 <button
                                                     key={memberKey(m)}
@@ -145,7 +137,7 @@ function ModelPickerSection({
                                                     )}
                                                 >
                                                     <span className="flex items-center gap-2 min-w-0">
-                                                        <Avatar size={16} />
+                                                        <Icon aria-hidden="true" className={iconClassName} width={16} height={16} />
                                                         <span className="text-sm font-medium truncate">{m.name}</span>
                                                     </span>
 
@@ -174,17 +166,13 @@ function SortSection({
     members,
     onReorder,
     onRemove,
-    onWeightChange,
     removingIds,
-    showWeight,
     onClear,
 }: {
     members: SelectedMember[];
     onReorder: (members: SelectedMember[]) => void;
     onRemove: (id: string) => void;
-    onWeightChange: (id: string, weight: number) => void;
     removingIds: Set<string>;
-    showWeight: boolean;
     onClear: () => void;
 }) {
     const t = useTranslations('group');
@@ -222,9 +210,7 @@ function SortSection({
                     members={members}
                     onReorder={onReorder}
                     onRemove={onRemove}
-                    onWeightChange={onWeightChange}
                     removingIds={removingIds}
-                    showWeight={showWeight}
                     showConfirmDelete={false}
                 />
             </div>
@@ -251,53 +237,30 @@ export function GroupEditor({
     const { data: modelChannels = [] } = useModelChannelList();
 
     const [groupName, setGroupName] = useState(initial?.name ?? '');
-    const [matchRegex, setMatchRegex] = useState(initial?.match_regex ?? '');
-    const [mode, setMode] = useState<GroupMode>((initial?.mode ?? 1) as GroupMode);
-    const [firstTokenTimeOut, setFirstTokenTimeOut] = useState<number>(initial?.first_token_time_out ?? 0);
-    const [sessionKeepTime, setSessionKeepTime] = useState<number>(initial?.session_keep_time ?? 0);
+    const [retryInterval, setRetryInterval] = useState(initial?.retry_interval ?? 1);
     const [selectedMembers, setSelectedMembers] = useState<SelectedMember[]>(initial?.members ?? []);
     const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
     const groupKey = normalizeKey(groupName);
-    const regexKey = matchRegex.trim();
 
-    const { matchedModelChannels, regexError } = useMemo(() => {
-        const parseRegex = (input: string): RegExp => {
-            const inlineMatch = input.match(/^\(\?([ism]+)\)(.+)$/);
-            if (inlineMatch) {
-                const flagMap: Record<string, string> = { i: 'i', s: 's', m: 'm' };
-                const flags = inlineMatch[1].split('').map(f => flagMap[f] || '').join('');
-                return new RegExp(inlineMatch[2], flags);
-            }
-
-            return new RegExp(input);
-        };
-
-        if (regexKey) {
-            try {
-                const re = parseRegex(regexKey);
-                return { matchedModelChannels: modelChannels.filter((mc) => re.test(mc.name)), regexError: '' };
-            } catch (e) {
-                return { matchedModelChannels: [], regexError: (e as Error)?.message ?? 'Invalid regex' };
-            }
-        }
-        if (!groupKey) return { matchedModelChannels: [], regexError: '' };
-        return { matchedModelChannels: modelChannels.filter((mc) => matchesGroupName(mc.name, groupKey)), regexError: '' };
-    }, [groupKey, regexKey, modelChannels]);
+    const matchedModelChannels = useMemo(() => {
+        if (!groupKey) return [];
+        return modelChannels.filter((mc) => matchesGroupName(mc.name, groupKey));
+    }, [groupKey, modelChannels]);
 
     const handleAddMember = useCallback((channel: LLMChannel) => {
         const key = memberKey(channel);
         setSelectedMembers((prev) => {
             if (prev.some((m) => m.id === key)) return prev;
-            return [...prev, { ...channel, id: key, weight: 1 }];
+            return [...prev, { ...channel, id: key }];
         });
     }, []);
 
     const autoAddDisabled = useMemo(() => {
-        if ((!regexKey && !groupKey) || regexError || matchedModelChannels.length === 0) return true;
+        if (!groupKey || matchedModelChannels.length === 0) return true;
         const existing = new Set(selectedMembers.map((m) => m.id));
         return matchedModelChannels.every((mc) => existing.has(memberKey(mc)));
-    }, [groupKey, regexKey, regexError, matchedModelChannels, selectedMembers]);
+    }, [groupKey, matchedModelChannels, selectedMembers]);
 
     const handleAutoAdd = useCallback(() => {
         if (matchedModelChannels.length === 0) return;
@@ -305,14 +268,10 @@ export function GroupEditor({
             const existing = new Set(prev.map((m) => m.id));
             const toAdd = matchedModelChannels
                 .filter((mc) => !existing.has(memberKey(mc)))
-                .map((mc) => ({ ...mc, id: memberKey(mc), weight: 1 }));
+                .map((mc) => ({ ...mc, id: memberKey(mc) }));
             return toAdd.length ? [...prev, ...toAdd] : prev;
         });
     }, [matchedModelChannels]);
-
-    const handleWeightChange = useCallback((id: string, weight: number) => {
-        setSelectedMembers((prev) => prev.map((m) => m.id === id ? { ...m, weight } : m));
-    }, []);
 
     const handleRemoveMember = useCallback((id: string) => {
         setRemovingIds((prev) => new Set(prev).add(id));
@@ -327,17 +286,14 @@ export function GroupEditor({
         setRemovingIds(new Set());
     }, []);
 
-    const isValid = groupKey.length > 0 && selectedMembers.length > 0 && !regexError;
+    const isValid = groupKey.length > 0 && selectedMembers.length > 0;
 
     const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         if (!isValid) return;
         onSubmit({
             name: groupName,
-            match_regex: regexKey,
-            mode,
-            first_token_time_out: firstTokenTimeOut,
-            session_keep_time: sessionKeepTime,
+            retry_interval: retryInterval,
             members: selectedMembers,
         });
     };
@@ -347,7 +303,7 @@ export function GroupEditor({
         <form onSubmit={handleSubmit} className="flex flex-col h-full min-h-0 ">
             <div className="flex-1 min-h-0 overflow-hidden px-1">
                 <FieldGroup className="gap-4 flex flex-col min-h-0 h-full">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <Field>
                             <FieldLabel htmlFor="group-name">{t('form.name')}</FieldLabel>
                             <Input
@@ -358,105 +314,21 @@ export function GroupEditor({
                             />
                         </Field>
                         <Field>
-                            <FieldLabel htmlFor="group-match-regex">{t('form.matchRegex')}</FieldLabel>
+                            <FieldLabel htmlFor="group-retry-interval">{t('form.retryInterval')}</FieldLabel>
                             <Input
-                                id="group-match-regex"
-                                value={matchRegex}
-                                onChange={(e) => setMatchRegex(e.target.value)}
-                                className="rounded-xl"
-                                placeholder={t('form.matchRegexPlaceholder')}
-                            />
-                            {regexError && (
-                                <p className="mt-1 text-xs text-destructive">
-                                    {t('form.matchRegexInvalid')}: {regexError}
-                                </p>
-                            )}
-                        </Field>
-
-                        <Field>
-                            <FieldLabel htmlFor="group-first-token-time-out">
-                                {t('form.firstTokenTimeOut')}
-                                <TooltipProvider>
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <HelpCircle className="size-4 text-muted-foreground cursor-help" />
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                            {t('form.firstTokenTimeOutHint')}
-                                        </TooltipContent>
-                                    </Tooltip>
-                                </TooltipProvider>
-                            </FieldLabel>
-                            <Input
-                                id="group-first-token-time-out"
+                                id="group-retry-interval"
                                 type="number"
                                 inputMode="numeric"
-                                min={0}
+                                min={1}
                                 step={1}
-                                value={String(firstTokenTimeOut)}
+                                value={String(retryInterval)}
                                 onChange={(e) => {
-                                    const raw = e.target.value;
-                                    if (raw.trim() === '') {
-                                        setFirstTokenTimeOut(0);
-                                        return;
-                                    }
-                                    const n = Number.parseInt(raw, 10);
-                                    setFirstTokenTimeOut(Number.isFinite(n) && n > 0 ? n : 0);
+                                    const value = Number.parseInt(e.target.value, 10);
+                                    setRetryInterval(Number.isFinite(value) && value >= 1 ? value : 1);
                                 }}
                                 className="rounded-xl"
                             />
                         </Field>
-
-                        <Field>
-                            <FieldLabel htmlFor="group-session-keep-time">
-                                {t('form.sessionKeepTime')}
-                                <TooltipProvider>
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <HelpCircle className="size-4 text-muted-foreground cursor-help" />
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                            {t('form.sessionKeepTimeHint')}
-                                        </TooltipContent>
-                                    </Tooltip>
-                                </TooltipProvider>
-                            </FieldLabel>
-                            <Input
-                                id="group-session-keep-time"
-                                type="number"
-                                inputMode="numeric"
-                                min={0}
-                                step={1}
-                                value={String(sessionKeepTime)}
-                                onChange={(e) => {
-                                    const raw = e.target.value;
-                                    if (raw.trim() === '') {
-                                        setSessionKeepTime(0);
-                                        return;
-                                    }
-                                    const n = Number.parseInt(raw, 10);
-                                    setSessionKeepTime(Number.isFinite(n) && n > 0 ? n : 0);
-                                }}
-                                className="rounded-xl"
-                            />
-                        </Field>
-                    </div>
-
-                    {/* Mode */}
-                    <div className="flex gap-1">
-                        {([1, 2, 3, 4] as const).map((m) => (
-                            <button
-                                key={m}
-                                type="button"
-                                onClick={() => setMode(m)}
-                                className={cn(
-                                    'flex-1 py-1 text-xs rounded-lg transition-colors',
-                                    mode === m ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
-                                )}
-                            >
-                                {t(`mode.${MODE_LABELS[m]}`)}
-                            </button>
-                        ))}
                     </div>
 
                     <div className="flex-1 min-h-0">
@@ -472,9 +344,7 @@ export function GroupEditor({
                                 members={selectedMembers}
                                 onReorder={setSelectedMembers}
                                 onRemove={handleRemoveMember}
-                                onWeightChange={handleWeightChange}
                                 removingIds={removingIds}
-                                showWeight={mode === 4}
                                 onClear={handleClearMembers}
                             />
                         </div>

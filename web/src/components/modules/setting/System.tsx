@@ -3,9 +3,9 @@ import { useTranslations } from 'use-intl';
 import { Monitor, Globe, Clock, Shield, HelpCircle, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { useSettingList, useSetSetting, SettingKey } from '@/api/endpoints/setting';
+import { useSettingList, useSetSetting, SettingKey } from '@/api/setting';
 import { toast } from '@/components/common/Toast';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/animate-ui/components/animate/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 export function SettingSystem() {
     const t = useTranslations('setting');
@@ -155,18 +155,16 @@ export function SettingSystem() {
                 <div className="flex items-center gap-3">
                     <Shield className="h-5 w-5 text-muted-foreground" />
                     <span className="text-sm font-medium">{t('corsAllowOrigins.label')}</span>
-                    <TooltipProvider>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <HelpCircle className="size-4 text-muted-foreground cursor-help" />
-                            </TooltipTrigger>
-                            <TooltipContent>
-                                {t('corsAllowOrigins.hint')}
-                                <br />
-                                {t('corsAllowOrigins.example')}
-                            </TooltipContent>
-                        </Tooltip>
-                    </TooltipProvider>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" sideOffset={10} align="center">
+                            {t('corsAllowOrigins.hint')}
+                            <br />
+                            {t('corsAllowOrigins.example')}
+                        </TooltipContent>
+                    </Tooltip>
                 </div>
                 <Popover>
                     <PopoverTrigger asChild>

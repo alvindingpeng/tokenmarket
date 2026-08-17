@@ -1,12 +1,11 @@
-import { useStatsDaily, useStatsHourly } from '@/api/endpoints/stats';
+import { useStatsDaily, useStatsHourly } from '@/api/stats';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { useMemo } from 'react';
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { useTranslations } from 'use-intl';
 import { formatCount, formatMoney } from '@/lib/utils';
-import dayjs from 'dayjs';
 import { AnimatedNumber } from '@/components/common/AnimatedNumber';
-import { Tabs, TabsList, TabsTrigger } from '@/components/animate-ui/components/animate/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useHomeViewStore, type ChartMetricType, type ChartPeriod } from '@/components/modules/home/store';
 
 export function StatsChart() {
@@ -44,7 +43,7 @@ export function StatsChart() {
         } else {
             const days = Number(period);
             return sortedDaily.slice(-days).map((stat) => ({
-                date: dayjs(stat.date).format('MM/DD'),
+                date: `${stat.date.slice(4, 6)}/${stat.date.slice(6, 8)}`,
                 [dataKey]: chartMetricType === 'cost'
                     ? stat.total_cost.raw
                     : chartMetricType === 'count'
@@ -121,15 +120,17 @@ export function StatsChart() {
     };
 
     return (
-        <div className="rounded-3xl bg-card border-card-border border pt-4 pb-0 text-card-foreground custom-shadow">
+        <div className="rounded-3xl bg-card border-border border pt-2 pb-0 text-card-foreground">
             <div className="px-4 pb-2 space-y-2">
                 <div className="flex justify-between items-center">
                     <h3 className="font-semibold text-base">{t('title')}</h3>
                     <Tabs value={chartMetricType} onValueChange={(value) => setChartMetricType(value as ChartMetricType)}>
-                        <TabsList>
-                            <TabsTrigger value="cost">{t('metricType.cost')}</TabsTrigger>
-                            <TabsTrigger value="count">{t('metricType.count')}</TabsTrigger>
-                            <TabsTrigger value="tokens">{t('metricType.tokens')}</TabsTrigger>
+                        <TabsList variant="text" className="p-0">
+                            <TabsTrigger value="cost" className="pr-0">{t('metricType.cost')}</TabsTrigger>
+                            <span aria-hidden="true" className="mx-1 inline-flex h-full -translate-y-px items-center text-sm font-medium leading-none text-muted-foreground/50">/</span>
+                            <TabsTrigger value="count" className="px-0">{t('metricType.count')}</TabsTrigger>
+                            <span aria-hidden="true" className="mx-1 inline-flex h-full -translate-y-px items-center text-sm font-medium leading-none text-muted-foreground/50">/</span>
+                            <TabsTrigger value="tokens" className="pl-0">{t('metricType.tokens')}</TabsTrigger>
                         </TabsList>
                     </Tabs>
                 </div>
@@ -197,11 +198,9 @@ export function StatsChart() {
                             if (chartMetricType === 'cost') {
                                 const formatted = formatMoney(value);
                                 return `${formatted.formatted.value}${formatted.formatted.unit}`;
-                            } else if (chartMetricType === 'count' || chartMetricType === 'tokens') {
-                                const formatted = formatCount(value);
-                                return `${formatted.formatted.value}${formatted.formatted.unit}`;
                             }
-                            return value.toString();
+                            const formatted = formatCount(value);
+                            return `${formatted.formatted.value}${formatted.formatted.unit}`;
                         }}
                     />
                     <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" />} />

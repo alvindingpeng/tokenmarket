@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/alvindingpeng/switchyard/internal/conf"
-	"github.com/alvindingpeng/switchyard/internal/relay"
 	_ "github.com/alvindingpeng/switchyard/internal/server/handlers"
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
@@ -13,7 +12,6 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/utils/log"
 	"github.com/alvindingpeng/switchyard/static"
 	"github.com/gin-gonic/gin"
-	"github.com/looplj/axonhub/llm"
 )
 
 var httpSrv http.Server
@@ -26,7 +24,7 @@ func Start() error {
 	}
 
 	r := gin.New()
-	r.Use(gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
+	r.Use(gin.CustomRecovery(func(c *gin.Context, _ any) {
 		resp.Error(c, http.StatusInternalServerError, resp.ErrInternalServer)
 		c.Abort()
 	}))
@@ -37,8 +35,9 @@ func Start() error {
 	r.Use(middleware.Cors())
 	r.Use(middleware.StaticEmbed("/", static.StaticFS))
 
-	registerRelayRoutes(r)
-	router.RegisterAll(r)
+	if err := router.RegisterAll(r); err != nil {
+		return err
+	}
 
 	httpSrv.Addr = fmt.Sprintf("%s:%d", conf.AppConfig.Server.Host, conf.AppConfig.Server.Port)
 	httpSrv.Handler = r
@@ -52,15 +51,4 @@ func Start() error {
 
 func Close() error {
 	return httpSrv.Close()
-}
-
-func registerRelayRoutes(r *gin.Engine) {
-	v1 := r.Group("/v1", middleware.APIKeyAuth())
-	v1.POST("/chat/completions", middleware.RequireJSON(), relay.Handler(llm.APIFormatOpenAIChatCompletion))
-	v1.POST("/responses", middleware.RequireJSON(), relay.Handler(llm.APIFormatOpenAIResponse))
-	v1.POST("/messages", middleware.RequireJSON(), relay.Handler(llm.APIFormatAnthropicMessage))
-	v1.POST("/embeddings", middleware.RequireJSON(), relay.Handler(llm.APIFormatOpenAIEmbedding))
-	v1.POST("/images/generations", middleware.RequireJSON(), relay.Handler(llm.APIFormatOpenAIImageGeneration))
-	v1.POST("/images/edits", relay.Handler(llm.APIFormatOpenAIImageEdit))
-	v1.POST("/images/variations", relay.Handler(llm.APIFormatOpenAIImageVariation))
 }

@@ -5,11 +5,11 @@ import {
     MorphingDialogContent,
 } from '@/components/ui/morphing-dialog';
 import { CheckCircle2, DollarSign, Layers, MessageSquare, XCircle } from 'lucide-react';
-import { type StatsMetricsFormatted } from '@/api/endpoints/stats';
-import { type Channel, useEnableChannel } from '@/api/endpoints/channel';
+import { type StatsMetricsFormatted } from '@/api/stats';
+import { type Channel, useEnableChannel } from '@/api/channel';
 import { CardContent } from './CardContent';
 import { useTranslations } from 'use-intl';
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/animate-ui/components/animate/tooltip';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/common/Toast';
 
@@ -48,13 +48,15 @@ export function Card({ channel, stats, layout = 'grid' }: { channel: Channel; st
     return (
         <MorphingDialog>
             <MorphingDialogTrigger className="w-full">
-                <article className="flex flex-col gap-4 rounded-3xl border border-border bg-card text-card-foreground p-4 transition-all duration-300">
+                <article className="flex flex-col gap-4 rounded-3xl border border-border bg-card text-card-foreground p-4">
                     <header className="relative flex items-center justify-between gap-2">
-                        <Tooltip side="top" sideOffset={10} align="center">
+                        <Tooltip>
                             <TooltipTrigger asChild>
                                 <h3 className="text-lg font-bold truncate min-w-0">{channel.name}</h3>
                             </TooltipTrigger>
-                            <TooltipContent key={channel.name}>{channel.name}</TooltipContent>
+                            <TooltipContent key={channel.name} side="top" sideOffset={10} align="center">
+                                {channel.name}
+                            </TooltipContent>
                         </Tooltip>
                         <Switch
                             checked={channel.enabled}

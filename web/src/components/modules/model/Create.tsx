@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useCreateModel } from '@/api/endpoints/model';
+import { useCreateModel } from '@/api/model';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Field, FieldLabel, FieldGroup } from '@/components/ui/field';

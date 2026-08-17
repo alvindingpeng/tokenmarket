@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/common/Toast';
-import { useExportDB, useImportDB } from '@/api/endpoints/setting';
+import { useExportDB, useImportDB } from '@/api/setting';
 
 export function SettingBackup() {
     const t = useTranslations('setting');
@@ -13,7 +13,6 @@ export function SettingBackup() {
     const exportDB = useExportDB();
     const importDB = useImportDB();
 
-    const [includeLogs, setIncludeLogs] = useState(false);
     const [includeStats, setIncludeStats] = useState(false);
 
     const [file, setFile] = useState<File | null>(null);
@@ -48,7 +47,7 @@ export function SettingBackup() {
 
     const onExport = async () => {
         try {
-            await exportDB.mutateAsync({ include_logs: includeLogs, include_stats: includeStats });
+            await exportDB.mutateAsync({ include_stats: includeStats });
             toast.success(t('backup.export.success'));
         } catch (e) {
             toast.error(e instanceof Error ? e.message : t('backup.export.failed'));
@@ -65,11 +64,6 @@ export function SettingBackup() {
             {/* 导出 */}
             <div className="space-y-3">
                 <div className="text-sm font-semibold text-card-foreground">{t('backup.export.title')}</div>
-
-                <div className="flex items-center justify-between gap-4">
-                    <div className="text-sm text-muted-foreground">{t('backup.export.includeLogs')}</div>
-                    <Switch checked={includeLogs} onCheckedChange={setIncludeLogs} />
-                </div>
 
                 <div className="flex items-center justify-between gap-4">
                     <div className="text-sm text-muted-foreground">{t('backup.export.includeStats')}</div>
@@ -130,4 +124,3 @@ export function SettingBackup() {
         </div>
     );
 }
-

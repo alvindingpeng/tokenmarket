@@ -1,61 +1,53 @@
 package model
 
-type GroupMode int
-
-const (
-	GroupModeRoundRobin GroupMode = 1 // 轮询：依次循环选择渠道
-	GroupModeRandom     GroupMode = 2 // 随机：每次随机选择一个渠道
-	GroupModeFailover   GroupMode = 3 // 故障转移：按优先级选择，失败时降级到下一个
-	GroupModeWeighted   GroupMode = 4 // 加权分配：按优权重分配流量
-)
-
+// Group 表示客户端模型名称及其可手动切换的上游分组。
 type Group struct {
-	ID                int         `json:"id" gorm:"primaryKey"`
-	Name              string      `json:"name" gorm:"unique;not null"`
-	Mode              GroupMode   `json:"mode" gorm:"not null"`
-	MatchRegex        string      `json:"match_regex"`
-	FirstTokenTimeOut int         `json:"first_token_time_out"` // 单个渠道首个Token响应超时时间(秒)
-	SessionKeepTime   int         `json:"session_keep_time"`    // 会话保持时间(秒) 0 为禁用
-	Items             []GroupItem `json:"items,omitempty" gorm:"foreignKey:GroupID"`
+	ID                int         `json:"id" gorm:"primaryKey"`                      // ID 是分组主键。
+	Name              string      `json:"name" gorm:"unique;not null"`              // Name 是客户端请求使用的模型名称。
+	ActiveItemID      int         `json:"active_item_id" gorm:"not null;default:0"`  // ActiveItemID 是当前手动选中的分组项 ID，0 表示尚未指定。
+	RetryInterval     int         `json:"retry_interval" gorm:"not null;default:1"`  // RetryInterval 是上游失败后的重试等待秒数，最小为 1。
+	Items             []GroupItem `json:"items,omitempty" gorm:"foreignKey:GroupID"` // Items 是该分组可手动选择的渠道模型。
 }
 
+// GroupItem 表示分组内一个可手动选择的渠道模型。
 type GroupItem struct {
-	ID        int    `json:"id" gorm:"primaryKey"`
-	GroupID   int    `json:"group_id" gorm:"not null;index:idx_group_channel_model,unique"` // 创建时不携带此字段,更新时需要
-	ChannelID int    `json:"channel_id" gorm:"not null;index:idx_group_channel_model,unique"`
-	ModelName string `json:"model_name" gorm:"not null;index:idx_group_channel_model,unique"`
-	Priority  int    `json:"priority"`
-	Weight    int    `json:"weight"`
+	ID        int    `json:"id" gorm:"primaryKey"`                                            // ID 是分组项主键。
+	GroupID   int    `json:"group_id" gorm:"not null;index:idx_group_channel_model,unique"`   // GroupID 是所属分组 ID，创建分组时无需携带，更新时需要。
+	ChannelID int    `json:"channel_id" gorm:"not null;index:idx_group_channel_model,unique"` // ChannelID 是实际上游渠道 ID。
+	ModelName string `json:"model_name" gorm:"not null;index:idx_group_channel_model,unique"` // ModelName 是该渠道实际请求的模型名称。
+	Priority  int    `json:"priority"`                                                         // Priority 仅用于分组项的界面展示顺序。
 }
 
-// GroupUpdateRequest 分组更新请求 - 仅包含变更的数据
+// GroupUpdateRequest 表示分组普通配置和成员变更请求。
 type GroupUpdateRequest struct {
-	ID                int                      `json:"id" binding:"required"`
-	Name              *string                  `json:"name,omitempty"`                 // 仅在名称变更时发送
-	Mode              *GroupMode               `json:"mode,omitempty"`                 // 仅在模式变更时发送
-	MatchRegex        *string                  `json:"match_regex,omitempty"`          // 仅在匹配正则变更时发送
-	FirstTokenTimeOut *int                     `json:"first_token_time_out,omitempty"` // 仅在超时变更时发送(秒)
-	SessionKeepTime   *int                     `json:"session_keep_time,omitempty"`    // 仅在会话保持时间变更时发送(秒)
-	ItemsToAdd        []GroupItemAddRequest    `json:"items_to_add,omitempty"`         // 新增的 items
-	ItemsToUpdate     []GroupItemUpdateRequest `json:"items_to_update,omitempty"`      // 更新的 items (priority 变更)
-	ItemsToDelete     []int                    `json:"items_to_delete,omitempty"`      // 删除的 item IDs
+	ID            int                      `json:"id" binding:"required"`      // ID 是待更新的分组主键。
+	Name          *string                  `json:"name,omitempty"`             // Name 仅在名称变更时发送。
+	RetryInterval *int                     `json:"retry_interval,omitempty" binding:"omitempty,min=1"` // RetryInterval 仅在重试间隔变更时发送，单位为秒。
+	ItemsToAdd    []GroupItemAddRequest    `json:"items_to_add,omitempty"`     // ItemsToAdd 是待新增的分组项。
+	ItemsToUpdate []GroupItemUpdateRequest `json:"items_to_update,omitempty"`  // ItemsToUpdate 是待调整展示顺序的分组项。
+	ItemsToDelete []int                    `json:"items_to_delete,omitempty"`  // ItemsToDelete 是待删除的分组项 ID。
 }
 
-// GroupItemAddRequest 新增 item 请求
+// GroupActiveItemUpdateRequest 表示手动切换分组当前渠道的请求。
+type GroupActiveItemUpdateRequest struct {
+	ItemID int `json:"item_id" binding:"required"` // ItemID 是待设为当前渠道的分组项 ID。
+}
+
+// GroupItemAddRequest 表示新增分组项请求。
 type GroupItemAddRequest struct {
-	ChannelID int    `json:"channel_id" binding:"required"`
-	ModelName string `json:"model_name" binding:"required"`
-	Priority  int    `json:"priority,omitempty"`
-	Weight    int    `json:"weight,omitempty"`
+	ChannelID int    `json:"channel_id" binding:"required"` // ChannelID 是实际上游渠道 ID。
+	ModelName string `json:"model_name" binding:"required"` // ModelName 是该渠道实际请求的模型名称。
+	Priority  int    `json:"priority,omitempty"`             // Priority 是分组项的界面展示顺序。
 }
 
-// GroupItemUpdateRequest 更新 item 请求
+// GroupItemUpdateRequest 表示分组项展示顺序更新请求。
 type GroupItemUpdateRequest struct {
-	ID       int `json:"id" binding:"required"`
-	Priority int `json:"priority,omitempty"`
-	Weight   int `json:"weight,omitempty"`
+	ID       int `json:"id" binding:"required"` // ID 是待更新的分组项主键。
+	Priority int `json:"priority,omitempty"`     // Priority 是新的界面展示顺序。
 }
+
+// GroupIDAndLLMName 表示渠道及其模型名称组合。
 type GroupIDAndLLMName struct {
-	ChannelID int
-	ModelName string
+	ChannelID int    // ChannelID 是实际上游渠道 ID。
+	ModelName string // ModelName 是该渠道提供的模型名称。
 }

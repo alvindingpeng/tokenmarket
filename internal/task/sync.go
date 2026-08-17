@@ -76,11 +76,6 @@ func SyncModelsTask() {
 				log.Errorf("failed to batch delete group items for channel %s: %v", channel.Name, err)
 			}
 		}
-
-		// 自动分组
-		if len(newModels) > 0 {
-			helper.ChannelAutoGroup(&channel, ctx)
-		}
 	}
 	llmPrice, err := op.LLMList(ctx)
 	if err != nil {

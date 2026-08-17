@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useId, useMemo, useState } from 'react';
 import { useTranslations } from 'use-intl';
 import { KeyRound, Plus, Loader, Trash2, Check, X, Info, CalendarDays, Pencil, Maximize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -20,13 +20,12 @@ import {
     useUpdateAPIKey,
     useDeleteAPIKey,
     type APIKey,
-} from '@/api/endpoints/apikey';
-import { useGroupList } from '@/api/endpoints/group';
-import { useStatsAPIKey } from '@/api/endpoints/stats';
+} from '@/api/apikey';
+import { useGroupList } from '@/api/group';
+import { useStatsAPIKey } from '@/api/stats';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/common/Toast';
 import { CopyIconButton } from '@/components/common/CopyButton';
-import type { ApiError } from '@/api/types';
 
 function toExpireAt(date: Date, time: string): number {
     const t = /^\d{2}:\d{2}$/.test(time) ? time : '00:00';
@@ -483,8 +482,6 @@ function APIKeyKeyItem({
     return (
         <motion.div
             layout
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
             transition={{ type: 'spring', stiffness: 500, damping: 30 }}
             className="group relative flex items-center justify-between gap-3 p-3 rounded-xl bg-muted/50 overflow-hidden origin-top"
@@ -567,7 +564,6 @@ function APIKeyPanelBase({
     listClassName: string;
     renderHeaderExtra?: (ctx: {
         disabled: boolean;
-        onCloseAllOverlays: () => void;
     }) => React.ReactNode;
 }) {
     const t = useTranslations('setting');
@@ -599,7 +595,7 @@ function APIKeyPanelBase({
                 toast.success(t('apiKey.toast.deleteSuccess'));
             },
             onError: (error) => {
-                const msg = (error as unknown as ApiError)?.message;
+                const msg = error instanceof Error ? error.message : undefined;
                 toast.error(t('apiKey.toast.deleteError'), { description: msg });
             },
             onSettled: () => setDeletingId((cur) => (cur === id ? null : cur)),
@@ -621,7 +617,7 @@ function APIKeyPanelBase({
                 setIsAdding(false);
             },
             onError: (error) => {
-                const msg = (error as unknown as ApiError)?.message;
+                const msg = error instanceof Error ? error.message : undefined;
                 toast.error(t('apiKey.toast.createError'), { description: msg });
             },
         });
@@ -634,7 +630,7 @@ function APIKeyPanelBase({
                 setEditingKey(null);
             },
             onError: (error) => {
-                const msg = (error as unknown as ApiError)?.message;
+                const msg = error instanceof Error ? error.message : undefined;
                 toast.error(t('apiKey.toast.updateError'), { description: msg });
             },
         });
@@ -658,7 +654,7 @@ function APIKeyPanelBase({
                     >
                         <Plus className="size-4" />
                     </motion.button>
-                    {renderHeaderExtra?.({ disabled: disabledHeaderActions, onCloseAllOverlays: closeAllOverlays })}
+                    {renderHeaderExtra?.({ disabled: disabledHeaderActions })}
                 </div>
             </div>
 
@@ -770,11 +766,21 @@ export function SettingAPIKey() {
             idPrefix="apikey"
             containerClassName="rounded-3xl border border-border bg-card p-6 space-y-5 relative"
             listClassName="space-y-2 h-36 overflow-y-auto"
-            renderHeaderExtra={() => (
+            renderHeaderExtra={({ disabled }) => (
                 <MorphingDialog>
-                    <MorphingDialogTrigger className="h-9 w-9 flex items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors hover:bg-muted">
-                        <Maximize2 className="size-4" />
-                    </MorphingDialogTrigger>
+                    {disabled ? (
+                        <button
+                            type="button"
+                            disabled
+                            className="h-9 w-9 flex items-center justify-center rounded-lg bg-muted/60 text-muted-foreground opacity-50"
+                        >
+                            <Maximize2 className="size-4" />
+                        </button>
+                    ) : (
+                        <MorphingDialogTrigger className="h-9 w-9 flex items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors hover:bg-muted">
+                            <Maximize2 className="size-4" />
+                        </MorphingDialogTrigger>
+                    )}
                     <MorphingDialogContainer>
                         <MorphingDialogContent className="relative">
                             <APIKeyDialogPanel />

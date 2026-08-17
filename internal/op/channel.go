@@ -77,10 +77,6 @@ func ChannelUpdate(req *model.ChannelUpdateRequest, ctx context.Context) (*model
 		selectFields = append(selectFields, "auto_sync")
 		updates.AutoSync = *req.AutoSync
 	}
-	if req.AutoGroup != nil {
-		selectFields = append(selectFields, "auto_group")
-		updates.AutoGroup = *req.AutoGroup
-	}
 	if req.CustomHeader != nil {
 		selectFields = append(selectFields, "custom_header")
 		updates.CustomHeader = *req.CustomHeader

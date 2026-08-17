@@ -1,16 +1,60 @@
 import { useMemo } from 'react';
-import { useModelList } from '@/api/endpoints/model';
+import { ArrowUpAZ } from 'lucide-react';
+import { useTranslations } from 'use-intl';
+import { useModelList } from '@/api/model';
+import { PageActions, usePageActionsStore } from '@/components/common/PageActions';
 import { ModelItem } from './Item';
-import { useSearchStore, useToolbarViewOptionsStore } from '@/components/modules/toolbar';
+import { CreateDialogContent } from './Create';
 import { VirtualizedGrid } from '@/components/common/VirtualizedGrid';
 
+// ModelActions 向稳定顶栏提供模型页面的搜索、视图选项和创建入口。
+export function ModelActions() {
+    const t = useTranslations('toolbar');
+    const searchTerm = usePageActionsStore((state) => state.searchTerms.model || '');
+    const layout = usePageActionsStore((state) => state.layouts.model || 'grid');
+    const sortOrder = usePageActionsStore((state) => state.sortOrders.model === 'desc' ? 'desc' : 'asc');
+    const filter = usePageActionsStore((state) => state.modelFilter);
+    const setSearchTerm = usePageActionsStore((state) => state.setSearchTerm);
+    const setLayout = usePageActionsStore((state) => state.setLayout);
+    const setSort = usePageActionsStore((state) => state.setSort);
+    const setFilter = usePageActionsStore((state) => state.setModelFilter);
+
+    return (
+        <PageActions
+            searchTerm={searchTerm}
+            onSearchTermChange={(value) => setSearchTerm('model', value)}
+            layout={layout}
+            onLayoutChange={(value) => setLayout('model', value)}
+            sortOptions={[
+                { value: 'asc', label: t('popover.nameAsc'), icon: ArrowUpAZ },
+                { value: 'desc', label: t('popover.nameDesc'), icon: ArrowUpAZ },
+            ]}
+            sortValue={sortOrder}
+            onSortChange={(value) => {
+                if (value === 'asc' || value === 'desc') setSort('model', value);
+            }}
+            filterOptions={[
+                { value: 'all', label: t('popover.filter.model.all') },
+                { value: 'priced', label: t('popover.filter.model.priced') },
+                { value: 'free', label: t('popover.filter.model.free') },
+            ]}
+            filterValue={filter}
+            onFilterChange={(value) => {
+                if (value === 'all' || value === 'priced' || value === 'free') setFilter(value);
+            }}
+        >
+            <CreateDialogContent />
+        </PageActions>
+    );
+}
+
+// Model 渲染模型列表正文。
 export function Model() {
     const { data: models } = useModelList();
-    const pageKey = 'model' as const;
-    const searchTerm = useSearchStore((s) => s.getSearchTerm(pageKey));
-    const layout = useToolbarViewOptionsStore((s) => s.getLayout(pageKey));
-    const sortOrder = useToolbarViewOptionsStore((s) => s.getSortOrder(pageKey));
-    const filter = useToolbarViewOptionsStore((s) => s.modelFilter);
+    const searchTerm = usePageActionsStore((state) => state.searchTerms.model || '');
+    const layout = usePageActionsStore((state) => state.layouts.model || 'grid');
+    const sortOrder = usePageActionsStore((state) => state.sortOrders.model === 'desc' ? 'desc' : 'asc');
+    const filter = usePageActionsStore((state) => state.modelFilter);
 
     const sortedModels = useMemo(() => {
         if (!models) return [];

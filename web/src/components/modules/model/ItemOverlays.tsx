@@ -80,7 +80,7 @@ export function ModelEditOverlay({
     return (
         <motion.div
             layoutId={layoutId}
-            className="absolute inset-x-0 top-0 z-20 flex flex-col bg-card p-5 rounded-3xl border border-border custom-shadow"
+            className="absolute inset-x-0 top-0 z-20 flex flex-col bg-card p-5 rounded-3xl border border-border"
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
         >
             <h3 className="text-sm font-semibold text-card-foreground line-clamp-1 mb-3">

@@ -9,7 +9,6 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/alvindingpeng/switchyard/internal/server/router"
-	"github.com/dlclark/regexp2"
 	"github.com/gin-gonic/gin"
 )
 
@@ -30,13 +29,13 @@ func init() {
 				Handle(updateGroup),
 		).
 		AddRoute(
+			router.NewRoute("/active/:id", http.MethodPost).
+				Handle(updateGroupActiveItem),
+		).
+		AddRoute(
 			router.NewRoute("/delete/:id", http.MethodDelete).
 				Handle(deleteGroup),
 		)
-	// AddRoute(
-	// 	router.NewRoute("/auto-add-item", http.MethodPost).
-	// 		Handle(autoAddGroupItem),
-	// )
 }
 
 func getGroupList(c *gin.Context) {
@@ -54,13 +53,6 @@ func createGroup(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if group.MatchRegex != "" {
-		_, err := regexp2.Compile(group.MatchRegex, regexp2.ECMAScript)
-		if err != nil {
-			resp.Error(c, http.StatusBadRequest, err.Error())
-			return
-		}
-	}
 	if err := op.GroupCreate(&group, c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -74,14 +66,27 @@ func updateGroup(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.MatchRegex != nil {
-		_, err := regexp2.Compile(*req.MatchRegex, regexp2.ECMAScript)
-		if err != nil {
-			resp.Error(c, http.StatusBadRequest, err.Error())
-			return
-		}
-	}
 	group, err := op.GroupUpdate(&req, c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, group)
+}
+
+// updateGroupActiveItem 更新分组当前手动指定的渠道模型。
+func updateGroupActiveItem(c *gin.Context) {
+	groupID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	var req model.GroupActiveItemUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	group, err := op.GroupActiveItemUpdate(groupID, &req, c.Request.Context())
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -102,23 +107,3 @@ func deleteGroup(c *gin.Context) {
 	}
 	resp.Success(c, "group deleted successfully")
 }
-
-// func autoAddGroupItem(c *gin.Context) {
-// 	var req struct {
-// 		ID int `json:"id"`
-// 	}
-// 	if err := c.ShouldBindJSON(&req); err != nil {
-// 		resp.Error(c, http.StatusBadRequest, err.Error())
-// 		return
-// 	}
-// 	if req.ID <= 0 {
-// 		resp.Error(c, http.StatusBadRequest, "invalid id")
-// 		return
-// 	}
-// 	err := worker.AutoAddGroupItem(req.ID, c.Request.Context())
-// 	if err != nil {
-// 		resp.Error(c, http.StatusInternalServerError, err.Error())
-// 		return
-// 	}
-// 	resp.Success(c, nil)
-// }

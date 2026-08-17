@@ -13,7 +13,6 @@ import (
 const (
 	TaskPriceUpdate  = "price_update"
 	TaskStatsSave    = "stats_save"
-	TaskRelayLogSave = "relay_log_save"
 	TaskSyncLLM      = "sync_llm"
 	TaskCleanLLM     = "clean_llm"
 )
@@ -49,10 +48,4 @@ func Init() {
 	}
 	statsSaveInterval := time.Duration(statsSaveIntervalMinutes) * time.Minute
 	Register(TaskStatsSave, statsSaveInterval, false, op.StatsSaveDBTask)
-	// 注册中继日志保存任务
-	Register(TaskRelayLogSave, 10*time.Minute, false, func() {
-		if err := op.RelayLogSaveDBTask(context.Background()); err != nil {
-			log.Warnf("relay log save db task failed: %v", err)
-		}
-	})
 }

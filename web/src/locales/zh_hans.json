@@ -21,10 +21,6 @@
     "apiKeyDashboard": {
         "error": "加载数据失败",
         "logout": "退出",
-        "requestStats": "请求统计",
-        "totalStats": "全部统计",
-        "inputStats": "输入统计",
-        "outputStats": "输出统计",
         "requestCount": "请求次数",
         "timeConsumed": "消耗时间",
         "totalToken": "消耗 Token",
@@ -35,8 +31,6 @@
         "outputCost": "输出费用",
         "successRequests": "成功请求",
         "failedRequests": "失败请求",
-        "quota": "剩余额度",
-        "unlimited": "无限制",
         "expireAt": "过期时间",
         "neverExpire": "永不过期",
         "daysLeft": "天后到期",
@@ -47,7 +41,6 @@
         "home": "主页",
         "channel": "渠道",
         "group": "分组",
-        "key": "密钥",
         "model": "价格",
         "log": "日志",
         "setting": "设置"
@@ -61,10 +54,6 @@
             "list": "列表",
             "nameAsc": "名称正序",
             "nameDesc": "名称倒序",
-            "createdAsc": "时间正序",
-            "createdDesc": "时间倒序",
-            "asc": "升序",
-            "desc": "降序",
             "filter": {
                 "title": "筛选",
                 "channel": {
@@ -95,7 +84,7 @@
     "home": {
         "activity": {
             "requestCount": "请求次数",
-            "waitTime": "等待时间",
+            "waitTime": "消耗时间",
             "totalToken": "消耗 Token",
             "totalCost": "消耗费用",
             "noData": "无数据"
@@ -189,7 +178,6 @@
             "title": "备份 / 恢复",
             "export": {
                 "title": "导出",
-                "includeLogs": "包含日志",
                 "includeStats": "包含统计",
                 "button": "下载 JSON",
                 "exporting": "导出中...",
@@ -197,7 +185,6 @@
             },
             "import": {
                 "title": "导入（增量）",
-                "selected": "已选择文件",
                 "button": "导入 JSON",
                 "importing": "导入中...",
                 "noFile": "请先选择 JSON 文件",
@@ -307,8 +294,6 @@
             "title": "版本信息",
             "currentVersion": "当前版本",
             "latestVersion": "最新版本",
-            "buildTime": "构建时间",
-            "publishedAt": "发布时间",
             "github": "GitHub 仓库",
             "unknown": "未知",
             "versionMismatch": "版本不匹配",
@@ -323,13 +308,6 @@
         },
         "log": {
             "title": "日志设置",
-            "enabled": {
-                "label": "启用历史日志"
-            },
-            "keepPeriod": {
-                "label": "日志保存天数",
-                "placeholder": "请输入天数"
-            },
             "clear": {
                 "label": "清空历史日志",
                 "button": "清空",
@@ -341,12 +319,10 @@
     },
     "group": {
         "toast": {
-            "created": "创建成功",
             "createFailed": "创建失败",
             "updated": "更新成功",
             "updateFailed": "更新失败",
-            "deleted": "删除成功",
-            "autoAddFailed": "自动添加失败"
+            "deleted": "删除成功"
         },
         "create": {
             "title": "创建分组",
@@ -354,7 +330,9 @@
             "submitting": "创建中..."
         },
         "card": {
-            "empty": "暂无规则"
+            "empty": "暂无规则",
+            "active": "当前活动项",
+            "activate": "设为活动项"
         },
         "detail": {
             "actions": {
@@ -368,27 +346,12 @@
         },
         "form": {
             "name": "分组名称",
-            "matchRegex": "匹配正则",
-            "matchRegexPlaceholder": "留空则默认按分组名称模糊匹配",
-            "matchRegexInvalid": "正则无效",
-            "firstTokenTimeOut": "首字超时",
-            "firstTokenTimeOutHint": "单位秒，仅流式响应起效，0 表示不限制",
-            "sessionKeepTime": "会话保持",
-            "sessionKeepTimeHint": "单位秒，会话期间保持使用同一渠道，0 表示禁用",
+            "retryInterval": "重试间隔",
             "items": "已选模型",
             "addItem": "添加模型",
             "autoAdd": "自动添加",
-            "clear": "清空",
-            "selectChannel": "渠道",
-            "selectModel": "模型"
-        },
-        "mode": {
-            "roundRobin": "轮询",
-            "random": "随机",
-            "failover": "故障转移",
-            "weighted": "加权分配"
-        },
-        "empty": "暂无分组，点击左上角按钮创建"
+            "clear": "清空"
+        }
     },
     "model": {
         "create": {
@@ -426,26 +389,34 @@
     },
     "log": {
         "list": {
-            "noMore": "没有更多日志了"
+            "empty": "暂无日志",
+            "disconnected": "日志连接已断开，正在重连"
+        },
+        "status": {
+            "running": "处理中",
+            "committed": "响应中"
         },
         "card": {
-            "error": "错误",
             "errorInfo": "错误信息",
-            "firstToken": "首字",
-            "totalTime": "总耗时",
-            "input": "输入",
-            "output": "输出",
-            "cost": "费用",
-            "requestContent": "请求内容",
+            "unknownModel": "未知模型",
+            "retryIndex": "重试 {index}",
+            "detailUnavailable": "详情连接不可用",
+            "noDetail": "暂无详情",
+            "requestContent": "请求体",
+            "group": "分组",
+            "groupUnavailable": "当前请求模型没有对应分组",
+            "noGroupItems": "当前分组没有可用渠道",
+            "channelChanged": "渠道已切换",
+            "channelChangeFailed": "渠道切换失败",
             "responseContent": "响应内容",
             "noRequestContent": "(无请求内容)",
             "noResponseContent": "(无响应内容)",
-            "firstTokenTime": "首字时间",
             "tokens": "tokens",
             "retryDetails": "重试详情",
-            "attempts": "次尝试",
-            "success": "成功",
-            "failed": "失败"
+            "stopAttempt": "停止本次尝试",
+            "stopFailed": "停止失败",
+            "waitingResponse": "正在等待上游响应",
+            "responseStreaming": "上游已响应，流式传输正在进行"
         }
     },
     "channel": {
@@ -465,12 +436,8 @@
             "sections": {
                 "requests": "请求详情",
                 "tokens": "Token 使用",
-                "costs": "成本详情",
-                "baseUrls": "Base URLs",
-                "keys": "密钥"
+                "costs": "成本详情"
             },
-            "noBaseUrls": "暂无 Base URL",
-            "noKeys": "暂无密钥",
             "metrics": {
                 "totalRequests": "总请求",
                 "totalToken": "总 Token",
@@ -499,12 +466,10 @@
             "submitting": "创建中..."
         },
         "form": {
-            "add": "添加",
             "name": "渠道名称",
             "type": "渠道类型",
-            "baseUrls": "Base URLs",
+            "baseUrl": "Base URL",
             "baseUrlUrl": "地址",
-            "baseUrlDelay": "延迟(ms)",
             "advanced": "高级设置",
             "apiKey": "API Key",
             "customHeader": "自定义 Header",
@@ -529,19 +494,12 @@
             "modelClearAll": "清除全部",
             "typeOpenAIChat": "OpenAI Chat",
             "typeOpenAIResponse": "OpenAI Response",
-            "typeOpenAIEmbedding": "OpenAI Embedding",
             "typeAnthropic": "Anthropic",
             "typeGemini": "Gemini",
             "typeVolcengine": "火山引擎",
             "autoSync": "自动同步",
-            "autoGroup": "自动分组",
-            "autoGroupNone": "不自动分组",
-            "autoGroupFuzzy": "模糊匹配",
-            "autoGroupExact": "准确匹配",
-            "autoGroupRegex": "正则匹配",
             "matchRegex": "匹配正则",
-            "matchRegexPlaceholder": "可选：用于匹配请求模型名称的正则表达式",
-            "remark": "备注"
+            "matchRegexPlaceholder": "可选：用于匹配请求模型名称的正则表达式"
         }
     }
 }

@@ -13,13 +13,12 @@ import (
 
 const dbDumpVersion = 2
 
-func DBExportAll(ctx context.Context, includeLogs, includeStats bool) (*model.DBDump, error) {
+func DBExportAll(ctx context.Context, includeStats bool) (*model.DBDump, error) {
 	conn := db.GetDB().WithContext(ctx)
 
 	d := &model.DBDump{
 		Version:      dbDumpVersion,
 		ExportedAt:   time.Now().UTC(),
-		IncludeLogs:  includeLogs,
 		IncludeStats: includeStats,
 	}
 
@@ -60,12 +59,6 @@ func DBExportAll(ctx context.Context, includeLogs, includeStats bool) (*model.DB
 		}
 		if err := conn.Find(&d.StatsAPIKey).Error; err != nil {
 			return nil, fmt.Errorf("export stats_api_key: %w", err)
-		}
-	}
-
-	if includeLogs {
-		if err := conn.Find(&d.RelayLogs).Error; err != nil {
-			return nil, fmt.Errorf("export relay_logs: %w", err)
 		}
 	}
 
@@ -147,14 +140,6 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 				return fmt.Errorf("import stats_api_key: %w", err)
 			} else {
 				res.RowsAffected["stats_api_key"] = n
-			}
-		}
-
-		if dump.IncludeLogs {
-			if n, err := createDoNothing(tx, dump.RelayLogs); err != nil {
-				return fmt.Errorf("import relay_logs: %w", err)
-			} else {
-				res.RowsAffected["relay_logs"] = n
 			}
 		}
 

@@ -8,7 +8,6 @@ import (
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/dlclark/regexp2"
-	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/transformer"
 )
 
@@ -19,9 +18,9 @@ func FetchModels(ctx context.Context, request model.Channel) ([]string, error) {
 	}
 	fetchModel := make([]string, 0)
 	switch request.Type {
-	case llm.APIFormatAnthropicMessage:
+	case model.ChannelProviderAnthropic:
 		fetchModel, err = fetchAnthropicModels(client, ctx, request)
-	case llm.APIFormatGeminiContents:
+	case model.ChannelProviderGemini:
 		fetchModel, err = fetchGeminiModels(client, ctx, request)
 	default:
 		fetchModel, err = fetchOpenAIModels(client, ctx, request)
@@ -51,9 +50,9 @@ func FetchModels(ctx context.Context, request model.Channel) ([]string, error) {
 
 // refer: https://platform.openai.com/docs/api-reference/models/list
 func fetchOpenAIModels(client *http.Client, ctx context.Context, request model.Channel) ([]string, error) {
-	baseURL := transformer.NormalizeBaseURL(request.GetBaseUrl(), "v1")
-	if request.Type == model.ChannelTypeDoubao {
-		baseURL = transformer.NormalizeBaseURL(request.GetBaseUrl(), "v3")
+	baseURL := transformer.NormalizeBaseURL(request.BaseURL, "v1")
+	if request.Type == model.ChannelProviderVolcengine {
+		baseURL = transformer.NormalizeBaseURL(request.BaseURL, "v3")
 	}
 	req, _ := http.NewRequestWithContext(
 		ctx,
@@ -61,7 +60,7 @@ func fetchOpenAIModels(client *http.Client, ctx context.Context, request model.C
 		baseURL+"/models",
 		nil,
 	)
-	req.Header.Set("Authorization", "Bearer "+request.GetChannelKey().ChannelKey)
+	req.Header.Set("Authorization", "Bearer "+request.Key)
 	applyCustomHeaders(req, request)
 
 	resp, err := client.Do(req)
@@ -87,10 +86,10 @@ func fetchOpenAIModels(client *http.Client, ctx context.Context, request model.C
 func fetchGeminiModels(client *http.Client, ctx context.Context, request model.Channel) ([]string, error) {
 	var allModels []string
 	pageToken := ""
-	baseURL := transformer.NormalizeBaseURL(request.GetBaseUrl(), "v1beta")
+	baseURL := transformer.NormalizeBaseURL(request.BaseURL, "v1beta")
 	// Gemini transformer 会保留用户显式填写的 /v1；这里同样处理，避免把 /v1 拼成 /v1/v1beta。
-	if strings.HasSuffix(strings.TrimRight(request.GetBaseUrl(), "/"), "/v1") {
-		baseURL = transformer.NormalizeBaseURL(request.GetBaseUrl(), "")
+	if strings.HasSuffix(strings.TrimRight(request.BaseURL, "/"), "/v1") {
+		baseURL = transformer.NormalizeBaseURL(request.BaseURL, "")
 	}
 
 	for {
@@ -100,7 +99,7 @@ func fetchGeminiModels(client *http.Client, ctx context.Context, request model.C
 			baseURL+"/models",
 			nil,
 		)
-		req.Header.Set("X-Goog-Api-Key", request.GetChannelKey().ChannelKey)
+		req.Header.Set("X-Goog-Api-Key", request.Key)
 		applyCustomHeaders(req, request)
 		if pageToken != "" {
 			q := req.URL.Query()
@@ -141,7 +140,7 @@ func fetchAnthropicModels(client *http.Client, ctx context.Context, request mode
 
 	var allModels []string
 	var afterID string
-	baseURL := transformer.NormalizeBaseURL(request.GetBaseUrl(), "v1")
+	baseURL := transformer.NormalizeBaseURL(request.BaseURL, "v1")
 	for {
 
 		req, _ := http.NewRequestWithContext(
@@ -150,7 +149,7 @@ func fetchAnthropicModels(client *http.Client, ctx context.Context, request mode
 			baseURL+"/models",
 			nil,
 		)
-		req.Header.Set("X-Api-Key", request.GetChannelKey().ChannelKey)
+		req.Header.Set("X-Api-Key", request.Key)
 		req.Header.Set("Anthropic-Version", "2023-06-01")
 		applyCustomHeaders(req, request)
 		// 设置多页参数

@@ -1,16 +1,22 @@
-import { useMemo, useState, useEffect } from 'react';
-import { Clock, Cpu, Zap, AlertCircle, ArrowDownToLine, ArrowUpFromLine, DollarSign, ArrowRight, ArrowDown, Send, MessageSquare, Loader2, RotateCw, ChevronDown, ChevronUp, Pin, KeyRound } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { AlertCircle, ArrowDownToLine, ArrowRight, ArrowUpFromLine, Circle, CircleCheck, Clock, Cpu, Database, DollarSign, Loader2, Square } from 'lucide-react';
 import { useTranslations } from 'use-intl';
-import { motion, AnimatePresence } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import JsonView from '@uiw/react-json-view';
 import { githubDarkTheme } from '@uiw/react-json-view/githubDark';
 import { githubLightTheme } from '@uiw/react-json-view/githubLight';
 import { useTheme } from '@/provider/theme';
-import { type RelayLog, type ChannelAttempt } from '@/api/endpoints/log';
+import { type RelayLogOverview, useLogDetailStream, useLogRequestBody, useLogResponseBody, useStopAttempt } from '@/api/log';
+import { ApiError } from '@/api/client';
+import { useGroupList, useUpdateGroupActiveItem } from '@/api/group';
+import { useModelChannelList } from '@/api/model';
 import { getModelIcon } from '@/lib/model-icons';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { CopyIconButton } from '@/components/common/CopyButton';
+import { toast } from '@/components/common/Toast';
+import { buildChannelNameByModelKey, modelChannelKey } from '@/components/modules/group/utils';
 import {
     MorphingDialog,
     MorphingDialogTrigger,
@@ -21,11 +27,12 @@ import {
     MorphingDialogDescription,
     useMorphingDialog,
 } from '@/components/ui/morphing-dialog';
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/animate-ui/components/animate/tooltip';
 
-function formatTime(timestamp: number): string {
-    const date = new Date(timestamp * 1000);
-    return date.toLocaleString('zh-CN', {
+// formatTime 将后端 RFC3339 时间转换为本地时间。
+function formatTime(value: string) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime()) || date.getUTCFullYear() === 1) return '--';
+    return date.toLocaleString(undefined, {
         month: '2-digit',
         day: '2-digit',
         hour: '2-digit',
@@ -34,76 +41,42 @@ function formatTime(timestamp: number): string {
     });
 }
 
-function formatDuration(ms: number): string {
-    if (ms < 1000) return `${ms}ms`;
-    return `${(ms / 1000).toFixed(2)}s`;
+// formatMilliseconds 将毫秒转换为紧凑耗时文本。
+function formatMilliseconds(value: number) {
+    const milliseconds = Math.max(0, value);
+    if (milliseconds < 1000) return `${Math.round(milliseconds)}ms`;
+    return `${(milliseconds / 1000).toFixed(2)}s`;
 }
 
-interface RetryBadgeWithTooltipProps {
-    channelName: string;
-    brandColor: string;
-    attempts: ChannelAttempt[];
+// formatDuration 将 Go time.Duration 的纳秒值转换为显示文本。
+function formatDuration(value: number) {
+    return formatMilliseconds(value / 1_000_000);
 }
 
-function RetryBadgeWithTooltip({ channelName, brandColor, attempts }: RetryBadgeWithTooltipProps) {
-    const t = useTranslations('log.card');
+// useOverviewDuration 返回运行中请求的实时耗时或完成请求的固定耗时。
+function useOverviewDuration(log: RelayLogOverview) {
+    const active = log.state === 'running' || log.state === 'committed';
+    const [now, setNow] = useState(Date.now());
 
-    return (
-        <Tooltip>
-            <TooltipTrigger asChild>
-                <Badge
-                    variant="secondary"
-                    className="shrink-0 text-xs px-1.5 py-0 cursor-help"
-                    style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
-                >
-                    <RotateCw className="size-3 mr-1 opacity-80" />
-                    {channelName}
-                </Badge>
-            </TooltipTrigger>
-            <TooltipContent className="border bg-card p-2 min-w-[280px] shadow-sm rounded-3xl flex flex-col gap-1">
-                {attempts.map((attempt, idx) => (
-                    <div key={idx} className="flex flex-col w-full">
-                        <div className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50 transition-colors">
-                            <Badge
-                                className={cn(
-                                    "h-5 shrink-0 px-1.5 text-[10px] font-bold uppercase shadow-none border-0",
-                                    attempt.status === 'success'
-                                        ? "bg-primary/15 text-primary"
-                                        : "bg-destructive/15 text-destructive"
-                                )}
-                            >
-                                {attempt.status === 'success' ? t('success') : t('failed')}
-                            </Badge>
-                            <div className="flex min-w-0 flex-col flex-1">
-                                <span className="truncate text-xs font-semibold text-foreground">
-                                    {attempt.channel_name}
-                                </span>
-                                <span className="text-[10px] text-muted-foreground">
-                                    {attempt.model_name} • {formatDuration(attempt.duration)}
-                                </span>
-                            </div>
-                        </div>
-                        {
-                            idx < attempts.length - 1 && (
-                                <div className="flex justify-center py-0.5">
-                                    <ArrowDown className="size-3 text-muted-foreground/30" />
-                                </div>
-                            )
-                        }
-                    </div>
-                ))}
-            </TooltipContent>
-        </Tooltip >
-    );
+    useEffect(() => {
+        if (!active) return;
+        const timer = window.setInterval(() => setNow(Date.now()), 1000);
+        return () => window.clearInterval(timer);
+    }, [active]);
+
+    if (!active) return formatDuration(log.duration);
+    return formatMilliseconds(now - new Date(log.started_at).getTime());
 }
 
-function DeferredJsonContent({ content, fallbackText }: { content: string | undefined; fallbackText: string }) {
+// DeferredJsonContent 在详情弹窗稳定后渲染可能较大的 JSON 正文。
+function DeferredJsonContent({ content, fallbackText }: { content: string | object | undefined; fallbackText: string }) {
     const { resolvedTheme } = useTheme();
     const { isOpen } = useMorphingDialog();
     const [shouldRender, setShouldRender] = useState(false);
 
     const parsed = useMemo(() => {
-        if (!content) return { isJson: false, data: null };
+        if (content === undefined || content === '') return { isJson: false, data: null };
+        if (typeof content !== 'string') return { isJson: true, data: content };
         try {
             return { isJson: true, data: JSON.parse(content) };
         } catch {
@@ -112,18 +85,17 @@ function DeferredJsonContent({ content, fallbackText }: { content: string | unde
     }, [content]);
 
     useEffect(() => {
-        if (isOpen) {
-            const timer = setTimeout(() => setShouldRender(true), 300);
-            return () => clearTimeout(timer);
+        if (!isOpen) {
+            setShouldRender(false);
+            return;
         }
+        const timer = window.setTimeout(() => setShouldRender(true), 300);
+        return () => window.clearTimeout(timer);
     }, [isOpen]);
 
-    if (!isOpen) {
-        if (shouldRender) setShouldRender(false);
-        return null;
-    }
+    if (!isOpen) return null;
 
-    if (!content) {
+    if (content === undefined || content === '') {
         return (
             <pre className="p-4 text-xs text-muted-foreground whitespace-pre-wrap wrap-break-word leading-relaxed">
                 {fallbackText}
@@ -175,312 +147,365 @@ function DeferredJsonContent({ content, fallbackText }: { content: string | unde
                     transition={{ duration: 0.2 }}
                     className="p-4 text-xs text-muted-foreground whitespace-pre-wrap wrap-break-word font-mono leading-relaxed"
                 >
-                    {content}
+                    {parsed.data as string}
                 </motion.pre>
             )}
         </AnimatePresence>
     );
 }
 
-export function LogCard({ log }: { log: RelayLog }) {
+// LogCardContent 使用新日志流为原卡片和弹窗布局提供数据。
+function LogCardContent({ log }: { log: RelayLogOverview }) {
     const t = useTranslations('log.card');
-    const { Avatar: ModelAvatar, color: brandColor } = useMemo(
-        () => getModelIcon(log.actual_model_name),
-        [log.actual_model_name]
+    const statusT = useTranslations('log.status');
+    const { isOpen } = useMorphingDialog();
+    const [leftTab, setLeftTab] = useState<'request' | 'group'>('group');
+    const { attempts, runningAttempt, isCommitted } = useLogDetailStream(log.id, log.state, isOpen);
+    const requestBody = useLogRequestBody(log.id, log.started_at, isOpen && leftTab === 'request');
+    const responseBody = useLogResponseBody(log.id, log.started_at, isOpen && log.state === 'success');
+    const { data: groups = [] } = useGroupList(isOpen);
+    const { data: modelChannels = [] } = useModelChannelList(isOpen);
+    const updateActiveItem = useUpdateGroupActiveItem();
+    const stopAttempt = useStopAttempt();
+    const [switchingItemId, setSwitchingItemId] = useState<number | null>(null);
+    const duration = useOverviewDuration(log);
+    const actualModel = log.actual_model || runningAttempt?.model_name || attempts[attempts.length - 1]?.model_name || log.request_model;
+    const activeState = log.state;
+    // 请求结束前只展示当前状态，避免尝试阶段提前写入的渠道名称出现在概览中。
+    const channelName = activeState === 'running' || activeState === 'committed'
+        ? statusT('running')
+        : log.final_channel_name || attempts[attempts.length - 1]?.channel_name || '-';
+    const errorText = log.error ?? '';
+    const requestFailed = activeState === 'failed' || activeState === 'canceled';
+    const responseCommitted = isCommitted || activeState === 'committed';
+    const isWaiting = activeState === 'running' && !responseCommitted;
+    const activeGroup = groups.find((group) => group.name === log.request_model);
+    const channelNameByKey = useMemo(() => buildChannelNameByModelKey(modelChannels), [modelChannels]);
+    const { Icon, className: iconClassName, color: brandColor } = useMemo(
+        () => getModelIcon(actualModel),
+        [actualModel]
     );
-    const requestAPIKeyName = useMemo(() => log.request_api_key_name?.trim() ?? '', [log.request_api_key_name]);
 
-    const hasError = !!log.error;
-    const hasMultipleAttempts = log.attempts && log.attempts.length > 1;
-    const [isDiagnosticExpanded, setIsDiagnosticExpanded] = useState(false);
+    useEffect(() => {
+        if (!isOpen) setLeftTab('group');
+    }, [isOpen]);
 
     return (
-        <TooltipProvider>
-            <MorphingDialog>
-                <MorphingDialogTrigger
-                    className={cn(
-                        "rounded-3xl border bg-card w-full text-left",
-                        hasError ? "border-destructive/40" : "border-border",
-                    )}
-                >
-                    <div className={cn("p-4 grid grid-cols-[auto_1fr] gap-4", hasError ? "items-start" : "items-center")}>
-                        <ModelAvatar size={40} />
-                        <div className="min-w-0 flex flex-col gap-3">
-                            <div className="flex items-center gap-2 min-w-0 text-sm">
-                                <span className="font-semibold text-card-foreground truncate" title={log.request_model_name}>
-                                    {log.request_model_name}
-                                </span>
-                                <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/50" />
-                                {hasMultipleAttempts ? (
-                                    <RetryBadgeWithTooltip
-                                        channelName={log.channel_name}
-                                        brandColor={brandColor}
-                                        attempts={log.attempts!}
-                                    />
-                                ) : (
-                                    <Badge
-                                        variant="secondary"
-                                        className="shrink-0 text-xs px-1.5 py-0"
-                                        style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
-                                    >
-                                        {log.channel_name}
-                                    </Badge>
-                                )}
-                                <span className="text-muted-foreground truncate" title={log.actual_model_name}>
-                                    {log.actual_model_name}
-                                </span>
-                                {log.attempts?.some(a => a.sticky) && (
-                                    <Pin className="size-3.5 shrink-0 text-amber-500" />
-                                )}
+        <>
+            <MorphingDialogTrigger
+                className={cn(
+                    "rounded-3xl border bg-card w-full text-left",
+                    requestFailed ? "border-destructive/40" : "border-border",
+                )}
+            >
+                <div className={cn("p-4 grid grid-cols-[auto_1fr] gap-4", requestFailed ? "items-start" : "items-center")}>
+                    <Icon aria-hidden="true" className={iconClassName} width={40} height={40} />
+                    <div className="min-w-0 flex flex-col gap-3">
+                        <div className="flex items-center gap-2 min-w-0 text-sm">
+                            <span className="font-semibold text-card-foreground truncate" title={log.request_model}>
+                                {log.request_model || t('unknownModel')}
+                            </span>
+                            <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/50" />
+                            <Badge
+                                variant="secondary"
+                                className="shrink-0 text-xs px-1.5 py-0"
+                                style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
+                            >
+                                {channelName}
+                            </Badge>
+                            <span className="text-muted-foreground truncate" title={actualModel}>
+                                {actualModel}
+                            </span>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-7 gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground">
+                            <div className="flex items-center gap-1.5">
+                                <Clock className="size-3.5 shrink-0" style={{ color: brandColor }} />
+                                <span>{formatTime(log.started_at)}</span>
                             </div>
-                            <div className="grid grid-cols-2 md:grid-cols-7 gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground">
-                                <div className="flex items-center gap-1.5">
-                                    <Clock className="size-3.5 shrink-0" style={{ color: brandColor }} />
-                                    <span>{formatTime(log.time)}</span>
-                                </div>
-                                {requestAPIKeyName && (
-                                    <div className="flex items-center gap-1.5">
-                                        <KeyRound className="size-3.5 shrink-0 text-orange-500" />
-                                        <span className="truncate" title={requestAPIKeyName}>
-                                            {requestAPIKeyName}
-                                        </span>
+                            <div className="flex items-center gap-1.5">
+                                <Cpu className="size-3.5 shrink-0 text-blue-500" />
+                                <span>{duration}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <ArrowDownToLine className="size-3.5 shrink-0 text-green-500" />
+                                <span>{(log.input_tokens - log.cache_read_tokens).toLocaleString()}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <Database className="size-3.5 shrink-0 text-cyan-500" />
+                                <span>{log.cache_read_tokens.toLocaleString()}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <ArrowUpFromLine className="size-3.5 shrink-0 text-purple-500" />
+                                <span>{log.output_tokens.toLocaleString()}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <Database className="size-3.5 shrink-0 text-orange-500" />
+                                <span>{log.cache_write_tokens.toLocaleString()}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <DollarSign className="size-3.5 shrink-0 text-emerald-500" />
+                                <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                                    {log.total_cost.toFixed(6)}
+                                </span>
+                            </div>
+                        </div>
+                        {requestFailed && errorText && (
+                            <div className="p-2.5 rounded-xl bg-destructive/10 border border-destructive/20 overflow-hidden">
+                                <p className="text-xs text-destructive line-clamp-2 whitespace-pre-line">{errorText}</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </MorphingDialogTrigger>
+
+            <MorphingDialogContainer>
+                <MorphingDialogContent className="relative w-[calc(100vw-2rem)] md:w-[80vw] bg-card text-card-foreground px-6 py-4 rounded-3xl h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
+                    <MorphingDialogClose className="top-4 right-5 text-muted-foreground hover:text-foreground transition-colors" />
+                    <MorphingDialogTitle className="flex items-center gap-2 mb-3 text-sm">
+                        <Icon aria-hidden="true" className={iconClassName} width={28} height={28} />
+                        <span className="font-semibold text-card-foreground">{log.request_model || t('unknownModel')}</span>
+                        <ArrowRight className="size-3.5 text-muted-foreground/50" />
+                        <Badge
+                            variant="secondary"
+                            className="text-xs px-1.5 py-0"
+                            style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
+                        >
+                            {channelName}
+                        </Badge>
+                        <span className="text-muted-foreground">{actualModel}</span>
+                    </MorphingDialogTitle>
+
+                    <MorphingDialogDescription className="flex-1 min-h-0">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full min-h-0">
+                                <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
+                                    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-muted/50 pl-1 pr-3 md:pr-4">
+                                        <Tabs value={leftTab} onValueChange={(value) => setLeftTab(value as 'request' | 'group')}>
+                                            <TabsList variant="text" className="p-0">
+                                                <TabsTrigger value="group" className="pr-0">
+                                                    {t('group')}
+                                                </TabsTrigger>
+                                                <span aria-hidden="true" className="mx-1 inline-flex h-full -translate-y-px items-center text-sm font-medium leading-none text-muted-foreground/50">/</span>
+                                                <TabsTrigger value="request" className="pl-0">
+                                                    {t('requestContent')}
+                                                </TabsTrigger>
+                                            </TabsList>
+                                        </Tabs>
+                                        {leftTab === 'request' && (
+                                            <Badge variant="secondary" className="ml-auto text-xs">
+                                                {(log.input_tokens - log.cache_read_tokens).toLocaleString()} {t('tokens')}
+                                            </Badge>
+                                        )}
                                     </div>
-                                )}
-                                <div className="flex items-center gap-1.5">
-                                    <Zap className="size-3.5 shrink-0 text-amber-500" />
-                                    <span>{t('firstToken')} {formatDuration(log.ftut)}</span>
+                                    <div className="flex-1 overflow-auto min-h-0">
+                                        {leftTab === 'request' ? (
+                                            requestBody.isLoading ? (
+                                                <div className="flex h-full items-center justify-center">
+                                                    <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                                                </div>
+                                            ) : requestBody.error ? (
+                                                <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-xs text-destructive">
+                                                    <AlertCircle className="size-5" />
+                                                    <span>{t('detailUnavailable')}</span>
+                                                </div>
+                                            ) : (
+                                                <DeferredJsonContent content={requestBody.data} fallbackText={t('noRequestContent')} />
+                                            )
+                                        ) : !activeGroup ? (
+                                            <div className="flex h-full items-center justify-center px-4 text-xs text-muted-foreground">
+                                                {t('groupUnavailable')}
+                                            </div>
+                                        ) : !activeGroup.items?.length ? (
+                                            <div className="flex h-full items-center justify-center px-4 text-xs text-muted-foreground">
+                                                {t('noGroupItems')}
+                                            </div>
+                                        ) : (
+                                            <div className="divide-y divide-border">
+                                                {[...activeGroup.items].sort((a, b) => a.priority - b.priority).map((item) => {
+                                                    const itemChannelName = channelNameByKey.get(modelChannelKey(item.channel_id, item.model_name)) ?? `#${item.channel_id}`;
+                                                    const { Icon: ItemIcon, className: itemIconClassName } = getModelIcon(item.model_name);
+                                                    const itemActive = item.id === activeGroup.active_item_id;
+                                                    const itemSwitching = item.id === switchingItemId;
+                                                    return (
+                                                        <button
+                                                            key={item.id ?? modelChannelKey(item.channel_id, item.model_name)}
+                                                            type="button"
+                                                            disabled={item.id === undefined || itemActive || switchingItemId !== null || stopAttempt.isPending}
+                                                            onClick={async () => {
+                                                                if (!activeGroup.id || item.id === undefined) return;
+                                                                setSwitchingItemId(item.id);
+                                                                try {
+                                                                    await updateActiveItem.mutateAsync({ groupId: activeGroup.id, itemId: item.id });
+                                                                    if (runningAttempt) {
+                                                                        try {
+                                                                            await stopAttempt.mutateAsync({ requestId: log.id, attemptIndex: runningAttempt.attempt_index });
+                                                                        } catch (cause) {
+                                                                            if (!(cause instanceof ApiError && cause.status === 409)) throw cause;
+                                                                        }
+                                                                    }
+                                                                    toast.success(t('channelChanged'));
+                                                                } catch (cause) {
+                                                                    toast.error(t('channelChangeFailed'), { description: cause instanceof Error ? cause.message : undefined });
+                                                                } finally {
+                                                                    setSwitchingItemId(null);
+                                                                }
+                                                            }}
+                                                            className={cn(
+                                                                'flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-xs transition-colors disabled:cursor-default',
+                                                                itemActive ? 'bg-primary/5' : 'hover:bg-muted/50 disabled:hover:bg-transparent'
+                                                            )}
+                                                        >
+                                                            <ItemIcon aria-hidden="true" className={itemIconClassName} width={20} height={20} />
+                                                            <span className="min-w-0 flex-1">
+                                                                <span className="block truncate font-semibold text-foreground">{itemChannelName}</span>
+                                                                <span className="block truncate text-[11px] text-muted-foreground">{item.model_name}</span>
+                                                            </span>
+                                                            {itemSwitching ? (
+                                                                <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+                                                            ) : itemActive ? (
+                                                                <CircleCheck className="size-4 shrink-0 text-primary" />
+                                                            ) : (
+                                                                <Circle className="size-4 shrink-0 text-muted-foreground" />
+                                                            )}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="flex items-center gap-1.5">
-                                    <Cpu className="size-3.5 shrink-0 text-blue-500" />
-                                    <span>{t('totalTime')} {formatDuration(log.use_time)}</span>
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                    <ArrowDownToLine className="size-3.5 shrink-0 text-green-500" />
-                                    <span>{t('input')} {log.input_tokens.toLocaleString()}</span>
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                    <ArrowUpFromLine className="size-3.5 shrink-0 text-purple-500" />
-                                    <span>{t('output')} {log.output_tokens.toLocaleString()}</span>
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                    <DollarSign className="size-3.5 shrink-0 text-emerald-500" />
-                                    <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                                        {t('cost')} {Number(log.cost).toFixed(6)}
-                                    </span>
+
+                                <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
+                                    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-muted/50 px-3 md:px-4">
+                                        <span className="text-sm font-medium text-card-foreground">
+                                            {isWaiting ? t('retryDetails') : requestFailed ? t('errorInfo') : t('responseContent')}
+                                        </span>
+                                        {isWaiting && runningAttempt ? (
+                                            <button
+                                                type="button"
+                                                disabled={stopAttempt.isPending}
+                                                onClick={async () => {
+                                                    try {
+                                                        await stopAttempt.mutateAsync({ requestId: log.id, attemptIndex: runningAttempt.attempt_index });
+                                                    } catch (cause) {
+                                                        if (!(cause instanceof ApiError && cause.status === 409)) {
+                                                            toast.error(t('stopFailed'), { description: cause instanceof Error ? cause.message : undefined });
+                                                        }
+                                                    }
+                                                }}
+                                                className="ml-auto flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+                                            >
+                                                {stopAttempt.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Square className="size-3.5" />}
+                                                {t('stopAttempt')}
+                                            </button>
+                                        ) : requestFailed ? (
+                                            errorText && (
+                                                <CopyIconButton
+                                                    text={errorText}
+                                                    className="ml-auto p-1 rounded-md text-destructive/60 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                                                    copyIconClassName="size-4"
+                                                    checkIconClassName="size-4"
+                                                />
+                                            )
+                                        ) : responseCommitted ? (
+                                            <Badge variant="secondary" className="ml-auto text-xs">{statusT('committed')}</Badge>
+                                        ) : (
+                                            <Badge variant="secondary" className="ml-auto text-xs">
+                                                {log.output_tokens.toLocaleString()} {t('tokens')}
+                                            </Badge>
+                                        )}
+                                    </div>
+                                    <div className="min-h-0 flex-1 overflow-auto">
+                                        {isWaiting ? (
+                                            attempts.length ? (
+                                                <div className="divide-y divide-border">
+                                                    {attempts.slice().reverse().map((attempt) => (
+                                                        <div key={attempt.attempt_index} className="flex flex-col gap-1.5 px-3 py-2.5 text-xs">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-muted-foreground">{t('retryIndex', { index: attempt.attempt_index })}</span>
+                                                                <span className="font-semibold text-foreground">{attempt.channel_name}</span>
+                                                                {runningAttempt?.attempt_index === attempt.attempt_index && <Loader2 className="ml-auto size-3.5 animate-spin text-muted-foreground" />}
+                                                            </div>
+                                                            {attempt.error && (
+                                                                <div className="text-[11px] leading-relaxed text-destructive/90 whitespace-pre-wrap wrap-break-word">
+                                                                    {attempt.error}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
+                                                    <Loader2 className="size-4 animate-spin" />
+                                                    {t('waitingResponse')}
+                                                </div>
+                                            )
+                                        ) : responseCommitted ? (
+                                            <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
+                                                <Loader2 className="size-4 animate-spin" />
+                                                {t('responseStreaming')}
+                                            </div>
+                                        ) : requestFailed ? (
+                                            <DeferredJsonContent content={errorText} fallbackText={t('noResponseContent')} />
+                                        ) : responseBody.isLoading ? (
+                                            <div className="flex h-full items-center justify-center">
+                                                <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                                            </div>
+                                        ) : responseBody.error ? (
+                                            <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-xs text-destructive">
+                                                <AlertCircle className="size-5" />
+                                                <span>{t('detailUnavailable')}</span>
+                                            </div>
+                                        ) : (
+                                            <DeferredJsonContent content={responseBody.data} fallbackText={t('noResponseContent')} />
+                                        )}
+                                    </div>
                                 </div>
                             </div>
-                            {hasError && (
-                                <div className="p-2.5 rounded-xl bg-destructive/10 border border-destructive/20 overflow-hidden">
-                                    <p className="text-xs text-destructive line-clamp-2">{log.error}</p>
-                                </div>
-                            )}
+                    </MorphingDialogDescription>
+
+                    <div className="flex flex-wrap items-center gap-3 md:gap-4 pt-4 mt-auto text-xs text-muted-foreground shrink-0">
+                        <div className="flex items-center gap-1.5">
+                            <Clock className="size-3.5" style={{ color: brandColor }} />
+                            <span className="tabular-nums">{formatTime(log.started_at)}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <Cpu className="size-3.5 text-blue-500" />
+                            <span>{activeState !== 'running' && activeState !== 'committed' ? formatDuration(log.duration) : duration}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <ArrowDownToLine className="size-3.5 text-green-500" />
+                            <span>{(log.input_tokens - log.cache_read_tokens).toLocaleString()}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <Database className="size-3.5 text-cyan-500" />
+                            <span>{log.cache_read_tokens.toLocaleString()}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <ArrowUpFromLine className="size-3.5 text-purple-500" />
+                            <span>{log.output_tokens.toLocaleString()}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <Database className="size-3.5 text-orange-500" />
+                            <span>{log.cache_write_tokens.toLocaleString()}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <DollarSign className="size-3.5 text-emerald-500" />
+                            <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                                {log.total_cost.toFixed(6)}
+                            </span>
                         </div>
                     </div>
-                </MorphingDialogTrigger>
+                </MorphingDialogContent>
+            </MorphingDialogContainer>
+        </>
+    );
+}
 
-                <MorphingDialogContainer>
-                    <MorphingDialogContent className="relative w-[calc(100vw-2rem)] md:w-[80vw] bg-card text-card-foreground px-6 py-4 rounded-3xl h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
-                        <MorphingDialogClose className="top-4 right-5 text-muted-foreground hover:text-foreground transition-colors" />
-                        <MorphingDialogTitle className="flex items-center gap-2 mb-3 text-sm">
-                            <ModelAvatar size={28} />
-                            <span className="font-semibold text-card-foreground">{log.request_model_name}</span>
-                            <ArrowRight className="size-3.5 text-muted-foreground/50" />
-                            {hasMultipleAttempts ? (
-                                <RetryBadgeWithTooltip
-                                    channelName={log.channel_name}
-                                    brandColor={brandColor}
-                                    attempts={log.attempts!}
-                                />
-                            ) : (
-                                <Badge
-                                    variant="secondary"
-                                    className="text-xs px-1.5 py-0"
-                                    style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
-                                >
-                                    {log.channel_name}
-                                </Badge>
-                            )}
-                            <span className="text-muted-foreground">{log.actual_model_name}</span>
-                            {log.attempts?.some(a => a.sticky) && (
-                                <Pin className="size-3.5 shrink-0 text-amber-500" />
-                            )}
-                        </MorphingDialogTitle>
-
-                        <MorphingDialogDescription className="flex-1 min-h-0">
-                            <div className="flex flex-col min-h-0 h-full gap-4">
-                                {(hasError || hasMultipleAttempts) && (
-                                    <div className={cn(
-                                        "flex-initial min-h-0 flex flex-col rounded-2xl border overflow-hidden max-h-[40%]",
-                                        hasError
-                                            ? "bg-destructive/5 border-destructive/20"
-                                            : "bg-secondary/30 border-border/50"
-                                    )}>
-                                        <div
-                                            className={cn(
-                                                "flex items-center gap-2 px-3 py-2.5 shrink-0 cursor-pointer select-none hover:bg-muted/50 transition-colors",
-                                                hasError && "hover:bg-destructive/10"
-                                            )}
-                                            onClick={() => setIsDiagnosticExpanded(!isDiagnosticExpanded)}
-                                        >
-                                            {hasError ? (
-                                                <AlertCircle className="size-4 text-destructive" />
-                                            ) : (
-                                                <RotateCw className="size-4 text-muted-foreground" />
-                                            )}
-                                            <span className={cn(
-                                                "text-sm font-medium",
-                                                hasError ? "text-destructive" : "text-secondary-foreground"
-                                            )}>
-                                                {hasError ? t('errorInfo') : t('retryDetails')}
-                                            </span>
-                                            <div className="ml-auto flex items-center gap-2">
-                                                {hasMultipleAttempts && (
-                                                    <Badge
-                                                        variant="outline"
-                                                        className={cn(
-                                                            "text-xs border-0",
-                                                            hasError
-                                                                ? "bg-destructive/10 text-destructive"
-                                                                : "bg-secondary text-secondary-foreground"
-                                                        )}
-                                                    >
-                                                        {log.total_attempts || log.attempts!.length} {t('attempts')}
-                                                    </Badge>
-                                                )}
-                                                {isDiagnosticExpanded ? (
-                                                    <ChevronUp className="size-4 text-muted-foreground" />
-                                                ) : (
-                                                    <ChevronDown className="size-4 text-muted-foreground" />
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        <AnimatePresence initial={false}>
-                                            {isDiagnosticExpanded && (
-                                                <motion.div
-                                                    initial={{ height: 0, opacity: 0 }}
-                                                    animate={{ height: "auto", opacity: 1 }}
-                                                    exit={{ height: 0, opacity: 0 }}
-                                                    transition={{ duration: 0.2, ease: "easeInOut" }}
-                                                    className="overflow-hidden flex flex-col min-h-0"
-                                                >
-                                                    <div className="flex-1 overflow-auto p-2.5 md:p-3 flex flex-col gap-4">
-                                                        {hasError && (
-                                                            <div className="relative pl-1">
-                                                                <div className="absolute right-0 top-0">
-                                                                    <CopyIconButton
-                                                                        text={log.error ?? ''}
-                                                                        className="p-1 rounded-md text-destructive/60 hover:text-destructive hover:bg-destructive/10 transition-colors"
-                                                                        copyIconClassName="size-4"
-                                                                        checkIconClassName="size-4"
-                                                                    />
-                                                                </div>
-                                                                <p className="text-sm text-destructive whitespace-pre-wrap wrap-break-word pr-8 leading-relaxed">
-                                                                    {log.error}
-                                                                </p>
-                                                            </div>
-                                                        )}
-
-                                                        {hasMultipleAttempts && (
-                                                            <div className="flex flex-col gap-2">
-                                                                {log.attempts!.map((attempt, idx) => (
-                                                                    <div
-                                                                        key={idx}
-                                                                        className={cn(
-                                                                            "text-xs p-2.5 rounded-xl border transition-colors flex flex-col gap-2",
-                                                                            attempt.status === 'success'
-                                                                                ? "bg-primary/5 border-primary/20 hover:bg-primary/10"
-                                                                                : "bg-destructive/5 border-destructive/20 hover:bg-destructive/10"
-                                                                        )}
-                                                                    >
-                                                                        <div className="flex items-center gap-2">
-                                                                            <span className="font-semibold text-foreground">
-                                                                                {attempt.channel_name}
-                                                                            </span>
-                                                                            <span className="text-muted-foreground">
-                                                                                ({attempt.model_name})
-                                                                            </span>
-                                                                            <span className="ml-auto text-muted-foreground tabular-nums font-mono">
-                                                                                {formatDuration(attempt.duration)}
-                                                                            </span>
-                                                                        </div>
-                                                                        {attempt.msg && (
-                                                                            <div className="text-destructive/90 pl-2 border-l-2 border-destructive/30 text-[11px] leading-relaxed">
-                                                                                {attempt.msg}
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </motion.div>
-                                            )}
-                                        </AnimatePresence>
-                                    </div>
-                                )}
-                                <div className="flex-1 min-h-0 overflow-hidden">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full min-h-0">
-                                        <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
-                                            <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-border bg-muted/50 shrink-0">
-                                                <Send className="size-4 text-green-500" />
-                                                <span className="text-sm font-medium text-card-foreground">{t('requestContent')}</span>
-                                                <Badge variant="secondary" className="ml-auto text-xs">
-                                                    {log.input_tokens.toLocaleString()} {t('tokens')}
-                                                </Badge>
-                                            </div>
-                                            <div className="flex-1 overflow-auto min-h-0">
-                                                <DeferredJsonContent content={log.request_content} fallbackText={t('noRequestContent')} />
-                                            </div>
-                                        </div>
-                                        <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
-                                            <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-border bg-muted/50 shrink-0">
-                                                <MessageSquare className="size-4 text-purple-500" />
-                                                <span className="text-sm font-medium text-card-foreground">{t('responseContent')}</span>
-                                                <Badge variant="secondary" className="ml-auto text-xs">
-                                                    {log.output_tokens.toLocaleString()} {t('tokens')}
-                                                </Badge>
-                                            </div>
-                                            <div className="flex-1 overflow-auto min-h-0">
-                                                <DeferredJsonContent content={log.response_content} fallbackText={t('noResponseContent')} />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </MorphingDialogDescription>
-
-                        <div className="flex flex-wrap items-center gap-3 md:gap-4 pt-4 mt-auto text-xs text-muted-foreground shrink-0">
-                            <div className="flex items-center gap-1.5">
-                                <Clock className="size-3.5" style={{ color: brandColor }} />
-                                <span className="tabular-nums">{formatTime(log.time)}</span>
-                            </div>
-                            {requestAPIKeyName && (
-                                <div className="flex min-w-0 items-center gap-1.5">
-                                    <KeyRound className="size-3.5 shrink-0 text-orange-500" />
-                                    <span className="truncate" title={requestAPIKeyName}>
-                                        {requestAPIKeyName}
-                                    </span>
-                                </div>
-                            )}
-                            <div className="flex items-center gap-1.5">
-                                <Zap className="size-3.5 text-amber-500" />
-                                <span>{t('firstTokenTime')}: {formatDuration(log.ftut)}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                                <Cpu className="size-3.5 text-blue-500" />
-                                <span>{t('totalTime')}: {formatDuration(log.use_time)}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                                <DollarSign className="size-3.5 text-emerald-500" />
-                                <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                                    {t('cost')}: {Number(log.cost).toFixed(6)}
-                                </span>
-                            </div>
-                        </div>
-                    </MorphingDialogContent>
-                </MorphingDialogContainer>
-            </MorphingDialog>
-        </TooltipProvider>
+// LogCard 展示一条概览，并在弹窗打开时建立唯一详情连接。
+export function LogCard({ log }: { log: RelayLogOverview }) {
+    return (
+        <MorphingDialog>
+            <LogCardContent log={log} />
+        </MorphingDialog>
     );
 }

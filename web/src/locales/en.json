@@ -21,10 +21,6 @@
     "apiKeyDashboard": {
         "error": "Failed to load data",
         "logout": "Logout",
-        "requestStats": "Request Stats",
-        "totalStats": "Total Stats",
-        "inputStats": "Input Stats",
-        "outputStats": "Output Stats",
         "requestCount": "Requests",
         "timeConsumed": "Time Consumed",
         "totalToken": "Tokens Used",
@@ -35,8 +31,6 @@
         "outputCost": "Output Cost",
         "successRequests": "Successful",
         "failedRequests": "Failed",
-        "quota": "Remaining Quota",
-        "unlimited": "Unlimited",
         "expireAt": "Expires",
         "neverExpire": "Never",
         "daysLeft": "days left",
@@ -47,7 +41,6 @@
         "home": "Home",
         "channel": "Channel",
         "group": "Group",
-        "key": "Key",
         "model": "Price",
         "log": "Log",
         "setting": "Setting"
@@ -61,10 +54,6 @@
             "list": "List",
             "nameAsc": "Name Asc",
             "nameDesc": "Name Desc",
-            "createdAsc": "Time Asc",
-            "createdDesc": "Time Desc",
-            "asc": "Asc",
-            "desc": "Desc",
             "filter": {
                 "title": "Filter",
                 "channel": {
@@ -95,7 +84,7 @@
     "home": {
         "activity": {
             "requestCount": "Requests",
-            "waitTime": "Wait Time",
+            "waitTime": "Time Consumed",
             "totalToken": "Tokens Used",
             "totalCost": "Total Cost",
             "noData": "No Data"
@@ -189,7 +178,6 @@
             "title": "Backup / Restore",
             "export": {
                 "title": "Export",
-                "includeLogs": "Include Logs",
                 "includeStats": "Include Stats",
                 "button": "Download JSON",
                 "exporting": "Exporting...",
@@ -197,7 +185,6 @@
             },
             "import": {
                 "title": "Import (Incremental)",
-                "selected": "File selected",
                 "button": "Import JSON",
                 "importing": "Importing...",
                 "noFile": "Please select a JSON file first",
@@ -307,8 +294,6 @@
             "title": "Version Info",
             "currentVersion": "Current Version",
             "latestVersion": "Latest Version",
-            "buildTime": "Build Time",
-            "publishedAt": "Published At",
             "github": "GitHub Repository",
             "unknown": "Unknown",
             "versionMismatch": "Version Mismatch",
@@ -323,13 +308,6 @@
         },
         "log": {
             "title": "Log Settings",
-            "enabled": {
-                "label": "Enable History Logs"
-            },
-            "keepPeriod": {
-                "label": "Log Retention (days)",
-                "placeholder": "Enter days"
-            },
             "clear": {
                 "label": "Clear History Logs",
                 "button": "Clear",
@@ -341,12 +319,10 @@
     },
     "group": {
         "toast": {
-            "created": "Created successfully",
             "createFailed": "Create failed",
             "updated": "Updated successfully",
             "updateFailed": "Update failed",
-            "deleted": "Deleted successfully",
-            "autoAddFailed": "Auto add failed"
+            "deleted": "Deleted successfully"
         },
         "create": {
             "title": "Create Group",
@@ -354,7 +330,9 @@
             "submitting": "Creating..."
         },
         "card": {
-            "empty": "No rules"
+            "empty": "No rules",
+            "active": "Active item",
+            "activate": "Set as active"
         },
         "detail": {
             "actions": {
@@ -368,27 +346,12 @@
         },
         "form": {
             "name": "Group Name",
-            "matchRegex": "Match Regex",
-            "matchRegexPlaceholder": "Leave empty to use default fuzzy match by group name",
-            "matchRegexInvalid": "Invalid regex",
-            "firstTokenTimeOut": "First Token Timeout",
-            "firstTokenTimeOutHint": "Unit: seconds, only effective for streaming response, 0 = no limit",
-            "sessionKeepTime": "Session Keep Time",
-            "sessionKeepTimeHint": "Unit: seconds, keeps using the same channel within a session, 0 = disabled",
+            "retryInterval": "Retry Interval",
             "items": "Selected Models",
             "addItem": "Add Model",
             "autoAdd": "Auto Add",
-            "clear": "Clear",
-            "selectChannel": "Channel",
-            "selectModel": "Model"
-        },
-        "mode": {
-            "roundRobin": "Round Robin",
-            "random": "Random",
-            "failover": "Failover",
-            "weighted": "Weighted"
-        },
-        "empty": "No groups yet, click the button above to create one"
+            "clear": "Clear"
+        }
     },
     "model": {
         "create": {
@@ -426,26 +389,34 @@
     },
     "log": {
         "list": {
-            "noMore": "No more logs"
+            "empty": "No logs yet",
+            "disconnected": "Log stream disconnected, reconnecting"
+        },
+        "status": {
+            "running": "Running",
+            "committed": "Responding"
         },
         "card": {
-            "error": "Error",
             "errorInfo": "Error Info",
-            "firstToken": "TTFT",
-            "totalTime": "Total",
-            "input": "Input",
-            "output": "Output",
-            "cost": "Cost",
-            "requestContent": "Request Content",
+            "unknownModel": "Unknown model",
+            "retryIndex": "Retry {index}",
+            "detailUnavailable": "Detail stream unavailable",
+            "noDetail": "No details available",
+            "requestContent": "Request Body",
+            "group": "Group",
+            "groupUnavailable": "No group matches this request model",
+            "noGroupItems": "No channels are available in this group",
+            "channelChanged": "Channel switched",
+            "channelChangeFailed": "Failed to switch channel",
             "responseContent": "Response Content",
             "noRequestContent": "(No request content)",
             "noResponseContent": "(No response content)",
-            "firstTokenTime": "First Token Time",
             "tokens": "tokens",
             "retryDetails": "Retry Details",
-            "attempts": "attempts",
-            "success": "Success",
-            "failed": "Failed"
+            "stopAttempt": "Stop Attempt",
+            "stopFailed": "Failed to stop attempt",
+            "waitingResponse": "Waiting for upstream response",
+            "responseStreaming": "Upstream responded; streaming is in progress"
         }
     },
     "channel": {
@@ -465,12 +436,8 @@
             "sections": {
                 "requests": "Request Details",
                 "tokens": "Token Usage",
-                "costs": "Cost Details",
-                "baseUrls": "Base URLs",
-                "keys": "Keys"
+                "costs": "Cost Details"
             },
-            "noBaseUrls": "No Base URLs",
-            "noKeys": "No Keys",
             "metrics": {
                 "totalRequests": "Total Requests",
                 "totalToken": "Total Tokens",
@@ -499,12 +466,10 @@
             "submitting": "Creating..."
         },
         "form": {
-            "add": "Add",
             "name": "Channel Name",
             "type": "Channel Type",
-            "baseUrls": "Base URLs",
+            "baseUrl": "Base URL",
             "baseUrlUrl": "URL",
-            "baseUrlDelay": "Delay(ms)",
             "advanced": "Advanced Settings",
             "apiKey": "API Key",
             "customHeader": "Custom Headers",
@@ -529,19 +494,12 @@
             "modelClearAll": "Clear All",
             "typeOpenAIChat": "OpenAI Chat",
             "typeOpenAIResponse": "OpenAI Response",
-            "typeOpenAIEmbedding": "OpenAI Embedding",
             "typeAnthropic": "Anthropic",
             "typeGemini": "Gemini",
             "typeVolcengine": "Volcengine",
             "autoSync": "Auto Sync",
-            "autoGroup": "Auto Group",
-            "autoGroupNone": "None",
-            "autoGroupFuzzy": "Fuzzy",
-            "autoGroupExact": "Exact",
-            "autoGroupRegex": "Regex",
             "matchRegex": "Match Regex",
-            "matchRegexPlaceholder": "Optional: regex pattern to match request model names",
-            "remark": "Remark"
+            "matchRegexPlaceholder": "Optional: regex pattern to match request model names"
         }
     }
 }

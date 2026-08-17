@@ -1,8 +1,7 @@
-import { useStatsDaily, type StatsDailyFormatted } from '@/api/endpoints/stats';
-import { useMemo, useRef, useLayoutEffect, useState, useCallback } from 'react';
+import { useStatsDaily, type StatsDailyFormatted } from '@/api/stats';
+import { Fragment, useMemo, useRef, useLayoutEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslations } from 'use-intl';
-import { Fragment } from 'react';
 import dayjs from 'dayjs';
 
 interface StatsDailyData {
@@ -11,20 +10,8 @@ interface StatsDailyData {
     formatted: StatsDailyFormatted | null;
 }
 
-const ACTIVITY_LEVELS = [
-    { min: 5000, level: 4 },
-    { min: 2000, level: 3 },
-    { min: 1000, level: 2 },
-    { min: 1, level: 1 }
-];
-
-function getActivityLevel(value: number): number {
-    if (value === 0) return 0;
-    return ACTIVITY_LEVELS.find(level => value >= level.min)?.level || 1;
-}
-
 export function Activity() {
-    const { data: statsDailyFormatted, isLoading } = useStatsDaily();
+    const { data: statsDailyFormatted, maxRequestCount, isLoading } = useStatsDaily();
     const scrollRef = useRef<HTMLDivElement>(null);
     const t = useTranslations('home.activity');
 
@@ -85,7 +72,7 @@ export function Activity() {
     }, [days, isLoading, checkScroll]);
 
     return (
-        <div className="rounded-3xl bg-card border-card-border border text-card-foreground custom-shadow">
+        <div className="rounded-3xl bg-card border-border border text-card-foreground">
             <div
                 ref={scrollRef}
                 onScroll={checkScroll}
@@ -105,7 +92,10 @@ export function Activity() {
                                 return <div key={day.dateStr} />;
                             }
 
-                            const level = getActivityLevel(day.formatted?.request_count.raw ?? 0);
+                            const requestCount = day.formatted?.request_count.raw ?? 0;
+                            const level = maxRequestCount > 0
+                                ? Math.min(4, Math.ceil(requestCount * 4 / maxRequestCount))
+                                : 0;
 
                             return (
                                 <div
@@ -116,7 +106,10 @@ export function Activity() {
                                         setTooltip({ day, x: rect.left + rect.width / 2, y: rect.top, visible: true });
                                     }}
                                     onMouseLeave={() => setTooltip(prev => prev ? { ...prev, visible: false } : null)}
-                                    style={{ backgroundColor: level === 0 ? 'var(--muted)' : `color-mix(in oklch, var(--primary) ${level * 25}%, var(--muted))` }}
+                                    style={{
+                                        backgroundColor: level === 0 ? 'var(--muted)' : 'var(--primary)',
+                                        opacity: level === 0 ? 1 : level / 4,
+                                    }}
                                 />
                             );
                         })}
@@ -128,8 +121,7 @@ export function Activity() {
                     const isLeft = tooltip.x < 200;
                     const isRight = tooltip.x > window.innerWidth - 200;
                     const isTop = tooltip.y < window.innerHeight / 2;
-                    const tooltipDate = dayjs(tooltip.day.dateStr, 'YYYYMMDD');
-                    const tooltipDateLabel = tooltipDate.isValid() ? tooltipDate.format('YYYY-MM-DD') : tooltip.day.dateStr;
+                    const tooltipDateLabel = `${tooltip.day.dateStr.slice(0, 4)}-${tooltip.day.dateStr.slice(4, 6)}-${tooltip.day.dateStr.slice(6, 8)}`;
 
                     let transform = 'translate(-50%, 15%)';
                     if (!isTop && !isLeft && !isRight) {

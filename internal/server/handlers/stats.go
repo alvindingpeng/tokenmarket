@@ -2,13 +2,25 @@ package handlers
 
 import (
 	"net/http"
+	"sync"
+	"time"
 
+	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/alvindingpeng/switchyard/internal/server/router"
 	"github.com/gin-gonic/gin"
 )
+
+var activityMaxRequestCount int64 // 最近 54 周每日请求量的最大值。
+var activityMaxCalculatedAt time.Time // 最大值上次计算时间。
+var activityMaxMu sync.Mutex // 保护最大值及计算时间的并发更新。
+
+type statsDailyResponse struct {
+	MaxRequestCount int64             `json:"max_request_count"` // 最近 54 周每日请求量的最大值。
+	Items           []model.StatsDaily `json:"items"` // 每日原始统计数据。
+}
 
 func init() {
 	router.NewGroupRouter("/api/v1/stats").
@@ -45,7 +57,31 @@ func getStatsDaily(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	resp.Success(c, statsDaily)
+
+	now := time.Now()
+	activityMaxMu.Lock()
+	if activityMaxCalculatedAt.IsZero() || now.Sub(activityMaxCalculatedAt) >= 24*time.Hour {
+		cutoff := now.AddDate(0, 0, -(int(now.Weekday()) + 53*7)).Format("20060102")
+		maxRequestCount := int64(0)
+		for _, daily := range statsDaily {
+			if daily.Date < cutoff {
+				continue
+			}
+			requestCount := daily.RequestSuccess + daily.RequestFailed
+			if requestCount > maxRequestCount {
+				maxRequestCount = requestCount
+			}
+		}
+		activityMaxRequestCount = maxRequestCount
+		activityMaxCalculatedAt = now
+	}
+	maxRequestCount := activityMaxRequestCount
+	activityMaxMu.Unlock()
+
+	resp.Success(c, statsDailyResponse{
+		MaxRequestCount: maxRequestCount,
+		Items:           statsDaily,
+	})
 }
 
 func getStatsHourly(c *gin.Context) {

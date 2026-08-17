@@ -1,11 +1,14 @@
 import { useTranslations } from 'use-intl';
-import { Info, Tag, Github, RefreshCw, AlertTriangle, Download, Loader2 } from 'lucide-react';
-import { APP_VERSION, GITHUB_REPO } from '@/lib/info';
-import { useLatestInfo, useNowVersion, useUpdateCore } from '@/api/endpoints/update';
+import { Info, Tag, AlertTriangle, Download, Loader2 } from 'lucide-react';
+import Github from '@thesvg/react/github';
+import { useLatestInfo, useNowVersion, useUpdateCore } from '@/api/update';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/common/Toast';
-import { isSwitchyardCacheName, isFontCacheName, SW_MESSAGE_TYPE } from '@/lib/sw';
 
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || 'unknown'; // 当前前端构建对应的应用版本。
+const GITHUB_REPO = import.meta.env.VITE_GITHUB_REPO || 'https://github.com/alvindingpeng/switchyard'; // 项目仓库地址。
+
+// SettingInfo 展示版本信息，并在更新后清理本项目的浏览器缓存。
 export function SettingInfo() {
     const t = useTranslations('setting');
     const latestInfoQuery = useLatestInfo();
@@ -20,40 +23,34 @@ export function SettingInfo() {
     // 最新版本与后端当前版本不一致 → 有新版本可更新
     const hasNewVersion = latestVersion && backendNowVersion && latestVersion !== backendNowVersion;
 
+    // clearCacheAndReload 清理 Switchyard 缓存和根作用域注册后刷新页面。
     const clearCacheAndReload = async () => {
-        // 通知 Service Worker 清理缓存
-        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-            navigator.serviceWorker.controller.postMessage({ type: SW_MESSAGE_TYPE.CLEAR_CACHE });
-        }
-        // 同时也从主线程清理（双保险），但保留字体缓存
         if ('caches' in window) {
             const names = await caches.keys();
-            await Promise.all(
-                names
-                    .filter((name) => isSwitchyardCacheName(name) && !isFontCacheName(name))
-                    .map((name) => caches.delete(name))
-            );
+            await Promise.all(names.filter((name) => name.startsWith('switchyard-')).map((name) => caches.delete(name)));
         }
-        // 注销当前 SW，下次加载会重新注册
+
         if ('serviceWorker' in navigator) {
-            const registrations = await navigator.serviceWorker.getRegistrations();
-            await Promise.all(registrations.map((reg) => reg.unregister()));
+            const registration = await navigator.serviceWorker.getRegistration('/');
+            if (registration) await registration.unregister();
         }
-        // 强制刷新（跳过缓存）
+
         window.location.reload();
     };
 
+    // handleForceRefresh 立即清理缓存并重新加载当前页面。
     const handleForceRefresh = () => {
-        clearCacheAndReload();
+        void clearCacheAndReload();
     };
 
+    // handleUpdate 更新服务端程序，成功后清理旧前端缓存。
     const handleUpdate = () => {
         updateCore.mutate(undefined, {
             onSuccess: () => {
                 toast.success(t('info.updateSuccess'));
                 // 更新成功后清理缓存并刷新
                 setTimeout(() => {
-                    clearCacheAndReload();
+                    void clearCacheAndReload();
                 }, 1500);
             },
             onError: () => {
@@ -71,7 +68,7 @@ export function SettingInfo() {
             {/* GitHub 仓库 */}
             <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                    <Github className="h-5 w-5 text-muted-foreground" />
+                    <Github variant="mono" className="h-5 w-5 text-muted-foreground" />
                     <span className="text-sm font-medium">{t('info.github')}</span>
                 </div>
                 <a

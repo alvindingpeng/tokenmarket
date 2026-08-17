@@ -1,12 +1,11 @@
 import { useTranslations } from 'use-intl';
 import { useTheme } from '@/provider/theme';
 import { toast } from '@/components/common/Toast';
-import { useAPIKeyDashboardStats } from '@/api/endpoints/apikey';
-import { useAuthStore } from '@/api/endpoints/user';
+import { useAPIKeyDashboardStats } from '@/api/apikey';
+import { useAuthStore } from '@/api/user';
 import { useSettingStore } from '@/stores/setting';
 import { AnimatedNumber } from '@/components/common/AnimatedNumber';
 import Logo from '@/components/modules/logo';
-import { PageWrapper } from '@/components/common/PageWrapper';
 import { CopyIconButton } from '@/components/common/CopyButton';
 import { useCopyToClipboard } from '@uidotdev/usehooks';
 import { useCallback } from 'react';
@@ -21,7 +20,6 @@ import {
     LogOut,
     Calendar,
     Wallet,
-    Copy,
     Sun,
     Moon,
     Languages,
@@ -46,10 +44,8 @@ export function APIKeyDashboard() {
             try {
                 await copyToClipboard(text);
                 toast.success(`${label} copied`);
-                return true;
             } catch {
                 toast.error(t('error'));
-                return false;
             }
         },
         [copyToClipboard, t]
@@ -127,7 +123,7 @@ export function APIKeyDashboard() {
             </header>
 
             <main className="mb-10">
-                <PageWrapper className="space-y-6">
+                <div className="space-y-6">
                     {/* Hero: Identity + Limits */}
                     <div className="overflow-hidden rounded-3xl border bg-card">
                         <div className="grid grid-cols-1 md:grid-cols-2">
@@ -282,7 +278,7 @@ export function APIKeyDashboard() {
                             </div>
                         </div>
                     )}
-                </PageWrapper>
+                </div>
             </main>
         </div>
     );

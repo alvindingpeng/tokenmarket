@@ -2,9 +2,9 @@ import { useEffect, useState, useRef } from 'react';
 import { useTranslations } from 'use-intl';
 import { Zap, Hash, Timer, TimerOff, HelpCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { useSettingList, useSetSetting, SettingKey } from '@/api/endpoints/setting';
+import { useSettingList, useSetSetting, SettingKey } from '@/api/setting';
 import { toast } from '@/components/common/Toast';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/animate-ui/components/animate/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 export function SettingCircuitBreaker() {
     const t = useTranslations('setting');
@@ -61,16 +61,14 @@ export function SettingCircuitBreaker() {
             <h2 className="text-lg font-bold text-card-foreground flex items-center gap-2">
                 <Zap className="h-5 w-5" />
                 {t('circuitBreaker.title')}
-                <TooltipProvider>
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <HelpCircle className="size-4 text-muted-foreground cursor-help" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                            {t('circuitBreaker.hint')}
-                        </TooltipContent>
-                    </Tooltip>
-                </TooltipProvider>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" sideOffset={10} align="center">
+                        {t('circuitBreaker.hint')}
+                    </TooltipContent>
+                </Tooltip>
             </h2>
 
             {/* 熔断触发阈值 */}

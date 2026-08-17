@@ -1,4 +1,3 @@
-import { motion } from 'motion/react';
 import {
     Activity,
     MessageSquare,
@@ -12,9 +11,8 @@ import {
     FastForward
 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
-import { useStatsTotal } from '@/api/endpoints/stats';
+import { useStatsTotal } from '@/api/stats';
 import { AnimatedNumber } from '@/components/common/AnimatedNumber';
-import { EASING } from '@/lib/animations/fluid-transitions';
 
 
 export function Total() {
@@ -115,16 +113,9 @@ export function Total() {
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {cards.map((card, index) => (
-                <motion.section
+                <section
                     key={index}
-                    className="rounded-3xl bg-card border-card-border border p-5 text-card-foreground flex flex-row items-center gap-4"
-                    initial={{ opacity: 0, y: 20, filter: 'blur(8px)' }}
-                    animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                    transition={{
-                        duration: 0.5,
-                        ease: EASING.easeOutExpo,
-                        delay: index * 0.08,
-                    }}
+                    className="rounded-3xl bg-card border-border border p-5 text-card-foreground flex flex-row items-center gap-4"
                 >
                     <div className="flex flex-col items-center justify-center gap-3 border-r border-border/50 pr-4 py-1 self-stretch">
                         <card.headerIcon className="w-4 h-4" />
@@ -151,7 +142,7 @@ export function Total() {
                             </div>
                         ))}
                     </div>
-                </motion.section>
+                </section>
             ))}
         </div>
     );

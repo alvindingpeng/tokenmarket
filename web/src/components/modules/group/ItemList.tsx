@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { Layers, GripVertical, X, Trash2 } from 'lucide-react';
+import { Circle, CircleCheck, Layers, GripVertical, X, Trash2 } from 'lucide-react';
 import {
     DragDropContext,
     Draggable,
@@ -10,14 +10,13 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { getModelIcon } from '@/lib/model-icons';
-import type { LLMChannel } from '@/api/endpoints/model';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/animate-ui/components/animate/tooltip';
+import type { LLMChannel } from '@/api/model';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTranslations } from 'use-intl';
 
 export interface SelectedMember extends LLMChannel {
     id: string;
     item_id?: number;
-    weight?: number;
 }
 
 function reorderList<T>(list: T[], startIndex: number, endIndex: number): T[] {
@@ -34,28 +33,28 @@ type MemberItemDnd = {
     isDragging: boolean;
 };
 
+// MemberItem 渲染可拖拽成员及其删除确认状态。
 function MemberItem({
     member,
     onRemove,
-    onWeightChange,
+    onActivate,
+    isActive,
     isRemoving,
-    index,
-    showWeight = false,
     showConfirmDelete = true,
     layoutScope,
     dnd,
 }: {
     member: SelectedMember;
     onRemove: (id: string) => void;
-    onWeightChange?: (id: string, weight: number) => void;
+    onActivate?: (itemId: number) => void;
+    isActive?: boolean;
     isRemoving?: boolean;
-    index: number;
-    showWeight?: boolean;
     showConfirmDelete?: boolean;
     layoutScope?: string;
     dnd: MemberItemDnd;
 }) {
-    const { Avatar: ModelAvatar } = getModelIcon(member.name);
+    const t = useTranslations('group');
+    const { Icon, className: iconClassName } = getModelIcon(member.name);
     const [confirmDelete, setConfirmDelete] = useState(false);
     const isDisabled = member.enabled === false;
 
@@ -79,15 +78,19 @@ function MemberItem({
             <div className={cn(
                 'flex items-center gap-2 rounded-lg bg-background border border-border/50 px-2.5 py-2 select-none transition-opacity duration-200 relative overflow-hidden',
                 isRemoving && 'opacity-0',
-                isDisabled && 'opacity-60 grayscale'
-            )}>
-                <span className={cn(
-                    'size-5 rounded-md text-xs font-bold grid place-items-center shrink-0',
-                    isDisabled ? 'bg-muted text-muted-foreground' : 'bg-primary/10 text-primary'
-                )}>
-                    {index + 1}
-                </span>
-
+                isDisabled && 'opacity-60 grayscale',
+                onActivate && member.item_id !== undefined && 'cursor-pointer'
+            )}
+                onClick={() => member.item_id !== undefined && onActivate?.(member.item_id)}
+                onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget || member.item_id === undefined || !onActivate || (event.key !== 'Enter' && event.key !== ' ')) return;
+                    event.preventDefault();
+                    onActivate(member.item_id);
+                }}
+                role={onActivate && member.item_id !== undefined ? 'button' : undefined}
+                tabIndex={onActivate && member.item_id !== undefined ? 0 : undefined}
+                title={onActivate && member.item_id !== undefined ? (isActive ? t('card.active') : t('card.activate')) : undefined}
+            >
                 <div
                     className={cn(
                         'p-0.5 rounded touch-none transition-colors',
@@ -97,48 +100,47 @@ function MemberItem({
                     )}
                     // eslint-disable-next-line react-hooks/refs
                     {...dnd.dragHandleProps}
+                    onClick={(event) => event.stopPropagation()}
                 >
                     <GripVertical className="size-3.5 text-muted-foreground" />
                 </div>
 
                 <span className={cn(isDisabled && 'opacity-70')}>
-                    <ModelAvatar size={18} />
+                    <Icon aria-hidden="true" className={iconClassName} width={18} height={18} />
                 </span>
 
                 <div className="flex flex-col min-w-0 flex-1">
-                    <Tooltip side="top" sideOffset={10} align="start">
-                        <TooltipTrigger className={cn(
-                            'text-sm font-medium truncate leading-tight',
-                            isDisabled && 'text-muted-foreground'
-                        )}>
-                            {member.name}
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <span className={cn(
+                                'w-fit max-w-full text-sm font-medium truncate leading-tight',
+                                isDisabled && 'text-muted-foreground'
+                            )}>
+                                {member.name}
+                            </span>
                         </TooltipTrigger>
-                        <TooltipContent key={member.name}>{member.name}</TooltipContent>
+                        <TooltipContent key={member.name} side="top" sideOffset={10} align="center">
+                            {member.name}
+                        </TooltipContent>
                     </Tooltip>
                     <span className="text-[10px] text-muted-foreground truncate leading-tight">{member.channel_name}</span>
                 </div>
 
-                {showWeight && (
-                    <input
-                        type="number"
-                        min={1}
-                        value={member.weight ?? 1}
-                        onChange={(e) => onWeightChange?.(member.id, Math.max(1, parseInt(e.target.value) || 1))}
-                        className={cn(
-                            'w-12 h-6 text-xs text-center rounded border border-border bg-muted/50 focus:outline-none focus:ring-1 focus:ring-primary',
-                            isDisabled && 'text-muted-foreground'
-                        )}
-                    />
+                {onActivate && member.item_id !== undefined && (
+                    <span className={cn('p-1', isActive ? 'text-primary' : 'text-muted-foreground')}>
+                        {isActive ? <CircleCheck className="size-4" /> : <Circle className="size-4" />}
+                    </span>
                 )}
 
                 {(!showConfirmDelete || !confirmDelete) && (
                     <motion.button
                         layoutId={`delete-btn-member-${layoutScope ?? 'default'}-${member.id}`}
                         type="button"
-                        onClick={() => showConfirmDelete ? setConfirmDelete(true) : onRemove(member.id)}
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            showConfirmDelete ? setConfirmDelete(true) : onRemove(member.id);
+                        }}
                         className="p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-colors"
-                        initial={false}
-                        animate={{ opacity: 1, x: 0 }}
                         transition={{ duration: 0.15 }}
                         style={{ pointerEvents: 'auto' }}
                     >
@@ -151,18 +153,25 @@ function MemberItem({
                         <motion.div
                             layoutId={`delete-btn-member-${layoutScope ?? 'default'}-${member.id}`}
                             className="absolute inset-0 flex items-center justify-center gap-2 bg-destructive p-1.5 rounded-lg"
+                            onClick={(event) => event.stopPropagation()}
                             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                         >
                             <button
                                 type="button"
-                                onClick={() => setConfirmDelete(false)}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    setConfirmDelete(false);
+                                }}
                                 className="flex h-6 w-6 items-center justify-center rounded-md bg-destructive-foreground/20 text-destructive-foreground transition-all hover:bg-destructive-foreground/30 active:scale-95"
                             >
                                 <X className="h-3 w-3" />
                             </button>
                             <button
                                 type="button"
-                                onClick={() => onRemove(member.id)}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    onRemove(member.id);
+                                }}
                                 className="flex-1 h-6 flex items-center justify-center gap-1.5 rounded-md bg-destructive-foreground text-destructive text-xs font-semibold transition-all hover:bg-destructive-foreground/90 active:scale-[0.98]"
                             >
                                 <Trash2 className="h-3 w-3" />
@@ -175,11 +184,12 @@ function MemberItem({
     );
 }
 
-export interface MemberListProps {
+interface MemberListProps {
     members: SelectedMember[];
     onReorder: (members: SelectedMember[]) => void;
     onRemove: (id: string) => void;
-    onWeightChange?: (id: string, weight: number) => void;
+    onActivate?: (itemId: number) => void;
+    activeItemId?: number;
     /**
      * When true, auto-scroll the list to bottom when a *new visible* member appears
      * (i.e. a new member id is added). Useful in "editor" flows. Defaults to true.
@@ -197,7 +207,6 @@ export interface MemberListProps {
      */
     onDragFinish?: () => void;
     removingIds?: Set<string>;
-    showWeight?: boolean;
     /**
      * When true, show a confirmation overlay before removing an item.
      * When false, clicking the delete button removes the item immediately.
@@ -211,13 +220,13 @@ export function MemberList({
     members,
     onReorder,
     onRemove,
-    onWeightChange,
+    onActivate,
+    activeItemId,
     autoScrollOnAdd = true,
     onDragStart,
     onDrop,
     onDragFinish,
     removingIds = new Set(),
-    showWeight = false,
     showConfirmDelete = true,
     layoutScope: externalLayoutScope,
 }: MemberListProps) {
@@ -305,10 +314,9 @@ export function MemberList({
                             <MemberItem
                                 member={members[rubric.source.index]}
                                 onRemove={onRemove}
-                                onWeightChange={onWeightChange}
+                                onActivate={onActivate}
+                                isActive={members[rubric.source.index].item_id === activeItemId}
                                 isRemoving={false}
-                                index={rubric.source.index}
-                                showWeight={showWeight}
                                 showConfirmDelete={showConfirmDelete}
                                 layoutScope={layoutScope}
                                 dnd={{
@@ -337,10 +345,9 @@ export function MemberList({
                                             <MemberItem
                                                 member={member}
                                                 onRemove={onRemove}
-                                                onWeightChange={onWeightChange}
+                                                onActivate={onActivate}
+                                                isActive={member.item_id === activeItemId}
                                                 isRemoving={removingIds.has(member.id)}
-                                                index={index}
-                                                showWeight={showWeight}
                                                 showConfirmDelete={showConfirmDelete}
                                                 layoutScope={layoutScope}
                                                 dnd={{
