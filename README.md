@@ -4,7 +4,7 @@
 
 ### Switchyard
 
-**A Simple, Beautiful, and Elegant LLM API Aggregation & Load Balancing Service for Individuals**
+**A Simple, Beautiful, and Elegant LLM API Aggregation Service for Individuals**
 
  English | [简体中文](README_zh.md)
 
@@ -14,7 +14,6 @@
 ## ✨ Features
 
 - 🔀 **Multi-Channel Aggregation** - Connect multiple LLM provider channels with unified management
-- ⚖️ **Load Balancing** - Automatic request distribution for stable and efficient service
 - 🔄 **Protocol Conversion** - Seamless conversion between OpenAI Chat / OpenAI Responses / Anthropic API formats
 - 💰 **Price Sync** - Automatic model pricing updates
 - 🔃 **Model Sync** - Automatic synchronization of available model lists with channels
@@ -167,11 +166,6 @@ All configuration options can be overridden via environment variables using the 
 | `SWITCHYARD_DATABASE_PATH` | `database.path` |
 | `SWITCHYARD_LOG_LEVEL` | `log.level` |
 | `SWITCHYARD_GITHUB_PAT` | For rate limiting when getting the latest version (optional) |
-| `SWITCHYARD_RELAY_MAX_SSE_EVENT_SIZE` | Maximum SSE event size (optional) |
-| `SWITCHYARD_IMAGES_BODY_MEMORY_THRESHOLD_MB` | Images request body in-memory threshold. If exceeded, it will be spooled to a temporary file (optional, default 16) |
-| `SWITCHYARD_IMAGES_BODY_MAX_MB` | Images request body maximum size. Requests above this limit are rejected (optional, default 256) |
-| `SWITCHYARD_IMAGES_BODY_TMP_DIR` | Images request body temporary directory (optional, default `./cache`) |
-| `SWITCHYARD_IMAGES_BODY_TMP_CLEANUP_HOURS` | Startup cleanup threshold for temporary files (optional, default 24) |
 
 ## 📸 Screenshots
 
@@ -240,7 +234,6 @@ The program automatically appends API paths based on channel type. You only need
 |--------------|-------------------|----------|--------------------------|
 | OpenAI Chat | `/chat/completions` | `https://api.openai.com/v1` | `https://api.openai.com/v1/chat/completions` |
 | OpenAI Responses | `/responses` | `https://api.openai.com/v1` | `https://api.openai.com/v1/responses` |
-| OpenAI Images | `/images/generations`, `/images/edits`, `/images/variations` | `https://api.openai.com/v1` | `https://api.openai.com/v1/images/generations` |
 | Anthropic | `/messages` | `https://api.anthropic.com/v1` | `https://api.anthropic.com/v1/messages` |
 | Gemini | `/models/:model:generateContent` | `https://generativelanguage.googleapis.com/v1beta` | `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent` |
 
@@ -256,15 +249,6 @@ Groups aggregate multiple channels into a unified external model name.
 
 - **Group name** is the model name exposed by the program
 - When calling the API, set the `model` parameter to the group name
-
-**Load Balancing Modes:**
-
-| Mode | Description |
-|------|-------------|
-| 🔄 **Round Robin** | Cycles through channels sequentially for each request |
-| 🎲 **Random** | Randomly selects an available channel for each request |
-| 🛡️ **Failover** | Prioritizes high-priority channels, switches to lower priority only on failure |
-| ⚖️ **Weighted** | Distributes requests based on configured channel weights |
 
 > 💡 **Example**: Create a group named `gpt-4o`, add multiple providers' GPT-4o channels to it, then access all channels via a unified `model: gpt-4o`.
 
@@ -376,3 +360,4 @@ Edit `~/.codex/auth.json`
 - 🙏 [looplj/axonhub](https://github.com/looplj/axonhub) - The LLM API adaptation module in this project is directly derived from this repository
 - 📊 [sst/models.dev](https://github.com/sst/models.dev) - AI model database providing model pricing data
 - 🇨🇳 [AtomGit](https://github.com/alvindingpeng/switchyard) - China-based code hosting
+- 💬 [Linux.do](https://linux.do/)
