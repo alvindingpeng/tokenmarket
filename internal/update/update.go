@@ -15,7 +15,7 @@ import (
 
 	"github.com/alvindingpeng/switchyard/internal/client"
 	"github.com/alvindingpeng/switchyard/internal/conf"
-	"github.com/alvindingpeng/switchyard/internal/utils/log"
+	"github.com/charmbracelet/log"
 )
 
 const (

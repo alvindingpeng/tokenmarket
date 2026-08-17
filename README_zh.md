@@ -321,7 +321,7 @@ print(completion.choices[0].message.content)
 {
   "env": {
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:8080",
-    "ANTHROPIC_AUTH_TOKEN": "sk-switchyard-P48ROljwJmWBYVARjwQM8Nkiezlg7WOrXXOWDYY8TI5p9Mzg",
+    "ANTHROPIC_AUTH_TOKEN": "sk-switchyard-",
     "API_TIMEOUT_MS": "3000000",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "ANTHROPIC_MODEL": "switchyard-sonnet-4-5",
@@ -338,19 +338,24 @@ print(completion.choices[0].message.content)
 编辑 `~/.codex/config.toml`
 
 ```toml
-model = "switchyard-codex" # 填写正确的分组名称
-
+model = "gpt-5.6-sol"
+model_reasoning_effort = "xhigh"
 model_provider = "switchyard"
+preferred_auth_method = "apikey"
 
 [model_providers.switchyard]
-name = "switchyard"
 base_url = "http://127.0.0.1:8080/v1"
+name = "switchyard"
+supports_websockets = false
+requires_openai_auth = true
+wire_api = "responses"
+experimental_bearer_token = "sk-switchyard-"
 ```
 编辑 `~/.codex/auth.json`
 
 ```json
 {
-  "OPENAI_API_KEY": "sk-switchyard-P48ROljwJmWBYVARjwQM8Nkiezlg7WOrXXOWDYY8TI5p9Mzg"
+  "OPENAI_API_KEY": ""
 }
 ```
 

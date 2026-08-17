@@ -9,8 +9,8 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/alvindingpeng/switchyard/internal/server/router"
-	"github.com/alvindingpeng/switchyard/internal/utils/log"
 	"github.com/alvindingpeng/switchyard/static"
+	"github.com/charmbracelet/log"
 	"github.com/gin-gonic/gin"
 )
 

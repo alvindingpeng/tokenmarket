@@ -16,7 +16,6 @@ type Cache[K comparable, V any] interface {
 	Get(k K) (V, bool)
 	GetAll() map[K]V
 	Del(keys ...K) int
-	Exists(keys ...K) bool
 	Len() int
 	Clear()
 }
@@ -73,15 +72,6 @@ func (c *cache[K, V]) Del(ks ...K) int {
 		count += shard.del(k)
 	}
 	return count
-}
-
-func (c *cache[K, V]) Exists(ks ...K) bool {
-	for _, k := range ks {
-		if _, found := c.Get(k); !found {
-			return false
-		}
-	}
-	return true
 }
 
 func (c *cache[K, V]) Len() int {

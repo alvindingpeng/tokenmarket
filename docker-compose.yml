@@ -7,3 +7,4 @@ services:
        - '/path/to/data:/app/data'
     container_name: switchyard
     restart: unless-stopped
+    network_mode: bridge

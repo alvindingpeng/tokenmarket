@@ -8,8 +8,8 @@ import (
 	"runtime"
 	"syscall"
 
-	"github.com/alvindingpeng/switchyard/internal/utils/log"
 	"github.com/alvindingpeng/switchyard/internal/utils/shutdown"
+	"github.com/charmbracelet/log"
 )
 
 func UpdateCore() error {

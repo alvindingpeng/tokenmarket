@@ -6,7 +6,7 @@ import (
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
-	"github.com/alvindingpeng/switchyard/internal/utils/log"
+	"github.com/charmbracelet/log"
 	"github.com/looplj/axonhub/llm"
 )
 

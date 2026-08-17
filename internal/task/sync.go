@@ -9,8 +9,8 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/utils/diff"
-	"github.com/alvindingpeng/switchyard/internal/utils/log"
 	"github.com/alvindingpeng/switchyard/internal/utils/xstrings"
+	"github.com/charmbracelet/log"
 )
 
 var lastSyncModelsTime = time.Now()

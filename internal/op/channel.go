@@ -7,8 +7,8 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/utils/cache"
-	"github.com/alvindingpeng/switchyard/internal/utils/log"
 	"github.com/alvindingpeng/switchyard/internal/utils/xstrings"
+	"github.com/charmbracelet/log"
 )
 
 var channelCache = cache.New[int, model.Channel](16) // channelCache 保存渠道配置的进程内副本。

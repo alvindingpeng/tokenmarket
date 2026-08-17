@@ -13,7 +13,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/client"
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
-	"github.com/alvindingpeng/switchyard/internal/utils/log"
+	"github.com/charmbracelet/log"
 )
 
 const llmPriceUrl = "https://models.dev/api.json"

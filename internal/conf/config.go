@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/alvindingpeng/switchyard/internal/utils/log"
+	"github.com/charmbracelet/log"
 	"github.com/spf13/viper"
 )
 

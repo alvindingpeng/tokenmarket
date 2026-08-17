@@ -10,7 +10,6 @@ type logger interface {
 	Infof(template string, args ...interface{})
 	Errorf(template string, args ...interface{})
 	Warnf(template string, args ...interface{})
-	Debugf(template string, args ...interface{})
 }
 
 var ilog logger

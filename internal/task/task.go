@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alvindingpeng/switchyard/internal/utils/log"
+	"github.com/charmbracelet/log"
 )
 
 type taskEntry struct {

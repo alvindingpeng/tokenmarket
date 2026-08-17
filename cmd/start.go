@@ -6,8 +6,8 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/server"
 	"github.com/alvindingpeng/switchyard/internal/task"
-	"github.com/alvindingpeng/switchyard/internal/utils/log"
 	"github.com/alvindingpeng/switchyard/internal/utils/shutdown"
+	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
 )
 
@@ -19,10 +19,12 @@ var startCmd = &cobra.Command{
 	PreRun: func(cmd *cobra.Command, args []string) {
 		conf.PrintBanner()
 		conf.Load(cfgFile)
-		log.SetLevel(conf.AppConfig.Log.Level)
+		if level, err := log.ParseLevel(conf.AppConfig.Log.Level); err == nil {
+			log.SetLevel(level)
+		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		shutdown.Init(log.Logger)
+		shutdown.Init(log.Default())
 		if err := db.InitDB(conf.AppConfig.Database.Type, conf.AppConfig.Database.Path, conf.IsDebug()); err != nil {
 			log.Errorf("database init error: %v", err)
 			return
