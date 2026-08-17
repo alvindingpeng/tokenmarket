@@ -147,6 +147,21 @@ func ChannelDel(id int, ctx context.Context) error {
 		tx.Rollback()
 		return fmt.Errorf("failed to get affected groups: %w", err)
 	}
+	var affectedModelIDs []int
+	if err := tx.Model(&model.GroupItem{}).
+		Where("channel_id = ?", id).
+		Pluck("id", &affectedModelIDs).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to get affected models: %w", err)
+	}
+
+	// 模型统计同时通过渠道 ID 和分组项 ID 关联渠道，需在删除渠道前清理。
+	if err := tx.Where("channel_id = ?", id).
+		Or("id IN ?", affectedModelIDs).
+		Delete(&model.StatsModel{}).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to delete model stats: %w", err)
+	}
 
 	// 删除所有引用该渠道的 GroupItem
 	if err := tx.Where("channel_id = ?", id).Delete(&model.GroupItem{}).Error; err != nil {
@@ -173,6 +188,12 @@ func ChannelDel(id int, ctx context.Context) error {
 	// 删除缓存
 	channelCache.Del(id)
 	StatsChannelDel(id)
+	statsModelCacheNeedUpdateLock.Lock()
+	for _, modelID := range affectedModelIDs {
+		statsModelCache.Del(modelID)
+		delete(statsModelCacheNeedUpdate, modelID)
+	}
+	statsModelCacheNeedUpdateLock.Unlock()
 
 	// 刷新受影响的分组缓存
 	for _, groupID := range affectedGroupIDs {
