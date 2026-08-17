@@ -15,9 +15,6 @@ export const SettingKey = {
     ModelInfoUpdateInterval: 'model_info_update_interval',
     SyncLLMInterval: 'sync_llm_interval',
     CORSAllowOrigins: 'cors_allow_origins',
-    CircuitBreakerThreshold: 'circuit_breaker_threshold',
-    CircuitBreakerCooldown: 'circuit_breaker_cooldown',
-    CircuitBreakerMaxCooldown: 'circuit_breaker_max_cooldown',
 } as const;
 
 /**

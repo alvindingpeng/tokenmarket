@@ -7,7 +7,6 @@ import { SettingInfo } from './Info';
 import { SettingLLMSync } from './LLMSync';
 import { SettingLog } from './Log';
 import { SettingBackup } from './Backup';
-import { SettingCircuitBreaker } from './CircuitBreaker';
 
 // Setting 渲染设置页面正文。
 export function Setting() {
@@ -22,7 +21,6 @@ export function Setting() {
                 <SettingLLMPrice />
                 <SettingAPIKey />
                 <SettingLLMSync />
-                <SettingCircuitBreaker />
                 <SettingBackup />
             </div>
         </div>
