@@ -45,6 +45,7 @@ func UpdateCore() error {
 	return nil
 }
 
+// getDownloadFilename 返回当前平台对应的发布归档名称。
 func getDownloadFilename() (string, error) {
 	arch := runtime.GOARCH
 	goos := runtime.GOOS
@@ -52,28 +53,37 @@ func getDownloadFilename() (string, error) {
 	switch goos {
 	case "windows":
 		switch arch {
-		case "386":
-			return "switchyard-windows-x86.zip", nil
 		case "amd64":
-			return "switchyard-windows-x86_64.zip", nil
+			return "switchyard-windows-amd64.zip", nil
 		}
 	case "darwin":
 		switch arch {
 		case "amd64":
-			return "switchyard-darwin-x86_64.zip", nil
+			return "switchyard-darwin-amd64.zip", nil
 		case "arm64":
 			return "switchyard-darwin-arm64.zip", nil
 		}
 	case "linux":
 		switch arch {
 		case "386":
-			return "switchyard-linux-x86.zip", nil
+			return "switchyard-linux-386.zip", nil
 		case "amd64":
-			return "switchyard-linux-x86_64.zip", nil
+			return "switchyard-linux-amd64.zip", nil
 		case "arm":
-			return "switchyard-linux-armv7.zip", nil
+			return "switchyard-linux-arm.zip", nil
 		case "arm64":
 			return "switchyard-linux-arm64.zip", nil
+		}
+	case "android":
+		switch arch {
+		case "386":
+			return "switchyard-android-386.zip", nil
+		case "amd64":
+			return "switchyard-android-amd64.zip", nil
+		case "arm":
+			return "switchyard-android-arm.zip", nil
+		case "arm64":
+			return "switchyard-android-arm64.zip", nil
 		}
 	}
 	return "", fmt.Errorf("unsupported platform: %s/%s", goos, arch)

@@ -35,7 +35,7 @@ docker run -d --name switchyard -v /path/to/data:/app/data -p 8080:8080 bestrui/
 Or use docker compose:
 
 ```bash
-wget https://raw.githubusercontent.com/alvindingpeng/switchyard/refs/heads/dev/docker-compose.yml
+wget https://raw.githubusercontent.com/alvindingpeng/switchyard/refs/heads/master/docker-compose.yml
 docker compose up -d
 ```
 
