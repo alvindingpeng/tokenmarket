@@ -407,6 +407,7 @@
             "groupUnavailable": "目前請求模型沒有對應分組",
             "noGroupItems": "目前分組沒有可用供應源",
             "channelChanged": "供應源已切換",
+            "channelCleared": "已取消供應源選擇",
             "channelChangeFailed": "供應源切換失敗",
             "responseContent": "回應內容",
             "noRequestContent": "(無請求內容)",
@@ -415,6 +416,7 @@
             "retryDetails": "重試詳情",
             "stopAttempt": "停止本次嘗試",
             "stopFailed": "停止失敗",
+            "waitingChannelSelection": "正在等待選擇供應源",
             "waitingResponse": "正在等待上游回應",
             "responseStreaming": "上游已回應，串流傳輸正在進行"
         }

@@ -73,7 +73,7 @@ export function useUpdateGroup() {
     });
 }
 
-// useUpdateGroupActiveItem 手动切换分组当前渠道。
+// useUpdateGroupActiveItem 手动切换或清空分组当前渠道。
 export function useUpdateGroupActiveItem() {
     const queryClient = useQueryClient();
     return useMutation({

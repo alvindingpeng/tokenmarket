@@ -180,6 +180,7 @@ function LogCardContent({ log }: { log: RelayLogOverview }) {
     const responseCommitted = isCommitted || activeState === 'committed';
     const isWaiting = activeState === 'running' && !responseCommitted;
     const activeGroup = groups.find((group) => group.name === log.request_model);
+    const isWaitingForSelection = isWaiting && activeGroup?.active_item_id === 0; // isWaitingForSelection 表示请求正等待分组选择渠道。
     const channelNameByKey = useMemo(() => buildChannelNameByModelKey(modelChannels), [modelChannels]);
     const { Icon, className: iconClassName, color: brandColor } = useMemo(
         () => getModelIcon(actualModel),
@@ -329,12 +330,13 @@ function LogCardContent({ log }: { log: RelayLogOverview }) {
                                                         <button
                                                             key={item.id ?? modelChannelKey(item.channel_id, item.model_name)}
                                                             type="button"
-                                                            disabled={item.id === undefined || itemActive || switchingItemId !== null || stopAttempt.isPending}
+                                                            aria-pressed={itemActive}
+                                                            disabled={item.id === undefined || switchingItemId !== null || stopAttempt.isPending}
                                                             onClick={async () => {
                                                                 if (!activeGroup.id || item.id === undefined) return;
                                                                 setSwitchingItemId(item.id);
                                                                 try {
-                                                                    await updateActiveItem.mutateAsync({ groupId: activeGroup.id, itemId: item.id });
+                                                                    await updateActiveItem.mutateAsync({ groupId: activeGroup.id, itemId: itemActive ? 0 : item.id });
                                                                     if (runningAttempt) {
                                                                         try {
                                                                             await stopAttempt.mutateAsync({ requestId: log.id, attemptIndex: runningAttempt.attempt_index });
@@ -342,7 +344,7 @@ function LogCardContent({ log }: { log: RelayLogOverview }) {
                                                                             if (!(cause instanceof ApiError && cause.status === 409)) throw cause;
                                                                         }
                                                                     }
-                                                                    toast.success(t('channelChanged'));
+                                                                    toast.success(itemActive ? t('channelCleared') : t('channelChanged'));
                                                                 } catch (cause) {
                                                                     toast.error(t('channelChangeFailed'), { description: cause instanceof Error ? cause.message : undefined });
                                                                 } finally {
@@ -377,7 +379,7 @@ function LogCardContent({ log }: { log: RelayLogOverview }) {
                                 <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
                                     <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-muted/50 px-3 md:px-4">
                                         <span className="text-sm font-medium text-card-foreground">
-                                            {isWaiting ? t('retryDetails') : requestFailed ? t('errorInfo') : t('responseContent')}
+                                            {isWaitingForSelection ? t('waitingChannelSelection') : isWaiting ? t('retryDetails') : requestFailed ? t('errorInfo') : t('responseContent')}
                                         </span>
                                         {isWaiting && runningAttempt ? (
                                             <button
@@ -415,7 +417,12 @@ function LogCardContent({ log }: { log: RelayLogOverview }) {
                                         )}
                                     </div>
                                     <div className="min-h-0 flex-1 overflow-auto">
-                                        {isWaiting ? (
+                                        {isWaitingForSelection ? (
+                                            <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
+                                                <Loader2 className="size-4 animate-spin" />
+                                                {t('waitingChannelSelection')}
+                                            </div>
+                                        ) : isWaiting ? (
                                             attempts.length ? (
                                                 <div className="divide-y divide-border">
                                                     {attempts.slice().reverse().map((attempt) => (

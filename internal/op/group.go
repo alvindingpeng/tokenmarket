@@ -3,6 +3,7 @@ package op
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
@@ -13,6 +14,11 @@ import (
 
 var groupCache = cache.New[int, model.Group](16)
 var groupMap = cache.New[string, model.Group](16)
+
+var (
+	groupActiveItemMu      sync.Mutex       // groupActiveItemMu 保护活动项变更通知通道。
+	groupActiveItemChanged = make(chan struct{}) // groupActiveItemChanged 在任一分组活动项变化时广播通知。
+)
 
 func GroupList(ctx context.Context) ([]model.Group, error) {
 	groups := make([]model.Group, 0, groupCache.Len())
@@ -164,28 +170,47 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 	return &group, nil
 }
 
-// GroupActiveItemUpdate 更新分组当前手动指定的渠道模型。
+// GroupActiveItemChangeSignal 返回下一次分组活动项变化时关闭的通知通道。
+func GroupActiveItemChangeSignal() <-chan struct{} {
+	groupActiveItemMu.Lock()
+	defer groupActiveItemMu.Unlock()
+	return groupActiveItemChanged
+}
+
+// notifyGroupActiveItemChanged 唤醒等待活动项变化的请求。
+func notifyGroupActiveItemChanged() {
+	groupActiveItemMu.Lock()
+	close(groupActiveItemChanged)
+	groupActiveItemChanged = make(chan struct{})
+	groupActiveItemMu.Unlock()
+}
+
+// GroupActiveItemUpdate 更新或清空分组当前手动指定的渠道模型。
 func GroupActiveItemUpdate(groupID int, req *model.GroupActiveItemUpdateRequest, ctx context.Context) (*model.Group, error) {
 	group, ok := groupCache.Get(groupID)
 	if !ok {
 		return nil, fmt.Errorf("group not found")
 	}
-	found := false
-	for _, item := range group.Items {
-		if item.ID == req.ItemID {
-			found = true
-			break
+	itemID := *req.ItemID
+	if itemID != 0 {
+		found := false
+		for _, item := range group.Items {
+			if item.ID == itemID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("group item not found")
 		}
 	}
-	if !found {
-		return nil, fmt.Errorf("group item not found")
-	}
-	if err := db.GetDB().WithContext(ctx).Model(&model.Group{}).Where("id = ?", groupID).Update("active_item_id", req.ItemID).Error; err != nil {
+	if err := db.GetDB().WithContext(ctx).Model(&model.Group{}).Where("id = ?", groupID).Update("active_item_id", itemID).Error; err != nil {
 		return nil, fmt.Errorf("failed to update active item: %w", err)
 	}
 	if err := groupRefreshCacheByID(groupID, ctx); err != nil {
 		return nil, err
 	}
+	notifyGroupActiveItemChanged()
 	updated, _ := groupCache.Get(groupID)
 	return &updated, nil
 }

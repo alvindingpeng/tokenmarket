@@ -28,9 +28,9 @@ type GroupUpdateRequest struct {
 	ItemsToDelete []int                    `json:"items_to_delete,omitempty"`  // ItemsToDelete 是待删除的分组项 ID。
 }
 
-// GroupActiveItemUpdateRequest 表示手动切换分组当前渠道的请求。
+// GroupActiveItemUpdateRequest 表示切换或清空分组当前渠道的请求。
 type GroupActiveItemUpdateRequest struct {
-	ItemID int `json:"item_id" binding:"required"` // ItemID 是待设为当前渠道的分组项 ID。
+	ItemID *int `json:"item_id" binding:"required"` // ItemID 是待设为当前渠道的分组项 ID，0 表示取消选择。
 }
 
 // GroupItemAddRequest 表示新增分组项请求。

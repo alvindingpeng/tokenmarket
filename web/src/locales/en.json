@@ -407,6 +407,7 @@
             "groupUnavailable": "No group matches this request model",
             "noGroupItems": "No channels are available in this group",
             "channelChanged": "Channel switched",
+            "channelCleared": "Channel selection cleared",
             "channelChangeFailed": "Failed to switch channel",
             "responseContent": "Response Content",
             "noRequestContent": "(No request content)",
@@ -415,6 +416,7 @@
             "retryDetails": "Retry Details",
             "stopAttempt": "Stop Attempt",
             "stopFailed": "Failed to stop attempt",
+            "waitingChannelSelection": "Waiting for channel selection",
             "waitingResponse": "Waiting for upstream response",
             "responseStreaming": "Upstream responded; streaming is in progress"
         }

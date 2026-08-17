@@ -26,6 +26,7 @@ const (
 	LogEventRequestStarted    LogEventType = "request.started"
 	LogEventAttemptStarted    LogEventType = "attempt.started"
 	LogEventAttemptFinished   LogEventType = "attempt.finished"
+	LogEventTargetWaiting     LogEventType = "target.waiting"
 	LogEventResponseCommitted LogEventType = "response.committed"
 	LogEventRequestFinished   LogEventType = "request.finished"
 )

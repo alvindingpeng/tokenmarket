@@ -20,6 +20,7 @@ import (
 )
 
 var requestIDs atomic.Uint64 // requestIDs 分配进程内严格递增的请求 ID。
+var errNoActiveChannel = errors.New("no active channel") // errNoActiveChannel 表示分组尚未选择活动渠道。
 
 // execution 保存单个客户端请求的全部可变执行状态。
 type execution struct {
@@ -46,7 +47,7 @@ func HandleMessages(c *gin.Context) {
 	(&execution{ctx: c, protocol: &relayProtocol{format: llm.APIFormatAnthropicMessage, route: "/messages", authType: httpclient.AuthTypeAPIKey, inbound: anthropic.NewInboundTransformer()}}).execute()
 }
 
-// execute 初始化请求，并持续重试当前手动目标直至提交响应或客户端取消。
+// execute 初始化请求，并在渠道未选择时等待、失败时重试，直至提交响应或客户端取消。
 func (e *execution) execute() {
 	e.log = LogRecord{LogOverview: LogOverview{ID: requestIDs.Add(1), State: RequestStateRunning, StartedAt: time.Now(), ClientProtocol: e.protocol.format}}
 	ctx := e.ctx.Request.Context()
@@ -90,7 +91,21 @@ func (e *execution) execute() {
 			return
 		}
 
+		activeItemChanged := op.GroupActiveItemChangeSignal()
 		item, channel, retryInterval, retryErr := e.resolveTarget(ctx)
+		if errors.Is(retryErr, errNoActiveChannel) {
+			if e.log.Error != "" {
+				e.log.Error = ""
+				e.emit(LogEventTargetWaiting, nil)
+			}
+			select {
+			case <-ctx.Done():
+				e.finish(RequestStateCanceled, ctx.Err(), nil, nil)
+				return
+			case <-activeItemChanged:
+			}
+			continue
+		}
 		if retryErr != nil {
 			e.recordUnavailableTarget(item, channel, retryErr)
 		} else {
@@ -126,7 +141,7 @@ func (e *execution) resolveTarget(ctx context.Context) (model.GroupItem, *model.
 
 	var item model.GroupItem
 	if group.ActiveItemID == 0 {
-		return model.GroupItem{}, nil, retryInterval, errors.New("no active channel")
+		return model.GroupItem{}, nil, retryInterval, errNoActiveChannel
 	}
 	for _, candidate := range group.Items {
 		if candidate.ID == group.ActiveItemID {

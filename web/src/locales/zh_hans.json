@@ -407,6 +407,7 @@
             "groupUnavailable": "当前请求模型没有对应分组",
             "noGroupItems": "当前分组没有可用渠道",
             "channelChanged": "渠道已切换",
+            "channelCleared": "已取消渠道选择",
             "channelChangeFailed": "渠道切换失败",
             "responseContent": "响应内容",
             "noRequestContent": "(无请求内容)",
@@ -415,6 +416,7 @@
             "retryDetails": "重试详情",
             "stopAttempt": "停止本次尝试",
             "stopFailed": "停止失败",
+            "waitingChannelSelection": "正在等待选择渠道",
             "waitingResponse": "正在等待上游响应",
             "responseStreaming": "上游已响应，流式传输正在进行"
         }
