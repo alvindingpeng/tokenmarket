@@ -10,7 +10,7 @@ import { apiRequest, apiUnauthorizedEvent, setAPIKey } from './client';
 interface UserLoginRequest {
     username: string;
     password: string;
-    expire: number; // 登录状态过期时间（秒）
+    expire: number; // 登录状态过期时间，正数为秒，-1 表示 30 天。
 }
 
 /**

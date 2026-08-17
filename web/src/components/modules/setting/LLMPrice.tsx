@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useSettingList, useSetSetting, SettingKey } from '@/api/setting';
 import { useUpdateModelPrice, useLastUpdateTime } from '@/api/model';
-import { toast } from '@/components/common/Toast';
+import { toast } from 'sonner';
 
 export function SettingLLMPrice() {
     const t = useTranslations('setting');

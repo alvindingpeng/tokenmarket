@@ -8,7 +8,7 @@ import {
 import { useCreateGroup } from '@/api/group';
 import { useTranslations } from 'use-intl';
 import { GroupEditor } from './Editor';
-import { toast } from '@/components/common/Toast';
+import { toast } from 'sonner';
 
 export function CreateDialogContent() {
     const { setIsOpen } = useMorphingDialog();

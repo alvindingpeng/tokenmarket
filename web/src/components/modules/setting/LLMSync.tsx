@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useSettingList, useSetSetting, SettingKey } from '@/api/setting';
 import { useLastSyncTime, useSyncChannel } from '@/api/channel';
-import { toast } from '@/components/common/Toast';
+import { toast } from 'sonner';
 
 export function SettingLLMSync() {
     const t = useTranslations('setting');

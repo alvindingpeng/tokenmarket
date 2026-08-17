@@ -14,7 +14,16 @@ createRoot(document.getElementById('root')!).render(
       <LocaleProvider>
         <TooltipProvider>
           <AppContainer />
-          <Toaster />
+          <Toaster
+            position="top-left"
+            toastOptions={{
+              classNames: {
+                success: '[&_[data-icon]]:text-primary',
+                error: '[&_[data-icon]]:text-destructive',
+                warning: '[&_[data-icon]]:text-destructive/70',
+              },
+            }}
+          />
         </TooltipProvider>
       </LocaleProvider>
     </QueryClientProvider>

@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { toast } from '@/components/common/Toast';
+import { toast } from 'sonner';
 import { useTranslations } from 'use-intl';
 import { useEffect, useState } from 'react';
 import { RefreshCw, X, Plus } from 'lucide-react';

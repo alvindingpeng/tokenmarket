@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { type Group, type GroupUpdateRequest, useDeleteGroup, useUpdateGroup, useUpdateGroupActiveItem } from '@/api/group';
 import { useModelChannelList } from '@/api/model';
 import { useTranslations } from 'use-intl';
-import { toast } from '@/components/common/Toast';
+import { toast } from 'sonner';
 import { CopyIconButton } from '@/components/common/CopyButton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { SelectedMember } from './ItemList';

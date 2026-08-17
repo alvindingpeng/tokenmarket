@@ -24,7 +24,7 @@ import {
 import { useGroupList } from '@/api/group';
 import { useStatsAPIKey } from '@/api/stats';
 import { cn } from '@/lib/utils';
-import { toast } from '@/components/common/Toast';
+import { toast } from 'sonner';
 import { CopyIconButton } from '@/components/common/CopyButton';
 
 function toExpireAt(date: Date, time: string): number {

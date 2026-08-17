@@ -1,9 +1,8 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { LucideIcon } from 'lucide-react';
 import { LayoutGrid, List, Plus, Search, SlidersHorizontal, X } from 'lucide-react';
-import { motion } from 'motion/react';
 import { useTranslations } from 'use-intl';
 import {
     MorphingDialog,
@@ -109,46 +108,52 @@ export function PageActions({
 }: PageActionsProps) {
     const t = useTranslations('toolbar');
     const [searchExpanded, setSearchExpanded] = useState(false);
+    const searchInputRef = useRef<HTMLInputElement>(null);
 
     return (
         <div className="flex items-center gap-2">
             {/* 搜索按钮/展开框 */}
             <div className="relative h-9 w-9">
-                {!searchExpanded ? (
-                    <motion.button
+                <div
+                    className={cn(
+                        'absolute right-0 top-0 flex h-9 items-center gap-2 overflow-hidden rounded-xl border transition-[width,padding,border-color] duration-200 ease-linear',
+                        searchExpanded ? 'w-39 border-border px-3' : 'w-9 border-transparent px-0',
+                    )}
+                >
+                    <button
                         type="button"
-                        layoutId="search-box"
-                        onClick={() => setSearchExpanded(true)}
-                        className={buttonVariants({ variant: 'ghost', size: 'icon', className: 'absolute inset-0 rounded-xl transition-none hover:bg-transparent text-muted-foreground hover:text-foreground' })}
+                        onClick={() => {
+                            if (searchExpanded) return;
+                            setSearchExpanded(true);
+                            window.requestAnimationFrame(() => searchInputRef.current?.focus());
+                        }}
+                        className={cn(
+                            'flex h-full shrink-0 items-center justify-center text-muted-foreground transition-[width,color] duration-200 ease-linear hover:text-foreground',
+                            searchExpanded ? 'w-4 cursor-default' : 'w-9',
+                        )}
                     >
-                        <motion.span layout="position"><Search className="size-4 transition-colors duration-300" /></motion.span>
-                    </motion.button>
-                ) : (
-                    <motion.div
-                        layoutId="search-box"
-                        className="absolute right-0 top-0 flex h-9 items-center gap-2 rounded-xl border px-3"
-                        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                        <Search className="size-4" />
+                    </button>
+                    <input
+                        ref={searchInputRef}
+                        type="text"
+                        value={searchTerm}
+                        onChange={(event) => onSearchTermChange(event.target.value)}
+                        tabIndex={searchExpanded ? 0 : -1}
+                        className="w-20 shrink-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                    />
+                    <button
+                        type="button"
+                        tabIndex={searchExpanded ? 0 : -1}
+                        onClick={() => {
+                            onSearchTermChange('');
+                            setSearchExpanded(false);
+                        }}
+                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
                     >
-                        <motion.span layout="position"><Search className="size-4 shrink-0 text-muted-foreground" /></motion.span>
-                        <input
-                            type="text"
-                            value={searchTerm}
-                            onChange={(event) => onSearchTermChange(event.target.value)}
-                            autoFocus
-                            className="w-20 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                        />
-                        <button
-                            type="button"
-                            onClick={() => {
-                                onSearchTermChange('');
-                                setSearchExpanded(false);
-                            }}
-                            className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
-                        >
-                            <X className="size-3.5" />
-                        </button>
-                    </motion.div>
-                )}
+                        <X className="size-3.5" />
+                    </button>
+                </div>
             </div>
 
             <Popover>

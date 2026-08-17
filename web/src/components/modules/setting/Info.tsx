@@ -3,7 +3,7 @@ import { Info, Tag, AlertTriangle, Download, Loader2 } from 'lucide-react';
 import Github from '@thesvg/react/github';
 import { useLatestInfo, useNowVersion, useUpdateCore } from '@/api/update';
 import { Button } from '@/components/ui/button';
-import { toast } from '@/components/common/Toast';
+import { toast } from 'sonner';
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || 'unknown'; // 当前前端构建对应的应用版本。
 const GITHUB_REPO = import.meta.env.VITE_GITHUB_REPO || 'https://github.com/alvindingpeng/switchyard'; // 项目仓库地址。

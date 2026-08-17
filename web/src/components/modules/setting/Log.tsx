@@ -2,7 +2,7 @@ import { ScrollText, Trash2 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { useClearLogs } from '@/api/log';
 import { Button } from '@/components/ui/button';
-import { toast } from '@/components/common/Toast';
+import { toast } from 'sonner';
 
 // SettingLog 提供进程内完成日志的清空操作。
 export function SettingLog() {

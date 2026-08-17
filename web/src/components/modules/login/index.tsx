@@ -1,7 +1,7 @@
 import { useState } from "react"
-import { motion } from "motion/react"
 import { useTranslations } from 'use-intl'
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { useLogin } from "@/api/user"
@@ -23,6 +23,7 @@ export function LoginForm() {
   const [mode, setMode] = useState<LoginMode>('user')
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
+  const [trustDevice, setTrustDevice] = useState(false) // trustDevice 表示是否请求后端签发 30 天登录凭证。
   const [apiKey, setApiKey] = useState("")
   const [error, setError] = useState<string | null>(null)
 
@@ -38,7 +39,7 @@ export function LoginForm() {
         await loginMutation.mutateAsync({
           username,
           password,
-          expire: 86400,
+          expire: trustDevice ? -1 : 86400,
         })
       } else {
         await apiKeyLoginMutation.mutateAsync(apiKey)
@@ -57,12 +58,7 @@ export function LoginForm() {
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.3 }}
-      className="min-h-screen flex items-center justify-center px-6 text-foreground"
-    >
+    <div className="min-h-screen flex animate-in items-center justify-center px-6 text-foreground fade-in duration-300">
       <div className="w-full max-w-sm space-y-8">
         <header className="flex flex-col items-center gap-3">
           <Logo size={48} />
@@ -114,6 +110,17 @@ export function LoginForm() {
                     disabled={isPending}
                   />
                 </Field>
+                <Field orientation="horizontal" data-disabled={isPending}>
+                  <Checkbox
+                    id="trust-device"
+                    checked={trustDevice}
+                    onCheckedChange={(checked) => setTrustDevice(checked === true)}
+                    disabled={isPending}
+                  />
+                  <FieldLabel htmlFor="trust-device" className="text-muted-foreground">
+                    {t('trustDevice')}
+                  </FieldLabel>
+                </Field>
               </TabsContent>
               <TabsContent value="apikey" style={{ overflow: 'visible' }}>
                 <Field>
@@ -139,6 +146,6 @@ export function LoginForm() {
           </form>
         </Tabs>
       </div>
-    </motion.div>
+    </div>
   )
 }

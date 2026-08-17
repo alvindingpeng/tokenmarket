@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
 import { Check, Copy } from 'lucide-react';
 import { useCopyToClipboard } from '@uidotdev/usehooks';
 import { useTranslations } from 'use-intl';
 import { cn } from '@/lib/utils';
-import { toast } from '@/components/common/Toast';
+import { toast } from 'sonner';
 
 type CopyIconButtonProps = {
     text: string;
@@ -61,17 +60,22 @@ export function CopyIconButton({
             aria-label="Copy"
             className={cn(className)}
         >
-            <AnimatePresence mode="wait" initial={false}>
-                {copied ? (
-                    <motion.div key="check" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}>
-                        <Check className={cn(checkIconClassName)} />
-                    </motion.div>
-                ) : (
-                    <motion.div key="copy" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}>
-                        <Copy className={cn(copyIconClassName)} />
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            <span className="grid place-items-center">
+                <Copy
+                    className={cn(
+                        'col-start-1 row-start-1 transition-transform duration-200 motion-reduce:transition-none',
+                        copied ? 'scale-0 delay-0 ease-in' : 'scale-100 delay-200 ease-out',
+                        copyIconClassName,
+                    )}
+                />
+                <Check
+                    className={cn(
+                        'col-start-1 row-start-1 transition-transform duration-200 motion-reduce:transition-none',
+                        copied ? 'scale-100 delay-200 ease-out' : 'scale-0 delay-0 ease-in',
+                        checkIconClassName,
+                    )}
+                />
+            </span>
         </button>
     );
 }

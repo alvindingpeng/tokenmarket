@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { CopyIconButton } from '@/components/common/CopyButton';
-import { toast } from '@/components/common/Toast';
+import { toast } from 'sonner';
 import { buildChannelNameByModelKey, modelChannelKey } from '@/components/modules/group/utils';
 import {
     MorphingDialog,

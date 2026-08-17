@@ -4,7 +4,7 @@ import { User, KeyRound, Lock, Eye, EyeOff } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useChangeUsername, useChangePassword, useAuth } from '@/api/user';
-import { toast } from '@/components/common/Toast';
+import { toast } from 'sonner';
 
 export function SettingAccount() {
     const t = useTranslations('setting');
