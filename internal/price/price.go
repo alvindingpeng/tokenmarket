@@ -90,12 +90,12 @@ func UpdateLLMPrice(ctx context.Context) error {
 	}
 	var rawPrice map[string]struct {
 		Models map[string]struct {
-			ID         string `json:"id"`     // ID 是模型标识。
-			Family     string `json:"family"` // Family 是模型所属系列。
+			ID         string `json:"id"`     // 模型标识。
+			Family     string `json:"family"` // 模型所属系列。
 			Modalities struct {
-				Output []string `json:"output"` // Output 是模型支持的输出类型。
+				Output []string `json:"output"` // 模型支持的输出类型。
 			} `json:"modalities"`
-			Cost model.LLMPrice `json:"cost"` // Cost 是模型价格。
+			Cost model.LLMPrice `json:"cost"` // 模型价格。
 		} `json:"models"`
 	}
 	if err := json.Unmarshal(body, &rawPrice); err != nil {
