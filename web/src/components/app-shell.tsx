@@ -1,4 +1,6 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
+import { useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'use-intl';
 import Logo from '@/components/modules/logo';
@@ -13,6 +15,9 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
     const setCurrentPage = useAppStore((state) => state.setCurrentPage);
     const t = useTranslations('navbar');
     const activeIndex = NAV_ITEMS.findIndex((route) => route.id === currentPage); // activeIndex 表示选中项在 Dock 中的位置。
+    const [hoveredIndex, setHoveredIndex] = useState<number | null>(null); // hoveredIndex 表示当前悬浮项的位置。
+    const [isNavHovered, setIsNavHovered] = useState(false); // isNavHovered 表示悬浮背景是否显示。
+    const hoverIndicatorRef = useRef<HTMLSpanElement>(null); // hoverIndicatorRef 用于在淡入前确认悬浮背景的新位置。
 
     return (
         <div className="mx-auto flex h-dvh max-w-6xl animate-in flex-col overflow-hidden px-3 fade-in duration-300 md:grid md:grid-cols-[auto_1fr] md:grid-rows-[auto_minmax(0,1fr)] md:gap-x-6 md:px-6">
@@ -24,18 +29,34 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                         'md:sticky md:top-30 md:left-auto md:bottom-auto md:translate-x-0 md:flex-col md:gap-3',
                         'bg-sidebar text-sidebar-foreground border border-sidebar-border rounded-3xl',
                     )}
+                    onMouseLeave={() => setIsNavHovered(false)}
                 >
                     <span
                         aria-hidden="true"
-                        className="pointer-events-none absolute left-3 top-3 z-0 size-10 rounded-2xl bg-sidebar-primary transition-transform duration-300 ease-out md:hidden"
-                        style={{ transform: `translateX(${activeIndex * 2.75}rem)` }}
+                        className="pointer-events-none absolute left-3 top-3 z-10 size-10 rounded-2xl bg-sidebar-primary transition-transform duration-300 ease-out [transform:translateX(var(--nav-offset-x))] md:size-12 md:[transform:translateY(var(--nav-offset-y))]"
+                        style={{
+                            '--nav-offset-x': `${activeIndex * 2.75}rem`,
+                            '--nav-offset-y': `${activeIndex * 3.75}rem`,
+                        } as CSSProperties}
                     />
                     <span
+                        ref={hoverIndicatorRef}
                         aria-hidden="true"
-                        className="pointer-events-none absolute left-3 top-3 z-0 hidden size-12 rounded-2xl bg-sidebar-primary transition-transform duration-300 ease-out md:block"
-                        style={{ transform: `translateY(${activeIndex * 3.75}rem)` }}
-                    />
-                    {NAV_ITEMS.map((route) => {
+                        className={cn(
+                            'pointer-events-none absolute left-3 top-3 z-0 size-10 [transform:translateX(var(--nav-offset-x))] md:size-12 md:[transform:translateY(var(--nav-offset-y))]',
+                            isNavHovered ? 'transition-transform duration-300 ease-out' : 'transition-none',
+                        )}
+                        style={{
+                            '--nav-offset-x': `${(hoveredIndex ?? activeIndex) * 2.75}rem`,
+                            '--nav-offset-y': `${(hoveredIndex ?? activeIndex) * 3.75}rem`,
+                        } as CSSProperties}
+                    >
+                        <span
+                            className="absolute inset-0 rounded-2xl bg-sidebar-accent transition-opacity duration-350 ease-linear"
+                            style={{ opacity: isNavHovered ? 1 : 0 }}
+                        />
+                    </span>
+                    {NAV_ITEMS.map((route, index) => {
                         const isActive = currentPage === route.id;
 
                         return (
@@ -44,7 +65,17 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                                 type="button"
                                 aria-label={route.label}
                                 aria-current={isActive ? 'page' : undefined}
-                                onMouseEnter={() => preloadPage(route.id)}
+                                onMouseEnter={() => {
+                                    // 首次进入先在不可见状态下定位，避免背景从上一次位置移动过来。
+                                    if (isNavHovered) {
+                                        setHoveredIndex(index);
+                                    } else {
+                                        flushSync(() => setHoveredIndex(index));
+                                        hoverIndicatorRef.current?.getBoundingClientRect();
+                                        setIsNavHovered(true);
+                                    }
+                                    preloadPage(route.id);
+                                }}
                                 onFocus={() => preloadPage(route.id)}
                                 onTouchStart={() => preloadPage(route.id)}
                                 onClick={() => {
@@ -52,8 +83,8 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                                     setCurrentPage(route.id);
                                 }}
                                 className={cn(
-                                    'relative z-20 flex size-10 items-center justify-center rounded-2xl p-2 transition-[color,background-color,transform] duration-150 ease-out hover:z-30 hover:scale-110 active:scale-95 md:size-12 md:p-3',
-                                    isActive ? 'text-sidebar-primary-foreground' : 'text-sidebar-foreground/60 hover:bg-sidebar-accent',
+                                    'relative z-20 flex size-10 items-center justify-center rounded-2xl p-2 transition-[color,scale] duration-150 ease-linear hover:z-30 hover:scale-110 active:scale-95 md:size-12 md:p-3',
+                                    isActive ? 'text-sidebar-primary-foreground' : 'text-sidebar-foreground/60',
                                 )}
                             >
                                 <span className="relative z-10">
