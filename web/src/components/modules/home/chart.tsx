@@ -32,7 +32,11 @@ export function StatsChart() {
         const dataKey = getChartDataKey(chartMetricType);
         if (period === '1') {
             if (!statsHourly) return [];
-            return statsHourly.map((stat) => ({
+            const firstUsageIndex = statsHourly.findIndex((stat) => stat.request_count.raw > 0);
+            const startIndex = firstUsageIndex === -1
+                ? Math.max(statsHourly.length - 1, 0)
+                : Math.max(firstUsageIndex - 1, 0);
+            return statsHourly.slice(startIndex).map((stat) => ({
                 date: `${stat.hour}:00`,
                 [dataKey]: chartMetricType === 'cost'
                     ? stat.total_cost.raw
@@ -42,7 +46,12 @@ export function StatsChart() {
             }));
         } else {
             const days = Number(period);
-            return sortedDaily.slice(-days).map((stat) => ({
+            const recentStats = sortedDaily.slice(-days);
+            const firstUsageIndex = recentStats.findIndex((stat) => stat.request_count.raw > 0);
+            const startIndex = firstUsageIndex === -1
+                ? Math.max(recentStats.length - 1, 0)
+                : Math.max(firstUsageIndex - 1, 0);
+            return recentStats.slice(startIndex).map((stat) => ({
                 date: `${stat.date.slice(4, 6)}/${stat.date.slice(6, 8)}`,
                 [dataKey]: chartMetricType === 'cost'
                     ? stat.total_cost.raw
