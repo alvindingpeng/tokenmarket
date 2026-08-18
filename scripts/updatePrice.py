@@ -23,6 +23,7 @@ DEVELOPERS: dict[str, tuple[str, ...]] = {
     "minimax": ("minimax",),
     "moonshotai": ("kimi",),
     "v0": ("v0",),
+    "xiaomi": ("mimo",),
 }
 
 PRESETS_GO_TEMPLATE = '''package price

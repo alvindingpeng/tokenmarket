@@ -30,6 +30,7 @@ var developerFamilies = map[string][]string{
 	"minimax":    {"minimax"},
 	"moonshotai": {"kimi"},
 	"v0":         {"v0"},
+	"xiaomi":     {"mimo"},
 }
 
 var lastUpdateTime time.Time // lastUpdateTime 记录最近一次成功更新时间。
