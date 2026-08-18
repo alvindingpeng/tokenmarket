@@ -28,16 +28,15 @@ import {
     useMorphingDialog,
 } from '@/components/ui/morphing-dialog';
 
-// formatTime 将后端 RFC3339 时间转换为本地时间。
+// formatTime 将后端 RFC3339 时间转换为本地时分秒。
 function formatTime(value: string) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime()) || date.getUTCFullYear() === 1) return '--';
-    return date.toLocaleString(undefined, {
-        month: '2-digit',
-        day: '2-digit',
+    return date.toLocaleTimeString(undefined, {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
+        hour12: false,
     });
 }
 
@@ -218,36 +217,36 @@ function LogCardContent({ log }: { log: RelayLogOverview }) {
                                 {actualModel}
                             </span>
                         </div>
-                        <div className="grid grid-cols-2 md:grid-cols-7 gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground">
-                            <div className="flex items-center gap-1.5">
+                        <div className="grid grid-cols-12 gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground md:grid-cols-7">
+                            <div className="col-span-4 flex items-center gap-1.5 whitespace-nowrap md:col-span-1">
                                 <Clock className="size-3.5 shrink-0" style={{ color: brandColor }} />
                                 <span>{formatTime(log.started_at)}</span>
                             </div>
-                            <div className="flex items-center gap-1.5">
+                            <div className="col-span-4 flex items-center gap-1.5 md:col-span-1">
                                 <Cpu className="size-3.5 shrink-0 text-blue-500" />
                                 <span>{duration}</span>
                             </div>
-                            <div className="flex items-center gap-1.5">
-                                <ArrowDownToLine className="size-3.5 shrink-0 text-green-500" />
-                                <span>{(log.input_tokens - log.cache_read_tokens).toLocaleString()}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                                <Database className="size-3.5 shrink-0 text-cyan-500" />
-                                <span>{log.cache_read_tokens.toLocaleString()}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                                <ArrowUpFromLine className="size-3.5 shrink-0 text-purple-500" />
-                                <span>{log.output_tokens.toLocaleString()}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                                <Database className="size-3.5 shrink-0 text-orange-500" />
-                                <span>{log.cache_write_tokens.toLocaleString()}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
+                            <div className="col-span-4 flex items-center gap-1.5 md:col-span-1">
                                 <DollarSign className="size-3.5 shrink-0 text-emerald-500" />
                                 <span className="font-medium text-emerald-600 dark:text-emerald-400">
                                     {log.total_cost.toFixed(6)}
                                 </span>
+                            </div>
+                            <div className="col-span-3 flex items-center gap-1.5 md:col-span-1">
+                                <ArrowDownToLine className="size-3.5 shrink-0 text-green-500" />
+                                <span>{(log.input_tokens - log.cache_read_tokens).toLocaleString()}</span>
+                            </div>
+                            <div className="col-span-3 flex items-center gap-1.5 md:col-span-1">
+                                <Database className="size-3.5 shrink-0 text-cyan-500" />
+                                <span>{log.cache_read_tokens.toLocaleString()}</span>
+                            </div>
+                            <div className="col-span-3 flex items-center gap-1.5 md:col-span-1">
+                                <ArrowUpFromLine className="size-3.5 shrink-0 text-purple-500" />
+                                <span>{log.output_tokens.toLocaleString()}</span>
+                            </div>
+                            <div className="col-span-3 flex items-center gap-1.5 md:col-span-1">
+                                <Database className="size-3.5 shrink-0 text-orange-500" />
+                                <span>{log.cache_write_tokens.toLocaleString()}</span>
                             </div>
                         </div>
                         {requestFailed && errorText && (
@@ -470,36 +469,36 @@ function LogCardContent({ log }: { log: RelayLogOverview }) {
                             </div>
                     </MorphingDialogDescription>
 
-                    <div className="flex flex-wrap items-center gap-3 md:gap-4 pt-4 mt-auto text-xs text-muted-foreground shrink-0">
-                        <div className="flex items-center gap-1.5">
-                            <Clock className="size-3.5" style={{ color: brandColor }} />
+                    <div className="grid w-full shrink-0 grid-cols-12 gap-x-4 gap-y-2 pt-4 mt-auto text-xs text-muted-foreground md:grid-cols-7">
+                        <div className="col-span-4 flex items-center gap-1.5 whitespace-nowrap md:col-span-1">
+                            <Clock className="size-3.5 shrink-0" style={{ color: brandColor }} />
                             <span className="tabular-nums">{formatTime(log.started_at)}</span>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                            <Cpu className="size-3.5 text-blue-500" />
+                        <div className="col-span-4 flex items-center gap-1.5 md:col-span-1">
+                            <Cpu className="size-3.5 shrink-0 text-blue-500" />
                             <span>{activeState !== 'running' && activeState !== 'committed' ? formatDuration(log.duration) : duration}</span>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                            <ArrowDownToLine className="size-3.5 text-green-500" />
-                            <span>{(log.input_tokens - log.cache_read_tokens).toLocaleString()}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                            <Database className="size-3.5 text-cyan-500" />
-                            <span>{log.cache_read_tokens.toLocaleString()}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                            <ArrowUpFromLine className="size-3.5 text-purple-500" />
-                            <span>{log.output_tokens.toLocaleString()}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                            <Database className="size-3.5 text-orange-500" />
-                            <span>{log.cache_write_tokens.toLocaleString()}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                            <DollarSign className="size-3.5 text-emerald-500" />
+                        <div className="col-span-4 flex items-center gap-1.5 md:col-span-1">
+                            <DollarSign className="size-3.5 shrink-0 text-emerald-500" />
                             <span className="font-medium text-emerald-600 dark:text-emerald-400">
                                 {log.total_cost.toFixed(6)}
                             </span>
+                        </div>
+                        <div className="col-span-3 flex items-center gap-1.5 md:col-span-1">
+                            <ArrowDownToLine className="size-3.5 shrink-0 text-green-500" />
+                            <span>{(log.input_tokens - log.cache_read_tokens).toLocaleString()}</span>
+                        </div>
+                        <div className="col-span-3 flex items-center gap-1.5 md:col-span-1">
+                            <Database className="size-3.5 shrink-0 text-cyan-500" />
+                            <span>{log.cache_read_tokens.toLocaleString()}</span>
+                        </div>
+                        <div className="col-span-3 flex items-center gap-1.5 md:col-span-1">
+                            <ArrowUpFromLine className="size-3.5 shrink-0 text-purple-500" />
+                            <span>{log.output_tokens.toLocaleString()}</span>
+                        </div>
+                        <div className="col-span-3 flex items-center gap-1.5 md:col-span-1">
+                            <Database className="size-3.5 shrink-0 text-orange-500" />
+                            <span>{log.cache_write_tokens.toLocaleString()}</span>
                         </div>
                     </div>
                 </MorphingDialogContent>
