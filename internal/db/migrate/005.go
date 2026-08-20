@@ -30,11 +30,11 @@ func migrateChannelToSingleURLAndKey(db *gorm.DB) error {
 
 	if db.Migrator().HasColumn("channels", "base_urls") {
 		type legacyBaseURL struct {
-			URL string `json:"url"` // URL 是旧地址值。
+			URL string `json:"url"` // 旧地址值。
 		}
 		type legacyChannel struct {
-			ID       int    `gorm:"column:id"`        // ID 是渠道主键。
-			BaseURLs string `gorm:"column:base_urls"` // BaseURLs 是旧地址数组 JSON。
+			ID       int    `gorm:"column:id"`        // 渠道主键。
+			BaseURLs string `gorm:"column:base_urls"` // 旧地址数组 JSON。
 		}
 
 		rows := make([]legacyChannel, 0)
@@ -60,8 +60,8 @@ func migrateChannelToSingleURLAndKey(db *gorm.DB) error {
 
 	if db.Migrator().HasTable("channel_keys") {
 		type legacyChannelKey struct {
-			ChannelID  int    `gorm:"column:channel_id"`  // ChannelID 是所属渠道主键。
-			ChannelKey string `gorm:"column:channel_key"` // ChannelKey 是旧凭据值。
+			ChannelID  int    `gorm:"column:channel_id"`  // 所属渠道主键。
+			ChannelKey string `gorm:"column:channel_key"` // 旧凭据值。
 		}
 
 		keys := make([]legacyChannelKey, 0)

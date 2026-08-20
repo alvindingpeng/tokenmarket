@@ -40,19 +40,3 @@ func migrateDropLegacyGroupColumns(db *gorm.DB) error {
 
 	return nil
 }
-
-func dropColumnIfExists(db *gorm.DB, model interface{}, table, column string) error {
-	if !db.Migrator().HasColumn(model, column) {
-		return nil
-	}
-	if db.Dialector.Name() == "sqlite" {
-		if err := db.Exec(fmt.Sprintf(`ALTER TABLE %q DROP COLUMN %q`, table, column)).Error; err != nil {
-			return fmt.Errorf("failed to drop %s.%s: %w", table, column, err)
-		}
-		return nil
-	}
-	if err := db.Migrator().DropColumn(model, column); err != nil {
-		return fmt.Errorf("failed to drop %s.%s: %w", table, column, err)
-	}
-	return nil
-}

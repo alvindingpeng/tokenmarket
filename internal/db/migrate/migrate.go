@@ -133,3 +133,20 @@ func upsertMigrationRecord(db *gorm.DB, version int, status MigrationRecordStatu
 		DoUpdates: clause.AssignmentColumns([]string{"status"}),
 	}).Create(&rec).Error
 }
+
+// dropColumnIfExists 删除指定表中存在的列，兼容 SQLite、MySQL 和 PostgreSQL。
+func dropColumnIfExists(db *gorm.DB, model interface{}, table, column string) error {
+	if !db.Migrator().HasColumn(model, column) {
+		return nil
+	}
+	if db.Dialector.Name() == "sqlite" {
+		if err := db.Exec(fmt.Sprintf(`ALTER TABLE %q DROP COLUMN %q`, table, column)).Error; err != nil {
+			return fmt.Errorf("failed to drop %s.%s: %w", table, column, err)
+		}
+		return nil
+	}
+	if err := db.Migrator().DropColumn(model, column); err != nil {
+		return fmt.Errorf("failed to drop %s.%s: %w", table, column, err)
+	}
+	return nil
+}
