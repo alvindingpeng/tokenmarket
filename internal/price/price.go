@@ -12,7 +12,6 @@ import (
 
 	"github.com/alvindingpeng/switchyard/internal/client"
 	"github.com/alvindingpeng/switchyard/internal/model"
-	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/charmbracelet/log"
 )
 
@@ -102,7 +101,7 @@ func UpdateLLMPrice(ctx context.Context) error {
 	if err := json.Unmarshal(body, &rawPrice); err != nil {
 		return fmt.Errorf("failed to parse LLM info: %w", err)
 	}
-	llmPriceLock.Lock()
+	updatedPrices := make(map[string]model.LLMPrice)
 	for provider, familyPrefixes := range developerFamilies {
 		for _, priceModel := range rawPrice[provider].Models {
 			modelID := strings.ToLower(priceModel.ID)
@@ -125,31 +124,66 @@ func UpdateLLMPrice(ctx context.Context) error {
 				continue
 			}
 
-			llmPrice[modelID] = priceModel.Cost
+			updatedPrices[modelID] = priceModel.Cost
 		}
 	}
-	llmPriceLock.Unlock()
+	llmPriceLock.Lock()
+	llmPrice = updatedPrices
 	lastUpdateTime = time.Now()
+	llmPriceLock.Unlock()
 	return nil
 }
 
 // GetLastUpdateTime 返回最近一次价格更新时间。
 func GetLastUpdateTime() time.Time {
+	llmPriceLock.RLock()
+	defer llmPriceLock.RUnlock()
 	return lastUpdateTime
 }
 
-// GetLLMPrice 返回指定模型的自定义价格或预设价格。
+// GetLLMPrice 根据已规范化的模型名返回 API 提供的校准价格。
 func GetLLMPrice(modelName string) *model.LLMPrice {
-	modelName = strings.ToLower(modelName)
-	price, err := op.LLMGet(modelName)
-	if err == nil {
-		return &price
-	}
 	llmPriceLock.RLock()
 	defer llmPriceLock.RUnlock()
-	price, ok := llmPrice[modelName]
-	if !ok {
+
+	if price, ok := llmPrice[modelName]; ok {
+		return &price
+	}
+	// 将非字母、数字和小数点字符作为边界，使标准模型名可以出现在任意前缀或后缀之间。
+	modelNameSegments := strings.FieldsFunc(modelName, func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '.'
+	})
+
+	// 匹配完整且连续的标准名称分段，优先选择分段最多的具体模型。
+	matchedModelID := ""
+	matchedSegmentCount := 0
+	ambiguous := false
+	for modelID, price := range llmPrice {
+		modelIDSegments := strings.Split(modelID, "-")
+		for start := 0; start+len(modelIDSegments) <= len(modelNameSegments); start++ {
+			matched := true
+			for i, segment := range modelIDSegments {
+				if modelNameSegments[start+i] != segment {
+					matched = false
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
+			if len(modelIDSegments) > matchedSegmentCount {
+				matchedModelID = modelID
+				matchedSegmentCount = len(modelIDSegments)
+				ambiguous = false
+			} else if len(modelIDSegments) == matchedSegmentCount && llmPrice[matchedModelID] != price {
+				ambiguous = true
+			}
+			break
+		}
+	}
+	if matchedModelID == "" || ambiguous {
 		return nil
 	}
+	price := llmPrice[matchedModelID]
 	return &price
 }

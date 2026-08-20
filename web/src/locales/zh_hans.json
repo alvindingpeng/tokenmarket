@@ -69,8 +69,8 @@
                 },
                 "model": {
                     "all": "全部模型",
-                    "priced": "仅收费",
-                    "free": "仅免费"
+                    "priced": "已配置价格",
+                    "free": "未配置价格"
                 }
             }
         }
@@ -232,7 +232,17 @@
             "lastUpdate": "上次更新",
             "neverUpdated": "从未更新",
             "updateSuccess": "价格更新成功",
-            "updateFailed": "价格更新失败"
+            "updateFailed": "价格更新失败",
+            "rebuild": {
+                "label": "重建价格数据",
+                "description": "重新匹配并清理模型价格\n会重置手动设置的价格",
+                "button": "重建",
+                "cancel": "取消",
+                "confirm": "确认重建",
+                "rebuilding": "重建中...",
+                "success": "价格数据重建成功，共处理 {count} 个模型",
+                "failed": "价格数据重建失败"
+            }
         },
         "llmSync": {
             "title": "渠道同步",

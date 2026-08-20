@@ -43,6 +43,10 @@ func init() {
 				Handle(updateLLMPrice),
 		).
 		AddRoute(
+			router.NewRoute("/rebuild-price", http.MethodPost).
+				Handle(rebuildLLMPrice),
+		).
+		AddRoute(
 			router.NewRoute("/last-update-time", http.MethodGet).
 				Handle(getLastUpdateTime),
 		)
@@ -55,11 +59,7 @@ func init() {
 }
 
 func getModelList(c *gin.Context) {
-	models, err := op.GroupListModel(c.Request.Context())
-	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
+	models := op.GroupListModel()
 	if supportedModelsValue := c.GetString("supported_models"); supportedModelsValue != "" {
 		supportedModels := lo.Map(strings.Split(supportedModelsValue, ","), func(s string, _ int) string {
 			return strings.TrimSpace(s)
@@ -107,27 +107,23 @@ func getModelList(c *gin.Context) {
 }
 
 func listLLM(c *gin.Context) {
-	models, err := op.LLMList(c.Request.Context())
-	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	resp.Success(c, models)
+	resp.Success(c, op.LLMList())
 }
 
 func listLLMByChannel(c *gin.Context) {
-	channels, err := op.ChannelLLMList(c.Request.Context())
-	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	resp.Success(c, channels)
+	resp.Success(c, op.ChannelLLMList())
 }
 
+// createLLM 校验并创建自定义模型价格。
 func createLLM(c *gin.Context) {
 	var model model.LLMInfo
 	if err := c.ShouldBindJSON(&model); err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	model.Name = strings.ToLower(strings.TrimSpace(model.Name))
+	if model.Name == "" {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
 		return
 	}
 	if err := op.LLMCreate(model, c.Request.Context()); err != nil {
@@ -137,10 +133,16 @@ func createLLM(c *gin.Context) {
 	resp.Success(c, model)
 }
 
+// updateLLM 校验并更新自定义模型价格。
 func updateLLM(c *gin.Context) {
 	var model model.LLMInfo
 	if err := c.ShouldBindJSON(&model); err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	model.Name = strings.ToLower(strings.TrimSpace(model.Name))
+	if model.Name == "" {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
 		return
 	}
 	if err := op.LLMUpdate(model, c.Request.Context()); err != nil {
@@ -150,12 +152,18 @@ func updateLLM(c *gin.Context) {
 	resp.Success(c, model)
 }
 
+// deleteLLM 校验模型名并删除自定义模型价格。
 func deleteLLM(c *gin.Context) {
 	var req struct {
 		Name string `json:"name" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	req.Name = strings.ToLower(strings.TrimSpace(req.Name))
+	if req.Name == "" {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
 		return
 	}
 	if err := op.LLMDelete(req.Name, c.Request.Context()); err != nil {
@@ -172,6 +180,28 @@ func updateLLMPrice(c *gin.Context) {
 		return
 	}
 	resp.Success(c, nil)
+}
+
+// rebuildLLMPrice 清理幽灵模型并重新校准数据库中的剩余模型价格。
+func rebuildLLMPrice(c *gin.Context) {
+	ctx := c.Request.Context()
+	if err := op.LLMCleanupGhosts(ctx); err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	llmInfos := op.LLMList()
+	for i := range llmInfos {
+		llmInfos[i].LLMPrice = model.LLMPrice{}
+		if modelPrice := price.GetLLMPrice(llmInfos[i].Name); modelPrice != nil {
+			llmInfos[i].LLMPrice = *modelPrice
+		}
+	}
+	if err := op.LLMBatchSave(llmInfos, ctx); err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, gin.H{"count": len(llmInfos)})
 }
 
 func getLastUpdateTime(c *gin.Context) {

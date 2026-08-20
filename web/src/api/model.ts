@@ -151,6 +151,18 @@ export function useUpdateModelPrice() {
 }
 
 /**
+ * 重建渠道模型价格 Hook
+ */
+export function useRebuildModelPrice() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: () => apiRequest<{ count: number }>('/api/v1/model/rebuild-price', { method: 'POST', body: {} }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: modelListQueryOptions.queryKey }),
+    });
+}
+
+/**
  * 获取 LLM 模型价格最后更新时间 Hook
  * 
  * @example
