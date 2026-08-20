@@ -1,6 +1,6 @@
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from './client';
-import { channelListQueryOptions, modelChannelListQueryOptions, modelListQueryOptions } from './queries';
+import { channelListQueryOptions, groupListQueryOptions, modelChannelListQueryOptions, modelListQueryOptions } from './queries';
 import { formatCount, formatMoney, formatTime } from '@/lib/utils';
 import { StatsChannel, type StatsMetricsFormatted } from './stats';
 /**
@@ -193,7 +193,9 @@ export function useUpdateChannel() {
             apiRequest<ChannelServer>('/api/v1/channel/update', { method: 'POST', body: data }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: channelListQueryOptions.queryKey });
+            queryClient.invalidateQueries({ queryKey: modelListQueryOptions.queryKey });
             queryClient.invalidateQueries({ queryKey: modelChannelListQueryOptions.queryKey });
+            queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
         },
     });
 }
@@ -214,7 +216,9 @@ export function useDeleteChannel() {
             apiRequest<null>(`/api/v1/channel/delete/${id}`, { method: 'DELETE' }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: channelListQueryOptions.queryKey });
+            queryClient.invalidateQueries({ queryKey: modelListQueryOptions.queryKey });
             queryClient.invalidateQueries({ queryKey: modelChannelListQueryOptions.queryKey });
+            queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
         },
     });
 }
@@ -234,7 +238,10 @@ export function useEnableChannel() {
     return useMutation({
         mutationFn: (data: { id: number; enabled: boolean }) =>
             apiRequest<null>('/api/v1/channel/enable', { method: 'POST', body: data }),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: channelListQueryOptions.queryKey }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: channelListQueryOptions.queryKey });
+            queryClient.invalidateQueries({ queryKey: modelChannelListQueryOptions.queryKey });
+        },
     });
 }
 
@@ -290,6 +297,12 @@ export function useSyncChannel() {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: () => apiRequest<null>('/api/v1/channel/sync', { method: 'POST' }),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['channels', 'last-sync-time'] }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['channels', 'last-sync-time'] });
+            queryClient.invalidateQueries({ queryKey: channelListQueryOptions.queryKey });
+            queryClient.invalidateQueries({ queryKey: modelListQueryOptions.queryKey });
+            queryClient.invalidateQueries({ queryKey: modelChannelListQueryOptions.queryKey });
+            queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
+        },
     });
 }
