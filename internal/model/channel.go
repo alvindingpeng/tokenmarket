@@ -1,6 +1,6 @@
 package model
 
-// ChannelProvider 表示渠道使用的上游服务提供方。
+// 渠道使用的上游服务提供方。
 type ChannelProvider string
 
 const (
@@ -11,18 +11,18 @@ const (
 	ChannelProviderVolcengine      ChannelProvider = "volcengine"
 )
 
-// Channel 保存单个上游渠道的连接和转发配置。
+// 单个上游渠道的连接和转发配置。
 type Channel struct {
 	ID            int             `json:"id" gorm:"primaryKey"`                        // 渠道主键。
 	Name          string          `json:"name" gorm:"unique;not null"`                 // 渠道名称。
 	Type          ChannelProvider `json:"type"`                                        // 上游服务提供方。
-	Enabled       bool            `json:"enabled" gorm:"default:true"`                 // Enabled 表示渠道是否可用。
+	Enabled       bool            `json:"enabled" gorm:"default:true"`                 // 渠道是否可用。
 	BaseURL       string          `json:"base_url"`                                    // 唯一的上游基础地址。
 	Key           string          `json:"key"`                                         // 唯一的上游访问凭据。
 	Model         string          `json:"model"`                                       // 自动同步的模型列表。
 	CustomModel   string          `json:"custom_model"`                                // 手动配置的模型列表。
-	Proxy         bool            `json:"proxy" gorm:"default:false"`                  // Proxy 表示是否使用代理。
-	AutoSync      bool            `json:"auto_sync" gorm:"default:false"`              // AutoSync 表示是否自动同步模型。
+	Proxy         bool            `json:"proxy" gorm:"default:false"`                  // 是否使用代理。
+	AutoSync      bool            `json:"auto_sync" gorm:"default:false"`              // 是否自动同步模型。
 	CustomHeader  []CustomHeader  `json:"custom_header" gorm:"serializer:json"`        // 追加到上游请求的 Header。
 	ParamOverride *string         `json:"param_override"`                              // 请求参数覆盖配置。
 	ChannelProxy  *string         `json:"channel_proxy"`                               // 渠道专用代理地址。
@@ -30,7 +30,7 @@ type Channel struct {
 	MatchRegex    *string         `json:"match_regex"`                                 // 模型同步过滤表达式。
 }
 
-// CustomHeader 表示追加到上游请求的单个 Header。
+// 追加到上游请求的单个 Header。
 type CustomHeader struct {
 	HeaderKey   string `json:"header_key"`   // Header 名称。
 	HeaderValue string `json:"header_value"` // Header 值。

@@ -32,7 +32,7 @@ var developerFamilies = map[string][]string{
 	"xiaomi":     {"mimo"},
 }
 
-var lastUpdateTime time.Time // lastUpdateTime 记录最近一次成功更新时间。
+var lastUpdateTime time.Time // 最近一次成功更新时间。
 
 // UpdateLLMPrice 从 models.dev 更新自研文本输出模型的价格。
 func UpdateLLMPrice(ctx context.Context) error {

@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var channelCache = cache.New[int, model.Channel](16) // channelCache 保存渠道配置的进程内副本。
+var channelCache = cache.New[int, model.Channel](16) // 渠道配置的进程内副本。
 
 // ChannelList 返回缓存中的全部渠道。
 func ChannelList() []model.Channel {

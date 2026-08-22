@@ -10,7 +10,6 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/alvindingpeng/switchyard/internal/server/router"
-	"github.com/charmbracelet/log"
 	"github.com/gin-contrib/sse"
 	"github.com/gin-gonic/gin"
 )
@@ -23,10 +22,6 @@ func init() {
 				Handle(streamOverview),
 		).
 		AddRoute(
-			router.NewRoute("/:id/stream", http.MethodGet).
-				Handle(streamDetail),
-		).
-		AddRoute(
 			router.NewRoute("/:id/request-body", http.MethodGet).
 				Handle(getRequestBody),
 		).
@@ -35,8 +30,8 @@ func init() {
 				Handle(getResponseBody),
 		).
 		AddRoute(
-			router.NewRoute("/:request_id/:attempt_index/stop", http.MethodPost).
-				Handle(interruptAttempt),
+			router.NewRoute("/:request_id/:round/stop", http.MethodPost).
+				Handle(interruptRound),
 		).
 		AddRoute(
 			router.NewRoute("/clear", http.MethodDelete).
@@ -44,27 +39,26 @@ func init() {
 		)
 }
 
-// interruptAttempt 中止请求当前序号匹配的上游尝试。
-func interruptAttempt(c *gin.Context) {
+// interruptRound 中止请求当前轮次匹配的上游调用。
+func interruptRound(c *gin.Context) {
 	requestID, err := strconv.ParseUint(c.Param("request_id"), 10, 64)
 	if err != nil {
 		resp.Error(c, http.StatusBadRequest, "invalid request id")
 		return
 	}
-	attemptIndex, err := strconv.Atoi(c.Param("attempt_index"))
-	if err != nil || attemptIndex < 1 {
-		resp.Error(c, http.StatusBadRequest, "invalid attempt index")
+	round, err := strconv.Atoi(c.Param("round"))
+	if err != nil || round < 1 {
+		resp.Error(c, http.StatusBadRequest, "invalid round")
 		return
 	}
-	relay.InterruptAttempt(requestID, attemptIndex)
+	relay.Interrupt(requestID, round)
 	c.Status(http.StatusNoContent)
 }
 
 // clearLog 删除全部已完成的请求记录，并在释放记录引用后主动执行垃圾回收。
 func clearLog(c *gin.Context) {
-	relay.ClearLogs()
+	relay.Clear()
 	runtime.GC()
-	log.Debugf("relay log history cleared")
 	c.Status(http.StatusNoContent)
 }
 
@@ -75,12 +69,7 @@ func getRequestBody(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, "invalid request id")
 		return
 	}
-	body, found := relay.GetLogRequestBody(id)
-	if !found {
-		resp.Error(c, http.StatusNotFound, "request log not found")
-		return
-	}
-	resp.Success(c, body)
+	resp.Success(c, relay.RequestBody(id))
 }
 
 // getResponseBody 返回指定请求当前保存的响应体。
@@ -90,25 +79,16 @@ func getResponseBody(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, "invalid request id")
 		return
 	}
-	body, found := relay.GetLogResponseBody(id)
-	if !found {
-		resp.Error(c, http.StatusNotFound, "request log not found")
-		return
-	}
-	resp.Success(c, body)
+	resp.Success(c, relay.ResponseBody(id))
 }
 
 // streamOverview 逐条发送建立连接时的概览及后续请求更新。
 func streamOverview(c *gin.Context) {
 	prepareSSE(c)
-	snapshot, updates := relay.OpenLogOverview()
-	log.Debugf("relay log overview stream opened: snapshot=%d", len(snapshot))
-	defer func() {
-		relay.CloseLogOverview(updates)
-		log.Debugf("relay log overview stream closed")
-	}()
-	for _, overview := range snapshot {
-		if err := sse.Encode(c.Writer, sse.Event{Event: "log", Data: overview}); err != nil {
+	snapshot, updates := relay.OpenRequestStream()
+	defer relay.CloseRequestStream(updates)
+	for _, request := range snapshot {
+		if err := sse.Encode(c.Writer, sse.Event{Event: "log", Data: request}); err != nil {
 			return
 		}
 		c.Writer.Flush()
@@ -125,54 +105,11 @@ func streamOverview(c *gin.Context) {
 				return
 			}
 			c.Writer.Flush()
-		case overview, ok := <-updates:
+		case request, ok := <-updates:
 			if !ok {
 				return
 			}
-			if err := sse.Encode(c.Writer, sse.Event{Event: "log", Data: overview}); err != nil {
-				return
-			}
-			c.Writer.Flush()
-		}
-	}
-}
-
-// streamDetail 先发送当前运行或已提交状态，再持续发送后续尝试更新。
-func streamDetail(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		resp.Error(c, http.StatusBadRequest, "invalid request id")
-		return
-	}
-	updates, found := relay.OpenLogDetail(id)
-	if !found {
-		resp.Error(c, http.StatusNotFound, "request log not found")
-		return
-	}
-	log.Debugf("relay log detail stream opened: request_id=%d", id)
-	defer func() {
-		relay.CloseLogDetail(updates)
-		log.Debugf("relay log detail stream closed: request_id=%d", id)
-	}()
-	prepareSSE(c)
-	c.Writer.Flush()
-
-	heartbeat := time.NewTicker(15 * time.Second)
-	defer heartbeat.Stop()
-	for {
-		select {
-		case <-c.Request.Context().Done():
-			return
-		case <-heartbeat.C:
-			if _, err := c.Writer.Write([]byte(": ping\n\n")); err != nil {
-				return
-			}
-			c.Writer.Flush()
-		case update, ok := <-updates:
-			if !ok {
-				return
-			}
-			if err := sse.Encode(c.Writer, sse.Event{Event: string(update.Type), Data: update}); err != nil {
+			if err := sse.Encode(c.Writer, sse.Event{Event: "log", Data: request}); err != nil {
 				return
 			}
 			c.Writer.Flush()

@@ -3,12 +3,15 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
+	"github.com/alvindingpeng/switchyard/internal/relay"
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/alvindingpeng/switchyard/internal/server/router"
+	"github.com/gin-contrib/sse"
 	"github.com/gin-gonic/gin"
 )
 
@@ -19,6 +22,10 @@ func init() {
 		AddRoute(
 			router.NewRoute("/list", http.MethodGet).
 				Handle(getGroupList),
+		).
+		AddRoute(
+			router.NewRoute("/runtime/stream", http.MethodGet).
+				Handle(streamGroupRuntime),
 		).
 		AddRoute(
 			router.NewRoute("/create", http.MethodPost).
@@ -38,13 +45,43 @@ func init() {
 		)
 }
 
-func getGroupList(c *gin.Context) {
-	groups, err := op.GroupList(c.Request.Context())
-	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
-		return
+// streamGroupRuntime 向前端发送分组实时运行状态。
+func streamGroupRuntime(c *gin.Context) {
+	prepareSSE(c)
+	snapshot, updates := relay.OpenRouteStream()
+	defer relay.CloseRouteStream(updates)
+	for _, update := range snapshot {
+		if err := sse.Encode(c.Writer, sse.Event{Event: "runtime", Data: update}); err != nil {
+			return
+		}
+		c.Writer.Flush()
 	}
-	resp.Success(c, groups)
+
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+	for {
+		select {
+		case <-c.Request.Context().Done():
+			return
+		case <-heartbeat.C:
+			if _, err := c.Writer.Write([]byte(": ping\n\n")); err != nil {
+				return
+			}
+			c.Writer.Flush()
+		case update, ok := <-updates:
+			if !ok {
+				return
+			}
+			if err := sse.Encode(c.Writer, sse.Event{Event: "runtime", Data: update}); err != nil {
+				return
+			}
+			c.Writer.Flush()
+		}
+	}
+}
+
+func getGroupList(c *gin.Context) {
+	resp.Success(c, op.GroupList())
 }
 
 func createGroup(c *gin.Context) {
@@ -95,13 +132,12 @@ func updateGroupActiveItem(c *gin.Context) {
 }
 
 func deleteGroup(c *gin.Context) {
-	id := c.Param("id")
-	idNum, err := strconv.Atoi(id)
+	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := op.GroupDel(idNum, c.Request.Context()); err != nil {
+	if err := op.GroupDel(id, c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}

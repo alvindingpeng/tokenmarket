@@ -18,9 +18,9 @@ import (
 )
 
 var (
-	syncModelsMu        sync.Mutex   // syncModelsMu 保证同一时间只有一个模型同步任务运行。
-	lastSyncModelsTimeMu sync.RWMutex // lastSyncModelsTimeMu 保护最近同步时间。
-	lastSyncModelsTime   = time.Now() // lastSyncModelsTime 保存最近一次模型同步任务结束时间。
+	syncModelsMu        sync.Mutex   // 保证同一时间只有一个模型同步任务运行。
+	lastSyncModelsTimeMu sync.RWMutex // 最近同步时间的读写锁。
+	lastSyncModelsTime   = time.Now() // 最近一次模型同步任务结束时间。
 )
 
 // SyncModelsTask 同步渠道模型并清理失效关联，返回本次同步遇到的首个错误。

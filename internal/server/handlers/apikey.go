@@ -105,11 +105,7 @@ func getStatsAPIKeyById(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	models, err := op.GroupListModel(c.Request.Context())
-	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
+	models := op.GroupListModel()
 	var modelsString string
 	if info.SupportedModels == "" {
 		modelsString = strings.Join(models, ", ")

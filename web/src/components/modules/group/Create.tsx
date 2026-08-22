@@ -37,7 +37,7 @@ export function CreateDialogContent() {
                     submitText={t('create.submit')}
                     submittingText={t('create.submitting')}
                     isSubmitting={createGroup.isPending}
-                    onSubmit={({ name, retry_interval, members }) => {
+                    onSubmit={({ name, mode, relay_config, members }) => {
                         const items: GroupItem[] = members.map((member, index) => ({
                             channel_id: member.channel_id,
                             model_name: member.name,
@@ -45,7 +45,7 @@ export function CreateDialogContent() {
                         }));
 
                         createGroup.mutate(
-                            { name, active_item_id: 0, retry_interval, items },
+                            { name, mode, active_item_id: 0, relay_config, items },
                             {
                                 onSuccess: () => setIsOpen(false),
                                 onError: (error) => toast.error(t('toast.createFailed'), { description: error.message }),

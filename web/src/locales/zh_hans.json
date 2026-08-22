@@ -326,8 +326,9 @@
         },
         "card": {
             "empty": "暂无规则",
-            "active": "当前活动项",
-            "activate": "设为活动项"
+            "activate": "设为活动项",
+            "cooling": "冷却 {seconds}s",
+            "affinity": "亲和 {seconds}s"
         },
         "detail": {
             "actions": {
@@ -341,8 +342,25 @@
         },
         "form": {
             "name": "分组名称",
-            "retryInterval": "重试间隔",
-            "items": "已选模型",
+            "mode": "路由模式",
+            "modeHint": "手动固定选中成员；故障转移按成员顺序并在失败时切换",
+            "manual": "手动",
+            "failover": "故障转移",
+            "members": "成员",
+            "relay": "路由策略",
+            "retryCount": "总尝试次数",
+            "retryCountHint": "单个成员包含首次请求的总尝试次数",
+            "retryInterval": "重试间隔（秒）",
+            "retryIntervalHint": "同一成员相邻两次尝试的等待时间",
+            "nonStreamTimeout": "非流式超时（秒）",
+            "nonStreamTimeoutHint": "等待完整非流式响应的最长时间",
+            "streamTimeout": "流式首事件超时（秒）",
+            "streamTimeoutHint": "等待首个有效流事件的最长时间",
+            "cooldown": "冷却时间（秒）",
+            "cooldownHint": "成员重试耗尽后暂停使用的时间",
+            "affinity": "故障切换亲和时间（秒）",
+            "affinityHint": "备用成员首次请求成功后继续使用该成员的时间",
+            "items": "成员顺序",
             "addItem": "添加模型",
             "autoAdd": "自动添加",
             "clear": "清空"
@@ -388,15 +406,12 @@
             "disconnected": "日志连接已断开，正在重连"
         },
         "status": {
-            "running": "处理中",
             "committed": "响应中"
         },
         "card": {
             "errorInfo": "错误信息",
             "unknownModel": "未知模型",
-            "retryIndex": "重试 {index}",
-            "detailUnavailable": "详情连接不可用",
-            "noDetail": "暂无详情",
+            "detailUnavailable": "正文内容不可用",
             "requestContent": "请求体",
             "group": "分组",
             "groupUnavailable": "当前请求模型没有对应分组",
@@ -408,9 +423,10 @@
             "noRequestContent": "(无请求内容)",
             "noResponseContent": "(无响应内容)",
             "tokens": "tokens",
+            "retryIndex": "重试 {index}",
             "retryDetails": "重试详情",
-            "stopAttempt": "停止本次尝试",
-            "stopFailed": "停止失败",
+            "stopRound": "停止当前轮次",
+            "stopFailed": "停止当前轮次失败",
             "waitingChannelSelection": "正在等待选择渠道",
             "waitingResponse": "正在等待上游响应",
             "responseStreaming": "上游已响应，流式传输正在进行"

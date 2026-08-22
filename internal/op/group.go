@@ -3,50 +3,46 @@ package op
 import (
 	"context"
 	"fmt"
-	"sync"
+	"sort"
+	"strings"
 
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/utils/cache"
+	"github.com/alvindingpeng/switchyard/internal/utils/xstrings"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
-
-var groupCache = cache.New[int, model.Group](16)
-var groupMap = cache.New[string, model.Group](16)
 
 var (
-	groupActiveItemMu      sync.Mutex       // groupActiveItemMu 保护活动项变更通知通道。
-	groupActiveItemChanged = make(chan struct{}) // groupActiveItemChanged 在任一分组活动项变化时广播通知。
+	groupCache     = cache.New[int, model.Group](16) // groupCache 按主键保存完整分组配置。
+	groupNameIndex = cache.New[string, int](16)      // 客户端模型名对应的分组主键。
 )
 
-func GroupList(ctx context.Context) ([]model.Group, error) {
+// GroupList 返回缓存中的全部分组。
+func GroupList() []model.Group {
 	groups := make([]model.Group, 0, groupCache.Len())
 	for _, group := range groupCache.GetAll() {
 		groups = append(groups, group)
 	}
-	return groups, nil
+	return groups
 }
 
-func GroupListModel(ctx context.Context) ([]string, error) {
+// GroupListModel 返回缓存中的全部分组模型名。
+func GroupListModel() []string {
 	models := []string{}
 	for _, group := range groupCache.GetAll() {
 		models = append(models, group.Name)
 	}
-	return models, nil
-}
-
-func GroupGet(id int, ctx context.Context) (*model.Group, error) {
-	group, ok := groupCache.Get(id)
-	if !ok {
-		return nil, fmt.Errorf("group not found")
-	}
-	return &group, nil
+	return models
 }
 
 // GroupGetByName 返回客户端模型名称对应的完整分组配置。
-func GroupGetByName(name string, ctx context.Context) (model.Group, error) {
-	group, ok := groupMap.Get(name)
+func GroupGetByName(name string) (model.Group, error) {
+	groupID, ok := groupNameIndex.Get(name)
+	if !ok {
+		return model.Group{}, fmt.Errorf("group not found")
+	}
+	group, ok := groupCache.Get(groupID)
 	if !ok {
 		return model.Group{}, fmt.Errorf("group not found")
 	}
@@ -55,14 +51,37 @@ func GroupGetByName(name string, ctx context.Context) (model.Group, error) {
 
 // GroupCreate 创建分组并刷新名称和主键缓存。
 func GroupCreate(group *model.Group, ctx context.Context) error {
-	if group.RetryInterval < 1 {
-		group.RetryInterval = 1
+	if group == nil {
+		return fmt.Errorf("group is required")
+	}
+	group.ID = 0
+	group.Name = strings.TrimSpace(group.Name)
+	if group.Name == "" {
+		return fmt.Errorf("group name is required")
+	}
+	group.ActiveItemID = 0
+	if group.Mode == "" {
+		group.Mode = model.GroupModeManual
+	}
+	model.NormalizeGroupRelayConfig(&group.RelayConfig)
+	for i := range group.Items {
+		group.Items[i].ID = 0
+		group.Items[i].GroupID = 0
+	}
+	if err := normalizeAndValidateGroupItems(group.Items); err != nil {
+		return err
 	}
 	if err := db.GetDB().WithContext(ctx).Create(group).Error; err != nil {
 		return err
 	}
+	sort.Slice(group.Items, func(i, j int) bool {
+		if group.Items[i].Priority != group.Items[j].Priority {
+			return group.Items[i].Priority < group.Items[j].Priority
+		}
+		return group.Items[i].ID < group.Items[j].ID
+	})
 	groupCache.Set(group.ID, *group)
-	groupMap.Set(group.Name, *group)
+	groupNameIndex.Set(group.Name, group.ID)
 	return nil
 }
 
@@ -74,115 +93,121 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 	}
 	oldName := oldGroup.Name
 
-	tx := db.GetDB().WithContext(ctx).Begin()
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
 	var selectFields []string
 	updates := model.Group{ID: req.ID}
-
 	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			return nil, fmt.Errorf("group name is required")
+		}
 		selectFields = append(selectFields, "name")
-		updates.Name = *req.Name
+		updates.Name = name
 	}
-	if req.RetryInterval != nil {
-		selectFields = append(selectFields, "retry_interval")
-		updates.RetryInterval = *req.RetryInterval
+	if req.Mode != nil {
+		selectFields = append(selectFields, "mode")
+		updates.Mode = *req.Mode
 	}
-
-	if len(selectFields) > 0 {
-		if err := tx.Model(&model.Group{}).Where("id = ?", req.ID).Select(selectFields).Updates(&updates).Error; err != nil {
-			tx.Rollback()
-			return nil, fmt.Errorf("failed to update group: %w", err)
-		}
-	}
-
-	// 删除 items
-	if len(req.ItemsToDelete) > 0 {
-		for _, itemID := range req.ItemsToDelete {
-			if itemID == oldGroup.ActiveItemID {
-				if err := tx.Model(&model.Group{}).Where("id = ?", req.ID).Update("active_item_id", 0).Error; err != nil {
-					tx.Rollback()
-					return nil, fmt.Errorf("failed to clear active item: %w", err)
-				}
-				break
-			}
-		}
-		if err := tx.Where("id IN ? AND group_id = ?", req.ItemsToDelete, req.ID).Delete(&model.GroupItem{}).Error; err != nil {
-			tx.Rollback()
-			return nil, fmt.Errorf("failed to delete items: %w", err)
-		}
+	if req.RelayConfig != nil {
+		config := *req.RelayConfig
+		model.NormalizeGroupRelayConfig(&config)
+		selectFields = append(selectFields, "relay_config")
+		updates.RelayConfig = config
 	}
 
-	// 批量更新 items
-	if len(req.ItemsToUpdate) > 0 {
-		ids := make([]int, len(req.ItemsToUpdate))
-		priorityCase := "CASE id"
-		for i, item := range req.ItemsToUpdate {
-			ids[i] = item.ID
-			priorityCase += fmt.Sprintf(" WHEN %d THEN %d", item.ID, item.Priority)
-		}
-		priorityCase += " END"
-
-		if err := tx.Model(&model.GroupItem{}).
-			Where("id IN ? AND group_id = ?", ids, req.ID).
-			Updates(map[string]interface{}{
-				"priority": gorm.Expr(priorityCase),
-			}).Error; err != nil {
-			tx.Rollback()
-			return nil, fmt.Errorf("failed to update items: %w", err)
+	newItems := make([]model.GroupItem, len(req.ItemsToAdd))
+	for i, item := range req.ItemsToAdd {
+		newItems[i] = model.GroupItem{
+			GroupID:   req.ID,
+			ChannelID: item.ChannelID,
+			ModelName: item.ModelName,
+			Priority:  item.Priority,
 		}
 	}
-
-	// 批量新增 items
-	if len(req.ItemsToAdd) > 0 {
-		newItems := make([]model.GroupItem, len(req.ItemsToAdd))
-		for i, item := range req.ItemsToAdd {
-			newItems[i] = model.GroupItem{
-				GroupID:   req.ID,
-				ChannelID: item.ChannelID,
-				ModelName: item.ModelName,
-				Priority:  item.Priority,
-			}
-		}
-		if err := tx.Create(&newItems).Error; err != nil {
-			tx.Rollback()
-			return nil, fmt.Errorf("failed to create items: %w", err)
-		}
-	}
-
-	if err := tx.Commit().Error; err != nil {
-		return nil, fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
-	// 刷新缓存并返回最新数据
-	if err := groupRefreshCacheByID(req.ID, ctx); err != nil {
+	if err := normalizeAndValidateGroupItems(newItems); err != nil {
 		return nil, err
 	}
 
-	group, _ := groupCache.Get(req.ID)
-	if oldName != "" && oldName != group.Name {
-		groupMap.Del(oldName)
+	var deletedItemIDs []int
+	var group model.Group
+	if err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if len(selectFields) > 0 {
+			if err := tx.Model(&model.Group{}).Where("id = ?", req.ID).Select(selectFields).Updates(&updates).Error; err != nil {
+				return fmt.Errorf("failed to update group: %w", err)
+			}
+		}
+
+		// 删除 items
+		if len(req.ItemsToDelete) > 0 {
+			if err := tx.Model(&model.GroupItem{}).
+				Where("id IN ? AND group_id = ?", req.ItemsToDelete, req.ID).
+				Pluck("id", &deletedItemIDs).Error; err != nil {
+				return fmt.Errorf("failed to find deleted items: %w", err)
+			}
+			if len(deletedItemIDs) > 0 {
+				if err := tx.Model(&model.Group{}).
+					Where("id = ? AND active_item_id IN ?", req.ID, deletedItemIDs).
+					Update("active_item_id", 0).Error; err != nil {
+					return fmt.Errorf("failed to clear active item: %w", err)
+				}
+				if err := tx.Where("id IN ?", deletedItemIDs).Delete(&model.StatsModel{}).Error; err != nil {
+					return fmt.Errorf("failed to delete model stats: %w", err)
+				}
+				if err := tx.Where("id IN ?", deletedItemIDs).Delete(&model.GroupItem{}).Error; err != nil {
+					return fmt.Errorf("failed to delete items: %w", err)
+				}
+			}
+		}
+
+		// 批量更新 items
+		if len(req.ItemsToUpdate) > 0 {
+			ids := make([]int, len(req.ItemsToUpdate))
+			priorityCase := "CASE id"
+			for i, item := range req.ItemsToUpdate {
+				ids[i] = item.ID
+				priorityCase += fmt.Sprintf(" WHEN %d THEN %d", item.ID, item.Priority)
+			}
+			priorityCase += " END"
+
+			if err := tx.Model(&model.GroupItem{}).
+				Where("id IN ? AND group_id = ?", ids, req.ID).
+				Updates(map[string]interface{}{
+					"priority": gorm.Expr(priorityCase),
+				}).Error; err != nil {
+				return fmt.Errorf("failed to update items: %w", err)
+			}
+		}
+
+		// 批量新增 items
+		if len(newItems) > 0 {
+			if err := tx.Create(&newItems).Error; err != nil {
+				return fmt.Errorf("failed to create items: %w", err)
+			}
+		}
+
+		if err := tx.Preload("Items", func(tx *gorm.DB) *gorm.DB {
+			return tx.Order("priority ASC").Order("id ASC")
+		}).First(&group, req.ID).Error; err != nil {
+			return fmt.Errorf("failed to load updated group: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if len(deletedItemIDs) > 0 {
+		statsModelCacheNeedUpdateLock.Lock()
+		for _, itemID := range deletedItemIDs {
+			statsModelCache.Del(itemID)
+			delete(statsModelCacheNeedUpdate, itemID)
+		}
+		statsModelCacheNeedUpdateLock.Unlock()
+	}
+
+	groupCache.Set(group.ID, group)
+	groupNameIndex.Set(group.Name, group.ID)
+	if oldName != group.Name {
+		groupNameIndex.Del(oldName)
 	}
 	return &group, nil
-}
-
-// GroupActiveItemChangeSignal 返回下一次分组活动项变化时关闭的通知通道。
-func GroupActiveItemChangeSignal() <-chan struct{} {
-	groupActiveItemMu.Lock()
-	defer groupActiveItemMu.Unlock()
-	return groupActiveItemChanged
-}
-
-// notifyGroupActiveItemChanged 唤醒等待活动项变化的请求。
-func notifyGroupActiveItemChanged() {
-	groupActiveItemMu.Lock()
-	close(groupActiveItemChanged)
-	groupActiveItemChanged = make(chan struct{})
-	groupActiveItemMu.Unlock()
 }
 
 // GroupActiveItemUpdate 更新或清空分组当前手动指定的渠道模型。
@@ -207,226 +232,166 @@ func GroupActiveItemUpdate(groupID int, req *model.GroupActiveItemUpdateRequest,
 	if err := db.GetDB().WithContext(ctx).Model(&model.Group{}).Where("id = ?", groupID).Update("active_item_id", itemID).Error; err != nil {
 		return nil, fmt.Errorf("failed to update active item: %w", err)
 	}
-	if err := groupRefreshCacheByID(groupID, ctx); err != nil {
-		return nil, err
-	}
-	notifyGroupActiveItemChanged()
-	updated, _ := groupCache.Get(groupID)
-	return &updated, nil
+	group.ActiveItemID = itemID
+	groupCache.Set(group.ID, group)
+	return &group, nil
 }
 
+// GroupDel 删除分组、分组成员及其模型统计。
 func GroupDel(id int, ctx context.Context) error {
 	group, ok := groupCache.Get(id)
 	if !ok {
 		return fmt.Errorf("group not found")
 	}
 
-	tx := db.GetDB().WithContext(ctx).Begin()
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
+	var itemIDs []int
+	if err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.GroupItem{}).Where("group_id = ?", id).Pluck("id", &itemIDs).Error; err != nil {
+			return fmt.Errorf("failed to find group items: %w", err)
 		}
-	}()
+		if len(itemIDs) > 0 {
+			if err := tx.Where("id IN ?", itemIDs).Delete(&model.StatsModel{}).Error; err != nil {
+				return fmt.Errorf("failed to delete model stats: %w", err)
+			}
+			if err := tx.Where("id IN ?", itemIDs).Delete(&model.GroupItem{}).Error; err != nil {
+				return fmt.Errorf("failed to delete group items: %w", err)
+			}
+		}
 
-	if err := tx.Where("group_id = ?", id).Delete(&model.GroupItem{}).Error; err != nil {
-		tx.Rollback()
-		return fmt.Errorf("failed to delete group items: %w", err)
-	}
-
-	if err := tx.Delete(&model.Group{}, id).Error; err != nil {
-		tx.Rollback()
-		return fmt.Errorf("failed to delete group: %w", err)
-	}
-
-	if err := tx.Commit().Error; err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
+		if err := tx.Delete(&model.Group{}, id).Error; err != nil {
+			return fmt.Errorf("failed to delete group: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	groupCache.Del(id)
-	groupMap.Del(group.Name)
+	groupNameIndex.Del(group.Name)
+	if len(itemIDs) > 0 {
+		statsModelCacheNeedUpdateLock.Lock()
+		for _, itemID := range itemIDs {
+			statsModelCache.Del(itemID)
+			delete(statsModelCacheNeedUpdate, itemID)
+		}
+		statsModelCacheNeedUpdateLock.Unlock()
+	}
 	return nil
 }
 
-func GroupItemAdd(item *model.GroupItem, ctx context.Context) error {
-	if _, ok := groupCache.Get(item.GroupID); !ok {
-		return fmt.Errorf("group not found")
-	}
-
-	if err := db.GetDB().WithContext(ctx).Create(item).Error; err != nil {
-		return err
-	}
-
-	return groupRefreshCacheByID(item.GroupID, ctx)
-}
-
-func GroupItemBatchAdd(groupID int, items []model.GroupIDAndLLMName, ctx context.Context) error {
-	if len(items) == 0 {
-		return nil
-	}
-
-	group, ok := groupCache.Get(groupID)
-	if !ok {
-		return fmt.Errorf("group not found")
-	}
-
-	seen := make(map[string]struct{}, len(items))
-	uniq := make([]model.GroupIDAndLLMName, 0, len(items))
-	for _, it := range items {
-		if it.ChannelID == 0 || it.ModelName == "" {
-			continue
+// normalizeAndValidateGroupItems 规范化分组成员模型名，并验证引用的渠道模型真实存在。
+func normalizeAndValidateGroupItems(items []model.GroupItem) error {
+	for i := range items {
+		items[i].ModelName = strings.TrimSpace(items[i].ModelName)
+		item := items[i]
+		if item.ModelName == "" {
+			return fmt.Errorf("group item model name is required")
 		}
-		k := fmt.Sprintf("%d|%s", it.ChannelID, it.ModelName)
-		if _, exists := seen[k]; exists {
-			continue
+		channel, err := ChannelGet(item.ChannelID)
+		if err != nil {
+			return fmt.Errorf("group item channel %d not found", item.ChannelID)
 		}
-		seen[k] = struct{}{}
-		uniq = append(uniq, it)
-	}
-	if len(uniq) == 0 {
-		return nil
-	}
-
-	nextPriority := 1
-	for _, gi := range group.Items {
-		if gi.Priority >= nextPriority {
-			nextPriority = gi.Priority + 1
+		found := false
+		for _, modelName := range xstrings.SplitCompact(",", channel.Model, channel.CustomModel) {
+			if modelName == item.ModelName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("model %q not found in channel %d", item.ModelName, item.ChannelID)
 		}
 	}
-
-	newItems := make([]model.GroupItem, 0, len(uniq))
-	for _, it := range uniq {
-		newItems = append(newItems, model.GroupItem{
-			GroupID:   groupID,
-			ChannelID: it.ChannelID,
-			ModelName: it.ModelName,
-			Priority:  nextPriority,
-		})
-		nextPriority++
-	}
-
-	if err := db.GetDB().WithContext(ctx).
-		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "group_id"}, {Name: "channel_id"}, {Name: "model_name"}},
-			DoNothing: true,
-		}).
-		Create(&newItems).Error; err != nil {
-		return fmt.Errorf("failed to create group items: %w", err)
-	}
-
-	return groupRefreshCacheByID(groupID, ctx)
-}
-
-func GroupItemUpdate(item *model.GroupItem, ctx context.Context) error {
-	if err := db.GetDB().WithContext(ctx).Model(item).
-		Select("ModelName", "Priority").
-		Updates(item).Error; err != nil {
-		return err
-	}
-
-	return groupRefreshCacheByID(item.GroupID, ctx)
-}
-
-func GroupItemDel(id int, ctx context.Context) error {
-	var item model.GroupItem
-	if err := db.GetDB().WithContext(ctx).First(&item, id).Error; err != nil {
-		return fmt.Errorf("group item not found")
-	}
-
-	if err := db.GetDB().WithContext(ctx).Delete(&item).Error; err != nil {
-		return err
-	}
-
-	return groupRefreshCacheByID(item.GroupID, ctx)
-}
-
-// GroupItemBatchDelByChannelAndModels 根据渠道ID和模型名称批量删除分组项
-func GroupItemBatchDelByChannelAndModels(keys []model.GroupIDAndLLMName, ctx context.Context) error {
-	if len(keys) == 0 {
-		return nil
-	}
-
-	conditions := make([][]interface{}, len(keys))
-	for i, key := range keys {
-		conditions[i] = []interface{}{key.ChannelID, key.ModelName}
-	}
-
-	var groupIDs []int
-	if err := db.GetDB().WithContext(ctx).
-		Model(&model.GroupItem{}).
-		Distinct("group_id").
-		Where("(channel_id, model_name) IN ?", conditions).
-		Pluck("group_id", &groupIDs).Error; err != nil {
-		return fmt.Errorf("failed to find group ids: %w", err)
-	}
-
-	if len(groupIDs) == 0 {
-		return nil
-	}
-
-	if err := db.GetDB().WithContext(ctx).
-		Where("(channel_id, model_name) IN ?", conditions).
-		Delete(&model.GroupItem{}).Error; err != nil {
-		return fmt.Errorf("failed to delete group items: %w", err)
-	}
-
-	if err := groupRefreshCacheByIDs(groupIDs, ctx); err != nil {
-		return fmt.Errorf("failed to refresh group cache: %w", err)
-	}
-
 	return nil
 }
 
-func GroupItemList(groupID int, ctx context.Context) ([]model.GroupItem, error) {
+// groupItemCleanupByChannel 在当前事务中删除指定渠道不属于最终模型集合的分组项及其统计；modelNames 为空时删除全部分组项。
+func groupItemCleanupByChannel(tx *gorm.DB, channelID int, modelNames []string) ([]int, []int, error) {
 	var items []model.GroupItem
-	if err := db.GetDB().WithContext(ctx).
-		Where("group_id = ?", groupID).
-		Order("priority ASC").
-		Find(&items).Error; err != nil {
-		return nil, err
+	query := tx.Select("id", "group_id").Where("channel_id = ?", channelID)
+	if len(modelNames) > 0 {
+		query = query.Where("model_name NOT IN ?", modelNames)
 	}
-	return items, nil
+	if err := query.Find(&items).Error; err != nil {
+		return nil, nil, fmt.Errorf("failed to find group items: %w", err)
+	}
+	if len(items) == 0 {
+		return nil, nil, nil
+	}
+
+	seenGroupIDs := make(map[int]struct{}, len(items))
+	groupIDs := make([]int, 0, len(items))
+	itemIDs := make([]int, 0, len(items))
+	for _, item := range items {
+		itemIDs = append(itemIDs, item.ID)
+		if _, ok := seenGroupIDs[item.GroupID]; !ok {
+			seenGroupIDs[item.GroupID] = struct{}{}
+			groupIDs = append(groupIDs, item.GroupID)
+		}
+	}
+
+	if err := tx.Model(&model.Group{}).
+		Where("id IN ? AND active_item_id IN ?", groupIDs, itemIDs).
+		Update("active_item_id", 0).Error; err != nil {
+		return nil, nil, fmt.Errorf("failed to clear active items: %w", err)
+	}
+	if err := tx.Where("id IN ?", itemIDs).Delete(&model.StatsModel{}).Error; err != nil {
+		return nil, nil, fmt.Errorf("failed to delete model stats: %w", err)
+	}
+	if err := tx.Where("id IN ?", itemIDs).Delete(&model.GroupItem{}).Error; err != nil {
+		return nil, nil, fmt.Errorf("failed to delete group items: %w", err)
+	}
+	return groupIDs, itemIDs, nil
 }
 
+// groupItemCleanupCache 从缓存副本中移除已删除的分组项及其统计。
+func groupItemCleanupCache(groupIDs, itemIDs []int) {
+	if len(itemIDs) == 0 {
+		return
+	}
+	statsModelCacheNeedUpdateLock.Lock()
+	for _, itemID := range itemIDs {
+		statsModelCache.Del(itemID)
+		delete(statsModelCacheNeedUpdate, itemID)
+	}
+	statsModelCacheNeedUpdateLock.Unlock()
+
+	deletedItemIDs := make(map[int]struct{}, len(itemIDs))
+	for _, itemID := range itemIDs {
+		deletedItemIDs[itemID] = struct{}{}
+	}
+	for _, groupID := range groupIDs {
+		group, ok := groupCache.Get(groupID)
+		if !ok {
+			continue
+		}
+		items := make([]model.GroupItem, 0, len(group.Items))
+		for _, item := range group.Items {
+			if _, deleted := deletedItemIDs[item.ID]; !deleted {
+				items = append(items, item)
+			}
+		}
+		group.Items = items
+		if _, deleted := deletedItemIDs[group.ActiveItemID]; deleted {
+			group.ActiveItemID = 0
+		}
+		groupCache.Set(group.ID, group)
+	}
+}
+
+// groupRefreshCache 从数据库刷新完整分组缓存和名称索引。
 func groupRefreshCache(ctx context.Context) error {
 	groups := []model.Group{}
 	if err := db.GetDB().WithContext(ctx).
-		Preload("Items").
+		Preload("Items", func(tx *gorm.DB) *gorm.DB {
+			return tx.Order("priority ASC").Order("id ASC")
+		}).
 		Find(&groups).Error; err != nil {
 		return err
 	}
 	for _, group := range groups {
 		groupCache.Set(group.ID, group)
-		groupMap.Set(group.Name, group)
-	}
-	return nil
-}
-
-func groupRefreshCacheByID(id int, ctx context.Context) error {
-	var group model.Group
-	if err := db.GetDB().WithContext(ctx).
-		Preload("Items").
-		First(&group, id).Error; err != nil {
-		return err
-	}
-	groupCache.Set(group.ID, group)
-	groupMap.Set(group.Name, group)
-	return nil
-}
-
-func groupRefreshCacheByIDs(ids []int, ctx context.Context) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	var groups []model.Group
-	if err := db.GetDB().WithContext(ctx).
-		Preload("Items").
-		Where("id IN ?", ids).
-		Find(&groups).Error; err != nil {
-		return err
-	}
-	for _, group := range groups {
-		groupCache.Set(group.ID, group)
-		groupMap.Set(group.Name, group)
+		groupNameIndex.Set(group.Name, group.ID)
 	}
 	return nil
 }

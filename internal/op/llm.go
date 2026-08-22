@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var llmModelCache = cache.New[string, model.LLMPrice](16) // llmModelCache 保存数据库中的模型价格。
+var llmModelCache = cache.New[string, model.LLMPrice](16) // 数据库中的模型价格。
 
 // LLMList 返回缓存中的全部模型价格。
 func LLMList() []model.LLMInfo {

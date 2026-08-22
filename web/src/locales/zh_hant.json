@@ -326,8 +326,9 @@
         },
         "card": {
             "empty": "暫無規則",
-            "active": "目前活動項",
-            "activate": "設為活動項"
+            "activate": "設為活動項",
+            "cooling": "冷卻 {seconds}s",
+            "affinity": "親和 {seconds}s"
         },
         "detail": {
             "actions": {
@@ -341,8 +342,25 @@
         },
         "form": {
             "name": "分組名稱",
-            "retryInterval": "重試間隔",
-            "items": "已選模型",
+            "mode": "路由模式",
+            "modeHint": "手動固定選中成員；故障轉移按成員順序並在失敗時切換",
+            "manual": "手動",
+            "failover": "故障轉移",
+            "members": "成員",
+            "relay": "路由策略",
+            "retryCount": "總嘗試次數",
+            "retryCountHint": "單個成員包含首次請求的總嘗試次數",
+            "retryInterval": "重試間隔（秒）",
+            "retryIntervalHint": "同一成員相鄰兩次嘗試的等待時間",
+            "nonStreamTimeout": "非串流逾時（秒）",
+            "nonStreamTimeoutHint": "等待完整非串流回應的最長時間",
+            "streamTimeout": "串流首事件逾時（秒）",
+            "streamTimeoutHint": "等待首個有效串流事件的最長時間",
+            "cooldown": "冷卻時間（秒）",
+            "cooldownHint": "成員重試耗盡後暫停使用的時間",
+            "affinity": "故障切換親和時間（秒）",
+            "affinityHint": "備用成員首次請求成功後繼續使用該成員的時間",
+            "items": "成員順序",
             "addItem": "新增模型",
             "autoAdd": "自動新增",
             "clear": "清空"
@@ -388,15 +406,12 @@
             "disconnected": "日誌連線已中斷，正在重新連線"
         },
         "status": {
-            "running": "處理中",
             "committed": "回應中"
         },
         "card": {
             "errorInfo": "錯誤訊息",
             "unknownModel": "未知模型",
-            "retryIndex": "重試 {index}",
-            "detailUnavailable": "詳情連線不可用",
-            "noDetail": "暫無詳情",
+            "detailUnavailable": "正文內容不可用",
             "requestContent": "請求體",
             "group": "分組",
             "groupUnavailable": "目前請求模型沒有對應分組",
@@ -408,9 +423,10 @@
             "noRequestContent": "(無請求內容)",
             "noResponseContent": "(無回應內容)",
             "tokens": "tokens",
+            "retryIndex": "重試 {index}",
             "retryDetails": "重試詳情",
-            "stopAttempt": "停止本次嘗試",
-            "stopFailed": "停止失敗",
+            "stopRound": "停止目前輪次",
+            "stopFailed": "停止目前輪次失敗",
             "waitingChannelSelection": "正在等待選擇供應源",
             "waitingResponse": "正在等待上游回應",
             "responseStreaming": "上游已回應，串流傳輸正在進行"

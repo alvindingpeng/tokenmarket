@@ -326,8 +326,9 @@
         },
         "card": {
             "empty": "No rules",
-            "active": "Active item",
-            "activate": "Set as active"
+            "activate": "Set as active",
+            "cooling": "Cooling {seconds}s",
+            "affinity": "Affinity {seconds}s"
         },
         "detail": {
             "actions": {
@@ -341,8 +342,25 @@
         },
         "form": {
             "name": "Group Name",
-            "retryInterval": "Retry Interval",
-            "items": "Selected Models",
+            "mode": "Routing Mode",
+            "modeHint": "Manual fixes one member; failover follows member order and switches on failures",
+            "manual": "Manual",
+            "failover": "Failover",
+            "members": "Members",
+            "relay": "Routing",
+            "retryCount": "Maximum Attempts",
+            "retryCountHint": "Total attempts per member, including the first request",
+            "retryInterval": "Retry Interval (s)",
+            "retryIntervalHint": "Wait time between attempts on the same member",
+            "nonStreamTimeout": "Non-stream Timeout (s)",
+            "nonStreamTimeoutHint": "Maximum wait for a complete non-stream response",
+            "streamTimeout": "Stream First Event Timeout (s)",
+            "streamTimeoutHint": "Maximum wait for the first valid stream event",
+            "cooldown": "Cooldown (s)",
+            "cooldownHint": "Time a member is paused after retries are exhausted",
+            "affinity": "Failover Affinity (s)",
+            "affinityHint": "Time to keep the fallback member after its first successful request",
+            "items": "Member Order",
             "addItem": "Add Model",
             "autoAdd": "Auto Add",
             "clear": "Clear"
@@ -388,15 +406,12 @@
             "disconnected": "Log stream disconnected, reconnecting"
         },
         "status": {
-            "running": "Running",
             "committed": "Responding"
         },
         "card": {
             "errorInfo": "Error Info",
             "unknownModel": "Unknown model",
-            "retryIndex": "Retry {index}",
-            "detailUnavailable": "Detail stream unavailable",
-            "noDetail": "No details available",
+            "detailUnavailable": "Body content unavailable",
             "requestContent": "Request Body",
             "group": "Group",
             "groupUnavailable": "No group matches this request model",
@@ -408,9 +423,10 @@
             "noRequestContent": "(No request content)",
             "noResponseContent": "(No response content)",
             "tokens": "tokens",
+            "retryIndex": "Retry {index}",
             "retryDetails": "Retry Details",
-            "stopAttempt": "Stop Attempt",
-            "stopFailed": "Failed to stop attempt",
+            "stopRound": "Stop Current Round",
+            "stopFailed": "Failed to stop current round",
             "waitingChannelSelection": "Waiting for channel selection",
             "waitingResponse": "Waiting for upstream response",
             "responseStreaming": "Upstream responded; streaming is in progress"

@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { Circle, CircleCheck, Layers, GripVertical, X, Trash2 } from 'lucide-react';
+import { Layers, GripVertical, X, Trash2 } from 'lucide-react';
 import {
     DragDropContext,
     Draggable,
@@ -13,6 +13,8 @@ import { getModelIcon } from '@/lib/model-icons';
 import type { LLMChannel } from '@/api/model';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTranslations } from 'use-intl';
+import type { Group } from '@/api/group';
+import { MemberStatus } from './MemberStatus';
 
 export interface SelectedMember extends LLMChannel {
     id: string;
@@ -39,6 +41,8 @@ function MemberItem({
     onRemove,
     onActivate,
     isActive,
+    group,
+    now,
     isRemoving,
     showConfirmDelete = true,
     layoutScope,
@@ -48,6 +52,8 @@ function MemberItem({
     onRemove: (id: string) => void;
     onActivate?: (itemId: number) => void;
     isActive?: boolean;
+    group?: Group; // group 提供成员当前的冷却和亲和时间。
+    now: number; // now 是成员列表共享的当前 Unix 毫秒时间。
     isRemoving?: boolean;
     showConfirmDelete?: boolean;
     layoutScope?: string;
@@ -57,6 +63,9 @@ function MemberItem({
     const { Icon, className: iconClassName } = getModelIcon(member.name);
     const [confirmDelete, setConfirmDelete] = useState(false);
     const isDisabled = member.enabled === false;
+    const activationTitle = onActivate && member.item_id !== undefined && !isActive
+        ? t('card.activate')
+        : undefined;
 
     return (
         <div
@@ -76,7 +85,7 @@ function MemberItem({
             }}
         >
             <div className={cn(
-                'flex items-center gap-2 rounded-lg bg-background border border-border/50 px-2.5 py-2 select-none transition-opacity duration-200 relative overflow-hidden',
+                'flex items-center gap-2 rounded-lg bg-background px-2.5 py-2 select-none transition-[background-color,opacity] duration-200 relative overflow-hidden',
                 isRemoving && 'opacity-0',
                 isDisabled && 'opacity-60 grayscale',
                 onActivate && member.item_id !== undefined && 'cursor-pointer'
@@ -89,7 +98,7 @@ function MemberItem({
                 }}
                 role={onActivate && member.item_id !== undefined ? 'button' : undefined}
                 tabIndex={onActivate && member.item_id !== undefined ? 0 : undefined}
-                title={onActivate && member.item_id !== undefined ? (isActive ? t('card.active') : t('card.activate')) : undefined}
+                title={activationTitle}
             >
                 <div
                     className={cn(
@@ -126,11 +135,7 @@ function MemberItem({
                     <span className="text-[10px] text-muted-foreground truncate leading-tight">{member.channel_name}</span>
                 </div>
 
-                {onActivate && member.item_id !== undefined && (
-                    <span className={cn('p-1', isActive ? 'text-primary' : 'text-muted-foreground')}>
-                        {isActive ? <CircleCheck className="size-4" /> : <Circle className="size-4" />}
-                    </span>
-                )}
+                {group && <MemberStatus group={group} itemId={member.item_id} now={now} active={isActive} activeClassName="p-1" />}
 
                 {(!showConfirmDelete || !confirmDelete) && (
                     <motion.button
@@ -190,6 +195,8 @@ interface MemberListProps {
     onRemove: (id: string) => void;
     onActivate?: (itemId: number) => void;
     activeItemId?: number;
+    group?: Group; // group 提供当前模式和成员运行状态。
+    now?: number; // now 是页面共享的当前 Unix 毫秒时间，仅展示运行态时需要。
     /**
      * When true, auto-scroll the list to bottom when a *new visible* member appears
      * (i.e. a new member id is added). Useful in "editor" flows. Defaults to true.
@@ -222,6 +229,8 @@ export function MemberList({
     onRemove,
     onActivate,
     activeItemId,
+    group,
+    now = 0,
     autoScrollOnAdd = true,
     onDragStart,
     onDrop,
@@ -232,7 +241,6 @@ export function MemberList({
 }: MemberListProps) {
     const internalLayoutScope = useId();
     const layoutScope = externalLayoutScope ?? internalLayoutScope;
-
     const scrollContainerRef = useRef<HTMLDivElement | null>(null);
     const prevMemberCountRef = useRef<number>(0);
     const hasMountedRef = useRef(false);
@@ -316,6 +324,8 @@ export function MemberList({
                                 onRemove={onRemove}
                                 onActivate={onActivate}
                                 isActive={members[rubric.source.index].item_id === activeItemId}
+                                group={group}
+                                now={now}
                                 isRemoving={false}
                                 showConfirmDelete={showConfirmDelete}
                                 layoutScope={layoutScope}
@@ -347,6 +357,8 @@ export function MemberList({
                                                 onRemove={onRemove}
                                                 onActivate={onActivate}
                                                 isActive={member.item_id === activeItemId}
+                                                group={group}
+                                                now={now}
                                                 isRemoving={removingIds.has(member.id)}
                                                 showConfirmDelete={showConfirmDelete}
                                                 layoutScope={layoutScope}

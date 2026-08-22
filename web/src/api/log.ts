@@ -3,42 +3,33 @@ import { useEffect, useState } from 'react';
 import { apiRequest } from './client';
 
 // RequestState 表示 Relay 请求的实时状态。
-type RequestState = 'running' | 'committed' | 'success' | 'failed' | 'canceled';
+export type RequestState = 'running' | 'committed' | 'success' | 'failed' | 'canceled';
 
-// RelayAttempt 是详情流实时展示的一次渠道尝试。
-interface RelayAttempt {
-    attempt_index: number;
-    channel_name: string;
-    model_name: string;
-    error: string;
+// RelayUsage 保存请求结束后确认的统一 Token 用量。
+export interface RelayUsage {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    prompt_tokens_details: {
+        cached_tokens: number;
+        write_cached_tokens?: number;
+    } | null;
 }
 
-// RelayLogOverview 是概览流中不含正文和尝试详情的日志。
+// RelayLogOverview 是请求状态流发送的完整进程内请求状态。
 export interface RelayLogOverview {
     id: number;
-    state: RequestState;
+    status: RequestState;
     started_at: string;
-    completed_at: string;
     duration: number;
-    request_model: string;
-    actual_model: string;
-    client_protocol: string;
-    stream: boolean;
-    final_channel_name: string;
-    input_tokens: number;
-    output_tokens: number;
-    cache_read_tokens: number;
-    cache_write_tokens: number;
-    total_cost: number;
+    model: string;
+    usage: RelayUsage;
+    cost: number;
+    round: number;
+    target_channel: string;
+    target_model: string;
+    sending: boolean;
     error?: string;
-}
-
-function isFinished(state: RequestState) {
-    return state === 'success' || state === 'failed' || state === 'canceled';
-}
-
-function sortLogs(logs: RelayLogOverview[]) {
-    return [...logs].sort((a, b) => b.id - a.id);
 }
 
 // useClearLogs 清空已完成的内存日志。
@@ -48,11 +39,11 @@ export function useClearLogs() {
     });
 }
 
-// useStopAttempt 中止指定请求当前序号匹配的上游尝试。
-export function useStopAttempt() {
+// useStopRound 中止指定请求当前轮次匹配的上游调用。
+export function useStopRound() {
     return useMutation({
-        mutationFn: ({ requestId, attemptIndex }: { requestId: number; attemptIndex: number }) =>
-            apiRequest<null>(`/api/v1/log/${requestId}/${attemptIndex}/stop`, { method: 'POST' }),
+        mutationFn: ({ requestId, round }: { requestId: number; round: number }) =>
+            apiRequest<null>(`/api/v1/log/${requestId}/${round}/stop`, { method: 'POST' }),
     });
 }
 
@@ -70,14 +61,28 @@ export function useLogs() {
             setIsLoading(false);
         };
         source.addEventListener('log', (event) => {
+            let next: RelayLogOverview;
             try {
-                const next = JSON.parse((event as MessageEvent<string>).data) as RelayLogOverview;
-                setLogs((current) => sortLogs([next, ...current.filter((item) => item.id !== next.id)]));
-                setIsLoading(false);
-                setError(null);
+                next = JSON.parse((event as MessageEvent<string>).data) as RelayLogOverview;
             } catch {
                 setError(new Error('Invalid log update'));
+                return;
             }
+            setIsLoading(false);
+            setError(null);
+            // 列表始终按 ID 倒序: 命中已有记录时原地替换, 新记录插入到首个更小 ID 之前,
+            // 由此避免每条更新重排整个列表, 并保留未变更记录的引用以跳过卡片重渲染。
+            setLogs((current) => {
+                const index = current.findIndex((item) => item.id === next.id);
+                if (index >= 0) {
+                    const updated = current.slice();
+                    updated[index] = next;
+                    return updated;
+                }
+                const position = current.findIndex((item) => item.id < next.id);
+                if (position < 0) return [...current, next];
+                return [...current.slice(0, position), next, ...current.slice(position)];
+            });
         });
         source.onerror = () => {
             setIsLoading(false);
@@ -109,55 +114,5 @@ export function useLogResponseBody(id: number, startedAt: string, enabled: boole
         queryFn: () => apiRequest<string>(`/api/v1/log/${id}/response-body`),
         enabled,
         staleTime: Infinity,
-    });
-}
-
-// useLogDetailStream 为活动请求订阅单条尝试和响应提交增量。
-export function useLogDetailStream(id: number, state: RequestState, enabled: boolean) {
-    const [attempts, setAttempts] = useState<RelayAttempt[]>([]);
-    const [runningAttempt, setRunningAttempt] = useState<RelayAttempt | null>(null);
-    const [isCommitted, setIsCommitted] = useState(false);
-
-    useEffect(() => {
-        if (!enabled) {
-            return;
-        }
-
-        setAttempts([]);
-        setRunningAttempt(null);
-        setIsCommitted(state === 'committed');
-        if (isFinished(state)) return;
-
-        const source = new EventSource(`/api/v1/log/${id}/stream`, { withCredentials: true });
-        source.addEventListener('attempt.started', (event) => {
-            try {
-                const next = JSON.parse((event as MessageEvent<string>).data) as RelayAttempt;
-                setRunningAttempt(next);
-                setAttempts((current) => [...current.filter((attempt) => attempt.attempt_index !== next.attempt_index), next].slice(-50));
-            } catch {
-                return;
-            }
-        });
-        source.addEventListener('attempt.finished', (event) => {
-            try {
-                const next = JSON.parse((event as MessageEvent<string>).data) as RelayAttempt;
-                setRunningAttempt((current) => current?.attempt_index === next.attempt_index ? null : current);
-                setAttempts((current) => {
-                    return [...current.filter((attempt) => attempt.attempt_index !== next.attempt_index), next].slice(-50);
-                });
-            } catch {
-                return;
-            }
-        });
-        source.addEventListener('response.committed', () => {
-            setRunningAttempt(null);
-            setIsCommitted(true);
-        });
-
-        return () => {
-            source.close();
-        };
-    }, [enabled, id, state]);
-
-    return { attempts, runningAttempt, isCommitted };
+	});
 }

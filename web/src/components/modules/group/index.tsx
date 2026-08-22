@@ -3,6 +3,7 @@ import { ArrowUpAZ } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { GroupCard } from './Card';
 import { CreateDialogContent } from './Create';
+import { useRuntimeClock } from './MemberStatus';
 import { useGroupList } from '@/api/group';
 import { PageActions, usePageActionsStore } from '@/components/common/PageActions';
 import { VirtualizedGrid } from '@/components/common/VirtualizedGrid';
@@ -46,7 +47,8 @@ export function GroupActions() {
 
 // Group 渲染分组列表正文。
 export function Group() {
-    const { data: groups } = useGroupList();
+    const { data: groups } = useGroupList(true, true);
+    const runtimeNow = useRuntimeClock(groups);
     const searchTerm = usePageActionsStore((state) => state.searchTerms.group || '');
     const sortOrder = usePageActionsStore((state) => state.sortOrders.group === 'desc' ? 'desc' : 'asc');
     const filter = usePageActionsStore((state) => state.groupFilter);
@@ -74,7 +76,13 @@ export function Group() {
             columns={{ default: 1, md: 2, lg: 3 }}
             estimateItemHeight={520}
             getItemKey={(group, index) => group.id ?? `group-${index}`}
-            renderItem={(group) => <GroupCard group={group} />}
+            renderItem={(group) => {
+                let deadline = group.runtime?.affinity_until ?? 0;
+                for (const cooldownUntil of Object.values(group.runtime?.cooldowns ?? {})) {
+                    deadline = Math.max(deadline, cooldownUntil);
+                }
+                return <GroupCard group={group} now={deadline > runtimeNow ? runtimeNow : deadline} />;
+            }}
         />
     );
 }
