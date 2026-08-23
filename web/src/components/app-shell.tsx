@@ -96,7 +96,7 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                 </nav>
             </div>
 
-            <header className="my-6 flex flex-none items-center gap-x-2 px-2">
+            <header className="my-3 md:my-6 flex flex-none items-center gap-x-2 px-2">
                 <Logo size={48} />
                 <div className="min-w-0 flex-1 overflow-hidden">
                     <AnimatePresence mode="wait" custom={direction}>
