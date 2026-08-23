@@ -218,20 +218,22 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				return
 			}
 
-			// 首帧提交后不再校验协议终态, 后续事件直接转发至上游结束。
+			// 首帧提交后仍需逐个事件判断协议终态: 上游发出结束事件后未必立即关闭响应体, 继续读取会一直阻塞到
+			// 客户端断开, 从而把已完整交付的响应误判为 context canceled。
 			if c.Writer.Header().Get("Content-Type") == "" {
 				c.Header("Content-Type", "text/event-stream")
 			}
 			var encoded bytes.Buffer
 			var chunks []*httpclient.StreamEvent
 			event := result.first
+			last := result.last // 已转发的最后一个事件是否已按客户端协议结束整个响应流。
 			committed := false
 			for {
 				if event != nil {
 					chunks = append(chunks, event)
 					encoded.Reset()
-					err = sse.Encode(&encoded, sse.Event{Id: event.LastEventID, Event: event.Type, Data: event.Data})
-					if err != nil {
+					if encodeErr := sse.Encode(&encoded, sse.Event{Id: event.LastEventID, Event: event.Type, Data: event.Data}); encodeErr != nil {
+						err = encodeErr
 						break
 					}
 					if !committed {
@@ -248,13 +250,16 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					}
 					c.Writer.Flush()
 				}
-				if result.last || !result.events.Next() {
+				if last {
+					break
+				}
+				if !result.events.Next() {
+					err = result.events.Err()
 					break
 				}
 				event = result.events.Current()
-			}
-			if err == nil {
-				err = result.events.Err()
+				// 已提交的响应不能再换目标重试, 结束事件自身携带的失败原样转发给客户端, 并在转发后作为本请求终态。
+				last, err = inspectStreamEvent(format, event)
 			}
 			result.events.Close()
 			cancelRound()
@@ -263,10 +268,14 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			if aggregateErr == nil {
 				result.usage = meta.Usage
 			}
-			// 流式响应结束并聚合出用量后, 完成本轮渠道和成员统计。
+			// 流式响应结束并聚合出用量后, 按最终结果完成本轮渠道和成员统计。
 			metrics := usageMetrics(item.ModelName, result.usage)
 			metrics.WaitTime = roundWaitTime
-			metrics.RequestSuccess = 1
+			if err == nil {
+				metrics.RequestSuccess = 1
+			} else {
+				metrics.RequestFailed = 1
+			}
 			_ = op.StatsChannelUpdate(channel.ID, metrics)
 			_ = op.StatsModelUpdate(model.StatsModel{ID: item.ID, Name: item.ModelName, ChannelID: channel.ID, StatsMetrics: metrics})
 			if err != nil {
