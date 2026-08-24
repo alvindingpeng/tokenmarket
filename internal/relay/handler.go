@@ -131,8 +131,12 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				}
 			}
 
-			// 为本轮上游调用建立独立取消入口并登记当前目标。
-			roundCtx, cancelRound := context.WithCancel(ctx)
+			// 为本轮上游调用建立独立取消入口并登记当前目标; 取消原因用于区分人工中止与响应超时。
+			roundCtx, cancelRoundCause := context.WithCancelCause(ctx)
+			// 人工中止和本轮完成都使用普通 canceled 原因, 超时回调则写入具体的超时错误。
+			cancelRound := func() {
+				cancelRoundCause(context.Canceled)
+			}
 			request.startRound(cancelRound, channel.Name, channelModel.Name)
 
 			// 按渠道协议构造出站转换器并确定是否可以直接透传。
@@ -143,11 +147,32 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			// 同协议渠道原样直通, 跨协议渠道经转换后请求; 此时尚未写给客户端, 失败仍可换目标重试。
 			var result *upstreamResponse
 			if err == nil {
+				timeoutSeconds := group.RelayConfig.MemberNonStreamResponseTimeoutSeconds // 非流式等待完整响应, 流式分支改为首事件超时。
+				timeoutErr := errors.New("upstream non-stream response timeout")          // 具体错误用于区分超时与人工中止。
+				if metadata.Streaming {
+					timeoutSeconds = group.RelayConfig.MemberStreamFirstEventTimeoutSeconds
+					timeoutErr = errors.New("upstream stream first event timeout")
+				}
+				// 计时器取消本轮上下文, 让正在等待 HTTP 响应或首个流事件的调用及时返回。
+				timeoutTimer := time.AfterFunc(time.Duration(timeoutSeconds)*time.Second, func() {
+					cancelRoundCause(timeoutErr)
+				})
 				// 客户端与渠道协议一致时直接透传, 其余组合通过 pipeline 转换。
 				if passthrough {
 					result, err = sendPassthrough(roundCtx, format, raw, channel, outbound, metadata.Streaming)
 				} else {
 					result, err = sendConverted(roundCtx, format, raw, channel, outbound, metadata.Streaming)
+				}
+				// 上游调用返回即结束首响应等待; Stop 失败说明已到期, 主动取消可避免等待异步回调完成。
+				if !timeoutTimer.Stop() {
+					cancelRoundCause(timeoutErr)
+				}
+				if context.Cause(roundCtx) == timeoutErr {
+					err = timeoutErr
+					// 超时与响应返回同时发生时舍弃尚未提交的流结果, 避免把超时误记为成功。
+					if result != nil && result.events != nil {
+						result.events.Close()
+					}
 				}
 			}
 
@@ -160,8 +185,8 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					request.markCanceled(ctx.Err(), "", nil)
 					return
 				}
-				// 仅本轮上下文结束说明该轮被人工中止, 不计失败也不等待, 立即重新选择目标。
-				if roundCtx.Err() != nil {
+				// 仅人工中止本轮时不计失败也不等待; 响应超时属于真实失败并消耗尝试次数。
+				if context.Cause(roundCtx) == context.Canceled {
 					releaseRouteProbe(group, item.ID)
 					continue
 				}
