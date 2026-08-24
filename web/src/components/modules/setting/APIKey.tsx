@@ -1,4 +1,4 @@
-import { useCallback, useId, useMemo, useState } from 'react';
+import { useId, useState } from 'react';
 import { useTranslations } from 'use-intl';
 import { KeyRound, Plus, Loader, Trash2, Check, X, Info, CalendarDays, Pencil, Maximize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -64,15 +64,13 @@ function toggleModel(current: string | undefined, model: string): string | undef
     return next.length ? next.join(',') : undefined;
 }
 
-function hasModel(supported: string | undefined, model: string): boolean {
-    return supported ? supported.split(',').includes(model) : false;
-}
+type APIKeyFormData = Omit<APIKey, 'id'>;
 
 interface APIKeyFormProps {
     apiKey?: APIKey;
     isPending: boolean;
     submitLabel: string;
-    onSubmit: (data: Omit<APIKey, 'id' | 'api_key'>) => void;
+    onSubmit: (data: APIKeyFormData) => void;
     onClose: () => void;
 }
 
@@ -80,8 +78,9 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
     const t = useTranslations('setting');
     const { data: groups = [] } = useGroupList();
 
-    const [form, setForm] = useState<Omit<APIKey, 'id' | 'api_key'>>(() => ({
+    const [form, setForm] = useState<APIKeyFormData>(() => ({
         name: apiKey?.name ?? '',
+        api_key: apiKey?.api_key ?? '',
         enabled: apiKey?.enabled ?? true,
         expire_at: apiKey?.expire_at,
         max_cost: apiKey?.max_cost,
@@ -101,10 +100,8 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
     });
     const [expireOpen, setExpireOpen] = useState(false);
 
-    const availableModels = useMemo(() => {
-        const names = groups.map((g) => g.name).filter(Boolean);
-        return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
-    }, [groups]);
+    const availableModels = Array.from(new Set(groups.map((g) => g.name).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+    const supportedModels = new Set(form.supported_models?.split(',').filter(Boolean));
 
     const expireDate = parseExpireDate(form.expire_at);
     const neverExpire = !form.expire_at;
@@ -116,52 +113,52 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
             ? expireDate.toLocaleDateString()
             : t('apiKey.form.selectDate');
 
-    const updateForm = useCallback((updater: Partial<Omit<APIKey, 'id' | 'api_key'>>) => {
+    const updateForm = (updater: Partial<APIKeyFormData>) => {
         setForm((prev) => ({ ...prev, ...updater }));
-    }, []);
+    };
 
-    const handleSelectDate = useCallback((d: Date | undefined) => {
+    const handleSelectDate = (d: Date | undefined) => {
         if (d) {
             updateForm({ expire_at: toExpireAt(d, expireTime) });
             setExpireOpen(false);
         } else {
             updateForm({ expire_at: undefined });
         }
-    }, [updateForm, expireTime]);
+    };
 
-    const handleTimeBlur = useCallback(() => {
+    const handleTimeBlur = () => {
         if (!expireDate) return;
         const normalized = normalizeHHmm(expireTime);
         setExpireTime(normalized);
         updateForm({ expire_at: toExpireAt(expireDate, normalized) });
-    }, [expireDate, expireTime, updateForm]);
+    };
 
-    const handleToggleNeverExpire = useCallback(() => {
+    const handleToggleNeverExpire = () => {
         if (neverExpire) {
             updateForm({ expire_at: toExpireAt(new Date(), expireTime) });
         } else {
             updateForm({ expire_at: undefined });
             setExpireOpen(false);
         }
-    }, [neverExpire, expireTime, updateForm]);
+    };
 
-    const handleMaxCostChange = useCallback((val: string) => {
+    const handleMaxCostChange = (val: string) => {
         const normalized = normalizeMoneyInput(val);
         setMaxCostInput(normalized);
         const num = parseFloat(normalized);
         updateForm({ max_cost: Number.isFinite(num) ? num : undefined });
-    }, [updateForm]);
+    };
 
-    const handleClearMaxCost = useCallback(() => {
+    const handleClearMaxCost = () => {
         setMaxCostInput('');
         updateForm({ max_cost: undefined });
-    }, [updateForm]);
+    };
 
-    const handleSubmit = useCallback((e: React.FormEvent) => {
+    const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!form.name.trim()) return;
         onSubmit(form);
-    }, [form, onSubmit]);
+    };
 
     return (
         <form onSubmit={handleSubmit} className="grid gap-2">
@@ -174,6 +171,18 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
                     className="h-9 text-sm rounded-xl"
                     disabled={isPending}
                     required
+                />
+            </label>
+
+            <label className="grid gap-1 text-xs text-muted-foreground">
+                {t('apiKey.form.value')}
+                <Input
+                    type="text"
+                    value={form.api_key}
+                    onChange={(e) => updateForm({ api_key: e.target.value })}
+                    placeholder={t('apiKey.form.valuePlaceholder')}
+                    className="h-9 text-sm rounded-xl"
+                    disabled={isPending}
                 />
             </label>
 
@@ -282,7 +291,7 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
                     ) : (
                         <div className="flex flex-wrap gap-2">
                             {availableModels.map((m) => {
-                                const checked = hasModel(form.supported_models, m);
+                                const checked = supportedModels.has(m);
                                 return (
                                     <button
                                         key={m}
@@ -353,7 +362,7 @@ function APIKeyFormOverlay({
     apiKey?: APIKey;
     isPending: boolean;
     submitLabel: string;
-    onSubmit: (data: Omit<APIKey, 'id' | 'api_key'>) => void;
+    onSubmit: (data: APIKeyFormData) => void;
     onClose: () => void;
 }) {
     return (
@@ -384,7 +393,7 @@ function APIKeyStatsCard({
 }) {
     const t = useTranslations('setting');
     const { data: statsList = [] } = useStatsAPIKey();
-    const stats = useMemo(() => statsList.find((s) => s.api_key_id === apiKey.id), [statsList, apiKey.id]);
+    const stats = statsList.find((s) => s.api_key_id === apiKey.id);
 
     return (
         <motion.div
@@ -579,16 +588,13 @@ function APIKeyPanelBase({
     const deletePrefix = `${idPrefix}-delete-`;
 
     const [isAdding, setIsAdding] = useState(false);
-    const [viewingStats, setViewingStats] = useState<{ apiKey: APIKey; layoutId: string } | null>(null);
-    const [editingKey, setEditingKey] = useState<{ apiKey: APIKey; layoutId: string } | null>(null);
+    const [viewingStats, setViewingStats] = useState<APIKey | null>(null);
+    const [editingKey, setEditingKey] = useState<APIKey | null>(null);
     const [deletingId, setDeletingId] = useState<number | null>(null);
 
-    const sortedApiKeys = useMemo(() => {
-        if (!apiKeys) return [];
-        return [...apiKeys].sort((a, b) => a.id - b.id);
-    }, [apiKeys]);
+    const sortedApiKeys = apiKeys ? [...apiKeys].sort((a, b) => a.id - b.id) : [];
 
-    const handleDelete = useCallback((id: number) => {
+    const handleDelete = (id: number) => {
         setDeletingId(id);
         deleteAPIKey.mutate(id, {
             onSuccess: () => {
@@ -600,17 +606,17 @@ function APIKeyPanelBase({
             },
             onSettled: () => setDeletingId((cur) => (cur === id ? null : cur)),
         });
-    }, [deleteAPIKey, t]);
+    };
 
-    const closeAllOverlays = useCallback(() => {
+    const closeAllOverlays = () => {
         setIsAdding(false);
         setViewingStats(null);
         setEditingKey(null);
-    }, []);
+    };
 
     const disabledHeaderActions = createAPIKey.isPending || isAdding || !!viewingStats || !!editingKey;
 
-    const handleCreate = useCallback((data: Omit<APIKey, 'id' | 'api_key'>) => {
+    const handleCreate = (data: APIKeyFormData) => {
         createAPIKey.mutate(data, {
             onSuccess: () => {
                 toast.success(t('apiKey.toast.createSuccess'));
@@ -621,9 +627,9 @@ function APIKeyPanelBase({
                 toast.error(t('apiKey.toast.createError'), { description: msg });
             },
         });
-    }, [createAPIKey, t]);
+    };
 
-    const handleUpdate = useCallback((apiKey: APIKey, data: Omit<APIKey, 'id' | 'api_key'>) => {
+    const handleUpdate = (apiKey: APIKey, data: APIKeyFormData) => {
         updateAPIKey.mutate({ id: apiKey.id, ...data }, {
             onSuccess: () => {
                 toast.success(t('apiKey.toast.updateSuccess'));
@@ -634,7 +640,7 @@ function APIKeyPanelBase({
                 toast.error(t('apiKey.toast.updateError'), { description: msg });
             },
         });
-    }, [t, updateAPIKey]);
+    };
 
     return (
         <div className={containerClassName}>
@@ -673,8 +679,8 @@ function APIKeyPanelBase({
             <AnimatePresence>
                 {viewingStats && (
                     <APIKeyStatsCard
-                        layoutId={viewingStats.layoutId}
-                        apiKey={viewingStats.apiKey}
+                        layoutId={`${statsPrefix}-${viewingStats.id}`}
+                        apiKey={viewingStats}
                         onClose={() => setViewingStats(null)}
                     />
                 )}
@@ -683,11 +689,11 @@ function APIKeyPanelBase({
             <AnimatePresence>
                 {editingKey && (
                     <APIKeyFormOverlay
-                        layoutId={editingKey.layoutId}
-                        apiKey={editingKey.apiKey}
+                        layoutId={`${editPrefix}-${editingKey.id}`}
+                        apiKey={editingKey}
                         isPending={updateAPIKey.isPending}
                         submitLabel={t('apiKey.form.save')}
-                        onSubmit={(data) => handleUpdate(editingKey.apiKey, data)}
+                        onSubmit={(data) => handleUpdate(editingKey, data)}
                         onClose={() => setEditingKey(null)}
                     />
                 )}
@@ -721,11 +727,11 @@ function APIKeyPanelBase({
                                     deleteLayoutId={deleteLayoutId}
                                     onViewStats={() => {
                                         closeAllOverlays();
-                                        setViewingStats({ apiKey, layoutId: statsLayoutId });
+                                        setViewingStats(apiKey);
                                     }}
                                     onEdit={() => {
                                         closeAllOverlays();
-                                        setEditingKey({ apiKey, layoutId: editLayoutId });
+                                        setEditingKey(apiKey);
                                     }}
                                     onDelete={() => handleDelete(apiKey.id)}
                                     isDeleting={deleteAPIKey.isPending && deletingId === apiKey.id}
