@@ -2,7 +2,7 @@ import { memo, useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Trash2, X, Pencil } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { type Group, type GroupUpdateRequest, useDeleteGroup, useUpdateGroup, useUpdateGroupActiveItem } from '@/api/group';
-import { useModelChannelList } from '@/api/model';
+import { useChannelList } from '@/api/channel';
 import { useTranslations } from 'use-intl';
 import { toast } from 'sonner';
 import { CopyIconButton } from '@/components/common/CopyButton';
@@ -10,7 +10,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import type { SelectedMember } from './ItemList';
 import { MemberList } from './ItemList';
 import { GroupEditor, type GroupEditorValues } from './Editor';
-import { buildChannelNameByModelKey, modelChannelKey } from './utils';
 import {
     MorphingDialog,
     MorphingDialogClose,
@@ -67,31 +66,37 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
     const updateGroup = useUpdateGroup();
     const updateActiveItem = useUpdateGroupActiveItem();
     const deleteGroup = useDeleteGroup();
-    const { data: modelChannels = [] } = useModelChannelList();
+    const { data: channelsData = [] } = useChannelList();
 
     const [confirmDelete, setConfirmDelete] = useState(false);
     const [members, setMembers] = useState<SelectedMember[]>([]);
     const isDragging = useRef(false);
 
-    const channelNameByKey = useMemo(() => buildChannelNameByModelKey(modelChannels), [modelChannels]);
-    const enabledByKey = useMemo(() => {
-        const map = new Map<string, boolean>();
-        modelChannels.forEach((mc) => {
-            map.set(modelChannelKey(mc.channel_id, mc.name), mc.enabled);
+    const channelByModelID = useMemo(() => {
+        const map = new Map<number, { channel_name: string; enabled: boolean }>();
+        channelsData.forEach(({ raw: channel }) => {
+            channel.models.forEach((channelModel) => {
+                map.set(channelModel.id, { channel_name: channel.name, enabled: channel.enabled });
+            });
         });
         return map;
-    }, [modelChannels]);
+    }, [channelsData]);
 
     const displayMembers = useMemo((): SelectedMember[] =>
-        (group.items || []).map((item) => ({
-            id: modelChannelKey(item.channel_id, item.model_name),
-            name: item.model_name,
-            enabled: enabledByKey.get(modelChannelKey(item.channel_id, item.model_name)) ?? true,
-            channel_id: item.channel_id,
-            channel_name: channelNameByKey.get(modelChannelKey(item.channel_id, item.model_name)) ?? `Channel ${item.channel_id}`,
-            item_id: item.id,
-        })),
-        [group.items, channelNameByKey, enabledByKey]
+        (group.items || []).map((item) => {
+            const channelModel = item.channel_model;
+            const channel = channelByModelID.get(item.channel_model_id);
+            return {
+                id: String(item.channel_model_id),
+                channel_model_id: item.channel_model_id,
+                name: channelModel?.name ?? `Model ${item.channel_model_id}`,
+                enabled: channel?.enabled ?? true,
+                channel_id: channelModel?.channel_id ?? 0,
+                channel_name: channel?.channel_name ?? 'Unknown channel',
+                item_id: item.id,
+            };
+        }),
+        [group.items, channelByModelID]
     );
 
     useEffect(() => {
@@ -155,8 +160,7 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
             .map((m, idx) => ({ m, priority: idx + 1 }))
             .filter(({ m }) => typeof m.item_id !== 'number')
             .map(({ m, priority }) => ({
-                channel_id: m.channel_id,
-                model_name: m.name,
+                channel_model_id: m.channel_model_id,
                 priority,
             }));
 

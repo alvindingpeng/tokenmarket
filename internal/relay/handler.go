@@ -97,8 +97,16 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				continue
 			}
 
+			channelModel := item.ChannelModel
+			if channelModel == nil {
+				if !request.wait(ctx, group.RelayConfig.MemberRetryIntervalSeconds) {
+					return
+				}
+				continue
+			}
+
 			// 成员指向的渠道已被删除时同样等待, 该成员可能很快被改回可用渠道。
-			channel, err := op.ChannelGet(item.ChannelID)
+			channel, err := op.ChannelGet(channelModel.ChannelID)
 			if err != nil {
 				if !request.wait(ctx, group.RelayConfig.MemberRetryIntervalSeconds) {
 					return
@@ -107,7 +115,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			}
 
 			// 将分组成员配置的真实模型写入本轮上游请求。
-			raw.Body, err = sjson.SetBytes(raw.Body, "model", item.ModelName)
+			raw.Body, err = sjson.SetBytes(raw.Body, "model", channelModel.Name)
 			if err != nil {
 				request.markFailed(err, "", nil)
 				rejectRequest(c, inbound, err)
@@ -125,7 +133,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 
 			// 为本轮上游调用建立独立取消入口并登记当前目标。
 			roundCtx, cancelRound := context.WithCancel(ctx)
-			request.startRound(cancelRound, channel.Name, item.ModelName)
+			request.startRound(cancelRound, channel.Name, channelModel.Name)
 
 			// 按渠道协议构造出站转换器并确定是否可以直接透传。
 			roundStartedAt := time.Now() // 本轮上游调用的开始时间, 用于统计首个有效响应耗时。
@@ -160,8 +168,8 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				cancelRound()
 				// 本轮真实失败只计入当前渠道和成员, 客户端取消与人工中止不计为渠道故障。
 				metrics := model.StatsMetrics{WaitTime: time.Since(roundStartedAt).Milliseconds(), RequestFailed: 1}
-				_ = op.StatsChannelUpdate(channel.ID, metrics)
-				_ = op.StatsModelUpdate(model.StatsModel{ID: item.ID, Name: item.ModelName, ChannelID: channel.ID, StatsMetrics: metrics})
+				_ = op.ChannelStatsUpdate(channel.ID, metrics)
+				_ = op.ChannelModelStatsUpdate(channelModel.ID, metrics)
 
 				// 成员改变时重新开始累计该成员在本请求内的连续失败次数。
 				if failedItemID == item.ID {
@@ -196,11 +204,11 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					c.Header("Content-Type", "application/json")
 				}
 				// 非流式响应已有完整用量, 本轮渠道和成员统计可在提交前一次完成。
-				metrics := usageMetrics(item.ModelName, result.usage)
+				metrics := usageMetrics(channelModel.Name, result.usage)
 				metrics.WaitTime = roundWaitTime
 				metrics.RequestSuccess = 1
-				_ = op.StatsChannelUpdate(channel.ID, metrics)
-				_ = op.StatsModelUpdate(model.StatsModel{ID: item.ID, Name: item.ModelName, ChannelID: channel.ID, StatsMetrics: metrics})
+				_ = op.ChannelStatsUpdate(channel.ID, metrics)
+				_ = op.ChannelModelStatsUpdate(channelModel.ID, metrics)
 				request.markCommitted()
 				n, err := c.Writer.Write(result.body)
 				if err == nil && n != len(result.body) {
@@ -269,15 +277,15 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				result.usage = meta.Usage
 			}
 			// 流式响应结束并聚合出用量后, 按最终结果完成本轮渠道和成员统计。
-			metrics := usageMetrics(item.ModelName, result.usage)
+			metrics := usageMetrics(channelModel.Name, result.usage)
 			metrics.WaitTime = roundWaitTime
 			if err == nil {
 				metrics.RequestSuccess = 1
 			} else {
 				metrics.RequestFailed = 1
 			}
-			_ = op.StatsChannelUpdate(channel.ID, metrics)
-			_ = op.StatsModelUpdate(model.StatsModel{ID: item.ID, Name: item.ModelName, ChannelID: channel.ID, StatsMetrics: metrics})
+			_ = op.ChannelStatsUpdate(channel.ID, metrics)
+			_ = op.ChannelModelStatsUpdate(channelModel.ID, metrics)
 			if err != nil {
 				if ctx.Err() != nil {
 					request.markCanceled(ctx.Err(), string(responseBody), result.usage)

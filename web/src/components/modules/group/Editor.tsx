@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState, type FormEvent } from 'react';
 import { Check, ChevronDownIcon, HelpCircle, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
-import { useModelChannelList, type LLMChannel } from '@/api/model';
+import { useChannelList } from '@/api/channel';
 import { Button } from '@/components/ui/button';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -55,9 +55,9 @@ function ModelPickerSection({
     onAutoAdd,
     autoAddDisabled,
 }: {
-    modelChannels: LLMChannel[];
+    modelChannels: SelectedMember[];
     selectedMembers: SelectedMember[];
-    onAdd: (channel: LLMChannel) => void;
+    onAdd: (channel: SelectedMember) => void;
     onAutoAdd: () => void;
     autoAddDisabled: boolean;
 }) {
@@ -68,7 +68,7 @@ function ModelPickerSection({
     const normalizedSearch = searchKeyword.trim().toLowerCase();
 
     const channels = useMemo(() => {
-        const byId = new Map<number, { id: number; name: string; models: LLMChannel[] }>();
+        const byId = new Map<number, { id: number; name: string; models: SelectedMember[] }>();
         modelChannels.forEach((mc) => {
             const existing = byId.get(mc.channel_id);
             if (existing) existing.models.push(mc);
@@ -268,7 +268,17 @@ export function GroupEditor({
     onCancel?: () => void;
 }) {
     const t = useTranslations('group');
-    const { data: modelChannels = [] } = useModelChannelList();
+    const { data: channelsData = [] } = useChannelList();
+    const modelChannels = useMemo<SelectedMember[]>(() => channelsData.flatMap(({ raw: channel }) =>
+        channel.models.map((channelModel) => ({
+            id: String(channelModel.id),
+            channel_model_id: channelModel.id,
+            name: channelModel.name,
+            enabled: channel.enabled,
+            channel_id: channelModel.channel_id,
+            channel_name: channel.name,
+        }))
+    ), [channelsData]);
 
     const [groupName, setGroupName] = useState(initial?.name ?? '');
     const [mode, setMode] = useState<GroupMode>(initial?.mode ?? 'manual');
@@ -286,7 +296,7 @@ export function GroupEditor({
         return modelChannels.filter((mc) => matchesGroupName(mc.name, groupKey));
     }, [groupKey, modelChannels]);
 
-    const handleAddMember = useCallback((channel: LLMChannel) => {
+    const handleAddMember = useCallback((channel: SelectedMember) => {
         const key = memberKey(channel);
         setSelectedMembers((prev) => {
             if (prev.some((m) => m.id === key)) return prev;

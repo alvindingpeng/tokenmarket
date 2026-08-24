@@ -82,9 +82,7 @@ func setSetting(c *gin.Context) {
 }
 
 func exportDB(c *gin.Context) {
-	includeStats, _ := strconv.ParseBool(c.DefaultQuery("include_stats", "false"))
-
-	dump, err := op.DBExportAll(c.Request.Context(), includeStats)
+	dump, err := op.DBExportAll(c.Request.Context())
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -132,11 +130,6 @@ func importDB(c *gin.Context) {
 		}
 	}
 
-	for i := range dump.Channels {
-		dump.Channels[i].Model = normalizeChannelModelList(dump.Channels[i].Model)
-		dump.Channels[i].CustomModel = normalizeChannelModelList(dump.Channels[i].CustomModel)
-		dump.Channels[i].Model = excludeCustomChannelModels(dump.Channels[i].Model, dump.Channels[i].CustomModel)
-	}
 	seenLLMNames := make(map[string]struct{}, len(dump.LLMInfos))
 	for i := range dump.LLMInfos {
 		dump.LLMInfos[i].Name = strings.ToLower(strings.TrimSpace(dump.LLMInfos[i].Name))
@@ -187,6 +180,7 @@ func decodeDBDump(body []byte, dump *model.DBDump) error {
 	if dump.Version == 0 &&
 		len(dump.Channels) == 0 &&
 		len(dump.Groups) == 0 &&
+		len(dump.ChannelModels) == 0 &&
 		len(dump.GroupItems) == 0 &&
 		len(dump.Settings) == 0 &&
 		len(dump.APIKeys) == 0 &&
@@ -194,8 +188,6 @@ func decodeDBDump(body []byte, dump *model.DBDump) error {
 		len(dump.StatsDaily) == 0 &&
 		len(dump.StatsHourly) == 0 &&
 		len(dump.StatsTotal) == 0 &&
-		len(dump.StatsChannel) == 0 &&
-		len(dump.StatsModel) == 0 &&
 		len(dump.StatsAPIKey) == 0 {
 		var wrapper struct {
 			Code    int             `json:"code"`

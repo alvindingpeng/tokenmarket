@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from './client';
-import { modelChannelListQueryOptions, modelListQueryOptions } from './queries';
+import { modelListQueryOptions } from './queries';
 
 /**
  * LLM 价格信息
@@ -20,16 +20,6 @@ export interface LLMInfo extends LLMPrice {
 }
 
 /**
- * LLM 渠道关联信息
- */
-export interface LLMChannel {
-    name: string;
-    enabled: boolean;
-    channel_id: number;
-    channel_name: string;
-}
-
-/**
  * 获取 LLM 模型列表 Hook
  * 
  * @example
@@ -45,25 +35,6 @@ export function useModelList() {
         ...modelListQueryOptions,
         refetchInterval: 30000,
         refetchOnMount: 'always',
-    });
-}
-
-/**
- * 获取 LLM 模型与渠道关联列表 Hook
- * 
- * @example
- * const { data: channelModels, isLoading, error } = useModelChannelList();
- * 
- * if (isLoading) return <Loading />;
- * if (error) return <Error message={error.message} />;
- * 
- * channelModels?.forEach(item => console.log(item.name, item.channel_name));
- */
-export function useModelChannelList(enabled = true) {
-    return useQuery({
-        ...modelChannelListQueryOptions,
-        enabled,
-        refetchInterval: 30000,
     });
 }
 

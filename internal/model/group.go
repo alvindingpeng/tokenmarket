@@ -59,21 +59,21 @@ func NormalizeGroupRelayConfig(config *GroupRelayConfig) {
 
 // 客户端模型名称及其可手动选择或故障转移的上游分组。
 type Group struct {
-	ID           int              `json:"id" gorm:"primaryKey"`                                                          // 分组主键。
-	Name         string           `json:"name" gorm:"unique;not null"`                                                   // 客户端请求使用的模型名称。
-	Mode         GroupMode        `json:"mode" gorm:"not null;default:manual" binding:"omitempty,oneof=manual failover"` // 选择成员的模式。
-	ActiveItemID int              `json:"active_item_id" gorm:"not null;default:0"`                                      // 手动模式指定的成员，故障转移模式保留但忽略该值，0 表示未指定。
-	RelayConfig  GroupRelayConfig `json:"relay_config" gorm:"serializer:json"`                                           // 该分组的 Relay 路由配置。
-	Items        []GroupItem      `json:"items,omitempty" gorm:"foreignKey:GroupID"`                                     // 该分组可手动选择或故障转移的渠道模型。
+	ID             int              `json:"id" gorm:"primaryKey"`                                                          // 分组主键。
+	Name           string           `json:"name" gorm:"unique;not null"`                                                   // 客户端请求使用的模型名称。
+	Mode           GroupMode        `json:"mode" gorm:"not null;default:manual" binding:"omitempty,oneof=manual failover"` // 选择成员的模式。
+	ActiveItemID   int              `json:"active_item_id" gorm:"not null;default:0"`                                   // 手动模式指定的成员，故障转移模式忽略该值，0 表示未指定。
+	RelayConfig    GroupRelayConfig `json:"relay_config" gorm:"serializer:json"`                                           // 该分组的 Relay 路由配置。
+	Items          []GroupItem      `json:"items,omitempty" gorm:"foreignKey:GroupID;constraint:OnDelete:CASCADE"`      // 该分组可手动选择或故障转移的分组项。
 }
 
-// 分组内一个可选择的渠道模型。
+// 分组内一个可选择的渠道模型分组项。
 type GroupItem struct {
-	ID        int    `json:"id" gorm:"primaryKey"`                                            // 分组项主键。
-	GroupID   int    `json:"group_id" gorm:"not null;index:idx_group_channel_model,unique"`   // 所属分组 ID，创建分组时无需携带，更新时需要。
-	ChannelID int    `json:"channel_id" gorm:"not null;index:idx_group_channel_model,unique"` // 实际上游渠道 ID。
-	ModelName string `json:"model_name" gorm:"not null;index:idx_group_channel_model,unique"` // 该渠道实际请求的模型名称。
-	Priority  int    `json:"priority"`                                                        // Priority 决定界面展示和故障转移模式下的成员切换顺序。
+	ID             int           `json:"id" gorm:"primaryKey"`                                                                    // 分组项主键。
+	GroupID        int           `json:"group_id" gorm:"not null;index:idx_group_channel_model,unique"`                           // 所属分组 ID。
+	ChannelModelID int           `json:"channel_model_id" gorm:"not null;index:idx_group_channel_model,unique"`                  // 引用的渠道模型 ID。
+	ChannelModel   *ChannelModel `json:"channel_model,omitempty" gorm:"foreignKey:ChannelModelID;references:ID;constraint:OnDelete:CASCADE"` // 分组项引用的渠道模型。
+	Priority       int           `json:"priority" gorm:"not null"`                                                                // Priority 决定界面展示和故障转移模式下的成员切换顺序。
 }
 
 // 分组普通配置和成员变更请求。
@@ -87,16 +87,15 @@ type GroupUpdateRequest struct {
 	ItemsToDelete []int                    `json:"items_to_delete,omitempty"`                                // 待删除的分组项 ID。
 }
 
-// 手动模式下切换或清空分组成员的请求。
+// 手动模式下切换或清空分组当前分组项的请求。
 type GroupActiveItemUpdateRequest struct {
-	ItemID *int `json:"item_id" binding:"required"` // 待设为当前渠道的分组项 ID，0 表示取消选择。
+	ItemID *int `json:"item_id"` // 待设为当前分组项的 ID，空值或 0 表示取消选择。
 }
 
 // 新增分组项请求。
 type GroupItemAddRequest struct {
-	ChannelID int    `json:"channel_id" binding:"required"` // 实际上游渠道 ID。
-	ModelName string `json:"model_name" binding:"required"` // 该渠道实际请求的模型名称。
-	Priority  int    `json:"priority,omitempty"`            // 分组项的界面展示和故障转移顺序。
+	ChannelModelID int `json:"channel_model_id" binding:"required"` // 待引用的渠道模型 ID。
+	Priority       int `json:"priority,omitempty"`                   // 分组项的界面展示和故障转移顺序。
 }
 
 // 分组项展示和故障转移顺序更新请求。

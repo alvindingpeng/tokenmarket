@@ -37,8 +37,7 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         custom_header: channel.custom_header ?? [],
         channel_proxy: channel.channel_proxy ?? '',
         param_override: channel.param_override ?? '',
-        model: channel.model,
-        custom_model: channel.custom_model,
+        models: channel.models.map(({ name, source }) => ({ name, source })),
         proxy: channel.proxy,
         auto_sync: channel.auto_sync,
         match_regex: channel.match_regex ?? '',
@@ -60,8 +59,13 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         if (formData.enabled !== channel.enabled) req.enabled = formData.enabled;
         if (formData.base_url.trim() !== channel.base_url) req.base_url = formData.base_url.trim();
         if (formData.key.trim() !== channel.key) req.key = formData.key.trim();
-        if (formData.model !== channel.model) req.model = formData.model;
-        if (formData.custom_model !== channel.custom_model) req.custom_model = formData.custom_model;
+        const nextModels = formData.models
+            .map(({ name, source }) => ({ name, source }))
+            .sort((a, b) => `${a.source}:${a.name}`.localeCompare(`${b.source}:${b.name}`));
+        const currentModels = channel.models
+            .map(({ name, source }) => ({ name, source }))
+            .sort((a, b) => `${a.source}:${a.name}`.localeCompare(`${b.source}:${b.name}`));
+        if (JSON.stringify(nextModels) !== JSON.stringify(currentModels)) req.models = formData.models;
         if (formData.proxy !== channel.proxy) req.proxy = formData.proxy;
         if (formData.auto_sync !== channel.auto_sync) req.auto_sync = formData.auto_sync;
 

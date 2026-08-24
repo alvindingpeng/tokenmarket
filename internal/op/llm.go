@@ -44,7 +44,7 @@ func LLMDelete(modelName string, ctx context.Context) error {
 	if !ok {
 		return fmt.Errorf("model not found")
 	}
-	for _, channelModel := range ChannelLLMList() {
+	for _, channelModel := range channelModelCache.GetAll() {
 		if strings.ToLower(channelModel.Name) == modelName {
 			return fmt.Errorf("model is referenced by channel")
 		}
@@ -58,7 +58,7 @@ func LLMDelete(modelName string, ctx context.Context) error {
 
 // LLMCleanupGhosts 删除已经不被任何渠道引用的模型价格。
 func LLMCleanupGhosts(ctx context.Context) error {
-	channelModels := ChannelLLMList()
+	channelModels := channelModelCache.GetAll()
 	referencedModelNames := make(map[string]struct{}, len(channelModels))
 	// 价格表使用小写模型名作为键，渠道模型名转换为相同键后再判断引用关系。
 	for _, channelModel := range channelModels {

@@ -1,8 +1,8 @@
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from './client';
-import { channelListQueryOptions, groupListQueryOptions, modelChannelListQueryOptions, modelListQueryOptions } from './queries';
+import { channelListQueryOptions, groupListQueryOptions, modelListQueryOptions } from './queries';
 import { formatCount, formatMoney, formatTime } from '@/lib/utils';
-import { StatsChannel, type StatsMetricsFormatted } from './stats';
+import type { StatsMetrics, StatsMetricsFormatted } from './stats';
 /**
  * 渠道类型枚举
  */
@@ -19,25 +19,37 @@ type CustomHeader = {
     header_value: string;
 };
 
+export type ChannelModelSource = 'auto' | 'manual';
+
+export type ChannelModel = StatsMetrics & {
+    id: number;
+    channel_id: number;
+    name: string;
+    source: ChannelModelSource;
+};
+
+export type ChannelModelInput = {
+    name: string;
+    source?: ChannelModelSource;
+};
+
 /**
  * 渠道完整数据（与后端 model.Channel 对齐）
  */
-export type Channel = {
+export type Channel = StatsMetrics & {
     id: number;
     name: string;
     type: ChannelType;
     enabled: boolean;
     base_url: string;
     key: string;
-    model: string;
-    custom_model: string;
+    models: ChannelModel[];
     proxy: boolean;
     auto_sync: boolean;
     custom_header: CustomHeader[];
     param_override?: string | null;
     channel_proxy?: string | null;
     match_regex?: string | null;
-    stats: StatsChannel;
 };
 
 // ChannelServer 表示后端可能返回空 custom_header 的原始渠道数据。
@@ -60,8 +72,7 @@ type CreateChannelRequest = {
     enabled?: boolean;
     base_url: string;
     key: string;
-    model: string;
-    custom_model?: string;
+    models: ChannelModelInput[];
     proxy?: boolean;
     auto_sync?: boolean;
     custom_header?: CustomHeader[];
@@ -80,8 +91,7 @@ export type UpdateChannelRequest = {
     enabled?: boolean;
     base_url?: string;
     key?: string;
-    model?: string;
-    custom_model?: string;
+    models?: ChannelModelInput[];
     proxy?: boolean;
     auto_sync?: boolean;
     custom_header?: CustomHeader[];
@@ -103,24 +113,28 @@ type FetchModelRequest = {
 // channelListFormattedQueryOptions 统一渠道列表查询、字段归一化和刷新策略。
 const channelListFormattedQueryOptions = queryOptions({
     ...channelListQueryOptions,
-    select: (data) => data.map((item): ChannelListItem => ({
-        raw: ({
-            ...item,
-            custom_header: item.custom_header ?? [],
-        }) satisfies Channel,
-        formatted: {
-            input_token: formatCount(item.stats.input_token),
-            output_token: formatCount(item.stats.output_token),
-            total_token: formatCount(item.stats.input_token + item.stats.output_token),
-            input_cost: formatMoney(item.stats.input_cost),
-            output_cost: formatMoney(item.stats.output_cost),
-            total_cost: formatMoney(item.stats.input_cost + item.stats.output_cost),
-            request_success: formatCount(item.stats.request_success),
-            request_failed: formatCount(item.stats.request_failed),
-            request_count: formatCount(item.stats.request_success + item.stats.request_failed),
-            wait_time: formatTime(item.stats.wait_time),
-        }
-    })),
+    select: (data) => data.map((item): ChannelListItem => {
+        const models = item.models ?? [];
+        return {
+            raw: ({
+                ...item,
+                models,
+                custom_header: item.custom_header ?? [],
+            }) satisfies Channel,
+            formatted: {
+                input_token: formatCount(item.input_token),
+                output_token: formatCount(item.output_token),
+                total_token: formatCount(item.input_token + item.output_token),
+                input_cost: formatMoney(item.input_cost),
+                output_cost: formatMoney(item.output_cost),
+                total_cost: formatMoney(item.input_cost + item.output_cost),
+                request_success: formatCount(item.request_success),
+                request_failed: formatCount(item.request_failed),
+                request_count: formatCount(item.request_success + item.request_failed),
+                wait_time: formatTime(item.wait_time),
+            }
+        };
+    }),
     refetchInterval: 30000,
     refetchOnMount: 'always',
 });
@@ -136,8 +150,8 @@ const channelListFormattedQueryOptions = queryOptions({
  * 
  * channels?.forEach(channel => console.log(channel.raw.name));
  */
-export function useChannelList() {
-    return useQuery(channelListFormattedQueryOptions);
+export function useChannelList(enabled = true) {
+    return useQuery({ ...channelListFormattedQueryOptions, enabled });
 }
 
 /**
@@ -151,7 +165,7 @@ export function useChannelList() {
  *   type: ChannelType.OpenAIChat,
  *   base_url: 'https://api.openai.com',
  *   key: 'sk-xxx',
- *   model: 'gpt-4',
+ *   models: [{ name: 'gpt-4', source: 'manual' }],
  * });
  */
 export function useCreateChannel() {
@@ -163,7 +177,6 @@ export function useCreateChannel() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: channelListQueryOptions.queryKey });
             queryClient.invalidateQueries({ queryKey: modelListQueryOptions.queryKey });
-            queryClient.invalidateQueries({ queryKey: modelChannelListQueryOptions.queryKey });
         },
     });
 }
@@ -181,7 +194,7 @@ export function useCreateChannel() {
  *   enabled: true,
  *   base_url: 'https://api.openai.com',
  *   key: 'sk-xxx',
- *   model: 'gpt-4-turbo',
+ *   models: [{ name: 'gpt-4-turbo', source: 'manual' }],
  *   proxy: false,
  * });
  */
@@ -194,7 +207,6 @@ export function useUpdateChannel() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: channelListQueryOptions.queryKey });
             queryClient.invalidateQueries({ queryKey: modelListQueryOptions.queryKey });
-            queryClient.invalidateQueries({ queryKey: modelChannelListQueryOptions.queryKey });
             queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
         },
     });
@@ -217,7 +229,6 @@ export function useDeleteChannel() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: channelListQueryOptions.queryKey });
             queryClient.invalidateQueries({ queryKey: modelListQueryOptions.queryKey });
-            queryClient.invalidateQueries({ queryKey: modelChannelListQueryOptions.queryKey });
             queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
         },
     });
@@ -240,7 +251,6 @@ export function useEnableChannel() {
             apiRequest<null>('/api/v1/channel/enable', { method: 'POST', body: data }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: channelListQueryOptions.queryKey });
-            queryClient.invalidateQueries({ queryKey: modelChannelListQueryOptions.queryKey });
         },
     });
 }
@@ -301,7 +311,6 @@ export function useSyncChannel() {
             queryClient.invalidateQueries({ queryKey: ['channels', 'last-sync-time'] });
             queryClient.invalidateQueries({ queryKey: channelListQueryOptions.queryKey });
             queryClient.invalidateQueries({ queryKey: modelListQueryOptions.queryKey });
-            queryClient.invalidateQueries({ queryKey: modelChannelListQueryOptions.queryKey });
             queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
         },
     });

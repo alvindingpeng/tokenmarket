@@ -26,18 +26,6 @@ type StatsDaily struct {
 	StatsMetrics
 }
 
-type StatsModel struct {
-	ID        int    `json:"id" gorm:"primaryKey"`
-	Name      string `json:"name" gorm:"not null"`
-	ChannelID int    `json:"channel_id" gorm:"not null"`
-	StatsMetrics
-}
-
-type StatsChannel struct {
-	ChannelID int `json:"channel_id" gorm:"primaryKey"`
-	StatsMetrics
-}
-
 type StatsAPIKey struct {
 	APIKeyID int `json:"api_key_id" gorm:"primaryKey"`
 	StatsMetrics

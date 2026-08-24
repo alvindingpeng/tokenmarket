@@ -65,10 +65,6 @@ interface DBImportResult {
     rows_affected: Record<string, number>;
 }
 
-interface DBExportOptions {
-    include_stats?: boolean;
-}
-
 function parseFilename(contentDisposition: string | null): string | null {
     if (!contentDisposition) return null;
     // e.g. attachment; filename="switchyard-export-20250101120000.json"
@@ -102,11 +98,8 @@ async function downloadBlob(blob: Blob, filename: string) {
  */
 export function useExportDB() {
     return useMutation({
-        mutationFn: async (options: DBExportOptions = {}) => {
-            const params = new URLSearchParams();
-            params.set('include_stats', String(!!options.include_stats));
-
-            const res = await fetch(`/api/v1/setting/export?${params.toString()}`, {
+        mutationFn: async () => {
+            const res = await fetch('/api/v1/setting/export', {
                 method: 'GET',
                 credentials: 'include',
             });
@@ -125,7 +118,7 @@ export function useExportDB() {
 }
 
 /**
- * 导入数据库（上传 JSON 文件，增量导入）
+ * 导入数据库（上传 JSON 文件）
  */
 export function useImportDB() {
     return useMutation({

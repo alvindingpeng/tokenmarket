@@ -7,14 +7,13 @@ import { githubLightTheme } from '@uiw/react-json-view/githubLight';
 import { useTheme } from '@/provider/theme';
 import { type RelayLogOverview, useLogRequestBody, useLogResponseBody, useStopRound } from '@/api/log';
 import { useGroupList, useUpdateGroupActiveItem } from '@/api/group';
-import { useModelChannelList } from '@/api/model';
+import { useChannelList } from '@/api/channel';
 import { getModelIcon } from '@/lib/model-icons';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { CopyIconButton } from '@/components/common/CopyButton';
 import { toast } from 'sonner';
-import { buildChannelNameByModelKey, modelChannelKey } from '@/components/modules/group/utils';
 import { MemberStatus } from '@/components/modules/group/MemberStatus';
 import {
     MorphingDialog,
@@ -138,10 +137,16 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
     const requestBody = useLogRequestBody(log.id, log.started_at, detailReady && leftTab === 'request');
     const responseBody = useLogResponseBody(log.id, log.started_at, detailReady && log.status === 'success');
     const { data: groups = [] } = useGroupList(detailReady, detailReady);
-    const { data: modelChannels = [] } = useModelChannelList(detailReady);
+    const { data: channels = [] } = useChannelList(detailReady);
     const updateActiveItem = useUpdateGroupActiveItem();
     const stopRound = useStopRound();
-    const channelNameByKey = useMemo(() => buildChannelNameByModelKey(modelChannels), [modelChannels]);
+    const channelNameByModelID = useMemo(() => {
+        const map = new Map<number, string>();
+        channels.forEach(({ raw: channel }) => {
+            channel.models.forEach((channelModel) => map.set(channelModel.id, channel.name));
+        });
+        return map;
+    }, [channels]);
     const actualModel = log.target_model || log.model;
     const { Icon, className: iconClassName, color: brandColor } = getModelIcon(actualModel);
     const errorText = log.error ?? '';
@@ -238,7 +243,11 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
                             ) : (
                                 <div className="divide-y divide-border">
                                     {activeGroup.items.map((item) => {
-                                        const { Icon: ItemIcon, className: itemIconClassName } = getModelIcon(item.model_name);
+                                        const modelName = item.channel_model?.name ?? '';
+                                        const channelName = item.channel_model
+                                            ? channelNameByModelID.get(item.channel_model.id) ?? `#${item.channel_model.channel_id}`
+                                            : '-';
+                                        const { Icon: ItemIcon, className: itemIconClassName } = getModelIcon(modelName);
                                         const itemActive = item.id === activeGroup.active_item_id;
                                         const itemSwitching = item.id === switchingItemId;
                                         const itemCurrent = switchingItemId !== null
@@ -248,7 +257,7 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
                                                 : itemActive;
                                         return (
                                             <button
-                                                key={item.id ?? modelChannelKey(item.channel_id, item.model_name)}
+                                                key={item.id ?? item.channel_model_id}
                                                 type="button"
                                                 aria-pressed={itemCurrent}
                                                 disabled={item.id === undefined || activeGroup.mode === 'failover' || switchingItemId !== null || stopRound.isPending}
@@ -272,9 +281,9 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
                                                 <ItemIcon aria-hidden="true" className={itemIconClassName} width={20} height={20} />
                                                 <span className="min-w-0 flex-1">
                                                     <span className="block truncate font-semibold text-foreground">
-                                                        {channelNameByKey.get(modelChannelKey(item.channel_id, item.model_name)) ?? `#${item.channel_id}`}
+                                                        {channelName}
                                                     </span>
-                                                    <span className="block truncate text-[11px] text-muted-foreground">{item.model_name}</span>
+                                                    <span className="block truncate text-[11px] text-muted-foreground">{modelName}</span>
                                                 </span>
                                                 <MemberStatus group={activeGroup} itemId={item.id} now={now} active={itemCurrent} />
                                                 {itemSwitching && <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />}

@@ -39,8 +39,7 @@ export function CreateDialogContent() {
                     isSubmitting={createGroup.isPending}
                     onSubmit={({ name, mode, relay_config, members }) => {
                         const items: GroupItem[] = members.map((member, index) => ({
-                            channel_id: member.channel_id,
-                            model_name: member.name,
+                            channel_model_id: member.channel_model_id,
                             priority: index + 1,
                         }));
 

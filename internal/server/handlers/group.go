@@ -111,7 +111,7 @@ func updateGroup(c *gin.Context) {
 	resp.Success(c, group)
 }
 
-// updateGroupActiveItem 更新分组当前手动指定的渠道模型。
+// updateGroupActiveItem 更新分组当前手动指定的渠道模型成员。
 func updateGroupActiveItem(c *gin.Context) {
 	groupID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {

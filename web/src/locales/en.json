@@ -122,7 +122,8 @@
             }
         },
         "rank": {
-            "title": "Ranking",
+            "channel": "Channel",
+            "model": "Model",
             "sortByCost": "Cost",
             "sortByCount": "Count",
             "sortByTokens": "Tokens",
@@ -163,14 +164,13 @@
             "title": "Backup / Restore",
             "export": {
                 "title": "Export",
-                "includeStats": "Include Stats",
-                "button": "Download JSON",
+                "button": "Export",
                 "exporting": "Exporting...",
                 "success": "Export started"
             },
             "import": {
-                "title": "Import (Incremental)",
-                "button": "Import JSON",
+                "title": "Import",
+                "button": "Import",
                 "importing": "Importing...",
                 "noFile": "Please select a JSON file first",
                 "success": "Import successful",

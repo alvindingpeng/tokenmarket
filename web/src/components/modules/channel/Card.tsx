@@ -20,16 +20,7 @@ export function Card({ channel, stats, layout = 'grid' }: { channel: Channel; st
     const enableChannel = useEnableChannel();
     const isListLayout = layout === 'list';
 
-    const splitModels = (models: string) =>
-        models
-            .split(',')
-            .map((item) => item.trim())
-            .filter(Boolean);
-
-    const modelCount = new Set([
-        ...splitModels(channel.model),
-        ...splitModels(channel.custom_model),
-    ]).size;
+    const modelCount = channel.models.length;
 
     const handleEnableChange = (checked: boolean) => {
         enableChannel.mutate(

@@ -1,4 +1,4 @@
-import { ChannelType, type Channel, useFetchModel } from '@/api/channel';
+import { ChannelType, type Channel, type ChannelModelInput, useFetchModel } from '@/api/channel';
 import {
     Select,
     SelectContent,
@@ -23,8 +23,7 @@ export interface ChannelFormData {
     custom_header: Channel['custom_header'];
     channel_proxy: string;
     param_override: string;
-    model: string;
-    custom_model: string;
+    models: ChannelModelInput[];
     enabled: boolean;
     proxy: boolean;
     auto_sync: boolean;
@@ -70,22 +69,20 @@ export function ChannelForm({
         }
     }, [formData, onFormDataChange]);
 
-    const autoModels = formData.model
-        ? formData.model.split(',').map((m) => m.trim()).filter(Boolean)
-        : [];
-    const customModels = formData.custom_model
-        ? formData.custom_model.split(',').map((m) => m.trim()).filter(Boolean)
-        : [];
-    const hasModels = autoModels.length + customModels.length > 0;
+    const autoModels = formData.models.filter((model) => model.source === 'auto').map((model) => model.name);
+    const manualModels = formData.models.filter((model) => model.source === 'manual').map((model) => model.name);
+    const hasModels = formData.models.length > 0;
     const [inputValue, setInputValue] = useState('');
 
     const fetchModel = useFetchModel();
 
-    const updateModels = (nextAuto: string[], nextCustom: string[]) => {
-        const model = nextAuto.join(',');
-        const custom_model = nextCustom.join(',');
-        if (formData.model === model && formData.custom_model === custom_model) return;
-        onFormDataChange({ ...formData, model, custom_model });
+    const updateModels = (nextAuto: string[], nextManual: string[]) => {
+        const models: ChannelModelInput[] = [
+            ...nextAuto.map((name) => ({ name, source: 'auto' as const })),
+            ...nextManual.map((name) => ({ name, source: 'manual' as const })),
+        ];
+        if (JSON.stringify(formData.models) === JSON.stringify(models)) return;
+        onFormDataChange({ ...formData, models });
     };
 
     const handleRefreshModels = () => {
@@ -103,8 +100,10 @@ export function ChannelForm({
             {
                 onSuccess: (data) => {
                     if (data && data.length > 0) {
-                        const nextAuto = Array.from(new Set([...autoModels, ...data].map((m) => m.trim()).filter(Boolean)));
-                        updateModels(nextAuto, customModels);
+                        const nextAuto = Array.from(new Set([...autoModels, ...data]
+                            .map((m) => m.trim())
+                            .filter((m) => m && !manualModels.includes(m))));
+                        updateModels(nextAuto, manualModels);
                         toast.success(t('modelRefreshSuccess'));
                     } else {
                         toast.warning(t('modelRefreshEmpty'));
@@ -120,18 +119,18 @@ export function ChannelForm({
 
     const handleAddModel = (model: string) => {
         const trimmedModel = model.trim();
-        if (trimmedModel && !customModels.includes(trimmedModel) && !autoModels.includes(trimmedModel)) {
-            updateModels(autoModels, [...customModels, trimmedModel]);
+        if (trimmedModel && !manualModels.includes(trimmedModel) && !autoModels.includes(trimmedModel)) {
+            updateModels(autoModels, [...manualModels, trimmedModel]);
         }
         setInputValue('');
     };
 
     const handleRemoveAutoModel = (model: string) => {
-        updateModels(autoModels.filter(m => m !== model), customModels);
+        updateModels(autoModels.filter(m => m !== model), manualModels);
     };
 
-    const handleRemoveCustomModel = (model: string) => {
-        updateModels(autoModels, customModels.filter(m => m !== model));
+    const handleRemoveManualModel = (model: string) => {
+        updateModels(autoModels, manualModels.filter(m => m !== model));
     };
 
     const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -262,7 +261,7 @@ export function ChannelForm({
                         placeholder={t('modelCustomPlaceholder')}
                         className="pr-10 rounded-xl"
                     />
-                    {inputValue.trim() && !customModels.includes(inputValue.trim()) && !autoModels.includes(inputValue.trim()) && (
+                    {inputValue.trim() && !manualModels.includes(inputValue.trim()) && !autoModels.includes(inputValue.trim()) && (
                         <Button
                             type="button"
                             variant="ghost"
@@ -279,9 +278,9 @@ export function ChannelForm({
                 <div className="space-y-2">
                     <div className="flex items-center justify-between">
                         <label className="text-xs font-medium text-card-foreground">
-                            {t('modelSelected')} {(autoModels.length + customModels.length) > 0 && `(${autoModels.length + customModels.length})`}
+                            {t('modelSelected')} {hasModels && `(${formData.models.length})`}
                         </label>
-                        {(autoModels.length + customModels.length) > 0 && (
+                        {hasModels && (
                             <Button
                                 type="button"
                                 variant="ghost"
@@ -296,7 +295,7 @@ export function ChannelForm({
                         )}
                     </div>
                     <div className="rounded-xl border border-border bg-muted/30 p-2.5 max-h-40 min-h-12 overflow-y-auto">
-                        {(autoModels.length + customModels.length) > 0 ? (
+                        {hasModels ? (
                             <div className="flex flex-wrap gap-1.5">
                                 {autoModels.map((model) => (
                                     <Badge key={model} variant="secondary" className="bg-muted hover:bg-muted/80">
@@ -310,12 +309,12 @@ export function ChannelForm({
                                         </button>
                                     </Badge>
                                 ))}
-                                {customModels.map((model) => (
+                                {manualModels.map((model) => (
                                     <Badge key={model} className="bg-primary hover:bg-primary/90">
                                         {model}
                                         <button
                                             type="button"
-                                            onClick={() => handleRemoveCustomModel(model)}
+                                            onClick={() => handleRemoveManualModel(model)}
                                             className="ml-1 rounded-sm opacity-70 hover:opacity-100 focus:outline-none focus:ring-1 focus:ring-ring"
                                         >
                                             <X className="h-3 w-3" />

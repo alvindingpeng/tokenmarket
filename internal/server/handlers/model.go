@@ -27,10 +27,6 @@ func init() {
 				Handle(createLLM),
 		).
 		AddRoute(
-			router.NewRoute("/channel", http.MethodGet).
-				Handle(listLLMByChannel),
-		).
-		AddRoute(
 			router.NewRoute("/update", http.MethodPost).
 				Handle(updateLLM),
 		).
@@ -108,10 +104,6 @@ func getModelList(c *gin.Context) {
 
 func listLLM(c *gin.Context) {
 	resp.Success(c, op.LLMList())
-}
-
-func listLLMByChannel(c *gin.Context) {
-	resp.Success(c, op.ChannelLLMList())
 }
 
 // createLLM 校验并创建自定义模型价格。

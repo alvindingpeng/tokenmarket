@@ -12,13 +12,6 @@ type LLMInfo struct {
 	LLMPrice
 }
 
-type LLMChannel struct {
-	Name        string `json:"name"`
-	Enabled     bool   `json:"enabled"`
-	ChannelID   int    `json:"channel_id"`
-	ChannelName string `json:"channel_name"`
-}
-
 type GeminiModel struct {
 	Name        string `json:"name"`
 	DisplayName string `json:"displayName"`

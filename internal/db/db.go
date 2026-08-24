@@ -55,6 +55,7 @@ func InitDB(dbType, dsn string, debug bool) error {
 	if err := db.AutoMigrate(
 		&model.User{},
 		&model.Channel{},
+		&model.ChannelModel{},
 		&model.Group{},
 		&model.GroupItem{},
 		&model.LLMInfo{},
@@ -63,8 +64,6 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.StatsTotal{},
 		&model.StatsDaily{},
 		&model.StatsHourly{},
-		&model.StatsModel{},
-		&model.StatsChannel{},
 		&model.StatsAPIKey{},
 		&migrate.MigrationRecord{},
 	); err != nil {

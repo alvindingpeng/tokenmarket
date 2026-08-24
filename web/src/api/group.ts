@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { apiRequest } from './client';
 import { groupListQueryOptions } from './queries';
+import type { ChannelModel } from './channel';
 
 // GroupMode 表示分组的手动或故障转移路由模式。
 export type GroupMode = 'manual' | 'failover';
@@ -20,8 +21,8 @@ export interface GroupRelayConfig {
 export interface GroupItem {
     id?: number;
     group_id?: number;
-    channel_id: number;
-    model_name: string;
+    channel_model_id: number;
+    channel_model?: ChannelModel;
     priority: number;
 }
 
@@ -47,8 +48,7 @@ export interface Group {
 
 // GroupItemAddRequest 是待新增的分组项。
 interface GroupItemAddRequest {
-    channel_id: number;
-    model_name: string;
+    channel_model_id: number;
     priority: number;
 }
 

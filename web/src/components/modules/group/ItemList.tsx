@@ -10,14 +10,18 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { getModelIcon } from '@/lib/model-icons';
-import type { LLMChannel } from '@/api/model';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTranslations } from 'use-intl';
 import type { Group } from '@/api/group';
 import { MemberStatus } from './MemberStatus';
 
-export interface SelectedMember extends LLMChannel {
+export interface SelectedMember {
     id: string;
+    channel_model_id: number;
+    name: string;
+    enabled: boolean;
+    channel_id: number;
+    channel_name: string;
     item_id?: number;
 }
 

@@ -11,15 +11,15 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const dbDumpVersion = 2
+const dbDumpVersion = 3
 
-func DBExportAll(ctx context.Context, includeStats bool) (*model.DBDump, error) {
+// DBExportAll 导出完整数据库内容，包括所有统计数据。
+func DBExportAll(ctx context.Context) (*model.DBDump, error) {
 	conn := db.GetDB().WithContext(ctx)
 
 	d := &model.DBDump{
-		Version:      dbDumpVersion,
-		ExportedAt:   time.Now().UTC(),
-		IncludeStats: includeStats,
+		Version:    dbDumpVersion,
+		ExportedAt: time.Now().UTC(),
 	}
 
 	if err := conn.Find(&d.Channels).Error; err != nil {
@@ -27,6 +27,9 @@ func DBExportAll(ctx context.Context, includeStats bool) (*model.DBDump, error) 
 	}
 	if err := conn.Find(&d.Groups).Error; err != nil {
 		return nil, fmt.Errorf("export groups: %w", err)
+	}
+	if err := conn.Find(&d.ChannelModels).Error; err != nil {
+		return nil, fmt.Errorf("export channel_models: %w", err)
 	}
 	if err := conn.Find(&d.GroupItems).Error; err != nil {
 		return nil, fmt.Errorf("export group_items: %w", err)
@@ -41,25 +44,17 @@ func DBExportAll(ctx context.Context, includeStats bool) (*model.DBDump, error) 
 		return nil, fmt.Errorf("export settings: %w", err)
 	}
 
-	if includeStats {
-		if err := conn.Find(&d.StatsTotal).Error; err != nil {
-			return nil, fmt.Errorf("export stats_total: %w", err)
-		}
-		if err := conn.Find(&d.StatsDaily).Error; err != nil {
-			return nil, fmt.Errorf("export stats_daily: %w", err)
-		}
-		if err := conn.Find(&d.StatsHourly).Error; err != nil {
-			return nil, fmt.Errorf("export stats_hourly: %w", err)
-		}
-		if err := conn.Find(&d.StatsModel).Error; err != nil {
-			return nil, fmt.Errorf("export stats_model: %w", err)
-		}
-		if err := conn.Find(&d.StatsChannel).Error; err != nil {
-			return nil, fmt.Errorf("export stats_channel: %w", err)
-		}
-		if err := conn.Find(&d.StatsAPIKey).Error; err != nil {
-			return nil, fmt.Errorf("export stats_api_key: %w", err)
-		}
+	if err := conn.Find(&d.StatsTotal).Error; err != nil {
+		return nil, fmt.Errorf("export stats_total: %w", err)
+	}
+	if err := conn.Find(&d.StatsDaily).Error; err != nil {
+		return nil, fmt.Errorf("export stats_daily: %w", err)
+	}
+	if err := conn.Find(&d.StatsHourly).Error; err != nil {
+		return nil, fmt.Errorf("export stats_hourly: %w", err)
+	}
+	if err := conn.Find(&d.StatsAPIKey).Error; err != nil {
+		return nil, fmt.Errorf("export stats_api_key: %w", err)
 	}
 
 	return d, nil
@@ -76,7 +71,6 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 
 	conn := db.GetDB().WithContext(ctx)
 	res := &model.DBImportResult{RowsAffected: map[string]int64{}}
-
 	err := conn.Transaction(func(tx *gorm.DB) error {
 		// base tables
 		if n, err := createDoNothing(tx, dump.Channels); err != nil {
@@ -84,10 +78,23 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 		} else {
 			res.RowsAffected["channels"] = n
 		}
+		for _, channel := range dump.Channels {
+			if err := tx.Model(&model.Channel{}).
+				Where("id = ?", channel.ID).
+				Select("input_token", "output_token", "input_cost", "output_cost", "wait_time", "request_success", "request_failed").
+				Updates(&channel).Error; err != nil {
+				return fmt.Errorf("import channel stats: %w", err)
+			}
+		}
 		if n, err := createDoNothing(tx, dump.Groups); err != nil {
 			return fmt.Errorf("import groups: %w", err)
 		} else {
 			res.RowsAffected["groups"] = n
+		}
+		if n, err := createUpsertAll(tx, dump.ChannelModels, []clause.Column{{Name: "id"}}); err != nil {
+			return fmt.Errorf("import channel_models: %w", err)
+		} else {
+			res.RowsAffected["channel_models"] = n
 		}
 		if n, err := createDoNothing(tx, dump.GroupItems); err != nil {
 			return fmt.Errorf("import group_items: %w", err)
@@ -110,37 +117,25 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 			res.RowsAffected["settings"] = n
 		}
 
-		if dump.IncludeStats {
-			if n, err := createUpsertAll(tx, dump.StatsTotal, []clause.Column{{Name: "id"}}); err != nil {
-				return fmt.Errorf("import stats_total: %w", err)
-			} else {
-				res.RowsAffected["stats_total"] = n
-			}
-			if n, err := createUpsertAll(tx, dump.StatsDaily, []clause.Column{{Name: "date"}}); err != nil {
-				return fmt.Errorf("import stats_daily: %w", err)
-			} else {
-				res.RowsAffected["stats_daily"] = n
-			}
-			if n, err := createUpsertAll(tx, dump.StatsHourly, []clause.Column{{Name: "hour"}}); err != nil {
-				return fmt.Errorf("import stats_hourly: %w", err)
-			} else {
-				res.RowsAffected["stats_hourly"] = n
-			}
-			if n, err := createUpsertAll(tx, dump.StatsModel, []clause.Column{{Name: "id"}}); err != nil {
-				return fmt.Errorf("import stats_model: %w", err)
-			} else {
-				res.RowsAffected["stats_model"] = n
-			}
-			if n, err := createUpsertAll(tx, dump.StatsChannel, []clause.Column{{Name: "channel_id"}}); err != nil {
-				return fmt.Errorf("import stats_channel: %w", err)
-			} else {
-				res.RowsAffected["stats_channel"] = n
-			}
-			if n, err := createUpsertAll(tx, dump.StatsAPIKey, []clause.Column{{Name: "api_key_id"}}); err != nil {
-				return fmt.Errorf("import stats_api_key: %w", err)
-			} else {
-				res.RowsAffected["stats_api_key"] = n
-			}
+		if n, err := createUpsertAll(tx, dump.StatsTotal, []clause.Column{{Name: "id"}}); err != nil {
+			return fmt.Errorf("import stats_total: %w", err)
+		} else {
+			res.RowsAffected["stats_total"] = n
+		}
+		if n, err := createUpsertAll(tx, dump.StatsDaily, []clause.Column{{Name: "date"}}); err != nil {
+			return fmt.Errorf("import stats_daily: %w", err)
+		} else {
+			res.RowsAffected["stats_daily"] = n
+		}
+		if n, err := createUpsertAll(tx, dump.StatsHourly, []clause.Column{{Name: "hour"}}); err != nil {
+			return fmt.Errorf("import stats_hourly: %w", err)
+		} else {
+			res.RowsAffected["stats_hourly"] = n
+		}
+		if n, err := createUpsertAll(tx, dump.StatsAPIKey, []clause.Column{{Name: "api_key_id"}}); err != nil {
+			return fmt.Errorf("import stats_api_key: %w", err)
+		} else {
+			res.RowsAffected["stats_api_key"] = n
 		}
 
 		return nil

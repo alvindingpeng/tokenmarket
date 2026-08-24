@@ -6,7 +6,7 @@ import { formatCount, formatMoney, formatTime } from '@/lib/utils';
 /**
  * 统计数据
  */
-interface StatsMetrics {
+export interface StatsMetrics {
     input_token: number;
     output_token: number;
     input_cost: number;
@@ -28,10 +28,6 @@ export interface StatsMetricsFormatted {
     request_count: ReturnType<typeof formatCount>;
     total_token: ReturnType<typeof formatCount>;
     total_cost: ReturnType<typeof formatMoney>;
-}
-
-export interface StatsChannel extends StatsMetrics {
-    channel_id: number;
 }
 
 export interface StatsDaily extends StatsMetrics {

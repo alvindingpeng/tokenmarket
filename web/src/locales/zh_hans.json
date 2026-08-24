@@ -24,11 +24,11 @@
         "logout": "退出",
         "requestCount": "请求次数",
         "timeConsumed": "消耗时间",
-        "totalToken": "消耗 Token",
+        "totalToken": "消耗词元",
         "totalCost": "消耗费用",
-        "inputTokens": "输入 Tokens",
+        "inputTokens": "输入词元",
         "inputCost": "输入费用",
-        "outputTokens": "输出 Tokens",
+        "outputTokens": "输出词元",
         "outputCost": "输出费用",
         "successRequests": "成功请求",
         "failedRequests": "失败请求",
@@ -86,7 +86,7 @@
         "activity": {
             "requestCount": "请求次数",
             "waitTime": "消耗时间",
-            "totalToken": "消耗 Token",
+            "totalToken": "消耗词元",
             "totalCost": "消耗费用",
             "noData": "无数据"
         },
@@ -97,23 +97,23 @@
             "outputStats": "输出统计",
             "requestCount": "请求次数",
             "timeConsumed": "消耗时间",
-            "totalToken": "消耗 Token",
+            "totalToken": "消耗词元",
             "totalCost": "消耗费用",
-            "inputTokens": "输入 Tokens",
+            "inputTokens": "输入词元",
             "inputCost": "输入费用",
-            "outputTokens": "输出 Tokens",
+            "outputTokens": "输出词元",
             "outputCost": "输出费用"
         },
         "chart": {
             "title": "趋势",
             "totalRequests": "请求次数",
             "totalCost": "消费金额",
-            "totalTokens": "Tokens 消耗",
+            "totalTokens": "词元消耗",
             "timePeriod": "时间周期",
             "metricType": {
                 "cost": "金额",
                 "count": "次数",
-                "tokens": "Tokens"
+                "tokens": "词元"
             },
             "period": {
                 "today": "今天",
@@ -122,10 +122,11 @@
             }
         },
         "rank": {
-            "title": "排行榜",
+            "channel": "渠道",
+            "model": "模型",
             "sortByCost": "金额",
             "sortByCount": "次数",
-            "sortByTokens": "Tokens",
+            "sortByTokens": "词元",
             "noData": "暂无排行数据",
             "successRate": "成功率"
         }
@@ -163,14 +164,13 @@
             "title": "备份 / 恢复",
             "export": {
                 "title": "导出",
-                "includeStats": "包含统计",
-                "button": "下载 JSON",
+                "button": "导出",
                 "exporting": "导出中...",
                 "success": "开始导出"
             },
             "import": {
-                "title": "导入（增量）",
-                "button": "导入 JSON",
+                "title": "导入",
+                "button": "导入",
                 "importing": "导入中...",
                 "noFile": "请先选择 JSON 文件",
                 "success": "导入成功",
@@ -202,8 +202,8 @@
             },
             "stats": {
                 "noData": "暂无统计数据",
-                "inputToken": "输入 Token",
-                "outputToken": "输出 Token",
+                "inputToken": "输入词元",
+                "outputToken": "输出词元",
                 "inputCost": "输入费用",
                 "outputCost": "输出费用",
                 "requestSuccess": "成功请求",
@@ -422,7 +422,7 @@
             "responseContent": "响应内容",
             "noRequestContent": "(无请求内容)",
             "noResponseContent": "(无响应内容)",
-            "tokens": "tokens",
+            "tokens": "词元",
             "retryIndex": "重试 {index}",
             "retryDetails": "重试详情",
             "stopRound": "停止当前轮次",
@@ -448,17 +448,17 @@
             },
             "sections": {
                 "requests": "请求详情",
-                "tokens": "Token 使用",
+                "tokens": "词元使用",
                 "costs": "成本详情"
             },
             "metrics": {
                 "totalRequests": "总请求",
-                "totalToken": "总 Token",
+                "totalToken": "总词元",
                 "totalCost": "总成本",
                 "successRequests": "成功请求",
                 "failedRequests": "失败请求",
-                "inputToken": "输入 Token",
-                "outputToken": "输出 Token",
+                "inputToken": "输入词元",
+                "outputToken": "输出词元",
                 "inputCost": "输入成本",
                 "outputCost": "输出成本",
                 "avgWaitTime": "等待时间"

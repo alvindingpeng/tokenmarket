@@ -3,7 +3,6 @@ package task
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -12,8 +11,6 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/price"
-	"github.com/alvindingpeng/switchyard/internal/utils/diff"
-	"github.com/alvindingpeng/switchyard/internal/utils/xstrings"
 	"github.com/charmbracelet/log"
 )
 
@@ -57,28 +54,53 @@ func SyncModelsTask() error {
 			continue
 		}
 
-		customModels := xstrings.SplitCompact(",", channel.CustomModel)
+		manualNames := make(map[string]struct{})
+		oldAutoNames := make(map[string]struct{})
+		models := make([]model.ChannelModel, 0, len(channel.Models)+len(fetchModels))
+		for _, channelModel := range channel.Models {
+			switch channelModel.Source {
+			case model.ChannelModelSourceManual:
+				manualNames[channelModel.Name] = struct{}{}
+				models = append(models, channelModel)
+			case model.ChannelModelSourceAuto:
+				oldAutoNames[channelModel.Name] = struct{}{}
+			}
+		}
 		// 外部返回的模型名只在进入内部流程时清洗一次，并由手动模型优先占用重复名称。
 		seen := make(map[string]struct{}, len(fetchModels))
-		newModels := make([]string, 0, len(fetchModels))
+		autoModels := make([]model.ChannelModel, 0, len(fetchModels))
 		for _, modelName := range fetchModels {
 			modelName = strings.TrimSpace(modelName)
 			if modelName == "" {
 				continue
 			}
-			if slices.Contains(customModels, modelName) {
+			if _, ok := manualNames[modelName]; ok {
 				continue
 			}
 			if _, ok := seen[modelName]; ok {
 				continue
 			}
 			seen[modelName] = struct{}{}
-			newModels = append(newModels, modelName)
+			autoModels = append(autoModels, model.ChannelModel{Name: modelName, Source: model.ChannelModelSourceAuto})
 		}
-		deletedModels, addedModels := diff.Diff(xstrings.SplitCompact(",", channel.Model), newModels)
+		addedModels := make([]string, 0)
+		newAutoNames := make(map[string]struct{}, len(autoModels))
+		for _, channelModel := range autoModels {
+			newAutoNames[channelModel.Name] = struct{}{}
+			if _, ok := oldAutoNames[channelModel.Name]; !ok {
+				addedModels = append(addedModels, channelModel.Name)
+			}
+		}
+		deletedModels := make([]string, 0)
+		for name := range oldAutoNames {
+			if _, ok := newAutoNames[name]; !ok {
+				deletedModels = append(deletedModels, name)
+			}
+		}
 		if len(deletedModels) == 0 && len(addedModels) == 0 {
 			continue
 		}
+		models = append(models, autoModels...)
 
 		if len(addedModels) > 0 {
 			llmInfos := make([]model.LLMInfo, 0, len(addedModels))
@@ -104,10 +126,9 @@ func SyncModelsTask() error {
 				continue
 			}
 		}
-		modelNames := strings.Join(newModels, ",")
 		if _, err := op.ChannelUpdate(&model.ChannelUpdateRequest{
 			ID:    channel.ID,
-			Model: &modelNames,
+			Models: &models,
 		}, ctx); err != nil {
 			log.Warnf("failed to sync models for channel %s: %v", channel.Name, err)
 			if syncErr == nil {

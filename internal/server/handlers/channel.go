@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -15,7 +14,6 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/alvindingpeng/switchyard/internal/server/router"
 	"github.com/alvindingpeng/switchyard/internal/task"
-	"github.com/alvindingpeng/switchyard/internal/utils/xstrings"
 	"github.com/gin-gonic/gin"
 )
 
@@ -60,12 +58,7 @@ func init() {
 }
 
 func listChannel(c *gin.Context) {
-	channels := op.ChannelList()
-	for i, channel := range channels {
-		stats := op.StatsChannelGet(channel.ID)
-		channels[i].Stats = &stats
-	}
-	resp.Success(c, channels)
+	resp.Success(c, op.ChannelList())
 }
 
 func createChannel(c *gin.Context) {
@@ -74,19 +67,18 @@ func createChannel(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
-	channel.Model = normalizeChannelModelList(channel.Model)
-	channel.CustomModel = normalizeChannelModelList(channel.CustomModel)
-	channel.Model = excludeCustomChannelModels(channel.Model, channel.CustomModel)
 	if err := op.ChannelCreate(&channel, c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := addChannelModelPrices(xstrings.SplitCompact(",", channel.Model, channel.CustomModel), c.Request.Context()); err != nil {
+	modelNames := make([]string, 0, len(channel.Models))
+	for _, channelModel := range channel.Models {
+		modelNames = append(modelNames, channelModel.Name)
+	}
+	if err := addChannelModelPrices(modelNames, c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	stats := op.StatsChannelGet(channel.ID)
-	channel.Stats = &stats
 	resp.Success(c, channel)
 }
 
@@ -96,20 +88,15 @@ func updateChannel(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
-	if req.Model != nil {
-		normalizedModels := normalizeChannelModelList(*req.Model)
-		req.Model = &normalizedModels
-	}
-	if req.CustomModel != nil {
-		normalizedCustomModels := normalizeChannelModelList(*req.CustomModel)
-		req.CustomModel = &normalizedCustomModels
-	}
 	channel, err := op.ChannelUpdate(&req, c.Request.Context())
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	newModelNames := xstrings.SplitCompact(",", channel.Model, channel.CustomModel)
+	newModelNames := make([]string, 0, len(channel.Models))
+	for _, channelModel := range channel.Models {
+		newModelNames = append(newModelNames, channelModel.Name)
+	}
 	if err := addChannelModelPrices(newModelNames, c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -118,8 +105,6 @@ func updateChannel(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	stats := op.StatsChannelGet(channel.ID)
-	channel.Stats = &stats
 	resp.Success(c, channel)
 }
 
@@ -154,31 +139,6 @@ func deleteChannel(c *gin.Context) {
 		return
 	}
 	resp.Success(c, nil)
-}
-
-// normalizeChannelModelList 规范化外部提交的渠道模型列表。
-func normalizeChannelModelList(models string) string {
-	modelNames := xstrings.SplitTrimCompact(",", models)
-	seen := make(map[string]struct{}, len(modelNames))
-	normalizedModelNames := modelNames[:0]
-	for _, modelName := range modelNames {
-		if _, ok := seen[modelName]; ok {
-			continue
-		}
-		seen[modelName] = struct{}{}
-		normalizedModelNames = append(normalizedModelNames, modelName)
-	}
-	return strings.Join(normalizedModelNames, ",")
-}
-
-// excludeCustomChannelModels 从已规范化的自动模型列表中排除手动模型。
-func excludeCustomChannelModels(models, customModels string) string {
-	modelNames := xstrings.SplitCompact(",", models)
-	customModelNames := xstrings.SplitCompact(",", customModels)
-	modelNames = slices.DeleteFunc(modelNames, func(modelName string) bool {
-		return slices.Contains(customModelNames, modelName)
-	})
-	return strings.Join(modelNames, ",")
 }
 
 // addChannelModelPrices 为渠道模型匹配校准价格，并批量写入尚不存在的价格记录。
