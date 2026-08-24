@@ -17,8 +17,12 @@
 - 🔄 **Protocol Conversion** - Seamless conversion between OpenAI Chat / OpenAI Responses / Anthropic API formats
 - 💰 **Price Sync** - Automatic model pricing updates
 - 🔃 **Model Sync** - Automatic synchronization of available model lists with channels
+- 🛡️ **Automatic Failover** - Automatically switches to an available channel when an upstream channel fails
+- 🔍 **Real-Time End-to-End Request Visualization** - Watch the complete request path in the frontend from the moment the client sends it
+- 🚧 **Upstream Error Shielding** - Intercept all upstream errors to keep agent tasks running without interruption
 - 📊 **Analytics** - Comprehensive request statistics, token consumption, and cost tracking
 - 🎨 **Elegant UI** - Clean and beautiful web management panel
+- 📦 **Lightweight Single-Binary Deployment** - Run as a single binary with no external runtime dependencies
 - 🗄️ **Multi-Database Support** - Support for SQLite, MySQL, PostgreSQL
 
 
@@ -60,9 +64,7 @@ Download the binary for your platform from [Releases](https://github.com/alvindi
 git clone https://github.com/alvindingpeng/switchyard.git
 cd switchyard
 # Build frontend
-cd web && pnpm install && pnpm run build && cd ..
-# Move frontend assets to static directory
-mv web/out static/
+cd web && pnpm install && pnpm run build
 # Start the backend service
 go run main.go start 
 ```
@@ -72,11 +74,11 @@ go run main.go start
 **Development Mode**
 
 ```bash
-cd web && pnpm install && NEXT_PUBLIC_API_BASE_URL="http://127.0.0.1:8080" pnpm run dev
+cd web && pnpm install && pnpm run dev
 ## Open a new terminal, start the backend service
 go run main.go start
 ## Access the frontend at
-http://localhost:3000
+http://localhost:5173
 ```
 
 ### 🔐 Default Credentials
@@ -228,16 +230,16 @@ Channels are the basic configuration units for connecting to LLM providers.
 
 **Base URL Guide:**
 
-The program automatically appends API paths based on channel type. You only need to provide the base URL:
+The program automatically appends the API version and endpoint path based on the channel type. You only need to provide the service root URL:
 
 | Channel Type | Auto-appended Path | Base URL | Full Request URL Example |
 |--------------|-------------------|----------|--------------------------|
-| OpenAI Chat | `/chat/completions` | `https://api.openai.com/v1` | `https://api.openai.com/v1/chat/completions` |
-| OpenAI Responses | `/responses` | `https://api.openai.com/v1` | `https://api.openai.com/v1/responses` |
-| Anthropic | `/messages` | `https://api.anthropic.com/v1` | `https://api.anthropic.com/v1/messages` |
-| Gemini | `/models/:model:generateContent` | `https://generativelanguage.googleapis.com/v1beta` | `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent` |
+| OpenAI Chat | `/v1/chat/completions` | `https://api.openai.com` | `https://api.openai.com/v1/chat/completions` |
+| OpenAI Responses | `/v1/responses` | `https://api.openai.com` | `https://api.openai.com/v1/responses` |
+| Anthropic | `/v1/messages` | `https://api.anthropic.com` | `https://api.anthropic.com/v1/messages` |
+| Gemini | `/v1beta/models/:model:generateContent` | `https://generativelanguage.googleapis.com` | `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent` |
 
-> 💡 **Tip**: No need to include specific API endpoint paths in the Base URL - the program handles this automatically.
+> 💡 **Tip**: The Base URL does not need to include `/v1`, `/v1beta`, or a specific API endpoint path - the program handles them automatically.
 
 ---
 

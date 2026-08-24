@@ -17,8 +17,12 @@
 - 🔄 **协议互转** - 支持 OpenAI Chat / OpenAI Responses / Anthropic 三种 API 格式互相转换
 - 💰 **价格同步** - 自动更新模型价格
 - 🔃 **模型同步** - 自动与渠道同步可用模型列表，省心省力
+- 🛡️ **自动故障转移** - 上游渠道发生故障时自动切换到可用渠道
+- 🔍 **请求全链路实时可视化** - 客户端发起请求后，即可在前端实时查看完整请求链路
+- 🚧 **上游错误拦截** - 拦截所有上游错误，避免中断 Agent 任务
 - 📊 **数据统计** - 全面的请求统计、Token 消耗、费用追踪
 - 🎨 **优雅界面** - 简洁美观的 Web 管理面板
+- 📦 **轻量单文件部署** - 单个二进制文件即可运行，无需额外运行时依赖
 - 🗄️ **多数据库支持** - 支持 SQLite、MySQL、PostgreSQL
 
 
@@ -60,9 +64,7 @@ docker compose up -d
 git clone https://github.com/alvindingpeng/switchyard.git
 cd switchyard
 # 构建前端
-cd web && pnpm install && pnpm run build && cd ..
-# 移动前端产物到 static 目录
-mv web/out static/
+cd web && pnpm install && pnpm run build
 # 启动后端服务
 go run main.go start 
 ```
@@ -72,11 +74,11 @@ go run main.go start
 **开发模式**
 
 ```bash
-cd web && pnpm install && NEXT_PUBLIC_API_BASE_URL="http://127.0.0.1:8080" pnpm run dev
+cd web && pnpm install && pnpm run dev
 ## 新建终端,启动后端服务
 go run main.go start
 ## 访问前端地址
-http://localhost:3000
+http://localhost:5173
 ```
 
 ### 🔐 默认账户
@@ -229,16 +231,16 @@ http://localhost:3000
 
 **Base URL 说明：**
 
-程序会根据渠道类型自动补全 API 路径，您只需填写基础 URL 即可：
+程序会根据渠道类型自动补全 API 版本和端点路径，您只需填写服务根地址即可：
 
 | 渠道类型 | 自动补全路径 | 填写 URL | 完整请求地址示例 |
 |----------|-------------|----------|-----------------|
-| OpenAI Chat | `/chat/completions` | `https://api.openai.com/v1` | `https://api.openai.com/v1/chat/completions` |
-| OpenAI Responses | `/responses` | `https://api.openai.com/v1` | `https://api.openai.com/v1/responses` |
-| Anthropic | `/messages` | `https://api.anthropic.com/v1` | `https://api.anthropic.com/v1/messages` |
-| Gemini | `/models/:model:generateContent` | `https://generativelanguage.googleapis.com/v1beta` | `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent` |
+| OpenAI Chat | `/v1/chat/completions` | `https://api.openai.com` | `https://api.openai.com/v1/chat/completions` |
+| OpenAI Responses | `/v1/responses` | `https://api.openai.com` | `https://api.openai.com/v1/responses` |
+| Anthropic | `/v1/messages` | `https://api.anthropic.com` | `https://api.anthropic.com/v1/messages` |
+| Gemini | `/v1beta/models/:model:generateContent` | `https://generativelanguage.googleapis.com` | `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent` |
 
-> 💡 **提示**：填写 Base URL 时无需包含具体的 API 端点路径，程序会自动处理。
+> 💡 **提示**：Base URL 无需包含 `/v1`、`/v1beta` 或具体的 API 端点路径，程序会自动处理。
 
 ---
 
