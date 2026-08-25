@@ -132,6 +132,7 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
     const statusT = useTranslations('log.status');
     const [leftTab, setLeftTab] = useState<'request' | 'group'>('group');
     const [rounds, setRounds] = useState<ObservedRound[]>([]);
+    const [observedRoundKey, setObservedRoundKey] = useState(''); // observedRoundKey 是已记入 rounds 的最近一次日志快照, 用于跳过重复渲染。
     const [detailReady, setDetailReady] = useState(false); // 展开动画结束后才允许加载详情数据。
     const [switchingItemId, setSwitchingItemId] = useState<number | null>(null);
     const requestBody = useLogRequestBody(log.id, log.started_at, detailReady && leftTab === 'request');
@@ -163,8 +164,10 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
     }, []);
 
     // 按轮次记录本次打开期间观察到的上游请求状态, 最新一轮排在最前。
-    useEffect(() => {
-        if (log.round === 0) return;
+    // 轮次来自逐次推送的日志, 需在渲染期比对已记录的快照累积, 不能仅由当前 log 推导。
+    const roundKey = log.round === 0 ? '' : `${log.round}:${log.target_channel}:${log.sending}:${errorText}`;
+    if (roundKey !== '' && roundKey !== observedRoundKey) {
+        setObservedRoundKey(roundKey);
         setRounds((current) => {
             if (!log.sending && current.every((item) => item.round !== log.round)) return current;
             return [
@@ -172,7 +175,7 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
                 ...current.filter((item) => item.round !== log.round),
             ];
         });
-    }, [errorText, log.round, log.sending, log.target_channel]);
+    }
 
     return (
         <MorphingDialogContent className="relative w-[calc(100vw-2rem)] md:w-[80vw] bg-card text-card-foreground px-6 py-4 rounded-3xl h-[calc(100vh-2rem)] flex flex-col overflow-hidden">

@@ -147,7 +147,8 @@ function MemberItem({
                         type="button"
                         onClick={(event) => {
                             event.stopPropagation();
-                            showConfirmDelete ? setConfirmDelete(true) : onRemove(member.id);
+                            if (showConfirmDelete) setConfirmDelete(true);
+                            else onRemove(member.id);
                         }}
                         className="p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-colors"
                         transition={{ duration: 0.15 }}

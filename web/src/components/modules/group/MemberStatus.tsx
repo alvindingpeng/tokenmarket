@@ -30,15 +30,22 @@ export function useRuntimeClock(source?: Group | Group[]) {
     }
 
     useEffect(() => {
-        const current = Date.now();
-        setNow(current);
-        if (!enabled || current >= lastDeadline) return;
-        const timer = window.setInterval(() => {
+        if (!enabled) return;
+
+        let timer = 0;
+        const tick = () => {
             const next = Date.now();
             setNow(next);
             if (next >= lastDeadline) window.clearInterval(timer);
-        }, 1000);
-        return () => window.clearInterval(timer);
+        };
+        // 依赖变化后先异步校正一次，避免上一轮倒计时结束后残留的旧时间参与判断。
+        const immediate = window.setTimeout(tick, 0);
+        if (Date.now() < lastDeadline) timer = window.setInterval(tick, 1000);
+
+        return () => {
+            window.clearTimeout(immediate);
+            window.clearInterval(timer);
+        };
     }, [enabled, lastDeadline]);
 
     return now;

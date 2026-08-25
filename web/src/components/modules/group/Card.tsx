@@ -203,7 +203,7 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
             },
             onError,
         });
-    }, [group.id, group.items, group.name, group.relay_config, onSuccess, onError, updateGroup]);
+    }, [group.id, group.items, group.mode, group.name, group.relay_config, onSuccess, onError, updateGroup]);
 
     return (
     <article className="flex flex-col rounded-3xl border border-border bg-card text-card-foreground p-4">

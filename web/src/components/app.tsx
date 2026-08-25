@@ -48,19 +48,18 @@ function InitialLoadingGate({ children }: { children: ReactNode }) {
 export function AppContainer() {
     const { isAuthenticated, isAPIKeyAuth, isLoading: authLoading } = useAuth();
     const queryClient = useQueryClient();
-    const [apiReady, setAPIReady] = useState(false); // apiReady 表示当前认证模式所需的初始 API 已加载完成。
+    const authMode = isAPIKeyAuth ? 'apikey' : 'user'; // authMode 区分两种认证模式各自需要的初始 API。
+    const [readyMode, setReadyMode] = useState<string | null>(null); // readyMode 记录已完成初始请求的认证模式。
     const currentPage = useAppStore((state) => state.currentPage);
     // visibleItem 延迟提交页面切换，等待 lazy 模块在 Suspense 中准备完成。
     const visibleItem = useDeferredValue(currentPage);
+    // 认证模式与已完成的模式不一致时仍需等待，避免退出登录后残留的完成标记让应用提前渲染。
+    const apiReady = readyMode === authMode;
 
     useEffect(() => {
-        if (authLoading || !isAuthenticated) {
-            setAPIReady(false);
-            return;
-        }
+        if (authLoading || !isAuthenticated) return;
 
         let cancelled = false;
-        setAPIReady(false);
 
         const requests = isAPIKeyAuth
             ? [
@@ -77,16 +76,17 @@ export function AppContainer() {
             ];
 
         void Promise.all(requests).then(() => {
-            if (!cancelled) setAPIReady(true);
+            if (!cancelled) setReadyMode(authMode);
         }, () => {
             // 初始请求失败后仍进入应用，由各查询页面展示具体错误状态。
-            if (!cancelled) setAPIReady(true);
+            if (!cancelled) setReadyMode(authMode);
         });
 
         return () => {
             cancelled = true;
+            setReadyMode(null);
         };
-    }, [authLoading, isAPIKeyAuth, isAuthenticated, queryClient]);
+    }, [authMode, authLoading, isAPIKeyAuth, isAuthenticated, queryClient]);
 
     if (authLoading) return null;
 

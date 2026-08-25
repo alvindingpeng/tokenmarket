@@ -83,11 +83,7 @@ export function useGroupList(enabled = true, runtimeEnabled = false) {
     const hasInitialData = query.data !== undefined;
 
     useEffect(() => {
-        if (!enabled || !runtimeEnabled) {
-            setRuntimeByGroup((current) => current.size === 0 ? current : new Map());
-            return;
-        }
-        if (!hasInitialData) return;
+        if (!enabled || !runtimeEnabled || !hasInitialData) return;
 
         const source = new EventSource('/api/v1/group/runtime/stream', { withCredentials: true });
         source.addEventListener('runtime', (event) => {
@@ -106,12 +102,15 @@ export function useGroupList(enabled = true, runtimeEnabled = false) {
 
         return () => {
             source.close();
+            setRuntimeByGroup((current) => current.size === 0 ? current : new Map());
         };
     }, [enabled, hasInitialData, runtimeEnabled]);
+    // 未开启实时连接时不合并 runtime，避免连接关闭前推送的状态残留在列表上。
+    const runtimeActive = enabled && runtimeEnabled;
     const groups = useMemo(() => query.data?.map((group) => {
-        const runtime = group.id === undefined ? undefined : runtimeByGroup.get(group.id);
+        const runtime = !runtimeActive || group.id === undefined ? undefined : runtimeByGroup.get(group.id);
         return runtime ? { ...group, runtime } : group;
-    }), [query.data, runtimeByGroup]);
+    }), [query.data, runtimeActive, runtimeByGroup]);
     return { ...query, data: groups };
 }
 
