@@ -439,47 +439,31 @@
         "card": {
             "requestCount": "Requests",
             "totalCost": "Total Cost",
+            "model": "Model",
+            "successRequests": "Successful Requests",
+            "failedRequests": "Failed Requests",
+            "edit": "Edit",
+            "delete": "Delete",
+            "confirmDelete": "Confirm Delete",
+            "cancel": "Cancel",
             "toast": {
                 "enabled": "Channel enabled",
                 "disabled": "Channel disabled"
             }
         },
-        "detail": {
-            "title": {
-                "edit": "Edit Channel",
-                "view": "Channel Details"
-            },
-            "sections": {
-                "requests": "Request Details",
-                "tokens": "Token Usage",
-                "costs": "Cost Details"
-            },
-            "metrics": {
-                "totalRequests": "Total Requests",
-                "totalToken": "Total Tokens",
-                "totalCost": "Total Cost",
-                "successRequests": "Successful Requests",
-                "failedRequests": "Failed Requests",
-                "inputToken": "Input Tokens",
-                "outputToken": "Output Tokens",
-                "inputCost": "Input Cost",
-                "outputCost": "Output Cost",
-                "avgWaitTime": "Wait Time"
-            },
-            "actions": {
-                "edit": "Edit",
-                "cancel": "Cancel",
-                "save": "Save",
-                "saving": "Saving...",
-                "delete": "Delete",
-                "confirmDelete": "Confirm Delete",
-                "deleting": "Deleting..."
-            }
+        "stats": {
+            "totalRequests": "Total Requests",
+            "totalToken": "Total Tokens",
+            "totalCost": "Total Cost",
+            "avgWaitTime": "Wait Time",
+            "models": "Model",
+            "noModels": "No models selected",
+            "sortByCost": "Cost",
+            "sortByCount": "Count",
+            "sortByTokens": "Tokens"
         },
         "create": {
-            "dialogTitle": "Create New Channel",
-            "submit": "Create Channel",
-            "submitting": "Creating..."
+            "dialogTitle": "Create New Channel"
         },
         "form": {
             "name": "Channel Name",
@@ -515,7 +499,12 @@
             "typeVolcengine": "Volcengine",
             "autoSync": "Auto Sync",
             "matchRegex": "Match Regex",
-            "matchRegexPlaceholder": "Optional: regex pattern to match request model names"
+            "matchRegexPlaceholder": "Optional: regex pattern to match request model names",
+            "submit": "Create Channel",
+            "submitting": "Creating...",
+            "save": "Save",
+            "saving": "Saving...",
+            "cancel": "Cancel"
         }
     }
 }

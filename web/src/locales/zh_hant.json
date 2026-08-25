@@ -439,47 +439,31 @@
         "card": {
             "requestCount": "請求次數",
             "totalCost": "總成本",
+            "model": "模型",
+            "successRequests": "成功請求",
+            "failedRequests": "失敗請求",
+            "edit": "編輯",
+            "delete": "刪除",
+            "confirmDelete": "確認刪除",
+            "cancel": "取消",
             "toast": {
                 "enabled": "供應源已啟用",
                 "disabled": "供應源已停用"
             }
         },
-        "detail": {
-            "title": {
-                "edit": "編輯供應源",
-                "view": "供應源詳情"
-            },
-            "sections": {
-                "requests": "請求詳情",
-                "tokens": "詞元使用",
-                "costs": "成本詳情"
-            },
-            "metrics": {
-                "totalRequests": "總請求",
-                "totalToken": "總詞元",
-                "totalCost": "總成本",
-                "successRequests": "成功請求",
-                "failedRequests": "失敗請求",
-                "inputToken": "輸入詞元",
-                "outputToken": "輸出詞元",
-                "inputCost": "輸入成本",
-                "outputCost": "輸出成本",
-                "avgWaitTime": "等待時間"
-            },
-            "actions": {
-                "edit": "編輯",
-                "cancel": "取消",
-                "save": "儲存",
-                "saving": "儲存中...",
-                "delete": "刪除",
-                "confirmDelete": "確認刪除",
-                "deleting": "刪除中..."
-            }
+        "stats": {
+            "totalRequests": "總請求",
+            "totalToken": "總詞元",
+            "totalCost": "總成本",
+            "avgWaitTime": "等待時間",
+            "models": "模型",
+            "noModels": "暫未選擇模型",
+            "sortByCost": "金額",
+            "sortByCount": "次數",
+            "sortByTokens": "詞元"
         },
         "create": {
-            "dialogTitle": "建立新供應源",
-            "submit": "建立供應源",
-            "submitting": "建立中..."
+            "dialogTitle": "建立新供應源"
         },
         "form": {
             "name": "供應源名稱",
@@ -515,7 +499,12 @@
             "typeVolcengine": "火山引擎",
             "autoSync": "自動同步",
             "matchRegex": "匹配正規",
-            "matchRegexPlaceholder": "可選：用於匹配請求模型名稱的正規表示式"
+            "matchRegexPlaceholder": "可選：用於匹配請求模型名稱的正規表示式",
+            "submit": "建立供應源",
+            "submitting": "建立中...",
+            "save": "儲存",
+            "saving": "儲存中...",
+            "cancel": "取消"
         }
     }
 }
