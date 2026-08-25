@@ -14,9 +14,9 @@ import { useTranslations } from 'use-intl';
 import { useStatsTotal } from '@/api/stats';
 import { AnimatedNumber } from '@/components/common/AnimatedNumber';
 
-
+// Total 展示累计的请求, 总量, 输入和输出四组指标卡片。
 export function Total() {
-    const { data: statsTotalFormatted } = useStatsTotal();
+    const { data: stats } = useStatsTotal();
     const t = useTranslations('home.total');
 
     const cards = [
@@ -24,97 +24,41 @@ export function Total() {
             title: t('requestStats'),
             headerIcon: Activity,
             items: [
-                {
-                    label: t('requestCount'),
-                    value: statsTotalFormatted?.request_count.formatted.value,
-                    icon: MessageSquare,
-                    color: 'text-primary',
-                    bgColor: 'bg-primary/10',
-                    unit: statsTotalFormatted?.request_count.formatted.unit
-                },
-                {
-                    label: t('timeConsumed'),
-                    value: statsTotalFormatted?.wait_time.formatted.value,
-                    icon: Clock,
-                    color: 'text-primary',
-                    bgColor: 'bg-accent/10',
-                    unit: statsTotalFormatted?.wait_time.formatted.unit
-                }
-            ]
+                { label: t('requestCount'), metric: stats?.request_count, icon: MessageSquare, bgColor: 'bg-primary/10' },
+                { label: t('timeConsumed'), metric: stats?.wait_time, icon: Clock, bgColor: 'bg-accent/10' },
+            ],
         },
         {
             title: t('totalStats'),
             headerIcon: ChartColumnBig,
             items: [
-                {
-                    label: t('totalToken'),
-                    value: statsTotalFormatted?.total_token.formatted.value,
-                    icon: Bot,
-                    color: 'text-primary',
-                    bgColor: 'bg-chart-1/10',
-                    unit: statsTotalFormatted?.total_token.formatted.unit
-                },
-                {
-                    label: t('totalCost'),
-                    value: statsTotalFormatted?.total_cost.formatted.value,
-                    icon: DollarSign,
-                    color: 'text-primary',
-                    bgColor: 'bg-chart-2/10',
-                    unit: statsTotalFormatted?.total_cost.formatted.unit
-                }
-            ]
+                { label: t('totalToken'), metric: stats?.total_token, icon: Bot, bgColor: 'bg-chart-1/10' },
+                { label: t('totalCost'), metric: stats?.total_cost, icon: DollarSign, bgColor: 'bg-chart-2/10' },
+            ],
         },
         {
             title: t('inputStats'),
             headerIcon: ArrowDownToLine,
             items: [
-                {
-                    label: t('inputTokens'),
-                    value: statsTotalFormatted?.input_token.formatted.value,
-                    icon: Rewind,
-                    color: 'text-primary',
-                    bgColor: 'bg-chart-3/10',
-                    unit: statsTotalFormatted?.input_token.formatted.unit
-                },
-                {
-                    label: t('inputCost'),
-                    value: statsTotalFormatted?.input_cost.formatted.value,
-                    icon: DollarSign,
-                    color: 'text-primary',
-                    bgColor: 'bg-chart-3/10',
-                    unit: statsTotalFormatted?.input_cost.formatted.unit
-                }
-            ]
+                { label: t('inputTokens'), metric: stats?.input_token, icon: Rewind, bgColor: 'bg-chart-3/10' },
+                { label: t('inputCost'), metric: stats?.input_cost, icon: DollarSign, bgColor: 'bg-chart-3/10' },
+            ],
         },
         {
             title: t('outputStats'),
             headerIcon: ArrowUpFromLine,
             items: [
-                {
-                    label: t('outputTokens'),
-                    value: statsTotalFormatted?.output_token.formatted.value,
-                    icon: FastForward,
-                    color: 'text-primary',
-                    bgColor: 'bg-chart-4/10',
-                    unit: statsTotalFormatted?.output_token.formatted.unit
-                },
-                {
-                    label: t('outputCost'),
-                    value: statsTotalFormatted?.output_cost.formatted.value,
-                    icon: DollarSign,
-                    color: 'text-primary',
-                    bgColor: 'bg-chart-4/10',
-                    unit: statsTotalFormatted?.output_cost.formatted.unit
-                }
-            ]
-        }
+                { label: t('outputTokens'), metric: stats?.output_token, icon: FastForward, bgColor: 'bg-chart-4/10' },
+                { label: t('outputCost'), metric: stats?.output_cost, icon: DollarSign, bgColor: 'bg-chart-4/10' },
+            ],
+        },
     ];
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {cards.map((card, index) => (
+        <div className="grid grid-cols-1 @xl/home:grid-cols-2 @3xl/home:grid-cols-4 gap-4">
+            {cards.map((card) => (
                 <section
-                    key={index}
+                    key={card.title}
                     className="rounded-3xl bg-card border-border border p-5 text-card-foreground flex flex-row items-center gap-4"
                 >
                     <div className="flex flex-col items-center justify-center gap-3 border-r border-border/50 pr-4 py-1 self-stretch">
@@ -123,19 +67,20 @@ export function Total() {
                     </div>
 
                     <div className="flex flex-col gap-4 flex-1 min-w-0">
-                        {card.items.map((item, idx) => (
-                            <div key={idx} className="flex items-center gap-3">
-                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${item.bgColor} ${item.color}`}>
+                        {card.items.map((item) => (
+                            <div key={item.label} className="flex items-center gap-3">
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-primary ${item.bgColor}`}>
                                     <item.icon className="w-5 h-5" />
                                 </div>
                                 <div className="flex flex-col min-w-0">
                                     <span className="text-xs text-muted-foreground">{item.label}</span>
                                     <div className="flex items-baseline gap-1">
                                         <span className="text-xl">
-                                            <AnimatedNumber value={item.value} />
+                                            <AnimatedNumber value={item.metric?.formatted.value} />
                                         </span>
-                                        {item.unit && (
-                                            <span className="text-sm text-muted-foreground">{item.unit}</span>
+                                        {/* 计数在千位以下 unit 为空串, 空 span 仍是 flex 项, 会多出 gap-1 的间距。 */}
+                                        {item.metric?.formatted.unit && (
+                                            <span className="text-sm text-muted-foreground">{item.metric.formatted.unit}</span>
                                         )}
                                     </div>
                                 </div>

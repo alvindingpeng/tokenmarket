@@ -25,6 +25,7 @@ const Group = lazy(() => pageImports.group().then((module) => ({ default: module
 const Model = lazy(() => pageImports.model().then((module) => ({ default: module.Model })));
 const Log = lazy(() => pageImports.log().then((module) => ({ default: module.Log })));
 const Setting = lazy(() => pageImports.setting().then((module) => ({ default: module.Setting })));
+const HomeActions = lazy(() => pageImports.home().then((module) => ({ default: module.HomeActions })));
 const ChannelActions = lazy(() => pageImports.channel().then((module) => ({ default: module.ChannelActions })));
 const GroupActions = lazy(() => pageImports.group().then((module) => ({ default: module.GroupActions })));
 const ModelActions = lazy(() => pageImports.model().then((module) => ({ default: module.ModelActions })));
@@ -114,6 +115,7 @@ export function AppContainer() {
         <AppShell
             actions={
                 <Suspense fallback={null}>
+                    {visibleItem === 'home' && <HomeActions />}
                     {visibleItem === 'channel' && <ChannelActions />}
                     {visibleItem === 'group' && <GroupActions />}
                     {visibleItem === 'model' && <ModelActions />}

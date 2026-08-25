@@ -1,201 +1,106 @@
-import { useStatsDaily, useStatsHourly } from '@/api/stats';
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
-import { useMemo } from 'react';
+import { Fragment, useId, useMemo } from 'react';
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { useTranslations } from 'use-intl';
-import { formatCount, formatMoney } from '@/lib/utils';
+import { useStatsDaily, useStatsHourly, type StatsMetricsFormatted } from '@/api/stats';
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { AnimatedNumber } from '@/components/common/AnimatedNumber';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useHomeViewStore, type ChartMetricType, type ChartPeriod } from '@/components/modules/home/store';
+import { formatCount, formatMoney } from '@/lib/utils';
+import { useTheme } from '@/provider/theme';
+import { useHomeViewStore } from './store';
+import { MetricTabs } from './metric-tabs';
 
+// 趋势图上的一个点。小时与每日两种粒度只用到这三项, 且两者取值方式一致, 故统一成同一形状。
+interface ChartPoint {
+    label: string; // 横轴刻度, 小时粒度为 H:00, 每日粒度为 MM/DD。
+    stat: Pick<StatsMetricsFormatted, 'request_count' | 'total_cost' | 'total_token'>;
+}
+
+// StatsChart 展示选定指标在选定周期内的趋势, 并汇总该周期的请求, 金额和词元。
 export function StatsChart() {
-    const PERIODS: readonly ChartPeriod[] = ['1', '7', '30'];
     const { data: statsDaily } = useStatsDaily();
     const { data: statsHourly } = useStatsHourly();
     const t = useTranslations('home.chart');
+    const tMetric = useTranslations('home.metric');
+    // 订阅主题: 切换时 :root 上 --chart-* 的取值会变, 需重渲染以重新取色。
+    useTheme();
+    // 屏内图表与分享舞台副本同时存在, 渐变 id 需唯一, 避免 url(#id) 指向另一份 defs。
+    const gradientId = `fillMetric-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
 
-    const chartMetricType = useHomeViewStore((state) => state.chartMetricType);
-    const setChartMetricType = useHomeViewStore((state) => state.setChartMetricType);
+    const metricType = useHomeViewStore((state) => state.chartMetricType);
+    const setMetricType = useHomeViewStore((state) => state.setChartMetricType);
     const period = useHomeViewStore((state) => state.chartPeriod);
-    const setChartPeriod = useHomeViewStore((state) => state.setChartPeriod);
+    const setPeriod = useHomeViewStore((state) => state.setChartPeriod);
 
-    const sortedDaily = useMemo(() => {
-        if (!statsDaily) return [];
-        return [...statsDaily].sort((a, b) => a.date.localeCompare(b.date));
-    }, [statsDaily]);
-
-    const getChartDataKey = (type: ChartMetricType) => {
-        return type === 'cost' ? 'total_cost' : type === 'count' ? 'request_count' : 'total_token';
-    };
-
-    const chartData = useMemo(() => {
-        const dataKey = getChartDataKey(chartMetricType);
+    // 今天取小时粒度, 其余取最近 N 天; 两种粒度的统计字段同名, 后续处理不再分支。
+    const source = useMemo<ChartPoint[]>(() => {
         if (period === '1') {
-            if (!statsHourly) return [];
-            const firstUsageIndex = statsHourly.findIndex((stat) => stat.request_count.raw > 0);
-            const startIndex = firstUsageIndex === -1
-                ? Math.max(statsHourly.length - 1, 0)
-                : Math.max(firstUsageIndex - 1, 0);
-            return statsHourly.slice(startIndex).map((stat) => ({
-                date: `${stat.hour}:00`,
-                [dataKey]: chartMetricType === 'cost'
-                    ? stat.total_cost.raw
-                    : chartMetricType === 'count'
-                        ? stat.request_count.raw
-                        : (stat.input_token.raw + stat.output_token.raw),
-            }));
-        } else {
-            const days = Number(period);
-            const recentStats = sortedDaily.slice(-days);
-            const firstUsageIndex = recentStats.findIndex((stat) => stat.request_count.raw > 0);
-            const startIndex = firstUsageIndex === -1
-                ? Math.max(recentStats.length - 1, 0)
-                : Math.max(firstUsageIndex - 1, 0);
-            return recentStats.slice(startIndex).map((stat) => ({
-                date: `${stat.date.slice(4, 6)}/${stat.date.slice(6, 8)}`,
-                [dataKey]: chartMetricType === 'cost'
-                    ? stat.total_cost.raw
-                    : chartMetricType === 'count'
-                        ? (stat.request_success.raw + stat.request_failed.raw)
-                        : (stat.input_token.raw + stat.output_token.raw),
-            }));
+            return (statsHourly ?? []).map((stat) => ({ label: `${stat.hour}:00`, stat }));
         }
-    }, [sortedDaily, statsHourly, period, chartMetricType]);
+        return [...(statsDaily ?? [])]
+            .sort((a, b) => a.date.localeCompare(b.date))
+            .slice(-Number(period))
+            .map((stat) => ({ label: `${stat.date.slice(4, 6)}/${stat.date.slice(6, 8)}`, stat }));
+    }, [statsDaily, statsHourly, period]);
 
-    const totals = useMemo(() => {
-        if (period === '1') {
-            if (!statsHourly) return { requests: 0, cost: 0, tokens: 0 };
-            const requests = statsHourly.reduce((acc, stat) => acc + stat.request_count.raw, 0);
-            const cost = statsHourly.reduce((acc, stat) => acc + stat.total_cost.raw, 0);
-            const tokens = statsHourly.reduce((acc, stat) => acc + stat.input_token.raw + stat.output_token.raw, 0);
-            return {
-                requests,
-                cost,
-                tokens,
-            };
-        } else {
-            const days = Number(period);
-            const recentStats = sortedDaily.slice(-days);
-            const requests = recentStats.reduce((acc, stat) => acc + stat.request_success.raw + stat.request_failed.raw, 0);
-            const cost = recentStats.reduce((acc, stat) => acc + stat.total_cost.raw, 0);
-            const tokens = recentStats.reduce((acc, stat) => acc + stat.input_token.raw + stat.output_token.raw, 0);
-            return {
-                requests,
-                cost,
-                tokens,
-            };
-        }
-    }, [sortedDaily, statsHourly, period]);
+    // 图表从首个有请求的点前一个开始, 避免开头一长段零值; 汇总仍按整个周期统计。
+    const firstUsage = source.findIndex((item) => item.stat.request_count.raw > 0);
+    const metricField = metricType === 'cost' ? 'total_cost' : metricType === 'count' ? 'request_count' : 'total_token';
+    const chartData = source
+        .slice(firstUsage === -1 ? Math.max(source.length - 1, 0) : Math.max(firstUsage - 1, 0))
+        .map((item) => ({ date: item.label, value: item.stat[metricField].raw }));
 
-    const chartConfig = useMemo(() => {
-        const dataKey = getChartDataKey(chartMetricType);
-        const labels = {
-            'total_cost': t('totalCost'),
-            'request_count': t('totalRequests'),
-            'total_token': t('totalTokens'),
-        };
-        return {
-            [dataKey]: { label: labels[dataKey] },
-        };
-    }, [chartMetricType, t]);
-
-    const getPeriodLabel = (p: ChartPeriod) => {
-        const labels = {
-            '1': t('period.today'),
-            '7': t('period.last7Days'),
-            '30': t('period.last30Days'),
-        };
-        return labels[p];
-    };
-
-
-    const handlePeriodClick = () => {
-        const currentIndex = PERIODS.indexOf(period);
-        const nextIndex = (currentIndex + 1) % PERIODS.length;
-        setChartPeriod(PERIODS[nextIndex]);
-    };
-
-
-    const getChartStroke = (type: ChartMetricType) => {
-        if (type === 'cost') return 'var(--chart-1)';
-        if (type === 'count') return 'var(--chart-2)';
-        return 'var(--chart-3)';
-    };
-
-    const getChartFill = (type: ChartMetricType) => {
-        if (type === 'cost') return 'url(#fillMetric1)';
-        if (type === 'count') return 'url(#fillMetric2)';
-        return 'url(#fillMetric3)';
-    };
+    const chartColor = getComputedStyle(document.documentElement)
+        .getPropertyValue(metricType === 'cost' ? '--chart-1' : metricType === 'count' ? '--chart-2' : '--chart-3')
+        .trim();
+    const periodLabel = { '1': t('period.today'), '7': t('period.last7Days'), '30': t('period.last30Days') }[period];
+    const summary = [
+        { label: t('totalRequests'), metric: formatCount(source.reduce((sum, item) => sum + item.stat.request_count.raw, 0)) },
+        { label: t('totalCost'), metric: formatMoney(source.reduce((sum, item) => sum + item.stat.total_cost.raw, 0)) },
+        { label: t('totalTokens'), metric: formatCount(source.reduce((sum, item) => sum + item.stat.total_token.raw, 0)) },
+    ];
 
     return (
         <div className="rounded-3xl bg-card border-border border pt-2 pb-0 text-card-foreground">
             <div className="px-4 pb-2 space-y-2">
                 <div className="flex justify-between items-center">
                     <h3 className="font-semibold text-base">{t('title')}</h3>
-                    <Tabs value={chartMetricType} onValueChange={(value) => setChartMetricType(value as ChartMetricType)}>
-                        <TabsList variant="text" className="p-0">
-                            <TabsTrigger value="cost" className="pr-0">{t('metricType.cost')}</TabsTrigger>
-                            <span aria-hidden="true" className="mx-1 inline-flex h-full -translate-y-px items-center text-sm font-medium leading-none text-muted-foreground/50">/</span>
-                            <TabsTrigger value="count" className="px-0">{t('metricType.count')}</TabsTrigger>
-                            <span aria-hidden="true" className="mx-1 inline-flex h-full -translate-y-px items-center text-sm font-medium leading-none text-muted-foreground/50">/</span>
-                            <TabsTrigger value="tokens" className="pl-0">{t('metricType.tokens')}</TabsTrigger>
-                        </TabsList>
-                    </Tabs>
+                    <MetricTabs value={metricType} onChange={setMetricType} />
                 </div>
 
-                {/* 第二行：汇总统计 + 周期选择 */}
                 <div className="flex justify-between items-start">
                     <div className="flex gap-2 text-sm">
-                        <div>
-                            <div className="text-xs text-muted-foreground">{t('totalRequests')}</div>
-                            <div className="text-xl font-semibold">
-                                <AnimatedNumber value={formatCount(totals.requests).formatted.value} />
-                                <span className="ml-0.5 text-sm text-muted-foreground">{formatCount(totals.requests).formatted.unit}</span>
-                            </div>
-                        </div>
-                        <div className="w-px bg-border self-stretch"></div>
-                        <div>
-                            <div className="text-xs text-muted-foreground">{t('totalCost')}</div>
-                            <div className="text-xl font-semibold">
-                                <AnimatedNumber value={formatMoney(totals.cost).formatted.value} />
-                                <span className="ml-0.5 text-sm text-muted-foreground">{formatMoney(totals.cost).formatted.unit}</span>
-                            </div>
-                        </div>
-                        <div className="w-px bg-border self-stretch"></div>
-                        <div>
-                            <div className="text-xs text-muted-foreground">{t('totalTokens')}</div>
-                            <div className="text-xl font-semibold">
-                                <AnimatedNumber value={formatCount(totals.tokens).formatted.value} />
-                                <span className="ml-0.5 text-sm text-muted-foreground">{formatCount(totals.tokens).formatted.unit}</span>
-                            </div>
-                        </div>
+                        {summary.map(({ label, metric }, index) => (
+                            <Fragment key={label}>
+                                {index > 0 && <div className="w-px bg-border self-stretch" />}
+                                <div>
+                                    <div className="text-xs text-muted-foreground">{label}</div>
+                                    <div className="text-xl font-semibold">
+                                        <AnimatedNumber value={metric.formatted.value} />
+                                        <span className="ml-0.5 text-sm text-muted-foreground">{metric.formatted.unit}</span>
+                                    </div>
+                                </div>
+                            </Fragment>
+                        ))}
                     </div>
                     <div
                         className="flex gap-2 text-sm cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={handlePeriodClick}
+                        onClick={() => setPeriod(period === '1' ? '7' : period === '7' ? '30' : '1')}
                     >
                         <div>
                             <div className="text-xs text-muted-foreground">{t('timePeriod')}</div>
-                            <div className="text-base font-semibold">{getPeriodLabel(period)}</div>
+                            <div className="text-base font-semibold">{periodLabel}</div>
                         </div>
                     </div>
                 </div>
             </div>
-            <ChartContainer config={chartConfig} className="h-40 w-full" >
+
+            <ChartContainer config={{ value: { label: tMetric(metricType) } }} className="h-40 w-full">
                 <AreaChart accessibilityLayer data={chartData}>
                     <defs>
-                        <linearGradient id="fillMetric1" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={1.0} />
-                            <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0.1} />
-                        </linearGradient>
-                        <linearGradient id="fillMetric2" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="var(--chart-2)" stopOpacity={1.0} />
-                            <stop offset="95%" stopColor="var(--chart-2)" stopOpacity={0.1} />
-                        </linearGradient>
-                        <linearGradient id="fillMetric3" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="var(--chart-3)" stopOpacity={1.0} />
-                            <stop offset="95%" stopColor="var(--chart-3)" stopOpacity={0.1} />
+                        {/* 停靠点取实际色值而非 var(): snapdom 不解析 defs 内的 var(), 截图会落回黑色。 */}
+                        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor={chartColor} stopOpacity={1.0} />
+                            <stop offset="95%" stopColor={chartColor} stopOpacity={0.1} />
                         </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -204,21 +109,12 @@ export function StatsChart() {
                         tickLine={false}
                         axisLine={false}
                         tickFormatter={(value) => {
-                            if (chartMetricType === 'cost') {
-                                const formatted = formatMoney(value);
-                                return `${formatted.formatted.value}${formatted.formatted.unit}`;
-                            }
-                            const formatted = formatCount(value);
+                            const formatted = metricType === 'cost' ? formatMoney(value) : formatCount(value);
                             return `${formatted.formatted.value}${formatted.formatted.unit}`;
                         }}
                     />
                     <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" />} />
-                    <Area
-                        type="monotone"
-                        dataKey={getChartDataKey(chartMetricType)}
-                        stroke={getChartStroke(chartMetricType)}
-                        fill={getChartFill(chartMetricType)}
-                    />
+                    <Area type="monotone" dataKey="value" stroke={chartColor} fill={`url(#${gradientId})`} />
                 </AreaChart>
             </ChartContainer>
         </div>

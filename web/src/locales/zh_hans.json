@@ -47,6 +47,8 @@
         "setting": "设置"
     },
     "toolbar": {
+        "hideChannelName": "模糊渠道名称",
+        "share": "分享",
         "popover": {
             "ariaLabel": "视图选项",
             "layout": "布局",
@@ -83,6 +85,11 @@
         }
     },
     "home": {
+        "metric": {
+            "cost": "金额",
+            "count": "次数",
+            "tokens": "词元"
+        },
         "activity": {
             "requestCount": "请求次数",
             "waitTime": "消耗时间",
@@ -110,11 +117,6 @@
             "totalCost": "消费金额",
             "totalTokens": "词元消耗",
             "timePeriod": "时间周期",
-            "metricType": {
-                "cost": "金额",
-                "count": "次数",
-                "tokens": "词元"
-            },
             "period": {
                 "today": "今天",
                 "last7Days": "7天",
@@ -124,9 +126,6 @@
         "rank": {
             "channel": "渠道",
             "model": "模型",
-            "sortByCost": "金额",
-            "sortByCount": "次数",
-            "sortByTokens": "词元",
             "noData": "暂无排行数据",
             "successRate": "成功率"
         }

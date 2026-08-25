@@ -47,6 +47,8 @@
         "setting": "Setting"
     },
     "toolbar": {
+        "hideChannelName": "Blur channel names",
+        "share": "Share",
         "popover": {
             "ariaLabel": "View options",
             "layout": "Layout",
@@ -83,6 +85,11 @@
         }
     },
     "home": {
+        "metric": {
+            "cost": "Cost",
+            "count": "Count",
+            "tokens": "Tokens"
+        },
         "activity": {
             "requestCount": "Requests",
             "waitTime": "Time Consumed",
@@ -110,11 +117,6 @@
             "totalCost": "Total Cost",
             "totalTokens": "Total Tokens",
             "timePeriod": "Time Period",
-            "metricType": {
-                "cost": "Cost",
-                "count": "Count",
-                "tokens": "Tokens"
-            },
             "period": {
                 "today": "Today",
                 "last7Days": "7 Days",
@@ -124,9 +126,6 @@
         "rank": {
             "channel": "Channel",
             "model": "Model",
-            "sortByCost": "Cost",
-            "sortByCount": "Count",
-            "sortByTokens": "Tokens",
             "noData": "No ranking data",
             "successRate": "Success Rate"
         }
