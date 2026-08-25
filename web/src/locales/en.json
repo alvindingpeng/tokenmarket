@@ -266,6 +266,7 @@
             "title": "Account Settings",
             "save": "Save",
             "saving": "Saving...",
+            "cancel": "Cancel",
             "username": {
                 "label": "Change Username",
                 "placeholder": "Enter new username",

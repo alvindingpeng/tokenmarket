@@ -266,6 +266,7 @@
             "title": "账户设置",
             "save": "保存",
             "saving": "保存中...",
+            "cancel": "取消",
             "username": {
                 "label": "修改用户名",
                 "placeholder": "请输入新用户名",
