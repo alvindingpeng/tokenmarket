@@ -7,6 +7,7 @@ import (
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func init() {
@@ -82,9 +83,14 @@ func migrateChannelModels(db *gorm.DB) error {
 		}
 
 		// 同名模型只保留一行，手动来源优先于自动来源。
+		// 旧 group_items 对 channel_id 没有外键，渠道删除后会留下孤立行，
+		// 这些行引用的渠道已不存在，插入 channel_models 会违反外键，必须跳过。
 		addModel := func(channelID int, name string, source model.ChannelModelSource) {
 			name = strings.TrimSpace(name)
 			if channelID == 0 || name == "" {
+				return
+			}
+			if _, ok := channelAutoSync[channelID]; !ok {
 				return
 			}
 			key := channelModelKey{ChannelID: channelID, Name: name}
@@ -144,13 +150,45 @@ func migrateChannelModels(db *gorm.DB) error {
 				return fmt.Errorf("failed to update channel_model %d: %w", channelModel.ID, err)
 			}
 		}
+		// MySQL 默认排序规则不区分大小写，仅大小写不同的模型会撞 idx_channel_model_name 唯一索引，
+		// 直接 Create 会中断整个迁移，这里冲突跳过，随后统一从库里回读真实主键。
 		for _, key := range modelOrder {
 			channelModel := modelsByKey[key]
 			if _, exists := existingModelKeys[key]; exists {
 				continue
 			}
-			if err := tx.Create(channelModel).Error; err != nil {
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(channelModel).Error; err != nil {
 				return fmt.Errorf("failed to create channel_model %s: %w", channelModel.Name, err)
+			}
+		}
+
+		// 冲突跳过的行不会回写主键，且区分大小写的库里同名模型可能只留下一行，
+		// 统一重新读取并按精确名优先、小写名兜底的方式回填主键，避免 group_items 写入 0。
+		saved := make([]model.ChannelModel, 0)
+		if err := tx.Order("id ASC").Find(&saved).Error; err != nil {
+			return fmt.Errorf("failed to reload channel_models: %w", err)
+		}
+		savedIDByKey := make(map[channelModelKey]int, len(saved))
+		savedIDByLowerKey := make(map[channelModelKey]int, len(saved))
+		for _, channelModel := range saved {
+			name := strings.TrimSpace(channelModel.Name)
+			exact := channelModelKey{ChannelID: channelModel.ChannelID, Name: name}
+			if _, ok := savedIDByKey[exact]; !ok {
+				savedIDByKey[exact] = channelModel.ID
+			}
+			lower := channelModelKey{ChannelID: channelModel.ChannelID, Name: strings.ToLower(name)}
+			if _, ok := savedIDByLowerKey[lower]; !ok {
+				savedIDByLowerKey[lower] = channelModel.ID
+			}
+		}
+		for _, key := range modelOrder {
+			channelModel := modelsByKey[key]
+			if id, ok := savedIDByKey[channelModelKey{ChannelID: key.ChannelID, Name: strings.TrimSpace(key.Name)}]; ok {
+				channelModel.ID = id
+				continue
+			}
+			if id, ok := savedIDByLowerKey[channelModelKey{ChannelID: key.ChannelID, Name: strings.ToLower(strings.TrimSpace(key.Name))}]; ok {
+				channelModel.ID = id
 			}
 		}
 
@@ -232,13 +270,27 @@ func migrateLegacyGroupItems(db *gorm.DB, modelsByKey map[channelModelKey]*model
 		return fmt.Errorf("failed to read group_items: %w", err)
 	}
 
+	// 区分大小写的库里 modelsByKey 按原名建索引，不区分大小写的库里同名模型只落库一行，
+	// 精确名找不到时按小写名兜底，避免把合法旧行误判为无效。
+	modelsByLowerKey := make(map[channelModelKey]*model.ChannelModel, len(modelsByKey))
+	for key, channelModel := range modelsByKey {
+		lower := channelModelKey{ChannelID: key.ChannelID, Name: strings.ToLower(strings.TrimSpace(key.Name))}
+		if _, ok := modelsByLowerKey[lower]; !ok {
+			modelsByLowerKey[lower] = channelModel
+		}
+	}
+
 	items := make([]model.GroupItem, 0, len(legacyItems))
 	invalidIDs := make([]int, 0)
 	seen := make(map[[2]int]struct{}, len(legacyItems))
 	for _, item := range legacyItems {
-		key := channelModelKey{ChannelID: item.ChannelID, Name: strings.TrimSpace(item.ModelName)}
-		channelModel, ok := modelsByKey[key]
+		name := strings.TrimSpace(item.ModelName)
+		channelModel, ok := modelsByKey[channelModelKey{ChannelID: item.ChannelID, Name: name}]
 		if !ok {
+			channelModel, ok = modelsByLowerKey[channelModelKey{ChannelID: item.ChannelID, Name: strings.ToLower(name)}]
+		}
+		// 渠道已删除或模型未能落库时主键为 0，写入会违反 channel_model_id 外键，直接丢弃该行。
+		if !ok || channelModel.ID == 0 {
 			invalidIDs = append(invalidIDs, item.ID)
 			continue
 		}
@@ -273,9 +325,54 @@ func migrateLegacyGroupItems(db *gorm.DB, modelsByKey map[channelModelKey]*model
 		}
 	}
 	if db.Migrator().HasTable("groups") {
-		if err := db.Exec("UPDATE groups SET active_item_id = 0 WHERE active_item_id <> 0 AND NOT EXISTS (SELECT 1 FROM group_items WHERE group_items.id = groups.active_item_id AND group_items.group_id = groups.id)").Error; err != nil {
-			return fmt.Errorf("failed to clear stale active items: %w", err)
+		if err := clearStaleActiveItems(db); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+// clearStaleActiveItems 把 active_item_id 指向已不存在或不属于本分组的成员的分组重置为 0。
+// groups 在 MySQL 8.0.2+ 和 TiDB 里是保留字，改用 GORM 模型让各方言自行加引号，避免拼接原始 SQL。
+func clearStaleActiveItems(db *gorm.DB) error {
+	type groupActiveItem struct {
+		ID           int // 分组主键。
+		ActiveItemID int // 分组当前选中的成员主键。
+	}
+	groups := make([]groupActiveItem, 0)
+	if err := db.Model(&model.Group{}).Where("active_item_id <> 0").
+		Select("id, active_item_id").Find(&groups).Error; err != nil {
+		return fmt.Errorf("failed to read group active items: %w", err)
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+
+	type groupItemRef struct {
+		ID      int // 成员主键。
+		GroupID int // 成员所属分组主键。
+	}
+	items := make([]groupItemRef, 0)
+	if err := db.Model(&model.GroupItem{}).Select("id, group_id").Find(&items).Error; err != nil {
+		return fmt.Errorf("failed to read group items: %w", err)
+	}
+	itemGroup := make(map[int]int, len(items))
+	for _, item := range items {
+		itemGroup[item.ID] = item.GroupID
+	}
+
+	staleIDs := make([]int, 0)
+	for _, group := range groups {
+		if groupID, ok := itemGroup[group.ActiveItemID]; !ok || groupID != group.ID {
+			staleIDs = append(staleIDs, group.ID)
+		}
+	}
+	if len(staleIDs) == 0 {
+		return nil
+	}
+	if err := db.Model(&model.Group{}).Where("id IN ?", staleIDs).
+		Update("active_item_id", 0).Error; err != nil {
+		return fmt.Errorf("failed to clear stale active items: %w", err)
 	}
 	return nil
 }

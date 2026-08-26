@@ -17,8 +17,8 @@ type Migration struct {
 type MigrationRecordStatus int
 
 const (
-	MigrationRecordStatusSuccess MigrationRecordStatus = 1
-	MigrationRecordStatusFailed
+	MigrationRecordStatusSuccess MigrationRecordStatus = iota + 1 // 迁移已执行成功，后续启动跳过。
+	MigrationRecordStatusFailed                                   // 迁移执行失败，后续启动重试。
 )
 
 type MigrationRecord struct {
