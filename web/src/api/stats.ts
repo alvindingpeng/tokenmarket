@@ -30,6 +30,23 @@ export interface StatsMetricsFormatted {
     total_cost: ReturnType<typeof formatMoney>;
 }
 
+// formatStatsMetrics 把一组累计统计格式化为界面展示字段，并补齐合计项。
+// 渠道、渠道模型和渠道凭据各自维护独立计数，均按同一口径展示。
+export function formatStatsMetrics(metrics: StatsMetrics): StatsMetricsFormatted {
+    return {
+        input_token: formatCount(metrics.input_token),
+        output_token: formatCount(metrics.output_token),
+        total_token: formatCount(metrics.input_token + metrics.output_token),
+        input_cost: formatMoney(metrics.input_cost),
+        output_cost: formatMoney(metrics.output_cost),
+        total_cost: formatMoney(metrics.input_cost + metrics.output_cost),
+        wait_time: formatTime(metrics.wait_time),
+        request_success: formatCount(metrics.request_success),
+        request_failed: formatCount(metrics.request_failed),
+        request_count: formatCount(metrics.request_success + metrics.request_failed),
+    };
+}
+
 export interface StatsDaily extends StatsMetrics {
     date: string;
 }
@@ -75,16 +92,7 @@ const statsDailyFormattedQueryOptions = queryOptions({
     select: (data): StatsDailyFormattedResponse => ({
         max_request_count: data.max_request_count,
         items: data.items.map((item): StatsDailyFormatted => ({
-            input_token: formatCount(item.input_token),
-            output_token: formatCount(item.output_token),
-            total_token: formatCount(item.input_token + item.output_token),
-            input_cost: formatMoney(item.input_cost),
-            output_cost: formatMoney(item.output_cost),
-            total_cost: formatMoney(item.input_cost + item.output_cost),
-            wait_time: formatTime(item.wait_time),
-            request_success: formatCount(item.request_success),
-            request_failed: formatCount(item.request_failed),
-            request_count: formatCount(item.request_success + item.request_failed),
+            ...formatStatsMetrics(item),
             date: item.date,
         })),
     }),
@@ -108,18 +116,9 @@ export function useStatsDaily() {
 const statsHourlyFormattedQueryOptions = queryOptions({
     ...statsHourlyQueryOptions,
     select: (data) => data.map((item): StatsHourlyFormatted => ({
+        ...formatStatsMetrics(item),
         hour: item.hour,
         date: item.date,
-        input_token: formatCount(item.input_token),
-        output_token: formatCount(item.output_token),
-        total_token: formatCount(item.input_token + item.output_token),
-        input_cost: formatMoney(item.input_cost),
-        output_cost: formatMoney(item.output_cost),
-        total_cost: formatMoney(item.input_cost + item.output_cost),
-        wait_time: formatTime(item.wait_time),
-        request_success: formatCount(item.request_success),
-        request_failed: formatCount(item.request_failed),
-        request_count: formatCount(item.request_success + item.request_failed),
     })),
     refetchInterval: 10000,// 10 秒
     refetchOnMount: 'always',
@@ -135,18 +134,7 @@ export function useStatsHourly() {
 // statsTotalFormattedQueryOptions 统一首页总统计查询、格式化和刷新策略。
 const statsTotalFormattedQueryOptions = queryOptions({
     ...statsTotalQueryOptions,
-    select: (data): StatsTotalFormatted => ({
-        input_token: formatCount(data.input_token),
-        output_token: formatCount(data.output_token),
-        total_token: formatCount(data.input_token + data.output_token),
-        input_cost: formatMoney(data.input_cost),
-        output_cost: formatMoney(data.output_cost),
-        total_cost: formatMoney(data.input_cost + data.output_cost),
-        wait_time: formatTime(data.wait_time),
-        request_success: formatCount(data.request_success),
-        request_failed: formatCount(data.request_failed),
-        request_count: formatCount(data.request_success + data.request_failed),
-    }),
+    select: (data): StatsTotalFormatted => formatStatsMetrics(data),
     refetchInterval: 10000,// 10 秒
     refetchOnMount: 'always',
 });
@@ -168,17 +156,8 @@ export function useStatsAPIKey() {
         queryKey: ['stats', 'apikey'],
         queryFn: () => apiRequest<StatsAPIKey[]>('/api/v1/stats/apikey'),
         select: (data) => data.map((item): StatsAPIKeyFormatted => ({
+            ...formatStatsMetrics(item),
             api_key_id: item.api_key_id,
-            input_token: formatCount(item.input_token),
-            output_token: formatCount(item.output_token),
-            total_token: formatCount(item.input_token + item.output_token),
-            input_cost: formatMoney(item.input_cost),
-            output_cost: formatMoney(item.output_cost),
-            total_cost: formatMoney(item.input_cost + item.output_cost),
-            wait_time: formatTime(item.wait_time),
-            request_success: formatCount(item.request_success),
-            request_failed: formatCount(item.request_failed),
-            request_count: formatCount(item.request_success + item.request_failed),
         })),
         refetchInterval: 30000,
         refetchOnMount: 'always',

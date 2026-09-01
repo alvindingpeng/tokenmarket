@@ -245,22 +245,6 @@
                 "failed": "价格数据重建失败"
             }
         },
-        "llmSync": {
-            "title": "渠道同步",
-            "syncInterval": {
-                "label": "自动同步间隔（小时）",
-                "placeholder": "请输入间隔（小时）"
-            },
-            "manualSync": {
-                "label": "手动同步渠道",
-                "button": "立即同步",
-                "syncing": "同步中..."
-            },
-            "lastSync": "上次同步",
-            "neverSynced": "从未同步",
-            "syncSuccess": "渠道同步成功",
-            "syncFailed": "渠道同步失败"
-        },
         "account": {
             "title": "账户设置",
             "save": "保存",
@@ -337,8 +321,6 @@
                 "edit": "编辑",
                 "cancel": "取消",
                 "save": "保存",
-                "copyName": "复制名称",
-                "delete": "删除",
                 "confirmDelete": "确认删除"
             }
         },
@@ -441,10 +423,6 @@
             "model": "模型",
             "successRequests": "成功请求",
             "failedRequests": "失败请求",
-            "edit": "编辑",
-            "delete": "删除",
-            "confirmDelete": "确认删除",
-            "cancel": "取消",
             "toast": {
                 "enabled": "渠道已启用",
                 "disabled": "渠道已禁用"
@@ -459,51 +437,58 @@
             "noModels": "暂未选择模型",
             "sortByCost": "金额",
             "sortByCount": "次数",
-            "sortByTokens": "词元"
+            "sortByTokens": "词元",
+            "edit": "编辑",
+            "delete": "删除",
+            "confirmDelete": "确认删除",
+            "cancel": "取消"
         },
         "create": {
             "dialogTitle": "创建新渠道"
         },
         "form": {
+            "stepPreset": "开始",
+            "stepConnection": "连接",
+            "stepKeys": "凭据",
+            "stepGrants": "模型",
+            "stepAdvanced": "高级",
             "name": "渠道名称",
-            "type": "渠道类型",
             "baseUrl": "Base URL",
-            "baseUrlUrl": "地址",
-            "advanced": "高级设置",
             "apiKey": "API Key",
+            "enabled": "启用",
+            "proxy": "使用代理",
+            "keys": "凭据",
+            "keyAdd": "添加凭据",
+            "keyName": "名称",
+            "keyEmpty": "未填写",
+            "keysRequiredFirst": "请先添加凭据",
+            "detailLoading": "正在加载渠道配置",
+            "detailFailed": "渠道配置加载失败",
+            "grantExpandAll": "全部展开",
+            "grantCollapseAll": "全部折叠",
+            "modelAdd": "添加",
+            "modelCustomPlaceholder": "模型名称",
+            "modelRefresh": "拉取",
+            "modelNoSelected": "暂无模型",
+            "modelRefreshSuccess": "已拉取 {count} 个模型",
+            "modelRefreshFailed": "拉取失败",
+            "modelRefreshEmpty": "未获取到模型",
+            "channelProxy": "渠道代理",
+            "matchRegex": "匹配正则",
+            "paramOverride": "参数覆盖",
             "customHeader": "自定义 Header",
             "customHeaderKey": "Header Key",
             "customHeaderValue": "Header Value",
             "customHeaderAdd": "添加 Header",
-            "channelProxy": "渠道代理",
-            "channelProxyPlaceholder": "可选：仅对该渠道生效（覆盖全局代理）",
-            "paramOverride": "参数覆盖",
-            "paramOverridePlaceholder": "可选：JSON 字符串，用于覆盖请求参数",
-            "model": "模型",
-            "enabled": "启用",
-            "proxy": "使用代理",
-            "modelCustomPlaceholder": "自定义模型名称",
-            "modelAdd": "添加",
-            "modelRefresh": "刷新",
-            "modelRefreshSuccess": "模型列表获取成功",
-            "modelRefreshFailed": "模型列表获取失败",
-            "modelRefreshEmpty": "未获取到模型列表",
-            "modelSelected": "已选模型",
-            "modelNoSelected": "暂未选择模型",
-            "modelClearAll": "清除全部",
-            "typeOpenAIChat": "OpenAI Chat",
-            "typeOpenAIResponse": "OpenAI Response",
-            "typeAnthropic": "Anthropic",
-            "typeGemini": "Gemini",
-            "typeVolcengine": "火山引擎",
-            "autoSync": "自动同步",
-            "matchRegex": "匹配正则",
-            "matchRegexPlaceholder": "可选：用于匹配请求模型名称的正则表达式",
+            "edit": "编辑",
+            "delete": "删除",
             "submit": "创建渠道",
-            "submitting": "创建中...",
             "save": "保存",
-            "saving": "保存中...",
-            "cancel": "取消"
+            "cancel": "取消",
+            "backToStats": "返回统计",
+            "grantClearAll": "清空全部模型",
+            "modelRemove": "移除模型",
+            "grantRemove": "移除该凭据的授权"
         }
     }
 }

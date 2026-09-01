@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState, type FormEvent } from 'react';
 import { Check, ChevronDownIcon, HelpCircle, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
-import { useChannelList } from '@/api/channel';
+import { Protocol, useChannelGrantList } from '@/api/channel';
 import { Button } from '@/components/ui/button';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -34,6 +34,14 @@ const defaultRelayConfig: GroupRelayConfig = {
     member_affinity_seconds: 0,
 };
 
+// PROTOCOL_TAGS 是凭据行上的协议标识。
+// 此处写全称: 凭据行只有名称一列, 横向有余量; 渠道表单的授权矩阵是三列复选框, 列宽紧张才用缩写。
+const PROTOCOL_TAGS = [
+    { bit: Protocol.OpenAIChatCompletion, label: 'Chat' },
+    { bit: Protocol.OpenAIResponse, label: 'Response' },
+    { bit: Protocol.AnthropicMessage, label: 'Message' },
+];
+
 // FieldHelp 渲染配置字段的简短帮助提示。
 function FieldHelp({ text }: { text: string }) {
     return (
@@ -49,13 +57,13 @@ function FieldHelp({ text }: { text: string }) {
 }
 
 function ModelPickerSection({
-    modelChannels,
+    grantMembers,
     selectedMembers,
     onAdd,
     onAutoAdd,
     autoAddDisabled,
 }: {
-    modelChannels: SelectedMember[];
+    grantMembers: SelectedMember[];
     selectedMembers: SelectedMember[];
     onAdd: (channel: SelectedMember) => void;
     onAutoAdd: () => void;
@@ -67,18 +75,31 @@ function ModelPickerSection({
     const selectedKeys = useMemo(() => new Set(selectedMembers.map(memberKey)), [selectedMembers]);
     const normalizedSearch = searchKeyword.trim().toLowerCase();
 
+    // 候选按渠道 -> 模型 -> 凭据三级组织: 一个模型可有多份凭据, 各自是独立授权, 需再展开一级才能分别选取。
+    // 三级顺序沿用后端给出的候选顺序: Map 保留插入顺序, 后端已按渠道, 模型, 凭据排好, 此处无需再排。
     const channels = useMemo(() => {
-        const byId = new Map<number, { id: number; name: string; models: SelectedMember[] }>();
-        modelChannels.forEach((mc) => {
-            const existing = byId.get(mc.channel_id);
-            if (existing) existing.models.push(mc);
-            else byId.set(mc.channel_id, { id: mc.channel_id, name: mc.channel_name, models: [mc] });
+        const byChannel = new Map<number, {
+            id: number;
+            name: string;
+            models: Map<string, SelectedMember[]>;
+        }>();
+        grantMembers.forEach((mc) => {
+            let channel = byChannel.get(mc.channel_id);
+            if (!channel) {
+                channel = { id: mc.channel_id, name: mc.channel_name, models: new Map() };
+                byChannel.set(mc.channel_id, channel);
+            }
+            const grants = channel.models.get(mc.name);
+            if (grants) grants.push(mc);
+            else channel.models.set(mc.name, [mc]);
         });
 
-        return Array.from(byId.values())
-            .map((c) => ({ ...c, models: [...c.models].sort((a, b) => a.name.localeCompare(b.name)) }))
-            .sort((a, b) => a.id - b.id);
-    }, [modelChannels]);
+        return Array.from(byChannel.values()).map((channel) => ({
+            id: channel.id,
+            name: channel.name,
+            models: Array.from(channel.models, ([name, grants]) => ({ name, grants })),
+        }));
+    }, [grantMembers]);
 
     const filteredChannels = useMemo(() => {
         if (!normalizedSearch) return channels;
@@ -131,8 +152,10 @@ function ModelPickerSection({
             <div className="flex-1 min-h-0 overflow-y-auto p-2">
                 <Accordion type="multiple" className="w-full space-y-2">
                     {filteredChannels.map((channel) => {
-                        const total = channel.models.length;
-                        const selectedCount = channel.models.reduce(
+                        // 计数按授权算而非按模型: 展开后每份凭据都是一个可选项。
+                        const grants = channel.models.flatMap((model) => model.grants);
+                        const total = grants.length;
+                        const selectedCount = grants.reduce(
                             (acc, m) => acc + (selectedKeys.has(memberKey(m)) ? 1 : 0),
                             0
                         );
@@ -151,33 +174,63 @@ function ModelPickerSection({
                                 </AccordionPrimitive.Header>
                                 <AccordionContent className="px-2 pt-2">
                                     <div className="flex flex-col gap-1.5">
-                                        {channel.models.map((m) => {
-                                            const isSelected = selectedKeys.has(memberKey(m));
-                                            const { Icon, className: iconClassName } = getModelIcon(m.name);
+                                        {channel.models.map((model) => {
+                                            const { Icon, className: iconClassName } = getModelIcon(model.name);
+                                            const modelSelected = model.grants.reduce(
+                                                (acc, m) => acc + (selectedKeys.has(memberKey(m)) ? 1 : 0),
+                                                0
+                                            );
                                             return (
-                                                <button
-                                                    key={memberKey(m)}
-                                                    type="button"
-                                                    onClick={() => !isSelected && onAdd(m)}
-                                                    disabled={isSelected}
-                                                    className={cn(
-                                                        'w-full flex items-center justify-between gap-2 rounded-lg border border-border/50 bg-background px-2.5 py-2 text-left transition-colors',
-                                                        isSelected ? 'opacity-60 cursor-not-allowed' : 'hover:bg-muted'
-                                                    )}
-                                                >
-                                                    <span className="flex items-center gap-2 min-w-0">
-                                                        <Icon aria-hidden="true" className={iconClassName} width={16} height={16} />
-                                                        <span className="text-sm font-medium truncate">{m.name}</span>
-                                                    </span>
+                                                <div key={model.name} className="rounded-lg border border-border/50 bg-background">
+                                                    {/* 模型行只作分组标题, 不可点选: 可选的是它下面的凭据, 一份凭据一条授权。 */}
+                                                    <div className="flex items-center justify-between gap-2 px-2.5 py-2">
+                                                        <span className="flex items-center gap-2 min-w-0">
+                                                            <Icon aria-hidden="true" className={iconClassName} width={16} height={16} />
+                                                            <span className="text-sm font-medium truncate">{model.name}</span>
+                                                        </span>
+                                                        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                                                            {model.grants.length - modelSelected}/{model.grants.length}
+                                                        </span>
+                                                    </div>
 
-                                                    <span className="shrink-0 text-muted-foreground">
-                                                        {isSelected ? (
-                                                            <Check className="size-4 text-primary" />
-                                                        ) : (
-                                                            <Plus className="size-4" />
-                                                        )}
-                                                    </span>
-                                                </button>
+                                                    <div className="flex flex-col border-t border-border/50">
+                                                        {model.grants.map((m) => {
+                                                            const isSelected = selectedKeys.has(memberKey(m));
+                                                            return (
+                                                                <button
+                                                                    key={memberKey(m)}
+                                                                    type="button"
+                                                                    onClick={() => !isSelected && onAdd(m)}
+                                                                    disabled={isSelected}
+                                                                    className={cn(
+                                                                        'flex w-full items-center justify-between gap-2 px-2.5 py-1.5 pl-8 text-left transition-colors',
+                                                                        isSelected ? 'opacity-60 cursor-not-allowed' : 'hover:bg-muted'
+                                                                    )}
+                                                                >
+                                                                    <span className="flex min-w-0 items-center gap-2">
+                                                                        <span className="truncate text-xs text-muted-foreground">{m.key_name}</span>
+                                                                        {/* 标出该凭据讲得通的协议: 同一模型的不同凭据可能只支持其中一部分, 选之前就要能看出来。 */}
+                                                                        {PROTOCOL_TAGS.map(({ bit, label }) => (m.protocols & bit) !== 0 && (
+                                                                            <span
+                                                                                key={bit}
+                                                                                className="shrink-0 rounded border border-border/60 px-1 text-[10px] leading-4 text-muted-foreground"
+                                                                            >
+                                                                                {label}
+                                                                            </span>
+                                                                        ))}
+                                                                    </span>
+                                                                    <span className="shrink-0 text-muted-foreground">
+                                                                        {isSelected ? (
+                                                                            <Check className="size-4 text-primary" />
+                                                                        ) : (
+                                                                            <Plus className="size-4" />
+                                                                        )}
+                                                                    </span>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
                                             );
                                         })}
                                     </div>
@@ -268,17 +321,17 @@ export function GroupEditor({
     onCancel?: () => void;
 }) {
     const t = useTranslations('group');
-    const { data: channelsData = [] } = useChannelList();
-    const modelChannels = useMemo<SelectedMember[]>(() => channelsData.flatMap(({ raw: channel }) =>
-        channel.models.map((channelModel) => ({
-            id: String(channelModel.id),
-            channel_model_id: channelModel.id,
-            name: channelModel.name,
-            enabled: channel.enabled,
-            channel_id: channelModel.channel_id,
-            channel_name: channel.name,
-        }))
-    ), [channelsData]);
+    const { data: grantCandidates = [] } = useChannelGrantList();
+    const grantMembers = useMemo<SelectedMember[]>(() => grantCandidates.map((grant) => ({
+        id: String(grant.id),
+        channel_grant_id: grant.id,
+        name: grant.model_name,
+        enabled: grant.available,
+        channel_id: grant.channel_id,
+        channel_name: grant.channel_name,
+        key_name: grant.key_name,
+        protocols: grant.protocols,
+    })), [grantCandidates]);
 
     const [groupName, setGroupName] = useState(initial?.name ?? '');
     const [mode, setMode] = useState<GroupMode>(initial?.mode ?? 'manual');
@@ -293,8 +346,8 @@ export function GroupEditor({
 
     const matchedModelChannels = useMemo(() => {
         if (!groupKey) return [];
-        return modelChannels.filter((mc) => matchesGroupName(mc.name, groupKey));
-    }, [groupKey, modelChannels]);
+        return grantMembers.filter((mc) => matchesGroupName(mc.name, groupKey));
+    }, [groupKey, grantMembers]);
 
     const handleAddMember = useCallback((channel: SelectedMember) => {
         const key = memberKey(channel);
@@ -391,7 +444,7 @@ export function GroupEditor({
                         <TabsContent value="members" className="min-h-0 overflow-hidden">
                             <div className="grid h-full min-h-0 grid-cols-1 gap-4 md:grid-cols-2">
                                 <ModelPickerSection
-                                    modelChannels={modelChannels}
+                                    grantMembers={grantMembers}
                                     selectedMembers={selectedMembers}
                                     onAdd={handleAddMember}
                                     onAutoAdd={handleAutoAdd}

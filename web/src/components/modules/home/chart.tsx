@@ -36,8 +36,7 @@ export function StatsChart() {
         if (period === '1') {
             return (statsHourly ?? []).map((stat) => ({ label: `${stat.hour}:00`, stat }));
         }
-        return [...(statsDaily ?? [])]
-            .sort((a, b) => a.date.localeCompare(b.date))
+        return (statsDaily ?? [])
             .slice(-Number(period))
             .map((stat) => ({ label: `${stat.date.slice(4, 6)}/${stat.date.slice(6, 8)}`, stat }));
     }, [statsDaily, statsHourly, period]);

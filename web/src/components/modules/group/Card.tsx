@@ -1,11 +1,11 @@
 import { memo, useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Trash2, X, Pencil } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { type Group, type GroupUpdateRequest, useDeleteGroup, useUpdateGroup, useUpdateGroupActiveItem } from '@/api/group';
-import { useChannelList } from '@/api/channel';
+import { type Group, type GroupUpdateRequest, useDeleteGroup, useUpdateGroup } from '@/api/group';
 import { useTranslations } from 'use-intl';
 import { toast } from 'sonner';
 import { CopyIconButton } from '@/components/common/CopyButton';
+import { IconButton } from '@/components/common/IconButton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { SelectedMember } from './ItemList';
 import { MemberList } from './ItemList';
@@ -64,39 +64,28 @@ function EditDialogContent({ group, displayMembers, isSubmitting, onSubmit }: Ed
 export const GroupCard = memo(function GroupCard({ group, now }: { group: Group; now: number }) {
     const t = useTranslations('group');
     const updateGroup = useUpdateGroup();
-    const updateActiveItem = useUpdateGroupActiveItem();
+    const activateItem = useUpdateGroup(); // 与配置提交分开持有: 共用一个实例会让点选成员点亮编辑弹窗的提交态。
     const deleteGroup = useDeleteGroup();
-    const { data: channelsData = [] } = useChannelList();
 
     const [confirmDelete, setConfirmDelete] = useState(false);
     const [members, setMembers] = useState<SelectedMember[]>([]);
     const isDragging = useRef(false);
 
-    const channelByModelID = useMemo(() => {
-        const map = new Map<number, { channel_name: string; enabled: boolean }>();
-        channelsData.forEach(({ raw: channel }) => {
-            channel.models.forEach((channelModel) => {
-                map.set(channelModel.id, { channel_name: channel.name, enabled: channel.enabled });
-            });
-        });
-        return map;
-    }, [channelsData]);
-
+    // 成员的名称, 所属渠道与可用性由后端随分组给出, 此处只做展示形状的转换。
+    // 不可用的成员同样列出: 否则用户看不到它的存在也就无法移除。
     const displayMembers = useMemo((): SelectedMember[] =>
-        (group.items || []).map((item) => {
-            const channelModel = item.channel_model;
-            const channel = channelByModelID.get(item.channel_model_id);
-            return {
-                id: String(item.channel_model_id),
-                channel_model_id: item.channel_model_id,
-                name: channelModel?.name ?? `Model ${item.channel_model_id}`,
-                enabled: channel?.enabled ?? true,
-                channel_id: channelModel?.channel_id ?? 0,
-                channel_name: channel?.channel_name ?? 'Unknown channel',
-                item_id: item.id,
-            };
-        }),
-        [group.items, channelByModelID]
+        (group.items || []).map((item) => ({
+            id: String(item.channel_grant_id),
+            channel_grant_id: item.channel_grant_id,
+            name: item.model_name,
+            enabled: item.available,
+            channel_id: item.channel_id,
+            channel_name: item.channel_name,
+            key_name: item.key_name,
+            protocols: item.protocols,
+            item_id: item.id,
+        })),
+        [group.items]
     );
 
     useEffect(() => {
@@ -106,76 +95,32 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
     const onSuccess = useCallback(() => toast.success(t('toast.updated')), [t]);
     const onError = useCallback((error: Error) => toast.error(t('toast.updateFailed'), { description: error.message }), [t]);
 
-    const priorityByItemId = useMemo(() => {
-        const map = new Map<number, number>();
-        (group.items || []).forEach((item) => {
-            if (item.id !== undefined) map.set(item.id, item.priority);
-        });
-        return map;
-    }, [group.items]);
-
     const handleDragStart = useCallback(() => { isDragging.current = true; }, []);
     const handleDragFinish = useCallback(() => { isDragging.current = false; }, []);
 
-    const handleDropReorder = useCallback((nextMembers: SelectedMember[]) => {
-        const itemsToUpdate = nextMembers
-            .map((m, i) => ({ member: m, newPriority: i + 1 }))
-            .filter(({ member, newPriority }) => {
-                if (!member.item_id) return false;
-                const origPriority = priorityByItemId.get(member.item_id);
-                return origPriority !== undefined && origPriority !== newPriority;
-            })
-            .map(({ member, newPriority }) => ({ id: member.item_id!, priority: newPriority }));
-        if (itemsToUpdate.length > 0) updateGroup.mutate({ id: group.id!, items_to_update: itemsToUpdate }, { onSuccess, onError });
-    }, [group.id, priorityByItemId, updateGroup, onSuccess, onError]);
+    // 成员为整体替换, 拖拽与移除都直接提交当前排列, 优先级由提交顺序决定。
+    const submitMembers = useCallback((next: SelectedMember[]) => {
+        updateGroup.mutate(
+            { id: group.id, items: next.map((m) => ({ channel_grant_id: m.channel_grant_id })) },
+            { onSuccess, onError },
+        );
+    }, [group.id, updateGroup, onSuccess, onError]);
 
     const handleRemoveMember = useCallback((id: string) => {
-        const member = members.find((m) => m.id === id);
-        if (member?.item_id !== undefined) updateGroup.mutate({ id: group.id!, items_to_delete: [member.item_id] }, { onSuccess, onError });
-    }, [members, group.id, updateGroup, onSuccess, onError]);
+        submitMembers(members.filter((m) => m.id !== id));
+    }, [members, submitMembers]);
 
+    // 点击当前成员即取消选择, 提交 0。
     const handleActivate = useCallback((itemId: number) => {
-        if (!group.id || group.mode !== 'manual' || itemId === group.active_item_id || updateActiveItem.isPending) return;
-        updateActiveItem.mutate({ groupId: group.id, itemId }, { onSuccess, onError });
-    }, [group.active_item_id, group.id, group.mode, onError, onSuccess, updateActiveItem]);
+        if (group.mode !== 'manual' || activateItem.isPending) return;
+        activateItem.mutate(
+            { id: group.id, active_item_id: itemId === group.runtime.current_item_id ? 0 : itemId },
+            { onSuccess, onError },
+        );
+    }, [activateItem, group.id, group.mode, group.runtime.current_item_id, onError, onSuccess]);
 
     const handleSubmitEdit = useCallback((values: GroupEditorValues, onDone?: () => void) => {
-        if (!group.id) return;
-
-        const originalById = new Map<number, number>();
-        const originalIds = new Set<number>();
-        (group.items || []).forEach((it) => {
-            if (typeof it.id === 'number') {
-                originalIds.add(it.id);
-                originalById.set(it.id, it.priority);
-            }
-        });
-
-        const newIds = new Set<number>();
-        values.members.forEach((m) => { if (typeof m.item_id === 'number') newIds.add(m.item_id); });
-
-        const items_to_delete = Array.from(originalIds).filter((id) => !newIds.has(id));
-
-        const items_to_add = values.members
-            .map((m, idx) => ({ m, priority: idx + 1 }))
-            .filter(({ m }) => typeof m.item_id !== 'number')
-            .map(({ m, priority }) => ({
-                channel_model_id: m.channel_model_id,
-                priority,
-            }));
-
-        const items_to_update = values.members
-            .map((m, idx) => ({ m, priority: idx + 1 }))
-            .filter(({ m }) => typeof m.item_id === 'number')
-            .map(({ m, priority }) => {
-                const id = m.item_id!;
-                const originalPriority = originalById.get(id);
-                if (originalPriority === undefined || originalPriority === priority) return null;
-                return { id, priority };
-            })
-            .filter((item): item is { id: number; priority: number } => item !== null);
-
-        const payload: GroupUpdateRequest = { id: group.id };
+        const payload: GroupUpdateRequest & { id: number } = { id: group.id };
 
         if (values.name !== group.name) payload.name = values.name;
         if (values.mode !== group.mode) payload.mode = values.mode;
@@ -187,9 +132,12 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
             values.relay_config.member_cooldown_seconds !== group.relay_config.member_cooldown_seconds ||
             values.relay_config.member_affinity_seconds !== group.relay_config.member_affinity_seconds
         ) payload.relay_config = values.relay_config;
-        if (items_to_add.length) payload.items_to_add = items_to_add;
-        if (items_to_update.length) payload.items_to_update = items_to_update;
-        if (items_to_delete.length) payload.items_to_delete = items_to_delete;
+        // 成员集合与顺序有任一处不同就整体提交; 后端按授权主键匹配, 已有成员保留其主键与统计。
+        const nextGrantIDs = values.members.map((m) => m.channel_grant_id);
+        const currentGrantIDs = (group.items || []).map((item) => item.channel_grant_id);
+        if (nextGrantIDs.length !== currentGrantIDs.length || nextGrantIDs.some((id, i) => id !== currentGrantIDs[i])) {
+            payload.items = nextGrantIDs.map((channel_grant_id) => ({ channel_grant_id }));
+        }
 
         if (Object.keys(payload).length === 1) {
             onDone?.();
@@ -221,16 +169,12 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
 
                 <div className="flex items-center gap-1 shrink-0">
                     <MorphingDialog>
-                        <MorphingDialogTrigger className="p-1.5 rounded-lg transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Pencil className="size-4" />
-                                </TooltipTrigger>
-                                <TooltipContent side="top" sideOffset={10} align="center">
-                                    {t('detail.actions.edit')}
-                                </TooltipContent>
-                            </Tooltip>
-                        </MorphingDialogTrigger>
+                        {/* trigger 自身渲染 motion.div 承担弹窗形变, 故由它出元素, IconButton 只补样式。 */}
+                        <IconButton asChild className="size-7">
+                            <MorphingDialogTrigger>
+                                <Pencil className="size-4" />
+                            </MorphingDialogTrigger>
+                        </IconButton>
 
                         <MorphingDialogContainer>
                             <MorphingDialogContent className="relative w-screen max-w-full md:max-w-4xl bg-card text-card-foreground px-6 py-4 rounded-3xl h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
@@ -244,32 +188,21 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
                         </MorphingDialogContainer>
                     </MorphingDialog>
 
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <span className="inline-flex">
-                                <CopyIconButton
-                                    text={group.name}
-                                    className="p-1.5 rounded-lg transition-colors hover:bg-muted text-muted-foreground hover:text-foreground"
-                                    copyIconClassName="size-4"
-                                    checkIconClassName="size-4 text-primary"
-                                />
-                            </span>
-                        </TooltipTrigger>
-                        <TooltipContent side="top" sideOffset={10} align="center">
-                            {t('detail.actions.copyName')}
-                        </TooltipContent>
-                    </Tooltip>
+                    {/* CopyIconButton 自带按钮元素与复制成功的图标切换, 故以 asChild 交给它渲染。 */}
+                    <IconButton asChild className="size-7">
+                        <CopyIconButton
+                            text={group.name}
+                            copyIconClassName="size-4"
+                            checkIconClassName="size-4 text-primary"
+                        />
+                    </IconButton>
+                    {/* asChild 保留 motion.button: 它与确认态共享 layoutId, 换成普通按钮会丢掉形变动画。 */}
                     {!confirmDelete && (
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <motion.button layoutId={`delete-btn-group-${group.id}`} type="button" onClick={() => setConfirmDelete(true)} className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors">
-                                    <Trash2 className="size-4" />
-                                </motion.button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" sideOffset={10} align="center">
-                                {t('detail.actions.delete')}
-                            </TooltipContent>
-                        </Tooltip>
+                        <IconButton asChild className="size-7 hover:text-destructive">
+                            <motion.button layoutId={`delete-btn-group-${group.id}`} type="button" onClick={() => setConfirmDelete(true)}>
+                                <Trash2 className="size-4" />
+                            </motion.button>
+                        </IconButton>
                     )}
                 </div>
 
@@ -279,7 +212,7 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
                             <button type="button" onClick={() => setConfirmDelete(false)} className="flex h-7 w-7 items-center justify-center rounded-lg bg-destructive-foreground/20 text-destructive-foreground transition-all hover:bg-destructive-foreground/30 active:scale-95">
                                 <X className="size-4" />
                             </button>
-                            <button type="button" onClick={() => group.id && deleteGroup.mutate(group.id, { onSuccess: () => toast.success(t('toast.deleted')) })} disabled={deleteGroup.isPending} className="flex-1 h-7 flex items-center justify-center gap-2 rounded-lg bg-destructive-foreground text-destructive text-sm font-semibold transition-all hover:bg-destructive-foreground/90 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed">
+                            <button type="button" onClick={() => deleteGroup.mutate(group.id, { onSuccess: () => toast.success(t('toast.deleted')) })} disabled={deleteGroup.isPending} className="flex-1 h-7 flex items-center justify-center gap-2 rounded-lg bg-destructive-foreground text-destructive text-sm font-semibold transition-all hover:bg-destructive-foreground/90 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed">
                                 <Trash2 className="size-3.5" />
                                 {t('detail.actions.confirmDelete')}
                             </button>
@@ -294,14 +227,14 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
                     onReorder={setMembers}
                     onRemove={handleRemoveMember}
                     onActivate={group.mode === 'manual' ? handleActivate : undefined}
-                    activeItemId={group.mode === 'failover' ? group.runtime?.current_item_id : group.active_item_id}
+                    activeItemId={group.runtime.current_item_id}
                     group={group}
                     now={now}
                     onDragStart={handleDragStart}
-                    onDrop={handleDropReorder}
+                    onDrop={submitMembers}
                     onDragFinish={handleDragFinish}
                     autoScrollOnAdd={false}
-                    layoutScope={`card-${group.id ?? 'unknown'}`}
+                    layoutScope={`card-${group.id}`}
                 />
             </section>
         </article >

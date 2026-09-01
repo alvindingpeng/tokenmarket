@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/alvindingpeng/switchyard/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -35,7 +34,7 @@ func migrateRepairGroupItemChannelModel(db *gorm.DB) error {
 
 	return db.Transaction(func(tx *gorm.DB) error {
 		if !tx.Migrator().HasTable("channel_models") {
-			if err := tx.AutoMigrate(&model.ChannelModel{}); err != nil {
+			if err := tx.AutoMigrate(&channelModelsV8{}); err != nil {
 				return fmt.Errorf("failed to create channel_models: %w", err)
 			}
 		}
@@ -86,7 +85,7 @@ func migrateRepairGroupItemChannelModel(db *gorm.DB) error {
 			channelID int    // 所属渠道主键。
 			name      string // 模型名称，精确索引用原名，兜底索引用小写名。
 		}
-		channelModels := make([]model.ChannelModel, 0)
+		channelModels := make([]channelModelsV8, 0)
 		if err := tx.Order("id ASC").Find(&channelModels).Error; err != nil {
 			return fmt.Errorf("failed to read channel_models: %w", err)
 		}
@@ -117,9 +116,9 @@ func migrateRepairGroupItemChannelModel(db *gorm.DB) error {
 
 		// 旧模型列表和旧分组项引用的模型统一补齐，同名只保留一行且手动来源优先。
 		// 渠道已删除时旧分组项是孤立行，插入 channel_models 会违反外键，直接跳过。
-		missing := make([]model.ChannelModel, 0)
+		missing := make([]channelModelsV8, 0)
 		missingIndexByKey := make(map[channelModelIndexKey]int)
-		addModel := func(channelID int, name string, source model.ChannelModelSource) {
+		addModel := func(channelID int, name string, source string) {
 			name = strings.TrimSpace(name)
 			if name == "" {
 				return
@@ -132,30 +131,30 @@ func migrateRepairGroupItemChannelModel(db *gorm.DB) error {
 			}
 			key := channelModelIndexKey{channelID: channelID, name: name}
 			if index, ok := missingIndexByKey[key]; ok {
-				if source == model.ChannelModelSourceManual {
-					missing[index].Source = model.ChannelModelSourceManual
+				if source == snapshotModelSourceManual {
+					missing[index].Source = snapshotModelSourceManual
 				}
 				return
 			}
 			missingIndexByKey[key] = len(missing)
-			missing = append(missing, model.ChannelModel{ChannelID: channelID, Name: name, Source: source})
+			missing = append(missing, channelModelsV8{ChannelID: channelID, Name: name, Source: source})
 		}
 		for _, channel := range channels {
 			if channel.Models.Valid {
 				for _, name := range strings.Split(channel.Models.String, ",") {
-					addModel(channel.ID, name, model.ChannelModelSourceAuto)
+					addModel(channel.ID, name, snapshotModelSourceAuto)
 				}
 			}
 			if channel.CustomModel.Valid {
 				for _, name := range strings.Split(channel.CustomModel.String, ",") {
-					addModel(channel.ID, name, model.ChannelModelSourceManual)
+					addModel(channel.ID, name, snapshotModelSourceManual)
 				}
 			}
 		}
 		for _, item := range legacyItems {
-			source := model.ChannelModelSourceManual
+			source := snapshotModelSourceManual
 			if channelAutoSync[item.ChannelID] {
-				source = model.ChannelModelSourceAuto
+				source = snapshotModelSourceAuto
 			}
 			addModel(item.ChannelID, item.ModelName, source)
 		}
@@ -189,13 +188,13 @@ func migrateRepairGroupItemChannelModel(db *gorm.DB) error {
 				continue
 			}
 			seen[itemKey] = struct{}{}
-			if err := tx.Model(&model.GroupItem{}).Where("id = ?", item.ID).
+			if err := tx.Model(&groupItemsV8{}).Where("id = ?", item.ID).
 				Update("channel_model_id", channelModelID).Error; err != nil {
 				return fmt.Errorf("failed to update group_item %d: %w", item.ID, err)
 			}
 		}
 		if len(invalidIDs) > 0 {
-			if err := tx.Where("id IN ?", invalidIDs).Delete(&model.GroupItem{}).Error; err != nil {
+			if err := tx.Where("id IN ?", invalidIDs).Delete(&groupItemsV8{}).Error; err != nil {
 				return fmt.Errorf("failed to delete invalid group_items: %w", err)
 			}
 		}
@@ -210,18 +209,18 @@ func migrateRepairGroupItemChannelModel(db *gorm.DB) error {
 		// 必须先删 group_id 外键，之后由 AutoMigrate 依据 Group.Items 重建外键和新索引。
 		// GORM 的 DropConstraint 只发 DROP CONSTRAINT，TiDB 对外键会静默忽略该语句，
 		// 因此这里显式使用 DROP FOREIGN KEY。
-		if tx.Migrator().HasIndex(&model.GroupItem{}, "idx_group_channel_model") {
-			if tx.Dialector.Name() == "mysql" && tx.Migrator().HasConstraint(&model.Group{}, "fk_groups_items") {
+		if tx.Migrator().HasIndex(&groupItemsV8{}, "idx_group_channel_model") {
+			if tx.Dialector.Name() == "mysql" && tx.Migrator().HasConstraint(&groupsTable{}, "fk_groups_items") {
 				if err := tx.Exec("ALTER TABLE group_items DROP FOREIGN KEY fk_groups_items").Error; err != nil {
 					return fmt.Errorf("failed to drop group_items foreign key: %w", err)
 				}
 			}
-			if err := tx.Migrator().DropIndex(&model.GroupItem{}, "idx_group_channel_model"); err != nil {
+			if err := tx.Migrator().DropIndex(&groupItemsV8{}, "idx_group_channel_model"); err != nil {
 				return fmt.Errorf("failed to drop legacy group_items index: %w", err)
 			}
 		}
 		for _, column := range []string{"channel_id", "model_name"} {
-			if err := dropColumnIfExists(tx, &model.GroupItem{}, "group_items", column); err != nil {
+			if err := dropColumnIfExists(tx, &groupItemsV8{}, "group_items", column); err != nil {
 				return err
 			}
 		}

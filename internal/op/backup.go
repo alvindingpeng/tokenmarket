@@ -11,7 +11,9 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const dbDumpVersion = 3
+// 渠道拆分为渠道, 凭据, 模型与渠道授权后导出结构变化, 版本随之递增;
+// 版本 5 起 api_keys.supported_models 由逗号分隔字符串改为 JSON 数组。
+const dbDumpVersion = 5
 
 // DBExportAll 导出完整数据库内容，包括所有统计数据。
 func DBExportAll(ctx context.Context) (*model.DBDump, error) {
@@ -28,8 +30,14 @@ func DBExportAll(ctx context.Context) (*model.DBDump, error) {
 	if err := conn.Find(&d.Groups).Error; err != nil {
 		return nil, fmt.Errorf("export groups: %w", err)
 	}
+	if err := conn.Find(&d.ChannelKeys).Error; err != nil {
+		return nil, fmt.Errorf("export channel_keys: %w", err)
+	}
 	if err := conn.Find(&d.ChannelModels).Error; err != nil {
 		return nil, fmt.Errorf("export channel_models: %w", err)
+	}
+	if err := conn.Find(&d.ChannelGrants).Error; err != nil {
+		return nil, fmt.Errorf("export channel_grants: %w", err)
 	}
 	if err := conn.Find(&d.GroupItems).Error; err != nil {
 		return nil, fmt.Errorf("export group_items: %w", err)
@@ -69,6 +77,16 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 		return nil, fmt.Errorf("unsupported dump version: %d", dump.Version)
 	}
 
+	// 导入也是写入边界, 渠道配置须与接口提交走同一套规范化: 手改过的备份文件同样可能带空白,
+	// 空串或缺省字段, 不在此收敛则读侧要为每个字段各自兜底。
+	for i := range dump.Channels {
+		config, err := normalizeChannelConfig(dump.Channels[i].ChannelConfig)
+		if err != nil {
+			return nil, fmt.Errorf("import channel %d: %w", dump.Channels[i].ID, err)
+		}
+		dump.Channels[i].ChannelConfig = config
+	}
+
 	conn := db.GetDB().WithContext(ctx)
 	res := &model.DBImportResult{RowsAffected: map[string]int64{}}
 	err := conn.Transaction(func(tx *gorm.DB) error {
@@ -78,6 +96,7 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 		} else {
 			res.RowsAffected["channels"] = n
 		}
+		// 渠道按主键冲突跳过, 统计需单独覆盖; 凭据与模型走整行覆盖, 统计随行一并导入。
 		for _, channel := range dump.Channels {
 			if err := tx.Model(&model.Channel{}).
 				Where("id = ?", channel.ID).
@@ -91,10 +110,20 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 		} else {
 			res.RowsAffected["groups"] = n
 		}
+		if n, err := createUpsertAll(tx, dump.ChannelKeys, []clause.Column{{Name: "id"}}); err != nil {
+			return fmt.Errorf("import channel_keys: %w", err)
+		} else {
+			res.RowsAffected["channel_keys"] = n
+		}
 		if n, err := createUpsertAll(tx, dump.ChannelModels, []clause.Column{{Name: "id"}}); err != nil {
 			return fmt.Errorf("import channel_models: %w", err)
 		} else {
 			res.RowsAffected["channel_models"] = n
+		}
+		if n, err := createUpsertAll(tx, dump.ChannelGrants, []clause.Column{{Name: "id"}}); err != nil {
+			return fmt.Errorf("import channel_grants: %w", err)
+		} else {
+			res.RowsAffected["channel_grants"] = n
 		}
 		if n, err := createDoNothing(tx, dump.GroupItems); err != nil {
 			return fmt.Errorf("import group_items: %w", err)

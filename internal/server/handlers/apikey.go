@@ -108,19 +108,12 @@ func getStatsAPIKeyById(c *gin.Context) {
 		return
 	}
 	models := op.GroupListModel()
-	var modelsString string
-	if info.SupportedModels == "" {
-		modelsString = strings.Join(models, ", ")
-	} else {
-		supportedModels := lo.Map(strings.Split(info.SupportedModels, ","), func(s string, _ int) string {
-			return strings.TrimSpace(s)
-		})
+	if len(info.SupportedModels) > 0 {
 		models = lo.Filter(models, func(m string, _ int) bool {
-			return lo.Contains(supportedModels, m)
+			return lo.Contains(info.SupportedModels, m)
 		})
-		modelsString = strings.Join(models, ", ")
 	}
-	info.SupportedModels = modelsString
+	info.SupportedModels = models
 	resp.Success(c, map[string]any{
 		"stats": stats,
 		"info":  info,

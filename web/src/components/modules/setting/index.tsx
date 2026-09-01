@@ -4,7 +4,6 @@ import { SettingAPIKey } from './APIKey';
 import { SettingLLMPrice } from './LLMPrice';
 import { SettingAccount } from './Account';
 import { SettingInfo } from './Info';
-import { SettingLLMSync } from './LLMSync';
 import { SettingLog } from './Log';
 import { SettingBackup } from './Backup';
 
@@ -20,7 +19,6 @@ export function Setting() {
                 <SettingLog />
                 <SettingLLMPrice />
                 <SettingAPIKey />
-                <SettingLLMSync />
                 <SettingBackup />
             </div>
         </div>

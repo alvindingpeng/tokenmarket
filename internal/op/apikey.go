@@ -3,6 +3,7 @@ package op
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
@@ -40,11 +41,14 @@ func APIKeyUpdate(key *model.APIKey, ctx context.Context) error {
 	return nil
 }
 
+// APIKeyList 返回全部 API Key, 按主键升序定序。
+// 设置页不提供排序开关, 而缓存遍历顺序随机, 故顺序须由此处定稿。
 func APIKeyList(ctx context.Context) ([]model.APIKey, error) {
 	keys := make([]model.APIKey, 0, apiKeyCache.Len())
 	for _, apiKey := range apiKeyCache.GetAll() {
 		keys = append(keys, apiKey)
 	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i].ID < keys[j].ID })
 	return keys, nil
 }
 

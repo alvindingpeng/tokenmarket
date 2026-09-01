@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alvindingpeng/switchyard/internal/client"
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/rhttp"
 	"github.com/charmbracelet/log"
 )
 
@@ -42,7 +42,7 @@ func UpdateLLMPrice(ctx context.Context) error {
 		log.Debugf("update LLM price task finished, update time: %s", time.Since(startTime))
 	}()
 	var body []byte
-	httpClient, err := client.GetHTTPClientSystemProxy(false)
+	httpClient, err := rhttp.Direct()
 	if err == nil {
 		req, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, llmPriceUrl, nil)
 		if requestErr != nil {
@@ -66,7 +66,7 @@ func UpdateLLMPrice(ctx context.Context) error {
 	}
 	if err != nil {
 		log.Warnf("direct request failed, trying with proxy: %v", err)
-		httpClient, err = client.GetHTTPClientSystemProxy(true)
+		httpClient, err = rhttp.Proxy()
 		if err != nil {
 			return err
 		}

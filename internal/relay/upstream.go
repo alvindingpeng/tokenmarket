@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"slices"
 
-	"github.com/alvindingpeng/switchyard/internal/helper"
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/rhttp"
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/httpclient"
 	"github.com/looplj/axonhub/llm/pipeline"
@@ -29,23 +29,58 @@ type upstreamResponse struct {
 	first  *httpclient.StreamEvent                 // 已预读并验证的首个事件。
 	last   bool                                    // 首个事件已经终止整个响应流。
 	usage  *llm.Usage                              // 上游本次可确认的用量。
+	// closeIdle 非 nil 时为渠道专用代理独占客户端的空闲连接归还入口, 消费方读完事件流后必须调用。
+	// 仅流式响应会带上它: 非流式响应返回时连接已经用完, 由发起方就地归还。
+	closeIdle func()
+}
+
+// resolveUpstreamClient 按渠道代理配置取得本轮上游请求使用的客户端。
+// 第二个返回值非 nil 时说明客户端是为渠道专用代理新建的独占实例, 不进共享连接池, 用完须调用它归还空闲连接。
+func resolveUpstreamClient(channel model.Channel) (*http.Client, func(), error) {
+	switch {
+	case !channel.Proxy:
+		client, err := rhttp.Direct()
+		return client, nil, err
+	case channel.ChannelProxy == "":
+		client, err := rhttp.Proxy()
+		return client, nil, err
+	default:
+		client, err := rhttp.New(channel.ChannelProxy)
+		if err != nil {
+			return nil, nil, err
+		}
+		return client, client.CloseIdleConnections, nil
+	}
 }
 
 // sendPassthrough 以同协议透传方式请求上游, 取得的响应无需转换即可回给客户端。
-func sendPassthrough(ctx context.Context, format llm.APIFormat, raw *httpclient.Request, channel model.Channel, outbound transformer.Outbound, streaming bool) (*upstreamResponse, error) {
-	request, err := buildPassthroughRequest(format, raw, channel)
+func sendPassthrough(ctx context.Context, format llm.APIFormat, raw *httpclient.Request, channel model.Channel, outbound transformer.Outbound, streaming bool, modelName string) (*upstreamResponse, error) {
+	request, err := buildPassthroughRequest(format, raw, channel, outbound, modelName)
 	if err != nil {
 		return nil, err
 	}
-	client, err := helper.ChannelHttpClient(&channel)
+	httpClient, closeIdle, err := resolveUpstreamClient(channel)
 	if err != nil {
 		return nil, err
 	}
 	if streaming {
-		return sendPassthroughStream(ctx, format, request, client)
+		// 流式响应返回后仍在读上游连接, 归还入口随响应交给消费方; 取不到响应时就地归还。
+		result, err := sendPassthroughStream(ctx, format, request, httpClient)
+		if err != nil {
+			if closeIdle != nil {
+				closeIdle()
+			}
+			return nil, err
+		}
+		result.closeIdle = closeIdle
+		return result, nil
+	}
+	// 非流式响应在 Do 返回时正文已读完, 连接可以立即归还。
+	if closeIdle != nil {
+		defer closeIdle()
 	}
 
-	response, err := httpclient.NewHttpClientWithClient(client).Do(ctx, request)
+	response, err := httpclient.NewHttpClientWithClient(httpClient).Do(ctx, request)
 	if err != nil {
 		var failure *httpclient.Error
 		if errors.As(err, &failure) && len(failure.Body) > 0 {
@@ -157,12 +192,21 @@ func sendConverted(ctx context.Context, format llm.APIFormat, raw *httpclient.Re
 		inbound = openai.NewInboundTransformer()
 	}
 
-	client, err := helper.ChannelHttpClient(&channel)
+	httpClient, closeIdle, err := resolveUpstreamClient(channel)
 	if err != nil {
 		return nil, err
 	}
+	// 流式响应要等消费方读完才能归还连接, 故只在提交流式结果那一处移交, 其余出口一律就地归还。
+	committed := false
+	if closeIdle != nil {
+		defer func() {
+			if !committed {
+				closeIdle()
+			}
+		}()
+	}
 	middleware := &conversionMiddleware{channel: channel, format: outbound.APIFormat()}
-	processor := pipeline.NewFactory(httpclient.NewHttpClientWithClient(client)).Pipeline(
+	processor := pipeline.NewFactory(httpclient.NewHttpClientWithClient(httpClient)).Pipeline(
 		inbound,
 		outbound,
 		pipeline.WithMiddlewares(middleware),
@@ -189,7 +233,8 @@ func sendConverted(ctx context.Context, format llm.APIFormat, raw *httpclient.Re
 			events.Close()
 			return nil, fmt.Errorf("%w: %s", err, event.Data)
 		}
-		return &upstreamResponse{events: events, first: event, last: last}, nil
+		committed = true
+		return &upstreamResponse{events: events, first: event, last: last, closeIdle: closeIdle}, nil
 	}
 
 	err = events.Err()

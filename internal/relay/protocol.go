@@ -2,11 +2,11 @@ package relay
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/looplj/axonhub/llm"
@@ -17,29 +17,20 @@ import (
 	"github.com/looplj/axonhub/llm/transformer/openai/responses"
 )
 
-// upstreamPath 返回客户端协议在标准上游中对应的请求路径。
-func upstreamPath(format llm.APIFormat) string {
-	switch format {
-	case llm.APIFormatOpenAIResponse:
-		return "/responses"
-	case llm.APIFormatAnthropicMessage:
-		return "/messages"
-	default:
-		return "/chat/completions"
-	}
-}
-
 // buildPassthroughRequest 构造同协议透传的上游请求: 目标地址, 认证和请求体由渠道决定, 客户端的其余请求头和查询参数
 // 经 MergeInboundRequest 透传给上游, 其中认证类, 库自管类和逐跳类请求头会被丢弃以免覆盖渠道凭据。
-func buildPassthroughRequest(format llm.APIFormat, raw *httpclient.Request, channel model.Channel) (*httpclient.Request, error) {
-	// BaseURL 以 ## 结尾表示地址已完整, 不再追加版本号和协议路径。
-	base := strings.TrimSuffix(channel.BaseURL, "##")
-	url := transformer.BuildRequestURL(base, "v1", upstreamPath(format), "", base != channel.BaseURL)
-
-	auth := &httpclient.AuthConfig{Type: httpclient.AuthTypeBearer, APIKey: channel.Key}
-	if format == llm.APIFormatAnthropicMessage {
-		auth = &httpclient.AuthConfig{Type: httpclient.AuthTypeAPIKey, APIKey: channel.Key, HeaderKey: "X-API-Key"}
+// 地址与认证取自出站转换器对一个占位请求的转换结果, 使透传与跨协议转换共用同一套地址拼接, 避免两处规则分歧;
+// openai 与 anthropic 出站转换器会校验模型名非空, 故占位请求必须带本轮真实的上游模型名。
+func buildPassthroughRequest(format llm.APIFormat, raw *httpclient.Request, channel model.Channel, outbound transformer.Outbound, modelName string) (*httpclient.Request, error) {
+	probeText := "probe"
+	probe, err := outbound.TransformRequest(context.Background(), &llm.Request{
+		Model:    modelName,
+		Messages: []llm.Message{{Role: "user", Content: llm.MessageContent{Content: &probeText}}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("resolve upstream endpoint: %w", err)
 	}
+
 	// Content-Type 属于库自管头, 不会随客户端请求透传, 需按客户端原值显式重建。
 	contentType := raw.Headers.Get("Content-Type")
 	if contentType == "" {
@@ -48,13 +39,13 @@ func buildPassthroughRequest(format llm.APIFormat, raw *httpclient.Request, chan
 
 	request := httpclient.MergeInboundRequest(&httpclient.Request{
 		Method:    raw.Method,
-		URL:       url,
+		URL:       probe.URL,
 		Headers:   http.Header{"Content-Type": []string{contentType}},
 		Body:      raw.Body,
-		Auth:      auth,
+		Auth:      probe.Auth,
 		APIFormat: format.String(),
 	}, raw)
-	request, err := httpclient.FinalizeAuthHeaders(request)
+	request, err = httpclient.FinalizeAuthHeaders(request)
 	if err != nil {
 		return nil, err
 	}

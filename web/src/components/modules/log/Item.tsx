@@ -6,8 +6,8 @@ import { githubDarkTheme } from '@uiw/react-json-view/githubDark';
 import { githubLightTheme } from '@uiw/react-json-view/githubLight';
 import { useTheme } from '@/provider/theme';
 import { type RelayLogOverview, useLogRequestBody, useLogResponseBody, useStopRound } from '@/api/log';
-import { useGroupList, useUpdateGroupActiveItem } from '@/api/group';
-import { useChannelList } from '@/api/channel';
+import { useGroup, useUpdateGroup } from '@/api/group';
+import { Protocol } from '@/api/channel';
 import { getModelIcon } from '@/lib/model-icons';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -44,6 +44,14 @@ function formatMilliseconds(value: number) {
     if (milliseconds < 1000) return `${Math.round(milliseconds)}ms`;
     return `${(milliseconds / 1000).toFixed(2)}s`;
 }
+
+// PROTOCOL_LABELS 是协议位值对应的界面标识, 与渠道页和分组页的授权标签同一套词。
+// 键是单个协议位而非掩码组合: 日志记录的是本次请求与本轮上游各自实际使用的那一个协议。
+const PROTOCOL_LABELS: Record<number, string> = {
+    [Protocol.OpenAIChatCompletion]: 'Chat',
+    [Protocol.OpenAIResponse]: 'Response',
+    [Protocol.AnthropicMessage]: 'Message',
+};
 
 // LogMetrics 渲染耗时, 费用和 Token 指标; card 变体用于卡片栅格, footer 变体用于弹窗底部。
 function LogMetrics({ log, now, brandColor, variant }: { log: RelayLogOverview; now: number; brandColor: string; variant: 'card' | 'footer' }) {
@@ -137,25 +145,16 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
     const [switchingItemId, setSwitchingItemId] = useState<number | null>(null);
     const requestBody = useLogRequestBody(log.id, log.started_at, detailReady && leftTab === 'request');
     const responseBody = useLogResponseBody(log.id, log.started_at, detailReady && log.status === 'success');
-    const { data: groups = [] } = useGroupList(detailReady, detailReady);
-    const { data: channels = [] } = useChannelList(detailReady);
-    const updateActiveItem = useUpdateGroupActiveItem();
+    const { data: activeGroup } = useGroup(log.group_id, detailReady, detailReady);
+    const updateActiveItem = useUpdateGroup();
     const stopRound = useStopRound();
-    const channelNameByModelID = useMemo(() => {
-        const map = new Map<number, string>();
-        channels.forEach(({ raw: channel }) => {
-            channel.models.forEach((channelModel) => map.set(channelModel.id, channel.name));
-        });
-        return map;
-    }, [channels]);
     const actualModel = log.target_model || log.model;
     const { Icon, className: iconClassName, color: brandColor } = getModelIcon(actualModel);
     const errorText = log.error ?? '';
     const requestFailed = log.status === 'failed' || log.status === 'canceled';
     const responseCommitted = log.status === 'committed';
     const showRounds = log.status === 'running' || (requestFailed && rounds.length > 0);
-    const activeGroup = groups.find((group) => group.name === log.model);
-    const isWaitingForSelection = log.status === 'running' && !log.sending && activeGroup?.mode === 'manual' && activeGroup.active_item_id === 0; // isWaitingForSelection 表示手动模式请求正等待选择渠道。
+    const isWaitingForSelection = log.status === 'running' && !log.sending && activeGroup?.mode === 'manual' && activeGroup.runtime.current_item_id === 0; // isWaitingForSelection 表示手动模式请求正等待选择渠道。
 
     // 让弹窗先完成展开动画, 避免详情请求及其状态更新占用动画起步帧。
     useEffect(() => {
@@ -182,10 +181,12 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
             <MorphingDialogClose className="top-4 right-5 text-muted-foreground hover:text-foreground transition-colors" />
             <MorphingDialogTitle className="flex items-center gap-2 mb-3 text-sm">
                 <Icon aria-hidden="true" className={iconClassName} width={28} height={28} />
+                <span className="text-xs text-muted-foreground/70">{PROTOCOL_LABELS[log.protocol] ?? '-'}</span>
                 <span className="font-semibold text-card-foreground">{log.model || t('unknownModel')}</span>
                 {log.status === 'running' || responseCommitted
                     ? <Loader2 className="size-3.5 animate-spin text-muted-foreground/50" />
                     : <ArrowRight className="size-3.5 text-muted-foreground/50" />}
+                <span className="text-xs text-muted-foreground/70">{PROTOCOL_LABELS[log.target_protocol] ?? '-'}</span>
                 <Badge
                     variant="secondary"
                     className="text-xs px-1.5 py-0"
@@ -239,40 +240,37 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
                                 <div className="flex h-full items-center justify-center px-4 text-xs text-muted-foreground">
                                     {t('groupUnavailable')}
                                 </div>
-                            ) : !activeGroup.items?.length ? (
+                            ) : !activeGroup.items.length ? (
                                 <div className="flex h-full items-center justify-center px-4 text-xs text-muted-foreground">
                                     {t('noGroupItems')}
                                 </div>
                             ) : (
                                 <div className="divide-y divide-border">
                                     {activeGroup.items.map((item) => {
-                                        const modelName = item.channel_model?.name ?? '';
-                                        const channelName = item.channel_model
-                                            ? channelNameByModelID.get(item.channel_model.id) ?? `#${item.channel_model.channel_id}`
-                                            : '-';
-                                        const { Icon: ItemIcon, className: itemIconClassName } = getModelIcon(modelName);
-                                        const itemActive = item.id === activeGroup.active_item_id;
+                                        const { Icon: ItemIcon, className: itemIconClassName } = getModelIcon(item.model_name);
                                         const itemSwitching = item.id === switchingItemId;
+                                        // 本请求当前打在哪个成员上由日志自己给出: 分组路由是分组级状态,
+                                        // 同一分组的并发请求可能各打在不同成员上, 读它会把别的请求的目标标成本请求的。
+                                        // 切换请求进行中时先按点击的成员显示, 落库后再由日志的下一次推送定稿。
                                         const itemCurrent = switchingItemId !== null
                                             ? itemSwitching
-                                            : activeGroup.mode === 'failover'
-                                                ? activeGroup.runtime?.current_item_id === item.id
-                                                : itemActive;
+                                            : log.target_item_id === item.id;
                                         return (
                                             <button
-                                                key={item.id ?? item.channel_model_id}
+                                                key={item.id}
                                                 type="button"
                                                 aria-pressed={itemCurrent}
-                                                disabled={item.id === undefined || activeGroup.mode === 'failover' || switchingItemId !== null || stopRound.isPending}
+                                                disabled={activeGroup.mode === 'failover' || switchingItemId !== null || stopRound.isPending}
                                                 onClick={async () => {
-                                                    if (!activeGroup.id || item.id === undefined || activeGroup.mode === 'failover') return;
+                                                    if (activeGroup.mode === 'failover') return;
                                                     setSwitchingItemId(item.id);
+                                                    const isCurrent = activeGroup.runtime.current_item_id === item.id;
                                                     try {
-                                                        await updateActiveItem.mutateAsync({ groupId: activeGroup.id, itemId: itemActive ? 0 : item.id });
+                                                        await updateActiveItem.mutateAsync({ id: activeGroup.id, active_item_id: isCurrent ? 0 : item.id });
                                                         if (log.sending) {
                                                             await stopRound.mutateAsync({ requestId: log.id, round: log.round });
                                                         }
-                                                        toast.success(itemActive ? t('channelCleared') : t('channelChanged'));
+                                                        toast.success(isCurrent ? t('channelCleared') : t('channelChanged'));
                                                     } catch (cause) {
                                                         toast.error(t('channelChangeFailed'), { description: cause instanceof Error ? cause.message : undefined });
                                                     } finally {
@@ -284,9 +282,9 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
                                                 <ItemIcon aria-hidden="true" className={itemIconClassName} width={20} height={20} />
                                                 <span className="min-w-0 flex-1">
                                                     <span className="block truncate font-semibold text-foreground">
-                                                        {channelName}
+                                                        {item.channel_name}
                                                     </span>
-                                                    <span className="block truncate text-[11px] text-muted-foreground">{modelName}</span>
+                                                    <span className="block truncate text-[11px] text-muted-foreground">{item.model_name}</span>
                                                 </span>
                                                 <MemberStatus group={activeGroup} itemId={item.id} now={now} active={itemCurrent} />
                                                 {itemSwitching && <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />}
@@ -431,12 +429,14 @@ function LogCardBody({ log }: { log: RelayLogOverview }) {
                     <Icon aria-hidden="true" className={iconClassName} width={40} height={40} />
                     <div className="min-w-0 flex flex-col gap-3">
                         <div className="flex items-center gap-2 min-w-0 text-sm">
+                            <span className="shrink-0 text-xs text-muted-foreground/70">{PROTOCOL_LABELS[log.protocol] ?? '-'}</span>
                             <span className="font-semibold text-card-foreground truncate" title={log.model}>
                                 {log.model || t('unknownModel')}
                             </span>
                             {requestRunning
                                 ? <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground/50" />
                                 : <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/50" />}
+                            <span className="shrink-0 text-xs text-muted-foreground/70">{PROTOCOL_LABELS[log.target_protocol] ?? '-'}</span>
                             <Badge
                                 variant="secondary"
                                 className="shrink-0 text-xs px-1.5 py-0"

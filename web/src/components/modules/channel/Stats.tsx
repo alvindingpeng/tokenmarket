@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Activity,
+    Check,
     CheckCircle2,
     Clock,
     Copy,
@@ -10,15 +11,17 @@ import {
     EyeOff,
     FileText,
     MessageSquare,
+    Pencil,
     Share2,
+    Trash2,
     X,
 } from 'lucide-react';
 import { snapdom } from '@zumer/snapdom';
 import { toast } from 'sonner';
 import { useTranslations } from 'use-intl';
-import { type Channel } from '@/api/channel';
+import { type ChannelStatsFormatted, useDeleteChannel } from '@/api/channel';
 import { type StatsMetricsFormatted } from '@/api/stats';
-import { formatCount, formatMoney } from '@/lib/utils';
+import { useMorphingDialog } from '@/components/ui/morphing-dialog';
 
 type FormattedMetric = StatsMetricsFormatted['request_count'];
 
@@ -42,17 +45,27 @@ function MetricValue({ metric }: { metric: FormattedMetric }) {
 }
 
 // ChannelStats 展示单个渠道的汇总指标与模型排行, 布局随容器宽度自适应, 并可导出为分享图
-export function ChannelStats({ channel, stats }: { channel: Channel; stats: StatsMetricsFormatted }) {
+// 统计自带渠道名称与模型清单, 由 /channel/stats 一并给出
+// 渠道的编辑与删除入口也在此: 卡片只负责打开弹窗, 需要看清指标后才动手的操作都收在头部
+export function ChannelStats({ channel, onEdit }: {
+    channel: ChannelStatsFormatted;
+    onEdit: () => void; // 切换同一弹窗到编辑表单。
+}) {
     const t = useTranslations('channel.stats');
     const tCommon = useTranslations('common');
+    const { setIsOpen } = useMorphingDialog();
+    const deleteChannel = useDeleteChannel();
     const [modelSort, setModelSort] = useState<ModelSortKey>('cost');
     // 隐藏渠道名称, 分享图也跟随此状态
     const [isNameHidden, setIsNameHidden] = useState(false);
+    // 删除需二次确认, 确认态下换成取消与确认两个键
+    const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
     const [isSharing, setIsSharing] = useState(false);
     // 分享图预览, url 用于展示, blob 用于复制和下载
     const [preview, setPreview] = useState<{ url: string; blob: Blob } | null>(null);
     // 分享截图的源节点
     const contentRef = useRef<HTMLDivElement>(null);
+    const metrics = channel.formatted;
 
     // 预览关闭或组件卸载时释放临时对象 URL
     useEffect(() => () => {
@@ -64,60 +77,60 @@ export function ChannelStats({ channel, stats }: { channel: Channel; stats: Stat
         {
             icon: <Activity className="size-3.5 text-chart-1" />,
             label: t('totalRequests'),
-            value: <MetricValue metric={stats.request_count} />,
+            value: <MetricValue metric={metrics.request_count} />,
             sub: (
                 <>
-                    <span className="text-accent">{stats.request_success.formatted.value}</span>
+                    <span className="text-accent">{metrics.request_success.formatted.value}</span>
                     <span className="text-muted-foreground/40">/</span>
-                    <span className="text-destructive">{stats.request_failed.formatted.value}</span>
+                    <span className="text-destructive">{metrics.request_failed.formatted.value}</span>
                     <span className="text-muted-foreground/40">·</span>
-                    <span>{successRate(stats.request_success.raw, stats.request_failed.raw).toFixed(1)}%</span>
+                    <span>{successRate(metrics.request_success.raw, metrics.request_failed.raw).toFixed(1)}%</span>
                 </>
             ),
         },
         {
             icon: <FileText className="size-3.5 text-chart-3" />,
             label: t('totalToken'),
-            value: <MetricValue metric={stats.total_token} />,
+            value: <MetricValue metric={metrics.total_token} />,
             sub: (
                 <>
-                    <span>↓ {stats.input_token.formatted.value}{stats.input_token.formatted.unit}</span>
-                    <span>↑ {stats.output_token.formatted.value}{stats.output_token.formatted.unit}</span>
+                    <span>↓ {metrics.input_token.formatted.value}{metrics.input_token.formatted.unit}</span>
+                    <span>↑ {metrics.output_token.formatted.value}{metrics.output_token.formatted.unit}</span>
                 </>
             ),
         },
         {
             icon: <DollarSign className="size-3.5 text-chart-5" />,
             label: t('totalCost'),
-            value: <MetricValue metric={stats.total_cost} />,
+            value: <MetricValue metric={metrics.total_cost} />,
             sub: (
                 <>
-                    <span>↓ {stats.input_cost.formatted.value}{stats.input_cost.formatted.unit}</span>
-                    <span>↑ {stats.output_cost.formatted.value}{stats.output_cost.formatted.unit}</span>
+                    <span>↓ {metrics.input_cost.formatted.value}{metrics.input_cost.formatted.unit}</span>
+                    <span>↑ {metrics.output_cost.formatted.value}{metrics.output_cost.formatted.unit}</span>
                 </>
             ),
         },
         {
             icon: <Clock className="size-3.5 text-primary" />,
             label: t('avgWaitTime'),
-            value: <MetricValue metric={stats.wait_time} />,
+            value: <MetricValue metric={metrics.wait_time} />,
         },
     ];
 
-    // 模型级统计: 现场格式化原始计数, 按当前维度排序并计算占比
+    // 模型级统计: 按当前维度排序并计算占比, 各项格式化已由查询层完成
     const modelStats = useMemo(() => {
-        const items = channel.models.map((model) => {
-            const count = model.request_success + model.request_failed;
-            const tokens = model.input_token + model.output_token;
-            const cost = model.input_cost + model.output_cost;
+        const items = channel.models.map((channelModel) => {
+            const { formatted } = channelModel;
             return {
-                id: model.id,
-                name: model.name,
-                weight: modelSort === 'cost' ? cost : modelSort === 'tokens' ? tokens : count,
-                rate: successRate(model.request_success, model.request_failed),
-                count: formatCount(count),
-                tokens: formatCount(tokens),
-                cost: formatMoney(cost),
+                id: channelModel.model_id,
+                name: channelModel.model_name,
+                weight: modelSort === 'cost'
+                    ? formatted.total_cost.raw
+                    : modelSort === 'tokens' ? formatted.total_token.raw : formatted.request_count.raw,
+                rate: successRate(formatted.request_success.raw, formatted.request_failed.raw),
+                count: formatted.request_count,
+                tokens: formatted.total_token,
+                cost: formatted.total_cost,
             };
         });
 
@@ -176,37 +189,87 @@ export function ChannelStats({ channel, stats }: { channel: Channel; stats: Stat
         if (!preview) return;
         const link = document.createElement('a');
         link.href = preview.url;
-        link.download = `channel-${channel.id}.png`;
+        link.download = `channel-${channel.channel_id}.png`;
         link.click();
     };
 
-    const iconButtonClass = 'flex size-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground disabled:opacity-50';
-    const previewActionClass = 'flex size-10 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:text-foreground active:scale-95';
-
     return (
-        <div ref={contentRef} className="@container/stats cursor-default">
-            <div className="grid gap-4 pb-2 @2xl/stats:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
+        // 撑满弹窗给定的高度, 两列各自拉伸填满; 内容更高时(窄屏堆成一列)继续增长, 由外层滚动。
+        // 高度不能写成 @2xl/stats:h-full: 容器查询只能由祖先容器回答, 这里自己声明了 @container/stats, 查不到自己。
+        // min-h-full 在分享用的屏外容器里取不到确定高度, 退化为 0, 不影响分享图。
+        <div ref={contentRef} className="@container/stats cursor-default flex min-h-full flex-col">
+            <div className="grid flex-1 gap-4 @2xl/stats:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
                 {/* 左列: 渠道汇总 */}
-                <section className="flex flex-col gap-2">
-                    <div className="flex h-7 items-center gap-1">
+                <section className="flex min-h-0 flex-col gap-2">
+                    {/* min-h-6 由最高的子元素(size-6 图标按钮)决定, 不锁死上限;
+                        与右列表头取同一下限, 两列的卡片顶边才对齐。 */}
+                    <div className="flex min-h-6 items-center gap-1">
                         <h3 className={`truncate text-xs font-semibold tracking-wider text-muted-foreground ${isNameHidden ? 'select-none blur-[3px]' : ''}`}>
-                            {channel.name}
+                            {channel.channel_name}
                         </h3>
                         <div data-share-exclude className="flex shrink-0 items-center">
                             <button
                                 type="button"
                                 onClick={() => setIsNameHidden(!isNameHidden)}
                                 aria-pressed={isNameHidden}
-                                className={iconButtonClass}
+                                className="flex size-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground disabled:opacity-50"
                             >
                                 {isNameHidden ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
                             </button>
-                            <button type="button" onClick={handleShare} disabled={isSharing} className={iconButtonClass}>
+                            <button type="button" onClick={handleShare} disabled={isSharing} className="flex size-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground disabled:opacity-50">
                                 <Share2 className="size-3.5" />
                             </button>
+                            {isConfirmingDelete ? (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsConfirmingDelete(false)}
+                                        title={t('cancel')}
+                                        aria-label={t('cancel')}
+                                        className="flex size-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground"
+                                    >
+                                        <X className="size-3.5" />
+                                    </button>
+                                    {/* 删除成功后该渠道已不存在, 连带关掉弹窗 */}
+                                    <button
+                                        type="button"
+                                        onClick={() => deleteChannel.mutate(channel.channel_id, {
+                                            onSuccess: () => setIsOpen(false),
+                                        })}
+                                        disabled={deleteChannel.isPending}
+                                        title={t('confirmDelete')}
+                                        aria-label={t('confirmDelete')}
+                                        className="flex size-6 items-center justify-center rounded-md text-destructive transition-colors hover:text-destructive/70 disabled:opacity-50"
+                                    >
+                                        <Check className="size-3.5" />
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={onEdit}
+                                        title={t('edit')}
+                                        aria-label={t('edit')}
+                                        className="flex size-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground"
+                                    >
+                                        <Pencil className="size-3.5" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsConfirmingDelete(true)}
+                                        title={t('delete')}
+                                        aria-label={t('delete')}
+                                        className="flex size-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-destructive"
+                                    >
+                                        <Trash2 className="size-3.5" />
+                                    </button>
+                                </>
+                            )}
                         </div>
                     </div>
-                    <dl className="grid grid-cols-2 gap-2 @md/stats:grid-cols-4 @2xl/stats:grid-cols-1 @2xl/stats:flex-1 @2xl/stats:auto-rows-fr">
+                    {/* 宽屏下四项各占四分之一列高: 行数与 summary 的项数一致, 等分由 grid-rows-4 表达。 */}
+                    <dl className="grid grid-cols-2 gap-2 @md/stats:grid-cols-4 @2xl/stats:flex-1 @2xl/stats:grid-cols-1 @2xl/stats:grid-rows-4">
                         {summary.map(({ icon, label, value, sub }) => (
                             <div key={label} className="flex flex-col rounded-2xl border bg-card p-3">
                                 <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -226,9 +289,10 @@ export function ChannelStats({ channel, stats }: { channel: Channel; stats: Stat
                     </dl>
                 </section>
 
-                {/* 右列: 模型统计, 仅列出当前维度下的前六名 */}
-                <section className="flex flex-col gap-2">
-                    <div className="flex h-7 items-center justify-between gap-2">
+                {/* 右列: 模型统计, 仅列出当前维度下的前五名 */}
+                <section className="flex min-h-0 flex-col gap-2">
+                    {/* 与左列表头取同一下限, 两列的卡片顶边才对齐。 */}
+                    <div className="flex min-h-6 items-center justify-between gap-2">
                         <h4 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                             {t('models')}
                             <span className="tabular-nums">({channel.models.length})</span>
@@ -252,16 +316,19 @@ export function ChannelStats({ channel, stats }: { channel: Channel; stats: Stat
                         </div>
                     </div>
 
+                    {/* 宽屏下五项等分右列剩余高度, 与左列同为 grid 等分; 窄屏按内容取高。
+                        行数固定为 5 而不是随模型数变化: 不足 5 个时行高仍按五等分, 两列的卡片高度才一致;
+                        超出的模型不显示, 这里是排行摘要而非完整列表。 */}
                     {modelStats.length === 0 ? (
-                        <div className="rounded-2xl border bg-card p-6 text-center text-xs text-muted-foreground">
+                        <div className="flex items-center justify-center rounded-2xl border bg-card p-6 text-center text-xs text-muted-foreground @2xl/stats:flex-1">
                             {t('noModels')}
                         </div>
                     ) : (
-                        <ul className="space-y-2">
-                            {modelStats.slice(0, 6).map((model) => (
+                        <ul className="grid gap-2 @2xl/stats:flex-1 @2xl/stats:grid-rows-5">
+                            {modelStats.slice(0, 5).map((model) => (
                                 <li
                                     key={model.id}
-                                    className="grid gap-2 rounded-2xl border bg-card p-3 @md/stats:grid-cols-[minmax(0,1fr)_auto] @md/stats:items-center @md/stats:gap-4 @2xl/stats:h-16"
+                                    className="grid gap-2 rounded-2xl border bg-card p-3 @md/stats:grid-cols-[minmax(0,1fr)_auto] @md/stats:items-center @md/stats:gap-4"
                                 >
                                     <div className="min-w-0 space-y-1.5">
                                         <span className="block truncate text-sm font-medium text-card-foreground">{model.name}</span>
@@ -309,13 +376,13 @@ export function ChannelStats({ channel, stats }: { channel: Channel; stats: Stat
                         className="max-h-[70vh] min-h-0 w-auto max-w-full rounded-2xl border border-border object-contain"
                     />
                     <div className="flex shrink-0 items-center gap-2">
-                        <button type="button" onClick={handleCopyImage} className={previewActionClass}>
+                        <button type="button" onClick={handleCopyImage} className="flex size-10 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:text-foreground active:scale-95">
                             <Copy className="size-4" />
                         </button>
-                        <button type="button" onClick={handleDownloadImage} className={previewActionClass}>
+                        <button type="button" onClick={handleDownloadImage} className="flex size-10 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:text-foreground active:scale-95">
                             <Download className="size-4" />
                         </button>
-                        <button type="button" onClick={() => setPreview(null)} className={previewActionClass}>
+                        <button type="button" onClick={() => setPreview(null)} className="flex size-10 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:text-foreground active:scale-95">
                             <X className="size-4" />
                         </button>
                     </div>

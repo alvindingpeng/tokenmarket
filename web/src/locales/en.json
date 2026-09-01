@@ -245,22 +245,6 @@
                 "failed": "Failed to rebuild price data"
             }
         },
-        "llmSync": {
-            "title": "Channel Sync",
-            "syncInterval": {
-                "label": "Auto Sync Interval (hours)",
-                "placeholder": "Enter interval in hours"
-            },
-            "manualSync": {
-                "label": "Manual Channel Sync",
-                "button": "Sync Now",
-                "syncing": "Syncing..."
-            },
-            "lastSync": "Last Sync",
-            "neverSynced": "Never synced",
-            "syncSuccess": "Channel synced successfully",
-            "syncFailed": "Failed to sync channel"
-        },
         "account": {
             "title": "Account Settings",
             "save": "Save",
@@ -337,8 +321,6 @@
                 "edit": "Edit",
                 "cancel": "Cancel",
                 "save": "Save",
-                "copyName": "Copy Name",
-                "delete": "Delete",
                 "confirmDelete": "Confirm Delete"
             }
         },
@@ -441,10 +423,6 @@
             "model": "Model",
             "successRequests": "Successful Requests",
             "failedRequests": "Failed Requests",
-            "edit": "Edit",
-            "delete": "Delete",
-            "confirmDelete": "Confirm Delete",
-            "cancel": "Cancel",
             "toast": {
                 "enabled": "Channel enabled",
                 "disabled": "Channel disabled"
@@ -459,51 +437,58 @@
             "noModels": "No models selected",
             "sortByCost": "Cost",
             "sortByCount": "Count",
-            "sortByTokens": "Tokens"
+            "sortByTokens": "Tokens",
+            "edit": "Edit",
+            "delete": "Delete",
+            "confirmDelete": "Confirm Delete",
+            "cancel": "Cancel"
         },
         "create": {
             "dialogTitle": "Create New Channel"
         },
         "form": {
-            "name": "Channel Name",
-            "type": "Channel Type",
+            "stepPreset": "Start",
+            "stepConnection": "Connection",
+            "stepKeys": "Credentials",
+            "stepGrants": "Models",
+            "stepAdvanced": "Advanced",
+            "name": "Channel name",
             "baseUrl": "Base URL",
-            "baseUrlUrl": "URL",
-            "advanced": "Advanced Settings",
             "apiKey": "API Key",
-            "customHeader": "Custom Headers",
-            "customHeaderKey": "Header Key",
-            "customHeaderValue": "Header Value",
-            "customHeaderAdd": "Add Header",
-            "channelProxy": "Channel Proxy",
-            "channelProxyPlaceholder": "Optional: proxy for this channel (overrides global proxy)",
-            "paramOverride": "Param Override",
-            "paramOverridePlaceholder": "Optional: JSON string to override request params",
-            "model": "Model",
             "enabled": "Enabled",
-            "proxy": "Use Proxy",
-            "modelCustomPlaceholder": "Custom model name",
+            "proxy": "Use proxy",
+            "keys": "Credentials",
+            "keyAdd": "Add credential",
+            "keyName": "Name",
+            "keyEmpty": "Not set",
+            "keysRequiredFirst": "Add a credential first",
+            "detailLoading": "Loading channel configuration",
+            "detailFailed": "Failed to load channel configuration",
+            "grantExpandAll": "Expand all",
+            "grantCollapseAll": "Collapse all",
             "modelAdd": "Add",
-            "modelRefresh": "Refresh",
-            "modelRefreshSuccess": "Models fetched successfully",
-            "modelRefreshFailed": "Failed to fetch models",
-            "modelRefreshEmpty": "No models found",
-            "modelSelected": "Selected Models",
-            "modelNoSelected": "No models selected",
-            "modelClearAll": "Clear All",
-            "typeOpenAIChat": "OpenAI Chat",
-            "typeOpenAIResponse": "OpenAI Response",
-            "typeAnthropic": "Anthropic",
-            "typeGemini": "Gemini",
-            "typeVolcengine": "Volcengine",
-            "autoSync": "Auto Sync",
-            "matchRegex": "Match Regex",
-            "matchRegexPlaceholder": "Optional: regex pattern to match request model names",
-            "submit": "Create Channel",
-            "submitting": "Creating...",
+            "modelCustomPlaceholder": "Model name",
+            "modelRefresh": "Fetch",
+            "modelNoSelected": "No models",
+            "modelRefreshSuccess": "Fetched {count} models",
+            "modelRefreshFailed": "Fetch failed",
+            "modelRefreshEmpty": "No models returned",
+            "channelProxy": "Channel proxy",
+            "matchRegex": "Match regex",
+            "paramOverride": "Param override",
+            "customHeader": "Custom headers",
+            "customHeaderKey": "Header key",
+            "customHeaderValue": "Header value",
+            "customHeaderAdd": "Add header",
+            "edit": "Edit",
+            "delete": "Delete",
+            "submit": "Create channel",
             "save": "Save",
-            "saving": "Saving...",
-            "cancel": "Cancel"
+            "cancel": "Cancel",
+            "backToStats": "Back to Stats",
+            "grantClearAll": "Clear all models",
+            "modelRemove": "Remove model",
+            "grantRemove": "Remove this key’s grant"
         }
     }
 }

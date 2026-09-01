@@ -75,10 +75,10 @@ export function Group() {
             items={visibleGroups}
             columns={{ default: 1, md: 2, lg: 3 }}
             estimateItemHeight={520}
-            getItemKey={(group, index) => group.id ?? `group-${index}`}
+            getItemKey={(group) => group.id}
             renderItem={(group) => {
-                let deadline = group.runtime?.affinity_until ?? 0;
-                for (const cooldownUntil of Object.values(group.runtime?.cooldowns ?? {})) {
+                let deadline = group.runtime.affinity_until;
+                for (const cooldownUntil of Object.values(group.runtime.cooldowns)) {
                     deadline = Math.max(deadline, cooldownUntil);
                 }
                 return <GroupCard group={group} now={deadline > runtimeNow ? runtimeNow : deadline} />;

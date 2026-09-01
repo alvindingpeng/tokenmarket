@@ -7,46 +7,53 @@ import (
 	"strings"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
-	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/auth"
 	"github.com/looplj/axonhub/llm/httpclient"
 	"github.com/looplj/axonhub/llm/transformer"
 	"github.com/looplj/axonhub/llm/transformer/anthropic"
-	"github.com/looplj/axonhub/llm/transformer/doubao"
-	"github.com/looplj/axonhub/llm/transformer/gemini"
 	"github.com/looplj/axonhub/llm/transformer/openai"
 	"github.com/looplj/axonhub/llm/transformer/openai/responses"
 	"github.com/tidwall/sjson"
 )
-// buildOutbound 按渠道协议构造出站转换器, 并判断客户端请求能否直接透传。
-func buildOutbound(channel model.Channel, format llm.APIFormat) (transformer.Outbound, bool, error) {
-	key := auth.NewStaticKeyProvider(channel.Key)
-	switch channel.Type {
-	case model.ChannelProviderOpenAI:
-		outbound, err := openai.NewOutboundTransformerWithConfig(&openai.Config{PlatformType: openai.PlatformOpenAI, BaseURL: channel.BaseURL, APIKeyProvider: key})
-		return outbound, format == llm.APIFormatOpenAIChatCompletion, err
-	case model.ChannelProviderOpenAIResponses:
-		outbound, err := responses.NewOutboundTransformerWithConfig(&responses.Config{BaseURL: channel.BaseURL, APIKeyProvider: key})
-		return outbound, format == llm.APIFormatOpenAIResponse, err
-	case model.ChannelProviderAnthropic:
-		outbound, err := anthropic.NewOutboundTransformerWithConfig(&anthropic.Config{Type: anthropic.PlatformDirect, BaseURL: channel.BaseURL, APIKeyProvider: key})
-		return outbound, format == llm.APIFormatAnthropicMessage, err
-	case model.ChannelProviderGemini:
-		outbound, err := gemini.NewOutboundTransformerWithConfig(gemini.Config{BaseURL: channel.BaseURL, APIKeyProvider: key})
-		return outbound, false, err
-	case model.ChannelProviderVolcengine:
-		outbound, err := doubao.NewOutboundTransformerWithConfig(&doubao.Config{BaseURL: channel.BaseURL, APIKeyProvider: key})
-		return outbound, false, err
+
+// buildOutbound 在渠道授权支持的协议内选出本轮上游协议, 构造对应的出站转换器, 并返回选中的协议和能否同协议透传。
+// 地址由渠道的协议路径字段与地址拼接, 凭据取自目标绑定的渠道凭据。
+// want 是客户端请求使用的协议, 由调用方按入站格式定出; 选中的协议随请求状态推给界面, 故一并返回。
+func buildOutbound(channel model.Channel, grant model.ChannelGrant, channelKey model.ChannelKey, want model.Protocol) (transformer.Outbound, model.Protocol, bool, error) {
+	protocol, passthrough := want, grant.Protocols&want != 0
+	if !passthrough {
+		protocol = 0
+		switch {
+		case grant.Protocols&model.ProtocolAnthropicMessage != 0:
+			protocol = model.ProtocolAnthropicMessage
+		case grant.Protocols&model.ProtocolOpenAIResponse != 0:
+			protocol = model.ProtocolOpenAIResponse
+		case grant.Protocols&model.ProtocolOpenAIChatCompletion != 0:
+			protocol = model.ProtocolOpenAIChatCompletion
+		}
+	}
+
+	key := auth.NewStaticKeyProvider(channelKey.Key)
+	switch protocol {
+	case model.ProtocolOpenAIChatCompletion:
+		outbound, err := openai.NewOutboundTransformerWithConfig(&openai.Config{PlatformType: openai.PlatformOpenAI, BaseURL: channel.BaseURL, EndpointPath: channel.OpenAIChatCompletionPath, APIKeyProvider: key})
+		return outbound, protocol, passthrough, err
+	case model.ProtocolOpenAIResponse:
+		outbound, err := responses.NewOutboundTransformerWithConfig(&responses.Config{BaseURL: channel.BaseURL, EndpointPath: channel.OpenAIResponsePath, APIKeyProvider: key})
+		return outbound, protocol, passthrough, err
+	case model.ProtocolAnthropicMessage:
+		outbound, err := anthropic.NewOutboundTransformerWithConfig(&anthropic.Config{Type: anthropic.PlatformDirect, BaseURL: channel.BaseURL, EndpointPath: channel.AnthropicMessagePath, APIKeyProvider: key})
+		return outbound, protocol, passthrough, err
 	default:
-		return nil, false, fmt.Errorf("unsupported channel provider: %s", channel.Type)
+		return nil, 0, false, fmt.Errorf("channel grant %d supports no known protocol: %d", grant.ID, grant.Protocols)
 	}
 }
 
 // applyChannelConfig 按渠道配置覆盖上游请求的参数并追加自定义 Header; model 与 stream 由转发流程决定, 不允许覆盖。
 func applyChannelConfig(channel model.Channel, request *httpclient.Request) error {
-	if channel.ParamOverride != nil && *channel.ParamOverride != "" {
+	if channel.ParamOverride != "" {
 		var overrides map[string]json.RawMessage
-		if err := json.Unmarshal([]byte(*channel.ParamOverride), &overrides); err != nil {
+		if err := json.Unmarshal([]byte(channel.ParamOverride), &overrides); err != nil {
 			return fmt.Errorf("invalid channel parameter override: %w", err)
 		}
 		body := request.Body

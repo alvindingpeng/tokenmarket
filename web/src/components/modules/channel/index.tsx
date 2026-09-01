@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { ArrowUpAZ } from 'lucide-react';
 import { useTranslations } from 'use-intl';
-import { useChannelList } from '@/api/channel';
+import { useChannelStats } from '@/api/channel';
 import { PageActions, usePageActionsStore } from '@/components/common/PageActions';
 import {
     MorphingDialogClose,
@@ -49,7 +49,7 @@ export function ChannelActions() {
                 if (value === 'all' || value === 'enabled' || value === 'disabled') setFilter(value);
             }}
         >
-            <div className="w-screen max-w-full md:max-w-xl h-full min-h-0 flex flex-col">
+            <div className="w-screen max-w-full md:max-w-3xl flex flex-col">
                 <MorphingDialogTitle className="shrink-0">
                     <header className="mb-6 flex items-center justify-between">
                         <h2 className="text-2xl font-bold text-card-foreground">{tCreate('dialogTitle')}</h2>
@@ -63,7 +63,7 @@ export function ChannelActions() {
                         />
                     </header>
                 </MorphingDialogTitle>
-                <MorphingDialogDescription disableLayoutAnimation className="flex-1 min-h-0 overflow-auto">
+                <MorphingDialogDescription disableLayoutAnimation>
                     <ChannelForm />
                 </MorphingDialogDescription>
             </div>
@@ -73,7 +73,7 @@ export function ChannelActions() {
 
 // Channel 渲染渠道列表正文。
 export function Channel() {
-    const { data: channelsData } = useChannelList();
+    const { data: statsData } = useChannelStats();
     const searchTerm = usePageActionsStore((state) => state.searchTerms.channel || '');
     const layout = usePageActionsStore((state) => state.layouts.channel || 'grid');
     const sortOrder = usePageActionsStore((state) => state.sortOrders.channel === 'desc' ? 'desc' : 'asc');
@@ -82,19 +82,19 @@ export function Channel() {
     // 先按搜索词和启用状态过滤, 再按名称排序
     const visibleChannels = useMemo(() => {
         const term = searchTerm.toLowerCase().trim();
-        const matched = (channelsData ?? []).filter((item) => {
-            if (term && !item.raw.name.toLowerCase().includes(term)) return false;
-            if (filter === 'enabled') return item.raw.enabled;
-            if (filter === 'disabled') return !item.raw.enabled;
+        const matched = (statsData ?? []).filter((channel) => {
+            if (term && !channel.channel_name.toLowerCase().includes(term)) return false;
+            if (filter === 'enabled') return channel.enabled;
+            if (filter === 'disabled') return !channel.enabled;
             return true;
         });
 
         return matched.sort((a, b) =>
             sortOrder === 'asc'
-                ? a.raw.name.localeCompare(b.raw.name)
-                : b.raw.name.localeCompare(a.raw.name)
+                ? a.channel_name.localeCompare(b.channel_name)
+                : b.channel_name.localeCompare(a.channel_name)
         );
-    }, [channelsData, searchTerm, filter, sortOrder]);
+    }, [statsData, searchTerm, filter, sortOrder]);
 
     return (
         <VirtualizedGrid
@@ -102,8 +102,10 @@ export function Channel() {
             layout={layout}
             columns={{ default: 1, md: 2, lg: 3 }}
             estimateItemHeight={216}
-            getItemKey={(item) => `channel-${item.raw.id}`}
-            renderItem={(item) => <Card channel={item.raw} stats={item.formatted} layout={layout} />}
+            getItemKey={(channel) => `channel-${channel.channel_id}`}
+            renderItem={(channel) => (
+                <Card channel={channel} />
+            )}
         />
     );
 }

@@ -1,4 +1,3 @@
-import type { GroupItem } from '@/api/group';
 import {
     MorphingDialogClose,
     MorphingDialogTitle,
@@ -38,13 +37,13 @@ export function CreateDialogContent() {
                     submittingText={t('create.submitting')}
                     isSubmitting={createGroup.isPending}
                     onSubmit={({ name, mode, relay_config, members }) => {
-                        const items: GroupItem[] = members.map((member, index) => ({
-                            channel_model_id: member.channel_model_id,
-                            priority: index + 1,
-                        }));
-
                         createGroup.mutate(
-                            { name, mode, active_item_id: 0, relay_config, items },
+                            {
+                                name,
+                                mode,
+                                relay_config,
+                                items: members.map((member) => ({ channel_grant_id: member.channel_grant_id })),
+                            },
                             {
                                 onSuccess: () => setIsOpen(false),
                                 onError: (error) => toast.error(t('toast.createFailed'), { description: error.message }),

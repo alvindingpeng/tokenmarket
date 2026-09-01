@@ -5,7 +5,7 @@ import { useAuth } from '@/api/user';
 import {
     apiKeyDashboardStatsQueryOptions,
     apiKeyListQueryOptions,
-    channelListQueryOptions,
+    channelStatsQueryOptions,
     groupListQueryOptions,
     modelListQueryOptions,
     statsDailyQueryOptions,
@@ -67,7 +67,7 @@ export function AppContainer() {
             ]
             : [
                 queryClient.fetchQuery(apiKeyListQueryOptions),
-                queryClient.fetchQuery(channelListQueryOptions),
+                queryClient.fetchQuery(channelStatsQueryOptions),
                 queryClient.fetchQuery(groupListQueryOptions),
                 queryClient.fetchQuery(modelListQueryOptions),
                 queryClient.fetchQuery(statsDailyQueryOptions),

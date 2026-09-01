@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
@@ -26,12 +25,16 @@ import (
 
 // Forward 按客户端协议承载一个请求的完整转发过程: 解析请求, 定位分组, 循环选目标请求上游, 直至提交响应或请求结束。
 func Forward(format llm.APIFormat) gin.HandlerFunc {
+	// 客户端协议同时定出入站转换器和请求协议位: 后者随请求状态推给界面, 也是每轮选择上游协议的首选。
 	var inbound transformer.Inbound
+	requestProtocol := model.ProtocolOpenAIChatCompletion
 	switch format {
 	case llm.APIFormatOpenAIResponse:
 		inbound = responses.NewInboundTransformer()
+		requestProtocol = model.ProtocolOpenAIResponse
 	case llm.APIFormatAnthropicMessage:
 		inbound = anthropic.NewInboundTransformer()
+		requestProtocol = model.ProtocolAnthropicMessage
 	default:
 		inbound = openai.NewInboundTransformer()
 	}
@@ -55,19 +58,23 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		}
 
 		// API Key 限定了模型范围时只放行范围内的模型, 为空表示不限制。
-		if allowed := c.GetString("supported_models"); allowed != "" && !slices.Contains(strings.Split(allowed, ","), metadata.Model) {
-			rejectRequest(c, inbound, errors.New("model not supported by this api key"))
-			return
+		if allowed, ok := c.Get("supported_models"); ok {
+			if names, _ := allowed.([]string); len(names) > 0 && !slices.Contains(names, metadata.Model) {
+				rejectRequest(c, inbound, errors.New("model not supported by this api key"))
+				return
+			}
 		}
 
 		// 客户端请求的模型名称即分组名称; 分组不存在说明模型名错误, 等待也不会出现该分组。
-		if _, err := op.GroupGetByName(metadata.Model); err != nil {
+		// 分组主键随请求状态一并登记, 界面由此可直接按主键取分组而不必按名称回查。
+		group, err := op.GroupGetByName(metadata.Model)
+		if err != nil {
 			rejectRequest(c, inbound, errors.New("model not found"))
 			return
 		}
 
 		// 登记进程内请求状态, 返回的记录是后续全部状态写入和前端可视化推送的入口。
-		request := newRequestState(metadata.Model, string(raw.Body), c.GetInt("api_key_id"))
+		request := newRequestState(metadata.Model, group.ID, requestProtocol, string(raw.Body), c.GetInt("api_key_id"))
 		ctx := c.Request.Context()
 		failedItemID := 0 // 当前累计连续失败次数的成员 ID。
 		failures := 0     // 该成员包含首次请求的连续失败次数。
@@ -79,7 +86,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			}
 
 			// 分组配置和成员随时可改, 故每轮重新读取; 分组被删除时等待它重新出现。
-			group, err := op.GroupGetByName(metadata.Model)
+			group, err = op.GroupGetByName(metadata.Model)
 			if err != nil {
 				if !request.wait(ctx, model.DefaultGroupRelayConfig().MemberRetryIntervalSeconds) {
 					return
@@ -97,13 +104,17 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				continue
 			}
 
-			channelModel := item.ChannelModel
-			if channelModel == nil {
+			// 成员指向的授权缺失, 凭据被停用或两侧已被删除时等待, 该成员可能很快被改回可用配置。
+			// ChannelGrantGet 一次校验齐这几种情况, 取到的授权必然可直接转发, 无需再逐项检查。
+			grant, err := op.ChannelGrantGet(item.ChannelGrantID)
+			if err != nil {
 				if !request.wait(ctx, group.RelayConfig.MemberRetryIntervalSeconds) {
 					return
 				}
 				continue
 			}
+			channelModel := grant.ChannelModel
+			channelKey := grant.ChannelKey
 
 			// 成员指向的渠道已被删除时同样等待, 该成员可能很快被改回可用渠道。
 			channel, err := op.ChannelGet(channelModel.ChannelID)
@@ -131,17 +142,19 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				}
 			}
 
+			// 在渠道授权支持的协议内选出本轮上游协议, 按该协议的路径与授权绑定的凭据构造出站转换器。
+			// 先于登记本轮目标: 选中的协议是本轮目标的一部分, 需与渠道和模型一并推给界面。
+			outbound, targetProtocol, passthrough, err := buildOutbound(channel, grant, *channelKey, requestProtocol)
+
 			// 为本轮上游调用建立独立取消入口并登记当前目标; 取消原因用于区分人工中止与响应超时。
 			roundCtx, cancelRoundCause := context.WithCancelCause(ctx)
 			// 人工中止和本轮完成都使用普通 canceled 原因, 超时回调则写入具体的超时错误。
 			cancelRound := func() {
 				cancelRoundCause(context.Canceled)
 			}
-			request.startRound(cancelRound, channel.Name, channelModel.Name)
+			request.startRound(cancelRound, channel.Name, channelModel.Name, item.ID, targetProtocol)
 
-			// 按渠道协议构造出站转换器并确定是否可以直接透传。
 			roundStartedAt := time.Now() // 本轮上游调用的开始时间, 用于统计首个有效响应耗时。
-			outbound, passthrough, err := buildOutbound(channel, format)
 
 			// 请求上游并等待首个有效响应: 非流式等待完整响应, 流式等待首个事件。
 			// 同协议渠道原样直通, 跨协议渠道经转换后请求; 此时尚未写给客户端, 失败仍可换目标重试。
@@ -159,7 +172,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				})
 				// 客户端与渠道协议一致时直接透传, 其余组合通过 pipeline 转换。
 				if passthrough {
-					result, err = sendPassthrough(roundCtx, format, raw, channel, outbound, metadata.Streaming)
+					result, err = sendPassthrough(roundCtx, format, raw, channel, outbound, metadata.Streaming, channelModel.Name)
 				} else {
 					result, err = sendConverted(roundCtx, format, raw, channel, outbound, metadata.Streaming)
 				}
@@ -172,6 +185,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					// 超时与响应返回同时发生时舍弃尚未提交的流结果, 避免把超时误记为成功。
 					if result != nil && result.events != nil {
 						result.events.Close()
+						if result.closeIdle != nil {
+							result.closeIdle()
+						}
 					}
 				}
 			}
@@ -195,6 +211,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				metrics := model.StatsMetrics{WaitTime: time.Since(roundStartedAt).Milliseconds(), RequestFailed: 1}
 				_ = op.ChannelStatsUpdate(channel.ID, metrics)
 				_ = op.ChannelModelStatsUpdate(channelModel.ID, metrics)
+				_ = op.ChannelKeyStatsUpdate(channelKey.ID, metrics)
 
 				// 成员改变时重新开始累计该成员在本请求内的连续失败次数。
 				if failedItemID == item.ID {
@@ -234,6 +251,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				metrics.RequestSuccess = 1
 				_ = op.ChannelStatsUpdate(channel.ID, metrics)
 				_ = op.ChannelModelStatsUpdate(channelModel.ID, metrics)
+				_ = op.ChannelKeyStatsUpdate(channelKey.ID, metrics)
 				request.markCommitted()
 				n, err := c.Writer.Write(result.body)
 				if err == nil && n != len(result.body) {
@@ -295,6 +313,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				last, err = inspectStreamEvent(format, event)
 			}
 			result.events.Close()
+			// 事件流已读完, 渠道专用代理的独占连接池到此归还。
+			if result.closeIdle != nil {
+				result.closeIdle()
+			}
 			cancelRound()
 			// 使用客户端协议转换器聚合已转发事件, 统一取得最终响应正文和用量。
 			responseBody, meta, aggregateErr := inbound.AggregateStreamChunks(context.WithoutCancel(ctx), chunks)
@@ -311,6 +333,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			}
 			_ = op.ChannelStatsUpdate(channel.ID, metrics)
 			_ = op.ChannelModelStatsUpdate(channelModel.ID, metrics)
+			_ = op.ChannelKeyStatsUpdate(channelKey.ID, metrics)
 			if err != nil {
 				if ctx.Err() != nil {
 					request.markCanceled(ctx.Err(), string(responseBody), result.usage)

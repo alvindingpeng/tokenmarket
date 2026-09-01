@@ -75,14 +75,7 @@ export function APIKeyDashboard() {
     const isExpired = expireAt ? expireAt.isBefore(dayjs()) : false;
     const daysUntilExpire = expireAt ? expireAt.diff(dayjs(), 'day') : null;
 
-    const supportedModels = info.supported_models
-        ? info.supported_models
-            .split(',')
-            .map((m) => m.trim())
-            .filter(Boolean)
-        : [];
-
-    const supportedModelButtons: JSX.Element[] = supportedModels.map((model) => (
+    const supportedModelButtons: JSX.Element[] = info.supported_models.map((model) => (
         <Button
             key={model}
             variant="secondary"
@@ -267,7 +260,7 @@ export function APIKeyDashboard() {
                     </div>
 
                     {/* Supported Models */}
-                    {info.supported_models && info.supported_models.trim().length > 0 && (
+                    {info.supported_models.length > 0 && (
                         <div className="rounded-2xl border bg-card p-6">
                             <div className="flex items-center gap-2 mb-4">
                                 <Layers className="w-5 h-5 text-chart-3" />

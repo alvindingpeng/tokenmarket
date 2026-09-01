@@ -11,10 +11,9 @@ import (
 )
 
 const (
-	TaskPriceUpdate  = "price_update"
-	TaskStatsSave    = "stats_save"
-	TaskSyncLLM      = "sync_llm"
-	TaskCleanLLM     = "clean_llm"
+	TaskPriceUpdate = "price_update"
+	TaskStatsSave   = "stats_save"
+	TaskCleanLLM    = "clean_llm"
 )
 
 func Init() {
@@ -28,19 +27,6 @@ func Init() {
 	Register(string(model.SettingKeyModelInfoUpdateInterval), priceUpdateInterval, true, func() {
 		if err := price.UpdateLLMPrice(context.Background()); err != nil {
 			log.Warnf("failed to update price info: %v", err)
-		}
-	})
-
-	// 注册LLM同步任务
-	syncLLMIntervalHours, err := op.SettingGetInt(model.SettingKeySyncLLMInterval)
-	if err != nil {
-		log.Warnf("failed to get sync LLM interval: %v", err)
-		return
-	}
-	syncLLMInterval := time.Duration(syncLLMIntervalHours) * time.Hour
-	Register(string(model.SettingKeySyncLLMInterval), syncLLMInterval, true, func() {
-		if err := SyncModelsTask(); err != nil {
-			log.Warnf("failed to sync models: %v", err)
 		}
 	})
 

@@ -13,22 +13,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var activityMaxRequestCount int64 // 最近 54 周每日请求量的最大值。
+var activityMaxRequestCount int64     // 最近 54 周每日请求量的最大值。
 var activityMaxCalculatedAt time.Time // 最大值上次计算时间。
-var activityMaxMu sync.Mutex // 保护最大值及计算时间的并发更新。
+var activityMaxMu sync.Mutex          // 保护最大值及计算时间的并发更新。
 
 type statsDailyResponse struct {
-	MaxRequestCount int64             `json:"max_request_count"` // 最近 54 周每日请求量的最大值。
-	Items           []model.StatsDaily `json:"items"` // 每日原始统计数据。
+	MaxRequestCount int64              `json:"max_request_count"` // 最近 54 周每日请求量的最大值。
+	Items           []model.StatsDaily `json:"items"`             // 每日原始统计数据。
 }
 
 func init() {
 	router.NewGroupRouter("/api/v1/stats").
 		Use(middleware.Auth()).
-		AddRoute(
-			router.NewRoute("/today", http.MethodGet).
-				Handle(getStatsToday),
-		).
 		AddRoute(
 			router.NewRoute("/daily", http.MethodGet).
 				Handle(getStatsDaily),
@@ -47,26 +43,19 @@ func init() {
 		)
 }
 
-func getStatsToday(c *gin.Context) {
-	resp.Success(c, op.StatsTodayGet())
-}
-
 func getStatsDaily(c *gin.Context) {
-	statsDaily, err := op.StatsGetDaily(c.Request.Context())
+	now := time.Now()
+	since := now.AddDate(0, 0, -(int(now.Weekday()) + 53*7)).Format("20060102")
+	statsDaily, err := op.StatsGetDaily(c.Request.Context(), since)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	now := time.Now()
 	activityMaxMu.Lock()
 	if activityMaxCalculatedAt.IsZero() || now.Sub(activityMaxCalculatedAt) >= 24*time.Hour {
-		cutoff := now.AddDate(0, 0, -(int(now.Weekday()) + 53*7)).Format("20060102")
 		maxRequestCount := int64(0)
 		for _, daily := range statsDaily {
-			if daily.Date < cutoff {
-				continue
-			}
 			requestCount := daily.RequestSuccess + daily.RequestFailed
 			if requestCount > maxRequestCount {
 				maxRequestCount = requestCount

@@ -8,12 +8,16 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
-// RouteState 是一个分组的进程内路由状态, 同时作为路由流的消息形状; 跨该分组的全部请求共享。
+// RouteState 是一个分组的进程内路由状态; 跨该分组的全部请求共享。
+// 同时作为路由流的消息形状与分组读取响应中的 runtime 字段: 冷却, 探测与亲和都是本包路由算法的概念,
+// 故状态形状由本包定义, 分组的持久化配置不含它; 内部标志未导出, 不会随消息出到 JSON。
+// 两种模式共用 CurrentItemID: 手动模式下即人工指定的成员, 故障转移模式下由路由决定,
+// 前端由此只读这一个字段即可知道当前承载请求的成员, 无需再按模式分支。
 type RouteState struct {
-	GroupID       int           `json:"group_id"`        // 状态所属的分组 ID。
-	CurrentItemID int           `json:"current_item_id"` // 当前承载请求的成员 ID, 0 表示尚未建立路由。
-	ProbeItemID   int           `json:"probe_item_id"`   // 当前占用恢复探测的成员 ID, 同一分组同时只允许一个成员被探测。
-	AffinityUntil int64         `json:"affinity_until"`  // 当前路由的亲和截止 Unix 毫秒时间, 0 表示无亲和。
+	GroupID       int           `json:"group_id"`        // 状态所属的分组 ID, 供状态流按分组定位。
+	CurrentItemID int           `json:"current_item_id"` // 当前承载请求的成员 ID, 0 表示尚未建立路由或未人工指定。
+	ProbeItemID   int           `json:"probe_item_id"`   // 当前占用恢复探测的成员 ID, 同一分组同时只允许一个成员被探测; 手动模式恒为 0。
+	AffinityUntil int64         `json:"affinity_until"`  // 当前路由的亲和截止 Unix 毫秒时间, 0 表示无亲和; 手动模式恒为 0。
 	Cooldowns     map[int]int64 `json:"cooldowns"`       // 失败成员 ID 对应的冷却截止 Unix 毫秒时间, 已到期的条目由前端按当前时间忽略。
 
 	affinityArmed bool // 当前路由下一次成功后是否开始亲和, 仅故障切换后为真。
@@ -22,10 +26,42 @@ type RouteState struct {
 const routeStreamBuffer = 16 // 单个路由流连接的非阻塞消息缓冲容量。
 
 var (
-	routeMu      sync.Mutex                      // routeMu 保护全部分组路由状态。
+	routeMu      sync.Mutex                           // routeMu 保护全部分组路由状态。
 	routes       = make(map[int]*RouteState)          // routes 按分组 ID 保存路由状态。
 	routeStreams = make(map[chan RouteState]struct{}) // 全部路由 SSE 连接。
 )
+
+// RouteStateOf 返回分组当前的实时路由状态, 供读取接口随分组一并返回。
+// 手动模式没有进程内路由: 当前成员即人工指定的成员, 冷却与亲和均不适用, 故直接由分组配置得出。
+func RouteStateOf(group model.Group) RouteState {
+	if group.Mode == model.GroupModeManual {
+		return RouteState{
+			GroupID:       group.ID,
+			CurrentItemID: group.ActiveItemID,
+			Cooldowns:     map[int]int64{},
+		}
+	}
+
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	route := routes[group.ID]
+	if route == nil {
+		return RouteState{GroupID: group.ID, Cooldowns: map[int]int64{}}
+	}
+	state := *route
+	state.Cooldowns = maps.Clone(route.Cooldowns)
+	return state
+}
+
+// ResetRouteState 丢弃分组的进程内路由状态, 用于分组切换选择模式或被删除。
+// 不丢弃的话冷却与亲和会在 failover 切到 manual 再切回来之后复活并继续影响选路, 分组删除后其状态也会永久残留。
+func ResetRouteState(groupID int) {
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	delete(routes, groupID)
+}
 
 // pickGroupItem 按分组模式选择本轮目标成员, 没有可用成员时返回零值; group.Items 已按 Priority 升序排列。
 // 渠道是否可用不在此判断: 渠道禁用或缺少密钥由调用方发现并作为一轮失败上报, 该成员随即进入冷却而在后续轮次被跳过。
@@ -216,21 +252,15 @@ func publishRouteLocked(route *RouteState) {
 	}
 }
 
-// OpenRouteStream 注册路由流连接, 返回全部分组的当前状态快照和后续增量通道。
-func OpenRouteStream() ([]RouteState, chan RouteState) {
+// OpenRouteStream 注册路由流连接, 返回后续增量通道。
+// 不再返回快照: 分组读取接口已随分组带回当前路由状态, 前端由此拿到的初始值即全量, 连接只负责增量。
+func OpenRouteStream() chan RouteState {
 	routeMu.Lock()
 	defer routeMu.Unlock()
 
 	stream := make(chan RouteState, routeStreamBuffer)
 	routeStreams[stream] = struct{}{}
-
-	snapshot := make([]RouteState, 0, len(routes))
-	for _, route := range routes {
-		message := *route
-		message.Cooldowns = maps.Clone(route.Cooldowns)
-		snapshot = append(snapshot, message)
-	}
-	return snapshot, stream
+	return stream
 }
 
 // CloseRouteStream 注销并关闭指定路由流连接。

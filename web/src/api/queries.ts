@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/react-query';
 import type { APIKey, APIKeyStatsResponse } from './apikey';
-import type { ChannelServer } from './channel';
+import type { ChannelStats } from './channel';
 import type { Group } from './group';
 import type { LLMInfo } from './model';
 import type { StatsDailyResponse, StatsHourly, StatsTotal } from './stats';
@@ -18,10 +18,11 @@ export const apiKeyListQueryOptions = queryOptions({
     queryFn: () => apiRequest<APIKey[]>('/api/v1/apikey/list'),
 });
 
-// channelListQueryOptions 供页面查询和启动预取共享渠道列表定义。
-export const channelListQueryOptions = queryOptions({
-    queryKey: ['channels', 'list'],
-    queryFn: () => apiRequest<ChannelServer[]>('/api/v1/channel/list'),
+// channelStatsQueryOptions 供页面查询和启动预取共享渠道统计定义。
+// 渠道页与首页榜单共用这一条: 统计自带渠道名称, 启停与模型个数, 两处都无需再拉渠道配置。
+export const channelStatsQueryOptions = queryOptions({
+    queryKey: ['channels', 'stats'],
+    queryFn: () => apiRequest<ChannelStats[]>('/api/v1/channel/stats'),
 });
 
 // groupListQueryOptions 供页面查询和启动预取共享分组列表定义。

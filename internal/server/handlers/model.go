@@ -56,13 +56,12 @@ func init() {
 
 func getModelList(c *gin.Context) {
 	models := op.GroupListModel()
-	if supportedModelsValue := c.GetString("supported_models"); supportedModelsValue != "" {
-		supportedModels := lo.Map(strings.Split(supportedModelsValue, ","), func(s string, _ int) string {
-			return strings.TrimSpace(s)
-		})
-		models = lo.Filter(models, func(m string, _ int) bool {
-			return lo.Contains(supportedModels, m)
-		})
+	if allowed, ok := c.Get("supported_models"); ok {
+		if names, _ := allowed.([]string); len(names) > 0 {
+			models = lo.Filter(models, func(m string, _ int) bool {
+				return lo.Contains(names, m)
+			})
+		}
 	}
 
 	if c.GetHeader("x-api-key") != "" {
