@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alvindingpeng/switchyard/internal/conf"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/server/auth"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
@@ -46,11 +45,6 @@ func APIKeyAuth() gin.HandlerFunc {
 			return
 		}
 
-		if !strings.HasPrefix(apiKey, "sk-"+conf.APP_NAME+"-") {
-			resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
-			c.Abort()
-			return
-		}
 		apiKeyObj, err := op.APIKeyGetByAPIKey(apiKey, c.Request.Context())
 		if err != nil {
 			resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
