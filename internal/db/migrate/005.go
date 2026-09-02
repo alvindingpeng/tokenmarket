@@ -58,7 +58,7 @@ func migrateChannelToSingleURLAndKey(db *gorm.DB) error {
 		}
 	}
 
-	if db.Migrator().HasTable("channel_keys") {
+	if db.Migrator().HasTable("channel_keys") && hasPhysicalColumn(db, "channel_keys", "channel_key") {
 		type legacyChannelKey struct {
 			ChannelID  int    `gorm:"column:channel_id"`  // 所属渠道主键。
 			ChannelKey string `gorm:"column:channel_key"` // 旧凭据值。
@@ -88,7 +88,9 @@ func migrateChannelToSingleURLAndKey(db *gorm.DB) error {
 		}
 	}
 
-	if db.Migrator().HasTable("channel_keys") {
+	// Migration 11 重新引入了 channel_keys 表用于多凭据架构，只有在旧架构（channels.type 存在）时才删除该表。
+	// Migration 11 会删除 channels.type 列，若该列不存在说明 Migration 11 已执行，channel_keys 表不应删除。
+	if db.Migrator().HasTable("channel_keys") && hasPhysicalColumn(db, "channels", "type") {
 		if err := db.Migrator().DropTable("channel_keys"); err != nil {
 			return fmt.Errorf("failed to drop channel_keys: %w", err)
 		}
