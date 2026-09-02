@@ -29,17 +29,17 @@ export function Card({ channel }: { channel: ChannelStatsFormatted }) {
 
     // 列表布局的统计项, 缺少 unit 时只显示数值
     const listMetrics: { icon: React.ReactNode; label: string; value: string | number; unit?: string }[] = [
-        { icon: <MessageSquare className="size-3.5 text-primary" />, label: t('requestCount'), value: metrics.request_count.formatted.value, unit: metrics.request_count.formatted.unit },
-        { icon: <Layers className="size-3.5 text-primary" />, label: t('model'), value: channel.models.length },
-        { icon: <CheckCircle2 className="size-3.5 text-emerald-500" />, label: t('successRequests'), value: metrics.request_success.formatted.value },
-        { icon: <XCircle className="size-3.5 text-destructive" />, label: t('failedRequests'), value: metrics.request_failed.formatted.value },
-        { icon: <DollarSign className="size-3.5 text-primary" />, label: t('totalCost'), value: metrics.total_cost.formatted.value, unit: metrics.total_cost.formatted.unit },
+        { icon: <MessageSquare className="size-4 shrink-0 text-primary" />, label: t('requestCount'), value: metrics.request_count.formatted.value, unit: metrics.request_count.formatted.unit },
+        { icon: <Layers className="size-4 shrink-0 text-primary" />, label: t('model'), value: channel.models.length },
+        { icon: <CheckCircle2 className="size-4 shrink-0 text-emerald-500" />, label: t('successRequests'), value: metrics.request_success.formatted.value },
+        { icon: <XCircle className="size-4 shrink-0 text-destructive" />, label: t('failedRequests'), value: metrics.request_failed.formatted.value },
+        { icon: <DollarSign className="size-4 shrink-0 text-primary" />, label: t('totalCost'), value: metrics.total_cost.formatted.value, unit: metrics.total_cost.formatted.unit },
     ];
 
     // 网格布局的统计项
     const gridMetrics = [
-        { icon: <MessageSquare className="h-5 w-5" />, label: t('requestCount'), metric: metrics.request_count },
-        { icon: <DollarSign className="h-5 w-5" />, label: t('totalCost'), metric: metrics.total_cost },
+        { icon: <MessageSquare className="size-4 shrink-0 text-primary" />, label: t('requestCount'), metric: metrics.request_count },
+        { icon: <DollarSign className="size-4 shrink-0 text-primary" />, label: t('totalCost'), metric: metrics.total_cost },
     ];
 
     const handleEnableChange = (checked: boolean) => {
@@ -86,13 +86,13 @@ export function Card({ channel }: { channel: ChannelStatsFormatted }) {
                         <dl className="grid grid-cols-2 gap-2 lg:grid-cols-5">
                             {listMetrics.map(({ icon, label, value, unit }) => (
                                 <div key={label} className="rounded-2xl border border-border/70 bg-background/80 p-2">
-                                    <dt className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
+                                    <dt className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                                         {icon}
-                                        {label}
+                                        <span className="truncate">{label}</span>
                                     </dt>
-                                    <dd className="text-sm font-semibold">
+                                    <dd className="text-right text-xl font-bold">
                                         {value}
-                                        {unit && <span className="ml-1 text-xs text-muted-foreground">{unit}</span>}
+                                        {unit && <span className="ml-1 text-xs font-normal text-muted-foreground">{unit}</span>}
                                     </dd>
                                 </div>
                             ))}
@@ -100,16 +100,14 @@ export function Card({ channel }: { channel: ChannelStatsFormatted }) {
                     ) : (
                         <dl className="grid grid-cols-1 gap-3">
                             {gridMetrics.map(({ icon, label, metric }) => (
-                                <div key={label} className="flex items-center justify-between rounded-2xl border border-border/70 bg-background/80 p-2">
-                                    <div className="flex items-center gap-3">
-                                        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                                            {icon}
-                                        </span>
-                                        <dt className="text-sm text-muted-foreground">{label}</dt>
-                                    </div>
-                                    <dd className="text-base">
+                                <div key={label} className="rounded-2xl border border-border/70 bg-background/80 p-2">
+                                    <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                        {icon}
+                                        <span className="truncate">{label}</span>
+                                    </dt>
+                                    <dd className="mt-1 text-right text-xl font-bold">
                                         {metric.formatted.value}
-                                        <span className="ml-1 text-xs text-muted-foreground">{metric.formatted.unit}</span>
+                                        <span className="ml-1 text-xs font-normal text-muted-foreground">{metric.formatted.unit}</span>
                                     </dd>
                                 </div>
                             ))}
@@ -120,7 +118,10 @@ export function Card({ channel }: { channel: ChannelStatsFormatted }) {
             </MorphingDialogTrigger>
 
             <MorphingDialogContainer>
-                <MorphingDialogContent className="relative w-full md:max-w-3xl h-fit bg-card text-card-foreground p-4 rounded-3xl overflow-hidden">
+                <MorphingDialogContent
+                    dismissOnClickOutside={!openInEditing}
+                    className="relative w-full md:max-w-3xl h-fit bg-card text-card-foreground p-4 rounded-3xl overflow-hidden"
+                >
                     {/* 高度固定在外层, 与表单自带的高度取同一值: 切换时两者同高, 弹窗才不会随内容缩放。
                         两个视图绝对定位重叠, 退场与入场同时进行: 串行会在两段动画之间留出谁都不在的空档。
                         重叠期间旧视图 pointer-events-none, 否则正在淡出的那份还能挡住点击。

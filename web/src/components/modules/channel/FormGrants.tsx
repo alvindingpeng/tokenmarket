@@ -130,7 +130,7 @@ export function FormGrants({ state, setState }: {
     };
 
     if (state.keys.length === 0) {
-        return <p className="text-sm text-muted-foreground">{t('keysRequiredFirst')}</p>;
+        return <p className="flex h-full items-center justify-center text-sm text-muted-foreground">{t('keysRequiredFirst')}</p>;
     }
 
     return (

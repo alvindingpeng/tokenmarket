@@ -71,7 +71,7 @@ export function FormKeys({ state, setState }: {
         <div className="flex flex-col gap-3 h-full min-h-0">
             <div className="flex items-center justify-between shrink-0">
                 <span className="text-sm font-medium">{t('keys')} ({state.keys.length})</span>
-                <IconButton onClick={add} className="h-8 px-2" tip={t('keyAdd')}>
+                <IconButton onClick={add} className="size-9" tip={t('keyAdd')}>
                     <Plus className="size-4" />
                 </IconButton>
             </div>

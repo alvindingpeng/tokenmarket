@@ -162,7 +162,6 @@
         "backup": {
             "title": "备份 / 恢复",
             "export": {
-                "title": "导出",
                 "button": "导出",
                 "exporting": "导出中...",
                 "success": "开始导出"
@@ -306,7 +305,6 @@
             "deleted": "删除成功"
         },
         "create": {
-            "title": "创建分组",
             "submit": "创建",
             "submitting": "创建中..."
         },
@@ -318,7 +316,6 @@
         },
         "detail": {
             "actions": {
-                "edit": "编辑",
                 "cancel": "取消",
                 "save": "保存",
                 "confirmDelete": "确认删除"
@@ -352,12 +349,12 @@
     },
     "model": {
         "create": {
-            "title": "创建模型",
             "name": "模型名称",
             "input": "输入价格",
             "output": "输出价格",
             "cacheRead": "缓存读取",
             "cacheWrite": "缓存写入",
+            "cancel": "取消",
             "submit": "创建",
             "submitting": "创建中..."
         },
@@ -443,9 +440,6 @@
             "confirmDelete": "确认删除",
             "cancel": "取消"
         },
-        "create": {
-            "dialogTitle": "创建新渠道"
-        },
         "form": {
             "stepPreset": "开始",
             "stepConnection": "连接",
@@ -482,7 +476,7 @@
             "customHeaderAdd": "添加 Header",
             "edit": "编辑",
             "delete": "删除",
-            "submit": "创建渠道",
+            "submit": "创建",
             "save": "保存",
             "cancel": "取消",
             "backToStats": "返回统计",

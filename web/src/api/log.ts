@@ -31,7 +31,6 @@ export interface RelayLogOverview {
     target_channel: string;
     target_model: string;
     target_protocol: number;
-    target_item_id: number;
     sending: boolean;
     error?: string;
 }

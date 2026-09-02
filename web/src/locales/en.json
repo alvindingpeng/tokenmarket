@@ -162,7 +162,6 @@
         "backup": {
             "title": "Backup / Restore",
             "export": {
-                "title": "Export",
                 "button": "Export",
                 "exporting": "Exporting...",
                 "success": "Export started"
@@ -306,7 +305,6 @@
             "deleted": "Deleted successfully"
         },
         "create": {
-            "title": "Create Group",
             "submit": "Create",
             "submitting": "Creating..."
         },
@@ -318,7 +316,6 @@
         },
         "detail": {
             "actions": {
-                "edit": "Edit",
                 "cancel": "Cancel",
                 "save": "Save",
                 "confirmDelete": "Confirm Delete"
@@ -352,12 +349,12 @@
     },
     "model": {
         "create": {
-            "title": "Create Model",
             "name": "Model Name",
             "input": "Input Price",
             "output": "Output Price",
             "cacheRead": "Cache Read",
             "cacheWrite": "Cache Write",
+            "cancel": "Cancel",
             "submit": "Create",
             "submitting": "Creating..."
         },
@@ -443,9 +440,6 @@
             "confirmDelete": "Confirm Delete",
             "cancel": "Cancel"
         },
-        "create": {
-            "dialogTitle": "Create New Channel"
-        },
         "form": {
             "stepPreset": "Start",
             "stepConnection": "Connection",
@@ -482,7 +476,7 @@
             "customHeaderAdd": "Add header",
             "edit": "Edit",
             "delete": "Delete",
-            "submit": "Create channel",
+            "submit": "Create",
             "save": "Save",
             "cancel": "Cancel",
             "backToStats": "Back to Stats",

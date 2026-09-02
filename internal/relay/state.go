@@ -39,7 +39,6 @@ type RequestState struct {
 	TargetChannel  string         `json:"target_channel"`   // 最新一轮选中的渠道名称。
 	TargetModel    string         `json:"target_model"`     // 最新一轮实际请求上游的模型名称。
 	TargetProtocol model.Protocol `json:"target_protocol"`  // 最新一轮实际请求上游的协议, 与 Protocol 不同即本轮做了跨协议转换; 0 表示尚未选出。
-	TargetItemID   int            `json:"target_item_id"`   // 最新一轮选中的分组成员 ID; 分组路由是分组级状态, 并发请求可能各打在不同成员上, 故按请求单独记录。
 	Sending        bool           `json:"sending"`          // 最新一轮是否仍在等待上游响应。
 	Error          string         `json:"error,omitempty"`  // 最新一轮的失败原因, 请求结束后即为最终错误。
 
@@ -80,7 +79,7 @@ func newRequestState(modelName string, groupID int, protocol model.Protocol, bod
 }
 
 // startRound 记录本轮选中的目标并进入上游请求, cancel 供人工中止本轮, 返回递增的轮次序号。
-func (r *RequestState) startRound(cancel context.CancelFunc, channel, modelName string, itemID int, protocol model.Protocol) int {
+func (r *RequestState) startRound(cancel context.CancelFunc, channel, modelName string, protocol model.Protocol) int {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -88,7 +87,6 @@ func (r *RequestState) startRound(cancel context.CancelFunc, channel, modelName 
 	r.TargetChannel = channel
 	r.TargetModel = modelName
 	r.TargetProtocol = protocol
-	r.TargetItemID = itemID
 	r.Sending = true
 	r.Error = ""
 	r.cancel = cancel

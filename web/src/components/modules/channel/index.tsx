@@ -3,11 +3,7 @@ import { ArrowUpAZ } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { useChannelStats } from '@/api/channel';
 import { PageActions, usePageActionsStore } from '@/components/common/PageActions';
-import {
-    MorphingDialogClose,
-    MorphingDialogTitle,
-    MorphingDialogDescription,
-} from '@/components/ui/morphing-dialog';
+import { MorphingDialogDescription } from '@/components/ui/morphing-dialog';
 import { Card } from './Card';
 import { ChannelForm } from './Form';
 import { VirtualizedGrid } from '@/components/common/VirtualizedGrid';
@@ -15,7 +11,6 @@ import { VirtualizedGrid } from '@/components/common/VirtualizedGrid';
 // ChannelActions 向稳定顶栏提供渠道页面的搜索、视图选项和创建入口。
 export function ChannelActions() {
     const t = useTranslations('toolbar');
-    const tCreate = useTranslations('channel.create');
     const searchTerm = usePageActionsStore((state) => state.searchTerms.channel || '');
     const layout = usePageActionsStore((state) => state.layouts.channel || 'grid');
     const sortOrder = usePageActionsStore((state) => state.sortOrders.channel === 'desc' ? 'desc' : 'asc');
@@ -50,19 +45,6 @@ export function ChannelActions() {
             }}
         >
             <div className="w-screen max-w-full md:max-w-3xl flex flex-col">
-                <MorphingDialogTitle className="shrink-0">
-                    <header className="mb-6 flex items-center justify-between">
-                        <h2 className="text-2xl font-bold text-card-foreground">{tCreate('dialogTitle')}</h2>
-                        <MorphingDialogClose
-                            className="relative right-0 top-0"
-                            variants={{
-                                initial: { opacity: 0, scale: 0.8 },
-                                animate: { opacity: 1, scale: 1 },
-                                exit: { opacity: 0, scale: 0.8 }
-                            }}
-                        />
-                    </header>
-                </MorphingDialogTitle>
                 <MorphingDialogDescription disableLayoutAnimation>
                     <ChannelForm />
                 </MorphingDialogDescription>
@@ -100,8 +82,8 @@ export function Channel() {
         <VirtualizedGrid
             items={visibleChannels}
             layout={layout}
-            columns={{ default: 1, md: 2, lg: 3 }}
-            estimateItemHeight={216}
+            columns={{ default: 1, sm: 2, md: 3, lg: 4, xl: 5, '2xl': 6 }}
+            estimateItemHeight={232}
             getItemKey={(channel) => `channel-${channel.channel_id}`}
             renderItem={(channel) => (
                 <Card channel={channel} />

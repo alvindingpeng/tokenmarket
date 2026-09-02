@@ -103,11 +103,13 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
     };
 
     // 表单高度固定, 否则切换步骤时弹窗会随内容高度跳动; 内容更高的步骤由步骤区内部滚动消化。
-    // 29rem 是连接页恰好铺满所需: 五个字段组 290px + 四道间距 80px + 开关行 28px + 底部按钮 52px。
+    // 29rem 是连接页恰好铺满所需: 首行留白 8px + 五个字段组 290px + 五道间距 80px + 开关行 20px + 底部按钮 52px。
+    // 各步骤首行统一落在同一水平线: connection 与 advanced 的首行是无边框文案, 补 8px 才能与步骤导航的按钮文案对齐;
+    // keys 与 grants 的首行是 36px 控件行, 文案居中后天然齐平, 无需补白。步骤区自带 4px 内边距供焦点环显示。
     // calc 一项夹住矮屏, 弹窗不提供滚动, 内容超出视口时底部按钮会点不到。详情视图取同一高度以对齐尺寸。
     return (
         <form onSubmit={submit} className="flex flex-col md:flex-row gap-6 h-[min(29rem,calc(100vh-10rem))]">
-            <nav className="md:w-28 shrink-0 flex md:flex-col gap-1 overflow-x-auto">
+            <nav className="md:w-28 shrink-0 flex md:flex-col gap-1 overflow-x-auto pt-1">
                 {steps.map((s) => (
                     <button
                         key={s.id}
@@ -151,7 +153,7 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
                     )}
 
                     {step === 'connection' && (
-                        <div className="space-y-4">
+                        <div className="space-y-4 pt-2">
                             <div className="space-y-2">
                                 <Label htmlFor={`${idPrefix}-name`}>{t('name')}</Label>
                                 <Input
@@ -189,7 +191,7 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
                                     />
                                 </div>
                             ))}
-                            <div className="flex flex-wrap items-center gap-6 pt-2">
+                            <div className="flex flex-wrap items-center gap-6">
                                 {([['enabled', t('enabled')], ['proxy', t('proxy')]] as const).map(([field, label]) => (
                                     <label key={field} className="flex items-center gap-2 cursor-pointer">
                                         <Switch
@@ -207,7 +209,7 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
                     {step === 'grants' && <FormGrants state={state} setState={setState} />}
 
                     {step === 'advanced' && (
-                        <div className="space-y-4">
+                        <div className="space-y-4 pt-2">
                             {([
                                 ['channel_proxy', t('channelProxy')],
                                 ['match_regex', t('matchRegex')],
@@ -240,7 +242,7 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
                                             ...state,
                                             custom_header: [...state.custom_header, { header_key: '', header_value: '' }],
                                         })}
-                                        className="size-8"
+                                        className="size-9"
                                         tip={t('customHeaderAdd')}
                                     >
                                         <Plus className="size-4" />
@@ -285,7 +287,15 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
                     )}
                 </div>
 
-                <div className="shrink-0 flex justify-end pt-4">
+                <div className="shrink-0 flex justify-end gap-2 pt-4">
+                    <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setIsOpen(false)}
+                        className="rounded-xl h-9 px-4"
+                    >
+                        {t('cancel')}
+                    </Button>
                     <Button type="submit" disabled={isPending || !canSubmit} className="rounded-xl h-9 px-4">
                         {channel ? t('save') : t('submit')}
                     </Button>

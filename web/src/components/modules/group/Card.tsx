@@ -12,11 +12,9 @@ import { MemberList } from './ItemList';
 import { GroupEditor, type GroupEditorValues } from './Editor';
 import {
     MorphingDialog,
-    MorphingDialogClose,
     MorphingDialogContainer,
     MorphingDialogContent,
     MorphingDialogDescription,
-    MorphingDialogTitle,
     MorphingDialogTrigger,
     useMorphingDialog,
 } from '@/components/ui/morphing-dialog';
@@ -32,32 +30,22 @@ function EditDialogContent({ group, displayMembers, isSubmitting, onSubmit }: Ed
     const { setIsOpen } = useMorphingDialog();
     const t = useTranslations('group');
     return (
-        <>
-            <MorphingDialogTitle className="shrink-0">
-                <header className="mb-3 flex items-center justify-between">
-                    <h2 className="text-2xl font-bold text-card-foreground">
-                        {t('detail.actions.edit')}
-                    </h2>
-                    <MorphingDialogClose className="relative right-0 top-0" />
-                </header>
-            </MorphingDialogTitle>
-            <MorphingDialogDescription className="flex-1 min-h-0 overflow-hidden">
-                <GroupEditor
-                    key={`edit-group-${group.id}`}
-                    initial={{
-                        name: group.name,
-                        mode: group.mode,
-                        relay_config: group.relay_config,
-                        members: displayMembers,
-                    }}
-                    submitText={t('detail.actions.save')}
-                    submittingText={t('create.submitting')}
-                    isSubmitting={isSubmitting}
-                    onCancel={() => setIsOpen(false)}
-                    onSubmit={(v) => onSubmit(v, () => setIsOpen(false))}
-                />
-            </MorphingDialogDescription>
-        </>
+        <MorphingDialogDescription className="flex-1 min-h-0 overflow-hidden">
+            <GroupEditor
+                key={`edit-group-${group.id}`}
+                initial={{
+                    name: group.name,
+                    mode: group.mode,
+                    relay_config: group.relay_config,
+                    members: displayMembers,
+                }}
+                submitText={t('detail.actions.save')}
+                submittingText={t('create.submitting')}
+                isSubmitting={isSubmitting}
+                onCancel={() => setIsOpen(false)}
+                onSubmit={(v) => onSubmit(v, () => setIsOpen(false))}
+            />
+        </MorphingDialogDescription>
     );
 }
 
@@ -154,7 +142,7 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
     }, [group.id, group.items, group.mode, group.name, group.relay_config, onSuccess, onError, updateGroup]);
 
     return (
-    <article className="flex flex-col rounded-3xl border border-border bg-card text-card-foreground p-4">
+        <article className="flex flex-col rounded-3xl border border-border bg-card text-card-foreground p-4">
             <header className="flex items-start justify-between mb-3 relative overflow-visible rounded-xl -mx-1 px-1 -my-1 py-1">
                 <div className="relative flex-1 mr-2 min-w-0 group/title">
                     <Tooltip>
@@ -177,7 +165,10 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
                         </IconButton>
 
                         <MorphingDialogContainer>
-                            <MorphingDialogContent className="relative w-screen max-w-full md:max-w-4xl bg-card text-card-foreground px-6 py-4 rounded-3xl h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
+                            <MorphingDialogContent
+                                dismissOnClickOutside={false}
+                                className="relative w-screen max-w-full md:max-w-4xl bg-card text-card-foreground px-6 py-4 rounded-3xl h-[calc(100vh-2rem)] flex flex-col overflow-hidden"
+                            >
                                 <EditDialogContent
                                     group={group}
                                     displayMembers={displayMembers}

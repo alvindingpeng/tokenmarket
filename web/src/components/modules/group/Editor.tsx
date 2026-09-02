@@ -142,7 +142,6 @@ function ModelPickerSection({
                             : 'hover:bg-muted text-muted-foreground hover:text-foreground'
                     )}
                     disabled={autoAddDisabled}
-                    title={t('form.autoAdd')}
                 >
                     <Sparkles className="size-3.5" />
                     <span>{t('form.autoAdd')}</span>
@@ -280,7 +279,6 @@ function SortSection({
                             ? 'text-muted-foreground/50 cursor-not-allowed'
                             : 'hover:bg-muted text-muted-foreground hover:text-foreground'
                     )}
-                    title={t('form.clear')}
                 >
                     <Trash2 className="size-3.5" />
                     <span>{t('form.clear')}</span>

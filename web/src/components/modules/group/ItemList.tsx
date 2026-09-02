@@ -69,9 +69,6 @@ function MemberItem({
     const { Icon, className: iconClassName } = getModelIcon(member.name);
     const [confirmDelete, setConfirmDelete] = useState(false);
     const isDisabled = member.enabled === false;
-    const activationTitle = onActivate && member.item_id !== undefined && !isActive
-        ? t('card.activate')
-        : undefined;
 
     return (
         <div
@@ -104,7 +101,6 @@ function MemberItem({
                 }}
                 role={onActivate && member.item_id !== undefined ? 'button' : undefined}
                 tabIndex={onActivate && member.item_id !== undefined ? 0 : undefined}
-                title={activationTitle}
             >
                 <div
                     className={cn(

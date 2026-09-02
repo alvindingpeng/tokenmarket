@@ -248,13 +248,9 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
                                 <div className="divide-y divide-border">
                                     {activeGroup.items.map((item) => {
                                         const { Icon: ItemIcon, className: itemIconClassName } = getModelIcon(item.model_name);
-                                        const itemSwitching = item.id === switchingItemId;
-                                        // 本请求当前打在哪个成员上由日志自己给出: 分组路由是分组级状态,
-                                        // 同一分组的并发请求可能各打在不同成员上, 读它会把别的请求的目标标成本请求的。
-                                        // 切换请求进行中时先按点击的成员显示, 落库后再由日志的下一次推送定稿。
                                         const itemCurrent = switchingItemId !== null
-                                            ? itemSwitching
-                                            : log.target_item_id === item.id;
+                                            ? item.id === switchingItemId
+                                            : activeGroup.runtime.current_item_id === item.id;
                                         return (
                                             <button
                                                 key={item.id}
@@ -282,12 +278,13 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
                                                 <ItemIcon aria-hidden="true" className={itemIconClassName} width={20} height={20} />
                                                 <span className="min-w-0 flex-1">
                                                     <span className="block truncate font-semibold text-foreground">
-                                                        {item.channel_name}
+                                                        {item.model_name}
                                                     </span>
-                                                    <span className="block truncate text-[11px] text-muted-foreground">{item.model_name}</span>
+                                                    <span className="block truncate text-[11px] text-muted-foreground">
+                                                        {item.key_name ? `${item.channel_name} · ${item.key_name}` : item.channel_name}
+                                                    </span>
                                                 </span>
                                                 <MemberStatus group={activeGroup} itemId={item.id} now={now} active={itemCurrent} />
-                                                {itemSwitching && <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />}
                                             </button>
                                         );
                                     })}
@@ -430,7 +427,7 @@ function LogCardBody({ log }: { log: RelayLogOverview }) {
                     <div className="min-w-0 flex flex-col gap-3">
                         <div className="flex items-center gap-2 min-w-0 text-sm">
                             <span className="shrink-0 text-xs text-muted-foreground/70">{PROTOCOL_LABELS[log.protocol] ?? '-'}</span>
-                            <span className="font-semibold text-card-foreground truncate" title={log.model}>
+                            <span className="font-semibold text-card-foreground truncate">
                                 {log.model || t('unknownModel')}
                             </span>
                             {requestRunning
@@ -444,7 +441,7 @@ function LogCardBody({ log }: { log: RelayLogOverview }) {
                             >
                                 {log.target_channel || '-'}
                             </Badge>
-                            <span className="text-muted-foreground truncate" title={actualModel}>
+                            <span className="text-muted-foreground truncate">
                                 {actualModel}
                             </span>
                         </div>

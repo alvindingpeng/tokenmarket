@@ -162,7 +162,6 @@
         "backup": {
             "title": "備份 / 復原",
             "export": {
-                "title": "匯出",
                 "button": "匯出",
                 "exporting": "匯出中...",
                 "success": "開始匯出"
@@ -306,7 +305,6 @@
             "deleted": "刪除成功"
         },
         "create": {
-            "title": "建立分組",
             "submit": "建立",
             "submitting": "建立中..."
         },
@@ -318,7 +316,6 @@
         },
         "detail": {
             "actions": {
-                "edit": "編輯",
                 "cancel": "取消",
                 "save": "儲存",
                 "confirmDelete": "確認刪除"
@@ -352,12 +349,12 @@
     },
     "model": {
         "create": {
-            "title": "建立模型",
             "name": "模型名稱",
             "input": "輸入價格",
             "output": "輸出價格",
             "cacheRead": "快取讀取",
             "cacheWrite": "快取寫入",
+            "cancel": "取消",
             "submit": "建立",
             "submitting": "建立中..."
         },
@@ -443,9 +440,6 @@
             "confirmDelete": "確認刪除",
             "cancel": "取消"
         },
-        "create": {
-            "dialogTitle": "建立新供應源"
-        },
         "form": {
             "stepPreset": "開始",
             "stepConnection": "連線",
@@ -482,7 +476,7 @@
             "customHeaderAdd": "新增 Header",
             "edit": "編輯",
             "delete": "刪除",
-            "submit": "建立通道",
+            "submit": "建立",
             "save": "儲存",
             "cancel": "取消",
             "backToStats": "返回統計",

@@ -152,12 +152,14 @@ export type MorphingDialogContentProps = {
   children: React.ReactNode;
   className?: string;
   style?: React.CSSProperties;
+  dismissOnClickOutside?: boolean;
 };
 
 function MorphingDialogContent({
   children,
   className,
   style,
+  dismissOnClickOutside = true,
 }: MorphingDialogContentProps) {
   const { setIsOpen, isOpen, uniqueId, triggerRef } = useMorphingDialog();
   const containerRef = useRef<HTMLDivElement>(null!);
@@ -213,7 +215,7 @@ function MorphingDialogContent({
   useClickOutside(
     containerRef,
     () => {
-      if (isOpen) {
+      if (isOpen && dismissOnClickOutside) {
         setIsOpen(false);
       }
     },

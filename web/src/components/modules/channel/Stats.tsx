@@ -224,7 +224,6 @@ export function ChannelStats({ channel, onEdit }: {
                                     <button
                                         type="button"
                                         onClick={() => setIsConfirmingDelete(false)}
-                                        title={t('cancel')}
                                         aria-label={t('cancel')}
                                         className="flex size-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground"
                                     >
@@ -237,7 +236,6 @@ export function ChannelStats({ channel, onEdit }: {
                                             onSuccess: () => setIsOpen(false),
                                         })}
                                         disabled={deleteChannel.isPending}
-                                        title={t('confirmDelete')}
                                         aria-label={t('confirmDelete')}
                                         className="flex size-6 items-center justify-center rounded-md text-destructive transition-colors hover:text-destructive/70 disabled:opacity-50"
                                     >
@@ -249,7 +247,6 @@ export function ChannelStats({ channel, onEdit }: {
                                     <button
                                         type="button"
                                         onClick={onEdit}
-                                        title={t('edit')}
                                         aria-label={t('edit')}
                                         className="flex size-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground"
                                     >
@@ -258,7 +255,6 @@ export function ChannelStats({ channel, onEdit }: {
                                     <button
                                         type="button"
                                         onClick={() => setIsConfirmingDelete(true)}
-                                        title={t('delete')}
                                         aria-label={t('delete')}
                                         className="flex size-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-destructive"
                                     >

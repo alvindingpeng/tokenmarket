@@ -266,7 +266,10 @@ export function PageActions({
                     <Plus className="size-4 transition-colors duration-300" />
                 </MorphingDialogTrigger>
                 <MorphingDialogContainer>
-                    <MorphingDialogContent className="flex max-h-[calc(100vh-2rem)] w-fit max-w-full flex-col overflow-hidden rounded-3xl bg-card px-6 py-4 text-card-foreground">
+                    <MorphingDialogContent
+                        dismissOnClickOutside={false}
+                        className="flex max-h-[calc(100vh-2rem)] w-fit max-w-full flex-col overflow-hidden rounded-3xl bg-card px-6 py-4 text-card-foreground"
+                    >
                         {children}
                     </MorphingDialogContent>
                 </MorphingDialogContainer>

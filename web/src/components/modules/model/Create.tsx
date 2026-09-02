@@ -4,8 +4,6 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Field, FieldLabel, FieldGroup } from '@/components/ui/field';
 import {
-    MorphingDialogClose,
-    MorphingDialogTitle,
     MorphingDialogDescription,
     useMorphingDialog,
 } from '@/components/ui/morphing-dialog';
@@ -44,19 +42,6 @@ export function CreateDialogContent() {
 
     return (
         <div className="w-screen max-w-full md:max-w-xl">
-            <MorphingDialogTitle>
-                <header className="mb-5 flex items-center justify-between">
-                    <h2 className="text-2xl font-bold text-card-foreground">{t('title')}</h2>
-                    <MorphingDialogClose
-                        className="relative right-0 top-0"
-                        variants={{
-                            initial: { opacity: 0, scale: 0.8 },
-                            animate: { opacity: 1, scale: 1 },
-                            exit: { opacity: 0, scale: 0.8 },
-                        }}
-                    />
-                </header>
-            </MorphingDialogTitle>
             <MorphingDialogDescription>
                 <form onSubmit={handleSubmit}>
                     <FieldGroup className="gap-4">
@@ -115,13 +100,23 @@ export function CreateDialogContent() {
                                 />
                             </Field>
                         </div>
-                        <Button
-                            type="submit"
-                            disabled={createModel.isPending || !formData.name.trim()}
-                            className="w-full rounded-xl h-11"
-                        >
-                            {createModel.isPending ? t('submitting') : t('submit')}
-                        </Button>
+                        <div className="flex gap-2">
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => setIsOpen(false)}
+                                className="flex-1 rounded-xl h-11"
+                            >
+                                {t('cancel')}
+                            </Button>
+                            <Button
+                                type="submit"
+                                disabled={createModel.isPending || !formData.name.trim()}
+                                className="flex-1 rounded-xl h-11"
+                            >
+                                {createModel.isPending ? t('submitting') : t('submit')}
+                            </Button>
+                        </div>
                     </FieldGroup>
                 </form>
             </MorphingDialogDescription>

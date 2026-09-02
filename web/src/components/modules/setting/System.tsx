@@ -171,7 +171,6 @@ export function SettingSystem() {
                         <button
                             type="button"
                             className="border-input focus-visible:border-ring focus-visible:ring-ring/50 w-48 min-h-9 rounded-xl border bg-transparent px-3 py-2 text-left text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px]"
-                            title={corsAllowOriginsDisplay}
                         >
                             <span className={`block overflow-hidden text-ellipsis whitespace-nowrap ${corsAllowOriginsList.length === 0 ? 'text-muted-foreground' : ''}`}>
                                 {corsAllowOriginsDisplay}

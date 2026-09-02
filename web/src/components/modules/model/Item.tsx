@@ -28,8 +28,6 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid' }: Mod
     const editLayoutId = `edit-btn-${model.name}-${instanceId}`;
     const deleteLayoutId = `delete-btn-${model.name}-${instanceId}`;
     const cardRef = useRef<HTMLElement | null>(null);
-    const editButtonRef = useRef<HTMLButtonElement | null>(null);
-    const editOverlayRef = useRef<HTMLDivElement | null>(null);
     const [editValues, setEditValues] = useState(() => ({
         input: model.input.toString(),
         output: model.output.toString(),
@@ -126,14 +124,6 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid' }: Mod
     useEffect(() => {
         if (!isEditOpen) return;
 
-        const handlePointerDown = (event: PointerEvent) => {
-            const target = event.target as Node | null;
-            if (!target) return;
-            if (editOverlayRef.current?.contains(target)) return;
-            if (editButtonRef.current?.contains(target)) return;
-            closeEdit();
-        };
-
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'Escape') closeEdit();
         };
@@ -141,13 +131,11 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid' }: Mod
         updateOverlayRect();
         window.addEventListener('resize', updateOverlayRect);
         window.addEventListener('scroll', updateOverlayRect, true);
-        document.addEventListener('pointerdown', handlePointerDown);
         document.addEventListener('keydown', handleKeyDown);
 
         return () => {
             window.removeEventListener('resize', updateOverlayRect);
             window.removeEventListener('scroll', updateOverlayRect, true);
-            document.removeEventListener('pointerdown', handlePointerDown);
             document.removeEventListener('keydown', handleKeyDown);
         };
     }, [isEditOpen, updateOverlayRect, closeEdit]);
@@ -216,13 +204,11 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid' }: Mod
                 )}
             >
                 <motion.button
-                    ref={editButtonRef}
                     layoutId={editLayoutId}
                     type="button"
                     onClick={handleEditClick}
                     disabled={isEditOpen || confirmDelete}
                     className="h-9 w-9 flex items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
-                    title={t('card.edit')}
                 >
                     <Pencil className="size-4" />
                 </motion.button>
@@ -233,7 +219,6 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid' }: Mod
                     onClick={handleDeleteClick}
                     disabled={isEditOpen || confirmDelete}
                     className="h-9 w-9 flex items-center justify-center rounded-lg bg-destructive/10 text-destructive transition-colors hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50"
-                    title={t('card.delete')}
                 >
                     <Trash2 className="size-4" />
                 </motion.button>
@@ -255,7 +240,6 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid' }: Mod
                     <AnimatePresence onExitComplete={() => setOverlayRect(null)}>
                         {isEditOpen && overlayRect && (
                             <div
-                                ref={editOverlayRef}
                                 className="fixed z-[90]"
                                 style={{
                                     top: `${overlayRect.top}px`,

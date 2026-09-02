@@ -499,7 +499,6 @@ function APIKeyKeyItem({
                     layoutId={statsLayoutId}
                     onClick={onViewStats}
                     className="flex size-8 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-95"
-                    title="Stats"
                 >
                     <Info className="size-4" />
                 </motion.button>
@@ -508,7 +507,6 @@ function APIKeyKeyItem({
                     layoutId={editLayoutId}
                     onClick={onEdit}
                     className="flex size-8 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-95"
-                    title="Edit"
                 >
                     <Pencil className="size-4" />
                 </motion.button>
@@ -652,7 +650,6 @@ function APIKeyPanelBase({
                         onClick={() => setIsAdding(true)}
                         disabled={disabledHeaderActions}
                         className="h-9 w-9 flex items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
-                        title={t('apiKey.add')}
                     >
                         <Plus className="size-4" />
                     </motion.button>
@@ -753,7 +750,6 @@ function APIKeyDialogPanel() {
                     type="button"
                     onClick={() => setIsOpen(false)}
                     className="h-9 w-9 flex items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors hover:bg-muted"
-                    title="Close"
                 >
                     <X className="size-4" />
                 </button>
