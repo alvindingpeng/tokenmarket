@@ -2,12 +2,18 @@ import path from 'node:path';
 import babel from '@rolldown/plugin-babel';
 import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import { compression, defineAlgorithm } from 'vite-plugin-compression2';
 
 export default defineConfig({
   base: './',
   plugins: [
     react(),
     babel({ presets: [reactCompilerPreset()] }),
+    compression({
+      algorithms: [defineAlgorithm('gzip', { level: 9 })],
+      include: /\.(html|css|js|mjs|json|svg|txt|xml)$/,
+      deleteOriginalAssets: true,
+    }),
   ],
   resolve: {
     alias: {
