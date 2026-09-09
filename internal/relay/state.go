@@ -25,15 +25,16 @@ const (
 
 // 客户端请求的完整进程内状态, 同时作为状态流的消息形状; 上半部分在请求到达时写入并在结束时定稿, 下半部分每轮循环覆盖。
 type RequestState struct {
-	ID        uint64         `json:"id"`         // 请求在当前进程内的唯一标识。
-	Status    Status         `json:"status"`     // 请求当前状态。
-	StartedAt time.Time      `json:"started_at"` // 请求到达时间。
-	Duration  time.Duration  `json:"duration"`   // 请求总耗时, 未结束时为零。
-	Model     string         `json:"model"`      // 客户端请求的模型名称, 即分组名称。
-	Protocol  model.Protocol `json:"protocol"`   // 客户端请求使用的协议, 由入站格式定出, 单个协议位而非掩码组合。
-	GroupID   int            `json:"group_id"`   // 承载本请求的分组 ID, 供界面按主键直接定位分组而不必按名称回查。
-	Usage     llm.Usage      `json:"usage"`      // 请求结束时写入的展示用量。
-	Cost      float64        `json:"cost"`       // 请求结束时写入的累计费用。
+	ID         uint64         `json:"id"`           // 请求在当前进程内的唯一标识。
+	Status     Status         `json:"status"`       // 请求当前状态。
+	StartedAt  time.Time      `json:"started_at"`   // 请求到达时间。
+	Duration   time.Duration  `json:"duration"`     // 请求总耗时, 未结束时为零。
+	Model      string         `json:"model"`        // 客户端请求的模型名称, 即分组名称。
+	Protocol   model.Protocol `json:"protocol"`     // 客户端请求使用的协议, 由入站格式定出, 单个协议位而非掩码组合。
+	GroupID    int            `json:"group_id"`     // 承载本请求的分组 ID, 供界面按主键直接定位分组而不必按名称回查。
+	APIKeyName string         `json:"api_key_name"` // 发起请求时的 API Key 名称。
+	Usage      llm.Usage      `json:"usage"`        // 请求结束时写入的展示用量。
+	Cost       float64        `json:"cost"`         // 请求结束时写入的累计费用。
 
 	Round          int            `json:"round"`            // 最新一轮循环的递增序号, 人工中止按此匹配以免误杀下一轮。
 	TargetChannel  string         `json:"target_channel"`   // 最新一轮选中的渠道名称。
@@ -59,7 +60,7 @@ var (
 )
 
 // newRequestState 分配请求 ID 并登记初始运行状态; 返回的记录是本请求后续全部状态写入的入口。
-func newRequestState(modelName string, groupID int, protocol model.Protocol, body string, apiKeyID int) *RequestState {
+func newRequestState(ctx context.Context, modelName string, groupID int, protocol model.Protocol, body string, apiKeyID int) *RequestState {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -72,6 +73,10 @@ func newRequestState(modelName string, groupID int, protocol model.Protocol, bod
 		GroupID:   groupID,
 		body:      body,
 		apiKeyID:  apiKeyID,
+	}
+	// 登记时保存名称快照, 查询失败时留空。
+	if apiKey, err := op.APIKeyGet(apiKeyID, ctx); err == nil {
+		request.APIKeyName = apiKey.Name
 	}
 	requests[request.ID] = request
 	publishRequestLocked(request)

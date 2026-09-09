@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { AlertCircle, ArrowDownToLine, ArrowRight, ArrowUpFromLine, Clock, Cpu, Database, DollarSign, Loader2, Square } from 'lucide-react';
+import { AlertCircle, ArrowDownToLine, ArrowRight, ArrowUpFromLine, Clock, Cpu, Database, DollarSign, KeyRound, Loader2, Square } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import JsonView from '@uiw/react-json-view';
 import { githubDarkTheme } from '@uiw/react-json-view/githubDark';
@@ -179,7 +179,7 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
     return (
         <MorphingDialogContent className="relative w-[calc(100vw-2rem)] md:w-[80vw] bg-card text-card-foreground px-6 py-4 rounded-3xl h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
             <MorphingDialogClose className="top-4 right-5 text-muted-foreground hover:text-foreground transition-colors" />
-            <MorphingDialogTitle className="flex items-center gap-2 mb-3 text-sm">
+            <MorphingDialogTitle className="flex flex-wrap items-center gap-2 pr-8 mb-3 text-sm">
                 <Icon aria-hidden="true" className={iconClassName} width={28} height={28} />
                 <span className="text-xs text-muted-foreground/70">{PROTOCOL_LABELS[log.protocol] ?? '-'}</span>
                 <span className="font-semibold text-card-foreground">{log.model || t('unknownModel')}</span>
@@ -196,6 +196,10 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
                 </Badge>
                 <span className="text-muted-foreground">{actualModel}</span>
             </MorphingDialogTitle>
+            <div className="mb-3 flex min-w-0 shrink-0 items-start gap-1 text-xs text-muted-foreground">
+                <KeyRound className="mt-0.5 size-3 shrink-0 text-orange-500" />
+                <span className="min-w-0 wrap-break-word">{log.api_key_name || '-'}</span>
+            </div>
 
             <MorphingDialogDescription className="flex-1 min-h-0">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full min-h-0">
@@ -444,6 +448,10 @@ function LogCardBody({ log }: { log: RelayLogOverview }) {
                             <span className="text-muted-foreground truncate">
                                 {actualModel}
                             </span>
+                        </div>
+                        <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground" title={log.api_key_name}>
+                            <KeyRound className="size-3 shrink-0 text-orange-500" />
+                            <span className="truncate">{log.api_key_name || '-'}</span>
                         </div>
                         <div className="grid grid-cols-12 gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground md:grid-cols-7">
                             <LogMetrics log={log} now={now} brandColor={brandColor} variant="card" />
