@@ -53,7 +53,7 @@ const PROTOCOL_LABELS: Record<number, string> = {
     [Protocol.AnthropicMessage]: 'Message',
 };
 
-// LogMetrics 渲染耗时, 费用和 Token 指标; card 变体用于卡片栅格, footer 变体用于弹窗底部。
+// LogMetrics 渲染时间、API Key、耗时、费用和 Token 指标; card 变体用于卡片栅格, footer 变体用于弹窗底部。
 function LogMetrics({ log, now, brandColor, variant }: { log: RelayLogOverview; now: number; brandColor: string; variant: 'card' | 'footer' }) {
     const cachedTokens = log.usage.prompt_tokens_details?.cached_tokens ?? 0;
     // 进行中的请求按共享时钟推算耗时, 结束后改用后端记录的最终耗时。
@@ -62,6 +62,7 @@ function LogMetrics({ log, now, brandColor, variant }: { log: RelayLogOverview; 
         : formatMilliseconds(log.duration / 1_000_000);
     const metrics = [
         { key: 'time', Icon: Clock, iconClassName: 'size-3.5 shrink-0', iconStyle: { color: brandColor } as CSSProperties, value: formatTime(log.started_at), valueClassName: 'tabular-nums', cellClassName: 'col-span-4 whitespace-nowrap md:col-span-1' },
+        { key: 'apiKey', Icon: KeyRound, iconClassName: 'size-3.5 shrink-0 text-orange-500', value: log.api_key_name || '-', valueClassName: 'truncate', cellClassName: 'col-span-4 md:col-span-1' },
         { key: 'duration', Icon: Cpu, iconClassName: 'size-3.5 shrink-0 text-blue-500', value: duration, cellClassName: 'col-span-4 md:col-span-1' },
         { key: 'cost', Icon: DollarSign, iconClassName: 'size-3.5 shrink-0 text-emerald-500', value: log.cost.toFixed(6), valueClassName: 'font-medium text-emerald-600 dark:text-emerald-400', cellClassName: 'col-span-4 md:col-span-1' },
         { key: 'prompt', Icon: ArrowDownToLine, iconClassName: 'size-3.5 shrink-0 text-green-500', value: (log.usage.prompt_tokens - cachedTokens).toLocaleString(), cellClassName: 'col-span-3 md:col-span-1' },
@@ -71,7 +72,11 @@ function LogMetrics({ log, now, brandColor, variant }: { log: RelayLogOverview; 
     ];
 
     return metrics.map((metric) => (
-        <div key={metric.key} className={cn('flex items-center gap-1.5', variant === 'card' && metric.cellClassName)}>
+        <div
+            key={metric.key}
+            title={metric.key === 'apiKey' ? log.api_key_name : undefined}
+            className={cn('flex min-w-0 items-center gap-1.5', variant === 'card' && metric.cellClassName)}
+        >
             <metric.Icon className={metric.iconClassName} style={metric.iconStyle} />
             <span className={metric.valueClassName}>{metric.value}</span>
         </div>
@@ -179,7 +184,7 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
     return (
         <MorphingDialogContent className="relative w-[calc(100vw-2rem)] md:w-[80vw] bg-card text-card-foreground px-6 py-4 rounded-3xl h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
             <MorphingDialogClose className="top-4 right-5 text-muted-foreground hover:text-foreground transition-colors" />
-            <MorphingDialogTitle className="flex flex-wrap items-center gap-2 pr-8 mb-3 text-sm">
+            <MorphingDialogTitle className="flex items-center gap-2 mb-3 text-sm">
                 <Icon aria-hidden="true" className={iconClassName} width={28} height={28} />
                 <span className="text-xs text-muted-foreground/70">{PROTOCOL_LABELS[log.protocol] ?? '-'}</span>
                 <span className="font-semibold text-card-foreground">{log.model || t('unknownModel')}</span>
@@ -196,10 +201,6 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
                 </Badge>
                 <span className="text-muted-foreground">{actualModel}</span>
             </MorphingDialogTitle>
-            <div className="mb-3 flex min-w-0 shrink-0 items-start gap-1 text-xs text-muted-foreground">
-                <KeyRound className="mt-0.5 size-3 shrink-0 text-orange-500" />
-                <span className="min-w-0 wrap-break-word">{log.api_key_name || '-'}</span>
-            </div>
 
             <MorphingDialogDescription className="flex-1 min-h-0">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full min-h-0">
@@ -449,11 +450,7 @@ function LogCardBody({ log }: { log: RelayLogOverview }) {
                                 {actualModel}
                             </span>
                         </div>
-                        <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground" title={log.api_key_name}>
-                            <KeyRound className="size-3 shrink-0 text-orange-500" />
-                            <span className="truncate">{log.api_key_name || '-'}</span>
-                        </div>
-                        <div className="grid grid-cols-12 gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground md:grid-cols-7">
+                        <div className="grid grid-cols-12 gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground md:grid-cols-8">
                             <LogMetrics log={log} now={now} brandColor={brandColor} variant="card" />
                         </div>
                         {requestFailed && errorText && (
