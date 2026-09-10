@@ -37,6 +37,7 @@ type RequestState struct {
 	Cost       float64        `json:"cost"`         // 请求结束时写入的累计费用。
 
 	Round          int            `json:"round"`            // 最新一轮循环的递增序号, 人工中止按此匹配以免误杀下一轮。
+	RoundStartedAt time.Time      `json:"round_started_at"` // 最新一轮上游请求的开始时间。
 	TargetChannel  string         `json:"target_channel"`   // 最新一轮选中的渠道名称。
 	TargetModel    string         `json:"target_model"`     // 最新一轮实际请求上游的模型名称。
 	TargetProtocol model.Protocol `json:"target_protocol"`  // 最新一轮实际请求上游的协议, 与 Protocol 不同即本轮做了跨协议转换; 0 表示尚未选出。
@@ -89,6 +90,7 @@ func (r *RequestState) startRound(cancel context.CancelFunc, channel, modelName 
 	defer mu.Unlock()
 
 	r.Round++
+	r.RoundStartedAt = time.Now()
 	r.TargetChannel = channel
 	r.TargetModel = modelName
 	r.TargetProtocol = protocol
