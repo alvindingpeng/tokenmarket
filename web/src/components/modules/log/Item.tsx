@@ -394,7 +394,7 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
                                 )
                             ) : responseCommitted ? (
                                 <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
-                                    <Loader2 className="size-4 animate-spin text-green-500" />
+                                    <Loader2 className="size-4 animate-spin" />
                                     {t('responseStreaming')}
                                 </div>
                             ) : requestFailed ? (
