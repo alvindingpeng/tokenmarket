@@ -28,6 +28,7 @@ export interface RelayLogOverview {
     api_key_name: string;
     usage: RelayUsage;
     cost: number;
+    output_chars: number;
     round: number;
     round_started_at: string;
     target_channel: string;

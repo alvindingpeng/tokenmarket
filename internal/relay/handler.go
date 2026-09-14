@@ -282,6 +282,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			for {
 				if event != nil {
 					chunks = append(chunks, event)
+					// 实时累计输出字符数供日志页展示, 按节流间隔发布, 不逐帧推送。
+					if chars := outputTextDelta(format, event.Data); chars > 0 {
+						request.addOutput(chars)
+					}
 					encoded.Reset()
 					if encodeErr := sse.Encode(&encoded, sse.Event{Id: event.LastEventID, Event: event.Type, Data: event.Data}); encodeErr != nil {
 						err = encodeErr
