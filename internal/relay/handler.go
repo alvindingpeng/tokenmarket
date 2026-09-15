@@ -75,7 +75,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 
 		// 登记进程内请求状态, 返回的记录是后续全部状态写入和前端可视化推送的入口。
 		request := newRequestState(c.Request.Context(), metadata.Model, group.ID, requestProtocol, string(raw.Body), c.GetInt("api_key_id"))
-		ctx := c.Request.Context()
+		ctx := request.requestCtx
 		failedItemID := 0 // 当前累计连续失败次数的成员 ID。
 		failures := 0     // 该成员包含首次请求的连续失败次数。
 
@@ -231,6 +231,12 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			}
 			// 记录本轮已经取得可提交的上游响应。
 			request.finishRound("")
+			// 请求级取消可能与上游成功同时到达, 此时不应提交响应或继续重试。
+			if ctx.Err() != nil {
+				releaseRouteProbe(group, item.ID)
+				request.markCanceled(ctx.Err(), "", result.usage)
+				return
+			}
 			roundWaitTime := time.Since(roundStartedAt).Milliseconds() // 流式响应只统计等待首帧的时间。
 			// 上游成功后解除该成员的冷却与探测占用, 并按路由配置开始亲和。
 			recordRouteSuccess(group, item.ID)

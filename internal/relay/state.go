@@ -45,11 +45,14 @@ type RequestState struct {
 	Sending        bool           `json:"sending"`          // 最新一轮是否仍在等待上游响应。
 	Error          string         `json:"error,omitempty"`  // 最新一轮的失败原因, 请求结束后即为最终错误。
 
-	body         string             // 客户端原始请求体, 体积大故不进状态流, 由独立接口按需拉取。
-	responseBody string             // 聚合后的完整最终响应体, 同样按需拉取。
-	apiKeyID     int                // 发起请求的 API Key ID, 用于请求完成后的归属统计。
-	cancel       context.CancelFunc // 中止最新一轮上游请求, 仅在该轮等待响应期间非空。
-	lastPublish  time.Time          // 上次向状态流发布快照的时间, 输出字符数按此节流发布。
+	requestBody  string // 客户端原始请求体, 体积大故不进状态流, 由独立接口按需拉取。
+	responseBody string // 聚合后的完整最终响应体, 同样按需拉取。
+	apiKeyID     int    // 发起请求的 API Key ID, 用于请求完成后的归属统计。
+
+	requestCtx    context.Context    // 请求级上下文, 同时约束等待、当前轮次和后续重试。
+	requestCancel context.CancelFunc // 中止整个请求, 同时打断等待、当前轮次和后续重试。
+	roundCancel   context.CancelFunc // 中止最新一轮上游请求, 仅在该轮等待响应期间非空。
+	lastPublish   time.Time          // 上次向状态流发布快照的时间, 输出字符数按此节流发布。
 }
 
 const streamBuffer = 16                              // 单个状态流连接的非阻塞消息缓冲容量。
@@ -65,18 +68,21 @@ var (
 
 // newRequestState 分配请求 ID 并登记初始运行状态; 返回的记录是本请求后续全部状态写入的入口。
 func newRequestState(ctx context.Context, modelName string, groupID int, protocol model.Protocol, body string, apiKeyID int) *RequestState {
+	requestCtx, requestCancel := context.WithCancel(ctx)
 	mu.Lock()
 	defer mu.Unlock()
 
 	request := &RequestState{
-		ID:        idSeq.Add(1),
-		Status:    StatusRunning,
-		StartedAt: time.Now(),
-		Model:     modelName,
-		Protocol:  protocol,
-		GroupID:   groupID,
-		body:      body,
-		apiKeyID:  apiKeyID,
+		ID:            idSeq.Add(1),
+		Status:        StatusRunning,
+		StartedAt:     time.Now(),
+		Model:         modelName,
+		Protocol:      protocol,
+		GroupID:       groupID,
+		requestBody:   body,
+		apiKeyID:      apiKeyID,
+		requestCtx:    requestCtx,
+		requestCancel: requestCancel,
 	}
 	// 登记时保存名称快照, 查询失败时留空。
 	if apiKey, err := op.APIKeyGet(apiKeyID, ctx); err == nil {
@@ -101,7 +107,7 @@ func (r *RequestState) startRound(cancel context.CancelFunc, channel, modelName 
 	r.TargetProtocol = protocol
 	r.Sending = true
 	r.Error = ""
-	r.cancel = cancel
+	r.roundCancel = cancel
 	publishRequestLocked(r)
 	return r.Round
 }
@@ -113,7 +119,7 @@ func (r *RequestState) finishRound(errText string) {
 
 	r.Sending = false
 	r.Error = errText
-	r.cancel = nil
+	r.roundCancel = nil
 	publishRequestLocked(r)
 }
 
@@ -133,15 +139,32 @@ func (r *RequestState) addOutput(chars int) {
 func Interrupt(id uint64, round int) {
 	mu.Lock()
 	request := requests[id]
-	if request == nil || request.Round != round || request.cancel == nil {
+	if request == nil || request.Round != round || request.roundCancel == nil {
 		mu.Unlock()
 		return
 	}
-	cancel := request.cancel
-	request.cancel = nil
+	cancel := request.roundCancel
+	request.roundCancel = nil
 	mu.Unlock()
 
 	cancel()
+}
+
+// CancelRequest 取消指定的完整请求; 已结束请求不会被重新改写状态。
+func CancelRequest(id uint64) {
+	mu.Lock()
+	request := requests[id]
+	if request == nil {
+		mu.Unlock()
+		return
+	}
+	cancel := request.requestCancel
+	request.requestCancel = nil
+	mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
 }
 
 // wait 在重新选择目标之前退避 seconds 秒; 客户端在退避期间断开时以取消终态定稿并返回 false。
@@ -169,8 +192,13 @@ func (r *RequestState) markSucceeded(responseBody string, usage *llm.Usage) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	r.Status = StatusSuccess
-	r.Error = ""
+	if r.requestCtx.Err() != nil {
+		r.Status = StatusCanceled
+		r.Error = r.requestCtx.Err().Error()
+	} else {
+		r.Status = StatusSuccess
+		r.Error = ""
+	}
 	r.responseBody = responseBody
 	r.finishLocked(usage)
 }
@@ -180,8 +208,13 @@ func (r *RequestState) markFailed(err error, responseBody string, usage *llm.Usa
 	mu.Lock()
 	defer mu.Unlock()
 
-	r.Status = StatusFailed
-	r.Error = err.Error()
+	if r.requestCtx.Err() != nil {
+		r.Status = StatusCanceled
+		r.Error = r.requestCtx.Err().Error()
+	} else {
+		r.Status = StatusFailed
+		r.Error = err.Error()
+	}
 	if responseBody != "" {
 		r.responseBody = responseBody
 	}
@@ -204,7 +237,11 @@ func (r *RequestState) markCanceled(err error, responseBody string, usage *llm.U
 // finishLocked 写入用量和费用, 发布终态, 更新请求级统计并裁剪历史; 调用方必须持有锁。
 func (r *RequestState) finishLocked(usage *llm.Usage) {
 	r.Sending = false
-	r.cancel = nil
+	r.roundCancel = nil
+	if r.requestCancel != nil {
+		r.requestCancel()
+	}
+	r.requestCancel = nil
 	if usage != nil {
 		r.Usage = *usage
 	}
@@ -308,7 +345,7 @@ func RequestBody(id uint64) string {
 	defer mu.Unlock()
 
 	if request := requests[id]; request != nil {
-		return request.body
+		return request.requestBody
 	}
 	return ""
 }

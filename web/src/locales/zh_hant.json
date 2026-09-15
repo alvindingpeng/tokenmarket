@@ -411,8 +411,10 @@
             "tokens": "詞元",
             "retryIndex": "重試 {index}",
             "retryDetails": "重試詳情",
-            "stopRound": "停止目前輪次",
-            "stopFailed": "停止目前輪次失敗",
+            "stopRound": "取消目前輪次",
+            "stopFailed": "取消目前輪次失敗",
+            "cancelRequest": "取消目前請求",
+            "cancelFailed": "取消目前請求失敗",
             "waitingChannelSelection": "正在等待選擇供應源",
             "waitingResponse": "正在等待上游回應",
             "responseStreaming": "上游已回應，串流傳輸正在進行"

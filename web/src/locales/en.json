@@ -411,8 +411,10 @@
             "tokens": "tokens",
             "retryIndex": "Retry {index}",
             "retryDetails": "Retry Details",
-            "stopRound": "Stop Current Round",
-            "stopFailed": "Failed to stop current round",
+            "stopRound": "Cancel Current Round",
+            "stopFailed": "Failed to cancel current round",
+            "cancelRequest": "Cancel Current Request",
+            "cancelFailed": "Failed to cancel current request",
             "waitingChannelSelection": "Waiting for channel selection",
             "waitingResponse": "Waiting for upstream response",
             "responseStreaming": "Upstream responded; streaming is in progress"
