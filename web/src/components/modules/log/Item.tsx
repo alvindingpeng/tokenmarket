@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { AlertCircle, ArrowDownToLine, ArrowRight, ArrowUpFromLine, Clock, Cpu, Database, DollarSign, Gauge, KeyRound, Loader2, Square } from 'lucide-react';
+import { AlertCircle, ArrowDownToLine, ArrowRight, ArrowUpFromLine, Clock, Cpu, Database, DollarSign, Gauge, KeyRound, Loader2, Square, Timer } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import JsonView from '@uiw/react-json-view';
 import { githubDarkTheme } from '@uiw/react-json-view/githubDark';
@@ -38,11 +38,9 @@ function formatTime(value: string) {
     });
 }
 
-// formatMilliseconds 将毫秒转换为紧凑耗时文本。
+// formatMilliseconds 将毫秒转换为以秒为单位的耗时文本。
 function formatMilliseconds(value: number) {
-    const milliseconds = Math.max(0, value);
-    if (milliseconds < 1000) return `${Math.round(milliseconds)}ms`;
-    return `${(milliseconds / 1000).toFixed(2)}s`;
+    return `${(Math.max(0, value) / 1000).toFixed(2)}s`;
 }
 
 // formatRoundStartedAt 将服务端轮次开始时间格式化为本地时分秒.毫秒, 各部分固定补零。
@@ -68,23 +66,32 @@ const PROTOCOL_LABELS: Record<number, string> = {
 // LogMetrics 渲染时间、API Key、耗时、费用和 Token 指标; card 变体用于卡片栅格, footer 变体用于弹窗底部。
 function LogMetrics({ log, now, brandColor, variant }: { log: RelayLogOverview; now: number; brandColor: string; variant: 'card' | 'footer' }) {
     const cachedTokens = log.usage.prompt_tokens_details?.cached_tokens ?? 0;
-    // 进行中的请求按共享时钟推算耗时, 结束后改用后端记录的最终耗时; 耗时秒数同时用于输出速度。
-    const elapsedMs = log.status === 'running' || log.status === 'committed'
+    // 缓存率取输入缓存占全部输入 Token 的比例, 无输入时为零。
+    const cacheRate = log.usage.prompt_tokens > 0 ? Math.round((cachedTokens / log.usage.prompt_tokens) * 100) : 0;
+    // 请求进行中显示实时总耗时; 结束后只显示实际响应阶段耗时, 提交前结束时回退到总耗时。
+    const requestActive = log.status === 'running' || log.status === 'committed';
+    const elapsedMs = requestActive
         ? now - new Date(log.started_at).getTime()
         : log.duration / 1_000_000;
-    const duration = formatMilliseconds(elapsedMs);
-    // 输出速度 = 实时累计输出字符数 / 已耗时, 未开始输出时不显示。
-    const outputSpeed = elapsedMs > 0 ? log.output_chars / (elapsedMs / 1000) : 0;
+    const responseMs = (log.stream_duration || log.response_duration) / 1_000_000;
+    const duration = formatMilliseconds(!requestActive && responseMs > 0 ? responseMs : elapsedMs);
+    // 首字时间仅流式响应存在, 非流式或尚未提交时留空。
+    const firstToken = log.first_token_duration > 0 ? formatMilliseconds(log.first_token_duration / 1_000_000) : '-';
+    // 请求进行中使用同一份服务端快照中的字符数和流式传输时长, 结束后改用最终 Token 数。
+    const outputCount = requestActive ? log.output_chars : log.usage.completion_tokens;
+    const outputSpeed = responseMs > 0 ? outputCount / (responseMs / 1000) : 0;
+    const outputSpeedUnit = requestActive ? 'c/s' : 't/s';
     const metrics = [
-        { key: 'time', Icon: Clock, iconClassName: 'size-3.5 shrink-0', iconStyle: { color: brandColor } as CSSProperties, value: formatTime(log.started_at), cellClassName: 'whitespace-nowrap col-span-5 whitespace-nowrap md:col-span-1' },
-        { key: 'apiKey', Icon: KeyRound, iconClassName: 'size-3.5 shrink-0 text-orange-500', value: log.api_key_name || '-', cellClassName: 'whitespace-nowrap col-span-5 md:col-span-1' },
-        { key: 'duration', Icon: Cpu, iconClassName: 'size-3.5 shrink-0 text-blue-500', value: duration, cellClassName: 'whitespace-nowrap col-span-5 md:col-span-1' },
-        { key: 'cost', Icon: DollarSign, iconClassName: 'size-3.5 shrink-0 text-emerald-500', value: log.cost.toFixed(6), cellClassName: 'whitespace-nowrap col-span-5 md:col-span-1' },
+        { key: 'time', Icon: Clock, iconClassName: 'size-3.5 shrink-0', iconStyle: { color: brandColor } as CSSProperties, value: formatTime(log.started_at), cellClassName: 'whitespace-nowrap col-span-4 md:col-span-1' },
+        { key: 'apiKey', Icon: KeyRound, iconClassName: 'size-3.5 shrink-0 text-orange-500', value: log.api_key_name || '-', cellClassName: 'whitespace-nowrap col-span-4 md:col-span-1' },
+        { key: 'firstToken', Icon: Timer, iconClassName: 'size-3.5 shrink-0 text-amber-500', value: firstToken, cellClassName: 'whitespace-nowrap col-span-4 md:col-span-1' },
+        { key: 'duration', Icon: Cpu, iconClassName: 'size-3.5 shrink-0 text-blue-500', value: duration, cellClassName: 'whitespace-nowrap col-span-4 md:col-span-1' },
+        { key: 'cost', Icon: DollarSign, iconClassName: 'size-3.5 shrink-0 text-emerald-500', value: log.cost.toFixed(6), cellClassName: 'whitespace-nowrap col-span-4 md:col-span-1' },
         { key: 'prompt', Icon: ArrowDownToLine, iconClassName: 'size-3.5 shrink-0 text-green-500', value: (log.usage.prompt_tokens - cachedTokens).toLocaleString(), cellClassName: 'whitespace-nowrap col-span-4 md:col-span-1' },
-        { key: 'cached', Icon: Database, iconClassName: 'size-3.5 shrink-0 text-cyan-500', value: cachedTokens.toLocaleString(), cellClassName: 'whitespace-nowrap col-span-4 md:col-span-1' },
-        { key: 'completion', Icon: ArrowUpFromLine, iconClassName: 'size-3.5 shrink-0 text-purple-500', value: (log.status === 'running' || log.status === 'committed' ? log.output_chars.toLocaleString() : log.usage.completion_tokens.toLocaleString()), cellClassName: 'col-span-4 md:col-span-1' },
+        { key: 'cached', Icon: Database, iconClassName: 'size-3.5 shrink-0 text-cyan-500', value: `${cachedTokens.toLocaleString()} (${cacheRate}%)`, cellClassName: 'whitespace-nowrap col-span-4 md:col-span-1' },
+        { key: 'completion', Icon: ArrowUpFromLine, iconClassName: 'size-3.5 shrink-0 text-purple-500', value: (requestActive ? log.output_chars.toLocaleString() : log.usage.completion_tokens.toLocaleString()), cellClassName: 'col-span-4 md:col-span-1' },
         { key: 'cacheWrite', Icon: Database, iconClassName: 'size-3.5 shrink-0 text-orange-500', value: (log.usage.prompt_tokens_details?.write_cached_tokens ?? 0).toLocaleString(), cellClassName: 'whitespace-nowrap col-span-4 md:col-span-1' },
-        { key: 'speed', Icon: Gauge, iconClassName: 'size-3.5 shrink-0 text-sky-500', value: outputSpeed > 0 ? `${outputSpeed.toFixed(0)}t/s` : '-', cellClassName: 'whitespace-nowrap col-span-4 md:col-span-1' },
+        { key: 'speed', Icon: Gauge, iconClassName: 'size-3.5 shrink-0 text-sky-500', value: outputSpeed > 0 ? `${outputSpeed.toFixed(0)}${outputSpeedUnit}` : '-', cellClassName: 'whitespace-nowrap col-span-4 md:col-span-1' },
     ];
 
     return metrics.map((metric) => (
@@ -463,10 +470,10 @@ function LogCardBody({ log }: { log: RelayLogOverview }) {
     const requestFailed = log.status === 'failed' || log.status === 'canceled';
     const errorText = log.error ?? '';
 
-    // 仅在请求进行中或弹窗打开时走秒级刷新, 避免已完成日志持续触发重渲染。
+    // 仅在请求进行中或弹窗打开时按 500ms 刷新, 避免已完成日志持续触发重渲染。
     useEffect(() => {
         if (!requestRunning && !isOpen) return;
-        const timer = window.setInterval(() => setNow(Date.now()), 1000);
+        const timer = window.setInterval(() => setNow(Date.now()), 500);
         return () => window.clearInterval(timer);
     }, [isOpen, requestRunning]);
 
@@ -501,7 +508,7 @@ function LogCardBody({ log }: { log: RelayLogOverview }) {
                                 {actualModel}
                             </span>
                         </div>
-                        <div className="grid grid-cols-20 gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground md:grid-cols-9">
+                        <div className="grid grid-cols-20 gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground md:grid-cols-10">
                             <LogMetrics log={log} now={now} brandColor={brandColor} variant="card" />
                         </div>
                         {requestFailed && errorText && (

@@ -25,17 +25,20 @@ const (
 
 // 客户端请求的完整进程内状态, 同时作为状态流的消息形状; 上半部分在请求到达时写入并在结束时定稿, 下半部分每轮循环覆盖。
 type RequestState struct {
-	ID          uint64         `json:"id"`           // 请求在当前进程内的唯一标识。
-	Status      Status         `json:"status"`       // 请求当前状态。
-	StartedAt   time.Time      `json:"started_at"`   // 请求到达时间。
-	Duration    time.Duration  `json:"duration"`     // 请求总耗时, 未结束时为零。
+	ID                 uint64         `json:"id"`                   // 请求在当前进程内的唯一标识。
+	Status             Status         `json:"status"`               // 请求当前状态。
+	StartedAt          time.Time      `json:"started_at"`           // 请求到达时间。
+	Duration           time.Duration  `json:"duration"`             // 请求从到达到结束的总耗时, 未结束时为零。
+	FirstTokenDuration time.Duration  `json:"first_token_duration"` // 流式正确响应轮次开始到首字节提交的耗时, 非流式响应为零。
+	StreamDuration     time.Duration  `json:"stream_duration"`      // 流式响应从首字节提交到响应结束的耗时, 非流式响应为零。
+	ResponseDuration   time.Duration  `json:"response_duration"`    // 非流式正确响应轮次开始到完整响应提交的耗时, 流式响应为零。
 	Model       string         `json:"model"`        // 客户端请求的模型名称, 即分组名称。
 	Protocol    model.Protocol `json:"protocol"`     // 客户端请求使用的协议, 由入站格式定出, 单个协议位而非掩码组合。
 	GroupID     int            `json:"group_id"`     // 承载本请求的分组 ID, 供界面按主键直接定位分组而不必按名称回查。
 	APIKeyName  string         `json:"api_key_name"` // 发起请求时的 API Key 名称。
 	Usage       llm.Usage      `json:"usage"`        // 请求结束时写入的展示用量。
 	Cost        float64        `json:"cost"`         // 请求结束时写入的累计费用。
-	OutputChars int            `json:"output_chars"` // 流式过程中实时累计的输出字符数, 仅用于界面展示, 不参与结算。
+	OutputChars int            `json:"output_chars"` // 流式过程中按事件数量估算并实时累计的输出字符数, 仅用于界面展示, 不参与结算。
 
 	Round          int            `json:"round"`            // 最新一轮循环的递增序号, 人工中止按此匹配以免误杀下一轮。
 	RoundStartedAt time.Time      `json:"round_started_at"` // 最新一轮上游请求的开始时间。
@@ -53,6 +56,7 @@ type RequestState struct {
 	requestCancel context.CancelFunc // 中止整个请求, 同时打断等待、当前轮次和后续重试。
 	roundCancel   context.CancelFunc // 中止最新一轮上游请求, 仅在该轮等待响应期间非空。
 	lastPublish   time.Time          // 上次向状态流发布快照的时间, 输出字符数按此节流发布。
+	streamStarted time.Time          // 流式响应首字节提交时间, 用于计算实际流式传输耗时。
 }
 
 const streamBuffer = 16                              // 单个状态流连接的非阻塞消息缓冲容量。
@@ -123,7 +127,7 @@ func (r *RequestState) finishRound(errText string) {
 	publishRequestLocked(r)
 }
 
-// addOutput 累加流式输出字符数并按节流间隔发布快照; 距上次发布不足阈值时只累加不出流。
+// addOutput 按事件数量估算输出字符数并按节流间隔发布快照; 距上次发布不足阈值时只累加不出流。
 func (r *RequestState) addOutput(chars int) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -131,6 +135,9 @@ func (r *RequestState) addOutput(chars int) {
 	r.OutputChars += chars
 	if time.Since(r.lastPublish) >= outputPublishInterval {
 		r.lastPublish = time.Now()
+		if !r.streamStarted.IsZero() {
+			r.StreamDuration = time.Since(r.streamStarted)
+		}
 		publishRequestLocked(r)
 	}
 }
@@ -178,13 +185,30 @@ func (r *RequestState) wait(ctx context.Context, seconds int) bool {
 	}
 }
 
-// markCommitted 标记响应已提交; 流式响应在此之后仍会持续转发, 故必须先于提交动作调用。
-func (r *RequestState) markCommitted() {
+// markCommitted 标记响应已提交, 并按响应方式记录最终正确轮次的首字或完整响应耗时。
+func (r *RequestState) markCommitted(streaming bool) {
 	mu.Lock()
 	defer mu.Unlock()
 
+	now := time.Now()
 	r.Status = StatusCommitted
+	if streaming {
+		r.FirstTokenDuration = now.Sub(r.RoundStartedAt)
+		r.streamStarted = now
+	} else {
+		r.ResponseDuration = now.Sub(r.RoundStartedAt)
+	}
 	publishRequestLocked(r)
+}
+
+// finishStream 记录首字节提交至流式响应实际结束的耗时。
+func (r *RequestState) finishStream() {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if !r.streamStarted.IsZero() {
+		r.StreamDuration = time.Since(r.streamStarted)
+	}
 }
 
 // markSucceeded 以成功终态定稿请求。

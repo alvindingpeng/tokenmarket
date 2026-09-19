@@ -22,6 +22,9 @@ export interface RelayLogOverview {
     status: RequestState;
     started_at: string;
     duration: number;
+    first_token_duration: number;
+    stream_duration: number;
+    response_duration: number;
     model: string;
     protocol: number;
     group_id: number;
