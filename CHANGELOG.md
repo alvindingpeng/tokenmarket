@@ -5,6 +5,42 @@
 每次发布把新章节追加到本文件顶部，GitHub Release 的正文由 `scripts/publish-release.sh`
 自动取本文件中对应版本的那一节。
 
+## v0.15.0 — 2026-10-09
+
+修复「管理员设置页面修改系统信息配置未生效」: 此前站点名称、描述、联系方式、公告、维护提示
+只有写入端（设置存储保存成功），没有任何消费端，所以改完确实"看不到效果"。本版补齐分发与消费链路。
+
+### 新增功能
+
+- **公开站点信息端点** `GET /api/v1/site/config`：白名单下发 site_name / site_description /
+  site_contact / announcement / maintenance_mode / maintenance_notice 六个字段，无需登录即可读取，
+  未登录的登录页因此也能显示站点身份。公告按 `site_announcement_enabled` 开关在后端过滤，
+  前端只判断正文是否为空；维护提示为空时回退 `service under maintenance`。
+- **浏览器标签页标题跟随站点名称**（`web/src/lib/site-title.ts`）：挂在 `AppContainer` 最外层，
+  登录页与已登录界面都生效；名称留空回退默认品牌 Octopus，不会把标题清成空串。
+- **全局横幅 `SiteBanners`**：维护模式提示（红色、常驻不可关闭 —— 管理员必须看得见自己开着
+  开关）与公告（可关闭，按正文记忆在 `sessionStorage`，改写公告后自动重新出现），
+  同时接入应用外壳、密钥视图与登录页三处。
+- **登录页展示站点身份**：标题下的站点名称（留空回退品牌名）、一句话描述、联系方式。
+  联系方式自动识别 http(s) 链接与邮箱并渲染成可点链接，纯文本原样显示。
+- **分享图与密钥视图抬头**同样读取站点名称，不再硬编码品牌名。
+
+### 问题修复
+
+- 注册开关接口 `/api/v1/user/register-config` 补发 `approval_required`：此前前端恒走
+  "注册成功，请登录"分支，开启审批后新注册用户看到的提示是错的。
+- 登录页站点文案统一由 `/api/v1/site/config` 提供，`register-config` 不再重复下发同名三字段，
+  避免同一份配置出现两个数据来源。
+- 保存任意设置后除失效 `['settings','list']` 外，同时失效 `['site','config']` 与
+  `['user','register-config']`：管理员改完配置立刻反映到标题、公告与维护横幅，无需刷新页面。
+
+### 工程与发布
+
+- 新增 `docs/site-info-distribution.md`: 记录站点信息的唯一下发端点、各字段消费点、缓存失效
+  责任划分，以及 `AppShell` 网格横幅槽的版式陷阱（条件渲染整行会塌陷内容区高度）。
+- `AppShell` 网格增加独立的横幅行（`md:grid-rows-[auto_auto_minmax(0,1fr)]`，导航
+  `md:row-span-3`）：横幅出现或消失都不改变导航 sticky 容器的高度，也不挤占内容区滚动高度。
+
 ## v0.14.0 — 2026-10-09
 
 基于上游 v0.13.9 的本项目第一批完整发布，汇总此前未成版本的全部开发与修复。

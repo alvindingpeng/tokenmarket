@@ -6,6 +6,8 @@ import { useAuthStore } from '@/api/user';
 import { useSettingStore } from '@/stores/setting';
 import { AnimatedNumber } from '@/components/common/AnimatedNumber';
 import Logo from '@/components/modules/logo';
+import { SiteBanners } from '@/components/site-banners';
+import { useSiteConfig, DEFAULT_SITE_NAME } from '@/api/site';
 import { CopyIconButton } from '@/components/common/CopyButton';
 import { useCopyToClipboard } from '@uidotdev/usehooks';
 import { useCallback } from 'react';
@@ -38,6 +40,9 @@ export function APIKeyDashboard() {
     const { theme, setTheme } = useTheme();
     const { locale, setLocale } = useSettingStore();
     const [, copyToClipboard] = useCopyToClipboard();
+    // 站点名称来自「系统信息配置」, 留空回退默认品牌; 密钥视图同样要显示自己站点的名字。
+    // 必须在下面的错误早退之前调用 —— React Hook 不能出现在条件分支之后。
+    const { data: site } = useSiteConfig();
 
     const copyWithToast = useCallback(
         async (text: string, label: string) => {
@@ -99,7 +104,9 @@ export function APIKeyDashboard() {
             {/* Header - Consistent with app.tsx */}
             <header className="my-6 flex items-center gap-2 px-2">
                 <Logo size={48} />
-                <h1 className="ml-2 flex-1 truncate text-2xl font-bold tracking-tight">octopus</h1>
+                <h1 className="ml-2 flex-1 truncate text-2xl font-bold tracking-tight">
+                    {site?.site_name?.trim() || DEFAULT_SITE_NAME}
+                </h1>
                 <div className="flex items-center gap-2">
                     <Button variant="ghost" size="icon" onClick={toggleTheme} className="rounded-xl hover:bg-accent">
                         <Sun className="size-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
@@ -114,6 +121,9 @@ export function APIKeyDashboard() {
                     </Button>
                 </div>
             </header>
+
+            {/* 公告与维护提示对密钥视图同样可见: 横幅读的是同一份站点配置缓存。 */}
+            <SiteBanners className="mb-6 flex flex-col gap-2 px-2" />
 
             <main className="mb-10">
                 <div className="space-y-6">

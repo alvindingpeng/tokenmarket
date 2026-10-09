@@ -28,7 +28,9 @@ function InfoRow({ icon, label, hint, children }: {
 }
 
 // SettingSystemInfo 系统信息配置: 站点名称、描述、联系方式、公告与维护模式。
-// 全部落到统一的设置存储, 由公开端点分发给未登录的登录页使用; 仅管理员可见可改。
+// 全部落到统一的设置存储, 由公开端点 GET /api/v1/site/config 分发给登录页与已登录界面
+// (浏览器标题、公告/维护横幅、密钥视图抬头); 仅管理员可见可改。保存成功后 useSetSetting
+// 会广播失效站点配置缓存, 改动即时生效而无需刷新页面。
 export function SettingSystemInfo() {
     const t = useTranslations('setting');
     const { data: settings } = useSettingList();

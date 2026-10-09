@@ -91,6 +91,11 @@
             }
         }
     },
+    "site": {
+        "announcement": "公告",
+        "maintenance": "維護模式",
+        "dismiss": "關閉公告"
+    },
     "common": {
         "copy": {
             "success": "複製成功",
@@ -349,21 +354,21 @@
         "systemInfo": {
             "title": "系統資訊設定",
             "siteName": "站點名稱",
-            "siteNameHint": "顯示於瀏覽器標題與登入頁, 留空則使用預設名稱。",
+            "siteNameHint": "顯示於瀏覽器分頁標題、登入頁與各介面抬頭, 留空則使用預設名稱。",
             "siteNamePlaceholder": "例如: Octopus 中轉站",
             "siteContact": "聯絡方式",
             "siteContactHint": "供使用者尋求支援的入口, 可填信箱或群組連結。",
             "siteContactPlaceholder": "例如: support@example.com",
             "siteDescription": "站點描述",
-            "siteDescriptionHint": "一句話介紹本站用途, 顯示於登入頁與關於處。",
+            "siteDescriptionHint": "一句話介紹本站用途, 顯示於登入頁標題下方。",
             "siteDescriptionPlaceholder": "例如: 穩定高速的 AI 模型 API 中轉服務",
             "announcementEnabled": "啟用公告",
-            "announcementEnabledHint": "開啟後向全部已登入使用者顯示公告內容。",
+            "announcementEnabledHint": "開啟後以橫幅向全部已登入使用者顯示公告內容。",
             "announcement": "公告內容",
             "announcementHint": "全域公告正文, 留空則不顯示。",
             "announcementPlaceholder": "例如: 今晚 23:00 起進行維護, 預計 30 分鐘",
             "maintenanceMode": "維護模式",
-            "maintenanceModeHint": "開啟後僅管理員可登入, 其餘帳號登入會被拒絕。",
+            "maintenanceModeHint": "開啟後僅管理員可登入, 其餘帳號登入會被拒絕, 並在介面頂部常駐提示。",
             "maintenanceNotice": "維護提示",
             "maintenanceNoticeHint": "使用者登入被拒時看到的提示文案。",
             "maintenanceNoticePlaceholder": "例如: 系統升級維護中, 請稍後再試"

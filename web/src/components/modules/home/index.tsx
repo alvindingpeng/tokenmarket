@@ -6,6 +6,7 @@ import { useTranslations } from 'use-intl';
 import dayjs from 'dayjs';
 import { buttonVariants } from '@/components/ui/button';
 import Logo from '@/components/modules/logo';
+import { useSiteConfig, DEFAULT_SITE_NAME } from '@/api/site';
 import { Activity } from './activity';
 import { Total } from './total';
 import { StatsChart } from './chart';
@@ -37,6 +38,8 @@ export function Home() {
 export function HomeActions() {
     const t = useTranslations('toolbar');
     const tCommon = useTranslations('common');
+    // 分享图抬头跟随站点名称: 自建站点的管理员希望截图上是自己站点的名字。
+    const { data: site } = useSiteConfig();
     const isChannelNameHidden = useHomeViewStore((state) => state.isChannelNameHidden);
     const setChannelNameHidden = useHomeViewStore((state) => state.setChannelNameHidden);
     const [isStaged, setIsStaged] = useState(false); // 为真时屏外挂载正文副本供截图, 期间分享按钮转为加载态。
@@ -137,7 +140,7 @@ export function HomeActions() {
                     {/* 分享图抬头, 与应用顶栏一致的标识和名称。 */}
                     <div className="mb-4 flex items-center gap-x-2 px-2">
                         <Logo size={48} />
-                        <span className="text-3xl font-bold">Octopus</span>
+                        <span className="text-3xl font-bold">{site?.site_name?.trim() || DEFAULT_SITE_NAME}</span>
                     </div>
                     <HomeSections />
                 </div>

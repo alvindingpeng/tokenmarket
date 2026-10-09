@@ -17,6 +17,7 @@ import { AppShell } from '@/components/app-shell';
 import { LoginForm } from '@/components/modules/login';
 import { APIKeyDashboard } from '@/components/modules/apikey-dashboard';
 import { useAppStore } from '@/stores/app';
+import { useApplySiteTitle } from '@/lib/site-title';
 import { pageImports } from '@/lib/page-preload';
 
 // 页面和顶栏操作共用 pageImports 中的懒加载模块。
@@ -56,6 +57,8 @@ function InitialLoadingGate({ children }: { children: ReactNode }) {
 export function AppContainer() {
     const { isAuthenticated, isAPIKeyAuth, isLoading: authLoading, role } = useAuth();
     const queryClient = useQueryClient();
+    // 浏览器标题在登录页也要生效, 所以挂在最外层而不是 AppShell 里。
+    useApplySiteTitle();
     const authMode = isAPIKeyAuth ? 'apikey' : 'user'; // authMode 区分两种认证模式各自需要的初始 API。
     const [readyMode, setReadyMode] = useState<string | null>(null); // readyMode 记录已完成初始请求的认证模式。
     const currentPage = useAppStore((state) => state.currentPage);

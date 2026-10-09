@@ -91,6 +91,11 @@
             }
         }
     },
+    "site": {
+        "announcement": "Announcement",
+        "maintenance": "Maintenance",
+        "dismiss": "Dismiss"
+    },
     "common": {
         "copy": {
             "success": "Copied",
@@ -349,21 +354,21 @@
         "systemInfo": {
             "title": "System Information",
             "siteName": "Site name",
-            "siteNameHint": "Shown in the browser title and on the login page; leave empty to use the default name.",
+            "siteNameHint": "Shown in the browser tab title, on the login page and in every header; leave empty to use the default name.",
             "siteNamePlaceholder": "e.g. Octopus Gateway",
             "siteContact": "Contact",
             "siteContactHint": "How users can reach support; an email address or group link.",
             "siteContactPlaceholder": "e.g. support@example.com",
             "siteDescription": "Description",
-            "siteDescriptionHint": "One line describing this site, shown on the login page and in About.",
+            "siteDescriptionHint": "One line describing this site, shown under the title on the login page.",
             "siteDescriptionPlaceholder": "e.g. Fast and stable AI model API gateway",
             "announcementEnabled": "Enable announcement",
-            "announcementEnabledHint": "Show the announcement to every signed-in user.",
+            "announcementEnabledHint": "Show the announcement as a banner to every signed-in user.",
             "announcement": "Announcement",
             "announcementHint": "Global announcement body; leave empty to hide it.",
             "announcementPlaceholder": "e.g. Maintenance tonight from 23:00, about 30 minutes",
             "maintenanceMode": "Maintenance mode",
-            "maintenanceModeHint": "When on, only administrators can sign in; other accounts are rejected.",
+            "maintenanceModeHint": "When on, only administrators can sign in; other accounts are rejected and a banner is shown to everyone.",
             "maintenanceNotice": "Maintenance notice",
             "maintenanceNoticeHint": "Message shown to users whose sign-in is rejected.",
             "maintenanceNoticePlaceholder": "e.g. The service is under maintenance, please retry later"

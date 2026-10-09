@@ -7,6 +7,8 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { useLogin, useRegister, registerConfigQueryOptions } from "@/api/user"
 import { useAPIKeyLogin } from "@/api/apikey"
+import { useSiteConfig, DEFAULT_SITE_NAME } from "@/api/site"
+import { SiteBanners } from "@/components/site-banners"
 import Logo from "@/components/modules/logo"
 import { KeyRound, Store, User } from "lucide-react"
 import {
@@ -17,6 +19,13 @@ import {
 } from "@/components/ui/tabs"
 
 type LoginMode = 'user' | 'apikey' | 'register-user' | 'register-reseller';
+
+// contactHref 把联系方式认成可用的链接: 管理员既可能填邮箱也可能填群链接, 也可能只是纯文本。
+function contactHref(value: string): string | undefined {
+  if (/^https?:\/\//i.test(value)) return value;
+  if (/^[\w.+-]+@[\w-]+\.[\w.-]+$/.test(value)) return `mailto:${value}`;
+  return undefined;
+}
 
 // LoginForm 渲染用户密码、API Key 与注册表单；注册入口按后端开关显隐。
 export function LoginForm() {
@@ -32,6 +41,8 @@ export function LoginForm() {
 
   // 注册开关由后端决定: 默认关闭, 管理员开启后登录页才出现注册入口。
   const { data: registerConfig } = useQuery(registerConfigQueryOptions)
+  // 站点身份文案同样来自后端「系统信息配置」, 留空回退默认品牌名。
+  const { data: site } = useSiteConfig()
 
   const loginMutation = useLogin()
   const apiKeyLoginMutation = useAPIKeyLogin()
@@ -80,8 +91,25 @@ export function LoginForm() {
       <div className="w-full max-w-sm space-y-8">
         <header className="flex flex-col items-center gap-3">
           <Logo size={48} />
-          <h1 className="text-2xl font-bold">Octopus</h1>
+          {/* 站点名称/描述/联系方式来自「系统信息配置」; 名称留空回退默认品牌。 */}
+          <h1 className="text-2xl font-bold text-center">{site?.site_name?.trim() || DEFAULT_SITE_NAME}</h1>
+          {!!site?.site_description?.trim() && (
+            <p className="text-center text-sm text-muted-foreground">{site.site_description.trim()}</p>
+          )}
+          {!!site?.site_contact?.trim() && (
+            <p className="text-center text-xs text-muted-foreground break-all">
+              {contactHref(site.site_contact.trim()) ? (
+                <a className="underline underline-offset-2 hover:text-foreground" href={contactHref(site.site_contact.trim())}>
+                  {site.site_contact.trim()}
+                </a>
+              ) : site.site_contact.trim()}
+            </p>
+          )}
         </header>
+
+        {/* 维护提示对未登录用户同样可见: 被维护模式挡住的人需要知道登不上的原因。
+            公告按管理员设置说明只面向登录用户, 这里不展示。 */}
+        <SiteBanners className="flex flex-none flex-col gap-2" includeAnnouncement={false} />
 
         <Tabs value={mode} onValueChange={handleModeChange}>
           <TabsList className="flex w-full rounded-2xl bg-muted p-1">

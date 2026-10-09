@@ -89,7 +89,14 @@ export function useSetSetting() {
     return useMutation({
         mutationFn: (data: Setting) =>
             apiRequest<Setting>('/api/v1/setting/set', { method: 'POST', body: data }),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', 'list'] }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['settings', 'list'] });
+            // 站点信息与注册开关同样由这个端点写入, 而消费方(登录页 / 浏览器标题 / 公告与
+            // 维护横幅)各自缓存自己的查询键。后端无从知道刚改的键会被谁读, 所以前端一律广播
+            // 失效: 否则管理员保存完「系统信息配置」, 要等页面刷新才看得到效果。
+            queryClient.invalidateQueries({ queryKey: ['site', 'config'] });
+            queryClient.invalidateQueries({ queryKey: ['user', 'register-config'] });
+        },
     });
 }
 

@@ -91,6 +91,11 @@
             }
         }
     },
+    "site": {
+        "announcement": "公告",
+        "maintenance": "维护模式",
+        "dismiss": "关闭公告"
+    },
     "common": {
         "copy": {
             "success": "复制成功",
@@ -349,21 +354,21 @@
         "systemInfo": {
             "title": "系统信息配置",
             "siteName": "站点名称",
-            "siteNameHint": "展示在浏览器标题与登录页, 留空则使用默认名称。",
+            "siteNameHint": "展示在浏览器标签页标题、登录页与各界面抬头, 留空则使用默认名称。",
             "siteNamePlaceholder": "例如: Octopus 中转站",
             "siteContact": "联系方式",
             "siteContactHint": "供用户寻求支持的入口, 可填邮箱或群链接。",
             "siteContactPlaceholder": "例如: support@example.com",
             "siteDescription": "站点描述",
-            "siteDescriptionHint": "一句话介绍本站用途, 展示在登录页与关于处。",
+            "siteDescriptionHint": "一句话介绍本站用途, 展示在登录页标题下方。",
             "siteDescriptionPlaceholder": "例如: 稳定高速的 AI 模型 API 中转服务",
             "announcementEnabled": "启用公告",
-            "announcementEnabledHint": "开启后向全部登录用户展示公告内容。",
+            "announcementEnabledHint": "开启后以横幅向全部登录用户展示公告内容。",
             "announcement": "公告内容",
             "announcementHint": "全局公告正文, 留空则不展示。",
             "announcementPlaceholder": "例如: 今晚 23:00 起进行维护, 预计 30 分钟",
             "maintenanceMode": "维护模式",
-            "maintenanceModeHint": "开启后仅管理员可登录, 其余账号登录会被拒绝。",
+            "maintenanceModeHint": "开启后仅管理员可登录, 其余账号登录会被拒绝, 并在界面顶部常驻提示。",
             "maintenanceNotice": "维护提示",
             "maintenanceNoticeHint": "用户登录被拒时看到的提示文案。",
             "maintenanceNoticePlaceholder": "例如: 系统升级维护中, 请稍后再试"
