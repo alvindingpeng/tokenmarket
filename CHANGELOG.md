@@ -5,6 +5,29 @@
 每次发布把新章节追加到本文件顶部，GitHub Release 的正文由 `scripts/publish-release.sh`
 自动取本文件中对应版本的那一节。
 
+## v0.15.1 — 2026-10-09
+
+文档：按当前实际运行的系统重写 `README.md` 与 `README_zh.md`，中英两份结构、表格与事实一一对应。
+不新增功能，不改变任何运行时行为。
+
+### 重写要点（中英一致）
+
+- **以本分支为准**：开篇写明仓库身份（`alvindingpeng/tokenmarket`，基线 `v0.13.9`）与「本文件描述
+  本分支当前真实运行的能力」，并给出指向 CHANGELOG 的差异入口。
+- **不夸大产物**：明确本分支不发布二进制、不发布容器镜像 —— 上游的 `release.yaml` 只在上游 `master`
+  分支触发，故这里的 Release 只有更新说明没有 `octopus-*.zip`；`docker-compose.yml` 的 `image:` 仍指向上游
+  镜像名（两者在 Docker Hub 均查无此库），已在文档中提示先替换再用。
+- **凭据不再泄漏**：旧文档的三处客户端示例内嵌了真实 `sk-octopus-…` 密钥，统一改为 `sk-octopus-REPLACE_ME`；
+  同时把密钥长度改为实测的 48 位（`GenerateAPIKey` 生成 48 位随机串）。
+- **校正事实**：`/v1` 只认 API 密钥（`Authorization: Bearer` 或 `x-api-key`，会话 Cookie 不适用，且停用 /
+  过期 / 用尽 `max_cost` 在入口拒绝）；Node.js 要求改为 Vite 8 的 `^20.19 || >=22.12`；测试一节补上
+  `go test ./internal/...`，并注明 `gofmt -l` 只对 `internal/server/handlers/` 门禁（`internal/` 仍带上游
+  遗留格式差异）。
+- **新增章节**：客户端接入示例（OpenAI SDK / Claude Code / Codex，密钥占位）、界面截图（仅列仓库内
+  真实存在的 12 张 PNG，并说明更新页面尚未截图）、文档索引（`docs/` 15 篇）。
+- **路线图如实列缺口**：生视频协议位已预留但未实现、`partial_images` 未做、能力探测未做、定时同步渠道模型
+  不采纳、自动定价 / 自动上架刻意排除、界面内自更新停用（`/api/v1/update` 回 `update paused`）、不发布镜像。
+
 ## v0.15.0 — 2026-10-09
 
 修复「管理员设置页面修改系统信息配置未生效」: 此前站点名称、描述、联系方式、公告、维护提示
