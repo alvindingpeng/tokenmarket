@@ -4,6 +4,7 @@ import { flushSync } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'use-intl';
 import Logo from '@/components/modules/logo';
+import { SiteBanners } from '@/components/site-banners';
 import { navItemsFor, useAppStore } from '@/stores/app';
 import { useAuthStore } from '@/api/user';
 import { preloadPage } from '@/lib/page-preload';
@@ -39,9 +40,10 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
     }, [activeIndex, currentPage]);
 
     return (
-        <div className="mx-auto flex h-dvh max-w-6xl animate-in flex-col overflow-hidden px-3 fade-in duration-300 md:grid md:grid-cols-[auto_1fr] md:grid-rows-[auto_minmax(0,1fr)] md:gap-x-6 md:px-6">
+        <div className="mx-auto flex h-dvh max-w-6xl animate-in flex-col overflow-hidden px-3 fade-in duration-300 md:grid md:grid-cols-[auto_1fr] md:grid-rows-[auto_auto_minmax(0,1fr)] md:gap-x-6 md:px-6">
             {/* md:min-h-0 让这一列可以被压缩, 否则内容高度会把网格行撑破并被外层 overflow-hidden 裁掉。 */}
-            <div className="relative z-50 md:row-span-2 md:min-h-0">
+            {/* row-span-3 跨过头部与横幅槽: 横幅出现或消失都不改变导航的 sticky 容器高度。 */}
+            <div className="relative z-50 md:row-span-3 md:min-h-0">
                 <nav
                     ref={navRef}
                     aria-label="Main Navigation"
@@ -154,6 +156,14 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                 </div>
                 {actions && <div className="ml-auto">{actions}</div>}
             </header>
+
+            {/* 站点横幅槽(公告 / 维护模式提示, 取自「系统信息配置」)。
+                没有内容时这是一个高度为 0 的空 div, 而不是被移出 DOM 的网格项 ——
+                否则网格行序会少一项, 把 main 挤到 auto 行上失去 1fr 高度。 */}
+            <div className="flex-none px-2 md:px-0">
+                {/* 外层已负责左右留白, 这里只要纵向堆叠。 */}
+                <SiteBanners className="flex flex-col gap-2" />
+            </div>
 
             {/* main 是页面内容的默认滚动容器: 各页只需管好自己的高度, 无需各自再造一个滚动层。 */}
             {/* 底部内边距按导航高度 + 安全区留净空, 保证最后一行内容不被贴底导航盖住。 */}

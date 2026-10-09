@@ -115,16 +115,14 @@ func login(c *gin.Context) {
 func registerConfig(c *gin.Context) {
 	userEnabled, _ := op.SettingGetBool(model.SettingKeyRegisterUserEnabled)
 	resellerEnabled, _ := op.SettingGetBool(model.SettingKeyRegisterResellerEnabled)
-	siteName, _ := op.SettingGetString(model.SettingKeySiteName)
-	siteDescription, _ := op.SettingGetString(model.SettingKeySiteDescription)
-	siteContact, _ := op.SettingGetString(model.SettingKeySiteContact)
+	// approval_required 决定注册成功后提示"请登录"还是"等待审批": 此前漏发, 前端恒走前者。
+	approvalRequired, _ := op.SettingGetBool(model.SettingKeyRegisterApproval)
+	// 站点文案(名称/描述/联系方式)不在这里下发: 那是 /api/v1/site/config 的职责,
+	// 两处都发同一个值只会让前端出现两个数据来源。
 	resp.Success(c, gin.H{
-		"user_enabled":     userEnabled,
-		"reseller_enabled": resellerEnabled,
-		// 站点信息: 登录页与关于处展示, 留空则由前端回退默认文案。
-		"site_name":        siteName,
-		"site_description": siteDescription,
-		"site_contact":     siteContact,
+		"user_enabled":      userEnabled,
+		"reseller_enabled":  resellerEnabled,
+		"approval_required": approvalRequired,
 	})
 }
 
