@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslations } from 'use-intl';
-import { User, KeyRound, Lock, Eye, EyeOff, Pencil, Check, X, Loader } from 'lucide-react';
+import { User, KeyRound, Lock, Eye, EyeOff, Pencil, Check, X, Loader, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Input } from '@/components/ui/input';
 import { useChangeUsername, useChangePassword, useAuth } from '@/api/user';
@@ -74,7 +74,7 @@ function UsernameForm({ onClose }: { onClose: () => void }) {
             layoutId="account-username"
             onSubmit={handleSubmit}
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-            className="absolute left-1/2 top-1/2 z-20 grid w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 gap-2 rounded-3xl border border-border bg-card p-5"
+            className="fixed left-1/2 top-1/2 z-50 grid w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 gap-2 rounded-3xl border border-border bg-card p-5 max-h-[85vh] overflow-y-auto overscroll-contain"
         >
             <Input
                 type="text"
@@ -154,7 +154,7 @@ function PasswordForm({ onClose }: { onClose: () => void }) {
             layoutId="account-password"
             onSubmit={handleSubmit}
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-            className="absolute left-1/2 top-1/2 z-20 grid w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 gap-2 rounded-3xl border border-border bg-card p-5"
+            className="fixed left-1/2 top-1/2 z-50 grid w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 gap-2 rounded-3xl border border-border bg-card p-5 max-h-[85vh] overflow-y-auto overscroll-contain"
         >
             <PasswordInput
                 value={oldPassword}
@@ -200,8 +200,15 @@ function PasswordForm({ onClose }: { onClose: () => void }) {
 
 export function SettingAccount() {
     const t = useTranslations('setting');
+    const { logout } = useAuth();
     // 当前展开的表单, 为空时仅显示两行入口
     const [editing, setEditing] = useState<'username' | 'password' | null>(null);
+
+    // handleLogout 退出当前登录; 所有角色均可在账户设置中主动登出。
+    const handleLogout = () => {
+        toast.success(t('account.logout.toast'));
+        setTimeout(() => logout(), 300);
+    };
 
     return (
         <div className="rounded-3xl border border-border bg-card p-6 space-y-5 relative">
@@ -252,6 +259,25 @@ export function SettingAccount() {
                 >
                     <Pencil className="size-4" />
                 </motion.button>
+            </div>
+
+            {/* 退出登录 */}
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                    <LogOut className="h-5 w-5 text-muted-foreground" />
+                    <div className="flex flex-col">
+                        <span className="text-sm font-medium">{t('account.logout.label')}</span>
+                        <span className="text-xs text-muted-foreground">{t('account.logout.hint')}</span>
+                    </div>
+                </div>
+                <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="flex h-8 items-center gap-1.5 rounded-lg bg-destructive/10 px-3 text-sm font-medium text-destructive transition-colors hover:bg-destructive/20 active:scale-95"
+                >
+                    <LogOut className="size-4" />
+                    {t('account.logout.button')}
+                </button>
             </div>
         </div>
     );

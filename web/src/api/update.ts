@@ -22,12 +22,14 @@ interface LatestInfo {
  * 
  * console.log('Latest tag:', latestInfo?.tag_name);
  */
-export function useLatestInfo() {
+export function useLatestInfo(enabled = true) {
     return useQuery({
         queryKey: ['update', 'latest'],
         queryFn: () => apiRequest<LatestInfo>('/api/v1/update'),
         refetchInterval: 3600000, // 1 小时
         refetchOnMount: 'always',
+        // 在线更新暂停时不发起请求, 避免无谓地打到上游仓库接口。
+        enabled,
     });
 }
 

@@ -15,6 +15,41 @@ export const SettingKey = {
     ModelInfoUpdateInterval: 'model_info_update_interval',
     CORSAllowOrigins: 'cors_allow_origins',
     ModelFilter: 'model_filter',
+    MarkupRatio: 'markup_ratio', // 渠道商供货价上浮比例, 用户价 = 供货价 × (1 + ratio)。
+    RegisterUserEnabled: 'register_user_enabled',
+    RegisterResellerEnabled: 'register_reseller_enabled',
+    RegisterApprovalRequired: 'register_approval_required',
+    MinBalance: 'min_balance', // 余额下限, 低于该值拒绝新请求。
+    BalanceReserveOutputCap: 'balance_reserve_output_cap', // 预扣估算用的单请求输出 token 上限。
+    BalanceReserveImages: 'balance_reserve_images', // 生图预扣保守张数(无 n 时按此冻结), 默认 4。
+    ScorePriceWeight: 'score_price_weight', // 综合评分系统默认: 价格权重, 分组内填 0(未自定义)时生效。
+    ScoreLatencyWeight: 'score_latency_weight', // 综合评分系统默认: 延迟权重。
+    ScoreSuccessWeight: 'score_success_weight', // 综合评分系统默认: 成功率权重。
+    // 系统信息配置: 站点身份信息与公告, 仅管理员可改, 公开端只在登录前读取。
+    SiteName: 'site_name', // 站点名称, 留空回退默认标题。
+    SiteDescription: 'site_description', // 站点描述, 展示在登录页与关于处。
+    SiteContact: 'site_contact', // 联系方式。
+    SiteAnnouncement: 'site_announcement', // 全局公告正文。
+    SiteAnnouncementEnabled: 'site_announcement_enabled', // 公告开关。
+    MaintenanceMode: 'maintenance_mode', // 维护模式开关。
+    MaintenanceNotice: 'maintenance_notice', // 维护提示文案。
+    // 第二批运营可靠性: 日志生命周期 / 自动备份 / 渠道健康 / 告警, 仅管理员可改。
+    LogRetentionDays: 'log_retention_days', // 调用日志留存天数, 默认 7。
+    LogArchiveEnabled: 'log_archive_enabled', // 清理前先归档, 默认 true。
+    LogStoreBody: 'log_store_body', // 是否保存请求/响应正文, 默认 true。
+    LogMaskFields: 'log_mask_fields', // 额外脱敏字段(逗号分隔 JSON key)。
+    AutoBackupEnabled: 'auto_backup_enabled', // 自动备份开关, 默认 true。
+    AutoBackupKeep: 'auto_backup_keep', // 备份保留份数, 默认 7。
+    AutoBackupInterval: 'auto_backup_interval', // 备份间隔(小时), 默认 24。
+    BackupEncrypt: 'backup_encrypt', // 备份加密开关, 默认 false; 口令在 config.json backup.passphrase。
+    BackupRemote: 'backup_remote', // 备份异地推送开关, 默认 false; 地址凭据在 config.json backup.remote_*。
+    HealthCheckEnabled: 'health_check_enabled', // 渠道健康探测开关, 默认 false。
+    HealthCheckInterval: 'health_check_interval', // 探测间隔(分钟), 默认 30。
+    HealthLatencyMS: 'health_latency_ms', // 延迟告警阈值(毫秒), 0 关闭, 默认 1000。
+    AlertWebhookURL: 'alert_webhook_url', // 告警 Webhook 地址, 留空仅站内通知。
+    AlertDedupMinutes: 'alert_dedup_minutes', // 告警去重窗口(分钟), 0 表示不去重。
+    AlertFailStreak: 'alert_fail_streak', // 连续失败多少次判宕机(抖动抑制)。
+    MetricsAuth: 'metrics_auth', // 探针鉴权: off(默认开放) | bearer(需令牌)。
 } as const;
 
 /**

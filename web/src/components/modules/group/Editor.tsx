@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState, type FormEvent } from 'react';
 import { Check, ChevronDownIcon, HelpCircle, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
+import { toast } from 'sonner';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import { Protocol, useChannelGrantList } from '@/api/channel';
 import { Button } from '@/components/ui/button';
@@ -12,10 +13,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { getModelIcon } from '@/lib/model-icons';
-import type { GroupMode, GroupRelayConfig } from '@/api/group';
+import type { GroupMode, GroupRelayConfig, PriceMetric } from '@/api/group';
 import type { SelectedMember } from './ItemList';
 import { MemberList } from './ItemList';
-import { matchesGroupName, memberKey, normalizeKey } from './utils';
+import { autoAddMatches, memberKey, normalizeKey } from './utils';
 
 export type GroupEditorValues = {
     name: string;
@@ -24,15 +25,20 @@ export type GroupEditorValues = {
     members: SelectedMember[];
 };
 
-// defaultRelayConfig 提供创建分组时的前端初始配置。
-const defaultRelayConfig: GroupRelayConfig = {
-    member_max_attempts: 2,
-    member_retry_interval_seconds: 1,
-    member_non_stream_response_timeout_seconds: 120,
-    member_stream_first_event_timeout_seconds: 30,
-    member_cooldown_seconds: 60,
-    member_affinity_seconds: 0,
+// modeRelayDefaults 与后端 DefaultGroupRelayConfigForMode 保持同一套新建预设。
+const modeRelayDefaults: Record<GroupMode, GroupRelayConfig> = {
+    manual: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 20, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0 },
+    failover: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 60, price_metric: 'blended', metric_window_size: 20, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0 },
+    price: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 20, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0 },
+    latency: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 10, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0 },
+    success: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 30, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0 },
+    score: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 20, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0 },
+    random: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 30, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 20, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0 },
 };
+
+function modeRelayConfig(mode: GroupMode): GroupRelayConfig {
+    return { ...modeRelayDefaults[mode] };
+}
 
 // PROTOCOL_TAGS 是凭据行上的协议标识。
 // 此处写全称: 凭据行只有名称一列, 横向有余量; 渠道表单的授权矩阵是三列复选框, 列宽紧张才用缩写。
@@ -62,15 +68,21 @@ function ModelPickerSection({
     onAdd,
     onAutoAdd,
     autoAddDisabled,
+    searchKeyword,
+    onSearchChange,
+    autoAddTitle,
 }: {
     grantMembers: SelectedMember[];
     selectedMembers: SelectedMember[];
     onAdd: (channel: SelectedMember) => void;
     onAutoAdd: () => void;
     autoAddDisabled: boolean;
+    searchKeyword: string;
+    onSearchChange: (value: string) => void;
+    autoAddTitle: string;
 }) {
     const t = useTranslations('group');
-    const [searchKeyword, setSearchKeyword] = useState('');
+    const setSearchKeyword = onSearchChange;
 
     const selectedKeys = useMemo(() => new Set(selectedMembers.map(memberKey)), [selectedMembers]);
     const normalizedSearch = searchKeyword.trim().toLowerCase();
@@ -135,6 +147,7 @@ function ModelPickerSection({
                 <button
                     type="button"
                     onClick={onAutoAdd}
+                    title={autoAddTitle}
                     className={cn(
                         'justify-self-end shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors',
                         autoAddDisabled
@@ -179,6 +192,8 @@ function ModelPickerSection({
                                                 (acc, m) => acc + (selectedKeys.has(memberKey(m)) ? 1 : 0),
                                                 0
                                             );
+                                            // 对客价: 供货价经系统上浮后的价格, 与计费同口径; 同一模型各授权价格一致, 取第一条展示。
+                                            const userPrice = model.grants.find((m) => m.user_price)?.user_price;
                                             return (
                                                 <div key={model.name} className="rounded-lg border border-border/50 bg-background">
                                                     {/* 模型行只作分组标题, 不可点选: 可选的是它下面的凭据, 一份凭据一条授权。 */}
@@ -191,6 +206,16 @@ function ModelPickerSection({
                                                             {model.grants.length - modelSelected}/{model.grants.length}
                                                         </span>
                                                     </div>
+                                                    {userPrice && (
+                                                        <p className="px-2.5 pb-2 -mt-1 text-[10px] text-muted-foreground tabular-nums">
+                                                            {t('modelPrice', {
+                                                                input: userPrice.input.toFixed(6),
+                                                                output: userPrice.output.toFixed(6),
+                                                                cacheRead: userPrice.cache_read.toFixed(6),
+                                                                cacheWrite: userPrice.cache_write.toFixed(6),
+                                                            })}
+                                                        </p>
+                                                    )}
 
                                                     <div className="flex flex-col border-t border-border/50">
                                                         {model.grants.map((m) => {
@@ -329,23 +354,38 @@ export function GroupEditor({
         channel_name: grant.channel_name,
         key_name: grant.key_name,
         protocols: grant.protocols,
+        user_price: grant.user_price,
     })), [grantCandidates]);
 
     const [groupName, setGroupName] = useState(initial?.name ?? '');
     const [mode, setMode] = useState<GroupMode>(initial?.mode ?? 'manual');
     const [relayConfig, setRelayConfig] = useState<GroupRelayConfig>(() => ({
-        ...defaultRelayConfig,
+        ...modeRelayConfig(initial?.mode ?? 'manual'),
         ...initial?.relay_config,
     }));
     const [selectedMembers, setSelectedMembers] = useState<SelectedMember[]>(initial?.members ?? []);
     const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
     const groupKey = normalizeKey(groupName);
+    // 搜索关键字提升为编辑器状态: 自动添加与左侧列表筛选共用同一份, 所见即所得。
+    const [searchKeyword, setSearchKeyword] = useState('');
 
+    // 自动添加候选(优先级链见 utils.autoAddMatches): 关键字优先, 组名回退, 皆空为无。
     const matchedModelChannels = useMemo(() => {
-        if (!groupKey) return [];
-        return grantMembers.filter((mc) => matchesGroupName(mc.name, groupKey));
-    }, [groupKey, grantMembers]);
+        if (!searchKeyword.trim() && !groupKey) return [];
+        return grantMembers.filter((mc) => autoAddMatches(mc, searchKeyword, groupKey));
+    }, [groupKey, searchKeyword, grantMembers]);
+    const autoAddCandidates = useMemo(
+        () => matchedModelChannels.filter((mc) => !selectedMembers.some((m) => memberKey(m) === memberKey(mc))),
+        [matchedModelChannels, selectedMembers],
+    );
+    // 置灰原因分三档, 随 title 提示, 让"为什么点不了"自解释。
+    const autoAddTitle = useMemo(() => {
+        if (!searchKeyword.trim() && !groupKey) return t('form.autoAddNeedKeyword');
+        if (matchedModelChannels.length === 0) return t('form.autoAddNoMatch');
+        if (autoAddCandidates.length === 0) return t('form.autoAddAllAdded');
+        return t('form.autoAddTitle', { count: autoAddCandidates.length });
+    }, [t, searchKeyword, groupKey, matchedModelChannels.length, autoAddCandidates.length]);
 
     const handleAddMember = useCallback((channel: SelectedMember) => {
         const key = memberKey(channel);
@@ -355,22 +395,15 @@ export function GroupEditor({
         });
     }, []);
 
-    const autoAddDisabled = useMemo(() => {
-        if (!groupKey || matchedModelChannels.length === 0) return true;
-        const existing = new Set(selectedMembers.map((m) => m.id));
-        return matchedModelChannels.every((mc) => existing.has(memberKey(mc)));
-    }, [groupKey, matchedModelChannels, selectedMembers]);
+    const autoAddDisabled = autoAddCandidates.length === 0;
 
+    // 只增不减: 候选追加到末尾, 已有成员及其顺序一律不动; 按 channel_grant_id 去重。
     const handleAutoAdd = useCallback(() => {
-        if (matchedModelChannels.length === 0) return;
-        setSelectedMembers((prev) => {
-            const existing = new Set(prev.map((m) => m.id));
-            const toAdd = matchedModelChannels
-                .filter((mc) => !existing.has(memberKey(mc)))
-                .map((mc) => ({ ...mc, id: memberKey(mc) }));
-            return toAdd.length ? [...prev, ...toAdd] : prev;
-        });
-    }, [matchedModelChannels]);
+        if (autoAddCandidates.length === 0) return;
+        const toAdd = autoAddCandidates.map((mc) => ({ ...mc, id: memberKey(mc) }));
+        setSelectedMembers((prev) => [...prev, ...toAdd]);
+        toast.success(t('form.autoAddDone', { count: toAdd.length }));
+    }, [autoAddCandidates, t]);
 
     const handleRemoveMember = useCallback((id: string) => {
         setRemovingIds((prev) => new Set(prev).add(id));
@@ -420,7 +453,12 @@ export function GroupEditor({
                             </FieldLabel>
                             <Select
                                 value={mode}
-                                onValueChange={(value) => setMode(value as GroupMode)}
+                                onValueChange={(value) => {
+                                    const nextMode = value as GroupMode;
+                                    setMode(nextMode);
+                                    // 新建分组切换策略时直接采用该策略预设; 编辑已有分组保留手工调整值。
+                                    if (!initial) setRelayConfig(modeRelayConfig(nextMode));
+                                }}
                             >
                                 <SelectTrigger id="group-mode" className="w-full rounded-xl">
                                     <SelectValue />
@@ -428,6 +466,11 @@ export function GroupEditor({
                                 <SelectContent>
                                     <SelectItem value="manual">{t('form.manual')}</SelectItem>
                                     <SelectItem value="failover">{t('form.failover')}</SelectItem>
+                                    <SelectItem value="price">{t('form.price')}</SelectItem>
+                                    <SelectItem value="latency">{t('form.latency')}</SelectItem>
+                                    <SelectItem value="success">{t('form.success')}</SelectItem>
+                                    <SelectItem value="score">{t('form.score')}</SelectItem>
+                                    <SelectItem value="random">{t('form.random')}</SelectItem>
                                 </SelectContent>
                             </Select>
                         </Field>
@@ -447,6 +490,9 @@ export function GroupEditor({
                                     onAdd={handleAddMember}
                                     onAutoAdd={handleAutoAdd}
                                     autoAddDisabled={autoAddDisabled}
+                                    searchKeyword={searchKeyword}
+                                    onSearchChange={setSearchKeyword}
+                                    autoAddTitle={autoAddTitle}
                                 />
                                 <SortSection
                                     members={selectedMembers}
@@ -459,7 +505,18 @@ export function GroupEditor({
                         </TabsContent>
 
                         <TabsContent value="relay" className="min-h-0 overflow-y-auto px-1">
+                            <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-border/50 bg-muted/30 px-3 py-2">
+                                <span className="text-xs text-muted-foreground">{t('form.presetHint')}</span>
+                                <Button type="button" variant="outline" size="sm" className="rounded-lg" onClick={() => setRelayConfig(modeRelayConfig(mode))}>{t('form.applyPreset')}</Button>
+                            </div>
                             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                {(['request_timeout_seconds', 'max_total_attempts', 'max_wait_seconds', 'max_waiting_requests', 'member_stream_idle_timeout_seconds'] as const).map((key) => (
+                                    <Field key={key}>
+                                        <FieldLabel htmlFor={'group-' + key}>{t('form.' + key)}<FieldHelp text={t('form.' + key + 'Hint')} /></FieldLabel>
+                                        <Input id={'group-' + key} type="number" min={key.startsWith('max_wait') ? 0 : 1} step={1} className="rounded-xl" value={relayConfig[key]} onChange={(event) => setRelayConfig(prev => ({...prev, [key]: Math.max(key.startsWith('max_wait') ? 0 : 1, Math.floor(Number(event.target.value) || 0))}))} />
+                                    </Field>
+                                ))}
+                                {mode !== 'manual' && (<>
                                 <Field>
                                     <FieldLabel htmlFor="group-retry-count">
                                         {t('form.retryCount')}
@@ -479,6 +536,7 @@ export function GroupEditor({
                                         className="rounded-xl"
                                     />
                                 </Field>
+                                </>)}
                                 <Field>
                                     <FieldLabel htmlFor="group-retry-interval">
                                         {t('form.retryInterval')}
@@ -536,6 +594,7 @@ export function GroupEditor({
                                         className="rounded-xl"
                                     />
                                 </Field>
+                                {mode !== 'manual' && (<>
                                 <Field>
                                     <FieldLabel htmlFor="group-cooldown">
                                         {t('form.cooldown')}
@@ -574,6 +633,114 @@ export function GroupEditor({
                                         className="rounded-xl"
                                     />
                                 </Field>
+                                </>)}
+                                {(mode === 'price' || mode === 'score') && (
+                                <Field>
+                                    <FieldLabel htmlFor="group-price-metric">
+                                        {t('form.priceMetric')}
+                                        <FieldHelp text={t('form.priceMetricHint')} />
+                                    </FieldLabel>
+                                    <Select
+                                        value={relayConfig.price_metric}
+                                        onValueChange={(value) => setRelayConfig((prev) => ({ ...prev, price_metric: value as PriceMetric }))}
+                                    >
+                                        <SelectTrigger id="group-price-metric" className="w-full rounded-xl">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="blended">{t('form.priceMetricBlended')}</SelectItem>
+                                            <SelectItem value="input">{t('form.priceMetricInput')}</SelectItem>
+                                            <SelectItem value="output">{t('form.priceMetricOutput')}</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </Field>
+                                )}
+                                {(mode === 'latency' || mode === 'success' || mode === 'score') && (
+                                <Field>
+                                    <FieldLabel htmlFor="group-metric-window">
+                                        {t('form.metricWindow')}
+                                        <FieldHelp text={t('form.metricWindowHint')} />
+                                    </FieldLabel>
+                                    <Input
+                                        id="group-metric-window"
+                                        type="number"
+                                        inputMode="numeric"
+                                        min={5}
+                                        max={200}
+                                        step={1}
+                                        value={String(relayConfig.metric_window_size)}
+                                        onChange={(event) => {
+                                            const value = Number.parseInt(event.target.value, 10);
+                                            setRelayConfig((prev) => ({ ...prev, metric_window_size: Number.isFinite(value) && value >= 5 && value <= 200 ? value : 20 }));
+                                        }}
+                                        className="rounded-xl"
+                                    />
+                                </Field>
+                                )}
+                                {mode === 'score' && (
+                                <>
+                                <Field>
+                                    <FieldLabel htmlFor="group-score-price-weight">
+                                        {t('form.scorePriceWeight')}
+                                        <FieldHelp text={t('form.scoreWeightHint')} />
+                                    </FieldLabel>
+                                    <Input
+                                        id="group-score-price-weight"
+                                        type="number"
+                                        inputMode="numeric"
+                                        min={0}
+                                        max={100}
+                                        step={1}
+                                        value={String(relayConfig.score_price_weight)}
+                                        onChange={(event) => {
+                                            const value = Number.parseInt(event.target.value, 10);
+                                            setRelayConfig((prev) => ({ ...prev, score_price_weight: Number.isFinite(value) ? Math.min(Math.max(value, 0), 100) : 0 }));
+                                        }}
+                                        className="rounded-xl"
+                                    />
+                                </Field>
+                                <Field>
+                                    <FieldLabel htmlFor="group-score-latency-weight">
+                                        {t('form.scoreLatencyWeight')}
+                                        <FieldHelp text={t('form.scoreWeightHint')} />
+                                    </FieldLabel>
+                                    <Input
+                                        id="group-score-latency-weight"
+                                        type="number"
+                                        inputMode="numeric"
+                                        min={0}
+                                        max={100}
+                                        step={1}
+                                        value={String(relayConfig.score_latency_weight)}
+                                        onChange={(event) => {
+                                            const value = Number.parseInt(event.target.value, 10);
+                                            setRelayConfig((prev) => ({ ...prev, score_latency_weight: Number.isFinite(value) ? Math.min(Math.max(value, 0), 100) : 0 }));
+                                        }}
+                                        className="rounded-xl"
+                                    />
+                                </Field>
+                                <Field>
+                                    <FieldLabel htmlFor="group-score-success-weight">
+                                        {t('form.scoreSuccessWeight')}
+                                        <FieldHelp text={t('form.scoreWeightHint')} />
+                                    </FieldLabel>
+                                    <Input
+                                        id="group-score-success-weight"
+                                        type="number"
+                                        inputMode="numeric"
+                                        min={0}
+                                        max={100}
+                                        step={1}
+                                        value={String(relayConfig.score_success_weight)}
+                                        onChange={(event) => {
+                                            const value = Number.parseInt(event.target.value, 10);
+                                            setRelayConfig((prev) => ({ ...prev, score_success_weight: Number.isFinite(value) ? Math.min(Math.max(value, 0), 100) : 0 }));
+                                        }}
+                                        className="rounded-xl"
+                                    />
+                                </Field>
+                                </>
+                                )}
                             </div>
                         </TabsContent>
                     </Tabs>

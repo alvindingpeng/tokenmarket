@@ -19,8 +19,9 @@ import {
 import { snapdom } from '@zumer/snapdom';
 import { toast } from 'sonner';
 import { useTranslations } from 'use-intl';
-import { type ChannelStatsFormatted, useDeleteChannel } from '@/api/channel';
-import { type StatsMetricsFormatted } from '@/api/stats';
+import { type ChannelStatsFormatted, useChannelDailyStats, useDeleteChannel } from '@/api/channel';
+import { formatStatsMetrics, type StatsMetricsFormatted } from '@/api/stats';
+import { formatTime } from '@/lib/utils';
 import { useMorphingDialog } from '@/components/ui/morphing-dialog';
 
 type FormattedMetric = StatsMetricsFormatted['request_count'];
@@ -41,6 +42,84 @@ function MetricValue({ metric }: { metric: FormattedMetric }) {
             {metric.formatted.value}
             <span className="ml-0.5 text-xs font-normal text-muted-foreground">{metric.formatted.unit}</span>
         </span>
+    );
+}
+
+// TrendDay 是趋势表的一行: 日期, 请求数, 成功率与平均延迟。
+type TrendDay = { date: string; requests: number; rate: number; avgWait: string };
+
+// trendDays 把一组按天原始统计换算成展示行, 按日期倒序(最新在前)。
+function trendDays(days: { date: string; input_token: number; output_token: number; input_cost: number; output_cost: number; wait_time: number; request_success: number; request_failed: number }[]): TrendDay[] {
+    return days
+        .map((day) => {
+            const requests = day.request_success + day.request_failed;
+            const rate = requests > 0 ? (day.request_success / requests) * 100 : 0;
+            const avgMs = requests > 0 ? day.wait_time / requests : 0;
+            const wait = formatTime(avgMs).formatted;
+            return { date: day.date, requests, rate, avgWait: `${wait.value}${wait.unit}` };
+        })
+        .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+// TrendPanel 展示渠道整体或单个模型近 14 天的请求量, 成功率与平均延迟。
+type TrendModel = { id: number; name: string };
+
+function TrendPanel({ channelId, models }: { channelId: number; models: TrendModel[] }) {
+    const t = useTranslations('channel.stats');
+    const { data: daily } = useChannelDailyStats(channelId);
+    const [selected, setSelected] = useState<number | 'channel'>('channel');
+
+    const rows = useMemo<TrendDay[]>(() => {
+        if (!daily) return [];
+        if (selected === 'channel') return trendDays(daily.channel);
+        const model = daily.models.find((m) => m.channel_model_id === selected);
+        return model ? trendDays(model.days) : [];
+    }, [daily, selected]);
+
+    const formatDate = (date: string) => (date.length === 8 ? `${date.slice(4, 6)}-${date.slice(6, 8)}` : date);
+
+    return (
+        <section data-share-exclude className="shrink-0 rounded-2xl border bg-card p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('trend')}</h4>
+                <select
+                    value={String(selected)}
+                    onChange={(event) => setSelected(event.target.value === 'channel' ? 'channel' : Number(event.target.value))}
+                    className="rounded-lg border border-border bg-transparent px-2 py-1 text-xs text-foreground outline-none"
+                >
+                    <option value="channel">{t('trendChannel')}</option>
+                    {models.map((model) => (
+                        <option key={model.id} value={model.id}>{model.name}</option>
+                    ))}
+                </select>
+            </div>
+            {rows.length === 0 ? (
+                <div className="py-4 text-center text-xs text-muted-foreground">{t('trendEmpty')}</div>
+            ) : (
+                <div className="max-h-48 overflow-y-auto rounded-xl border border-border/50">
+                    <table className="w-full text-xs tabular-nums">
+                        <thead className="sticky top-0 bg-muted/70 text-muted-foreground">
+                            <tr>
+                                <th className="px-2 py-1.5 text-left font-medium">{t('trendDate')}</th>
+                                <th className="px-2 py-1.5 text-right font-medium">{t('trendRequests')}</th>
+                                <th className="px-2 py-1.5 text-right font-medium">{t('trendSuccessRate')}</th>
+                                <th className="px-2 py-1.5 text-right font-medium">{t('trendAvgLatency')}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rows.map((row) => (
+                                <tr key={row.date} className="border-t border-border/40">
+                                    <td className="px-2 py-1 text-left text-muted-foreground">{formatDate(row.date)}</td>
+                                    <td className="px-2 py-1 text-right">{row.requests}</td>
+                                    <td className="px-2 py-1 text-right">{row.rate.toFixed(1)}%</td>
+                                    <td className="px-2 py-1 text-right">{row.avgWait}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </section>
     );
 }
 
@@ -73,6 +152,9 @@ export function ChannelStats({ channel, onEdit }: {
     }, [preview]);
 
     // 渠道汇总指标, 次要行承载成功率与输入/输出明细
+    // 等待耗时展示真正的平均值(累计耗时/请求总数), 累计值放次要行
+    const totalRequests = metrics.request_success.raw + metrics.request_failed.raw;
+    const avgWaitFormatted = formatTime(totalRequests > 0 ? metrics.wait_time.raw / totalRequests : 0).formatted;
     const summary: { icon: React.ReactNode; label: string; value: React.ReactNode; sub?: React.ReactNode }[] = [
         {
             icon: <Activity className="size-3.5 text-chart-1" />,
@@ -113,7 +195,18 @@ export function ChannelStats({ channel, onEdit }: {
         {
             icon: <Clock className="size-3.5 text-primary" />,
             label: t('avgWaitTime'),
-            value: <MetricValue metric={metrics.wait_time} />,
+            value: (
+                <span className="text-lg font-bold tabular-nums text-card-foreground">
+                    {avgWaitFormatted.value}
+                    <span className="ml-0.5 text-xs font-normal text-muted-foreground">{avgWaitFormatted.unit}</span>
+                </span>
+            ),
+            sub: (
+                <span>
+                    {t('cumulative')} {metrics.wait_time.formatted.value}
+                    {metrics.wait_time.formatted.unit}
+                </span>
+            ),
         },
     ];
 
@@ -362,6 +455,9 @@ export function ChannelStats({ channel, onEdit }: {
                     )}
                 </section>
             </div>
+
+            {/* 近 14 天趋势: 渠道整体或按模型的每日成功率与平均延迟 */}
+            <TrendPanel channelId={channel.channel_id} models={channel.models.map((model) => ({ id: model.model_id, name: model.model_name }))} />
 
             {/* 分享图预览: 覆盖整张弹窗卡片 */}
             {preview && (

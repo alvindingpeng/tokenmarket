@@ -12,6 +12,7 @@ import {
     statsHourlyQueryOptions,
     statsTotalQueryOptions,
 } from '@/api/queries';
+import { userManageListQueryOptions } from '@/api/usermanage';
 import { AppShell } from '@/components/app-shell';
 import { LoginForm } from '@/components/modules/login';
 import { APIKeyDashboard } from '@/components/modules/apikey-dashboard';
@@ -23,6 +24,13 @@ const Home = lazy(() => pageImports.home().then((module) => ({ default: module.H
 const Channel = lazy(() => pageImports.channel().then((module) => ({ default: module.Channel })));
 const Group = lazy(() => pageImports.group().then((module) => ({ default: module.Group })));
 const Model = lazy(() => pageImports.model().then((module) => ({ default: module.Model })));
+const Users = lazy(() => pageImports.users());
+const Audit = lazy(() => pageImports.audit());
+const RateLimit = lazy(() => pageImports.ratelimit());
+const Ops = lazy(() => pageImports.ops());
+const Share = lazy(() => pageImports.share());
+const Billing = lazy(() => pageImports.billing());
+const Apikey = lazy(() => pageImports.apikey());
 const Log = lazy(() => pageImports.log().then((module) => ({ default: module.Log })));
 const Setting = lazy(() => pageImports.setting().then((module) => ({ default: module.Setting })));
 const HomeActions = lazy(() => pageImports.home().then((module) => ({ default: module.HomeActions })));
@@ -46,7 +54,7 @@ function InitialLoadingGate({ children }: { children: ReactNode }) {
 
 // AppContainer 根据认证状态渲染登录页、API Key 页面或普通用户应用。
 export function AppContainer() {
-    const { isAuthenticated, isAPIKeyAuth, isLoading: authLoading } = useAuth();
+    const { isAuthenticated, isAPIKeyAuth, isLoading: authLoading, role } = useAuth();
     const queryClient = useQueryClient();
     const authMode = isAPIKeyAuth ? 'apikey' : 'user'; // authMode 区分两种认证模式各自需要的初始 API。
     const [readyMode, setReadyMode] = useState<string | null>(null); // readyMode 记录已完成初始请求的认证模式。
@@ -67,12 +75,16 @@ export function AppContainer() {
             ]
             : [
                 queryClient.fetchQuery(apiKeyListQueryOptions),
-                queryClient.fetchQuery(channelStatsQueryOptions),
                 queryClient.fetchQuery(groupListQueryOptions),
-                queryClient.fetchQuery(modelListQueryOptions),
                 queryClient.fetchQuery(statsDailyQueryOptions),
                 queryClient.fetchQuery(statsHourlyQueryOptions),
                 queryClient.fetchQuery(statsTotalQueryOptions),
+                // 渠道统计只对有渠道视图的角色开放; 用户端接口拒绝, 不预取以免无谓报错。
+                ...(role !== 'user' ? [queryClient.fetchQuery(channelStatsQueryOptions)] : []),
+                // 全局模型价表与用户管理属管理后台数据, 仅管理员预取。
+                ...(role === 'admin'
+                    ? [queryClient.fetchQuery(modelListQueryOptions), queryClient.fetchQuery(userManageListQueryOptions)]
+                    : []),
             ];
 
         void Promise.all(requests).then(() => {
@@ -86,7 +98,7 @@ export function AppContainer() {
             cancelled = true;
             setReadyMode(null);
         };
-    }, [authMode, authLoading, isAPIKeyAuth, isAuthenticated, queryClient]);
+    }, [authMode, authLoading, isAPIKeyAuth, isAuthenticated, queryClient, role]);
 
     if (authLoading) return null;
 
@@ -145,6 +157,13 @@ export function AppContainer() {
                             className="absolute inset-0 min-h-0 overflow-hidden"
                         >
                             {visibleItem === 'home' && <Home />}
+                            {visibleItem === 'users' && <Users />}
+                            {visibleItem === 'audit' && <Audit />}
+                            {visibleItem === 'ratelimit' && <RateLimit />}
+                            {visibleItem === 'ops' && <Ops />}
+                            {visibleItem === 'share' && <Share />}
+                            {visibleItem === 'billing' && <Billing />}
+                            {visibleItem === 'apikey' && <Apikey />}
                             {visibleItem === 'channel' && <Channel />}
                             {visibleItem === 'group' && <Group />}
                             {visibleItem === 'model' && <Model />}

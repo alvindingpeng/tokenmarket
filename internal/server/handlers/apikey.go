@@ -53,6 +53,9 @@ func createAPIKey(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
+	// 归属取自登录身份, 不信任请求体。
+	userID, _ := middleware.CurrentUser(c)
+	req.UserID = userID
 	if strings.TrimSpace(req.APIKey) == "" {
 		req.APIKey = auth.GenerateAPIKey()
 	}
@@ -64,7 +67,8 @@ func createAPIKey(c *gin.Context) {
 }
 
 func listAPIKey(c *gin.Context) {
-	apiKeys, err := op.APIKeyList(c.Request.Context())
+	userID, role := middleware.CurrentUser(c)
+	apiKeys, err := op.APIKeyList(model.Scope{ID: userID, Role: role}, c.Request.Context())
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -78,7 +82,8 @@ func updateAPIKey(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
-	if err := op.APIKeyUpdate(&req, c.Request.Context()); err != nil {
+	userID, role := middleware.CurrentUser(c)
+	if err := op.APIKeyUpdate(&req, model.Scope{ID: userID, Role: role}, c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -92,7 +97,8 @@ func deleteAPIKey(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
 		return
 	}
-	if err := op.APIKeyDelete(idNum, c.Request.Context()); err != nil {
+	userID, role := middleware.CurrentUser(c)
+	if err := op.APIKeyDelete(idNum, model.Scope{ID: userID, Role: role}, c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -107,7 +113,7 @@ func getStatsAPIKeyById(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	models := op.GroupListModel()
+	models := op.GroupListModel(model.Scope{ID: uint(info.UserID), Role: model.RoleUser})
 	if len(info.SupportedModels) > 0 {
 		models = lo.Filter(models, func(m string, _ int) bool {
 			return lo.Contains(info.SupportedModels, m)

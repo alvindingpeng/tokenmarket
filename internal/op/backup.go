@@ -15,6 +15,11 @@ import (
 // 版本 5 起 api_keys.supported_models 由逗号分隔字符串改为 JSON 数组。
 const dbDumpVersion = 5
 
+// internalSettingKeys 内部设置键集合, 导出时排除。
+func internalSettingKeys() []model.SettingKey {
+	return []model.SettingKey{model.SettingKeyAuthSecret}
+}
+
 // DBExportAll 导出完整数据库内容，包括所有统计数据。
 func DBExportAll(ctx context.Context) (*model.DBDump, error) {
 	conn := db.GetDB().WithContext(ctx)
@@ -48,7 +53,7 @@ func DBExportAll(ctx context.Context) (*model.DBDump, error) {
 	if err := conn.Find(&d.APIKeys).Error; err != nil {
 		return nil, fmt.Errorf("export api_keys: %w", err)
 	}
-	if err := conn.Find(&d.Settings).Error; err != nil {
+	if err := conn.Where("key NOT IN ?", internalSettingKeys()).Find(&d.Settings).Error; err != nil {
 		return nil, fmt.Errorf("export settings: %w", err)
 	}
 
@@ -199,6 +204,17 @@ func createUpsertAll[T any](tx *gorm.DB, rows []T, columns []clause.Column) (int
 }
 
 func createUpsertSettings(tx *gorm.DB, rows []model.Setting) (int64, error) {
+	if len(rows) == 0 {
+		return 0, nil
+	}
+	// 内部键(auth_secret 等)不随备份导入: 导入覆盖会让本机签名密钥失效。
+	filtered := rows[:0]
+	for _, row := range rows {
+		if !model.IsInternalSetting(row.Key) {
+			filtered = append(filtered, row)
+		}
+	}
+	rows = filtered
 	if len(rows) == 0 {
 		return 0, nil
 	}

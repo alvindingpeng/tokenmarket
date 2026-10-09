@@ -1,13 +1,14 @@
 import { useState } from "react"
 import { useTranslations } from 'use-intl'
+import { useQuery } from '@tanstack/react-query'
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { useLogin } from "@/api/user"
+import { useLogin, useRegister, registerConfigQueryOptions } from "@/api/user"
 import { useAPIKeyLogin } from "@/api/apikey"
 import Logo from "@/components/modules/logo"
-import { KeyRound, User } from "lucide-react"
+import { KeyRound, Store, User } from "lucide-react"
 import {
   Tabs,
   TabsList,
@@ -15,20 +16,29 @@ import {
   TabsContent,
 } from "@/components/ui/tabs"
 
-type LoginMode = 'user' | 'apikey';
+type LoginMode = 'user' | 'apikey' | 'register-user' | 'register-reseller';
 
-// LoginForm 渲染用户密码和 API Key 两种登录表单。
+// LoginForm 渲染用户密码、API Key 与注册表单；注册入口按后端开关显隐。
 export function LoginForm() {
   const t = useTranslations('login')
   const [mode, setMode] = useState<LoginMode>('user')
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
+  const [reason, setReason] = useState("") // reason 为渠道商注册的申请理由。
   const [trustDevice, setTrustDevice] = useState(false) // trustDevice 表示是否请求后端签发 30 天登录凭证。
   const [apiKey, setApiKey] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const [registerNotice, setRegisterNotice] = useState<string | null>(null)
+
+  // 注册开关由后端决定: 默认关闭, 管理员开启后登录页才出现注册入口。
+  const { data: registerConfig } = useQuery(registerConfigQueryOptions)
 
   const loginMutation = useLogin()
   const apiKeyLoginMutation = useAPIKeyLogin()
+  const registerUserMutation = useRegister('user')
+  const registerResellerMutation = useRegister('reseller')
+
+  const isRegister = mode === 'register-user' || mode === 'register-reseller'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -41,8 +51,14 @@ export function LoginForm() {
           password,
           expire: trustDevice ? -1 : 86400,
         })
-      } else {
+      } else if (mode === 'apikey') {
         await apiKeyLoginMutation.mutateAsync(apiKey)
+      } else {
+        // 注册成功后回登录页; 开启审批时账号需管理员放行才能登录。
+        const mutation = mode === 'register-user' ? registerUserMutation : registerResellerMutation
+        await mutation.mutateAsync({ username, password, reason: mode === 'register-reseller' ? reason : undefined })
+        setRegisterNotice(registerConfig?.approval_required ? t('registerPending') : t('registerSuccess'))
+        setMode('user')
       }
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : t('error.generic')
@@ -51,10 +67,12 @@ export function LoginForm() {
   }
 
   const isPending = loginMutation.isPending || apiKeyLoginMutation.isPending
+    || registerUserMutation.isPending || registerResellerMutation.isPending
 
   const handleModeChange = (value: string) => {
     setMode(value as LoginMode)
     setError(null)
+    setRegisterNotice(null)
   }
 
   return (
@@ -81,6 +99,24 @@ export function LoginForm() {
               <KeyRound className="w-4 h-4" />
               {t('mode.apikey')}
             </TabsTrigger>
+            {registerConfig?.user_enabled && (
+              <TabsTrigger
+                value="register-user"
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-medium transition-colors data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground"
+              >
+                <User className="w-4 h-4" />
+                {t('mode.registerUser')}
+              </TabsTrigger>
+            )}
+            {registerConfig?.reseller_enabled && (
+              <TabsTrigger
+                value="register-reseller"
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-medium transition-colors data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground"
+              >
+                <Store className="w-4 h-4" />
+                {t('mode.registerReseller')}
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <form onSubmit={handleSubmit} className="space-y-6 pt-2">
@@ -136,12 +172,54 @@ export function LoginForm() {
                   />
                 </Field>
               </TabsContent>
+              {(mode === 'register-user' || mode === 'register-reseller') && (
+                <TabsContent value={mode} className="space-y-6" style={{ overflow: 'visible' }}>
+                  <Field>
+                    <FieldLabel htmlFor="register-username">{t('username')}</FieldLabel>
+                    <Input
+                      id="register-username"
+                      type="text"
+                      placeholder={t('usernamePlaceholder')}
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      required
+                      disabled={isPending}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="register-password">{t('password')}</FieldLabel>
+                    <Input
+                      id="register-password"
+                      type="password"
+                      placeholder={t('passwordPlaceholder')}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      disabled={isPending}
+                    />
+                  </Field>
+                  {mode === 'register-reseller' && (
+                    <Field>
+                      <FieldLabel htmlFor="register-reason">{t('reason')}</FieldLabel>
+                      <Input
+                        id="register-reason"
+                        type="text"
+                        placeholder={t('reasonPlaceholder')}
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
+                        disabled={isPending}
+                      />
+                    </Field>
+                  )}
+                </TabsContent>
+              )}
             </div>
 
+            {registerNotice && <FieldDescription className="text-muted-foreground">{registerNotice}</FieldDescription>}
             {error && <FieldDescription className="text-destructive">{error}</FieldDescription>}
 
             <Button type="submit" disabled={isPending} className="w-full">
-              {isPending ? t('button.loading') : t('button.submit')}
+              {isPending ? t('button.loading') : (isRegister ? t('button.register') : t('button.submit'))}
             </Button>
           </form>
         </Tabs>

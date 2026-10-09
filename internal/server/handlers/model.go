@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -24,22 +25,27 @@ func init() {
 		).
 		AddRoute(
 			router.NewRoute("/create", http.MethodPost).
+				Allow(model.RoleAdmin).
 				Handle(createLLM),
 		).
 		AddRoute(
 			router.NewRoute("/update", http.MethodPost).
+				Allow(model.RoleAdmin).
 				Handle(updateLLM),
 		).
 		AddRoute(
 			router.NewRoute("/delete", http.MethodPost).
+				Allow(model.RoleAdmin).
 				Handle(deleteLLM),
 		).
 		AddRoute(
 			router.NewRoute("/update-price", http.MethodPost).
+				Allow(model.RoleAdmin).
 				Handle(updateLLMPrice),
 		).
 		AddRoute(
 			router.NewRoute("/rebuild-price", http.MethodPost).
+				Allow(model.RoleAdmin).
 				Handle(rebuildLLMPrice),
 		).
 		AddRoute(
@@ -55,7 +61,9 @@ func init() {
 }
 
 func getModelList(c *gin.Context) {
-	models := op.GroupListModel()
+	// /v1/models 列出该 API Key 归属者自己的分组名(客户端模型名)。
+	ownerID := uint(c.GetInt("api_key_user_id"))
+	models := op.GroupListModel(model.Scope{ID: ownerID, Role: model.RoleUser})
 	if allowed, ok := c.Get("supported_models"); ok {
 		if names, _ := allowed.([]string); len(names) > 0 {
 			models = lo.Filter(models, func(m string, _ int) bool {
@@ -121,6 +129,7 @@ func createLLM(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	audit(c, "model.create", model.Name, fmt.Sprintf("input=%v output=%v cache_read=%v cache_write=%v", model.Input, model.Output, model.CacheRead, model.CacheWrite))
 	resp.Success(c, model)
 }
 
@@ -140,6 +149,7 @@ func updateLLM(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	audit(c, "model.update", model.Name, fmt.Sprintf("input=%v output=%v cache_read=%v cache_write=%v", model.Input, model.Output, model.CacheRead, model.CacheWrite))
 	resp.Success(c, model)
 }
 
@@ -161,6 +171,7 @@ func deleteLLM(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	audit(c, "model.delete", req.Name, "")
 	resp.Success(c, nil)
 }
 
@@ -170,6 +181,7 @@ func updateLLMPrice(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	audit(c, "model.update-price", "", "sync from models.dev")
 	resp.Success(c, nil)
 }
 
@@ -192,6 +204,7 @@ func rebuildLLMPrice(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	audit(c, "model.rebuild-price", "", fmt.Sprintf("count=%d", len(llmInfos)))
 	resp.Success(c, gin.H{"count": len(llmInfos)})
 }
 

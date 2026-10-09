@@ -4,21 +4,55 @@ import { apiRequest } from './client';
 import { queryClient } from './client';
 import { groupListQueryOptions } from './queries';
 
-// GroupMode 表示分组的手动或故障转移路由模式。
-export type GroupMode = 'manual' | 'failover';
+// GroupMode 表示分组的路由模式: manual 固定成员, 其余为动态选路策略。
+export type GroupMode = 'manual' | 'failover' | 'price' | 'latency' | 'success' | 'score' | 'random';
+
+// PriceMetric 是低价优先与综合评分比较成员价格时使用的口径。
+export type PriceMetric = 'blended' | 'input' | 'output';
 
 // GroupRelayConfig 保存分组 Relay 配置。
 export interface GroupRelayConfig {
+ request_timeout_seconds: number;
+ max_wait_seconds: number;
+ max_waiting_requests: number;
+ max_total_attempts: number;
+ member_stream_idle_timeout_seconds: number;
     member_max_attempts: number;
     member_retry_interval_seconds: number;
     member_non_stream_response_timeout_seconds: number;
     member_stream_first_event_timeout_seconds: number;
     member_cooldown_seconds: number;
     member_affinity_seconds: number;
+    price_metric: PriceMetric;
+    metric_window_size: number;
+    score_price_weight: number;
+    score_latency_weight: number;
+    score_success_weight: number;
+}
+
+// GroupMemberMetric 是分组成员的实时选路指标快照: 首响应耗时与成功率的滑动平均。
+export interface GroupMemberMetric {
+    item_id: number;
+    wait_ms: number;
+    success: number;
+    samples: number;
+}
+
+// useGroupMetrics 轮询分组成员的实时选路指标; 未指定分组时不请求, 由 MemberStatus 按成员取用。
+export function useGroupMetrics(groupId?: number) {
+    return useQuery({
+        queryKey: ['group', 'metrics', groupId],
+        queryFn: () => apiRequest<GroupMemberMetric[]>(`/api/v1/group/metrics/${groupId}`),
+        enabled: !!groupId,
+        refetchInterval: 20000,
+        refetchOnMount: 'always',
+    });
 }
 
 // GroupItem 是分组内一条可路由的成员，对应一条渠道授权。
 // 名称、所属渠道与可用性由后端补齐：授权是 (模型, 凭据) 的组合，界面只需展示与排序，无需再按主键回查。
+import type { LLMPrice } from './share';
+
 export interface GroupItem {
     id: number;
     group_id: number;
@@ -30,6 +64,8 @@ export interface GroupItem {
     key_name: string;
     protocols: number; // 该授权支持的 Protocol 位掩码。
     available: boolean; // 为假表示该成员当前无法转发，但仍会列出以便移除。
+    supply_price: LLMPrice; // 供货价（渠道商收入口径）。
+    user_price: LLMPrice; // 上浮后的用户价；同名模型在不同发布渠道价格不同，逐成员展示。
 }
 
 // GroupRuntime 是分组的实时路由状态。

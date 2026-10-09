@@ -13,7 +13,7 @@ export function CreateDialogContent() {
     const t = useTranslations('group');
 
     return (
-        <div className="w-screen max-w-full md:max-w-4xl h-[calc(100vh-2rem)] min-h-0 flex flex-col">
+        <div className="w-screen max-w-full md:max-w-4xl h-[calc(100dvh-2rem)] min-h-0 flex flex-col">
             <MorphingDialogDescription className="flex-1 min-h-0 overflow-hidden">
                 <GroupEditor
                     submitText={t('create.submit')}

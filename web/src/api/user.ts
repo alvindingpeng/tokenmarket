@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { queryOptions, useMutation } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { apiRequest, apiUnauthorizedEvent, setAPIKey } from './client';
@@ -14,6 +14,45 @@ interface UserLoginRequest {
 }
 
 /**
+ * 用户角色：管理员、渠道商、普通用户。
+ */
+export type Role = 'admin' | 'reseller' | 'user';
+
+/**
+ * 用户视图（与后端 model.UserView 对齐）。
+ */
+export type UserView = {
+    id: number;
+    username: string;
+    role: Role;
+    status: 'active' | 'pending' | 'disabled';
+    balance: number;
+    frozen: number;
+    total_spent: number;
+    total_revenue: number;
+    total_recharged: number;
+    created_at: string;
+};
+
+/**
+ * 注册开关配置（登录页据其决定展示哪些注册入口）。
+ */
+export type RegisterConfig = {
+    user_enabled: boolean;
+    reseller_enabled: boolean;
+    approval_required: boolean;
+};
+
+/**
+ * 注册请求；渠道商注册可附申请理由，用户注册无理由字段。
+ */
+export interface UserRegisterRequest {
+    username: string;
+    password: string;
+    reason?: string;
+}
+
+/**
  * 认证状态 Store
  */
 interface AuthState {
@@ -21,9 +60,13 @@ interface AuthState {
     isLoading: boolean;
     isAPIKeyAuth: boolean;
     token: string | null;
+    role: Role | null; // 当前登录用户角色，用于按角色裁剪导航与页面。
+    balance: number; // 当前可用余额，计费页展示用。
+    frozen: number; // 当前冻结额（预扣中），计费页展示用。
+    username: string; // 当前用户名，顶栏与账户页展示用。
 
     // Actions
-    setAuth: () => void;
+    setAuth: (user: UserView) => void;
     setAPIKeyAuth: (apiKey: string) => void;
     checkAuth: () => Promise<void>;
     logout: () => void;
@@ -39,13 +82,21 @@ export const useAuthStore = create<AuthState>()(
             isLoading: true,
             isAPIKeyAuth: false,
             token: null,
+            role: null,
+            balance: 0,
+            frozen: 0,
+            username: '',
 
-            setAuth: () => {
+            setAuth: (user: UserView) => {
                 setAPIKey(null);
                 set({
                     isAuthenticated: true,
                     isAPIKeyAuth: false,
                     token: null,
+                    role: user.role,
+                    balance: user.balance,
+                    frozen: user.frozen,
+                    username: user.username,
                     isLoading: false
                 });
             },
@@ -56,6 +107,7 @@ export const useAuthStore = create<AuthState>()(
                     isAuthenticated: true,
                     isAPIKeyAuth: true,
                     token: apiKey,
+                    role: null,
                     isLoading: false
                 });
             },
@@ -71,11 +123,15 @@ export const useAuthStore = create<AuthState>()(
 
                 try {
                     const endpoint = isAPIKeyAuth ? '/api/v1/apikey/login' : '/api/v1/user/status';
-                    await apiRequest<unknown>(endpoint, { dispatchUnauthorized: false });
+                    const profile = await apiRequest<UserView>(endpoint, { dispatchUnauthorized: false });
                     set({
                         isAuthenticated: true,
                         isLoading: false,
-                        token: isAPIKeyAuth ? token : null
+                        token: isAPIKeyAuth ? token : null,
+                        role: profile?.role ?? null,
+                        balance: profile?.balance ?? 0,
+                        frozen: profile?.frozen ?? 0,
+                        username: profile?.username ?? ''
                     });
                 } catch {
                     get().logout();
@@ -88,6 +144,10 @@ export const useAuthStore = create<AuthState>()(
                     isAuthenticated: false,
                     isAPIKeyAuth: false,
                     token: null,
+                    role: null,
+                    balance: 0,
+                    frozen: 0,
+                    username: '',
                     isLoading: false
                 });
                 if (typeof document !== 'undefined') {
@@ -105,6 +165,7 @@ export const useAuthStore = create<AuthState>()(
             partialize: (state) => ({
                 token: state.token,
                 isAPIKeyAuth: state.isAPIKeyAuth,
+                role: state.role,
             })
         }
     )
@@ -126,15 +187,37 @@ export function useLogin() {
     return useMutation({
         mutationFn: async (data: UserLoginRequest) => {
             setAPIKey(null);
-            return apiRequest<string>('/api/v1/user/login', {
+            return apiRequest<UserView>('/api/v1/user/login', {
                 method: 'POST',
                 body: data,
                 dispatchUnauthorized: false,
             });
         },
-        onSuccess: () => {
-            setAuth();
+        onSuccess: (user: UserView) => {
+            setAuth(user);
         },
+    });
+}
+
+/**
+ * 注册配置查询定义（登录页与启动预取共用）。
+ */
+export const registerConfigQueryOptions = queryOptions({
+    queryKey: ['user', 'register-config'],
+    queryFn: () => apiRequest<RegisterConfig>('/api/v1/user/register-config'),
+});
+
+/**
+ * 注册 Hook：kind 决定注册为普通用户还是渠道商，角色由接口固定，不随请求提交。
+ */
+export function useRegister(kind: 'user' | 'reseller') {
+    return useMutation({
+        mutationFn: (data: UserRegisterRequest) =>
+            apiRequest<UserView>(kind === 'user' ? '/api/v1/user/register' : '/api/v1/user/register-reseller', {
+                method: 'POST',
+                body: data,
+                dispatchUnauthorized: false,
+            }),
     });
 }
 
@@ -206,6 +289,10 @@ export function useAuth() {
         isAuthenticated: store.isAuthenticated,
         isAPIKeyAuth: store.isAPIKeyAuth,
         isLoading: store.isLoading,
+        role: store.role,
+        balance: store.balance,
+        frozen: store.frozen,
+        username: store.username,
         logout: store.logout,
     };
 }

@@ -18,7 +18,9 @@ export interface RelayUsage {
 
 // RelayLogOverview 是请求状态流发送的完整进程内请求状态。
 export interface RelayLogOverview {
+ route_events?: {at:string;phase:string;reason:string}[];
     id: number;
+    client_ip?: string;
     status: RequestState;
     started_at: string;
     duration: number;
@@ -36,10 +38,19 @@ export interface RelayLogOverview {
     round: number;
     round_started_at: string;
     target_channel_key: string; // 本轮选中的渠道名称和 Key 名称, 以空格分隔。
+    target_channel_code: string; // 本轮落地渠道的发布编码, 用户侧的渠道标识; 未发布为空。
     target_model: string;
     target_protocol: number;
     sending: boolean;
     error?: string;
+}
+
+export interface RelayAttempt {
+ id: number; round: number; channel_code: string; target_model: string;
+ started_at: string; duration_ms: number; status: string; error: string; decision: string;
+}
+export function useLogAttempts(id: number, enabled: boolean, active: boolean) {
+ return useQuery({queryKey:['logs','attempts',id],queryFn:()=>apiRequest<{items:RelayAttempt[]}>(`/api/v1/log/attempts/${id}`),enabled,refetchInterval:active?1000:false});
 }
 
 // useClearLogs 清空已完成的内存日志。
@@ -105,6 +116,55 @@ export function useLogs() {
     }, []);
 
     return { logs, isLoading, error };
+}
+
+// LogListParams 是历史日志分页查询的筛选条件; 全部可选。
+export interface LogListParams {
+    limit: number;
+    offset: number;
+    keyword?: string;
+    status?: string; // 逗号分隔的终态列表。
+    from?: string; // RFC3339 起始时间。
+    to?: string; // RFC3339 结束时间。
+    clientIp?: string; // 客户端 IP 模糊匹配。
+    model?: string; // 模型名模糊匹配。
+    channel?: string; // 渠道模糊匹配。
+}
+
+// logFilterQuery 把筛选条件序列化为查询串, 列表与导出共用。
+function logFilterQuery(params: Omit<LogListParams, 'limit' | 'offset'>): string {
+    const query = new URLSearchParams();
+    if (params.keyword) query.set('keyword', params.keyword);
+    if (params.status) query.set('status', params.status);
+    if (params.from) query.set('from', params.from);
+    if (params.to) query.set('to', params.to);
+    if (params.clientIp) query.set('client_ip', params.clientIp);
+    if (params.model) query.set('model', params.model);
+    if (params.channel) query.set('channel', params.channel);
+    return query.toString();
+}
+
+// logExportUrl 构造日志 CSV 导出下载地址(同一套筛选条件, 单次上限 5000 条)。
+export function logExportUrl(params: Omit<LogListParams, 'limit' | 'offset'>): string {
+    return './api/v1/log/export?' + logFilterQuery(params);
+}
+
+// useLogList 分页拉取历史调用日志(倒序), 筛选条件变化时由调用方更新 key。
+export function useLogList(params: LogListParams) {
+    const query = new URLSearchParams({ limit: String(params.limit), offset: String(params.offset) });
+    if (params.keyword) query.set('keyword', params.keyword);
+    if (params.status) query.set('status', params.status);
+    if (params.from) query.set('from', params.from);
+    if (params.to) query.set('to', params.to);
+    if (params.clientIp) query.set('client_ip', params.clientIp);
+    if (params.model) query.set('model', params.model);
+    if (params.channel) query.set('channel', params.channel);
+    return useQuery({
+        queryKey: ['logs', 'list', query.toString()],
+        queryFn: () => apiRequest<{ items: RelayLogOverview[]; total: number }>(`/api/v1/log/list?${query.toString()}`),
+        refetchInterval: 15000,
+        placeholderData: (previous) => previous,
+    });
 }
 
 // useLogRequestBody 在调用方启用时按需获取指定日志的请求体。

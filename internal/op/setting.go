@@ -15,12 +15,46 @@ var settingCache = cache.New[model.SettingKey, string](16)
 func SettingList(ctx context.Context) ([]model.Setting, error) {
 	settings := make([]model.Setting, 0, settingCache.Len())
 	for key, value := range settingCache.GetAll() {
+		if model.IsInternalSetting(key) {
+			continue
+		}
 		settings = append(settings, model.Setting{
 			Key:   key,
 			Value: value,
 		})
 	}
 	return settings, nil
+}
+
+// SettingUpsert 写入或更新任意键(含内部键); 供启动初始化等内部流程使用。
+func SettingUpsert(key model.SettingKey, value string) error {
+	setting := model.Setting{Key: key, Value: value}
+	result := db.GetDB().Model(&setting).
+		Where("key = ?", key).
+		Updates(map[string]any{"value": value})
+	if result.Error != nil {
+		return fmt.Errorf("failed to upsert setting: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		if err := db.GetDB().Create(&setting).Error; err != nil {
+			return fmt.Errorf("failed to create setting: %w", err)
+		}
+	}
+	settingCache.Set(key, value)
+	return nil
+}
+
+// SettingGetFloat 读取浮点设置值。
+func SettingGetFloat(key model.SettingKey) float64 {
+	value, err := SettingGetString(key)
+	if err != nil {
+		return 0
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0
+	}
+	return parsed
 }
 
 func SettingGetString(key model.SettingKey) (string, error) {
@@ -56,6 +90,14 @@ func SettingGetInt(key model.SettingKey) (int, error) {
 		return 0, fmt.Errorf("setting not found")
 	}
 	return strconv.Atoi(setting)
+}
+
+// SettingGetIntDefault 读取整型设置, 缺失或解析失败时返回 fallback, 常用于阈值等可降级选项。
+func SettingGetIntDefault(key model.SettingKey, fallback int) int {
+	if v, err := SettingGetInt(key); err == nil {
+		return v
+	}
+	return fallback
 }
 
 func SettingGetBool(key model.SettingKey) (bool, error) {

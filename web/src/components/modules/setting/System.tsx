@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'use-intl';
-import { Monitor, Globe, Clock, Shield, Filter, HelpCircle, X } from 'lucide-react';
+import { Monitor, Globe, Clock, Shield, Filter, HelpCircle, SlidersHorizontal, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useSettingList, useSetSetting, SettingKey } from '@/api/setting';
@@ -17,11 +17,13 @@ export function SettingSystem() {
     const [corsAllowOrigins, setCorsAllowOrigins] = useState('');
     const [corsInputValue, setCorsInputValue] = useState('');
     const [modelFilter, setModelFilter] = useState('');
+    const [scoreWeights, setScoreWeights] = useState({ price: '', latency: '', success: '' });
 
     const initialProxyUrl = useRef('');
     const initialStatsSaveInterval = useRef('');
     const initialCorsAllowOrigins = useRef('');
     const initialModelFilter = useRef('');
+    const initialScoreWeights = useRef({ price: '', latency: '', success: '' });
 
     useEffect(() => {
         if (settings) {
@@ -45,6 +47,16 @@ export function SettingSystem() {
                 queueMicrotask(() => setModelFilter(modelFilterSetting.value));
                 initialModelFilter.current = modelFilterSetting.value;
             }
+            const price = settings.find(s => s.key === SettingKey.ScorePriceWeight);
+            const latency = settings.find(s => s.key === SettingKey.ScoreLatencyWeight);
+            const success = settings.find(s => s.key === SettingKey.ScoreSuccessWeight);
+            const next = {
+                price: price ? price.value : '',
+                latency: latency ? latency.value : '',
+                success: success ? success.value : '',
+            };
+            queueMicrotask(() => setScoreWeights(next));
+            initialScoreWeights.current = next;
         }
     }, [settings]);
 
@@ -62,9 +74,26 @@ export function SettingSystem() {
                     initialCorsAllowOrigins.current = value;
                 } else if (key === SettingKey.ModelFilter) {
                     initialModelFilter.current = value;
+                } else if (key === SettingKey.ScorePriceWeight) {
+                    initialScoreWeights.current = { ...initialScoreWeights.current, price: value };
+                } else if (key === SettingKey.ScoreLatencyWeight) {
+                    initialScoreWeights.current = { ...initialScoreWeights.current, latency: value };
+                } else if (key === SettingKey.ScoreSuccessWeight) {
+                    initialScoreWeights.current = { ...initialScoreWeights.current, success: value };
                 }
             }
         });
+    };
+
+    const saveScoreWeight = (dimension: 'price' | 'latency' | 'success', raw: string) => {
+        const key = dimension === 'price' ? SettingKey.ScorePriceWeight
+            : dimension === 'latency' ? SettingKey.ScoreLatencyWeight
+            : SettingKey.ScoreSuccessWeight;
+        const trimmed = raw.trim();
+        const parsed = Number.parseInt(trimmed, 10);
+        const normalized = Number.isFinite(parsed) ? String(Math.min(Math.max(parsed, 0), 100)) : '0';
+        setScoreWeights(prev => ({ ...prev, [dimension]: normalized }));
+        handleSave(key, normalized, initialScoreWeights.current[dimension]);
     };
 
     const corsAllowOriginsList = useMemo(() => {
@@ -157,6 +186,54 @@ export function SettingSystem() {
                     placeholder={t('statsSaveInterval.placeholder')}
                     className="w-48 rounded-xl"
                 />
+            </div>
+
+            {/* 综合评分默认参数 */}
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                    <SlidersHorizontal className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-sm font-medium">{t('scoreWeights.label')}</span>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" sideOffset={10} align="center" className="max-w-64">
+                            {t('scoreWeights.hint')}
+                        </TooltipContent>
+                    </Tooltip>
+                </div>
+                <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">{t('scoreWeights.price')}</span>
+                    <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={scoreWeights.price}
+                        onChange={(e) => setScoreWeights(prev => ({ ...prev, price: e.target.value }))}
+                        onBlur={(e) => saveScoreWeight('price', e.target.value)}
+                        className="w-20 rounded-xl"
+                    />
+                    <span className="text-xs text-muted-foreground">{t('scoreWeights.latency')}</span>
+                    <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={scoreWeights.latency}
+                        onChange={(e) => setScoreWeights(prev => ({ ...prev, latency: e.target.value }))}
+                        onBlur={(e) => saveScoreWeight('latency', e.target.value)}
+                        className="w-20 rounded-xl"
+                    />
+                    <span className="text-xs text-muted-foreground">{t('scoreWeights.success')}</span>
+                    <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={scoreWeights.success}
+                        onChange={(e) => setScoreWeights(prev => ({ ...prev, success: e.target.value }))}
+                        onBlur={(e) => saveScoreWeight('success', e.target.value)}
+                        className="w-20 rounded-xl"
+                    />
+                </div>
             </div>
 
             {/* 全局模型过滤 */}

@@ -26,6 +26,7 @@ export interface SelectedMember {
     key_name: string;
     protocols: number;
     item_id?: number;
+    user_price?: { input: number; output: number; cache_read: number; cache_write: number }; // 用户价, 逐成员展示不同渠道商的定价。
 }
 
 function reorderList<T>(list: T[], startIndex: number, endIndex: number): T[] {
@@ -144,6 +145,14 @@ function MemberItem({
                     <span className="text-[10px] text-muted-foreground truncate leading-tight">
                         {member.key_name ? `${member.channel_name} · ${member.key_name}` : member.channel_name}
                     </span>
+                    {member.user_price && (
+                        <span className="text-[10px] text-muted-foreground truncate leading-tight">
+                            {t('memberPrice', {
+                                input: member.user_price.input.toFixed(6),
+                                output: member.user_price.output.toFixed(6),
+                            })}
+                        </span>
+                    )}
                 </div>
 
                 {group && <MemberStatus group={group} itemId={member.item_id} now={now} active={isActive} activeClassName="p-1" />}

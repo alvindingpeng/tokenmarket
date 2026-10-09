@@ -31,6 +31,20 @@ type StatsAPIKey struct {
 	StatsMetrics
 }
 
+// StatsChannelDaily 是渠道维度的按天累计统计, 供渠道页展示成功率与平均延迟的逐日变化。
+type StatsChannelDaily struct {
+	ChannelID int    `json:"channel_id" gorm:"primaryKey"`          // 渠道主键。
+	Date      string `json:"date" gorm:"primaryKey;not null;index"` // 日期, 格式 20060102。
+	StatsMetrics
+}
+
+// StatsChannelModelDaily 是渠道模型维度的按天累计统计, 与渠道维度同口径。
+type StatsChannelModelDaily struct {
+	ChannelModelID int    `json:"channel_model_id" gorm:"primaryKey"`    // 渠道模型主键。
+	Date           string `json:"date" gorm:"primaryKey;not null;index"` // 日期, 格式 20060102。
+	StatsMetrics
+}
+
 // Add aggregates another StatsMetrics into the current one.
 func (s *StatsMetrics) Add(delta StatsMetrics) {
 	s.InputToken += delta.InputToken

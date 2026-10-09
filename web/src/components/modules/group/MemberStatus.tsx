@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { CircleCheck } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import type { Group } from '@/api/group';
+import { useGroupMetrics, type Group } from '@/api/group';
 
 // MemberStatusProps 描述成员的冷却和亲和状态。
 interface MemberStatusProps {
@@ -21,7 +21,7 @@ export function useRuntimeClock(source?: Group | Group[]) {
     let enabled = false;
     let lastDeadline = 0;
     for (const group of groups) {
-        if (group.mode !== 'failover') continue;
+        if (group.mode === 'manual') continue;
         enabled = true;
         lastDeadline = Math.max(lastDeadline, group.runtime.affinity_until);
         for (const cooldownUntil of Object.values(group.runtime.cooldowns)) {
@@ -51,11 +51,32 @@ export function useRuntimeClock(source?: Group | Group[]) {
     return now;
 }
 
-// MemberStatus 展示成员的冷却、亲和倒计时或当前使用圆点。
+// formatLatency 把毫秒形式的滑动平均耗时缩写为展示文本。
+const formatLatency = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`);
+
+// MemberStatus 展示成员的冷却、亲和倒计时、实时选路指标或当前使用圆点。
+// 冷却与亲和对所有动态选路模式生效, 实时指标来自 Relay 的滑动平均采样。
 export function MemberStatus({ group, itemId, now, active = false, activeClassName }: MemberStatusProps) {
     const t = useTranslations('group.card');
+    const { data: metrics } = useGroupMetrics(group?.id);
+    const metric = metrics?.find((m) => m.item_id === itemId);
 
-    if (group.mode === 'failover' && itemId !== undefined) {
+    const metricBadge = metric && metric.samples > 0 && itemId !== undefined && (
+        <span
+            title={t('metricTitle', { samples: metric.samples })}
+            className="shrink-0 rounded-md bg-muted/60 px-1.5 py-0 text-[10px] font-medium tabular-nums text-muted-foreground"
+        >
+            ≈{formatLatency(metric.wait_ms)} · {Math.round(metric.success * 100)}%
+        </span>
+    );
+
+    let status: ReactNode = active ? (
+        <span aria-hidden="true" className={cn('inline-flex shrink-0 text-primary', activeClassName)}>
+            <CircleCheck className="size-4" />
+        </span>
+    ) : null;
+
+    if (group.mode !== 'manual' && itemId !== undefined) {
         const cooldownUntil = group.runtime.cooldowns[itemId] ?? 0;
         const affinityUntil = group.runtime.current_item_id === itemId
             ? group.runtime.affinity_until
@@ -65,7 +86,7 @@ export function MemberStatus({ group, itemId, now, active = false, activeClassNa
             const deadline = cooling ? cooldownUntil : affinityUntil;
             const label = t(cooling ? 'cooling' : 'affinity', { seconds: Math.ceil((deadline - now) / 1000) });
 
-            return (
+            status = (
                 <Badge
                     variant="outline"
                     className={cn(
@@ -81,9 +102,10 @@ export function MemberStatus({ group, itemId, now, active = false, activeClassNa
         }
     }
 
-    return active ? (
-        <span aria-hidden="true" className={cn('inline-flex shrink-0 text-primary', activeClassName)}>
-            <CircleCheck className="size-4" />
+    return (
+        <span className="inline-flex shrink-0 items-center gap-1">
+            {metricBadge}
+            {status}
         </span>
-    ) : null;
+    );
 }

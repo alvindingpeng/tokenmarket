@@ -37,6 +37,26 @@ var statsAPIKeyCache = cache.New[int, model.StatsAPIKey](16)
 var statsAPIKeyCacheNeedUpdate = make(map[int]struct{})
 var statsAPIKeyCacheNeedUpdateLock sync.Mutex
 
+// 渠道与渠道模型维度的按天统计: 内存累加, 随统计任务全量落库; 缓存值即当日权威累计,
+// 覆盖写使重试安全; 重启时 statsRefreshCache 把当天的行装回缓存, 重启前的累计不会丢。
+type channelDailyKey struct {
+	channelID int
+	date      string
+}
+
+type channelModelDailyKey struct {
+	channelModelID int
+	date           string
+}
+
+var channelDailyStatsCache = make(map[channelDailyKey]model.StatsChannelDaily)
+var channelDailyStatsDirty = make(map[channelDailyKey]struct{})
+var channelDailyStatsLock sync.Mutex
+
+var channelModelDailyStatsCache = make(map[channelModelDailyKey]model.StatsChannelModelDaily)
+var channelModelDailyStatsDirty = make(map[channelModelDailyKey]struct{})
+var channelModelDailyStatsLock sync.Mutex
+
 func StatsSaveDBTask() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -76,6 +96,66 @@ func StatsSaveDB(ctx context.Context) error {
 		restoreStatsDirty(channelIDs, modelIDs, keyIDs, apiKeyIDs)
 		return err
 	}
+
+	// 按天统计在主统计之后落库: 失败只恢复自己的待写标记, 不影响已落库的主统计。
+	channelDailyKeys, channelDailyEntries := drainDailyEntries(&channelDailyStatsLock, channelDailyStatsDirty, channelDailyStatsCache)
+	channelModelDailyKeys, channelModelDailyEntries := drainDailyEntries(&channelModelDailyStatsLock, channelModelDailyStatsDirty, channelModelDailyStatsCache)
+	if err := persistDailyStats(ctx, channelDailyEntries, channelModelDailyEntries); err != nil {
+		restoreDailyEntries(&channelDailyStatsLock, channelDailyStatsDirty, channelDailyKeys)
+		restoreDailyEntries(&channelModelDailyStatsLock, channelModelDailyStatsDirty, channelModelDailyKeys)
+		return err
+	}
+	return nil
+}
+
+// drainDailyEntries 取出并清空按天统计的待写条目, 返回键与当前值的配对。
+func drainDailyEntries[K comparable, V any](lock *sync.Mutex, dirty map[K]struct{}, cache map[K]V) ([]K, []V) {
+	lock.Lock()
+	defer lock.Unlock()
+	keys := make([]K, 0, len(dirty))
+	entries := make([]V, 0, len(dirty))
+	for key := range dirty {
+		if value, ok := cache[key]; ok {
+			keys = append(keys, key)
+			entries = append(entries, value)
+		}
+		delete(dirty, key)
+	}
+	return keys, entries
+}
+
+// restoreDailyEntries 在按天统计落库失败后恢复待写标记。
+func restoreDailyEntries[K comparable](lock *sync.Mutex, dirty map[K]struct{}, keys []K) {
+	lock.Lock()
+	defer lock.Unlock()
+	for _, key := range keys {
+		dirty[key] = struct{}{}
+	}
+}
+
+// persistDailyStats 全量覆盖写入按天统计并裁剪过期行; 缓存值即权威累计, 覆盖写使重试安全。
+func persistDailyStats(ctx context.Context, channelDaily []model.StatsChannelDaily, channelModelDaily []model.StatsChannelModelDaily) error {
+	dbConn := db.GetDB().WithContext(ctx)
+	if len(channelDaily) > 0 {
+		if result := dbConn.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "channel_id"}, {Name: "date"}},
+			UpdateAll: true,
+		}).Create(&channelDaily); result.Error != nil {
+			return result.Error
+		}
+	}
+	if len(channelModelDaily) > 0 {
+		if result := dbConn.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "channel_model_id"}, {Name: "date"}},
+			UpdateAll: true,
+		}).Create(&channelModelDaily); result.Error != nil {
+			return result.Error
+		}
+	}
+	// 日期为 20060102 文本, 直接比较即可; 保留近 92 天, 每次落库顺手裁剪。
+	cutoff := time.Now().AddDate(0, 0, -92).Format("20060102")
+	dbConn.Where("date < ?", cutoff).Delete(&model.StatsChannelDaily{})
+	dbConn.Where("date < ?", cutoff).Delete(&model.StatsChannelModelDaily{})
 	return nil
 }
 
@@ -308,6 +388,79 @@ func ChannelStatsUpdate(channelID int, metrics model.StatsMetrics) error {
 	return nil
 }
 
+// ChannelDailyStatsUpdate 累加渠道当日统计并标记待落库; 统计不可用时静默丢弃, 避免影响转发主流程。
+func ChannelDailyStatsUpdate(channelID int, metrics model.StatsMetrics) {
+	key := channelDailyKey{channelID: channelID, date: time.Now().Format("20060102")}
+	channelDailyStatsLock.Lock()
+	defer channelDailyStatsLock.Unlock()
+	entry, ok := channelDailyStatsCache[key]
+	if !ok {
+		entry = model.StatsChannelDaily{ChannelID: channelID, Date: key.date}
+	}
+	entry.StatsMetrics.Add(metrics)
+	channelDailyStatsCache[key] = entry
+	channelDailyStatsDirty[key] = struct{}{}
+}
+
+// ChannelModelDailyStatsUpdate 累加渠道模型当日统计并标记待落库。
+func ChannelModelDailyStatsUpdate(channelModelID int, metrics model.StatsMetrics) {
+	key := channelModelDailyKey{channelModelID: channelModelID, date: time.Now().Format("20060102")}
+	channelModelDailyStatsLock.Lock()
+	defer channelModelDailyStatsLock.Unlock()
+	entry, ok := channelModelDailyStatsCache[key]
+	if !ok {
+		entry = model.StatsChannelModelDaily{ChannelModelID: channelModelID, Date: key.date}
+	}
+	entry.StatsMetrics.Add(metrics)
+	channelModelDailyStatsCache[key] = entry
+	channelModelDailyStatsDirty[key] = struct{}{}
+}
+
+// ChannelModelNames 返回渠道下各模型的名称映射(渠道模型主键 → 上游模型名)。
+func ChannelModelNames(channelID int) (map[int]string, error) {
+	var channelModels []model.ChannelModel
+	if err := db.GetDB().Where("channel_id = ?", channelID).Find(&channelModels).Error; err != nil {
+		return nil, err
+	}
+	names := make(map[int]string, len(channelModels))
+	for _, cm := range channelModels {
+		names[cm.ID] = cm.Name
+	}
+	return names, nil
+}
+
+// ChannelDailyStatsGet 返回渠道自身与各模型近 days 天的按天统计; 渠道不存在或无权访问时报错。
+func ChannelDailyStatsGet(channelID int, days int, scope model.Scope) ([]model.StatsChannelDaily, []model.StatsChannelModelDaily, error) {
+	channel, ok := channelCache.Get(channelID)
+	if !ok || !scope.Owns(channel.UserID) {
+		return nil, nil, fmt.Errorf("channel not found")
+	}
+	if days < 1 || days > 90 {
+		days = 14
+	}
+	since := time.Now().AddDate(0, 0, -(days - 1)).Format("20060102")
+	dbConn := db.GetDB()
+	var channelDaily []model.StatsChannelDaily
+	if err := dbConn.Where("channel_id = ? AND date >= ?", channelID, since).Order("date ASC").Find(&channelDaily).Error; err != nil {
+		return nil, nil, err
+	}
+	var channelModels []model.ChannelModel
+	if err := dbConn.Where("channel_id = ?", channelID).Find(&channelModels).Error; err != nil {
+		return nil, nil, err
+	}
+	modelIDs := make([]int, 0, len(channelModels))
+	for _, cm := range channelModels {
+		modelIDs = append(modelIDs, cm.ID)
+	}
+	var modelDaily []model.StatsChannelModelDaily
+	if len(modelIDs) > 0 {
+		if err := dbConn.Where("channel_model_id IN ? AND date >= ?", modelIDs, since).Order("date ASC").Find(&modelDaily).Error; err != nil {
+			return nil, nil, err
+		}
+	}
+	return channelDaily, modelDaily, nil
+}
+
 func StatsAPIKeyUpdate(apiKeyID int, metrics model.StatsMetrics) error {
 	statsAPIKeyCacheNeedUpdateLock.Lock()
 	defer statsAPIKeyCacheNeedUpdateLock.Unlock()
@@ -463,6 +616,30 @@ func statsRefreshCache(ctx context.Context) error {
 		}
 	}
 	statsHourlyCacheLock.Unlock()
+
+	// 当天的按天统计装回缓存: 缓存值即权威累计, 不装载会让首次落库覆盖掉重启前的部分。
+	var loadedChannelDaily []model.StatsChannelDaily
+	if err := dbConn.Where("date = ?", today).Find(&loadedChannelDaily).Error; err != nil {
+		return fmt.Errorf("failed to get channel daily stats: %v", err)
+	}
+	var loadedChannelModelDaily []model.StatsChannelModelDaily
+	if err := dbConn.Where("date = ?", today).Find(&loadedChannelModelDaily).Error; err != nil {
+		return fmt.Errorf("failed to get channel model daily stats: %v", err)
+	}
+	channelDailyStatsLock.Lock()
+	clear(channelDailyStatsCache)
+	clear(channelDailyStatsDirty)
+	for _, v := range loadedChannelDaily {
+		channelDailyStatsCache[channelDailyKey{channelID: v.ChannelID, date: v.Date}] = v
+	}
+	channelDailyStatsLock.Unlock()
+	channelModelDailyStatsLock.Lock()
+	clear(channelModelDailyStatsCache)
+	clear(channelModelDailyStatsDirty)
+	for _, v := range loadedChannelModelDaily {
+		channelModelDailyStatsCache[channelModelDailyKey{channelModelID: v.ChannelModelID, date: v.Date}] = v
+	}
+	channelModelDailyStatsLock.Unlock()
 
 	return nil
 }

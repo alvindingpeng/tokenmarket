@@ -1,6 +1,7 @@
 import { TrendingUp } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { useChannelStats } from '@/api/channel';
+import { useAuthStore } from '@/api/user';
 import { useHomeViewStore, type MetricKey } from './store';
 import { MetricTabs } from './metric-tabs';
 import type { StatsMetricsFormatted } from '@/api/stats';
@@ -113,7 +114,9 @@ function RankCard({
 
 // Rank 并列渠道榜和模型榜, 两榜各自独立排序。
 export function Rank() {
-    const { data: channelStats } = useChannelStats();
+    const role = useAuthStore((state) => state.role);
+    const hasChannelScope = role !== 'user'; // 用户没有渠道视图, 渠道榜接口对他们拒绝, 不发请求也不渲染。
+    const { data: channelStats } = useChannelStats(hasChannelScope);
     const t = useTranslations('home.rank');
     const channelSortMode = useHomeViewStore((state) => state.channelRankSortMode);
     const setChannelSortMode = useHomeViewStore((state) => state.setChannelRankSortMode);
@@ -135,6 +138,8 @@ export function Rank() {
             formatted: channelModel.formatted,
         }))
     );
+
+    if (!hasChannelScope) return null;
 
     return (
         <div className="grid grid-cols-1 @3xl/home:grid-cols-2 gap-4">

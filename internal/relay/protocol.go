@@ -22,11 +22,19 @@ import (
 // 地址与认证取自出站转换器对一个占位请求的转换结果, 使透传与跨协议转换共用同一套地址拼接, 避免两处规则分歧;
 // openai 与 anthropic 出站转换器会校验模型名非空, 故占位请求必须带本轮真实的上游模型名。
 func buildPassthroughRequest(format llm.APIFormat, raw *httpclient.Request, channel model.Channel, outbound transformer.Outbound, modelName string) (*httpclient.Request, error) {
-	probeText := "probe"
-	probe, err := outbound.TransformRequest(context.Background(), &llm.Request{
-		Model:    modelName,
-		Messages: []llm.Message{{Role: "user", Content: llm.MessageContent{Content: &probeText}}},
-	})
+	// 生图请求的探测体带一个最小 Image 载荷: openai 出站按 RequestType/APIFormat 分派到
+	// generations / edits 的地址拼接, 缺 Image 字段会直接报错; 探测体不会真的发往上游。
+	probeRequest := &llm.Request{Model: modelName}
+	switch format {
+	case llm.APIFormatOpenAIImageGeneration, llm.APIFormatOpenAIImageEdit, llm.APIFormatOpenAIImageVariation:
+		probeRequest.RequestType = llm.RequestTypeImage
+		probeRequest.APIFormat = format
+		probeRequest.Image = &llm.ImageRequest{Prompt: "probe", Images: [][]byte{[]byte("probe")}}
+	default:
+		probeText := "probe"
+		probeRequest.Messages = []llm.Message{{Role: "user", Content: llm.MessageContent{Content: &probeText}}}
+	}
+	probe, err := outbound.TransformRequest(context.Background(), probeRequest)
 	if err != nil {
 		return nil, fmt.Errorf("resolve upstream endpoint: %w", err)
 	}
