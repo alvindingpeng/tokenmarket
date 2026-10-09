@@ -27,6 +27,12 @@ import {
 
 type StepID = 'preset' | 'connection' | 'keys' | 'grants' | 'advanced';
 
+// 高度阶梯: 常态取固定 rem(与 Card.tsx 详情区同一取值, 统计/编辑切换时弹窗尺寸一致不缩放),
+// 但必须按可视区高度夹住: 外层弹窗有 max-h-[calc(100dvh-*rem)] 会把自己压缩,
+// 表单若坚持固定高度, 底部按钮行(取消/保存)就会被弹窗的 overflow-hidden 裁到可视区之外,
+// 表现为矮窗口/手机上编辑页看不到保存按钮。5rem = 弹窗外层 p-4 2rem + 弹窗内边距 2rem + 1rem 余量。
+export const SHELL_HEIGHT = 'h-[min(24rem,calc(100dvh_-_5rem))] md:h-[min(29rem,calc(100dvh_-_5rem))]';
+
 // ChannelForm 新建与编辑共用; 编辑时按 id 取回整份配置, 到齐后再进表单。
 // 配置不随渠道列表下发, 故编辑必然要等这一趟请求; 占位与表单同高, 弹窗不会因此跳动。
 export function ChannelForm({ channelId, onBack }: {
@@ -42,7 +48,7 @@ export function ChannelForm({ channelId, onBack }: {
     if (!detail) {
         return (
             // 占位高度与弹窗描述区保持同一值(见 Card.tsx), 视图切换时尺寸一致不跳动。
-            <div className="flex items-center justify-center h-[24rem] md:h-[29rem]">
+            <div className={`flex items-center justify-center ${SHELL_HEIGHT}`}>
                 <p className="text-sm text-muted-foreground">
                     {isError ? t('detailFailed') : isPending ? t('detailLoading') : null}
                 </p>
@@ -116,9 +122,10 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
     // 29rem 是连接页恰好铺满所需: 首行留白 8px + 五个字段组 290px + 五道间距 80px + 开关行 20px + 底部按钮 52px。
     // 各步骤首行统一落在同一水平线: connection 与 advanced 的首行是无边框文案, 补 8px 才能与步骤导航的按钮文案对齐;
     // keys 与 grants 的首行是 36px 控件行, 文案居中后天然齐平, 无需补白。步骤区自带 4px 内边距供焦点环显示。
-    // calc 一项夹住矮屏, 弹窗不提供滚动, 内容超出视口时底部按钮会点不到。详情视图取同一高度以对齐尺寸。
+    // 高度取 SHELL_HEIGHT: 既夹住矮屏(按钮行 shrink-0 常驻可见, 步骤区自己滚动消化超高内容),
+    // 又在正常视口保持固定尺寸不随步骤跳动。详情视图取同一高度以对齐尺寸。
     return (
-        <form onSubmit={submit} className="flex flex-col md:flex-row gap-6 h-[24rem] md:h-[29rem]">
+        <form onSubmit={submit} className={`flex flex-col md:flex-row gap-6 ${SHELL_HEIGHT}`}>
             <nav className="md:w-28 shrink-0 flex md:flex-col gap-1 overflow-x-auto pt-1">
                 {steps.map((s) => (
                     <button
