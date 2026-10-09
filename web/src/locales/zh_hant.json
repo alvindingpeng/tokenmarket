@@ -9,15 +9,22 @@
         "apikeyPlaceholder": "請輸入 API 金鑰 (sk-octopus-...)",
         "mode": {
             "user": "帳戶登入",
-            "apikey": "金鑰登入"
+            "apikey": "金鑰登入",
+            "registerUser": "註冊用戶",
+            "registerReseller": "註冊渠道商"
         },
         "error": {
             "generic": "登入失敗，請檢查登入憑證"
         },
         "button": {
             "loading": "登入中...",
-            "submit": "登入"
-        }
+            "submit": "登入",
+            "register": "註冊"
+        },
+        "reason": "申請理由",
+        "reasonPlaceholder": "申請成為渠道商的理由（選填）",
+        "registerSuccess": "註冊成功，請登入。",
+        "registerPending": "已提交註冊，等待管理員審批。"
     },
     "apiKeyDashboard": {
         "error": "載入資料失敗",
@@ -41,10 +48,17 @@
     "navbar": {
         "home": "主頁",
         "channel": "供應源",
-        "group": "分組",
+        "group": "模型配置",
         "model": "價格",
         "log": "日誌",
-        "setting": "設定"
+        "setting": "設定",
+        "users": "用戶管理",
+        "share": "發佬管理",
+        "billing": "計費",
+        "apikey": "API 金鑰",
+        "audit": "審計記錄",
+        "ratelimit": "限流管理",
+        "ops": "維運中心"
     },
     "toolbar": {
         "hideChannelName": "模糊渠道名稱",
@@ -65,9 +79,9 @@
                     "disabled": "僅停用"
                 },
                 "group": {
-                    "all": "全部分組",
+                    "all": "全部模型配置",
                     "withMembers": "有成員",
-                    "empty": "空分組"
+                    "empty": "空模型配置"
                 },
                 "model": {
                     "all": "全部模型",
@@ -273,6 +287,12 @@
                 "change": "修改密碼",
                 "success": "密碼修改成功",
                 "failed": "密碼修改失敗"
+            },
+            "logout": {
+                "label": "登出",
+                "hint": "登出目前帳號的登入狀態",
+                "button": "登出",
+                "toast": "已登出登入"
             }
         },
         "info": {
@@ -300,6 +320,53 @@
             },
             "clearSuccess": "日誌已清空",
             "clearFailed": "清空失敗"
+        },
+        "platform": {
+            "title": "平台設定",
+            "markupRatio": "上浮比例",
+            "markupRatioHint": "用戶價 = 供貨價 ×（1 + 比例），如 0.2 表示上浮 20%。",
+            "userRegister": "用戶註冊",
+            "userRegisterHint": "開放普通用戶自助註冊。",
+            "resellerRegister": "渠道商註冊",
+            "resellerRegisterHint": "開放渠道商自助註冊（需填寫申請理由）。",
+            "approvalRequired": "註冊審批",
+            "approvalRequiredHint": "新註冊帳號需管理員審批後才能登入。",
+            "minBalance": "最低餘額",
+            "minBalanceHint": "可用餘額低於該值時拒絕新請求。",
+            "reserveCap": "預扣輸出上限",
+            "reserveCapHint": "預扣估算按單請求輸出 token 上限折算。",
+            "reserveImages": "生圖預扣張數",
+            "reserveImagesHint": "生圖請求未指定 n 時按此張數預扣(預設 4)。",
+            "invalidNumber": "請輸入有效數字"
+        },
+        "scoreWeights": {
+            "label": "綜合評分預設參數",
+            "hint": "綜合評分路由的系統預設權重配比;分組內權重填 0(未自訂)時按此執行,分組內自訂值優先。",
+            "price": "價格",
+            "latency": "延遲",
+            "success": "成功率"
+        },
+        "systemInfo": {
+            "title": "系統資訊設定",
+            "siteName": "站點名稱",
+            "siteNameHint": "顯示於瀏覽器標題與登入頁, 留空則使用預設名稱。",
+            "siteNamePlaceholder": "例如: Octopus 中轉站",
+            "siteContact": "聯絡方式",
+            "siteContactHint": "供使用者尋求支援的入口, 可填信箱或群組連結。",
+            "siteContactPlaceholder": "例如: support@example.com",
+            "siteDescription": "站點描述",
+            "siteDescriptionHint": "一句話介紹本站用途, 顯示於登入頁與關於處。",
+            "siteDescriptionPlaceholder": "例如: 穩定高速的 AI 模型 API 中轉服務",
+            "announcementEnabled": "啟用公告",
+            "announcementEnabledHint": "開啟後向全部已登入使用者顯示公告內容。",
+            "announcement": "公告內容",
+            "announcementHint": "全域公告正文, 留空則不顯示。",
+            "announcementPlaceholder": "例如: 今晚 23:00 起進行維護, 預計 30 分鐘",
+            "maintenanceMode": "維護模式",
+            "maintenanceModeHint": "開啟後僅管理員可登入, 其餘帳號登入會被拒絕。",
+            "maintenanceNotice": "維護提示",
+            "maintenanceNoticeHint": "使用者登入被拒時看到的提示文案。",
+            "maintenanceNoticePlaceholder": "例如: 系統升級維護中, 請稍後再試"
         }
     },
     "group": {
@@ -317,7 +384,8 @@
             "empty": "暫無規則",
             "activate": "設為活動項",
             "cooling": "冷卻 {seconds}s",
-            "affinity": "親和 {seconds}s"
+            "affinity": "親和 {seconds}s",
+            "metricTitle": "選路採樣 {samples} 次;按滑動平均估算首回應耗時與成功率,供路由策略參考"
         },
         "detail": {
             "actions": {
@@ -327,13 +395,15 @@
             }
         },
         "form": {
-            "name": "分組名稱",
+            "name": "模型名稱",
             "mode": "路由模式",
-            "modeHint": "手動固定選中成員；故障轉移按成員順序並在失敗時切換",
+            "modeHint": "手動固定選中成員;其餘策略按各自維度自動選擇成員,並在失敗時自動切換",
             "manual": "手動",
             "failover": "故障轉移",
             "members": "成員",
             "relay": "路由策略",
+            "presetHint": "可按目前模式套用建議預設參數, 已有手動調整不會自動覆蓋",
+            "applyPreset": "套用模式預設",
             "retryCount": "總嘗試次數",
             "retryCountHint": "單個成員包含首次請求的總嘗試次數",
             "retryInterval": "重試間隔（秒）",
@@ -349,8 +419,41 @@
             "items": "成員順序",
             "addItem": "新增模型",
             "autoAdd": "自動新增",
-            "clear": "清空"
-        }
+            "autoAddTitle": "自動新增 {count} 項匹配且未選中的成員",
+            "autoAddNeedKeyword": "先輸入模型名或渠道名關鍵詞",
+            "autoAddNoMatch": "無匹配項: 請調整關鍵詞",
+            "autoAddAllAdded": "匹配項已全部新增",
+            "autoAddDone": "已自動新增 {count} 項",
+            "clear": "清空",
+            "price": "低價優先",
+            "latency": "延遲優先",
+            "success": "成功率優先",
+            "score": "綜合評分",
+            "random": "隨機分發",
+            "priceMetric": "價格口徑",
+            "priceMetricHint": "低價優先與綜合評分比較成員價格時使用的維度",
+            "priceMetricBlended": "讀寫均值",
+            "priceMetricInput": "僅輸入價格",
+            "priceMetricOutput": "僅輸出價格",
+            "metricWindow": "指標樣本視窗",
+            "metricWindowHint": "延遲與成功率指標的平滑樣本規模(5-200),越大越穩定,越小反應越快",
+            "scorePriceWeight": "評分·價格權重",
+            "scoreLatencyWeight": "評分·延遲權重",
+            "scoreSuccessWeight": "評分·成功率權重",
+            "scoreWeightHint": "三個權重為相對值(0-100),可任意配比;填 0 表示該維度未自訂,執行時跟隨系統預設參數(管理員可在設定頁調整)",
+            "request_timeout_seconds": "請求總逾時（秒）",
+            "request_timeout_secondsHint": "包含排隊、重試與完整串流傳輸；預設 600 秒。",
+            "max_total_attempts": "單請求最大嘗試次數",
+            "max_total_attemptsHint": "跨所有成員的總嘗試上限，預設 10。",
+            "max_wait_seconds": "累計最大排隊時間（秒）",
+            "max_wait_secondsHint": "0 不等待；僅在佇列容量大於 0 時生效。",
+            "max_waiting_requests": "排隊容量",
+            "max_waiting_requestsHint": "預設 0（關閉）。容量占滿或等待逾時回傳 429。",
+            "member_stream_idle_timeout_seconds": "串流閒置逾時（秒）",
+            "member_stream_idle_timeout_secondsHint": "連續無串流事件時中止，預設 60 秒。"
+        },
+        "memberPrice": "讀 {input} / 寫 {output}（每百萬 token）",
+        "modelPrice": "讀 {input} / 寫 {output} / 快取讀 {cacheRead} / 快取寫 {cacheWrite}（每百萬 token）"
     },
     "model": {
         "create": {
@@ -417,7 +520,89 @@
             "cancelFailed": "取消目前請求失敗",
             "waitingChannelSelection": "正在等待選擇供應源",
             "waitingResponse": "正在等待上游回應",
-            "responseStreaming": "上游已回應，串流傳輸正在進行"
+            "responseStreaming": "上游已回應，串流傳輸正在進行",
+            "timeline": "路由時間線",
+            "timelineEmpty": "尚無上游嘗試記錄",
+            "routeReason": {
+                "unavailable": "不可用",
+                "rate_or_concurrency_limit": "限流或並發占滿",
+                "not_manual_target": "非手動指定成員",
+                "cooldown": "冷卻中",
+                "selected": "已選擇",
+                "eligible": "可用候選",
+                "affinity": "成員親和",
+                "recovery_probe": "恢復探測",
+                "route_selected": "策略選擇",
+                "upstream_limit": "上游限流",
+                "upstream_success": "上游成功",
+                "upstream_timeout": "上游逾時",
+                "upstream_failure": "上游失敗",
+                "request_canceled": "請求取消",
+                "strategy_manual": "策略：manual",
+                "strategy_failover": "策略：failover",
+                "strategy_price": "策略：price",
+                "strategy_latency": "策略：latency",
+                "strategy_success": "策略：success",
+                "strategy_score": "策略：score",
+                "strategy_random": "策略：random"
+            },
+            "attemptStatus": {
+                "running": "進行中",
+                "success": "成功",
+                "failed": "失敗",
+                "limited": "受限",
+                "timeout": "逾時",
+                "canceled": "取消"
+            },
+            "eventPhase": {
+                "received": "接收",
+                "admission": "額度檢查",
+                "selection": "選路",
+                "waiting": "排隊",
+                "dispatch": "轉發",
+                "finished": "結束"
+            },
+            "eventReason": {
+                "request_received": "收到請求",
+                "user_admitted": "使用者額度通過",
+                "waiting_for_upstream": "等待可用上游",
+                "upstream_admitted": "上游額度通過",
+                "success": "成功",
+                "failed": "失敗",
+                "canceled": "已取消",
+                "affinity": "親和命中",
+                "recovery_probe": "恢復探測"
+            }
+        },
+        "group": "模型配置",
+        "tabs": {
+            "live": "即時",
+            "history": "歷史"
+        },
+        "history": {
+            "searchPlaceholder": "搜尋模型 / 渠道編碼 / Key / 錯誤…",
+            "filterIp": "客戶端 IP",
+            "filterModel": "模型",
+            "filterChannel": "渠道",
+            "export": "匯出 CSV",
+            "search": "搜尋",
+            "statusAll": "全部狀態",
+            "status": {
+                "success": "成功",
+                "failed": "失敗",
+                "canceled": "已取消",
+                "committed": "回應中",
+                "running": "進行中"
+            },
+            "loading": "載入中…",
+            "loadFailed": "歷史日誌載入失敗",
+            "retry": "重試",
+            "empty": "沒有符合條件的日誌",
+            "pagination": {
+                "page": "第 {page} 頁 · 共 {total} 條",
+                "prev": "上一頁",
+                "next": "下一頁"
+            }
         }
     },
     "channel": {
@@ -445,7 +630,15 @@
             "edit": "編輯",
             "delete": "刪除",
             "confirmDelete": "確認刪除",
-            "cancel": "取消"
+            "cancel": "取消",
+            "cumulative": "累計",
+            "trend": "近 14 天趨勢",
+            "trendChannel": "渠道整體",
+            "trendDate": "日期",
+            "trendRequests": "請求",
+            "trendSuccessRate": "成功率",
+            "trendAvgLatency": "平均延遲",
+            "trendEmpty": "暫無資料"
         },
         "form": {
             "stepPreset": "開始",
@@ -476,6 +669,8 @@
             "modelRefreshEmpty": "未取得模型",
             "channelProxy": "通道代理",
             "matchRegex": "匹配正則",
+            "modelAutoAdd": "儲存後自動添加模型",
+            "modelAutoAddHint": "儲存後自動探測上游 /models 併入本渠道: 只增不刪, 授權按位併入, 單次最多 200 個。",
             "paramOverride": "參數覆寫",
             "customHeader": "自訂 Header",
             "customHeaderKey": "Header Key",
@@ -490,6 +685,475 @@
             "grantClearAll": "清空全部模型",
             "modelRemove": "移除模型",
             "grantRemove": "移除該憑據的授權"
+        }
+    },
+    "share": {
+        "shareCode": "共享編碼",
+        "copyCode": "複製編碼",
+        "notPublished": "未發佬",
+        "manageListing": "模型上架與定價",
+        "loadFailed": "渠道載入失敗",
+        "loading": "載入中…",
+        "empty": "暫無渠道",
+        "toast": {
+            "published": "已發佬，編碼 {code}",
+            "unpublished": "已收回發佬",
+            "copied": "已複製"
+        },
+        "listing": {
+            "title": "模型上架與定價 — {name}",
+            "loading": "模型載入中…",
+            "empty": "暫無模型，請先在渠道配置中拉取模型列表。",
+            "hint": "已上架但未定價的模型按 0 計費；單價為每百萬 token。",
+            "save": "儲存",
+            "toast": {
+                "saved": "已儲存",
+                "fillNoRef": "該模型沒有參考價",
+                "fillNone": "沒有可填充的未定價模型",
+                "fillDone": "已填充 {count} 個模型"
+            },
+            "column": {
+                "listed": "上架",
+                "model": "模型",
+                "input": "輸入",
+                "output": "輸出",
+                "cacheRead": "快取讀",
+                "cacheWrite": "快取寫",
+                "fill": "參考價",
+                "userPrice": "用戶價(輸入/輸出)"
+            },
+            "search": "搜尋模型",
+            "counts": "顯示 {shown} / {total} 個模型",
+            "changed": "有 {count} 處改動待儲存",
+            "zeroPriced": "{count} 個已上架模型未定價(如 {models}), 上架即按 0 計費, 請先定價",
+            "userPriceHint": "用戶價 = 供貨價 × (1 + 全域上浮比例), 用戶實際支付的單價",
+            "userPriceValue": "入 {input} / 出 {output}",
+            "userPricePerImage": "{value} / 張",
+            "mediaHint": "生圖模型按張計價(上方輸入每張供貨價), token 四類價保持原值不動。",
+            "fillAll": "填充未定價項",
+            "fillOne": "填入參考價",
+            "filter": {
+                "all": "全部模型",
+                "listed": "僅已上架",
+                "unlisted": "僅未上架",
+                "unpriced": "僅未定價",
+                "empty": "沒有符合當前篩選的模型"
+            },
+            "refHint": "參考價來自全局價格表(models.dev 自動同步、管理員維護),僅供快速預填,儲存前請按你的供貨協議調整。"
+        }
+    },
+    "billing": {
+        "loadFailed": "載入失敗",
+        "filters": {
+            "model": "模型",
+            "channel": "渠道",
+            "statusAll": "全部狀態",
+            "apply": "篩選",
+            "export": "匯出 CSV"
+        },
+        "pagination": {
+            "summary": "第 {current}/{pages} 頁 · 共 {count} 筆"
+        },
+        "ledger": {
+            "title": "餘額流水",
+            "hint": "凍結/解凍/扣費/調賬逐筆留痕",
+            "empty": "暫無餘額流水",
+            "kindAll": "全部類型",
+            "kind": {
+                "reserve": "預扣",
+                "settle": "結算",
+                "release": "釋放",
+                "adjust": "調賬"
+            },
+            "column": {
+                "time": "時間",
+                "kind": "類型",
+                "frozen": "凍結變動",
+                "amount": "可用變動",
+                "cost": "實際費用",
+                "balance": "變動後餘額",
+                "note": "說明"
+            }
+        },
+        "account": {
+            "title": "帳戶概覽",
+            "balance": "可用餘額",
+            "frozen": "凍結額",
+            "frozenHint": "預扣中",
+            "totalSpent": "累計消費",
+            "totalRevenue": "累計收入",
+            "totalRecharged": "累計儲值"
+        },
+        "details": {
+            "title": "消費明細",
+            "hint": "可篩選 / 分頁 / 匯出",
+            "empty": "暫無消費記錄",
+            "column": {
+                "time": "時間",
+                "model": "模型",
+                "channel": "渠道",
+                "tokens": "Tokens",
+                "spend": "支出",
+                "revenue": "收入",
+                "unitPrice": "單價/1M",
+                "status": "狀態"
+            }
+        },
+        "tokens": {
+            "input": "輸入",
+            "output": "輸出",
+            "cacheRead": "快取讀",
+            "cacheWrite": "快取寫",
+            "images": "圖"
+        },
+        "status": {
+            "settled": "已結算",
+            "refunded": "已退款"
+        },
+        "trend": {
+            "title": "消費趨勢",
+            "range": "近 30 天",
+            "empty": "近 30 天暫無消費數據",
+            "summary": "合計",
+            "column": {
+                "date": "日期",
+                "requests": "請求數",
+                "tokens": "Tokens",
+                "spend": "消費"
+            }
+        },
+        "revenue": {
+            "title": "收入趨勢",
+            "hint": "按供貨價",
+            "empty": "近 30 天暫無收入數據",
+            "summary": "合計",
+            "column": {
+                "ownerRevenue": "供貨收入",
+                "commission": "平台佣金"
+            }
+        }
+    },
+    "users": {
+        "title": "用戶管理",
+        "create": "建立用戶",
+        "table": {
+            "username": "用戶名",
+            "role": "角色",
+            "status": "狀態",
+            "balance": "餘額",
+            "frozen": "凍結",
+            "totalSpent": "累計消費",
+            "totalRevenue": "累計收益",
+            "createdAt": "建立時間",
+            "actions": "操作",
+            "unknownDate": "未知"
+        },
+        "role": {
+            "admin": "管理員",
+            "reseller": "經銷商",
+            "user": "用戶"
+        },
+        "status": {
+            "active": "啟用",
+            "pending": "待審核",
+            "disabled": "停用"
+        },
+        "form": {
+            "username": "用戶名",
+            "password": "密碼",
+            "passwordOptional": "密碼（選填）",
+            "passwordUnchanged": "留空則保留原密碼",
+            "role": "角色",
+            "status": "狀態",
+            "cancel": "取消",
+            "submit": "建立",
+            "submitting": "建立中...",
+            "save": "儲存",
+            "saving": "儲存中...",
+            "balance": "餘額",
+            "balanceHint": "按絕對值直接調整;與原值一致則不改動。儲值功能後續上線。"
+        },
+        "action": {
+            "edit": "編輯",
+            "resetPassword": "重設密碼",
+            "delete": "刪除"
+        },
+        "reset": {
+            "description": "為 {username} 設定新密碼。",
+            "newPassword": "新密碼",
+            "submit": "重設",
+            "resetting": "重設中..."
+        },
+        "delete": {
+            "description": "確定刪除用戶 {username}？此操作無法復原。",
+            "submit": "刪除",
+            "deleting": "刪除中..."
+        },
+        "toast": {
+            "created": "用戶已建立",
+            "createFailed": "建立用戶失敗",
+            "updated": "用戶已更新",
+            "updateFailed": "更新用戶失敗",
+            "passwordReset": "密碼已重設",
+            "resetFailed": "重設密碼失敗",
+            "deleted": "用戶已刪除",
+            "deleteFailed": "刪除用戶失敗"
+        },
+        "list": {
+            "empty": "暫無用戶",
+            "error": "用戶列表載入失敗",
+            "retry": "重試"
+        }
+    },
+    "audit": {
+        "title": "審計記錄",
+        "total": "共 {total} 條",
+        "refresh": "重新整理",
+        "loading": "載入中...",
+        "error": "審計記錄載入失敗",
+        "retry": "重試",
+        "empty": "暫無審計記錄",
+        "filters": {
+            "keyword": "搜尋操作者、目標或明細",
+            "operator": "操作者",
+            "actionAll": "全部動作",
+            "from": "開始日期",
+            "to": "結束日期",
+            "search": "搜尋",
+            "reset": "重設",
+            "clear": "清除搜尋",
+            "export": "匯出 CSV"
+        },
+        "table": {
+            "time": "時間",
+            "operator": "操作者",
+            "action": "動作",
+            "target": "目標",
+            "detail": "明細"
+        },
+        "pagination": {
+            "page": "第 {page} 頁 / 共 {total} 條",
+            "prev": "上一頁",
+            "next": "下一頁"
+        },
+        "action": {
+            "user.create": "建立使用者",
+            "user.update": "修改使用者",
+            "user.balance": "調整餘額",
+            "user.reset-password": "重設密碼",
+            "user.delete": "刪除使用者",
+            "setting.set": "修改設定",
+            "backup.export": "匯出備份",
+            "backup.import": "匯入備份",
+            "log.clear": "清空日誌",
+            "channel.publish": "發布渠道",
+            "model.create": "新增模型價格",
+            "model.update": "修改模型價格",
+            "model.delete": "刪除模型價格",
+            "model.update-price": "同步模型價格",
+            "model.rebuild-price": "重建模型價格",
+            "update.core": "更新核心",
+            "audit.export": "匯出審計記錄"
+        }
+    },
+    "ratelimit": {
+        "title": "限流管理",
+        "total": "共 {total} 條策略",
+        "refresh": "重新整理",
+        "create": "新增策略",
+        "edit": "編輯策略",
+        "loading": "載入中...",
+        "error": "限流策略載入失敗",
+        "retry": "重試",
+        "empty": "暫無限流策略",
+        "filters": {
+            "scopeAll": "全部範圍",
+            "clear": "清除"
+        },
+        "scope": {
+            "system": "系統預設",
+            "user": "用戶",
+            "api_key": "API 金鑰",
+            "group": "分組",
+            "channel": "渠道",
+            "channel_key": "渠道憑證",
+            "channel_model": "渠道模型"
+        },
+        "form": {
+            "scopeType": "限流範圍",
+            "scopeTarget": "範圍對象",
+            "scopeTargetHint": "選擇對象",
+            "scopeIdHint": "對象 ID",
+            "modelName": "模型名",
+            "modelNameHint": "留空表示全部模型",
+            "rpm": "RPM(請求/分鐘)",
+            "tpm": "TPM(token/分鐘)",
+            "enabled": "啟用",
+            "save": "儲存",
+            "cancel": "取消",
+            "hint": "0 表示不限；全部模型策略共用額度，指定模型策略另行生效。系統策略為主體預設值。"
+        },
+        "table": {
+            "scope": "範圍",
+            "model": "模型",
+            "rpm": "RPM",
+            "tpm": "TPM",
+            "status": "狀態",
+            "updated": "更新時間",
+            "actions": "操作",
+            "allModels": "全部模型",
+            "unlimited": "不限",
+            "enabled": "啟用",
+            "disabled": "停用"
+        },
+        "inspect": {
+            "title": "即時用量",
+            "rpm": "生效 RPM",
+            "tpm": "生效 TPM",
+            "requests": "本窗口請求數",
+            "tokens": "本窗口 token 數",
+            "resetAt": "窗口刷新",
+            "blocked": "已觸頂",
+            "empty": "選擇範圍後查看即時用量"
+        },
+        "usage": {
+            "hour": "小時",
+            "requests": "請求數",
+            "input": "輸入 token",
+            "output": "輸出 token",
+            "rejected": "限流拒絕"
+        },
+        "concurrent": "並發上限",
+        "active": "目前活躍"
+    },
+    "ops": {
+        "title": "維運中心",
+        "overview": {
+            "requests": "24h 請求",
+            "successRate": "24h 成功率",
+            "tokens": "24h Tokens",
+            "cost": "24h 費用",
+            "active": "進行中",
+            "channels": "渠道 啟用/總數",
+            "alerts": "24h 告警"
+        },
+        "saved": "已儲存",
+        "saveFailed": "儲存失敗",
+        "refresh": "重新整理",
+        "running": "執行中...",
+        "loading": "載入中...",
+        "empty": "暫無資料",
+        "loadFailed": "載入失敗",
+        "tabs": {
+            "reconcile": "計費對帳",
+            "flow": "餘額流水",
+            "backup": "備份",
+            "archive": "日誌歸檔",
+            "health": "渠道健康",
+            "alerts": "告警記錄"
+        },
+        "reconcile": {
+            "desc": "每日自動核對計費明細與預扣結算; 對帳差異與備份/歸檔失敗會自動產生告警並推送 Webhook。"
+        },
+        "flow": {
+            "desc": "餘額預扣/結算/釋放流水(最近 100 筆), 管理員可按使用者 ID 篩選。",
+            "userFilter": "按使用者 ID 篩選",
+            "requestId": "請求 ID",
+            "userId": "使用者 ID",
+            "kind": "類型",
+            "amount": "金額",
+            "settled": "結算狀態",
+            "settledYes": "已結算",
+            "settledNo": "未結算",
+            "userCost": "使用者支出",
+            "time": "時間",
+            "kindReserve": "預扣",
+            "kindSettle": "結算",
+            "kindRelease": "釋放"
+        },
+        "backup": {
+            "desc": "SQLite 一致性快照備份, 儲存於 data/backups/。",
+            "run": "立即備份",
+            "runSuccess": "備份完成: {file}",
+            "runFailed": "備份失敗",
+            "name": "檔案",
+            "size": "大小",
+            "time": "時間"
+        },
+        "archive": {
+            "desc": "呼叫日誌按天歸檔為 NDJSON 後清理, 目前留存 {days} 天, 歸檔儲存於 data/archives/。",
+            "run": "立即歸檔清理",
+            "runSuccess": "清理完成: 歸檔 {archived} 筆, 刪除 {deleted} 筆",
+            "runFailed": "歸檔清理失敗",
+            "name": "檔案",
+            "size": "大小",
+            "time": "時間"
+        },
+        "health": {
+            "desc": "渠道健康探測記錄(需在設定中開啟)。連續 5 次失敗判定宕機; 探測正常但延遲超過閾值判定降級; 恢復後自動補發恢復告警。",
+            "runNow": "立即探測",
+            "runSuccess": "探測完成",
+            "runFailed": "探測失敗"
+        },
+        "alerts": {
+            "desc": "宕機/恢復/降級/對帳差異/備份與歸檔失敗/計費結算失敗告警; 設定 Webhook 後自動外發, 同類型告警 10 分鐘去重。",
+            "channel": "渠道",
+            "kind": "類型",
+            "reason": "原因",
+            "notified": "已外發",
+            "yes": "是",
+            "no": "否",
+            "time": "時間",
+            "kindDown": "宕機",
+            "kindRecovered": "已恢復",
+            "kindDegraded": "降級",
+            "kindMismatch": "對帳差異",
+            "kindBackup": "備份失敗",
+            "kindArchive": "歸檔失敗",
+            "kindBilling": "計費失敗",
+            "kindTest": "測試",
+            "kindLowBalance": "餘額觸底"
+        },
+        "settings": {
+            "title": "營運可靠性",
+            "logRetention": "日誌留存天數",
+            "logRetentionHint": "呼叫日誌保留 1-3650 天, 預設 7 天",
+            "logStoreBody": "儲存請求/回應正文",
+            "logStoreBodyHint": "關閉後僅記錄概覽與用量",
+            "logArchive": "清理前先歸檔",
+            "logArchiveHint": "超期日誌先寫入歸檔目錄再刪除",
+            "logMaskFields": "額外脫敏欄位",
+            "logMaskFieldsHint": "逗號分隔的 JSON 欄位名",
+            "autoBackup": "自動備份",
+            "autoBackupHint": "定時 SQLite 一致性快照",
+            "autoBackupKeep": "備份保留份數",
+            "autoBackupInterval": "備份間隔(小時)",
+            "healthCheck": "渠道健康探測",
+            "healthCheckHint": "會向上游發起真實請求, 可能產生費用",
+            "healthCheckInterval": "探測間隔(分鐘)",
+            "webhook": "告警 Webhook",
+            "webhookHint": "http/https 位址, 留空僅站內記錄",
+            "healthLatency": "延遲告警閾值(毫秒)",
+            "healthLatencyHint": "探測正常但超過該延遲時發出降級告警, 0 表示關閉",
+            "webhookTest": "測試通知",
+            "webhookTesting": "發送中...",
+            "webhookTestOk": "Webhook 連通性正常",
+            "webhookTestFail": "Webhook 測試失敗",
+            "backupEncrypt": "備份加密",
+            "backupEncryptHint": "AES-256 加密落地備份; 口令在 config.json backup.passphrase 或環境變數 OCTOPUS_BACKUP_PASSPHRASE",
+            "backupRemote": "備份異地推送",
+            "alertDedup": "告警去重視窗(分鐘)",
+            "alertDedupHint": "同渠道同類型同原因在該視窗內只告警一次, 0 表示不限制(每次都記)",
+            "alertFailStreak": "連續失敗判宕機次數",
+            "alertFailStreakHint": "連續多少次探測失敗才判定渠道宕機, 用於抑制單次抖動, 預設 5",
+            "metricsAuth": "/metrics 鑑權",
+            "metricsAuthHint": "開啟後抓取 /metrics 需攜帶令牌; /healthz 恆不鑑權(存活探針)",
+            "metricsToken": "抓取令牌",
+            "metricsTokenHint": "抓取端用 Authorization: Bearer <令牌> 或 ?token=<令牌>; 該憑據不進備份, 還原後重新生成即可",
+            "metricsTokenCopied": "令牌已複製",
+            "metricsTokenRotate": "重新生成",
+            "metricsTokenRotated": "令牌已輪換, 舊令牌立即失效",
+            "backupRemoteHint": "WebDAV 推送副本與校驗和; 地址憑據在 config.json backup.remote_*, 失敗自動告警"
         }
     }
 }

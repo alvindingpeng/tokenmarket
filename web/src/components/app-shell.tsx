@@ -1,10 +1,11 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'use-intl';
 import Logo from '@/components/modules/logo';
-import { NAV_ITEMS, useAppStore } from '@/stores/app';
+import { navItemsFor, useAppStore } from '@/stores/app';
+import { useAuthStore } from '@/api/user';
 import { preloadPage } from '@/lib/page-preload';
 import { cn } from '@/lib/utils';
 
@@ -14,26 +15,57 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
     const direction = useAppStore((state) => state.direction);
     const setCurrentPage = useAppStore((state) => state.setCurrentPage);
     const t = useTranslations('navbar');
-    const activeIndex = NAV_ITEMS.findIndex((route) => route.id === currentPage); // activeIndex 表示选中项在 Dock 中的位置。
+    const role = useAuthStore((state) => state.role);
+    const navItems = navItemsFor(role); // 导航按角色裁剪: 无权页面不出现在 Dock 中。
+    const activeIndex = navItems.findIndex((route) => route.id === currentPage); // activeIndex 表示选中项在 Dock 中的位置。
     const [hoveredIndex, setHoveredIndex] = useState<number | null>(null); // hoveredIndex 表示当前悬浮项的位置。
     const [isNavHovered, setIsNavHovered] = useState(false); // isNavHovered 表示悬浮背景是否显示。
     const hoverIndicatorRef = useRef<HTMLSpanElement>(null); // hoverIndicatorRef 用于在淡入前确认悬浮背景的新位置。
+    const navRef = useRef<HTMLElement>(null); // navRef 指向导航容器, 用于把选中项滚入视野。
+
+    // 导航在两种形态下都会滚动: 手机是横向单行, iPad/矮窗口是纵向长列。
+    // 切页后必须把选中项滚进视野, 否则当前页停在屏幕外 —— 用户既看不到高亮也点不到它。
+    // 只沿真正溢出的那个轴滚动, 避免在另一轴上带动整页产生横向抖动。
+    useEffect(() => {
+        const container = navRef.current;
+        if (!container) return;
+        const active = container.children[activeIndex + 2] as HTMLElement | undefined; // 前两个子节点是两个指示层。
+        if (!active) return;
+        if (container.scrollWidth > container.clientWidth) {
+            active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        } else if (container.scrollHeight > container.clientHeight) {
+            active.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        }
+    }, [activeIndex, currentPage]);
 
     return (
         <div className="mx-auto flex h-dvh max-w-6xl animate-in flex-col overflow-hidden px-3 fade-in duration-300 md:grid md:grid-cols-[auto_1fr] md:grid-rows-[auto_minmax(0,1fr)] md:gap-x-6 md:px-6">
-            <div className="relative z-50 md:row-span-2 md:min-h-screen">
+            {/* md:min-h-0 让这一列可以被压缩, 否则内容高度会把网格行撑破并被外层 overflow-hidden 裁掉。 */}
+            <div className="relative z-50 md:row-span-2 md:min-h-0">
                 <nav
+                    ref={navRef}
                     aria-label="Main Navigation"
                     className={cn(
-                        'fixed bottom-6 left-1/2 isolate -translate-x-1/2 flex animate-in items-center gap-1 p-3 fade-in zoom-in-95 duration-300',
-                        'md:sticky md:top-30 md:left-auto md:bottom-auto md:translate-x-0 md:flex-col md:gap-3',
+                        // 移动端: 贴底单行, 横向可滚动 —— 导航项多于屏宽时滑动查看, 绝不换行挤压或溢出屏幕。
+                        // 垂直位置用安全区偏移, 避免被 iOS 底部横条与浏览器工具栏盖住。
+                        'fixed left-1/2 isolate flex -translate-x-1/2 animate-in items-center gap-1 p-2 fade-in zoom-in-95 duration-300',
+                        'max-w-[calc(100vw-1rem)] overflow-x-auto overflow-y-hidden overscroll-x-contain',
+                        // 手机上不存在悬浮滚动条语义, 隐藏后仍可滑动。
+                        'nav-scrollbar',
+                        // 竖排时改成纵向可滚动: iPad 及矮窗口放不下十几个导航项, 没有上限就会被裁掉且拖不出来。
+                        // max-height 用 dvh 减去上下的留白, 保证最后一项永远能滚到; overflow-x 保持 hidden 避免横向抖动。
+                        // top-24 与 max-height 共用同一组留白: 顶部 6rem 对齐标题行, 底部再留 2rem,
+                        // 两项相加正好是 100dvh 减去 max-height, 导航既不会顶到页头也不会漏出屏幕底。
+                        'md:sticky md:top-24 md:left-auto md:bottom-auto md:translate-x-0 md:max-w-none md:flex-col md:gap-3 md:p-3',
+                        'md:max-h-[calc(100dvh-8rem)] md:overflow-y-auto md:overflow-x-hidden md:overscroll-contain md:nav-scrollbar',
                         'bg-sidebar text-sidebar-foreground border border-sidebar-border rounded-3xl',
                     )}
+                    style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)' }}
                     onMouseLeave={() => setIsNavHovered(false)}
                 >
                     <span
                         aria-hidden="true"
-                        className="pointer-events-none absolute left-3 top-3 z-10 size-10 rounded-2xl bg-sidebar-primary transition-transform duration-300 ease-out [transform:translateX(var(--nav-offset-x))] md:size-12 md:[transform:translateY(var(--nav-offset-y))]"
+                        className="pointer-events-none absolute left-2 top-2 z-10 size-10 shrink-0 rounded-2xl bg-sidebar-primary transition-transform duration-300 ease-out [transform:translateX(var(--nav-offset-x))] md:left-3 md:top-3 md:size-12 md:[transform:translateY(var(--nav-offset-y))]"
                         style={{
                             '--nav-offset-x': `${activeIndex * 2.75}rem`,
                             '--nav-offset-y': `${activeIndex * 3.75}rem`,
@@ -43,7 +75,7 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                         ref={hoverIndicatorRef}
                         aria-hidden="true"
                         className={cn(
-                            'pointer-events-none absolute left-3 top-3 z-0 size-10 [transform:translateX(var(--nav-offset-x))] md:size-12 md:[transform:translateY(var(--nav-offset-y))]',
+                            'pointer-events-none absolute left-2 top-2 z-0 size-10 shrink-0 [transform:translateX(var(--nav-offset-x))] md:left-3 md:top-3 md:size-12 md:[transform:translateY(var(--nav-offset-y))]',
                             isNavHovered ? 'transition-transform duration-300 ease-out' : 'transition-none',
                         )}
                         style={{
@@ -56,7 +88,7 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                             style={{ opacity: isNavHovered ? 1 : 0 }}
                         />
                     </span>
-                    {NAV_ITEMS.map((route, index) => {
+                    {navItems.map((route, index) => {
                         const isActive = currentPage === route.id;
 
                         return (
@@ -83,7 +115,7 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                                     setCurrentPage(route.id);
                                 }}
                                 className={cn(
-                                    'relative z-20 flex size-10 items-center justify-center rounded-2xl p-2 transition-[color,scale] duration-150 ease-linear hover:z-30 hover:scale-110 active:scale-95 md:size-12 md:p-3',
+                                    'relative z-20 flex size-10 shrink-0 items-center justify-center rounded-2xl p-2 transition-[color,scale] duration-150 ease-linear hover:z-30 hover:scale-110 active:scale-95 md:size-12 md:p-3',
                                     isActive ? 'text-sidebar-primary-foreground' : 'text-sidebar-foreground/60',
                                 )}
                             >
@@ -123,7 +155,12 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                 {actions && <div className="ml-auto">{actions}</div>}
             </header>
 
-            <main className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden">
+            {/* main 是页面内容的默认滚动容器: 各页只需管好自己的高度, 无需各自再造一个滚动层。 */}
+            {/* 底部内边距按导航高度 + 安全区留净空, 保证最后一行内容不被贴底导航盖住。 */}
+            <main
+                className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-contain px-1 pb-24 md:overflow-hidden md:px-0 md:pb-0"
+                style={{ scrollPaddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 5.5rem)' }}
+            >
                 {children}
             </main>
         </div>

@@ -14,6 +14,9 @@ import (
 )
 
 func UpdateCore() error {
+	if Paused() {
+		return ErrUpdatePaused
+	}
 	log.Infof("start update core")
 
 	filename, err := getDownloadFilename()

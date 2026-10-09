@@ -2,10 +2,13 @@ package relay
 
 import (
 	"maps"
+	"math"
+	"math/rand/v2"
 	"sync"
 	"time"
 
 	"github.com/bestruirui/octopus/internal/model"
+	"github.com/bestruirui/octopus/internal/op"
 )
 
 // RouteState 是一个分组的进程内路由状态; 跨该分组的全部请求共享。
@@ -64,11 +67,13 @@ func ResetRouteState(groupID int) {
 }
 
 // pickGroupItem 按分组模式选择本轮目标成员, 没有可用成员时返回零值; group.Items 已按 Priority 升序排列。
+// 手动模式固定人工成员; 其余模式为动态选路, 共用冷却, 探测与亲和机制:
+// 先在未冷却成员中按模式策略择优, 优先级高于全部候选的冷却到期成员获得一个探测请求。
 // 渠道是否可用不在此判断: 渠道禁用或缺少密钥由调用方发现并作为一轮失败上报, 该成员随即进入冷却而在后续轮次被跳过。
 func pickGroupItem(group model.Group) model.GroupItem {
 	if group.Mode == model.GroupModeManual {
 		for _, item := range group.Items {
-			if item.ID == group.ActiveItemID {
+			if item.ID == group.ActiveItemID && item.Available && !upstreamItemLimited(item) {
 				return item
 			}
 		}
@@ -86,35 +91,242 @@ func pickGroupItem(group model.Group) model.GroupItem {
 
 	// 亲和期内沿用当前成员, 不提前探测已恢复的高优先级成员。
 	if route.CurrentItemID != 0 && route.AffinityUntil > now {
-		return itemOf(group, route.CurrentItemID)
+		current := itemOf(group, route.CurrentItemID)
+		if current.Available && !upstreamItemLimited(current) {
+			return current
+		}
 	}
 
-	for _, item := range group.Items {
-		// 遍历到当前成员说明比它优先级更高的成员都不可选, 沿用当前成员。
-		if item.ID == route.CurrentItemID {
-			break
+	// 按优先级扫描: 未冷却成员进入候选, 首个冷却到期的成员登记为探测候选。
+	candidates := make([]model.GroupItem, 0, len(group.Items))
+	var probeCandidate *model.GroupItem
+	for i := range group.Items {
+		item := &group.Items[i]
+		// 上游限流触顶的成员直接出局: 与冷却不同, 不计失败率也不设恢复惩罚。
+		if !item.Available || upstreamItemLimited(*item) {
+			continue
 		}
 		deadline, cooling := route.Cooldowns[item.ID]
 		if cooling && deadline > now {
 			continue
 		}
-		// 冷却已到期的成员只放行一个探测请求, 避免全部请求同时涌向尚未恢复的成员。
 		if cooling {
-			if route.ProbeItemID != 0 {
-				continue
+			if probeCandidate == nil {
+				probeCandidate = item
 			}
-			route.ProbeItemID = item.ID
-			publishRouteLocked(route)
-			return item
+			continue
 		}
-		route.CurrentItemID = item.ID
+		candidates = append(candidates, *item)
+	}
+
+	// 冷却到期的成员优先级高于全部候选时放行一个探测请求(与故障转移原语义一致);
+	// 没有任何候选时也探测, 避免全组冷却时请求永久等待。探测占用被其它请求持有时跳过。
+	if probeCandidate != nil && route.ProbeItemID == 0 &&
+		(len(candidates) == 0 || probeCandidate.Priority < candidates[0].Priority) {
+		route.ProbeItemID = probeCandidate.ID
 		publishRouteLocked(route)
-		return item
+		return *probeCandidate
 	}
-	if route.CurrentItemID != 0 {
-		return itemOf(group, route.CurrentItemID)
+
+	if len(candidates) == 0 {
+		return model.GroupItem{}
 	}
-	return model.GroupItem{}
+
+	chosen := selectGroupItem(group, candidates)
+	route.CurrentItemID = chosen.ID
+	publishRouteLocked(route)
+	return chosen
+}
+
+// routeExplanation records observable constraints at selection time; admission
+// remains authoritative because concurrent callers may consume capacity afterwards.
+func routeExplanation(group model.Group, chosen model.GroupItem) model.RelayRouteDecision {
+	state := RouteStateOf(group)
+	now := time.Now().UnixMilli()
+	reason := "strategy_" + string(group.Mode)
+	if state.ProbeItemID == chosen.ID && chosen.ID != 0 {
+		reason = "recovery_probe"
+	}
+	if state.AffinityUntil > now && state.CurrentItemID == chosen.ID && chosen.ID != 0 {
+		reason = "affinity"
+	}
+	result := model.RelayRouteDecision{Mode: string(group.Mode), Phase: "selected", Reason: reason}
+	for _, item := range group.Items {
+		why := "eligible"
+		switch {
+		case !item.Available:
+			why = "unavailable"
+		case upstreamItemLimited(item):
+			why = "rate_or_concurrency_limit"
+		case group.Mode == model.GroupModeManual && item.ID != group.ActiveItemID:
+			why = "not_manual_target"
+		case state.Cooldowns[item.ID] > now:
+			why = "cooldown"
+		case item.ID == chosen.ID:
+			why = "selected"
+		}
+		result.Candidates = append(result.Candidates, model.RelayRouteCandidate{ItemID: item.ID, ChannelCode: item.ChannelName, Model: item.ModelName, Reason: why})
+	}
+	return result
+}
+
+// selectGroupItem 在未冷却候选中按模式策略选出本轮成员; candidates 已按优先级升序。
+// 故障转移维持优先级顺序; 其余动态策略在候选集内按各自维度择优, 平局回落优先级。
+func selectGroupItem(group model.Group, candidates []model.GroupItem) model.GroupItem {
+	switch group.Mode {
+	case model.GroupModePrice:
+		best, bestPrice := candidates[0], memberPrice(group, candidates[0])
+		for _, item := range candidates[1:] {
+			if p := memberPrice(group, item); p < bestPrice {
+				best, bestPrice = item, p
+			}
+		}
+		return best
+	case model.GroupModeLatency:
+		best, bestWait := candidates[0], memberWait(group, candidates[0])
+		for _, item := range candidates[1:] {
+			if w := memberWait(group, item); w < bestWait {
+				best, bestWait = item, w
+			}
+		}
+		return best
+	case model.GroupModeSuccess:
+		best, bestRate := candidates[0], memberRate(group, candidates[0])
+		for _, item := range candidates[1:] {
+			if r := memberRate(group, item); r > bestRate {
+				best, bestRate = item, r
+			}
+		}
+		return best
+	case model.GroupModeScore:
+		return selectByScore(group, candidates)
+	case model.GroupModeRandom:
+		return candidates[rand.IntN(len(candidates))]
+	default: // 故障转移及未知模式: 按优先级取第一个。
+		return candidates[0]
+	}
+}
+
+// memberPrice 返回成员在配置口径下的用户价(每百万 token)。
+func memberPrice(group model.Group, item model.GroupItem) float64 {
+	price := item.UserPrice
+	switch group.RelayConfig.PriceMetric {
+	case model.PriceMetricInput:
+		return price.Input
+	case model.PriceMetricOutput:
+		return price.Output
+	default: // blended: 读写均值。
+		return (price.Input + price.Output) / 2
+	}
+}
+
+// memberWait 返回成员用于排名的耗时: 冷成员取 0(最优), 保证新成员至少被试用一次以积累样本,
+// 采样后回归真实指标; 全员冷时并列, 回落优先级。
+func memberWait(group model.Group, item model.GroupItem) float64 {
+	waitMs, _, samples := memberMetricOf(group.ID, item.ID)
+	if samples == 0 {
+		return 0
+	}
+	return waitMs
+}
+
+// memberRate 返回成员用于排名的成功率: 冷成员取 1(最优), 与耗时同理让新成员先获得一次试用。
+func memberRate(group model.Group, item model.GroupItem) float64 {
+	_, success, samples := memberMetricOf(group.ID, item.ID)
+	if samples == 0 {
+		return 1
+	}
+	return success
+}
+
+// selectByScore 综合评分: 价格(低好), 延迟(低好)与成功率(高好)各自在候选集内归一化后加权求和。
+// 权重为相对值, 总和为分母; 冷成员在延迟与成功率维度按最优值参与, 让新成员先获得一次试用。
+func selectByScore(group model.Group, candidates []model.GroupItem) model.GroupItem {
+	config := group.RelayConfig
+	priceWeight, latencyWeight, successWeight := effectiveScoreWeights(config)
+	weightSum := float64(priceWeight + latencyWeight + successWeight)
+	if weightSum <= 0 {
+		return candidates[0]
+	}
+
+	prices := make([]float64, len(candidates))
+	waits := make([]float64, len(candidates))
+	rates := make([]float64, len(candidates))
+	for i, item := range candidates {
+		prices[i] = memberPrice(group, item)
+		waits[i] = memberWait(group, item)
+		rates[i] = memberRate(group, item)
+	}
+
+	best, bestScore := candidates[0], math.Inf(-1)
+	for i, item := range candidates {
+		score := memberScore(priceWeight, latencyWeight, successWeight, i, prices, waits, rates)
+		if score > bestScore {
+			best, bestScore = item, score
+		}
+	}
+	return best
+}
+
+// 综合评分的内置兜底配比: 系统设置缺失且分组未自定义时使用。
+const (
+	defaultScorePriceWeight   = 40
+	defaultScoreLatencyWeight = 30
+	defaultScoreSuccessWeight = 30
+)
+
+// effectiveScoreWeights 解析综合评分的有效权重。
+// 分组内某维度权重为 0 表示未自定义, 按系统默认设置(设置页"综合评分默认参数")执行;
+// 分组自定义的维度(>0)保持不变。分组与系统都未给出有效配比时回落内置 40/30/30。
+func effectiveScoreWeights(config model.GroupRelayConfig) (int, int, int) {
+	priceWeight, latencyWeight, successWeight := config.ScorePriceWeight, config.ScoreLatencyWeight, config.ScoreSuccessWeight
+	if priceWeight <= 0 {
+		if system, err := op.SettingGetInt(model.SettingKeyScorePriceWeight); err == nil && system > 0 {
+			priceWeight = system
+		}
+	}
+	if latencyWeight <= 0 {
+		if system, err := op.SettingGetInt(model.SettingKeyScoreLatencyWeight); err == nil && system > 0 {
+			latencyWeight = system
+		}
+	}
+	if successWeight <= 0 {
+		if system, err := op.SettingGetInt(model.SettingKeyScoreSuccessWeight); err == nil && system > 0 {
+			successWeight = system
+		}
+	}
+	if priceWeight <= 0 && latencyWeight <= 0 && successWeight <= 0 {
+		return defaultScorePriceWeight, defaultScoreLatencyWeight, defaultScoreSuccessWeight
+	}
+	return priceWeight, latencyWeight, successWeight
+}
+
+// memberScore 计算候选集中第 i 个成员的综合评分; 各维度在候选集内最小-最大归一化, 区间退化时并列。
+func memberScore(priceWeight, latencyWeight, successWeight, i int, prices, waits, rates []float64) float64 {
+	priceScore := normalizedDim(prices, i, false) // 价格低者得分高。
+	latScore := normalizedDim(waits, i, false)    // 延迟低者得分高。
+	succScore := normalizedDim(rates, i, true)    // 成功率高者得分高。
+	return (float64(priceWeight)*priceScore +
+		float64(latencyWeight)*latScore +
+		float64(successWeight)*succScore) /
+		float64(priceWeight+latencyWeight+successWeight)
+}
+
+// normalizedDim 把维度值归一到 0..1; higherBetter 为假时反向; 全体同值时并列返回 1。
+func normalizedDim(values []float64, i int, higherBetter bool) float64 {
+	minV, maxV := values[0], values[0]
+	for _, v := range values {
+		minV = min(minV, v)
+		maxV = max(maxV, v)
+	}
+	if maxV == minV {
+		return 1
+	}
+	norm := (values[i] - minV) / (maxV - minV)
+	if higherBetter {
+		return norm
+	}
+	return 1 - norm
 }
 
 // recordRouteSuccess 上报一轮成功: 结束该成员的冷却与探测占用, 并在故障切换后按配置开始亲和。
@@ -201,6 +413,16 @@ func releaseRouteProbe(group model.Group, itemID int) {
 	}
 }
 
+// upstreamItemLimited 判断成员的任一上游维度当前窗口是否已限流触顶。
+func upstreamItemLimited(item model.GroupItem) bool {
+	for _, scope := range upstreamItemScopes(item) {
+		if limiter.Blocked(scope) {
+			return true
+		}
+	}
+	return false
+}
+
 // groupRouteLocked 取出分组路由状态并清理已删除成员的残留; 调用方必须持有锁。
 func groupRouteLocked(group model.Group) *RouteState {
 	route := routes[group.ID]
@@ -240,6 +462,7 @@ func itemOf(group model.Group, itemID int) model.GroupItem {
 
 // publishRouteLocked 非阻塞发布路由状态, 连接拥塞时关闭它并交给客户端重连获取全量快照; 冷却表按值复制以免前端读到后续变更; 调用方必须持有锁。
 func publishRouteLocked(route *RouteState) {
+	markRouteDirty(route.GroupID) // 路由状态变更后由后台批量落库, 重启可恢复。
 	message := *route
 	message.Cooldowns = maps.Clone(route.Cooldowns)
 	for stream := range routeStreams {

@@ -6,6 +6,13 @@ export const pageImports = {
     channel: () => import('@/components/modules/channel'),
     group: () => import('@/components/modules/group'),
     model: () => import('@/components/modules/model'),
+    users: () => import('@/components/modules/users'),
+    audit: () => import('@/components/modules/audit'),
+    ratelimit: () => import('@/components/modules/ratelimit'),
+    ops: () => import('@/components/modules/ops'),
+    share: () => import('@/components/modules/share'),
+    billing: () => import('@/components/modules/billing'),
+    apikey: () => import('@/components/modules/apikey'),
     log: () => import('@/components/modules/log'),
     setting: () => import('@/components/modules/setting'),
 };

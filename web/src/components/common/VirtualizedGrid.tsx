@@ -149,7 +149,8 @@ export function VirtualizedGrid<T>({
         <div className="relative h-full min-h-0 w-full">
             <div
                 ref={containerRef}
-                className="relative h-full w-full overflow-y-auto overscroll-contain rounded-t-3xl"
+                // 移动端底部内边距为贴底导航留净空, 否则最后一行永远压在导航下面点不到。
+                className="relative h-full w-full overflow-y-auto overscroll-contain rounded-t-3xl pb-24 md:pb-0"
             >
                 {rowCount === 0 ? null : (
                     <div className="relative w-full" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>

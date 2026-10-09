@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,9 +20,16 @@ import (
 )
 
 const (
-	updateUrl    = "https://github.com/bestruirui/octopus/releases/latest/download"
-	updateApiUrl = "https://api.github.com/repos/bestruirui/octopus/releases/latest"
+	// 更新源留空即暂停版本更新(不查新版本也不下载); 部署自有仓库后在此填写即可恢复。
+	updateUrl    = ""
+	updateApiUrl = ""
 )
+
+// ErrUpdatePaused 表示版本更新处于暂停状态: 更新源尚未配置。
+var ErrUpdatePaused = errors.New("update paused: update source not configured")
+
+// Paused 报告版本更新是否暂停: 任一更新源地址为空即暂停。
+func Paused() bool { return updateUrl == "" || updateApiUrl == "" }
 
 type LatestInfo struct {
 	TagName     string `json:"tag_name"`
@@ -83,6 +91,9 @@ func doRequest(url string, useProxy bool) ([]byte, error) {
 }
 
 func GetLatestInfo() (*LatestInfo, error) {
+	if Paused() {
+		return nil, ErrUpdatePaused
+	}
 	body, err := doRequestWithFallback(updateApiUrl)
 	if err != nil {
 		return nil, err

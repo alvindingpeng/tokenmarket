@@ -23,10 +23,20 @@ type Database struct {
 	Path string `mapstructure:"path"`
 }
 
+// Backup 备份机密配置: 只走 config.json 或环境变量(OCTOPUS_BACKUP_*), 不入库。
+// 备份文件包含整个数据库, 口令与异地凭据若入库会被一并备份出去。
+type Backup struct {
+	Passphrase     string `mapstructure:"passphrase"`      // 备份加密口令, 空表示不加密。
+	RemoteURL      string `mapstructure:"remote_url"`      // WebDAV 异地目录地址, 空表示不推送。
+	RemoteUser     string `mapstructure:"remote_user"`     // WebDAV 用户名(可选)。
+	RemotePassword string `mapstructure:"remote_password"` // WebDAV 密码(可选)。
+}
+
 type Config struct {
 	Server   Server   `mapstructure:"server"`
 	Log      Log      `mapstructure:"log"`
 	Database Database `mapstructure:"database"`
+	Backup   Backup   `mapstructure:"backup"`
 }
 
 var AppConfig Config

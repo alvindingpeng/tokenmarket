@@ -23,5 +23,13 @@ func init() {
 		AddRoute(
 			router.NewRoute("/messages", http.MethodPost).
 				Handle(relay.Forward(llm.APIFormatAnthropicMessage)),
+		).
+		AddRoute(
+			router.NewRoute("/images/generations", http.MethodPost).
+				Handle(relay.Forward(llm.APIFormatOpenAIImageGeneration)),
+		).
+		AddRoute(
+			router.NewRoute("/images/edits", http.MethodPost).
+				Handle(relay.Forward(llm.APIFormatOpenAIImageEdit)),
 		)
 }

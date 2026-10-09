@@ -9,15 +9,22 @@
         "apikeyPlaceholder": "请输入 API 密钥 (sk-octopus-...)",
         "mode": {
             "user": "账户登录",
-            "apikey": "密钥登录"
+            "apikey": "密钥登录",
+            "registerUser": "注册用户",
+            "registerReseller": "注册渠道商"
         },
         "error": {
             "generic": "登录失败,请检查登录凭据"
         },
         "button": {
             "loading": "登录中...",
-            "submit": "登录"
-        }
+            "submit": "登录",
+            "register": "注册"
+        },
+        "reason": "申请理由",
+        "reasonPlaceholder": "申请成为渠道商的理由（选填）",
+        "registerSuccess": "注册成功，请登录。",
+        "registerPending": "已提交注册，等待管理员审批。"
     },
     "apiKeyDashboard": {
         "error": "加载数据失败",
@@ -41,10 +48,17 @@
     "navbar": {
         "home": "主页",
         "channel": "渠道",
-        "group": "分组",
+        "group": "模型配置",
         "model": "价格",
         "log": "日志",
-        "setting": "设置"
+        "setting": "设置",
+        "users": "用户管理",
+        "share": "发布管理",
+        "billing": "计费",
+        "apikey": "API 密钥",
+        "audit": "审计记录",
+        "ratelimit": "限流管理",
+        "ops": "运维中心"
     },
     "toolbar": {
         "hideChannelName": "模糊渠道名称",
@@ -65,9 +79,9 @@
                     "disabled": "仅禁用"
                 },
                 "group": {
-                    "all": "全部分组",
+                    "all": "全部模型配置",
                     "withMembers": "有成员",
-                    "empty": "空分组"
+                    "empty": "空模型配置"
                 },
                 "model": {
                     "all": "全部模型",
@@ -273,6 +287,12 @@
                 "change": "修改密码",
                 "success": "密码修改成功",
                 "failed": "密码修改失败"
+            },
+            "logout": {
+                "label": "退出登录",
+                "hint": "退出当前账号的登录状态",
+                "button": "退出登录",
+                "toast": "已退出登录"
             }
         },
         "info": {
@@ -300,6 +320,53 @@
             },
             "clearSuccess": "日志已清空",
             "clearFailed": "清空失败"
+        },
+        "platform": {
+            "title": "平台设置",
+            "markupRatio": "上浮比例",
+            "markupRatioHint": "用户价 = 供货价 ×（1 + 比例），如 0.2 表示上浮 20%。",
+            "userRegister": "用户注册",
+            "userRegisterHint": "开放普通用户自助注册。",
+            "resellerRegister": "渠道商注册",
+            "resellerRegisterHint": "开放渠道商自助注册（需填写申请理由）。",
+            "approvalRequired": "注册审批",
+            "approvalRequiredHint": "新注册账号需管理员审批后才能登录。",
+            "minBalance": "最低余额",
+            "minBalanceHint": "可用余额低于该值时拒绝新请求。",
+            "reserveCap": "预扣输出上限",
+            "reserveCapHint": "预扣估算按单请求输出 token 上限折算。",
+            "reserveImages": "生图预扣张数",
+            "reserveImagesHint": "生图请求未指定 n 时按此张数预扣(默认 4)。",
+            "invalidNumber": "请输入有效数字"
+        },
+        "scoreWeights": {
+            "label": "综合评分默认参数",
+            "hint": "综合评分路由的系统默认权重配比;分组内权重填 0(未自定义)时按此执行,分组内自定义值优先。",
+            "price": "价格",
+            "latency": "延迟",
+            "success": "成功率"
+        },
+        "systemInfo": {
+            "title": "系统信息配置",
+            "siteName": "站点名称",
+            "siteNameHint": "展示在浏览器标题与登录页, 留空则使用默认名称。",
+            "siteNamePlaceholder": "例如: Octopus 中转站",
+            "siteContact": "联系方式",
+            "siteContactHint": "供用户寻求支持的入口, 可填邮箱或群链接。",
+            "siteContactPlaceholder": "例如: support@example.com",
+            "siteDescription": "站点描述",
+            "siteDescriptionHint": "一句话介绍本站用途, 展示在登录页与关于处。",
+            "siteDescriptionPlaceholder": "例如: 稳定高速的 AI 模型 API 中转服务",
+            "announcementEnabled": "启用公告",
+            "announcementEnabledHint": "开启后向全部登录用户展示公告内容。",
+            "announcement": "公告内容",
+            "announcementHint": "全局公告正文, 留空则不展示。",
+            "announcementPlaceholder": "例如: 今晚 23:00 起进行维护, 预计 30 分钟",
+            "maintenanceMode": "维护模式",
+            "maintenanceModeHint": "开启后仅管理员可登录, 其余账号登录会被拒绝。",
+            "maintenanceNotice": "维护提示",
+            "maintenanceNoticeHint": "用户登录被拒时看到的提示文案。",
+            "maintenanceNoticePlaceholder": "例如: 系统升级维护中, 请稍后再试"
         }
     },
     "group": {
@@ -317,7 +384,8 @@
             "empty": "暂无规则",
             "activate": "设为活动项",
             "cooling": "冷却 {seconds}s",
-            "affinity": "亲和 {seconds}s"
+            "affinity": "亲和 {seconds}s",
+            "metricTitle": "选路采样 {samples} 次;按滑动平均估算首响应耗时与成功率,供路由策略参考"
         },
         "detail": {
             "actions": {
@@ -327,13 +395,15 @@
             }
         },
         "form": {
-            "name": "分组名称",
+            "name": "模型名称",
             "mode": "路由模式",
-            "modeHint": "手动固定选中成员；故障转移按成员顺序并在失败时切换",
+            "modeHint": "手动固定选中成员;其余策略按各自维度自动选择成员,并在失败时自动切换",
             "manual": "手动",
             "failover": "故障转移",
             "members": "成员",
             "relay": "路由策略",
+            "presetHint": "可按当前模式应用推荐默认参数, 已有手工调整不会自动覆盖",
+            "applyPreset": "应用模式默认",
             "retryCount": "总尝试次数",
             "retryCountHint": "单个成员包含首次请求的总尝试次数",
             "retryInterval": "重试间隔（秒）",
@@ -349,8 +419,41 @@
             "items": "成员顺序",
             "addItem": "添加模型",
             "autoAdd": "自动添加",
-            "clear": "清空"
-        }
+            "autoAddTitle": "自动添加 {count} 项匹配且未选中的成员",
+            "autoAddNeedKeyword": "先输入模型名或渠道名关键词",
+            "autoAddNoMatch": "无匹配项: 请调整关键词",
+            "autoAddAllAdded": "匹配项已全部添加",
+            "autoAddDone": "已自动添加 {count} 项",
+            "clear": "清空",
+            "price": "低价优先",
+            "latency": "延迟优先",
+            "success": "成功率优先",
+            "score": "综合评分",
+            "random": "随机分发",
+            "priceMetric": "价格口径",
+            "priceMetricHint": "低价优先与综合评分比较成员价格时使用的维度",
+            "priceMetricBlended": "读写均值",
+            "priceMetricInput": "仅输入价格",
+            "priceMetricOutput": "仅输出价格",
+            "metricWindow": "指标样本窗口",
+            "metricWindowHint": "延迟与成功率指标的平滑样本规模(5-200),越大越稳定,越小反应越快",
+            "scorePriceWeight": "评分·价格权重",
+            "scoreLatencyWeight": "评分·延迟权重",
+            "scoreSuccessWeight": "评分·成功率权重",
+            "scoreWeightHint": "三个权重为相对值(0-100),可任意配比;填 0 表示该维度未自定义,运行时跟随系统默认参数(管理员可在设置页调整)",
+            "request_timeout_seconds": "请求总超时（秒）",
+            "request_timeout_secondsHint": "包含排队、重试和完整流式传输；默认 600 秒。",
+            "max_total_attempts": "单请求最大尝试次数",
+            "max_total_attemptsHint": "跨所有成员的总尝试上限，默认 10。",
+            "max_wait_seconds": "累计最大排队时间（秒）",
+            "max_wait_secondsHint": "0 不等待；仅在队列容量大于 0 时生效。",
+            "max_waiting_requests": "排队容量",
+            "max_waiting_requestsHint": "默认 0（关闭）。容量占满或等待超时返回 429。",
+            "member_stream_idle_timeout_seconds": "流式空闲超时（秒）",
+            "member_stream_idle_timeout_secondsHint": "连续无流事件时中止，默认 60 秒。"
+        },
+        "memberPrice": "读 {input} / 写 {output}（每百万 token）",
+        "modelPrice": "读 {input} / 写 {output} / 缓存读 {cacheRead} / 缓存写 {cacheWrite}（每百万 token）"
     },
     "model": {
         "create": {
@@ -417,7 +520,89 @@
             "cancelFailed": "取消当前请求失败",
             "waitingChannelSelection": "正在等待选择渠道",
             "waitingResponse": "正在等待上游响应",
-            "responseStreaming": "上游已响应，流式传输正在进行"
+            "responseStreaming": "上游已响应，流式传输正在进行",
+            "timeline": "路由时间线",
+            "timelineEmpty": "尚无上游尝试记录",
+            "routeReason": {
+                "unavailable": "不可用",
+                "rate_or_concurrency_limit": "限流或并发占满",
+                "not_manual_target": "非手动指定成员",
+                "cooldown": "冷却中",
+                "selected": "已选择",
+                "eligible": "可用候选",
+                "affinity": "成员亲和",
+                "recovery_probe": "恢复探测",
+                "route_selected": "策略选择",
+                "upstream_limit": "上游限流",
+                "upstream_success": "上游成功",
+                "upstream_timeout": "上游超时",
+                "upstream_failure": "上游失败",
+                "request_canceled": "请求取消",
+                "strategy_manual": "策略：manual",
+                "strategy_failover": "策略：failover",
+                "strategy_price": "策略：price",
+                "strategy_latency": "策略：latency",
+                "strategy_success": "策略：success",
+                "strategy_score": "策略：score",
+                "strategy_random": "策略：random"
+            },
+            "attemptStatus": {
+                "running": "进行中",
+                "success": "成功",
+                "failed": "失败",
+                "limited": "受限",
+                "timeout": "超时",
+                "canceled": "取消"
+            },
+            "eventPhase": {
+                "received": "接收",
+                "admission": "额度检查",
+                "selection": "选路",
+                "waiting": "排队",
+                "dispatch": "转发",
+                "finished": "结束"
+            },
+            "eventReason": {
+                "request_received": "收到请求",
+                "user_admitted": "用户额度通过",
+                "waiting_for_upstream": "等待可用上游",
+                "upstream_admitted": "上游额度通过",
+                "success": "成功",
+                "failed": "失败",
+                "canceled": "已取消",
+                "affinity": "亲和命中",
+                "recovery_probe": "恢复探测"
+            }
+        },
+        "group": "模型配置",
+        "tabs": {
+            "live": "实时",
+            "history": "历史"
+        },
+        "history": {
+            "searchPlaceholder": "搜索模型 / 渠道编码 / Key / 错误…",
+            "filterIp": "客户端 IP",
+            "filterModel": "模型",
+            "filterChannel": "渠道",
+            "export": "导出 CSV",
+            "search": "搜索",
+            "statusAll": "全部状态",
+            "status": {
+                "success": "成功",
+                "failed": "失败",
+                "canceled": "已取消",
+                "committed": "响应中",
+                "running": "进行中"
+            },
+            "loading": "加载中…",
+            "loadFailed": "历史日志加载失败",
+            "retry": "重试",
+            "empty": "没有符合条件的日志",
+            "pagination": {
+                "page": "第 {page} 页 · 共 {total} 条",
+                "prev": "上一页",
+                "next": "下一页"
+            }
         }
     },
     "channel": {
@@ -445,7 +630,15 @@
             "edit": "编辑",
             "delete": "删除",
             "confirmDelete": "确认删除",
-            "cancel": "取消"
+            "cancel": "取消",
+            "cumulative": "累计",
+            "trend": "近 14 天趋势",
+            "trendChannel": "渠道整体",
+            "trendDate": "日期",
+            "trendRequests": "请求",
+            "trendSuccessRate": "成功率",
+            "trendAvgLatency": "平均延迟",
+            "trendEmpty": "暂无数据"
         },
         "form": {
             "stepPreset": "开始",
@@ -476,6 +669,8 @@
             "modelRefreshEmpty": "未获取到模型",
             "channelProxy": "渠道代理",
             "matchRegex": "匹配正则",
+            "modelAutoAdd": "保存后自动添加模型",
+            "modelAutoAddHint": "保存后自动探测上游 /models 并并入本渠道: 只增不删, 授权按位并入, 单次最多 200 个。",
             "paramOverride": "参数覆盖",
             "customHeader": "自定义 Header",
             "customHeaderKey": "Header Key",
@@ -490,6 +685,475 @@
             "grantClearAll": "清空全部模型",
             "modelRemove": "移除模型",
             "grantRemove": "移除该凭据的授权"
+        }
+    },
+    "share": {
+        "shareCode": "共享编码",
+        "copyCode": "复制编码",
+        "notPublished": "未发布",
+        "manageListing": "模型上架与定价",
+        "loadFailed": "渠道加载失败",
+        "loading": "加载中…",
+        "empty": "暂无渠道",
+        "toast": {
+            "published": "已发布，编码 {code}",
+            "unpublished": "已收回发布",
+            "copied": "已复制"
+        },
+        "listing": {
+            "title": "模型上架与定价 — {name}",
+            "loading": "模型加载中…",
+            "empty": "暂无模型，请先在渠道配置中拉取模型列表。",
+            "hint": "已上架但未定价的模型按 0 计费；单价为每百万 token。",
+            "save": "保存",
+            "toast": {
+                "saved": "已保存",
+                "fillNoRef": "该模型没有参考价",
+                "fillNone": "没有可填充的未定价模型",
+                "fillDone": "已填充 {count} 个模型"
+            },
+            "column": {
+                "listed": "上架",
+                "model": "模型",
+                "input": "输入",
+                "output": "输出",
+                "cacheRead": "缓存读",
+                "cacheWrite": "缓存写",
+                "fill": "参考价",
+                "userPrice": "用户价(输入/输出)"
+            },
+            "search": "搜索模型",
+            "counts": "显示 {shown} / {total} 个模型",
+            "changed": "有 {count} 处改动待保存",
+            "zeroPriced": "{count} 个已上架模型未定价(如 {models}), 上架即按 0 计费, 请先定价",
+            "userPriceHint": "用户价 = 供货价 × (1 + 全局上浮比例), 用户实际支付的单价",
+            "userPriceValue": "入 {input} / 出 {output}",
+            "userPricePerImage": "{value} / 张",
+            "mediaHint": "生图模型按张计价(上面输入每张供货价), token 四类价保持原值不动。",
+            "fillAll": "填充未定价项",
+            "fillOne": "填入参考价",
+            "refHint": "参考价来自全局价格表(models.dev 自动同步、管理员维护),仅供快速预填,保存前请按你的供货协议调整。",
+            "filter": {
+                "all": "全部模型",
+                "listed": "仅已上架",
+                "unlisted": "仅未上架",
+                "unpriced": "仅未定价",
+                "empty": "没有符合当前筛选的模型"
+            }
+        }
+    },
+    "billing": {
+        "loadFailed": "加载失败",
+        "filters": {
+            "model": "模型",
+            "channel": "渠道",
+            "statusAll": "全部状态",
+            "apply": "筛选",
+            "export": "导出 CSV"
+        },
+        "pagination": {
+            "summary": "第 {current}/{pages} 页 · 共 {count} 条"
+        },
+        "ledger": {
+            "title": "余额流水",
+            "hint": "冻结/解冻/扣费/调账逐笔留痕",
+            "empty": "暂无余额流水",
+            "kindAll": "全部类型",
+            "kind": {
+                "reserve": "预扣",
+                "settle": "结算",
+                "release": "释放",
+                "adjust": "调账"
+            },
+            "column": {
+                "time": "时间",
+                "kind": "类型",
+                "frozen": "冻结变动",
+                "amount": "可用变动",
+                "cost": "实际费用",
+                "balance": "变动后余额",
+                "note": "说明"
+            }
+        },
+        "account": {
+            "title": "账户概览",
+            "balance": "可用余额",
+            "frozen": "冻结额",
+            "frozenHint": "预扣中",
+            "totalSpent": "累计消费",
+            "totalRevenue": "累计收入",
+            "totalRecharged": "累计充值"
+        },
+        "details": {
+            "title": "消费明细",
+            "hint": "可筛选 / 分页 / 导出",
+            "empty": "暂无消费记录",
+            "column": {
+                "time": "时间",
+                "model": "模型",
+                "channel": "渠道",
+                "tokens": "Tokens",
+                "spend": "支出",
+                "revenue": "收入",
+                "unitPrice": "单价/1M",
+                "status": "状态"
+            }
+        },
+        "tokens": {
+            "input": "输入",
+            "output": "输出",
+            "cacheRead": "缓存读",
+            "cacheWrite": "缓存写",
+            "images": "图"
+        },
+        "status": {
+            "settled": "已结算",
+            "refunded": "已退款"
+        },
+        "trend": {
+            "title": "消费趋势",
+            "range": "近 30 天",
+            "empty": "近 30 天暂无消费数据",
+            "summary": "合计",
+            "column": {
+                "date": "日期",
+                "requests": "请求数",
+                "tokens": "Tokens",
+                "spend": "消费"
+            }
+        },
+        "revenue": {
+            "title": "收入趋势",
+            "hint": "按供货价",
+            "empty": "近 30 天暂无收入数据",
+            "summary": "合计",
+            "column": {
+                "ownerRevenue": "供货收入",
+                "commission": "平台佣金"
+            }
+        }
+    },
+    "users": {
+        "title": "用户管理",
+        "create": "创建用户",
+        "table": {
+            "username": "用户名",
+            "role": "角色",
+            "status": "状态",
+            "balance": "余额",
+            "frozen": "冻结",
+            "totalSpent": "累计消费",
+            "totalRevenue": "累计收益",
+            "createdAt": "创建时间",
+            "actions": "操作",
+            "unknownDate": "未知"
+        },
+        "role": {
+            "admin": "管理员",
+            "reseller": "渠道商",
+            "user": "用户"
+        },
+        "status": {
+            "active": "启用",
+            "pending": "待审核",
+            "disabled": "停用"
+        },
+        "form": {
+            "username": "用户名",
+            "password": "密码",
+            "passwordOptional": "密码（可选）",
+            "passwordUnchanged": "留空则保持原密码不变",
+            "role": "角色",
+            "status": "状态",
+            "cancel": "取消",
+            "submit": "创建",
+            "submitting": "创建中...",
+            "save": "保存",
+            "saving": "保存中...",
+            "balance": "余额",
+            "balanceHint": "按绝对值直接调整;与原值一致则不改动。充值功能后续上线。"
+        },
+        "action": {
+            "edit": "编辑",
+            "resetPassword": "重置密码",
+            "delete": "删除"
+        },
+        "reset": {
+            "description": "为 {username} 设置新密码。",
+            "newPassword": "新密码",
+            "submit": "重置",
+            "resetting": "重置中..."
+        },
+        "delete": {
+            "description": "确定删除用户 {username}？该操作不可撤销。",
+            "submit": "删除",
+            "deleting": "删除中..."
+        },
+        "toast": {
+            "created": "用户已创建",
+            "createFailed": "创建用户失败",
+            "updated": "用户已更新",
+            "updateFailed": "更新用户失败",
+            "passwordReset": "密码已重置",
+            "resetFailed": "重置密码失败",
+            "deleted": "用户已删除",
+            "deleteFailed": "删除用户失败"
+        },
+        "list": {
+            "empty": "暂无用户",
+            "error": "用户列表加载失败",
+            "retry": "重试"
+        }
+    },
+    "audit": {
+        "title": "审计记录",
+        "total": "共 {total} 条",
+        "refresh": "刷新",
+        "loading": "加载中...",
+        "error": "审计记录加载失败",
+        "retry": "重试",
+        "empty": "暂无审计记录",
+        "filters": {
+            "keyword": "搜索操作者、目标或明细",
+            "operator": "操作者",
+            "actionAll": "全部动作",
+            "from": "开始日期",
+            "to": "结束日期",
+            "search": "搜索",
+            "reset": "重置",
+            "clear": "清除搜索",
+            "export": "导出 CSV"
+        },
+        "table": {
+            "time": "时间",
+            "operator": "操作者",
+            "action": "动作",
+            "target": "目标",
+            "detail": "明细"
+        },
+        "pagination": {
+            "page": "第 {page} 页 / 共 {total} 条",
+            "prev": "上一页",
+            "next": "下一页"
+        },
+        "action": {
+            "user.create": "创建用户",
+            "user.update": "修改用户",
+            "user.balance": "调整余额",
+            "user.reset-password": "重置密码",
+            "user.delete": "删除用户",
+            "setting.set": "修改设置",
+            "backup.export": "导出备份",
+            "backup.import": "导入备份",
+            "log.clear": "清空日志",
+            "channel.publish": "发布渠道",
+            "model.create": "新增模型价格",
+            "model.update": "修改模型价格",
+            "model.delete": "删除模型价格",
+            "model.update-price": "同步模型价格",
+            "model.rebuild-price": "重建模型价格",
+            "update.core": "更新内核",
+            "audit.export": "导出审计记录"
+        }
+    },
+    "ratelimit": {
+        "title": "限流管理",
+        "total": "共 {total} 条策略",
+        "refresh": "刷新",
+        "create": "新建策略",
+        "edit": "编辑策略",
+        "loading": "加载中...",
+        "error": "限流策略加载失败",
+        "retry": "重试",
+        "empty": "暂无限流策略",
+        "filters": {
+            "scopeAll": "全部范围",
+            "clear": "清除"
+        },
+        "scope": {
+            "system": "系统默认",
+            "user": "用户",
+            "api_key": "API 密钥",
+            "group": "分组",
+            "channel": "渠道",
+            "channel_key": "渠道凭据",
+            "channel_model": "渠道模型"
+        },
+        "form": {
+            "scopeType": "限流范围",
+            "scopeTarget": "范围对象",
+            "scopeTargetHint": "选择对象",
+            "scopeIdHint": "对象 ID",
+            "modelName": "模型名",
+            "modelNameHint": "留空表示全部模型",
+            "rpm": "RPM(请求/分钟)",
+            "tpm": "TPM(token/分钟)",
+            "enabled": "启用",
+            "save": "保存",
+            "cancel": "取消",
+            "hint": "0 表示不限；全部模型策略共享额度，指定模型策略另行生效。系统策略为主体默认值。"
+        },
+        "table": {
+            "scope": "范围",
+            "model": "模型",
+            "rpm": "RPM",
+            "tpm": "TPM",
+            "status": "状态",
+            "updated": "更新时间",
+            "actions": "操作",
+            "allModels": "全部模型",
+            "unlimited": "不限",
+            "enabled": "启用",
+            "disabled": "停用"
+        },
+        "inspect": {
+            "title": "实时用量",
+            "rpm": "生效 RPM",
+            "tpm": "生效 TPM",
+            "requests": "本窗口请求数",
+            "tokens": "本窗口 token 数",
+            "resetAt": "窗口刷新",
+            "blocked": "已触顶",
+            "empty": "选择范围后查看实时用量"
+        },
+        "usage": {
+            "hour": "小时",
+            "requests": "请求数",
+            "input": "输入 token",
+            "output": "输出 token",
+            "rejected": "限流拒绝"
+        },
+        "concurrent": "并发上限",
+        "active": "当前活跃"
+    },
+    "ops": {
+        "title": "运维中心",
+        "overview": {
+            "requests": "24h 请求",
+            "successRate": "24h 成功率",
+            "tokens": "24h Tokens",
+            "cost": "24h 费用",
+            "active": "进行中",
+            "channels": "渠道 启用/总数",
+            "alerts": "24h 告警"
+        },
+        "saved": "已保存",
+        "saveFailed": "保存失败",
+        "refresh": "刷新",
+        "running": "执行中...",
+        "loading": "加载中...",
+        "empty": "暂无数据",
+        "loadFailed": "加载失败",
+        "tabs": {
+            "reconcile": "计费对账",
+            "flow": "余额流水",
+            "backup": "备份",
+            "archive": "日志归档",
+            "health": "渠道健康",
+            "alerts": "告警记录"
+        },
+        "reconcile": {
+            "desc": "每日自动核对计费明细与预扣结算; 对账差异与备份/归档失败会自动生成告警并推送 Webhook。"
+        },
+        "flow": {
+            "desc": "余额预扣/结算/释放流水(最近 100 条), 管理员可按用户 ID 过滤。",
+            "userFilter": "按用户 ID 过滤",
+            "requestId": "请求 ID",
+            "userId": "用户 ID",
+            "kind": "类型",
+            "amount": "金额",
+            "settled": "结算状态",
+            "settledYes": "已结算",
+            "settledNo": "未结算",
+            "userCost": "用户支出",
+            "time": "时间",
+            "kindReserve": "预扣",
+            "kindSettle": "结算",
+            "kindRelease": "释放"
+        },
+        "backup": {
+            "desc": "SQLite 一致性快照备份, 保存于 data/backups/。",
+            "run": "立即备份",
+            "runSuccess": "备份完成: {file}",
+            "runFailed": "备份失败",
+            "name": "文件",
+            "size": "大小",
+            "time": "时间"
+        },
+        "archive": {
+            "desc": "调用日志按天归档为 NDJSON 后清理, 当前留存 {days} 天, 归档保存于 data/archives/。",
+            "run": "立即归档清理",
+            "runSuccess": "清理完成: 归档 {archived} 条, 删除 {deleted} 条",
+            "runFailed": "归档清理失败",
+            "name": "文件",
+            "size": "大小",
+            "time": "时间"
+        },
+        "health": {
+            "desc": "渠道健康探测记录(需在设置中开启)。连续 5 次失败判定宕机; 探测正常但延迟超过阈值时判定降级; 恢复后自动补发恢复告警。",
+            "runNow": "立即探测",
+            "runSuccess": "探测完成",
+            "runFailed": "探测失败"
+        },
+        "alerts": {
+            "desc": "宕机/恢复/降级/对账差异/备份与归档失败/计费结算失败告警; 配置 Webhook 后自动外发, 同类型告警 10 分钟去重。",
+            "channel": "渠道",
+            "kind": "类型",
+            "reason": "原因",
+            "notified": "已外发",
+            "yes": "是",
+            "no": "否",
+            "time": "时间",
+            "kindDown": "宕机",
+            "kindRecovered": "已恢复",
+            "kindDegraded": "降级",
+            "kindMismatch": "对账差异",
+            "kindBackup": "备份失败",
+            "kindArchive": "归档失败",
+            "kindBilling": "计费失败",
+            "kindTest": "测试",
+            "kindLowBalance": "余额触底"
+        },
+        "settings": {
+            "title": "运营可靠性",
+            "logRetention": "日志留存天数",
+            "logRetentionHint": "调用日志保留 1-3650 天, 默认 7 天",
+            "logStoreBody": "保存请求/响应正文",
+            "logStoreBodyHint": "关闭后仅记录概览与用量",
+            "logArchive": "清理前先归档",
+            "logArchiveHint": "超期日志先写入归档目录再删除",
+            "logMaskFields": "额外脱敏字段",
+            "logMaskFieldsHint": "逗号分隔的 JSON 字段名",
+            "autoBackup": "自动备份",
+            "autoBackupHint": "定时 SQLite 一致性快照",
+            "autoBackupKeep": "备份保留份数",
+            "autoBackupInterval": "备份间隔(小时)",
+            "healthCheck": "渠道健康探测",
+            "healthCheckHint": "会向上游发起真实请求, 可能产生费用",
+            "healthCheckInterval": "探测间隔(分钟)",
+            "webhook": "告警 Webhook",
+            "webhookHint": "http/https 地址, 留空仅站内记录",
+            "healthLatency": "延迟告警阈值(毫秒)",
+            "healthLatencyHint": "探测正常但超过该延迟时发出降级告警, 0 表示关闭",
+            "webhookTest": "测试通知",
+            "webhookTesting": "发送中...",
+            "webhookTestOk": "Webhook 连通性正常",
+            "webhookTestFail": "Webhook 测试失败",
+            "backupEncrypt": "备份加密",
+            "backupEncryptHint": "AES-256 加密落地备份; 口令在 config.json backup.passphrase 或环境变量 OCTOPUS_BACKUP_PASSPHRASE",
+            "backupRemote": "备份异地推送",
+            "alertDedup": "告警去重窗口(分钟)",
+            "alertDedupHint": "同渠道同类型同原因在该窗口内只告警一次, 0 表示不限制(每次都记)",
+            "alertFailStreak": "连续失败判宕机次数",
+            "alertFailStreakHint": "连续多少次探测失败才判定渠道宕机, 用于抑制单次抖动, 默认 5",
+            "metricsAuth": "/metrics 鉴权",
+            "metricsAuthHint": "开启后抓取 /metrics 需携带令牌; /healthz 恒不鉴权(存活探针)",
+            "metricsToken": "抓取令牌",
+            "metricsTokenHint": "抓取端用 Authorization: Bearer <令牌> 或 ?token=<令牌>; 该凭据不进备份, 恢复后重新生成即可",
+            "metricsTokenCopied": "令牌已复制",
+            "metricsTokenRotate": "重新生成",
+            "metricsTokenRotated": "令牌已轮换, 旧令牌立即失效",
+            "backupRemoteHint": "WebDAV 推送副本与校验和; 地址凭据在 config.json backup.remote_*, 失败自动告警"
         }
     }
 }

@@ -2,6 +2,7 @@ package model
 
 type APIKey struct {
 	ID              int      `json:"id" gorm:"primaryKey"`
+	UserID          uint     `json:"user_id" gorm:"index;not null;default:0"` // 归属用户; 计费与数据隔离的归属依据。
 	Name            string   `json:"name" gorm:"not null"`
 	APIKey          string   `json:"api_key" gorm:"not null"`
 	Enabled         bool     `json:"enabled" gorm:"default:true"`

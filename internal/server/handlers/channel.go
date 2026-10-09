@@ -2,14 +2,11 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"path"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
@@ -18,21 +15,29 @@ import (
 	"github.com/bestruirui/octopus/internal/server/middleware"
 	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/bestruirui/octopus/internal/server/router"
-	"github.com/dlclark/regexp2"
+	"github.com/charmbracelet/log"
 	"github.com/gin-gonic/gin"
 )
 
 func init() {
+	// 渠道管理: 管理员(全部渠道)与渠道商(自有渠道); 用户无渠道管理。
 	router.NewGroupRouter("/api/v1/channel").
 		Use(middleware.Auth()).
 		Use(middleware.RequireJSON()).
 		AddRoute(
 			router.NewRoute("/detail/:id", http.MethodGet).
+				Allow(model.RoleAdmin, model.RoleReseller).
 				Handle(getChannelDetail),
 		).
 		AddRoute(
 			router.NewRoute("/stats", http.MethodGet).
+				Allow(model.RoleAdmin, model.RoleReseller).
 				Handle(listChannelStats),
+		).
+		AddRoute(
+			router.NewRoute("/stats/daily/:id", http.MethodGet).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(getChannelDailyStats),
 		).
 		AddRoute(
 			router.NewRoute("/grants", http.MethodGet).
@@ -40,24 +45,164 @@ func init() {
 		).
 		AddRoute(
 			router.NewRoute("/create", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
 				Handle(createChannel),
 		).
 		AddRoute(
 			router.NewRoute("/update", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
 				Handle(updateChannel),
 		).
 		AddRoute(
 			router.NewRoute("/enable", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
 				Handle(enableChannel),
 		).
 		AddRoute(
 			router.NewRoute("/delete/:id", http.MethodDelete).
+				Allow(model.RoleAdmin, model.RoleReseller).
 				Handle(deleteChannel),
 		).
 		AddRoute(
 			router.NewRoute("/fetch-model", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
 				Handle(fetchModel),
+		).
+		AddRoute(
+			router.NewRoute("/publish", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(publishChannel),
+		).
+		AddRoute(
+			router.NewRoute("/models/:id", http.MethodGet).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(getChannelModelListings),
+		).
+		AddRoute(
+			router.NewRoute("/models/update", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(updateChannelModelListings),
 		)
+}
+
+// scopeOf 从上下文取访问者作用域。
+func scopeOf(c *gin.Context) model.Scope {
+	userID, role := middleware.CurrentUser(c)
+	return model.Scope{ID: userID, Role: role}
+}
+
+// publishChannel 发布或取消发布渠道到用户侧; 发布自动生成唯一编码。
+func publishChannel(c *gin.Context) {
+	var request struct {
+		ID     int  `json:"id"`
+		Shared bool `json:"shared"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	channel, err := op.ChannelPublish(request.ID, request.Shared, scopeOf(c), c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	audit(c, "channel.publish", fmt.Sprintf("channel#%d", channel.ID), fmt.Sprintf("shared=%v share_code=%s", channel.Shared, channel.ShareCode))
+	resp.Success(c, gin.H{"id": channel.ID, "shared": channel.Shared, "share_code": channel.ShareCode})
+}
+
+// getChannelModelListings 返回渠道模型的上架配置(含四类供货价), 供发布管理界面编辑。
+func getChannelModelListings(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
+		return
+	}
+	listings, err := op.ChannelModelListingGet(id, scopeOf(c))
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+	resp.Success(c, listings)
+}
+
+// listingChange 描述一行改价/上下架的前后差异, 用于审计与回执。
+type listingChange struct {
+	Name   string `json:"name"`
+	Detail string `json:"detail"`
+}
+
+// diffListings 比对上架配置的改动, 只回报真正变化的行。
+// 整体提交的语义是"这份清单生效", 但审计要回答的是"谁把哪个模型的价格从多少改成了多少",
+// 因此这里按名称逐字段比对, 未变动的行不进审计, 避免每次保存都写几十条噪声。
+func diffListings(before []op.ChannelModelListing, after []op.ChannelModelListing) []listingChange {
+	previous := make(map[string]op.ChannelModelListing, len(before))
+	for _, listing := range before {
+		previous[listing.Name] = listing
+	}
+	changes := make([]listingChange, 0)
+	for _, listing := range after {
+		old, ok := previous[listing.Name]
+		if !ok {
+			continue
+		}
+		if old.Listed != listing.Listed {
+			changes = append(changes, listingChange{
+				Name:   listing.Name,
+				Detail: fmt.Sprintf("listed: %v -> %v", old.Listed, listing.Listed),
+			})
+		}
+		fields := []struct {
+			name     string
+			oldValue float64
+			newValue float64
+		}{
+			{"input", old.SupplyPrice.Input, listing.SupplyPrice.Input},
+			{"output", old.SupplyPrice.Output, listing.SupplyPrice.Output},
+			{"cache_read", old.SupplyPrice.CacheRead, listing.SupplyPrice.CacheRead},
+			{"cache_write", old.SupplyPrice.CacheWrite, listing.SupplyPrice.CacheWrite},
+		}
+		for _, field := range fields {
+			if field.oldValue == field.newValue {
+				continue
+			}
+			changes = append(changes, listingChange{
+				Name:   listing.Name,
+				Detail: fmt.Sprintf("%s: %g -> %g", field.name, field.oldValue, field.newValue),
+			})
+		}
+	}
+	return changes
+}
+
+// updateChannelModelListings 更新渠道模型的上架与供货价; 未设置价格的模型按 0 计费。
+// 回执带上本次真正改动的行, 供前端提示"改了什么"; 改动同时写入审计, 使调价可追溯。
+func updateChannelModelListings(c *gin.Context) {
+	var request struct {
+		ID       int                      `json:"id"`
+		Listings []op.ChannelModelListing `json:"listings"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	before, err := op.ChannelModelListingGet(request.ID, scopeOf(c))
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+	if err := op.ChannelModelListingUpdate(request.ID, request.Listings, scopeOf(c), c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	changes := diffListings(before, request.Listings)
+	if len(changes) > 0 {
+		parts := make([]string, 0, len(changes))
+		for _, change := range changes {
+			parts = append(parts, change.Name+" "+change.Detail)
+		}
+		audit(c, "channel.model-price", fmt.Sprintf("channel#%d", request.ID), strings.Join(parts, "; "))
+	}
+	resp.Success(c, gin.H{"changed": changes})
 }
 
 // getChannelDetail 返回单个渠道的完整配置, 供编辑表单打开时读取。
@@ -68,7 +213,7 @@ func getChannelDetail(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
 		return
 	}
-	detail, err := op.ChannelDetailGet(id)
+	detail, err := op.ChannelDetailGet(id, scopeOf(c))
 	if err != nil {
 		resp.Error(c, http.StatusNotFound, err.Error())
 		return
@@ -76,15 +221,54 @@ func getChannelDetail(c *gin.Context) {
 	resp.Success(c, detail)
 }
 
+// getChannelDailyStats 返回渠道自身与各模型近若干天的按天统计, 供渠道页展示成功率与延迟的逐日变化。
+func getChannelDailyStats(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
+		return
+	}
+	days, err := strconv.Atoi(c.DefaultQuery("days", "14"))
+	if err != nil || days < 1 || days > 90 {
+		days = 14
+	}
+	userID, role := middleware.CurrentUser(c)
+	channelDaily, modelDaily, err := op.ChannelDailyStatsGet(id, days, model.Scope{ID: userID, Role: role})
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+	// 模型名按渠道模型主键补齐, 前端按 channel_model_id 归组即可。
+	names, err := op.ChannelModelNames(id)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	models := make([]gin.H, 0)
+	byModel := make(map[int][]model.StatsChannelModelDaily)
+	for _, row := range modelDaily {
+		byModel[row.ChannelModelID] = append(byModel[row.ChannelModelID], row)
+	}
+	for modelID, rows := range byModel {
+		models = append(models, gin.H{
+			"channel_model_id": modelID,
+			"model_name":       names[modelID],
+			"days":             rows,
+		})
+	}
+	resp.Success(c, gin.H{"channel": channelDaily, "models": models})
+}
+
 // listChannelStats 返回全部渠道及其模型的累计统计, 也是渠道列表页的数据来源。
 // 不带整份配置: 统计每次转发都在变, 界面按更短的间隔刷新它, 而路径, 代理与凭据明文只在编辑时用得上。
 func listChannelStats(c *gin.Context) {
-	resp.Success(c, op.ChannelStatsList())
+	resp.Success(c, op.ChannelStatsList(scopeOf(c)))
 }
 
 // listChannelGrant 返回全部渠道授权候选, 供分组页选取成员。
 func listChannelGrant(c *gin.Context) {
-	resp.Success(c, op.ChannelGrantCandidates())
+	// 候选口径按访问者区分: 归属者看自有渠道, 其他用户只看已发布渠道的上架模型(编码脱敏)。
+	resp.Success(c, op.ChannelGrantCandidates(scopeOf(c)))
 }
 
 func createChannel(c *gin.Context) {
@@ -93,7 +277,7 @@ func createChannel(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
-	channel, err := op.ChannelCreate(&req, c.Request.Context())
+	channel, err := op.ChannelCreate(&req, scopeOf(c), c.Request.Context())
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -102,6 +286,7 @@ func createChannel(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	autoAddAfterSave(c, channel.ID, req.ChannelConfig, scopeOf(c).ID)
 	resp.Success(c, channel)
 }
 
@@ -115,7 +300,7 @@ func updateChannel(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
 		return
 	}
-	channel, err := op.ChannelUpdate(&req, c.Request.Context())
+	channel, err := op.ChannelUpdate(&req, scopeOf(c), c.Request.Context())
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -128,7 +313,24 @@ func updateChannel(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	autoAddAfterSave(c, channel.ID, req.ChannelConfig, scopeOf(c).ID)
 	resp.Success(c, channel)
+}
+
+// autoAddAfterSave 渠道保存成功后, 若开启了 model_auto_add 则按配置自动探测并并入上游模型。
+// 探测与并入是 best-effort: 失败只记日志, 不影响已经成功的保存; 客户端构建失败同样只记日志。
+func autoAddAfterSave(c *gin.Context, channelID int, config model.ChannelConfig, actorID uint) {
+	if !config.ModelAutoAdd {
+		return
+	}
+	client, err := probeHTTPClient(config)
+	if err != nil {
+		log.Warnf("auto-add: build probe client for channel %d failed: %v", channelID, err)
+		return
+	}
+	if err := op.AutoAddChannelModels(c.Request.Context(), channelID, config, client, actorID); err != nil {
+		log.Warnf("auto-add: channel %d failed: %v", channelID, err)
+	}
 }
 
 func enableChannel(c *gin.Context) {
@@ -140,7 +342,7 @@ func enableChannel(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
-	if err := op.ChannelEnabled(request.ID, request.Enabled, c.Request.Context()); err != nil {
+	if err := op.ChannelEnabled(request.ID, request.Enabled, scopeOf(c), c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -153,7 +355,7 @@ func deleteChannel(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
 		return
 	}
-	if err := op.ChannelDel(id, c.Request.Context()); err != nil {
+	if err := op.ChannelDel(id, scopeOf(c), c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -183,251 +385,47 @@ func addChannelModelPrices(modelNames []string, ctx context.Context) error {
 	return op.LLMBatchCreate(llmInfos, ctx)
 }
 
-// fetchModel 按提交的渠道配置与凭据拉取上游模型列表, 并按过滤表达式筛选后返回。
-// 同时探测 OpenAI 与 Anthropic 两侧, 谁返回了哪些模型, 就给对应协议位打勾: 协议支持由探测结果决定, 无需用户声明。
-// OpenAI 侧记为 Responses 而不是 Chat: Chat Completions 已被官方标记弃用, 新渠道应默认走 Responses,
-// 仍需 Chat 的渠道由用户在界面上手动勾选。两侧的 /models 地址与认证形态不同, 故必须分别探测:
-// 单协议上游只有一侧会成功, "哪侧成功" 本身就是协议支持的证据。
-// 只有两侧都失败才算失败; 一侧失败属正常情况, 单协议上游本就只有一侧讲得通, 按成功那侧的结果返回。
+// fetchModel 按提交的渠道配置与凭据拉取上游模型列表; 探测与协议判定在 op.ProbeChannelModels,
+// 这里只负责按代理配置构建客户端并按失败类型映射状态码。
 func fetchModel(c *gin.Context) {
 	var request model.ChannelFetchModelRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
-	ctx := c.Request.Context()
-	// 探测收的是尚未落库的提交配置, 不经 normalizeChannelConfig, 故在此自行去空白;
-	// 其中只有地址是硬需求: 渠道尚未命名时也可试拉, 故名称不在此校验。
-	target := request.Channel
-	target.BaseURL = strings.TrimSpace(target.BaseURL)
-	target.ChannelProxy = strings.TrimSpace(target.ChannelProxy)
-	target.MatchRegex = strings.TrimSpace(target.MatchRegex)
-	if target.BaseURL == "" {
-		resp.Error(c, http.StatusBadRequest, "channel base url is required")
+	client, err := probeHTTPClient(request.Channel)
+	if err != nil {
+		resp.Error(c, http.StatusBadGateway, err.Error())
 		return
 	}
+	fetched, err := op.ProbeChannelModels(client, request.Channel, request.Key, c.Request.Context())
+	if err != nil {
+		// 地址缺失与过滤正则编译错误属请求参数问题, 按 400; 两侧探测都失败是调用方配置问题, 按 502 带上游原文。
+		if errors.Is(err, op.ErrProbeBaseURLRequired) || errors.Is(err, op.ErrProbeInvalidFilter) {
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		resp.Error(c, http.StatusBadGateway, err.Error())
+		return
+	}
+	resp.Success(c, fetched)
+}
 
+// probeHTTPClient 按渠道配置构建探测用的 HTTP 客户端: 直连 / 应用代理 / 渠道专用代理。
+// 渠道专用代理的客户端不共享, 用完即关空闲连接; 编辑表单的手动刷新与保存后的自动添加共用。
+func probeHTTPClient(target model.ChannelConfig) (*http.Client, error) {
 	var httpClient *http.Client
 	var err error
 	switch {
 	case !target.Proxy:
 		httpClient, err = rhttp.Direct()
-	case target.ChannelProxy == "":
+	case strings.TrimSpace(target.ChannelProxy) == "":
 		httpClient, err = rhttp.Proxy()
 	default:
-		httpClient, err = rhttp.New(target.ChannelProxy)
-		// 渠道专用代理的客户端不再共享, 探测完就得关掉空闲连接; 探测收的是未落库的输入, 留着也无从复用。
+		httpClient, err = rhttp.New(strings.TrimSpace(target.ChannelProxy))
 		if httpClient != nil {
 			defer httpClient.CloseIdleConnections()
 		}
 	}
-	if err != nil {
-		resp.Error(c, http.StatusBadGateway, err.Error())
-		return
-	}
-
-	var openaiModels, anthropicModels []string
-	var openaiErr, anthropicErr error
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		openaiModels, openaiErr = fetchOpenAIModels(httpClient, ctx, target, request.Key, modelsURL(target.BaseURL, target.OpenAIResponsePath))
-	}()
-	go func() {
-		defer wg.Done()
-		anthropicModels, anthropicErr = fetchAnthropicModels(httpClient, ctx, target, request.Key, modelsURL(target.BaseURL, target.AnthropicMessagePath))
-	}()
-	wg.Wait()
-
-	if openaiErr != nil && anthropicErr != nil {
-		// 上游鉴权失败或地址不通属于调用方配置问题, 按 502 返回并带上上游原文, 便于在界面上直接看到原因。
-		resp.Error(c, http.StatusBadGateway, fmt.Sprintf("openai: %v; anthropic: %v", openaiErr, anthropicErr))
-		return
-	}
-
-	var re, reGlobal *regexp2.Regexp
-	if target.MatchRegex != "" {
-		if re, err = regexp2.Compile(target.MatchRegex, regexp2.ECMAScript); err != nil {
-			resp.Error(c, http.StatusBadRequest, err.Error())
-			return
-		}
-	}
-	// 全局过滤由设置页维护, 与渠道过滤同取 AND: 模型须同时通过两枚正则才保留, 留空的一侧不生效。
-	// 设置缺失按不过滤处理: 启动初始化会补齐默认值, 缺行只可能出现在旧库尚未刷新的瞬间。
-	globalFilter, _ := op.SettingGetString(model.SettingKeyModelFilter)
-	if globalFilter != "" {
-		if reGlobal, err = regexp2.Compile(globalFilter, regexp2.ECMAScript); err != nil {
-			resp.Error(c, http.StatusBadRequest, err.Error())
-			return
-		}
-	}
-
-	// 模型名须同时通过渠道与全局两枚过滤正则, 编译与匹配错误统一按请求错误返回。
-	matches := func(name string) (bool, error) {
-		if re != nil {
-			matched, err := re.MatchString(name)
-			if err != nil {
-				return false, err
-			}
-			if !matched {
-				return false, nil
-			}
-		}
-		if reGlobal != nil {
-			matched, err := reGlobal.MatchString(name)
-			if err != nil {
-				return false, err
-			}
-			if !matched {
-				return false, nil
-			}
-		}
-		return true, nil
-	}
-
-	// 两侧结果按名称合并成一份有序集合: 同名模型在两侧都出现时, 协议位取并集。
-	// 保持首次出现的顺序, 界面上模型的排列才与上游返回的一致;
-	// 先并入 OpenAI 再并入 Anthropic, 顺序写死而不用 map 遍历, 否则界面上的模型排列会随每次刷新变化。
-	protocolsByModel := make(map[string]model.Protocol, len(openaiModels)+len(anthropicModels))
-	order := make([]string, 0, len(openaiModels)+len(anthropicModels))
-	for _, name := range openaiModels {
-		matched, err := matches(name)
-		if err != nil {
-			resp.Error(c, http.StatusBadRequest, err.Error())
-			return
-		}
-		if !matched {
-			continue
-		}
-		if _, ok := protocolsByModel[name]; !ok {
-			order = append(order, name)
-		}
-		protocolsByModel[name] |= model.ProtocolOpenAIResponse
-	}
-	for _, name := range anthropicModels {
-		matched, err := matches(name)
-		if err != nil {
-			resp.Error(c, http.StatusBadRequest, err.Error())
-			return
-		}
-		if !matched {
-			continue
-		}
-		if _, ok := protocolsByModel[name]; !ok {
-			order = append(order, name)
-		}
-		protocolsByModel[name] |= model.ProtocolAnthropicMessage
-	}
-
-	models := make([]model.ChannelFetchModel, 0, len(order))
-	for _, name := range order {
-		models = append(models, model.ChannelFetchModel{Name: name, Protocols: protocolsByModel[name]})
-	}
-	resp.Success(c, models)
-}
-
-// modelsURL 取协议请求路径的父级目录, 与地址拼成同级的 /models 地址。
-// 例如 /v1/chat/completions 与 /v1/messages 都得到 /v1/models, /chat/completions 得到 /models。
-func modelsURL(baseURL, protocolPath string) string {
-	parent := path.Dir(strings.TrimRight(protocolPath, "/"))
-	// Anthropic 的 /v1/messages 只有一层, 父级即 /v1; Chat 的 /v1/chat/completions 需要再上一层。
-	if strings.HasSuffix(parent, "/chat") {
-		parent = path.Dir(parent)
-	}
-	if parent == "." || parent == "/" {
-		parent = ""
-	}
-	return strings.TrimRight(baseURL, "/") + parent + "/models"
-}
-
-// refer: https://platform.openai.com/docs/api-reference/models/list
-func fetchOpenAIModels(httpClient *http.Client, ctx context.Context, target model.ChannelConfig, key, url string) ([]string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+key)
-	for _, header := range target.CustomHeader {
-		if header.HeaderKey != "" {
-			req.Header.Set(header.HeaderKey, header.HeaderValue)
-		}
-	}
-
-	response, err := httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	result, err := decodeModelList[model.OpenAIModelList](response)
-	if err != nil {
-		return nil, err
-	}
-
-	models := make([]string, 0, len(result.Data))
-	for _, m := range result.Data {
-		models = append(models, m.ID)
-	}
-	return models, nil
-}
-
-// refer: https://platform.claude.com/docs
-func fetchAnthropicModels(httpClient *http.Client, ctx context.Context, target model.ChannelConfig, key, url string) ([]string, error) {
-	var allModels []string
-	var afterID string
-	for {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("X-Api-Key", key)
-		req.Header.Set("Anthropic-Version", "2023-06-01")
-		for _, header := range target.CustomHeader {
-			if header.HeaderKey != "" {
-				req.Header.Set(header.HeaderKey, header.HeaderValue)
-			}
-		}
-		if afterID != "" {
-			q := req.URL.Query()
-			q.Set("after_id", afterID)
-			req.URL.RawQuery = q.Encode()
-		}
-
-		response, err := httpClient.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		// 分页时每轮都会新建响应, 必须当轮读完即关; 用 defer 会攒到整个函数返回才释放。
-		result, err := decodeModelList[model.AnthropicModelList](response)
-		if err != nil {
-			return nil, err
-		}
-		for _, m := range result.Data {
-			allModels = append(allModels, m.ID)
-		}
-		if !result.HasMore {
-			break
-		}
-		afterID = result.LastID
-	}
-	return allModels, nil
-}
-
-// decodeModelList 关闭响应并把响应体解成模型列表; 非 2xx 时按上游错误返回。
-// 两侧解析流程一致, 只有目标结构不同, 故用类型参数收敛; 分页调用要求当轮读完即关, 关闭点放在此处最稳。
-func decodeModelList[T any](response *http.Response) (T, error) {
-	defer response.Body.Close()
-	var result T
-	// 上游报错时响应体常是能被正常解码的 JSON, 若不先拦下, 模型列表会解成空列表并当作成功;
-	// 响应体截断到 512 字节: 部分上游在鉴权失败时返回整页 HTML, 全文带到界面上无用。
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		body, err := io.ReadAll(io.LimitReader(response.Body, 512))
-		if err != nil {
-			return result, fmt.Errorf("upstream %s", response.Status)
-		}
-		return result, fmt.Errorf("upstream %s: %s", response.Status, strings.TrimSpace(string(body)))
-	}
-	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
-		return result, err
-	}
-	return result, nil
+	return httpClient, err
 }

@@ -364,7 +364,7 @@ function APIKeyFormOverlay({
     return (
         <motion.div
             layoutId={layoutId}
-            className="absolute left-1/2 top-1/2 z-20 w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 bg-card p-5 rounded-3xl border border-border max-h-[80vh] overflow-auto"
+            className="fixed left-1/2 top-1/2 z-50 w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 bg-card p-5 rounded-3xl border border-border max-h-[85vh] overflow-y-auto overscroll-contain"
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
         >
             <APIKeyForm
@@ -394,7 +394,7 @@ function APIKeyStatsCard({
     return (
         <motion.div
             layoutId={layoutId}
-            className="absolute left-1/2 top-1/2 z-30 w-[min(320px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex flex-col bg-card p-5 rounded-3xl border border-border max-h-[80vh] overflow-auto"
+            className="fixed left-1/2 top-1/2 z-50 w-[min(320px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex flex-col bg-card p-5 rounded-3xl border border-border max-h-[85vh] overflow-y-auto overscroll-contain"
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
         >
             <div className="flex items-center justify-between gap-2 mb-3">
@@ -744,7 +744,7 @@ function APIKeyDialogPanel() {
         <APIKeyPanelBase
             idPrefix="apikey-dialog"
             containerClassName="rounded-3xl border border-border bg-card p-6 space-y-5 relative w-screen max-w-full md:max-w-xl"
-            listClassName="space-y-2 h-[calc(100vh-10rem)] overflow-y-auto"
+            listClassName="space-y-2 h-[calc(100dvh-10rem)] overflow-y-auto"
             renderHeaderExtra={() => (
                 <button
                     type="button"

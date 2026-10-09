@@ -1,11 +1,11 @@
 import { memo, useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { AlertCircle, ArrowDownToLine, ArrowRight, ArrowUpFromLine, Brain, Clock, Cpu, Database, DollarSign, Gauge, KeyRound, Loader2, Square, Zap, Percent } from 'lucide-react';
+import { AlertCircle, ArrowDownToLine, ArrowRight, ArrowUpFromLine, Brain, Clock, Cpu, Database, DollarSign, Gauge, Globe, KeyRound, Loader2, Square, Zap, Percent } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import JsonView from '@uiw/react-json-view';
 import { githubDarkTheme } from '@uiw/react-json-view/githubDark';
 import { githubLightTheme } from '@uiw/react-json-view/githubLight';
 import { useTheme } from '@/provider/theme';
-import { type RelayLogOverview, useLogRequestBody, useLogResponseBody, useStopRequest } from '@/api/log';
+import { type RelayLogOverview, useLogAttempts, useLogRequestBody, useLogResponseBody, useStopRequest } from '@/api/log';
 import { useGroup, useUpdateGroup } from '@/api/group';
 import { Protocol } from '@/api/channel';
 import { getModelIcon } from '@/lib/model-icons';
@@ -84,6 +84,7 @@ function LogMetrics({ log, now, brandColor, variant }: { log: RelayLogOverview; 
     const metrics = [
         { key: 'time', Icon: Clock, iconClassName: 'size-3.5 shrink-0', iconStyle: { color: brandColor } as CSSProperties, value: formatTime(log.started_at), cellClassName: 'whitespace-nowrap col-span-5 md:col-span-1' },
         { key: 'apiKey', Icon: KeyRound, iconClassName: 'size-3.5 shrink-0 text-orange-500', value: log.api_key_name || '-', cellClassName: 'whitespace-nowrap col-span-5 md:col-span-1' },
+        ...(log.client_ip ? [{ key: 'clientIP', Icon: Globe, iconClassName: 'size-3.5 shrink-0 text-indigo-500', value: log.client_ip, cellClassName: 'whitespace-nowrap col-span-5 md:col-span-1' }] : []),
         { key: 'firstToken', Icon: Zap, iconClassName: 'size-3.5 shrink-0 text-amber-500', value: firstToken, cellClassName: 'whitespace-nowrap col-span-5 md:col-span-1' },
         { key: 'duration', Icon: Cpu, iconClassName: 'size-3.5 shrink-0 text-blue-500', value: duration, cellClassName: 'whitespace-nowrap col-span-5 md:col-span-1' },
         { key: 'prompt', Icon: ArrowDownToLine, iconClassName: 'size-3.5 shrink-0 text-green-500', value: (log.usage.prompt_tokens - cachedTokens).toLocaleString(), cellClassName: 'whitespace-nowrap col-span-4 md:col-span-1' },
@@ -98,7 +99,7 @@ function LogMetrics({ log, now, brandColor, variant }: { log: RelayLogOverview; 
     return metrics.map((metric) => (
         <div
             key={metric.key}
-            title={metric.key === 'apiKey' ? log.api_key_name : undefined}
+            title={metric.key === 'apiKey' ? log.api_key_name : metric.key === 'cost' ? 'User-price cost' : undefined}
             className={cn('flex min-w-0 items-center gap-1.5', variant === 'card' && metric.cellClassName)}
         >
             <metric.Icon className={metric.iconClassName} style={metric.iconStyle} />
@@ -111,6 +112,7 @@ function LogMetrics({ log, now, brandColor, variant }: { log: RelayLogOverview; 
 interface ObservedRound {
     round: number; // 当前请求内递增的轮次序号。
     channelKey: string; // 本轮实际请求的渠道名称和 Key 名称, 以空格分隔。
+    channelCode: string; // 本轮实际请求渠道的发布编码, 优先展示; 未发布为空。
     error: string; // 本轮最近一次上游错误。
     sending: boolean; // 本轮是否仍在等待上游响应。
     startedAt: string; // 服务端记录的本轮开始时间。
@@ -168,7 +170,7 @@ function JsonContent({ content, fallbackText }: { content: string | object | und
 function LogDetail({ log, now, errorRounds }: { log: RelayLogOverview; now: number; errorRounds: ObservedRound[] }) {
     const t = useTranslations('log.card');
     const statusT = useTranslations('log.status');
-    const [leftTab, setLeftTab] = useState<'request' | 'group'>('group');
+    const [leftTab, setLeftTab] = useState<'request' | 'group' | 'timeline'>('group');
     const [rounds, setRounds] = useState<ObservedRound[]>(errorRounds);
     const [observedRoundKey, setObservedRoundKey] = useState(''); // observedRoundKey 是已记入 rounds 的最近一次日志快照, 用于跳过重复渲染。
     const [detailReady, setDetailReady] = useState(false); // 展开动画结束后才允许加载详情数据。
@@ -184,6 +186,7 @@ function LogDetail({ log, now, errorRounds }: { log: RelayLogOverview; now: numb
     const requestFailed = log.status === 'failed' || log.status === 'canceled';
     const responseCommitted = log.status === 'committed';
     const requestActive = log.status === 'running' || responseCommitted;
+    const attempts = useLogAttempts(log.id, detailReady && leftTab === 'timeline', requestActive);
     const showRounds = log.status === 'running' || (requestFailed && rounds.length > 0);
     const isWaitingForSelection = log.status === 'running' && !log.sending && activeGroup?.mode === 'manual' && activeGroup.runtime.current_item_id === 0; // isWaitingForSelection 表示手动模式请求正等待选择渠道。
 
@@ -206,6 +209,7 @@ function LogDetail({ log, now, errorRounds }: { log: RelayLogOverview; now: numb
                 {
                     round: log.round,
                     channelKey: log.target_channel_key,
+                    channelCode: log.target_channel_code,
                     error: errorText,
                     sending: log.sending,
                     startedAt,
@@ -216,7 +220,7 @@ function LogDetail({ log, now, errorRounds }: { log: RelayLogOverview; now: numb
     }
 
     return (
-        <MorphingDialogContent className="relative w-[calc(100vw-2rem)] md:w-[80vw] bg-card text-card-foreground px-6 py-4 rounded-3xl h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
+        <MorphingDialogContent className="relative w-[calc(100vw-2rem)] md:w-[80vw] bg-card text-card-foreground px-6 py-4 rounded-3xl h-[calc(100dvh-2rem)] flex flex-col overflow-hidden">
             <MorphingDialogClose className="top-4 right-5 text-muted-foreground hover:text-foreground transition-colors" />
             <MorphingDialogTitle className="flex flex-wrap items-center gap-2 mb-3 text-sm">
                 <span className="flex min-w-0 items-center gap-2 w-full md:w-auto">
@@ -240,7 +244,7 @@ function LogDetail({ log, now, errorRounds }: { log: RelayLogOverview; now: numb
                         className="text-xs px-1.5 py-0"
                         style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
                     >
-                        {log.target_channel_key || '-'}
+                        {log.target_channel_code || log.target_channel_key || '-'}
                     </Badge>
                     <span className="text-muted-foreground">{actualModel}</span>
                 </span>
@@ -250,12 +254,13 @@ function LogDetail({ log, now, errorRounds }: { log: RelayLogOverview; now: numb
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full min-h-0">
                     <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
                         <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-muted/50 pl-1 pr-3 md:pr-4">
-                            <Tabs value={leftTab} onValueChange={(value) => setLeftTab(value as 'request' | 'group')}>
+                            <Tabs value={leftTab} onValueChange={(value) => setLeftTab(value as 'request' | 'group' | 'timeline')}>
                                 <TabsList variant="text" className="p-0">
                                     <TabsTrigger value="group" className="pr-0">
                                         {t('group')}
                                     </TabsTrigger>
                                     <span aria-hidden="true" className="mx-1 inline-flex h-full -translate-y-px items-center text-sm font-medium leading-none text-muted-foreground/50">/</span>
+                                    <TabsTrigger value="timeline">{t('timeline')}</TabsTrigger>
                                     <TabsTrigger value="request" className="pl-0">
                                         {t('requestContent')}
                                     </TabsTrigger>
@@ -271,6 +276,20 @@ function LogDetail({ log, now, errorRounds }: { log: RelayLogOverview; now: numb
                             {!detailReady ? (
                                 <div className="flex h-full items-center justify-center">
                                     <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                                </div>
+                            ) : leftTab === 'timeline' ? (
+                                <div className="space-y-3 p-3 text-xs">
+                                    {(log.route_events ?? []).map((event,index) => <div key={index} className="flex gap-2 text-muted-foreground"><span>{formatTime(event.at)}</span><span>{t('eventPhase.' + event.phase)}</span><span>{event.reason.startsWith('strategy_') ? t('routeReason.' + event.reason) : t('eventReason.' + event.reason)}</span></div>)}
+                                    {attempts.isLoading ? <Loader2 className="size-4 animate-spin" /> : attempts.isError ? <span>{t('detailUnavailable')}</span> : !attempts.data?.items.length ? <span>{t('timelineEmpty')}</span> : attempts.data.items.map((attempt) => {
+                                        let decision: {mode?: string; reason?: string; candidates?: {item_id:number;channel_code:string;model:string;reason:string}[]} = {};
+                                        try { decision = JSON.parse(attempt.decision || '{}'); } catch { /* Historical rows have no decision. */ }
+                                        return <div key={attempt.id} className="rounded-xl border border-border p-3">
+                                            <div className="flex justify-between gap-2"><b>#{attempt.round} · {attempt.channel_code || '-'} · {attempt.target_model}</b><span>{t('attemptStatus.' + attempt.status)}</span></div>
+                                            <div className="mt-1 text-muted-foreground">{formatTime(attempt.started_at)} · {attempt.duration_ms} ms · {decision.mode} · {decision.reason ? t('routeReason.' + decision.reason) : '-'}</div>
+                                            {attempt.error && <p className="mt-1 whitespace-pre-wrap text-destructive">{attempt.error}</p>}
+                                            {decision.candidates?.map(candidate => <div key={candidate.item_id} className="mt-1 text-muted-foreground">{candidate.channel_code || '-'} / {candidate.model}: {t('routeReason.' + candidate.reason)}</div>)}
+                                        </div>;
+                                    })}
                                 </div>
                             ) : leftTab === 'request' ? (
                                 requestBody.isLoading ? (
@@ -409,7 +428,7 @@ function LogDetail({ log, now, errorRounds }: { log: RelayLogOverview; now: numb
                                                 <div className="flex items-center gap-2">
                                                     <span className="shrink-0 tabular-nums text-muted-foreground">{formatRoundStartedAt(round.startedAt)}</span>
                                                     <span className="shrink-0 text-muted-foreground">{t('retryIndex', { index: round.round })}</span>
-                                                    <span className="shrink-0 font-semibold text-foreground">{round.channelKey || '-'}</span>
+                                                    <span className="shrink-0 font-semibold text-foreground">{round.channelCode || round.channelKey || '-'}</span>
                                                     {round.sending ? (
                                                         <Loader2 className="ml-auto size-3.5 animate-spin text-muted-foreground" />
                                                     ) : round.error ? (
@@ -475,6 +494,7 @@ function LogCardBody({ log }: { log: RelayLogOverview }) {
     const [errorRounds, setErrorRounds] = useState<ObservedRound[]>(() => log.error ? [{
         round: log.round,
         channelKey: log.target_channel_key,
+        channelCode: log.target_channel_code,
         error: log.error,
         sending: log.sending,
         startedAt: log.round_started_at,
@@ -507,6 +527,7 @@ function LogCardBody({ log }: { log: RelayLogOverview }) {
             {
                 round: log.round,
                 channelKey: log.target_channel_key,
+                channelCode: log.target_channel_code,
                 error: errorText,
                 sending: log.sending,
                 startedAt: log.round_started_at,
@@ -546,7 +567,7 @@ function LogCardBody({ log }: { log: RelayLogOverview }) {
                                     className="shrink-0 text-xs px-1.5 py-0"
                                     style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
                                 >
-                                    {log.target_channel_key || '-'}
+                                    {log.target_channel_code || log.target_channel_key || '-'}
                                 </Badge>
                                 <span className="text-muted-foreground truncate">
                                     {actualModel}

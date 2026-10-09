@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/bestruirui/octopus/internal/model"
+	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/auth"
 	"github.com/looplj/axonhub/llm/httpclient"
 	"github.com/looplj/axonhub/llm/transformer"
@@ -20,17 +21,22 @@ import (
 // buildOutbound 在渠道授权支持的协议内选出本轮上游协议, 构造对应的出站转换器, 并返回选中的协议和能否同协议透传。
 // 地址由渠道的协议路径字段与地址拼接, 凭据取自目标绑定的渠道凭据。
 // want 是客户端请求使用的协议, 由调用方按入站格式定出; 选中的协议随请求状态推给界面, 故一并返回。
-func buildOutbound(channel model.Channel, grant model.ChannelGrant, channelKey model.ChannelKey, want model.Protocol) (transformer.Outbound, model.Protocol, bool, error) {
+// inboundFormat 只在 ProtocolOpenAIImage 下生效: 区分 generations / edits 两种请求路径。
+func buildOutbound(channel model.Channel, grant model.ChannelGrant, channelKey model.ChannelKey, want model.Protocol, inboundFormat llm.APIFormat) (transformer.Outbound, model.Protocol, bool, error) {
 	protocol, passthrough := want, grant.Protocols&want != 0
 	if !passthrough {
-		protocol = 0
-		switch {
-		case grant.Protocols&model.ProtocolAnthropicMessage != 0:
-			protocol = model.ProtocolAnthropicMessage
-		case grant.Protocols&model.ProtocolOpenAIResponse != 0:
-			protocol = model.ProtocolOpenAIResponse
-		case grant.Protocols&model.ProtocolOpenAIChatCompletion != 0:
-			protocol = model.ProtocolOpenAIChatCompletion
+		// 生图不走跨协议回退: 客户端发起的生图请求只能由带生图位的授权承接,
+		// 回退到 chat/response/anthropic 只会把图片请求转成聊天请求打向错误端点。
+		// want=Image 且授权无生图位时保持 protocol=0, 由 default 分支报错并换下一个成员。
+		if want != model.ProtocolOpenAIImage {
+			switch {
+			case grant.Protocols&model.ProtocolAnthropicMessage != 0:
+				protocol = model.ProtocolAnthropicMessage
+			case grant.Protocols&model.ProtocolOpenAIResponse != 0:
+				protocol = model.ProtocolOpenAIResponse
+			case grant.Protocols&model.ProtocolOpenAIChatCompletion != 0:
+				protocol = model.ProtocolOpenAIChatCompletion
+			}
 		}
 	}
 
@@ -45,6 +51,18 @@ func buildOutbound(channel model.Channel, grant model.ChannelGrant, channelKey m
 	case model.ProtocolAnthropicMessage:
 		outbound, err := anthropic.NewOutboundTransformerWithConfig(&anthropic.Config{Type: anthropic.PlatformDirect, BaseURL: channel.BaseURL, EndpointPath: channel.AnthropicMessagePath, APIKeyProvider: key})
 		return outbound, protocol, passthrough, err
+	case model.ProtocolOpenAIImage:
+		// 生成与编辑是两个不同的请求路径; openai 出站会根据入站 APIFormat 自动生成 /v1/images/generations
+		// 或 /v1/images/edits, 因此这里按入站形态选择对应的渠道路径, 留空时由转换器用默认 fallback。
+		endpointPath := ""
+		switch inboundFormat {
+		case llm.APIFormatOpenAIImageEdit:
+			endpointPath = channel.OpenAIImageEditPath
+		case llm.APIFormatOpenAIImageGeneration:
+			endpointPath = channel.OpenAIImageGenerationPath
+		}
+		outbound, err := openai.NewOutboundTransformerWithConfig(&openai.Config{PlatformType: openai.PlatformOpenAI, BaseURL: channel.BaseURL, EndpointPath: endpointPath, APIKeyProvider: key})
+		return outbound, protocol, passthrough, err
 	default:
 		return nil, 0, false, fmt.Errorf("channel grant %d supports no known protocol: %d", grant.ID, grant.Protocols)
 	}
@@ -55,7 +73,9 @@ var clientHeaderPlaceholder = regexp.MustCompile(`\{client_header:[^}]+\}`)
 
 // applyChannelConfig 按渠道配置覆盖上游请求的参数并追加自定义 Header; model 与 stream 由转发流程决定, 不允许覆盖。
 func applyChannelConfig(channel model.Channel, request *httpclient.Request) error {
-	if channel.ParamOverride != "" {
+	// multipart 正文(生图 edits)不能按 JSON 路径改写, 参数覆盖只对 JSON 请求生效。
+	isMultipart := strings.HasPrefix(strings.ToLower(request.Headers.Get("Content-Type")), "multipart/form-data")
+	if channel.ParamOverride != "" && !isMultipart {
 		var overrides map[string]json.RawMessage
 		if err := json.Unmarshal([]byte(channel.ParamOverride), &overrides); err != nil {
 			return fmt.Errorf("invalid channel parameter override: %w", err)

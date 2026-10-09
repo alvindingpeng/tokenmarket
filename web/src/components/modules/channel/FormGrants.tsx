@@ -67,6 +67,7 @@ function GrantCells({ state, setState, models, keyNames, remove, icon: Icon, tip
             {cell(Protocol.OpenAIChatCompletion)}
             {cell(Protocol.OpenAIResponse)}
             {cell(Protocol.AnthropicMessage)}
+            {cell(Protocol.OpenAIImage)}
             <span className="w-7 flex justify-center">
                 {remove && (
                     <IconButton
@@ -185,7 +186,7 @@ export function FormGrants({ state, setState }: {
                         {allExpanded ? <ChevronsDownUp className="size-3.5" /> : <ChevronsUpDown className="size-3.5" />}
                     </IconButton>
                     <span className="ml-auto min-w-0 truncate text-xs text-muted-foreground">
-                        chat / response / message
+                        chat / response / message / image
                     </span>
                     {/* 表头覆盖全部模型全部凭据, 故勾选即批量, 删除即清空全部模型及其授权。 */}
                     <GrantCells

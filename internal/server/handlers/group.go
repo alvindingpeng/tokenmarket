@@ -33,6 +33,10 @@ func init() {
 				Handle(streamGroupEvents),
 		).
 		AddRoute(
+			router.NewRoute("/metrics/:id", http.MethodGet).
+				Handle(getGroupMetrics),
+		).
+		AddRoute(
 			router.NewRoute("/create", http.MethodPost).
 				Handle(createGroup),
 		).
@@ -62,15 +66,22 @@ type groupResponse struct {
 
 // 分组变更事件, SSE 收到后按事件名原样转发。
 type groupEvent struct {
-	Name string // SSE 事件名: changed 表示分组配置或成员发生变更, deleted 表示分组已删除。
-	Data any    // changed 携带完整的 groupResponse, deleted 携带分组 ID。
+	Name    string // SSE 事件名: changed 表示分组配置或成员发生变更, deleted 表示分组已删除。
+	Data    any    // changed 携带完整的 groupResponse, deleted 携带分组 ID。
+	ownerID uint   // 分组归属用户, 仅用于按访问者过滤事件流, 不出 JSON。
 }
 
 const groupEventBuffer = 16 // 单个分组事件流连接的非阻塞消息缓冲容量。
 
+// groupEventStream 一条事件流连接及其访问者作用域: 事件按归属过滤后才推送。
+type groupEventStream struct {
+	ch    chan groupEvent
+	scope model.Scope
+}
+
 var (
-	groupEventMu      sync.Mutex                           // groupEventMu 保护全部分组事件流连接。
-	groupEventStreams = make(map[chan groupEvent]struct{}) // 全部分组事件流 SSE 连接。
+	groupEventMu      sync.Mutex                                   // groupEventMu 保护全部分组事件流连接。
+	groupEventStreams = make(map[chan groupEvent]groupEventStream) // 全部分组事件流 SSE 连接及其访问者作用域。
 )
 
 // publishGroupEvent 非阻塞发布一条分组变更事件, 连接拥塞时关闭它并交给客户端重连后重新拉取对齐。
@@ -79,7 +90,11 @@ func publishGroupEvent(event groupEvent) {
 	groupEventMu.Lock()
 	defer groupEventMu.Unlock()
 
-	for stream := range groupEventStreams {
+	for stream, meta := range groupEventStreams {
+		// 归属过滤: 管理员收全部, 其余只收自有分组的事件。
+		if !meta.scope.Owns(event.ownerID) {
+			continue
+		}
 		select {
 		case stream <- event:
 		default:
@@ -97,9 +112,11 @@ func streamGroupEvents(c *gin.Context) {
 	routeUpdates := relay.OpenRouteStream()
 	defer relay.CloseRouteStream(routeUpdates)
 
+	userID, role := middleware.CurrentUser(c)
+	scope := model.Scope{ID: userID, Role: role}
 	events := make(chan groupEvent, groupEventBuffer)
 	groupEventMu.Lock()
-	groupEventStreams[events] = struct{}{}
+	groupEventStreams[events] = groupEventStream{ch: events, scope: scope}
 	groupEventMu.Unlock()
 	defer func() {
 		groupEventMu.Lock()
@@ -126,6 +143,10 @@ func streamGroupEvents(c *gin.Context) {
 			if !ok {
 				return
 			}
+			// 运行状态按分组归属过滤: 非管理员只收自有分组。
+			if ownerID, exists := op.GroupOwnerID(update.GroupID); !exists || !scope.Owns(ownerID) {
+				continue
+			}
 			if err := sse.Encode(c.Writer, sse.Event{Event: "runtime", Data: update}); err != nil {
 				return
 			}
@@ -145,7 +166,8 @@ func streamGroupEvents(c *gin.Context) {
 // getGroupList 返回全部分组, 并为每个分组补齐当前的实时路由状态。
 // 路由状态由 Relay 持有而 Relay 依赖 op, 故补齐点放在此处而非 op.GroupList 内。
 func getGroupList(c *gin.Context) {
-	groups := op.GroupList()
+	userID, role := middleware.CurrentUser(c)
+	groups := op.GroupList(model.Scope{ID: userID, Role: role})
 	responses := make([]groupResponse, len(groups))
 	for i, group := range groups {
 		responses[i] = groupResponse{Group: group, Runtime: relay.RouteStateOf(group)}
@@ -161,12 +183,34 @@ func getGroup(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	group, err := op.GroupGet(id)
+	userID, role := middleware.CurrentUser(c)
+	group, err := op.GroupGet(id, model.Scope{ID: userID, Role: role})
 	if err != nil {
 		resp.Error(c, http.StatusNotFound, err.Error())
 		return
 	}
 	resp.Success(c, groupResponse{Group: group, Runtime: relay.RouteStateOf(group)})
+}
+
+// getGroupMetrics 返回分组各成员的实时选路指标(首响应耗时与成功率的滑动平均)。
+// 指标由 Relay 在每次转发后更新, 进程内存储, 无样本的成员不返回。
+func getGroupMetrics(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	userID, role := middleware.CurrentUser(c)
+	group, err := op.GroupGet(id, model.Scope{ID: userID, Role: role})
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+	itemIDs := make([]int, 0, len(group.Items))
+	for _, item := range group.Items {
+		itemIDs = append(itemIDs, item.ID)
+	}
+	resp.Success(c, relay.MemberMetricViews(group.ID, itemIDs))
 }
 
 func createGroup(c *gin.Context) {
@@ -175,13 +219,14 @@ func createGroup(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	group, err := op.GroupCreate(&req, c.Request.Context())
+	userID, role := middleware.CurrentUser(c)
+	group, err := op.GroupCreate(&req, model.Scope{ID: userID, Role: role}, c.Request.Context())
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 	response := groupResponse{Group: *group, Runtime: relay.RouteStateOf(*group)}
-	publishGroupEvent(groupEvent{Name: "changed", Data: response})
+	publishGroupEvent(groupEvent{Name: "changed", Data: response, ownerID: group.UserID})
 	resp.Success(c, response)
 }
 
@@ -199,12 +244,14 @@ func updateGroup(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	oldGroup, err := op.GroupGet(id)
+	userID, role := middleware.CurrentUser(c)
+	scope := model.Scope{ID: userID, Role: role}
+	oldGroup, err := op.GroupGet(id, scope)
 	if err != nil {
 		resp.Error(c, http.StatusNotFound, err.Error())
 		return
 	}
-	group, err := op.GroupUpdate(id, &req, c.Request.Context())
+	group, err := op.GroupUpdate(id, &req, scope, c.Request.Context())
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -214,7 +261,7 @@ func updateGroup(c *gin.Context) {
 		relay.ResetRouteState(id)
 	}
 	response := groupResponse{Group: *group, Runtime: relay.RouteStateOf(*group)}
-	publishGroupEvent(groupEvent{Name: "changed", Data: response})
+	publishGroupEvent(groupEvent{Name: "changed", Data: response, ownerID: group.UserID})
 	resp.Success(c, response)
 }
 
@@ -224,11 +271,18 @@ func deleteGroup(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := op.GroupDel(id, c.Request.Context()); err != nil {
+	userID, role := middleware.CurrentUser(c)
+	// 先取归属: 删除事件要按归属过滤推送, 且非归属访问按 404 处理。
+	group, err := op.GroupGet(id, model.Scope{ID: userID, Role: role})
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+	if err := op.GroupDel(id, model.Scope{ID: userID, Role: role}, c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 	relay.ResetRouteState(id)
-	publishGroupEvent(groupEvent{Name: "deleted", Data: id})
+	publishGroupEvent(groupEvent{Name: "deleted", Data: id, ownerID: group.UserID})
 	resp.Success(c, "group deleted successfully")
 }

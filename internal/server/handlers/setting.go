@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -18,23 +19,28 @@ import (
 )
 
 func init() {
+	// 系统设置与备份属管理后台, 仅管理员可用。
 	router.NewGroupRouter("/api/v1/setting").
 		Use(middleware.Auth()).
 		AddRoute(
 			router.NewRoute("/list", http.MethodGet).
+				Allow(model.RoleAdmin).
 				Handle(getSettingList),
 		).
 		AddRoute(
 			router.NewRoute("/set", http.MethodPost).
 				Use(middleware.RequireJSON()).
+				Allow(model.RoleAdmin).
 				Handle(setSetting),
 		).
 		AddRoute(
 			router.NewRoute("/export", http.MethodGet).
+				Allow(model.RoleAdmin).
 				Handle(exportDB),
 		).
 		AddRoute(
 			router.NewRoute("/import", http.MethodPost).
+				Allow(model.RoleAdmin).
 				Handle(importDB),
 		)
 }
@@ -62,6 +68,17 @@ func setSetting(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// 切到 bearer 时确保已有令牌: 否则开启鉴权的同时把抓取端挡在门外, 管理员无从获取凭据。
+	if setting.Key == model.SettingKeyMetricsAuth && setting.Value == "bearer" {
+		token, err := op.MetricsTokenEnsure()
+		if err != nil {
+			resp.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		audit(c, "setting.set", string(setting.Key), setting.Value)
+		resp.Success(c, gin.H{"key": setting.Key, "value": setting.Value, "metrics_token": token})
+		return
+	}
 	switch setting.Key {
 	case model.SettingKeyModelInfoUpdateInterval:
 		hours, err := strconv.Atoi(setting.Value)
@@ -71,6 +88,7 @@ func setSetting(c *gin.Context) {
 		}
 		task.Update(string(setting.Key), time.Duration(hours)*time.Hour)
 	}
+	audit(c, "setting.set", string(setting.Key), setting.Value)
 	resp.Success(c, setting)
 }
 
@@ -81,6 +99,7 @@ func exportDB(c *gin.Context) {
 		return
 	}
 
+	audit(c, "backup.export", "", "")
 	c.Header("Content-Type", "application/json")
 	c.Header("Content-Disposition", "attachment; filename=\"octopus-export-"+time.Now().Format("20060102150405")+".json\"")
 	c.JSON(http.StatusOK, dump)
@@ -140,8 +159,8 @@ func importDB(c *gin.Context) {
 		if dump.Groups[i].Mode == "" {
 			dump.Groups[i].Mode = model.GroupModeManual
 		}
-		model.NormalizeGroupRelayConfig(&dump.Groups[i].RelayConfig)
-		if dump.Groups[i].Mode != model.GroupModeManual && dump.Groups[i].Mode != model.GroupModeFailover {
+		model.NormalizeGroupRelayConfigForMode(&dump.Groups[i].RelayConfig, dump.Groups[i].Mode)
+		if !model.IsValidGroupMode(dump.Groups[i].Mode) {
 			resp.Error(c, http.StatusBadRequest, "invalid group relay mode")
 			return
 		}
@@ -158,6 +177,7 @@ func importDB(c *gin.Context) {
 		return
 	}
 
+	audit(c, "backup.import", "", fmt.Sprintf("channels=%d groups=%d models=%d apikeys=%d", len(dump.Channels), len(dump.Groups), len(dump.LLMInfos), len(dump.APIKeys)))
 	resp.Success(c, result)
 }
 

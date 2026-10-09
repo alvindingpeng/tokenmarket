@@ -41,7 +41,8 @@ export function ChannelForm({ channelId, onBack }: {
     }
     if (!detail) {
         return (
-            <div className="flex items-center justify-center h-[min(29rem,calc(100vh-10rem))]">
+            // 占位高度与弹窗描述区保持同一值(见 Card.tsx), 视图切换时尺寸一致不跳动。
+            <div className="flex items-center justify-center h-[24rem] md:h-[29rem]">
                 <p className="text-sm text-muted-foreground">
                     {isError ? t('detailFailed') : isPending ? t('detailLoading') : null}
                 </p>
@@ -117,7 +118,7 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
     // keys 与 grants 的首行是 36px 控件行, 文案居中后天然齐平, 无需补白。步骤区自带 4px 内边距供焦点环显示。
     // calc 一项夹住矮屏, 弹窗不提供滚动, 内容超出视口时底部按钮会点不到。详情视图取同一高度以对齐尺寸。
     return (
-        <form onSubmit={submit} className="flex flex-col md:flex-row gap-6 h-[min(29rem,calc(100vh-10rem))]">
+        <form onSubmit={submit} className="flex flex-col md:flex-row gap-6 h-[24rem] md:h-[29rem]">
             <nav className="md:w-28 shrink-0 flex md:flex-col gap-1 overflow-x-auto pt-1">
                 {steps.map((s) => (
                     <button
@@ -244,6 +245,17 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
                                     onChange={(e) => setState({ ...state, param_override: e.target.value })}
                                     className="min-h-24 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 />
+                            </div>
+
+                            <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/30 px-3 py-2.5">
+                                <Switch
+                                    checked={state.model_auto_add}
+                                    onCheckedChange={(checked) => setState({ ...state, model_auto_add: checked })}
+                                />
+                                <div className="space-y-0.5">
+                                    <div className="text-sm leading-tight">{t('modelAutoAdd')}</div>
+                                    <div className="text-xs text-muted-foreground leading-tight">{t('modelAutoAddHint')}</div>
+                                </div>
                             </div>
 
                             <div className="space-y-2">

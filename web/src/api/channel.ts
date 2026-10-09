@@ -1,5 +1,6 @@
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from './client';
+import type { LLMPrice } from './share';
 import { channelStatsQueryOptions, groupListQueryOptions, modelListQueryOptions } from './queries';
 import { formatStatsMetrics, type StatsMetrics, type StatsMetricsFormatted } from './stats';
 
@@ -9,6 +10,7 @@ export const Protocol = {
     OpenAIChatCompletion: 1 << 1,
     OpenAIResponse: 1 << 2,
     AnthropicMessage: 1 << 3,
+    OpenAIImage: 1 << 4, // 生图协议(generations / edits); P2 视频为 1 << 5。
 } as const;
 
 // Dialect 是上游在标准协议之上的方言，决定出站转换器的厂商特化配置。
@@ -43,11 +45,14 @@ export type ChannelGrant = {
 export type ChannelGrantCandidate = {
     id: number; // 授权主键，分组成员按它引用。
     channel_id: number;
-    channel_name: string;
+    channel_name: string; // 非自有渠道此值为发布方的唯一编码，不暴露真实渠道名。
     model_name: string;
-    key_name: string;
+    key_name: string; // 非自有渠道此值为空，不暴露上游凭据名。
     protocols: number; // Protocol 位掩码。
     available: boolean;
+    listed: boolean; // 上架状态；非自有渠道只有上架模型才会出现在候选里。
+    supply_price: LLMPrice; // 供货价（渠道商收入口径）。
+    user_price: LLMPrice; // 上浮后的用户价；未定价的上架模型为全 0。
 };
 
 /**
@@ -73,6 +78,7 @@ export type ChannelDetail = {
     param_override: string;
     channel_proxy: string;
     match_regex: string;
+    model_auto_add: boolean; // 保存后自动探测上游模型并入渠道; 默认关, 只增不删、授权按位 OR。
 };
 
 // ChannelModelStats 是单个渠道模型的累计统计，自带名称。
@@ -86,8 +92,11 @@ export type ChannelModelStats = StatsMetrics & {
 // 故没有单独的渠道概览接口，整份配置在点开编辑时由 useChannelDetail 单独取。
 export type ChannelStats = StatsMetrics & {
     channel_id: number;
+    user_id: number; // 渠道归属者，管理员视图下用于区分他人渠道。
     channel_name: string;
     enabled: boolean;
+    shared: boolean; // 是否已发布给用户。
+    share_code: string; // 发布后对外展示的唯一编码，未发布为空。
     models: ChannelModelStats[];
 };
 
@@ -103,8 +112,11 @@ export type ChannelModelStatsFormatted = {
 // 整份配置在点开编辑时由 useChannelDetail 单独取。
 export type ChannelStatsFormatted = {
     channel_id: number;
+    user_id: number;
     channel_name: string;
     enabled: boolean;
+    shared: boolean;
+    share_code: string;
     models: ChannelModelStatsFormatted[];
     formatted: StatsMetricsFormatted;
 };
@@ -144,8 +156,11 @@ const channelStatsFormattedQueryOptions = queryOptions({
     ...channelStatsQueryOptions,
     select: (data) => data.map((item): ChannelStatsFormatted => ({
         channel_id: item.channel_id,
+        user_id: item.user_id,
         channel_name: item.channel_name,
         enabled: item.enabled,
+        shared: item.shared,
+        share_code: item.share_code,
         models: item.models.map((channelModel) => ({
             model_id: channelModel.model_id,
             model_name: channelModel.model_name,
@@ -160,6 +175,33 @@ const channelStatsFormattedQueryOptions = queryOptions({
 // useChannelStats 获取全部渠道及其模型的展示用统计, 也是渠道列表页的数据来源。
 export function useChannelStats(enabled = true) {
     return useQuery({ ...channelStatsFormattedQueryOptions, enabled });
+}
+
+// ChannelDailyStatsRow 是按天统计的一行: 日期加原始累计指标, 展示侧再计算平均值与成功率。
+export type ChannelDailyStatsRow = StatsMetrics & { date: string };
+
+// ChannelModelDailyStats 是单个渠道模型的按天统计序列。
+export type ChannelModelDailyStats = {
+    channel_model_id: number;
+    model_name: string;
+    days: ChannelDailyStatsRow[];
+};
+
+// ChannelDailyStats 是渠道按天统计的读取形状: 渠道整体与各模型各自的逐日序列。
+export type ChannelDailyStats = {
+    channel: ChannelDailyStatsRow[];
+    models: ChannelModelDailyStats[];
+};
+
+// useChannelDailyStats 拉取单个渠道近 14 天的按天统计, 供渠道卡片展示趋势。
+export function useChannelDailyStats(channelId: number, enabled = true) {
+    return useQuery({
+        queryKey: ['channels', 'stats', 'daily', channelId],
+        queryFn: () => apiRequest<ChannelDailyStats>(`/api/v1/channel/stats/daily/${channelId}?days=14`),
+        enabled: enabled && channelId > 0,
+        refetchInterval: 60000,
+        refetchOnMount: 'always',
+    });
 }
 
 /**

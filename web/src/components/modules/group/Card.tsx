@@ -72,6 +72,7 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
             key_name: item.key_name,
             protocols: item.protocols,
             item_id: item.id,
+            user_price: item.user_price,
         })),
         [group.items]
     );
@@ -118,7 +119,12 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
             values.relay_config.member_non_stream_response_timeout_seconds !== group.relay_config.member_non_stream_response_timeout_seconds ||
             values.relay_config.member_stream_first_event_timeout_seconds !== group.relay_config.member_stream_first_event_timeout_seconds ||
             values.relay_config.member_cooldown_seconds !== group.relay_config.member_cooldown_seconds ||
-            values.relay_config.member_affinity_seconds !== group.relay_config.member_affinity_seconds
+            values.relay_config.member_affinity_seconds !== group.relay_config.member_affinity_seconds ||
+            values.relay_config.price_metric !== group.relay_config.price_metric ||
+            values.relay_config.metric_window_size !== group.relay_config.metric_window_size ||
+            values.relay_config.score_price_weight !== group.relay_config.score_price_weight ||
+            values.relay_config.score_latency_weight !== group.relay_config.score_latency_weight ||
+            values.relay_config.score_success_weight !== group.relay_config.score_success_weight
         ) payload.relay_config = values.relay_config;
         // 成员集合与顺序有任一处不同就整体提交; 后端按授权主键匹配, 已有成员保留其主键与统计。
         const nextGrantIDs = values.members.map((m) => m.channel_grant_id);
@@ -167,7 +173,7 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
                         <MorphingDialogContainer>
                             <MorphingDialogContent
                                 dismissOnClickOutside={false}
-                                className="relative w-screen max-w-full md:max-w-4xl bg-card text-card-foreground px-6 py-4 rounded-3xl h-[calc(100vh-2rem)] flex flex-col overflow-hidden"
+                                className="relative w-screen max-w-full md:max-w-4xl bg-card text-card-foreground px-6 py-4 rounded-3xl h-[calc(100dvh-2rem)] flex flex-col overflow-hidden"
                             >
                                 <EditDialogContent
                                     group={group}

@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/bestruirui/octopus/internal/model"
+	"github.com/bestruirui/octopus/internal/server/middleware"
 	"github.com/gin-gonic/gin"
 )
 
@@ -46,6 +48,13 @@ type Route struct {
 	Method      string
 	Handlers    []gin.HandlerFunc
 	Middlewares []gin.HandlerFunc
+	Roles       []model.Role // 允许访问的角色白名单; 为空表示只要登录态即可, RegisterAll 自动挂 RequireRole。
+}
+
+// Allow 声明本路由允许的角色白名单。
+func (r *Route) Allow(roles ...model.Role) *Route {
+	r.Roles = append(r.Roles, roles...)
+	return r
 }
 
 // NewRoute creates a new Route instance with the given path and method.
@@ -101,8 +110,12 @@ func RegisterAll(engine *gin.Engine) error {
 
 		// Register all routes in the group
 		for _, route := range router.Routes {
-			handlers := make([]gin.HandlerFunc, 0, len(route.Middlewares)+len(route.Handlers))
+			handlers := make([]gin.HandlerFunc, 0, len(route.Middlewares)+len(route.Handlers)+1)
 			handlers = append(handlers, route.Middlewares...)
+			// 声明式 RBAC: 带角色白名单的路由统一在此挂角色中间件, 免得各处手写一遍。
+			if len(route.Roles) > 0 {
+				handlers = append(handlers, middleware.RequireRole(route.Roles...))
+			}
 			handlers = append(handlers, route.Handlers...)
 
 			registerRoute(group, route.Method, route.Path, handlers)

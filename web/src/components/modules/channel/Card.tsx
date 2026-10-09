@@ -120,13 +120,18 @@ export function Card({ channel }: { channel: ChannelStatsFormatted }) {
             <MorphingDialogContainer>
                 <MorphingDialogContent
                     dismissOnClickOutside={!openInEditing}
-                    className="relative w-full md:max-w-3xl h-fit bg-card text-card-foreground p-4 rounded-3xl overflow-hidden"
+                    // 移动端用 dvh 卡住整体高度并允许内部滚动: 100vh 不会随浏览器工具栏收缩,
+                    // 手机上弹窗底部会落到可视区之外, 表现为拉不到底。
+                    // 移动端/平板不能只靠 morph 动画与 dvh 决定尺寸: 动画中断或 dvh 失效时弹窗会塌成触发块大小(条状)。
+                    // min-h 用固定 rem 兜底保证可读, 宽度按断点自适应, 内部滚动处理超高内容。
+                    className="relative flex h-fit min-h-[20rem] max-h-[calc(100dvh-1rem)] w-full flex-col overflow-hidden rounded-3xl bg-card p-4 text-card-foreground md:max-w-3xl lg:max-w-4xl"
                 >
                     {/* 高度固定在外层, 与表单自带的高度取同一值: 切换时两者同高, 弹窗才不会随内容缩放。
                         两个视图绝对定位重叠, 退场与入场同时进行: 串行会在两段动画之间留出谁都不在的空档。
                         重叠期间旧视图 pointer-events-none, 否则正在淡出的那份还能挡住点击。
                         位移方向表达前进与后退: 进编辑时表单自右侧推入, 返回统计时反向。 */}
-                    <MorphingDialogDescription className="relative h-[min(29rem,calc(100vh-10rem))]">
+                    {/* 高度用固定 rem 阶梯而非 dvh 计算: 尺寸确定且无浏览器兼容歧义, 弹窗不会因测量失败塌成条状。 */}
+                    <MorphingDialogDescription className="relative h-[24rem] min-h-0 flex-1 md:h-[29rem]">
                         <AnimatePresence initial={false}>
                             {openInEditing ? (
                                 <motion.div

@@ -22,11 +22,14 @@ func APIKeyCreate(key *model.APIKey, ctx context.Context) error {
 	return nil
 }
 
-func APIKeyUpdate(key *model.APIKey, ctx context.Context) error {
+func APIKeyUpdate(key *model.APIKey, scope model.Scope, ctx context.Context) error {
 	existing, ok := apiKeyCache.Get(key.ID)
-	if !ok {
+	// 密钥是用户级凭据, 严格按归属隔离: 管理员也只可改自己的。
+	if !ok || existing.UserID != scope.ID {
 		return fmt.Errorf("API key not found")
 	}
+	// 归属不可经更新接口变更。
+	key.UserID = existing.UserID
 	if key.APIKey == "" {
 		key.APIKey = existing.APIKey
 	}
@@ -41,20 +44,34 @@ func APIKeyUpdate(key *model.APIKey, ctx context.Context) error {
 	return nil
 }
 
-// APIKeyList 返回全部 API Key, 按主键升序定序。
-// 设置页不提供排序开关, 而缓存遍历顺序随机, 故顺序须由此处定稿。
-func APIKeyList(ctx context.Context) ([]model.APIKey, error) {
+// APIKeyList 返回访问者自有的 API Key, 按主键升序定序。
+// 密钥严格按归属隔离, 管理员也只见自己的; 设置页不提供排序开关,
+// 而缓存遍历顺序随机, 故顺序须由此处定稿。
+func APIKeyList(scope model.Scope, ctx context.Context) ([]model.APIKey, error) {
 	keys := make([]model.APIKey, 0, apiKeyCache.Len())
 	for _, apiKey := range apiKeyCache.GetAll() {
+		if apiKey.UserID != scope.ID {
+			continue
+		}
 		keys = append(keys, apiKey)
 	}
 	sort.Slice(keys, func(i, j int) bool { return keys[i].ID < keys[j].ID })
 	return keys, nil
 }
 
+// APIKeyGet 按主键取 API Key, 不做归属校验(转发链路内部使用)。
 func APIKeyGet(id int, ctx context.Context) (model.APIKey, error) {
 	apiKey, ok := apiKeyCache.Get(id)
 	if !ok {
+		return model.APIKey{}, fmt.Errorf("API key not found")
+	}
+	return apiKey, nil
+}
+
+// APIKeyGetScoped 按主键取 API Key 并严格校验归属, 非归属按不存在处理。
+func APIKeyGetScoped(id int, scope model.Scope, ctx context.Context) (model.APIKey, error) {
+	apiKey, err := APIKeyGet(id, ctx)
+	if err != nil || apiKey.UserID != scope.ID {
 		return model.APIKey{}, fmt.Errorf("API key not found")
 	}
 	return apiKey, nil
@@ -68,7 +85,10 @@ func APIKeyGetByAPIKey(apiKey string, ctx context.Context) (model.APIKey, error)
 	return APIKeyGet(id, ctx)
 }
 
-func APIKeyDelete(id int, ctx context.Context) error {
+func APIKeyDelete(id int, scope model.Scope, ctx context.Context) error {
+	if existing, ok := apiKeyCache.Get(id); !ok || existing.UserID != scope.ID {
+		return fmt.Errorf("API key not found")
+	}
 	k := model.APIKey{
 		ID: id,
 	}

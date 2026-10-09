@@ -5,12 +5,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/server/auth"
 	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/gin-gonic/gin"
 )
 
+// CurrentUser 从上下文取已认证用户, 未认证时返回零值。
+func CurrentUser(c *gin.Context) (uint, model.Role) {
+	return uint(c.GetInt("user_id")), model.Role(c.GetString("role"))
+}
+
+// Auth 登录态中间件: 校验 JWT 并把身份注入上下文, 同时校验账号状态与令牌版本。
 func Auth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token, err := c.Cookie("auth")
@@ -19,13 +26,40 @@ func Auth() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		if !auth.VerifyJWTToken(token) {
+		claims, err := auth.VerifyJWTToken(token)
+		if err != nil {
 			c.SetCookie("auth", "", -1, "/", "", false, false)
 			resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
 			c.Abort()
 			return
 		}
+		user, err := op.UserGetByID(claims.UserID)
+		if err != nil || user.Status != model.StatusActive || user.TokenVersion != claims.TokenVersion {
+			c.SetCookie("auth", "", -1, "/", "", false, false)
+			resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
+			c.Abort()
+			return
+		}
+		// 角色以库内为准: 令牌里的角色只是快照, 改角色后旧令牌立即按新角色受限。
+		c.Set("user_id", int(user.ID))
+		c.Set("role", string(user.Role))
+		c.Set("username", user.Username)
 		c.Next()
+	}
+}
+
+// RequireRole 角色白名单中间件; 由路由注册器按 Route.Roles 自动挂载。
+func RequireRole(roles ...model.Role) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role := model.Role(c.GetString("role"))
+		for _, allowed := range roles {
+			if role == allowed {
+				c.Next()
+				return
+			}
+		}
+		resp.Error(c, http.StatusForbidden, "insufficient permissions")
+		c.Abort()
 	}
 }
 
@@ -69,6 +103,7 @@ func APIKeyAuth() gin.HandlerFunc {
 		}
 		c.Set("supported_models", apiKeyObj.SupportedModels)
 		c.Set("api_key_id", apiKeyObj.ID)
+		c.Set("api_key_user_id", int(apiKeyObj.UserID))
 		c.Next()
 	}
 }
