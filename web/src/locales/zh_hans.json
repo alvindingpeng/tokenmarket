@@ -494,7 +494,10 @@
             "inputCache": "输入/缓存",
             "outputCache": "输出/缓存",
             "edit": "编辑",
-            "delete": "删除"
+            "delete": "删除",
+            "scoreLine": "≈{latency} · {success}%（采样 {samples}）",
+            "scoreTitle": "该上游模型的选路评分：跨全部分组与用户采样的首响应耗时与成功率滑动平均。",
+            "scoreCold": "暂无采样"
         },
         "overlay": {
             "cancel": "取消",

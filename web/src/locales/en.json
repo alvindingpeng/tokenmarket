@@ -494,7 +494,10 @@
             "inputCache": "Input/Cache",
             "outputCache": "Output/Cache",
             "edit": "Edit",
-            "delete": "Delete"
+            "delete": "Delete",
+            "scoreLine": "≈{latency} · {success}% ({samples} samples)",
+            "scoreTitle": "Routing score for this upstream model, sampled across every group and user: sliding-average first-response latency and success rate.",
+            "scoreCold": "No samples yet"
         },
         "overlay": {
             "cancel": "Cancel",

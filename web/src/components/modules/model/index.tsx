@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { ArrowUpAZ } from 'lucide-react';
 import { useTranslations } from 'use-intl';
-import { useModelList } from '@/api/model';
+import { useModelList, useModelScores } from '@/api/model';
 import { PageActions, usePageActionsStore } from '@/components/common/PageActions';
 import { ModelItem } from './Item';
 import { CreateDialogContent } from './Create';
@@ -51,6 +51,13 @@ export function ModelActions() {
 // Model 渲染模型列表正文。
 export function Model() {
     const { data: models } = useModelList();
+    const { data: scores } = useModelScores();
+    // 评分按小写模型名归并: llms 表以名称为键且统一小写, 渠道模型名可能与上游大小写不同。
+    const scoreByName = useMemo(() => {
+        const map = new Map<string, NonNullable<typeof scores>[number]>();
+        for (const s of scores ?? []) map.set(s.name.toLowerCase(), s);
+        return map;
+    }, [scores]);
     const searchTerm = usePageActionsStore((state) => state.searchTerms.model || '');
     const layout = usePageActionsStore((state) => state.layouts.model || 'grid');
     const sortOrder = usePageActionsStore((state) => state.sortOrders.model === 'desc' ? 'desc' : 'asc');
@@ -86,7 +93,7 @@ export function Model() {
             columns={{ default: 1, md: 2, lg: 3 }}
             estimateItemHeight={112}
             getItemKey={(model) => `model-${model.name}`}
-            renderItem={(model) => <ModelItem model={model} layout={layout} />}
+            renderItem={(model) => <ModelItem model={model} layout={layout} score={scoreByName.get(model.name.toLowerCase())} />}
         />
     );
 }
