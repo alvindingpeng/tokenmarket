@@ -350,6 +350,9 @@ func StatsHourlyUpdate(metrics model.StatsMetrics) error {
 func ChannelModelStatsUpdate(channelModelID int, metrics model.StatsMetrics) error {
 	channelModelStatsNeedUpdateLock.Lock()
 	defer channelModelStatsNeedUpdateLock.Unlock()
+	// 读-改-写与改价更新互斥, 防止旧副本回写把新价格顶掉。
+	channelModelCacheWriteMu.Lock()
+	defer channelModelCacheWriteMu.Unlock()
 	channelModel, ok := channelModelCache.Get(channelModelID)
 	if !ok {
 		return nil

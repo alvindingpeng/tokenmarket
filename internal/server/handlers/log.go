@@ -3,12 +3,14 @@ package handlers
 import (
 	"encoding/csv"
 	"fmt"
+	"io"
 	"net/http"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/alvindingpeng/switchyard/internal/conf"
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/relay"
@@ -57,6 +59,10 @@ func init() {
 			router.NewRoute("/clear", http.MethodDelete).
 				Allow(model.RoleAdmin).
 				Handle(clearLog),
+		).
+		AddRoute(
+			router.NewRoute("/replay/:id", http.MethodPost).
+				Handle(replayRequest),
 		)
 }
 
@@ -292,3 +298,103 @@ func prepareSSE(c *gin.Context) {
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
 }
+
+// replayResponseLimit 重放响应收集上限(4MB): 正常对话响应远小于此, 超出按截断返回。
+const replayResponseLimit = 4 << 20
+
+// replayPath 把请求协议映射回转发入口路径; 媒体请求保存的请求体是 multipart 摘要而非原文, 无法原样重放。
+func replayPath(protocol model.Protocol) (string, bool) {
+	switch protocol {
+	case model.ProtocolOpenAIChatCompletion:
+		return "/v1/chat/completions", true
+	case model.ProtocolOpenAIResponse:
+		return "/v1/responses", true
+	case model.ProtocolAnthropicMessage:
+		return "/v1/messages", true
+	default:
+		return "", false
+	}
+}
+
+// replayRequest 用保存的原始请求体(可现场修改)经指定 API Key 重新走一遍转发链路:
+// 与客户端调用完全同一条链路(认证/限流/计费/路由/日志), 重放本身会产生一条新的调用日志。
+func replayRequest(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, "invalid request id")
+		return
+	}
+	if !canViewRequest(c, id) {
+		resp.Error(c, http.StatusNotFound, "request not found")
+		return
+	}
+	payload := struct {
+		RequestBody string `json:"request_body"`
+		APIKeyID    int    `json:"api_key_id"`
+	}{}
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&payload); err != nil {
+			resp.Error(c, http.StatusBadRequest, "invalid replay payload")
+			return
+		}
+	}
+	row, err := op.RelayRequestGet(id)
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, "request not found")
+		return
+	}
+	path, ok := replayPath(model.Protocol(row.Protocol))
+	if !ok {
+		resp.Error(c, http.StatusBadRequest, "request protocol does not support replay")
+		return
+	}
+	body := strings.TrimSpace(payload.RequestBody)
+	if body == "" {
+		body = row.RequestBody
+	}
+	if body == "" {
+		resp.Error(c, http.StatusBadRequest, "request body is empty")
+		return
+	}
+	keyID := payload.APIKeyID
+	if keyID == 0 {
+		keyID = row.APIKeyID
+	}
+	apiKey, err := op.APIKeyGet(keyID, c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, "api key not found")
+		return
+	}
+	// 自调用转发入口: 监听 0.0.0.0 时回环地址同样可达, 与客户端调用同一条链路。
+	target := fmt.Sprintf("http://127.0.0.1:%d%s", conf.AppConfig.Server.Port, path)
+	upstream, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, target, strings.NewReader(body))
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, "failed to build replay request")
+		return
+	}
+	upstream.Header.Set("Authorization", "Bearer "+apiKey.APIKey)
+	upstream.Header.Set("Content-Type", "application/json")
+	started := time.Now()
+	client := &http.Client{Timeout: 10 * time.Minute}
+	upstreamResp, err := client.Do(upstream)
+	if err != nil {
+		resp.Error(c, http.StatusBadGateway, "replay failed: "+err.Error())
+		return
+	}
+	defer upstreamResp.Body.Close()
+	result, err := io.ReadAll(io.LimitReader(upstreamResp.Body, replayResponseLimit))
+	if err != nil {
+		resp.Error(c, http.StatusBadGateway, "failed to read replay response")
+		return
+	}
+	audit(c, "log.replay", fmt.Sprintf("request#%d", id), fmt.Sprintf("status=%d bytes=%d", upstreamResp.StatusCode, len(result)))
+	resp.Success(c, gin.H{
+		"status_code":   upstreamResp.StatusCode,
+		"duration_ms":   time.Since(started).Milliseconds(),
+		"model":         row.Model,
+		"request_body":  body,
+		"response_body": string(result),
+		"content_type":  upstreamResp.Header.Get("Content-Type"),
+	})
+}
+

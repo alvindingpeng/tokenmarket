@@ -26,6 +26,11 @@ var (
 	channelGrantCache = cache.New[int, model.ChannelGrant](16) // 渠道授权的进程内副本。
 )
 
+// channelModelCacheWriteMu 串行化 channelModelCache 的读-改-写: 统计累加(旧副本+统计后整体回写)
+// 与改价更新(新价格整体写入)并发时会互相顶掉对方的字段, 表现为"改完价格路由还按旧价走",
+// 故两处写路径互斥; 纯读(快照/选路)不参与锁, 缓存本身并发读安全。
+var channelModelCacheWriteMu sync.Mutex
+
 // 已定义的全部协议位, 用于校验提交的协议掩码。
 // ProtocolOpenAIVideo 一并列入, 管理后台勾选不会被判为非法位; 视频路由本身 P2 阶段再补。
 const definedProtocols = model.ProtocolOpenAIChatCompletion | model.ProtocolOpenAIResponse | model.ProtocolAnthropicMessage | model.ProtocolOpenAIImage | model.ProtocolOpenAIVideo
@@ -571,7 +576,9 @@ func ChannelModelListingUpdate(id int, listings []ChannelModelListing, scope mod
 		channelModel.Listed = listing.Listed
 		channelModel.SupplyPrice = price
 		channelModel.MediaSupply = media
+		channelModelCacheWriteMu.Lock()
 		channelModelCache.Set(channelModel.ID, channelModel)
+		channelModelCacheWriteMu.Unlock()
 	}
 	return nil
 }

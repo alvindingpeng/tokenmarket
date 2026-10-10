@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Switchyard API 文档</title>
+<style>
+:root {
+  --bg: #f6f7f9; --card: #ffffff; --border: #e3e6ea; --text: #1c2430;
+  --muted: #66707d; --accent: #466551; --get: #2f7d4f; --post: #2b5fa8;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14181d; --card: #1b2027; --border: #2b323b; --text: #e6e9ed;
+    --muted: #98a2ad; --accent: #8fbc8f; --get: #7fc79a; --post: #86aee6;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.65 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+.wrap { max-width: 980px; margin: 0 auto; padding: 32px 20px 80px; }
+header h1 { margin: 0 0 6px; font-size: 26px; }
+header .ver { color: var(--muted); font-size: 13px; }
+header p.desc { color: var(--muted); margin: 12px 0 0; }
+.auth { margin: 20px 0 0; padding: 12px 16px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 8px; background: var(--card); font-size: 13px; }
+.auth code, .ep code, .schema code { background: color-mix(in srgb, var(--accent) 10%, transparent); padding: 1px 6px; border-radius: 4px; font-size: 12.5px; }
+h2.tag { margin: 36px 0 12px; font-size: 18px; }
+.ep { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin-bottom: 12px; }
+.ep .head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.method { font-size: 11px; font-weight: 700; letter-spacing: .06em; padding: 2px 9px; border-radius: 999px; color: #fff; }
+.method.get { background: var(--get); }
+.method.post { background: var(--post); }
+.path { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 14px; font-weight: 600; }
+.ep .summary { color: var(--muted); font-size: 13px; margin-left: auto; }
+.ep .desc { margin: 8px 0 0; color: var(--muted); font-size: 13.5px; }
+.ep .body, .ep .resp { margin: 10px 0 0; font-size: 13px; }
+.resp-list { margin: 6px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+.resp-list li { padding: 1px 9px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; color: var(--muted); }
+.schema { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin-bottom: 12px; }
+.schema h3 { margin: 0 0 8px; font-size: 15px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.schema table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.schema td { padding: 5px 8px; border-top: 1px solid var(--border); vertical-align: top; }
+.schema td.name { font-family: ui-monospace, Menlo, Consolas, monospace; white-space: nowrap; }
+.schema td.type { color: var(--muted); white-space: nowrap; }
+.required { color: #c2410c; font-size: 11px; margin-left: 6px; }
+footer { margin-top: 48px; color: var(--muted); font-size: 12px; }
+a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1 id="title">API 文档</h1>
+  <div class="ver" id="version"></div>
+  <p class="desc" id="desc"></p>
+</header>
+<div class="auth" id="auth"></div>
+<div id="paths"></div>
+<h2 class="tag">数据模型</h2>
+<div id="schemas"></div>
+<footer>本文档由服务端根据 <a href="./openapi.json">openapi.json</a> 实时渲染, 机器可读的 OpenAPI 规范可直接供 SDK 与代码生成器使用。</footer>
+</div>
+<script>
+(function () {
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  function refName(ref) {
+    return (ref || '').split('/').pop();
+  }
+  function renderSchemaBody(schema, host) {
+    if (!schema) return;
+    if (schema.$ref) {
+      host.appendChild(el('div', 'body', ''));
+      host.lastChild.innerHTML = '请求体: <code>' + refName(schema.$ref) + '</code>';
+      return;
+    }
+  }
+  fetch('./openapi.json').then(function (r) { return r.json(); }).then(function (spec) {
+    document.getElementById('title').textContent = spec.info.title;
+    document.getElementById('version').textContent = '版本 ' + spec.info.version;
+    document.getElementById('desc').textContent = spec.info.description;
+    document.getElementById('auth').innerHTML = '认证: <code>Authorization: Bearer &lt;API Key&gt;</code> &nbsp;·&nbsp; 机读规范: <a href="./openapi.json">openapi.json</a>';
+
+    var byTag = {};
+    Object.keys(spec.paths).forEach(function (path) {
+      var item = spec.paths[path];
+      Object.keys(item).forEach(function (method) {
+        var op = item[method];
+        (op.tags || ['other']).forEach(function (tag) {
+          (byTag[tag] = byTag[tag] || []).push({ path: path, method: method, op: op });
+        });
+      });
+    });
+
+    var pathsHost = document.getElementById('paths');
+    Object.keys(byTag).forEach(function (tag) {
+      pathsHost.appendChild(el('h2', 'tag', tag));
+      byTag[tag].forEach(function (entry) {
+        var op = entry.op;
+        var card = el('div', 'ep');
+        var head = el('div', 'head');
+        head.appendChild(el('span', 'method ' + entry.method, entry.method.toUpperCase()));
+        head.appendChild(el('span', 'path', entry.path));
+        if (op.summary) head.appendChild(el('span', 'summary', op.summary));
+        card.appendChild(head);
+        if (op.description) card.appendChild(el('div', 'desc', op.description));
+        var body = (op.requestBody && op.requestBody.content && op.requestBody.content['application/json'] && op.requestBody.content['application/json'].schema) || null;
+        if (body) {
+          var line = el('div', 'body');
+          line.innerHTML = '请求体: <code>' + (body.$ref ? refName(body.$ref) : 'object') + '</code>';
+          card.appendChild(line);
+        }
+        if (op.responses) {
+          var respWrap = el('div', 'resp');
+          respWrap.appendChild(el('div', '', '响应:'));
+          var list = el('ul', 'resp-list');
+          Object.keys(op.responses).forEach(function (code) {
+            var r = op.responses[code];
+            var schema = r.content && r.content['application/json'] && r.content['application/json'].schema;
+            var li = el('li', '', code + (schema ? ' ' + (schema.$ref ? refName(schema.$ref) : '') : '') + (r.description ? ' · ' + r.description : ''));
+            list.appendChild(li);
+          });
+          respWrap.appendChild(list);
+          card.appendChild(respWrap);
+        }
+        pathsHost.appendChild(card);
+      });
+    });
+
+    var schemasHost = document.getElementById('schemas');
+    var schemas = (spec.components && spec.components.schemas) || {};
+    Object.keys(schemas).forEach(function (name) {
+      var schema = schemas[name];
+      var card = el('div', 'schema');
+      card.appendChild(el('h3', null, name));
+      if (schema.properties) {
+        var table = el('table');
+        Object.keys(schema.properties).forEach(function (key) {
+          var prop = schema.properties[key];
+          var row = el('tr');
+          var nameCell = el('td', 'name', key);
+          if ((schema.required || []).indexOf(key) >= 0) {
+            nameCell.appendChild(el('span', 'required', '必填'));
+          }
+          row.appendChild(nameCell);
+          var typeText = prop.type || (prop.$ref ? refName(prop.$ref) : (prop.oneOf ? 'oneOf' : 'any'));
+          if (prop.format) typeText += ' (' + prop.format + ')';
+          row.appendChild(el('td', 'type', typeText));
+          row.appendChild(el('td', null, prop.description || prop.example !== undefined ? (prop.description || '') + (prop.example !== undefined ? ' (示例: ' + prop.example + ')' : '') : ''));
+          table.appendChild(row);
+        });
+        card.appendChild(table);
+      } else {
+        card.appendChild(el('div', 'desc', '自由结构对象'));
+      }
+      schemasHost.appendChild(card);
+    });
+  });
+})();
+</script>
+</body>
+</html>

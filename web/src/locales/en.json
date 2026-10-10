@@ -471,7 +471,7 @@
             "member_stream_idle_timeout_secondsHint": "Abort if no new stream events arrive; default 60 seconds."
         },
         "memberPrice": "Read {input} / write {output} per 1M tokens",
-        "modelPrice": "read {input} / write {output} / cache read {cacheRead} / cache write {cacheWrite} (per 1M tokens)"
+        "modelPrice": "read {input} / write {output} / cache read {cacheRead} / cache write {cacheWrite} (m)"
     },
     "model": {
         "create": {
@@ -539,6 +539,16 @@
             "stopFailed": "Failed to cancel current round",
             "cancelRequest": "Cancel Current Request",
             "cancelFailed": "Failed to cancel current request",
+            "replay": "Replay",
+            "replayHint": "Replay runs through the original relay pipeline (billing matches a normal call) and creates a new call log entry.",
+            "replayRequestBody": "Request body (editable)",
+            "replayReset": "Reset",
+            "replaySend": "Send replay",
+            "replaySending": "Replaying…",
+            "replayFailed": "Replay failed",
+            "replayUnsupported": "Only a summary of this request body was archived; replay is not supported",
+            "replayResultDuration": "took {ms} ms",
+            "replayResultEmpty": "(no response content)",
             "waitingChannelSelection": "Waiting for channel selection",
             "waitingResponse": "Waiting for upstream response",
             "responseStreaming": "Upstream responded; streaming is in progress",
@@ -711,6 +721,8 @@
     "share": {
         "shareCode": "Share code",
         "copyCode": "Copy code",
+        "copyLink": "Copy share link",
+        "openPage": "Open share page",
         "notPublished": "Not published yet",
         "manageListing": "Models & pricing",
         "loadFailed": "Failed to load channels",
@@ -719,7 +731,8 @@
         "toast": {
             "published": "Published as {code}",
             "unpublished": "Publication withdrawn",
-            "copied": "Copied"
+            "copied": "Copied",
+            "copiedLink": "Share link copied"
         },
         "listing": {
             "title": "Models & pricing — {name}",

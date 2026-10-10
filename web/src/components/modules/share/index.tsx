@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'use-intl';
-import { Copy, PackageCheck, Wand2 } from 'lucide-react';
+import { Copy, ExternalLink, Link2, PackageCheck, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useChannelStats, type ChannelStatsFormatted } from '@/api/channel';
 import { useChannelListings, usePublishChannel, useUpdateChannelListings, type ChannelModelListing } from '@/api/share';
@@ -307,6 +307,14 @@ function ShareCard({ channel }: { channel: ChannelStatsFormatted }) {
         toast.success(t('toast.copied'));
     };
 
+    // sharePageURL 分享页公开地址: 后端 /share/:code 渲染, 无需登录即可查看上架模型与对客价。
+    const sharePageURL = channel.share_code ? new URL(`share/${channel.share_code}`, window.location.href).href : '';
+
+    const handleCopyLink = () => {
+        void navigator.clipboard?.writeText(sharePageURL);
+        toast.success(t('toast.copiedLink'));
+    };
+
     return (
         <article className="flex flex-col gap-3 rounded-3xl border border-border bg-card text-card-foreground p-4">
             <header className="flex items-center justify-between gap-2">
@@ -321,12 +329,25 @@ function ShareCard({ channel }: { channel: ChannelStatsFormatted }) {
             <div className="rounded-2xl border border-border/70 bg-background/80 p-3">
                 <p className="text-xs text-muted-foreground">{t('shareCode')}</p>
                 {channel.shared && channel.share_code ? (
-                    <div className="mt-1 flex items-center gap-2">
-                        <code className="min-w-0 flex-1 truncate font-mono text-sm font-semibold">{channel.share_code}</code>
-                        <Button variant="ghost" size="icon" onClick={handleCopy} aria-label={t('copyCode')}>
-                            <Copy className="size-4" />
-                        </Button>
-                    </div>
+                    <>
+                        <div className="mt-1 flex items-center gap-2">
+                            <code className="min-w-0 flex-1 truncate font-mono text-sm font-semibold">{channel.share_code}</code>
+                            <Button variant="ghost" size="icon" onClick={handleCopy} aria-label={t('copyCode')}>
+                                <Copy className="size-4" />
+                            </Button>
+                        </div>
+                        <div className="mt-2 flex items-center gap-2 border-t border-border/70 pt-2">
+                            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{sharePageURL.replace(/^https?:\/\//, '')}</span>
+                            <Button variant="ghost" size="icon" onClick={handleCopyLink} aria-label={t('copyLink')}>
+                                <Link2 className="size-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" asChild aria-label={t('openPage')}>
+                                <a href={sharePageURL} target="_blank" rel="noreferrer">
+                                    <ExternalLink className="size-4" />
+                                </a>
+                            </Button>
+                        </div>
+                    </>
                 ) : (
                     <p className="mt-1 text-sm text-muted-foreground">{t('notPublished')}</p>
                 )}

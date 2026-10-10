@@ -96,6 +96,9 @@ export function useUpdateChannelListings() {
         onSuccess: (_data, variables) => {
             void queryClient.invalidateQueries({ queryKey: ['channels', 'models', variables.id] });
             void queryClient.invalidateQueries({ queryKey: ['channels', 'grants'] });
+            // 供货价是分组成员（模型路由）价格的来源：改价后分组缓存必须一并失效，
+            // 否则模型路由页继续展示改价前的旧单价（后端每次实时折算，问题只在前端缓存这一层）。
+            void queryClient.invalidateQueries({ queryKey: ['groups'] });
         },
     });
 }

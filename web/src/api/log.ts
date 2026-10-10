@@ -186,3 +186,25 @@ export function useLogResponseBody(id: number, startedAt: string, enabled: boole
         staleTime: Infinity,
     });
 }
+// ReplayResult 是请求重放的同步结果: 状态码、耗时与完整响应体。
+export interface ReplayResult {
+    status_code: number;
+    duration_ms: number;
+    model: string;
+    request_body: string;
+    response_body: string;
+    content_type: string;
+}
+
+// useReplayRequest 用保存的原始请求体(可现场修改)经指定 API Key 重放请求。
+// 重放走与客户端调用完全相同的转发链路(认证/限流/计费/路由), 会产生一条新的调用日志。
+export function useReplayRequest() {
+    return useMutation({
+        mutationFn: ({ requestId, requestBody, apiKeyId }: { requestId: number; requestBody?: string; apiKeyId?: number }) =>
+            apiRequest<ReplayResult>(`/api/v1/log/replay/${requestId}`, {
+                method: 'POST',
+                body: { request_body: requestBody ?? '', api_key_id: apiKeyId ?? 0 },
+            }),
+    });
+}
+
