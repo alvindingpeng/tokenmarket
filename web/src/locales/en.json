@@ -314,7 +314,18 @@
             "updateNow": "Update Now",
             "updating": "Updating...",
             "updateSuccess": "Update successful, service will restart shortly",
-            "updateFailed": "Update failed"
+            "updateFailed": "Update failed",
+            "checkNow": "Check for updates",
+            "checking": "Checking...",
+            "checkFailed": "Update check failed",
+            "assetMissing": "No update package is available for this platform",
+            "upToDate": "You are using the latest version",
+            "platform": "Platform",
+            "lastCheck": "Last checked",
+            "releaseNotes": "Release notes",
+            "viewRelease": "View release",
+            "confirmUpdate": "Confirm update",
+            "cancel": "Cancel"
         },
         "log": {
             "title": "Log Settings",
