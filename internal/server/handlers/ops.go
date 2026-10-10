@@ -4,8 +4,10 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/alvindingpeng/switchyard/internal/alert"
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/relay"
@@ -91,6 +93,11 @@ func init() {
 			router.NewRoute("/alerts/test-webhook", http.MethodPost).
 				Allow(model.RoleAdmin).
 				Handle(testAlertWebhook),
+		).
+		AddRoute(
+			router.NewRoute("/alerts/test/:channel", http.MethodPost).
+				Allow(model.RoleAdmin).
+				Handle(testAlertChannel),
 		).
 		AddRoute(
 			router.NewRoute("/auth-secret/rotate", http.MethodPost).
@@ -276,6 +283,27 @@ func testAlertWebhook(c *gin.Context) {
 		return
 	}
 	audit(c, "alert.test_webhook", "", webhookURL)
+	resp.Success(c, gin.H{"ok": true})
+}
+
+// testAlertChannel 按指定渠道(telegram/email)发送一条测试告警, 验证凭据与连通性。
+func testAlertChannel(c *gin.Context) {
+	channel := strings.TrimSpace(c.Param("channel"))
+	if channel != "telegram" && channel != "email" {
+		resp.Error(c, http.StatusBadRequest, "unsupported alert channel")
+		return
+	}
+	err := alert.SendOnce(c.Request.Context(), channel, alert.Alert{
+		Event:     alert.Event("test"),
+		Title:     "Switchyard test alert",
+		Message:   "test alert from admin panel; this confirms the alert channel is reachable",
+		Timestamp: time.Now(),
+	})
+	if err != nil {
+		resp.Error(c, http.StatusBadGateway, err.Error())
+		return
+	}
+	audit(c, "alert.test_"+channel, "", "")
 	resp.Success(c, gin.H{"ok": true})
 }
 

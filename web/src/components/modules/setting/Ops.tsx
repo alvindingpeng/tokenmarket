@@ -6,9 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useSettingList, useSetSetting, SettingKey } from '@/api/setting';
-import { useMetricsToken, useRotateMetricsToken, useTestAlertWebhook } from '@/api/ops';
+import { useMetricsToken, useRotateMetricsToken, useTestAlertChannel, useTestAlertWebhook } from '@/api/ops';
 import { Copy } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 
 // OPS_KEYS 是运营可靠性面板管理的设置键清单, 与后端 model/setting.go 对齐。
 const OPS_KEYS = [
@@ -27,8 +28,24 @@ const OPS_KEYS = [
     SettingKey.AlertWebhookURL,
     SettingKey.AlertDedupMinutes,
     SettingKey.AlertFailStreak,
+    SettingKey.AlertChannels,
+    SettingKey.AlertTelegramBotToken,
+    SettingKey.AlertTelegramChatID,
+    SettingKey.AlertEmailSMTPHost,
+    SettingKey.AlertEmailSMTPPort,
+    SettingKey.AlertEmailUsername,
+    SettingKey.AlertEmailPassword,
+    SettingKey.AlertEmailFrom,
+    SettingKey.AlertEmailTo,
     SettingKey.MetricsAuth,
 ] as const;
+
+// CHANNEL_LABELS 告警渠道展示名与 i18n key 的对应。
+const CHANNEL_LABELS = {
+    webhook: 'alertChannelWebhook',
+    telegram: 'alertChannelTelegram',
+    email: 'alertChannelEmail',
+} as const;
 
 // SettingOps 运营可靠性设置: 日志生命周期、自动备份、渠道健康与告警通知。
 export function SettingOps() {
@@ -38,6 +55,15 @@ export function SettingOps() {
     const setSetting = useSetSetting();
 
     const testWebhook = useTestAlertWebhook();
+    const testChannel = useTestAlertChannel();
+
+    // runChannelTest 发送测试告警并就地反馈结果。
+    const runChannelTest = (channel: 'telegram' | 'email') => {
+        testChannel.mutate(channel, {
+            onSuccess: () => toast.success(t('alertTestOk')),
+            onError: (error) => toast.error(error instanceof Error ? error.message : t('alertTestFail')),
+        });
+    };
     const [metricsAuth, setMetricsAuth] = useState(false);
     const [revealed, setRevealed] = useState('');
     // 仅在开启鉴权后才索取令牌, 关闭时不请求, 避免无谓地把凭据取到前端。
@@ -85,6 +111,21 @@ export function SettingOps() {
     };
 
     const boolValue = (key: string) => (values[key] ?? '') === 'true';
+
+    // alertChannels 解析启用的告警渠道; 空值与后端一致按仅 webhook 展示。
+    const alertChannels = (() => {
+        const raw = (values[SettingKey.AlertChannels] ?? '').trim();
+        return raw === '' ? ['webhook'] : raw.split(',').map((item) => item.trim()).filter(Boolean);
+    })();
+
+    // toggleAlertChannel 勾选/取消告警渠道并立即保存; 至少保留一个(全关时后端会回落到 webhook, 展示会不一致)。
+    const toggleAlertChannel = (name: string, on: boolean) => {
+        const next = on ? [...new Set([...alertChannels, name])] : alertChannels.filter((item) => item !== name);
+        if (next.length === 0) return;
+        const value = next.join(',');
+        setValues((prev) => ({ ...prev, [SettingKey.AlertChannels]: value }));
+        save(SettingKey.AlertChannels, value);
+    };
 
     // 令牌读数与设置面板同步: 面板值优先, 未加载时回退到接口回显。
     const effectiveToken = values[SettingKey.MetricsAuth] === 'bearer' ? (revealed || metricsToken.data?.token || '') : '';
@@ -134,6 +175,7 @@ export function SettingOps() {
                 </div>
                 <Input className='h-9 w-full max-w-72 rounded-xl' placeholder={t('logMaskFieldsHint')}
                     value={values[SettingKey.LogMaskFields] ?? ''}
+                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.LogMaskFields]: event.target.value }))}
                     onBlur={(event) => save(SettingKey.LogMaskFields, event.target.value.trim())} />
             </div>
 
@@ -218,6 +260,7 @@ export function SettingOps() {
                 <div className='flex w-full max-w-md items-center gap-2'>
                     <Input className='h-9 w-full rounded-xl' placeholder='https://...'
                         value={values[SettingKey.AlertWebhookURL] ?? ''}
+                        onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertWebhookURL]: event.target.value }))}
                         onBlur={(event) => save(SettingKey.AlertWebhookURL, event.target.value.trim())} />
                     <Button type='button' variant='outline' size='sm' className='shrink-0 rounded-xl'
                         disabled={testWebhook.isPending || !(values[SettingKey.AlertWebhookURL] ?? '')}
@@ -226,6 +269,110 @@ export function SettingOps() {
                             onError: (error) => toast.error(error instanceof Error ? error.message : t('webhookTestFail')),
                         })}>
                         {testWebhook.isPending ? t('webhookTesting') : t('webhookTest')}
+                    </Button>
+                </div>
+            </div>
+
+
+            <div className={rowClass + ' ' + dividerClass}>
+                <div className='min-w-0'>
+                    <Label className='text-sm font-medium'>{t('alertChannels')}</Label>
+                    <p className='text-xs text-muted-foreground'>{t('alertChannelsHint')}</p>
+                </div>
+                <div className='flex items-center gap-2'>
+                    {(['webhook', 'telegram', 'email'] as const).map((name) => {
+                        const on = alertChannels.includes(name);
+                        return (
+                            <button key={name} type='button'
+                                className={cn('rounded-xl border px-3 py-1.5 text-xs transition-colors', on ? 'border-primary bg-primary/10 font-medium text-primary' : 'border-border text-muted-foreground hover:bg-muted')}
+                                onClick={() => toggleAlertChannel(name, !on)}>
+                                {t(CHANNEL_LABELS[name])}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
+            <div className={rowClass + ' ' + dividerClass}>
+                <div className='min-w-0'>
+                    <Label className='text-sm font-medium'>{t('telegramBotToken')}</Label>
+                    <p className='text-xs text-muted-foreground'>{t('telegramBotTokenHint')}</p>
+                </div>
+                <Input className='h-9 w-full max-w-md rounded-xl' placeholder='123456789:ABCdef...' autoComplete='off'
+                    value={values[SettingKey.AlertTelegramBotToken] ?? ''}
+                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertTelegramBotToken]: event.target.value }))}
+                    onBlur={(event) => save(SettingKey.AlertTelegramBotToken, event.target.value.trim())} />
+            </div>
+
+            <div className={rowClass + ' ' + dividerClass}>
+                <div className='min-w-0'>
+                    <Label className='text-sm font-medium'>{t('telegramChatID')}</Label>
+                    <p className='text-xs text-muted-foreground'>{t('telegramChatIDHint')}</p>
+                </div>
+                <div className='flex w-full max-w-md items-center gap-2'>
+                    <Input className='h-9 w-full rounded-xl' placeholder='-1001234567890' autoComplete='off'
+                        value={values[SettingKey.AlertTelegramChatID] ?? ''}
+                        onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertTelegramChatID]: event.target.value }))}
+                        onBlur={(event) => save(SettingKey.AlertTelegramChatID, event.target.value.trim())} />
+                    <Button type='button' variant='outline' size='sm' className='shrink-0 rounded-xl'
+                        disabled={testChannel.isPending}
+                        onClick={() => runChannelTest('telegram')}>
+                        {testChannel.isPending ? t('alertTesting') : t('alertTest')}
+                    </Button>
+                </div>
+            </div>
+
+            <div className={rowClass + ' ' + dividerClass}>
+                <div className='min-w-0'>
+                    <Label className='text-sm font-medium'>{t('emailSMTP')}</Label>
+                    <p className='text-xs text-muted-foreground'>{t('emailSMTPHint')}</p>
+                </div>
+                <div className='flex w-full max-w-md items-center gap-2'>
+                    <Input className='h-9 w-full rounded-xl' placeholder='smtp.example.com'
+                        value={values[SettingKey.AlertEmailSMTPHost] ?? ''}
+                        onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertEmailSMTPHost]: event.target.value }))}
+                        onBlur={(event) => save(SettingKey.AlertEmailSMTPHost, event.target.value.trim())} />
+                    <Input type='number' min={1} max={65535} className='h-9 w-24 shrink-0 rounded-xl' placeholder='465'
+                        value={values[SettingKey.AlertEmailSMTPPort] ?? ''}
+                        onBlur={(event) => saveNumber(SettingKey.AlertEmailSMTPPort, event.target.value.trim(), 1, 65535, '465')} />
+                </div>
+            </div>
+
+            <div className={rowClass + ' ' + dividerClass}>
+                <div className='min-w-0'>
+                    <Label className='text-sm font-medium'>{t('emailAccount')}</Label>
+                    <p className='text-xs text-muted-foreground'>{t('emailAccountHint')}</p>
+                </div>
+                <div className='flex w-full max-w-md items-center gap-2'>
+                    <Input className='h-9 w-full rounded-xl' placeholder={t('emailUsernamePlaceholder')} autoComplete='off'
+                        value={values[SettingKey.AlertEmailUsername] ?? ''}
+                        onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertEmailUsername]: event.target.value }))}
+                        onBlur={(event) => save(SettingKey.AlertEmailUsername, event.target.value.trim())} />
+                    <Input type='password' className='h-9 w-full rounded-xl' placeholder={t('emailPasswordPlaceholder')} autoComplete='off'
+                        value={values[SettingKey.AlertEmailPassword] ?? ''}
+                        onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertEmailPassword]: event.target.value }))}
+                        onBlur={(event) => save(SettingKey.AlertEmailPassword, event.target.value)} />
+                </div>
+            </div>
+
+            <div className={rowClass + ' ' + dividerClass}>
+                <div className='min-w-0'>
+                    <Label className='text-sm font-medium'>{t('emailFromTo')}</Label>
+                    <p className='text-xs text-muted-foreground'>{t('emailFromToHint')}</p>
+                </div>
+                <div className='flex w-full max-w-md items-center gap-2'>
+                    <Input className='h-9 w-full rounded-xl' placeholder='alerts@example.com'
+                        value={values[SettingKey.AlertEmailFrom] ?? ''}
+                        onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertEmailFrom]: event.target.value }))}
+                        onBlur={(event) => save(SettingKey.AlertEmailFrom, event.target.value.trim())} />
+                    <Input className='h-9 w-full rounded-xl' placeholder={t('emailToPlaceholder')}
+                        value={values[SettingKey.AlertEmailTo] ?? ''}
+                        onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertEmailTo]: event.target.value }))}
+                        onBlur={(event) => save(SettingKey.AlertEmailTo, event.target.value.trim())} />
+                    <Button type='button' variant='outline' size='sm' className='shrink-0 rounded-xl'
+                        disabled={testChannel.isPending}
+                        onClick={() => runChannelTest('email')}>
+                        {testChannel.isPending ? t('alertTesting') : t('alertTest')}
                     </Button>
                 </div>
             </div>

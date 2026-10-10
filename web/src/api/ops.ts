@@ -133,6 +133,14 @@ export function useTestAlertWebhook() {
     });
 }
 
+// useTestAlertChannel 按指定渠道(telegram/email)发送测试告警, 验证凭据与连通性。
+export function useTestAlertChannel() {
+    return useMutation({
+        mutationFn: (channel: 'telegram' | 'email') =>
+            apiRequest<{ ok: boolean }>(`/api/v1/ops/alerts/test/${channel}`, { method: 'POST' }),
+    });
+}
+
 export function useRunHealthCheck() {
     const qc = useQueryClient();
     return useMutation({
