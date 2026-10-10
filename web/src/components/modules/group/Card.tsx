@@ -124,7 +124,8 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
             values.relay_config.metric_window_size !== group.relay_config.metric_window_size ||
             values.relay_config.score_price_weight !== group.relay_config.score_price_weight ||
             values.relay_config.score_latency_weight !== group.relay_config.score_latency_weight ||
-            values.relay_config.score_success_weight !== group.relay_config.score_success_weight
+            values.relay_config.score_success_weight !== group.relay_config.score_success_weight ||
+            values.relay_config.reliability_floor !== group.relay_config.reliability_floor
         ) payload.relay_config = values.relay_config;
         // 成员集合与顺序有任一处不同就整体提交; 后端按授权主键匹配, 已有成员保留其主键与统计。
         const nextGrantIDs = values.members.map((m) => m.channel_grant_id);

@@ -30,33 +30,51 @@ func metricAlpha(window int) float64 {
 var (
 	metricMu      sync.Mutex
 	memberMetrics = make(map[memberMetricKey]*memberMetric)
+	// modelMetrics 按上游渠道模型聚合的全局指标, 是综合评分的权威来源。
+	// 评分以「上游模型」为单位: 同一渠道模型在任意分组、任意用户下共享同一份成绩,
+	// 故某模型表现差只降它自己的名次, 不牵连同渠道其它模型, 打分结果也天然对所有用户一致。
+	modelMetrics = make(map[int]*memberMetric)
 )
 
+// applySample 把一次观测并入 EMA。
+func applySample(metric *memberMetric, window int, waitMs int64, success bool) {
+	s := 0.0
+	if success {
+		s = 1
+	}
+	if metric.samples == 0 {
+		metric.emaWaitMs = float64(waitMs)
+		metric.emaSuccess = s
+	} else {
+		alpha := metricAlpha(window)
+		metric.emaWaitMs = alpha*float64(waitMs) + (1-alpha)*metric.emaWaitMs
+		metric.emaSuccess = alpha*s + (1-alpha)*metric.emaSuccess
+	}
+	metric.samples++
+}
+
 // recordMemberMetric 记录一次成员请求结果, 供延迟/成功率/综合评分策略排名使用。
-func recordMemberMetric(groupID, itemID, window int, waitMs int64, success bool) {
-	key := memberMetricKey{groupID: groupID, itemID: itemID}
+// channelModelID 非零时同时并入该上游模型的全局指标, 使打分跨分组、跨用户一致。
+func recordMemberMetric(groupID, itemID, channelModelID, window int, waitMs int64, success bool) {
 	metricMu.Lock()
 	defer metricMu.Unlock()
+
+	key := memberMetricKey{groupID: groupID, itemID: itemID}
 	metric := memberMetrics[key]
 	if metric == nil {
 		metric = &memberMetric{}
 		memberMetrics[key] = metric
 	}
-	if metric.samples == 0 {
-		metric.emaWaitMs = float64(waitMs)
-		if success {
-			metric.emaSuccess = 1
+	applySample(metric, window, waitMs, success)
+
+	if channelModelID != 0 {
+		global := modelMetrics[channelModelID]
+		if global == nil {
+			global = &memberMetric{}
+			modelMetrics[channelModelID] = global
 		}
-	} else {
-		alpha := metricAlpha(window)
-		metric.emaWaitMs = alpha*float64(waitMs) + (1-alpha)*metric.emaWaitMs
-		s := 0.0
-		if success {
-			s = 1
-		}
-		metric.emaSuccess = metricAlpha(window)*s + (1-metricAlpha(window))*metric.emaSuccess
+		applySample(global, window, waitMs, success)
 	}
-	metric.samples++
 	markMetricDirty(groupID, itemID)
 }
 
@@ -69,6 +87,33 @@ func memberMetricOf(groupID, itemID int) (waitMs float64, success float64, sampl
 		return 0, 0, 0
 	}
 	return metric.emaWaitMs, metric.emaSuccess, metric.samples
+}
+
+// modelMetricOf 返回上游渠道模型的全局指标快照; samples 为 0 表示该模型尚无观测。
+func modelMetricOf(channelModelID int) (waitMs float64, success float64, samples int) {
+	if channelModelID == 0 {
+		return 0, 0, 0
+	}
+	metricMu.Lock()
+	defer metricMu.Unlock()
+	metric := modelMetrics[channelModelID]
+	if metric == nil {
+		return 0, 0, 0
+	}
+	return metric.emaWaitMs, metric.emaSuccess, metric.samples
+}
+
+// seedModelMetric 恢复持久化指标时并入一条历史观测, 保持全局模型指标的连续性。
+func seedModelMetric(channelModelID int, waitMs, success float64, samples int) {
+	if channelModelID == 0 || samples <= 0 {
+		return
+	}
+	metricMu.Lock()
+	defer metricMu.Unlock()
+	metric := modelMetrics[channelModelID]
+	if metric == nil || metric.samples < samples {
+		modelMetrics[channelModelID] = &memberMetric{emaWaitMs: waitMs, emaSuccess: success, samples: samples}
+	}
 }
 
 // MemberMetricView 是分组成员指标的可视快照, 供分组页展示。

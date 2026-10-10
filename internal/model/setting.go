@@ -31,6 +31,8 @@ const (
 	SettingKeyScorePriceWeight   SettingKey = "score_price_weight"   // 综合评分默认价格权重(0-100)
 	SettingKeyScoreLatencyWeight SettingKey = "score_latency_weight" // 综合评分默认延迟权重(0-100)
 	SettingKeyScoreSuccessWeight SettingKey = "score_success_weight" // 综合评分默认成功率权重(0-100)
+	// 综合评分可靠性下限(0-100 百分比): 成功率低于该值的成员排到达标成员之后, 防止最便宜但常失败的成员长期霸占首位。
+	SettingKeyScoreReliabilityFloor SettingKey = "score_reliability_floor"
 	// 系统信息配置: 管理后台展示的站点身份信息与公告, 仅管理员可改。
 	SettingKeySiteName                SettingKey = "site_name"                 // 站点名称, 留空则前端回退到默认标题
 	SettingKeySiteDescription         SettingKey = "site_description"          // 站点描述, 展示在登录页与关于处
@@ -95,6 +97,7 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyScorePriceWeight, Value: "40"},           // 综合评分默认配比: 价格 40
 		{Key: SettingKeyScoreLatencyWeight, Value: "30"},         // 综合评分默认配比: 延迟 30
 		{Key: SettingKeyScoreSuccessWeight, Value: "30"},         // 综合评分默认配比: 成功率 30
+		{Key: SettingKeyScoreReliabilityFloor, Value: "70"},      // 成功率低于 70% 视为不健康, 评分排后
 		{Key: SettingKeySiteName, Value: ""},                     // 站点名称默认空, 前端回退默认标题
 		{Key: SettingKeySiteDescription, Value: ""},              // 站点描述默认空
 		{Key: SettingKeySiteContact, Value: ""},                  // 联系方式默认空
@@ -153,7 +156,8 @@ func (s *Setting) Validate() error {
 			return fmt.Errorf("min balance must be a number")
 		}
 		return nil
-	case SettingKeyScorePriceWeight, SettingKeyScoreLatencyWeight, SettingKeyScoreSuccessWeight:
+	case SettingKeyScorePriceWeight, SettingKeyScoreLatencyWeight, SettingKeyScoreSuccessWeight,
+		SettingKeyScoreReliabilityFloor:
 		weight, err := strconv.Atoi(s.Value)
 		if err != nil || weight < 0 || weight > 100 {
 			return fmt.Errorf("score weight must be an integer between 0 and 100")

@@ -457,6 +457,8 @@
             "scoreLatencyWeight": "評分·延遲權重",
             "scoreSuccessWeight": "評分·成功率權重",
             "scoreWeightHint": "三個權重為相對值(0-100),可任意配比;填 0 表示該維度未自訂,執行時跟隨系統預設參數(管理員可在設定頁調整)",
+            "reliabilityFloor": "評分·可靠性下限",
+            "reliabilityFloorHint": "成功率低於此百分比的成員排到健康成員之後；填 0 跟隨系統預設值（70%）",
             "request_timeout_seconds": "請求總逾時（秒）",
             "request_timeout_secondsHint": "包含排隊、重試與完整串流傳輸；預設 600 秒。",
             "max_total_attempts": "單請求最大嘗試次數",

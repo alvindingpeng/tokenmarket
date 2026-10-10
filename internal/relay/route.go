@@ -183,18 +183,23 @@ func selectGroupItem(group model.Group, candidates []model.GroupItem) model.Grou
 		}
 		return best
 	case model.GroupModeLatency:
-		best, bestWait := candidates[0], memberWait(group, candidates[0])
+		best := candidates[0]
+		bestWait, bestKnown := memberWait(group, candidates[0])
 		for _, item := range candidates[1:] {
-			if w := memberWait(group, item); w < bestWait {
-				best, bestWait = item, w
+			w, known := memberWait(group, item)
+			// 有实测耗时者优先于冷成员; 同为冷成员时按优先级保持原顺序。
+			if known && (!bestKnown || w < bestWait) {
+				best, bestWait, bestKnown = item, w, true
 			}
 		}
 		return best
 	case model.GroupModeSuccess:
-		best, bestRate := candidates[0], memberRate(group, candidates[0])
+		best := candidates[0]
+		bestRate, bestKnown := memberRate(group, candidates[0])
 		for _, item := range candidates[1:] {
-			if r := memberRate(group, item); r > bestRate {
-				best, bestRate = item, r
+			r, known := memberRate(group, item)
+			if known && (!bestKnown || r > bestRate) {
+				best, bestRate, bestKnown = item, r, true
 			}
 		}
 		return best
@@ -220,23 +225,42 @@ func memberPrice(group model.Group, item model.GroupItem) float64 {
 	}
 }
 
-// memberWait 返回成员用于排名的耗时: 冷成员取 0(最优), 保证新成员至少被试用一次以积累样本,
-// 采样后回归真实指标; 全员冷时并列, 回落优先级。
-func memberWait(group model.Group, item model.GroupItem) float64 {
-	waitMs, _, samples := memberMetricOf(group.ID, item.ID)
+// memberWait 返回成员用于排名的耗时(毫秒)。
+// 指标按上游渠道模型全局聚合, 使同一模型的成绩在任意分组与用户下一致。
+// 冷成员(无观测)返回中性中性值而非 0: 若把冷成员当最优, 一个尚无成绩的成员会无条件压过
+// 有真实成绩的成员; 中性值只在其它维度胜出时才可能被选中, 兼顾新成员试用与老成员降级。
+func memberWait(group model.Group, item model.GroupItem) (float64, bool) {
+	waitMs, _, samples := memberScopeMetric(group, item)
 	if samples == 0 {
-		return 0
+		return 0, false
 	}
-	return waitMs
+	return waitMs, true
 }
 
-// memberRate 返回成员用于排名的成功率: 冷成员取 1(最优), 与耗时同理让新成员先获得一次试用。
-func memberRate(group model.Group, item model.GroupItem) float64 {
-	_, success, samples := memberMetricOf(group.ID, item.ID)
+// memberRate 返回成员用于排名的成功率; ok 为 false 表示冷成员(无观测)。
+func memberRate(group model.Group, item model.GroupItem) (float64, bool) {
+	_, success, samples := memberScopeMetric(group, item)
 	if samples == 0 {
-		return 1
+		return 0, false
 	}
-	return success
+	return success, true
+}
+
+// memberScopeMetric 取成员的评分指标: 优先用渠道模型全局指标, 缺失时回落本分组观测。
+// 全局指标冷启动时用本分组已有观测播种, 保证重启后评分仍从历史成绩起步而非全部归零。
+func memberScopeMetric(group model.Group, item model.GroupItem) (waitMs float64, success float64, samples int) {
+	groupWait, groupSuccess, groupSamples := memberMetricOf(group.ID, item.ID)
+	if item.ChannelModelID != 0 {
+		waitMs, success, samples = modelMetricOf(item.ChannelModelID)
+		if samples > 0 {
+			return waitMs, success, samples
+		}
+		if groupSamples > 0 {
+			seedModelMetric(item.ChannelModelID, groupWait, groupSuccess, groupSamples)
+			return groupWait, groupSuccess, groupSamples
+		}
+	}
+	return groupWait, groupSuccess, groupSamples
 }
 
 // selectByScore 综合评分: 价格(低好), 延迟(低好)与成功率(高好)各自在候选集内归一化后加权求和。
@@ -252,20 +276,47 @@ func selectByScore(group model.Group, candidates []model.GroupItem) model.GroupI
 	prices := make([]float64, len(candidates))
 	waits := make([]float64, len(candidates))
 	rates := make([]float64, len(candidates))
+	known := make([]bool, len(candidates))
 	for i, item := range candidates {
 		prices[i] = memberPrice(group, item)
-		waits[i] = memberWait(group, item)
-		rates[i] = memberRate(group, item)
+		waits[i], known[i] = memberWait(group, item)
+		rates[i], _ = memberRate(group, item)
 	}
 
-	best, bestScore := candidates[0], math.Inf(-1)
+	// 可靠性优先: 成功率低于下限的成员无条件排在全部达标成员之后。
+	// 价格是静态属性, 若不加此护栏, 最便宜的成员会因价格权重长期固守首位, 即便它频繁失败。
+	floor := effectiveReliabilityFloor(config)
+	best, bestScore, bestHealthy := candidates[0], math.Inf(-1), false
 	for i, item := range candidates {
-		score := memberScore(priceWeight, latencyWeight, successWeight, i, prices, waits, rates)
+		// 冷成员在成功率维度按中性值参与, 不因无样本被判为不健康。
+		healthy := !known[i] || rates[i] >= floor
+		score := memberScore(priceWeight, latencyWeight, successWeight, i, prices, waits, rates, known)
+		if healthy && !bestHealthy {
+			best, bestScore, bestHealthy = item, score, true
+			continue
+		}
+		if healthy != bestHealthy {
+			continue
+		}
 		if score > bestScore {
 			best, bestScore = item, score
 		}
 	}
 	return best
+}
+
+// reliabilityFloorDefault 是成员可靠性下限的内置兜底: 成功率(EMA)低于该值视为不健康成员。
+const reliabilityFloorDefault = 0.7
+
+// effectiveReliabilityFloor 解析可靠性下限: 分组自定义优先, 否则用系统设置, 均缺失回落内置值。
+func effectiveReliabilityFloor(config model.GroupRelayConfig) float64 {
+	if config.ReliabilityFloor > 0 {
+		return float64(config.ReliabilityFloor) / 100
+	}
+	if system, err := op.SettingGetInt(model.SettingKeyScoreReliabilityFloor); err == nil && system > 0 {
+		return float64(system) / 100
+	}
+	return reliabilityFloorDefault
 }
 
 // 综合评分的内置兜底配比: 系统设置缺失且分组未自定义时使用。
@@ -302,10 +353,15 @@ func effectiveScoreWeights(config model.GroupRelayConfig) (int, int, int) {
 }
 
 // memberScore 计算候选集中第 i 个成员的综合评分; 各维度在候选集内最小-最大归一化, 区间退化时并列。
-func memberScore(priceWeight, latencyWeight, successWeight, i int, prices, waits, rates []float64) float64 {
+// known 标记该成员是否有实测数据: 冷成员的延迟与成功率按中性值 0.5 参与,
+// 既不因无样本被当成最优而抢占首位, 也不因无样本被误判为最差。
+func memberScore(priceWeight, latencyWeight, successWeight, i int, prices, waits, rates []float64, known []bool) float64 {
 	priceScore := normalizedDim(prices, i, false) // 价格低者得分高。
-	latScore := normalizedDim(waits, i, false)    // 延迟低者得分高。
-	succScore := normalizedDim(rates, i, true)    // 成功率高者得分高。
+	latScore, succScore := 0.5, 0.5
+	if known[i] {
+		latScore = normalizedDim(waits, i, false) // 延迟低者得分高。
+		succScore = normalizedDim(rates, i, true) // 成功率高者得分高。
+	}
 	return (float64(priceWeight)*priceScore +
 		float64(latencyWeight)*latScore +
 		float64(successWeight)*succScore) /

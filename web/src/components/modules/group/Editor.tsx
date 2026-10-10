@@ -27,13 +27,13 @@ export type GroupEditorValues = {
 
 // modeRelayDefaults 与后端 DefaultGroupRelayConfigForMode 保持同一套新建预设。
 const modeRelayDefaults: Record<GroupMode, GroupRelayConfig> = {
-    manual: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 20, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0 },
-    failover: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 60, price_metric: 'blended', metric_window_size: 20, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0 },
-    price: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 20, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0 },
-    latency: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 10, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0 },
-    success: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 30, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0 },
-    score: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 20, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0 },
-    random: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 30, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 20, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0 },
+    manual: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 20, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0, reliability_floor: 0 },
+    failover: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 60, price_metric: 'blended', metric_window_size: 20, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0, reliability_floor: 0 },
+    price: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 20, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0, reliability_floor: 0 },
+    latency: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 10, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0, reliability_floor: 0 },
+    success: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 30, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0, reliability_floor: 0 },
+    score: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 20, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0, reliability_floor: 0 },
+    random: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 30, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 20, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0, reliability_floor: 0 },
 };
 
 function modeRelayConfig(mode: GroupMode): GroupRelayConfig {
@@ -735,6 +735,26 @@ export function GroupEditor({
                                         onChange={(event) => {
                                             const value = Number.parseInt(event.target.value, 10);
                                             setRelayConfig((prev) => ({ ...prev, score_success_weight: Number.isFinite(value) ? Math.min(Math.max(value, 0), 100) : 0 }));
+                                        }}
+                                        className="rounded-xl"
+                                    />
+                                </Field>
+                                <Field>
+                                    <FieldLabel htmlFor="group-reliability-floor">
+                                        {t('form.reliabilityFloor')}
+                                        <FieldHelp text={t('form.reliabilityFloorHint')} />
+                                    </FieldLabel>
+                                    <Input
+                                        id="group-reliability-floor"
+                                        type="number"
+                                        inputMode="numeric"
+                                        min={0}
+                                        max={100}
+                                        step={1}
+                                        value={String(relayConfig.reliability_floor ?? 0)}
+                                        onChange={(event) => {
+                                            const value = Number.parseInt(event.target.value, 10);
+                                            setRelayConfig((prev) => ({ ...prev, reliability_floor: Number.isFinite(value) ? Math.min(Math.max(value, 0), 100) : 0 }));
                                         }}
                                         className="rounded-xl"
                                     />
