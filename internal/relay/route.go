@@ -283,20 +283,17 @@ func selectByScore(group model.Group, candidates []model.GroupItem) model.GroupI
 		rates[i], _ = memberRate(group, item)
 	}
 
-	// 可靠性优先: 成功率低于下限的成员无条件排在全部达标成员之后。
-	// 价格是静态属性, 若不加此护栏, 最便宜的成员会因价格权重长期固守首位, 即便它频繁失败。
+	// 可靠性软性惩罚: 成功率低于下限的成员按 succ/floor 比例折减总分, 而非无条件垫底。
+	// 之前的硬门槛会把"仅略低于下限"的成员和最便宜成员一起压到健康成员之后, 反而违背了
+	// 价格权重(如 60)——最便宜但成功率 0.66 的模型被更贵的 0.77 模型反超。
+	// 软惩罚既保留价格主导, 又把彻底不可用(succ≈0)的模型自动压到近 0 分垫底。
 	floor := effectiveReliabilityFloor(config)
-	best, bestScore, bestHealthy := candidates[0], math.Inf(-1), false
+	best, bestScore := candidates[0], math.Inf(-1)
 	for i, item := range candidates {
-		// 冷成员在成功率维度按中性值参与, 不因无样本被判为不健康。
-		healthy := !known[i] || rates[i] >= floor
 		score := memberScore(priceWeight, latencyWeight, successWeight, i, prices, waits, rates, known)
-		if healthy && !bestHealthy {
-			best, bestScore, bestHealthy = item, score, true
-			continue
-		}
-		if healthy != bestHealthy {
-			continue
+		// 冷成员(无样本)不惩罚, 保留一次试用机会; 仅对确有观测且低于下限者按比例折减。
+		if known[i] && rates[i] < floor {
+			score *= rates[i] / floor
 		}
 		if score > bestScore {
 			best, bestScore = item, score

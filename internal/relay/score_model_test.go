@@ -95,3 +95,43 @@ func TestLatencyModePrefersMeasuredMember(t *testing.T) {
 		t.Fatalf("latency mode should prefer measured member: got %d, want %d", got.ID, measured.ID)
 	}
 }
+
+// TestSelectByScoreSoftPenaltyKeepsCheapestAhead 复现 klarns 反馈: 价格权重 60 时,
+// 最便宜但成功率略低于下限(如 0.66 < 0.70)的模型不应被硬门槛压到更贵模型之后。
+// 软性惩罚按 succ/floor 折减, 只要折扣后仍最高就应胜出; 而彻底不可用(succ≈0)者必须垫底。
+func TestSelectByScoreSoftPenaltyKeepsCheapestAhead(t *testing.T) {
+	metricMu.Lock()
+	memberMetrics = make(map[memberMetricKey]*memberMetric)
+	modelMetrics = make(map[int]*memberMetric)
+	metricMu.Unlock()
+
+	group := model.Group{ID: 510, Mode: model.GroupModeScore}
+	group.RelayConfig.ScorePriceWeight = 60
+	group.RelayConfig.ScoreLatencyWeight = 10
+	group.RelayConfig.ScoreSuccessWeight = 30
+	group.RelayConfig.MetricWindowSize = 50 // 平滑, 让成功率稳定落在目标附近
+	group.RelayConfig.ReliabilityFloor = 70
+
+	cheap, pricier, broken := model.GroupItem{}, model.GroupItem{}, model.GroupItem{}
+	cheap.ID, cheap.ChannelModelID, cheap.UserPrice = 1, 910, model.LLMPrice{Input: 0.05, Output: 0.2}
+	pricier.ID, pricier.ChannelModelID, pricier.UserPrice = 2, 911, model.LLMPrice{Input: 0.15, Output: 0.5}
+	broken.ID, broken.ChannelModelID, broken.UserPrice = 3, 912, model.LLMPrice{Input: 0.15, Output: 0.5}
+
+	// 直接种入目标成功率, 避免受 EMA 收敛影响: cheap≈0.66(略低于下限), pricier=1.0, broken=0。
+	metricMu.Lock()
+	modelMetrics[910] = &memberMetric{emaWaitMs: 10000, emaSuccess: 0.66, samples: 42}
+	modelMetrics[911] = &memberMetric{emaWaitMs: 7000, emaSuccess: 1.00, samples: 60}
+	modelMetrics[912] = &memberMetric{emaWaitMs: 5000, emaSuccess: 0.00, samples: 3}
+	metricMu.Unlock()
+
+	got := selectByScore(group, []model.GroupItem{pricier, cheap, broken})
+	if got.ID != cheap.ID {
+		t.Fatalf("略低于下限的最便宜模型应凭价格胜出: got item %d, want %d", got.ID, cheap.ID)
+	}
+
+	// 彻底失败(succ=0)的成员即使比 pricier 更快也不应入选。
+	got2 := selectByScore(group, []model.GroupItem{pricier, broken})
+	if got2.ID != pricier.ID {
+		t.Fatalf("succ=0 成员必须被软惩罚压到垫底: got item %d, want %d", got2.ID, pricier.ID)
+	}
+}
