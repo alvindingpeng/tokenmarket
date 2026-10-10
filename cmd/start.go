@@ -8,6 +8,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/server"
 	"github.com/alvindingpeng/switchyard/internal/server/auth"
 	"github.com/alvindingpeng/switchyard/internal/task"
+	"github.com/alvindingpeng/switchyard/internal/update"
 	"github.com/alvindingpeng/switchyard/internal/utils/shutdown"
 	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
@@ -73,6 +74,7 @@ var startCmd = &cobra.Command{
 
 		task.Init()
 		go task.RUN()
+		go update.HealthCheckAndRollback()
 		shutdown.Listen()
 	},
 }
