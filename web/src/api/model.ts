@@ -150,3 +150,31 @@ export function useLastUpdateTime() {
         refetchInterval: 30000,
     });
 }
+
+/**
+ * 模型选路评分: 以「渠道模型」为单位全局统计的首响应耗时与成功率滑动平均,
+ * 同名模型跨渠道的多份观测由后端按样本数加权归并。
+ */
+export interface ModelScoreChannel {
+    channel: string;
+    wait_ms: number;
+    success: number;
+    samples: number;
+}
+
+export interface ModelScore {
+    name: string;
+    wait_ms: number;
+    success: number;
+    samples: number;
+    channels: ModelScoreChannel[];
+}
+
+export function useModelScores() {
+    return useQuery({
+        queryKey: ['model', 'scores'],
+        queryFn: () => apiRequest<ModelScore[]>('/api/v1/model/scores'),
+        refetchInterval: 30000,
+        refetchOnMount: 'always',
+    });
+}
