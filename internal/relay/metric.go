@@ -2,7 +2,10 @@ package relay
 
 import (
 	"sort"
+	"strings"
 	"sync"
+
+	"github.com/bestruirui/octopus/internal/op"
 )
 
 // memberMetricKey 定位一个分组成员的运行指标。
@@ -169,4 +172,65 @@ func ModelScoreViews() []ModelScoreView {
 	metricMu.Unlock()
 	sort.Slice(views, func(i, j int) bool { return views[i].ChannelModelID < views[j].ChannelModelID })
 	return views
+}
+
+// ModelScore 是按模型名归并后的评分展示单元: 同名模型跨渠道的多份观测按样本数加权合并。
+type ModelScore struct {
+	Name     string              `json:"name"`
+	WaitMs   float64             `json:"wait_ms"`
+	Success  float64             `json:"success"`
+	Samples  int                 `json:"samples"`
+	Channels []ModelScoreChannel `json:"channels"`
+}
+
+// ModelScoreChannel 是单个渠道来源的观测: 对外展示名沿用渠道的发布编码口径。
+type ModelScoreChannel struct {
+	Channel string  `json:"channel"`
+	WaitMs  float64 `json:"wait_ms"`
+	Success float64 `json:"success"`
+	Samples int     `json:"samples"`
+}
+
+// ModelScoreBriefs 把渠道模型的展示要素与全局指标按小写模型名归并为模型页评分列表。
+// 归并口径与计费一致: 按样本数加权, 结果按模型名定序, 便于前端直接展示。
+func ModelScoreBriefs(briefs []op.ChannelModelBrief, views []ModelScoreView) []ModelScore {
+	byID := make(map[int]op.ChannelModelBrief, len(briefs))
+	for _, brief := range briefs {
+		byID[brief.ID] = brief
+	}
+	type acc struct {
+		score  ModelScore
+		weight float64
+		wSum   float64
+		sSum   float64
+	}
+	agg := make(map[string]*acc)
+	for _, v := range views {
+		brief, ok := byID[v.ChannelModelID]
+		if !ok {
+			continue
+		}
+		key := strings.ToLower(brief.Name)
+		a := agg[key]
+		if a == nil {
+			a = &acc{score: ModelScore{Name: brief.Name}}
+			agg[key] = a
+		}
+		a.score.Channels = append(a.score.Channels, ModelScoreChannel{Channel: brief.ChannelName, WaitMs: v.WaitMs, Success: v.Success, Samples: v.Samples})
+		a.score.Samples += v.Samples
+		a.weight += float64(v.Samples)
+		a.wSum += v.WaitMs * float64(v.Samples)
+		a.sSum += v.Success * float64(v.Samples)
+	}
+	out := make([]ModelScore, 0, len(agg))
+	for _, a := range agg {
+		if a.weight > 0 {
+			a.score.WaitMs = a.wSum / a.weight
+			a.score.Success = a.sSum / a.weight
+		}
+		sort.Slice(a.score.Channels, func(i, j int) bool { return a.score.Channels[i].Channel < a.score.Channels[j].Channel })
+		out = append(out, a.score)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }

@@ -1,10 +1,12 @@
 package relay
 
 import (
+	"math"
 	"testing"
 	"time"
 
 	"github.com/bestruirui/octopus/internal/model"
+	"github.com/bestruirui/octopus/internal/op"
 )
 
 // TestSelectByScoreDemotesUnreliableCheapMember 复现生产反馈:
@@ -133,5 +135,41 @@ func TestSelectByScoreSoftPenaltyKeepsCheapestAhead(t *testing.T) {
 	got2 := selectByScore(group, []model.GroupItem{pricier, broken})
 	if got2.ID != pricier.ID {
 		t.Fatalf("succ=0 成员必须被软惩罚压到垫底: got item %d, want %d", got2.ID, pricier.ID)
+	}
+}
+
+// TestModelScoreBriefsAggregatesChannels 校验模型页评分归并: 同名模型跨渠道的多份观测
+// 按样本数加权, 分数按模型名定序, 无观测的渠道模型不出现。
+func TestModelScoreBriefsAggregatesChannels(t *testing.T) {
+	briefs := []op.ChannelModelBrief{
+		{ID: 1, Name: "deepseek-v4-flash", ChannelName: "chB"},
+		{ID: 2, Name: "DeepSeek-V4-flash", ChannelName: "chA"}, // 同名不同大小写
+		{ID: 3, Name: "glm-5.3-flash", ChannelName: "chA"},
+		{ID: 4, Name: "cold-model", ChannelName: "chA"}, // 无观测
+	}
+	views := []ModelScoreView{
+		{ChannelModelID: 1, WaitMs: 1000, Success: 1.0, Samples: 1},
+		{ChannelModelID: 2, WaitMs: 3000, Success: 0.0, Samples: 3},
+		{ChannelModelID: 3, WaitMs: 2000, Success: 1.0, Samples: 5},
+	}
+	got := ModelScoreBriefs(briefs, views)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 scored models, got %d", len(got))
+	}
+	if got[0].Name != "deepseek-v4-flash" || got[1].Name != "glm-5.3-flash" {
+		t.Fatalf("models must be sorted by name: %+v", got)
+	}
+	merged := got[0]
+	if merged.Samples != 4 {
+		t.Fatalf("samples must sum: got %d", merged.Samples)
+	}
+	if diff := math.Abs(merged.WaitMs - 2500); diff > 0.001 {
+		t.Fatalf("wait must be sample-weighted: got %v want 2500", merged.WaitMs)
+	}
+	if diff := math.Abs(merged.Success - 0.25); diff > 0.001 {
+		t.Fatalf("success must be sample-weighted: got %v want 0.25", merged.Success)
+	}
+	if len(merged.Channels) != 2 || merged.Channels[0].Channel != "chA" {
+		t.Fatalf("channels must be sorted: %+v", merged.Channels)
 	}
 }

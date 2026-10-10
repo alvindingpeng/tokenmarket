@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 	"net/http"
-	"sort"
 	"strings"
 
 	"github.com/bestruirui/octopus/internal/model"
@@ -220,57 +219,10 @@ func getLastUpdateTime(c *gin.Context) {
 }
 
 // listModelScores 返回各模型名的全局选路评分: 按「渠道模型」为单位统计的首响应耗时与成功率 EMA,
-// 同名模型跨渠道的多份观测在此归并(按样本数加权), 供模型页卡片展示。
+// 同名模型跨渠道的多份观测按样本数加权归并, 供模型页卡片展示。
 func listModelScores(c *gin.Context) {
-	views := relay.ModelScoreViews()
 	userID, role := middleware.CurrentUser(c)
+	views := relay.ModelScoreViews()
 	briefs := op.ChannelModelBriefs(model.Scope{ID: userID, Role: role})
-	byID := make(map[int]op.ChannelModelBrief, len(briefs))
-	for _, b := range briefs {
-		byID[b.ID] = b
-	}
-	type channelRef struct {
-		Channel string  `json:"channel"`
-		WaitMs  float64 `json:"wait_ms"`
-		Success float64 `json:"success"`
-		Samples int     `json:"samples"`
-	}
-	type modelScore struct {
-		Name     string       `json:"name"`
-		WaitMs   float64      `json:"wait_ms"`
-		Success  float64      `json:"success"`
-		Samples  int          `json:"samples"`
-		Channels []channelRef `json:"channels"`
-	}
-	agg := make(map[string]*modelScore)
-	for _, v := range views {
-		brief, ok := byID[v.ChannelModelID]
-		if !ok {
-			continue
-		}
-		key := strings.ToLower(brief.Name)
-		entry := agg[key]
-		if entry == nil {
-			entry = &modelScore{Name: brief.Name}
-			agg[key] = entry
-		}
-		entry.Channels = append(entry.Channels, channelRef{Channel: brief.ChannelName, WaitMs: v.WaitMs, Success: v.Success, Samples: v.Samples})
-		entry.Samples += v.Samples
-	}
-	out := make([]modelScore, 0, len(agg))
-	for _, e := range agg {
-		var wSum, sSum float64
-		for _, ch := range e.Channels {
-			wSum += ch.WaitMs * float64(ch.Samples)
-			sSum += ch.Success * float64(ch.Samples)
-		}
-		if e.Samples > 0 {
-			e.WaitMs = wSum / float64(e.Samples)
-			e.Success = sSum / float64(e.Samples)
-		}
-		sort.Slice(e.Channels, func(i, j int) bool { return e.Channels[i].Channel < e.Channels[j].Channel })
-		out = append(out, *e)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	resp.Success(c, out)
+	resp.Success(c, relay.ModelScoreBriefs(briefs, views))
 }
