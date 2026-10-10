@@ -138,12 +138,13 @@ func exportLogs(c *gin.Context) {
 	writer := csv.NewWriter(c.Writer)
 	_ = writer.Write([]string{
 		"id", "started_at", "status", "duration_ms", "user_id", "api_key_name", "client_ip",
-		"model", "target_model", "channel", "round", "prompt_tokens", "completion_tokens", "cached_tokens", "cost", "error",
+		"model", "target_model", "channel", "round", "prompt_tokens", "completion_tokens", "cached_tokens", "cache_write_tokens", "cost", "error",
 	})
 	for _, item := range items {
-		var cached int64
+		var cached, writeCached int64
 		if item.Usage.PromptTokensDetails != nil {
 			cached = item.Usage.PromptTokensDetails.CachedTokens
+			writeCached = item.Usage.PromptTokensDetails.WriteCachedTokens
 		}
 		_ = writer.Write([]string{
 			strconv.FormatUint(item.ID, 10),
@@ -160,6 +161,7 @@ func exportLogs(c *gin.Context) {
 			strconv.FormatInt(item.Usage.PromptTokens, 10),
 			strconv.FormatInt(item.Usage.CompletionTokens, 10),
 			strconv.FormatInt(cached, 10),
+			strconv.FormatInt(writeCached, 10),
 			strconv.FormatFloat(item.Cost, 'f', 6, 64),
 			item.Error,
 		})

@@ -24,6 +24,15 @@ func Start() error {
 	}
 
 	r := gin.New()
+	if len(conf.AppConfig.Server.TrustedProxies) > 0 {
+		if err := r.SetTrustedProxies(conf.AppConfig.Server.TrustedProxies); err != nil {
+			log.Warnf("invalid trusted_proxies config, falling back to default: %v", err)
+		}
+	} else {
+		// 默认不信任任何代理, 禁止 X-Forwarded-For 伪造。如果部署在反向代理后面,
+		// 请在 config.json 中设置 server.trusted_proxies, 例如 ["10.0.0.0/8", "192.168.0.0/16"]。
+		r.SetTrustedProxies(nil)
+	}
 	r.Use(gin.CustomRecovery(func(c *gin.Context, _ any) {
 		resp.Error(c, http.StatusInternalServerError, resp.ErrInternalServer)
 		c.Abort()

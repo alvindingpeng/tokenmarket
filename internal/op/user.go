@@ -296,3 +296,19 @@ func UserTouchBalance(id uint) {
 	}
 	userCache.Set(int(id), fresh)
 }
+
+// UserBumpTokenVersion 递增令牌版本, 使签发更早的 JWT 马上失效 (Auth 中间件比对版本)。
+// 用于服务端登出等场景。
+func UserBumpTokenVersion(id uint) error {
+	user, err := UserGetByID(id)
+	if err != nil {
+		return err
+	}
+	if err := db.GetDB().Model(&model.User{}).Where("id = ?", id).
+		Update("token_version", user.TokenVersion+1).Error; err != nil {
+		return fmt.Errorf("failed to bump token version: %w", err)
+	}
+	user.TokenVersion++
+	userCache.Set(int(id), user)
+	return nil
+}

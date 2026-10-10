@@ -50,6 +50,10 @@ func init() {
 		AddRoute(
 			router.NewRoute("/status", http.MethodGet).
 				Handle(status),
+		).
+		AddRoute(
+			router.NewRoute("/logout", http.MethodPost).
+				Handle(logout),
 		)
 	// 管理后台: 用户管理仅管理员可用(含重置密码)。
 	router.NewGroupRouter("/api/v1/user/manage").
@@ -88,11 +92,28 @@ func login(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
+	// 登录防爆破: 按 IP+账号 两个维度独立度量, 任一超限即拒绝, 避免凭据填充与 IP 绕行。
+	ipKey := "ip:" + c.ClientIP()
+	userKey := "u:" + user.Username
+	if retryAfter, ok := auth.LoginAllowed(ipKey); !ok {
+		c.Header("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
+		resp.Error(c, http.StatusTooManyRequests, "login throttled, try again later")
+		return
+	}
+	if retryAfter, ok := auth.LoginAllowed(userKey); !ok {
+		c.Header("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
+		resp.Error(c, http.StatusTooManyRequests, "login throttled, try again later")
+		return
+	}
 	account, err := op.UserVerify(user.Username, user.Password)
 	if err != nil {
+		auth.LoginFailure(ipKey)
+		auth.LoginFailure(userKey)
 		resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
 		return
 	}
+	auth.LoginSuccess(ipKey)
+	auth.LoginSuccess(userKey)
 	// 维护模式: 开启后只放行管理员, 其余登录一律拒绝并返回维护提示。
 	if maintenance, _ := op.SettingGetBool(model.SettingKeyMaintenanceMode); maintenance && account.Role != model.RoleAdmin {
 		notice, _ := op.SettingGetString(model.SettingKeyMaintenanceNotice)
@@ -107,8 +128,21 @@ func login(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, resp.ErrInternalServer)
 		return
 	}
-	c.SetCookie("auth", token, maxAge, "/", "", false, false)
+	c.SetCookie("auth", token, maxAge, "/", "", false, true)
 	resp.Success(c, account.View())
+}
+
+// logout 服务端登出: 自增 TokenVersion 使当前令牌立即失效 (同时也会清掉此账号其他端的登录态)。
+// 若需要"只退本端不踢其他端", 客户端自行清 cookie 即可; 服务端登出是轻量安全手段而非 multi-tenant 方案。
+func logout(c *gin.Context) {
+	userID, _ := middleware.CurrentUser(c)
+	if err := op.UserBumpTokenVersion(userID); err != nil {
+		resp.Error(c, http.StatusInternalServerError, resp.ErrInternalServer)
+		return
+	}
+	c.SetCookie("auth", "", -1, "/", "", false, true)
+	audit(c, "user.logout", "", "")
+	resp.Success(c, "logged out")
 }
 
 // registerConfig 返回注册开关, 供登录页决定是否展示注册入口; 不泄露其他设置。
