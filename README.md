@@ -70,10 +70,9 @@ built-in billing currency conversion — prices are stored per model and charged
 
 ### Get a binary
 
-**This fork publishes no binaries.** Releases here carry release notes only — the upstream workflow that
-cross-compiles and uploads archives is scoped to upstream's `master` branch and upstream's registries, so
-no `octopus-*.zip` asset ever lands on this repository's releases (upstream's release page does have them,
-but that code is behind this fork's baseline and missing its features). Build the binary yourself:
+**This fork publishes standard release archives.** The tag-triggered release workflow uploads
+`octopus-<os>-<arch>.zip` assets (including the running platform) after the release notes are created.
+For a local build or an offline deployment, build the binary yourself:
 
 ```bash
 bash scripts/build-local.sh -o ./octopus    # one binary for the machine you are on
@@ -490,7 +489,7 @@ Console API under `/api/v1`, session-cookie authenticated, role-checked per rout
 /api/v1/ops                    overview, reconcile, backup, log-lifecycle, health, alerts, metrics token
 /api/v1/setting                list, set, export, import (admin only)
 /api/v1/site                   config (public)
-/api/v1/update                 now-version, latest, perform update (admin only)
+/api/v1/update                 status, forced check, now-version, perform update (admin only)
 ```
 
 Version notes on the surface: `POST /api/v1/user/update` handles both admins editing other accounts and
@@ -702,9 +701,9 @@ gofmt -l internal/server/handlers/      # must print nothing
 - Cross-stack behaviour is covered by an out-of-tree end-to-end harness (156 assertions: billing, settlement,
   rate limits, image protocols, auto-add rules) that builds a temporary binary with a fresh SQLite
   database on an isolated port, so it never touches production data.
-- `.github/workflows/build.yaml` builds frontend + backend on every push. `release.yaml` and
-  `template-check.yaml` come from upstream and target upstream's `master` branch and registries; this
-  fork's releases are cut by `scripts/publish-release.sh` instead (see below).
+- `.github/workflows/build.yaml` builds frontend + backend on every push. `.github/workflows/release-assets.yaml`
+  builds the frontend and standard cross-platform archives on version tags, then uploads them to the matching Release.
+  The existing upstream-oriented `release.yaml` remains separate from this fork's release-asset workflow.
 
 ---
 
@@ -728,8 +727,8 @@ the marker changed — tags, pushes the tag, and creates the Release from the ma
 > ⚠️ **Bump `main.go` before you commit**, not after. Committing without bumping makes the next release
 > attempt re-point an existing tag's release at a new commit while the tag stays behind.
 
-See [docs/release-versioning.md](docs/release-versioning.md) for the full procedure, and [CHANGELOG.md](CHANGELOG.md)
-for what changed in each version.
+See [docs/release-versioning.md](docs/release-versioning.md) for the full procedure, [docs/update-pipeline.md](docs/update-pipeline.md)
+for the self-update and asset pipeline, and [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
 ---
 
@@ -744,7 +743,7 @@ Known gaps in this fork, with the reasoning kept where the code is:
 | Model capability detection by probe instead of name keywords | Not started |
 | Scheduled channel model sync (cron rather than on-save) | Rejected for now: unbounded upstream cost and churn risk |
 | Automatic pricing / automatic listing on auto-add | Deliberately excluded: both are money-moving actions |
-| In-app self-update | Disabled here: `internal/update` has no release source configured, so `/api/v1/update` answers `update paused`. Deploy by replacing the binary |
+| In-app self-update | Enabled for admins; checks this fork's Releases and atomically replaces the service binary from the matching `octopus-<os>-<arch>.zip` asset |
 | Container images for this fork | Not published |
 
 Full backlog: [docs/roadmap.md](docs/roadmap.md).

@@ -67,9 +67,8 @@ Octopus 在多家上游供应商前面摆一个 OpenAI 形态的入口。客户�
 
 ### 取得二进制文件
 
-**本分支不发布二进制文件。** 这里的 Release 只有更新说明 —— 上游那条交叉编译并上传压缩包的 workflow
-绑定的是上游的 `master` 分支和上游的镜像仓库，所以本仓库的 Release 上不会有 `octopus-*.zip`（上游的
-Release 页有，但那份代码落后于本分支基线，且不含本分支新增的功能）。二进制请自行构建：
+**本分支会发布标准平台压缩包。** 标签触发的发布 workflow 会在 Release 说明创建后上传
+`octopus-<os>-<arch>.zip`（包含当前运行平台）。需要本地构建或离线部署时，也可以自行构建：
 
 ```bash
 bash scripts/build-local.sh -o ./octopus    # 只构建当前机器这一份
@@ -439,7 +438,7 @@ JSON key）做脱敏 —— 公网机器上保存正文之前请先配好掩码�
 /api/v1/ops                    概览、对账、备份、日志生命周期、健康、告警、指标令牌
 /api/v1/setting                列表、设置、导出、导入（仅管理员）
 /api/v1/site                   config（公开）
-/api/v1/update                 当前版本、最新版本、执行更新（仅管理员）
+/api/v1/update                 状态、强制检查、当前版本、执行更新（仅管理员）
 ```
 
 关于这一层的几点说明：`POST /api/v1/user/update` 同时承担「管理员改别人」和「用户改自己」两类动作 —— 一个
@@ -647,8 +646,8 @@ gofmt -l internal/server/handlers/      # 必须不输出任何内容（只对 h
   合并规则、告警去重、备份加密与异地推送、日志脱敏、限制钳制、等待队列）。跨全栈的行为由一套仓库外的
   端到端回归覆盖（156 条断言：计费、结算、限流、生图协议、自动添加规则）。它从当前源码
   构建临时二进制，用独立端口与全新 SQLite 库，因此绝不触碰生产数据。
-- `.github/workflows/build.yaml` 每次 push 都构建前端与后端。`release.yaml` 与 `template-check.yaml` 来自上游，
-  指向上游的 `master` 分支和上游的镜像仓库；本分支的发布由 `scripts/publish-release.sh` 完成（见下）。
+- `.github/workflows/build.yaml` 每次 push 都构建前端与后端。`.github/workflows/release-assets.yaml`
+  在版本标签上构建前端和标准跨平台压缩包，并上传到对应 Release；现有上游 `release.yaml` 与本分支的发布产物流程分离。
 
 ---
 
@@ -671,7 +670,7 @@ gofmt -l internal/server/handlers/      # 必须不输出任何内容（只对 h
 > ⚠️ **提交前先改 `main.go` 的版本号**，不要提交后再补。先提交后改号，会让下一次发布把已有标签的 Release
 > 指向新提交，而标签本身还留在旧提交上。
 
-完整流程见 [docs/release-versioning.md](docs/release-versioning.md)，各版本改了什么见 [CHANGELOG.md](CHANGELOG.md)。
+完整流程见 [docs/release-versioning.md](docs/release-versioning.md)，自更新与产物流程见 [docs/update-pipeline.md](docs/update-pipeline.md)，各版本改了什么见 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 
@@ -686,8 +685,8 @@ gofmt -l internal/server/handlers/      # 必须不输出任何内容（只对 h
 | 模型能力探测（替代名称关键词归类） | 未开始 |
 | 定时同步渠道模型（而非保存时触发） | 暂不采纳：上游费用与变更量不可控 |
 | 自动添加时顺带自动定价 / 自动上架 | 刻意排除：两者都是动钱的动作 |
-| 界面内自更新 | 本分支停用：`internal/update` 未配置发布源，`/api/v1/update` 会答 `update paused`；请以替换二进制的方式部署 |
-| 本分支的容器镜像与二进制产物 | 不发布 |
+| 界面内自更新 | 已对管理员启用：检查本分支 Release，并用匹配的 `octopus-<os>-<arch>.zip` 原子替换服务程序 |
+| 本分支的容器镜像与二进制产物 | Release 发布标准平台二进制压缩包；不发布容器镜像 |
 
 完整待办见 [docs/roadmap.md](docs/roadmap.md)。
 

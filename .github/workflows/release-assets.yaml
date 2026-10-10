@@ -1,0 +1,70 @@
+name: release-assets
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release-assets:
+    name: Build and upload release archives
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '11.10.0'
+          run_install: false
+
+      - name: Build frontend
+        working-directory: web
+        env:
+          VITE_APP_VERSION: ${{ github.ref_name }}
+          VITE_GITHUB_REPO: https://github.com/alvindingpeng/tokenmarket
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Refresh model prices
+        run: python3 scripts/updatePrice.py
+
+      - name: Build standard release archives
+        env:
+          SKIP_ANDROID: '1'
+        run: bash scripts/build.sh
+
+      - name: Upload release assets without replacing release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if gh release view "$TAG" >/dev/null 2>&1; then break; fi
+            echo "Release $TAG is not visible yet (attempt $attempt); waiting"
+            sleep 10
+          done
+          gh release upload "$TAG" build/archives/* --clobber

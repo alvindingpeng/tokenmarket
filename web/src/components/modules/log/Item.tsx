@@ -9,6 +9,7 @@ import { type RelayLogOverview, useLogAttempts, useLogRequestBody, useLogRespons
 import { useGroup, useUpdateGroup } from '@/api/group';
 import { Protocol } from '@/api/channel';
 import { getModelIcon } from '@/lib/model-icons';
+import { cacheHitRatePercent, detailTokens, formatCacheHitRate, freshInputTokens } from '@/lib/log-usage';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
@@ -65,9 +66,10 @@ const PROTOCOL_LABELS: Record<number, string> = {
 
 // LogMetrics 渲染时间、API Key、耗时、费用和 Token 指标; card 变体用于卡片栅格, footer 变体用于弹窗底部。
 function LogMetrics({ log, now, brandColor, variant }: { log: RelayLogOverview; now: number; brandColor: string; variant: 'card' | 'footer' }) {
-    const cachedTokens = log.usage.prompt_tokens_details?.cached_tokens ?? 0;
-    // 缓存率取输入缓存占全部输入 Token 的比例, 无输入时为零。
-    const cacheRate = log.usage.prompt_tokens > 0 ? Math.round((cachedTokens / log.usage.prompt_tokens) * 100) : 0;
+    const { cached: cachedTokens, cacheWrite: cacheWriteTokens } = detailTokens(log.usage);
+    // prompt_tokens 是已含缓存读与缓存写的毛输入, 故命中率分母要先扣掉写缓存(那是全新成本),
+    // 口径与后端计费桶 usageBuckets 一致; 详见 web/src/lib/log-usage.ts。
+    const cacheRate = cacheHitRatePercent(log.usage.prompt_tokens, cachedTokens, cacheWriteTokens);
     // 请求进行中显示实时总耗时; 结束后只显示实际响应阶段耗时, 提交前结束时回退到总耗时。
     const requestActive = log.status === 'running' || log.status === 'committed';
     const elapsedMs = requestActive
@@ -87,11 +89,11 @@ function LogMetrics({ log, now, brandColor, variant }: { log: RelayLogOverview; 
         ...(log.client_ip ? [{ key: 'clientIP', Icon: Globe, iconClassName: 'size-3.5 shrink-0 text-indigo-500', value: log.client_ip, cellClassName: 'whitespace-nowrap col-span-5 md:col-span-1' }] : []),
         { key: 'firstToken', Icon: Zap, iconClassName: 'size-3.5 shrink-0 text-amber-500', value: firstToken, cellClassName: 'whitespace-nowrap col-span-5 md:col-span-1' },
         { key: 'duration', Icon: Cpu, iconClassName: 'size-3.5 shrink-0 text-blue-500', value: duration, cellClassName: 'whitespace-nowrap col-span-5 md:col-span-1' },
-        { key: 'prompt', Icon: ArrowDownToLine, iconClassName: 'size-3.5 shrink-0 text-green-500', value: (log.usage.prompt_tokens - cachedTokens).toLocaleString(), cellClassName: 'whitespace-nowrap col-span-4 md:col-span-1' },
+        { key: 'prompt', Icon: ArrowDownToLine, iconClassName: 'size-3.5 shrink-0 text-green-500', value: freshInputTokens(log.usage.prompt_tokens, cachedTokens, cacheWriteTokens).toLocaleString(), cellClassName: 'whitespace-nowrap col-span-4 md:col-span-1' },
         { key: 'cached', Icon: Database, iconClassName: 'size-3.5 shrink-0 text-cyan-500', value: `${cachedTokens.toLocaleString()}`, cellClassName: 'whitespace-nowrap col-span-4 md:col-span-1' },
-        { key: 'cacheRate', Icon: Percent, iconClassName: 'size-3.5 shrink-0 text-teal-500', value: `${cacheRate}%`, valueClassName: 'tabular-nums', cellClassName: 'col-span-4 md:col-span-1' },
+        { key: 'cacheRate', Icon: Percent, iconClassName: 'size-3.5 shrink-0 text-teal-500', value: formatCacheHitRate(cacheRate), valueClassName: 'tabular-nums', cellClassName: 'col-span-4 md:col-span-1' },
         { key: 'completion', Icon: ArrowUpFromLine, iconClassName: 'size-3.5 shrink-0 text-purple-500', value: (requestActive ? log.output_chars.toLocaleString() : log.usage.completion_tokens.toLocaleString()), cellClassName: 'col-span-4 md:col-span-1' },
-        { key: 'cacheWrite', Icon: Database, iconClassName: 'size-3.5 shrink-0 text-orange-500', value: (log.usage.prompt_tokens_details?.write_cached_tokens ?? 0).toLocaleString(), cellClassName: 'whitespace-nowrap col-span-4 md:col-span-1' },
+        { key: 'cacheWrite', Icon: Database, iconClassName: 'size-3.5 shrink-0 text-orange-500', value: cacheWriteTokens.toLocaleString(), cellClassName: 'whitespace-nowrap col-span-4 md:col-span-1' },
         { key: 'speed', Icon: Gauge, iconClassName: 'size-3.5 shrink-0 text-sky-500', value: outputSpeed > 0 ? `${outputSpeed.toFixed(0)}${outputSpeedUnit}` : '-', cellClassName: 'whitespace-nowrap col-span-4 md:col-span-1' },
         { key: 'cost', Icon: DollarSign, iconClassName: 'size-3.5 shrink-0 text-emerald-500', value: log.cost.toFixed(6), cellClassName: 'whitespace-nowrap col-span-4 md:col-span-1' },
     ];
@@ -99,7 +101,7 @@ function LogMetrics({ log, now, brandColor, variant }: { log: RelayLogOverview; 
     return metrics.map((metric) => (
         <div
             key={metric.key}
-            title={metric.key === 'apiKey' ? log.api_key_name : metric.key === 'cost' ? 'User-price cost' : undefined}
+            title={metric.key === 'apiKey' ? log.api_key_name : metric.key === 'cost' ? 'User-price cost' : metric.key === 'cacheRate' ? 'Cache read / (prompt - cache write)' : undefined}
             className={cn('flex min-w-0 items-center gap-1.5', variant === 'card' && metric.cellClassName)}
         >
             <metric.Icon className={metric.iconClassName} style={metric.iconStyle} />

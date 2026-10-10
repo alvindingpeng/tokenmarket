@@ -17,6 +17,8 @@ const (
 	SettingKeyModelInfoUpdateInterval SettingKey = "model_info_update_interval" // 模型信息更新间隔(小时)
 	SettingKeyCORSAllowOrigins        SettingKey = "cors_allow_origins"         // 跨域白名单(逗号分隔, 如 "example.com,example2.com"). 为空不允许跨域, "*"允许所有
 	SettingKeyModelFilter             SettingKey = "model_filter"               // 渠道获取模型时的全局过滤表达式; 留空表示不过滤
+	SettingKeyUpdateCheckEnabled      SettingKey = "update_check_enabled"       // 是否自动检查本分支 Release 更新
+	SettingKeyUpdateCheckMinutes      SettingKey = "update_check_interval"      // 自动检查间隔(分钟)
 	// 多用户与计费。
 	SettingKeyMarkupRatio             SettingKey = "markup_ratio"               // 上浮比例: 用户价 = 供货价 × (1 + 上浮比例)
 	SettingKeyRegisterUserEnabled     SettingKey = "register_user_enabled"      // 用户注册开关, 默认关
@@ -78,12 +80,14 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyCORSAllowOrigins, Value: ""},             // CORS 默认不允许跨域，设置为 "*" 才允许所有来源
 		{Key: SettingKeyModelInfoUpdateInterval, Value: "24"},    // 默认24小时更新一次模型信息
 		{Key: SettingKeyModelFilter, Value: ""},                  // 默认不过滤模型
+		{Key: SettingKeyUpdateCheckEnabled, Value: "true"},       // 默认开启更新检查
+		{Key: SettingKeyUpdateCheckMinutes, Value: "60"},         // 每小时检查一次
 		{Key: SettingKeyMarkupRatio, Value: "0.2"},               // 默认上浮 20%
 		{Key: SettingKeyRegisterUserEnabled, Value: "false"},     // 用户注册默认关闭
 		{Key: SettingKeyRegisterResellerEnabled, Value: "false"}, // 渠道商注册默认关闭
 		{Key: SettingKeyRegisterApproval, Value: "true"},         // 注册默认需要审批
 		{Key: SettingKeyBalanceReserveCap, Value: "4096"},        // 预扣估算默认输出上限
-		{Key: SettingKeyBalanceReserveImages, Value: "4"},         // 生图预扣保守张数, 4 张覆盖 dall-e-3 / gpt-image-1 n=4 上限
+		{Key: SettingKeyBalanceReserveImages, Value: "4"},        // 生图预扣保守张数, 4 张覆盖 dall-e-3 / gpt-image-1 n=4 上限
 		{Key: SettingKeyMinBalance, Value: "0"},                  // 不允许透支
 		{Key: SettingKeyScorePriceWeight, Value: "40"},           // 综合评分默认配比: 价格 40
 		{Key: SettingKeyScoreLatencyWeight, Value: "30"},         // 综合评分默认配比: 延迟 30
@@ -123,7 +127,7 @@ func (s *Setting) Validate() error {
 			return fmt.Errorf("markup ratio must be a number between 0 and 100")
 		}
 		return nil
-	case SettingKeyRegisterUserEnabled, SettingKeyRegisterResellerEnabled, SettingKeyRegisterApproval:
+	case SettingKeyRegisterUserEnabled, SettingKeyRegisterResellerEnabled, SettingKeyRegisterApproval, SettingKeyUpdateCheckEnabled:
 		if _, err := strconv.ParseBool(s.Value); err != nil {
 			return fmt.Errorf("%s must be a boolean", s.Key)
 		}
@@ -158,6 +162,11 @@ func (s *Setting) Validate() error {
 	case SettingKeyLogRetentionDays, SettingKeyAutoBackupKeep, SettingKeyAutoBackupInterval, SettingKeyHealthCheckMinutes:
 		if n, err := strconv.Atoi(s.Value); err != nil || n < 1 || n > 3650 {
 			return fmt.Errorf("%s must be a positive integer", s.Key)
+		}
+		return nil
+	case SettingKeyUpdateCheckMinutes:
+		if n, err := strconv.Atoi(s.Value); err != nil || n < 1 || n > 1440 {
+			return fmt.Errorf("update check interval must be an integer between 1 and 1440 minutes")
 		}
 		return nil
 	case SettingKeyHealthLatencyMS:

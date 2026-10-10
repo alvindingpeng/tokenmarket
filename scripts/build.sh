@@ -52,7 +52,10 @@ readonly -a ANDROID_TARGETS=(
     "386:i686-linux-android21-clang"
 ) # Android API 21 的固定 ABI 与 NDK clang 映射。
 
-: "${ANDROID_NDK_HOME:?ANDROID_NDK_HOME is required}"
+SKIP_ANDROID="${SKIP_ANDROID:-0}"
+if [ "${SKIP_ANDROID}" != "1" ]; then
+    : "${ANDROID_NDK_HOME:?ANDROID_NDK_HOME is required}"
+fi
 
 # 构建工具不会创建父目录，因此只保留一次直接创建。
 mkdir -p "${OUTPUT_DIR}/bin" "${OUTPUT_DIR}/archives" \
@@ -64,9 +67,13 @@ echo "Building ${APP_NAME} ${VERSION} (${COMMIT})"
 for target in "${STANDARD_TARGETS[@]}"; do
     build_standard "${target}"
 done
-for target in "${ANDROID_TARGETS[@]}"; do
-    build_android "${target}"
-done
+if [ "${SKIP_ANDROID}" != "1" ]; then
+    for target in "${ANDROID_TARGETS[@]}"; do
+        build_android "${target}"
+    done
+else
+    echo "Skipping Android targets (SKIP_ANDROID=1)"
+fi
 
 # Docker buildx 按 TARGETPLATFORM 读取固定目录中的同名可执行文件。
 cp "${OUTPUT_DIR}/bin/${APP_NAME}-linux-amd64" "${OUTPUT_DIR}/docker/linux/amd64/${APP_NAME}"

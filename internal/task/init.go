@@ -7,6 +7,7 @@ import (
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/price"
+	"github.com/bestruirui/octopus/internal/update"
 	"github.com/charmbracelet/log"
 )
 
@@ -19,6 +20,7 @@ const (
 	TaskLogArchive       = "log_archive"       // 归档并清理超期日志。
 	TaskAutoBackup       = "auto_backup"       // 定时一致性备份。
 	TaskChannelHealth    = "channel_health"    // 低频渠道健康探测。
+	TaskUpdateCheck      = "update_check"      // 检查本分支 Release 是否有新版本。
 )
 
 func Init() {
@@ -99,6 +101,22 @@ func Init() {
 		}
 		if err := op.ChannelHealthCheckAll(context.Background()); err != nil {
 			log.Warnf("channel health check failed: %v", err)
+		}
+	})
+
+	// 更新检查只读取 Release 元数据, 不下载、不替换二进制; 真正更新必须由管理员点击按钮。
+	updateInterval := update.CheckIntervalMinutes()
+	Register(TaskUpdateCheck, time.Duration(updateInterval)*time.Minute, false, func() {
+		if !update.CheckEnabled() {
+			return
+		}
+		status, err := update.CheckNow()
+		if err != nil {
+			log.Warnf("update check failed: %v", err)
+			return
+		}
+		if status != nil {
+			log.Infof("system update available: current=%s latest=%s asset=%s", status.CurrentVersion, status.LatestVersion, status.AssetName)
 		}
 	})
 }

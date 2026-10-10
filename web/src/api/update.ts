@@ -1,71 +1,70 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from './client';
 
-/**
- * 后端 /api/v1/update 返回的最新发布信息
- */
-interface LatestInfo {
-    tag_name: string;
-    published_at: string;
-    body: string;
-    message: string;
+export interface UpdateStatus {
+    current_version: string;
+    paused: boolean;
+    check_enabled: boolean;
+    check_interval_min: number;
+    last_check_at: number;
+    update_available: boolean;
+    up_to_date: boolean;
+    check_failed: boolean;
+    check_error: string;
+    platform: string;
+    expected_asset: string;
+    asset_missing: boolean;
+    latest_version: string;
+    latest_published_at: string;
+    latest_body: string;
+    release_url: string;
+    asset_name: string;
+    asset_size: number;
+    asset_sha256: string;
+    download_url: string;
 }
 
-/**
- * 获取最新发布信息 Hook
- * 
- * @example
- * const { data: latestInfo, isLoading, error } = useLatestInfo();
- * 
- * if (isLoading) return <Loading />;
- * if (error) return <Error message={error.message} />;
- * 
- * console.log('Latest tag:', latestInfo?.tag_name);
- */
-export function useLatestInfo(enabled = true) {
+export interface UpdateResult {
+    from: string;
+    to: string;
+    asset: string;
+    exec_path: string;
+    backup_path: string;
+}
+
+export function useUpdateStatus(enabled = true) {
     return useQuery({
-        queryKey: ['update', 'latest'],
-        queryFn: () => apiRequest<LatestInfo>('/api/v1/update'),
-        refetchInterval: 3600000, // 1 小时
+        queryKey: ['update', 'status'],
+        queryFn: () => apiRequest<UpdateStatus>('/api/v1/update'),
+        refetchInterval: 3600000,
         refetchOnMount: 'always',
-        // 在线更新暂停时不发起请求, 避免无谓地打到上游仓库接口。
         enabled,
     });
 }
 
-/**
- * 获取后端当前版本 Hook
- *
- * 后端: GET /api/v1/update/now-version -> string
- */
+export function useCheckUpdate() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: () => apiRequest<UpdateStatus>('/api/v1/update/check', { method: 'POST' }),
+        onSuccess: (data) => queryClient.setQueryData(['update', 'status'], data),
+    });
+}
+
 export function useNowVersion() {
     return useQuery({
         queryKey: ['update', 'now-version'],
         queryFn: () => apiRequest<string>('/api/v1/update/now-version'),
-        refetchInterval: 3600000, // 1 小时
+        refetchInterval: 3600000,
         refetchOnMount: 'always',
     });
 }
 
-/**
- * 执行更新 Hook
- * 
- * @example
- * const updateCore = useUpdateCore();
- * 
- * updateCore.mutate(undefined, {
- *   onSuccess: () => {
- *     console.log('Update started successfully');
- *   },
- * });
- */
-export function useUpdateCore() {
+export function useUpdateCore(force = false) {
     const queryClient = useQueryClient();
-
     return useMutation({
-        mutationFn: () => apiRequest<string>('/api/v1/update', { method: 'POST' }),
+        mutationFn: () => apiRequest<UpdateResult>('/api/v1/update' + (force ? '?force=1' : ''), { method: 'POST' }),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['update', 'latest'] });
+            queryClient.invalidateQueries({ queryKey: ['update', 'status'] });
             queryClient.invalidateQueries({ queryKey: ['update', 'now-version'] });
         },
     });

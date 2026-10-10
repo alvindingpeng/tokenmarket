@@ -1,30 +1,29 @@
 import { useTranslations } from 'use-intl';
-import { Info, Tag, AlertTriangle, Download, Loader2 } from 'lucide-react';
+import { Info, Tag, AlertTriangle, Download, Loader2, RefreshCw } from 'lucide-react';
 import Github from '@thesvg/react/github';
-import { useLatestInfo, useNowVersion, useUpdateCore } from '@/api/update';
+import { useCheckUpdate, useNowVersion, useUpdateCore, useUpdateStatus } from '@/api/update';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || 'unknown'; // 当前前端构建对应的应用版本。
-// 项目仓库地址: 暂留空, 待本项目发布到自己的仓库后再填入(留空则不展示该行)。
-const GITHUB_REPO = import.meta.env.VITE_GITHUB_REPO || '';
-// 在线更新开关: 暂停使用; 待仓库地址就位且发行包可拉取后置为 true 恢复。
-const UPDATE_ENABLED = false;
+// 更新源固定为本分支仓库; 构建时仍可通过 VITE_GITHUB_REPO 注入展示地址。
+const GITHUB_REPO = import.meta.env.VITE_GITHUB_REPO || 'https://github.com/alvindingpeng/tokenmarket';
 
 // SettingInfo 展示版本信息，并在更新后清理本项目的浏览器缓存。
 export function SettingInfo() {
     const t = useTranslations('setting');
-    const latestInfoQuery = useLatestInfo(UPDATE_ENABLED);
+    const statusQuery = useUpdateStatus(true);
+    const checkUpdate = useCheckUpdate();
     const nowVersionQuery = useNowVersion();
     const updateCore = useUpdateCore();
 
-    const backendNowVersion = nowVersionQuery.data || '';
-    const latestVersion = UPDATE_ENABLED ? latestInfoQuery.data?.tag_name || '' : '';
+    const backendNowVersion = nowVersionQuery.data || statusQuery.data?.current_version || '';
+    const latestVersion = statusQuery.data?.latest_version || '';
 
     // 前端版本与后端当前版本不一致 → 浏览器缓存问题
     const isCacheMismatch = !!backendNowVersion && backendNowVersion !== APP_VERSION;
-    // 最新版本与后端当前版本不一致 → 有新版本可更新(在线更新暂停时恒为假)。
-    const hasNewVersion = UPDATE_ENABLED && !!latestVersion && !!backendNowVersion && latestVersion !== backendNowVersion;
+    // 只有仓库有更新且本平台产物已上传时才显示可点击的更新按钮。
+    const hasNewVersion = !!statusQuery.data?.update_available && !statusQuery.data.asset_missing;
 
     // clearCacheAndReload 清理当前应用目录的缓存和 Service Worker 注册后刷新页面。
     const clearCacheAndReload = async () => {
@@ -103,15 +102,15 @@ export function SettingInfo() {
                 </div>
             </div>
 
-            {/* 最新版本: 在线更新暂停时整行不展示。 */}
-            {UPDATE_ENABLED && (
+            {/* 最新版本: 后端检查失败时保留未知状态, 不误报为缓存问题。 */}
+            {(
                 <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                         <Download className="h-5 w-5 text-muted-foreground" />
                         <span className="text-sm font-medium">{t('info.latestVersion')}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                        {latestInfoQuery.isLoading ? (
+                        {statusQuery.isLoading ? (
                             <Loader2 className="size-4 animate-spin text-muted-foreground" />
                         ) : (
                             <code className="text-sm font-mono text-muted-foreground">
@@ -120,6 +119,16 @@ export function SettingInfo() {
                         )}
                     </div>
                 </div>
+            )}
+
+            {statusQuery.data?.check_failed && (
+                <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                    <div className="flex items-center justify-between gap-2"><span>{t('info.checkFailed')}</span><Button variant="outline" size="sm" onClick={() => checkUpdate.mutate()} disabled={checkUpdate.isPending}><RefreshCw className="mr-1 size-3" />{t('info.checkNow')}</Button></div>
+                    <p className="mt-1 break-words text-xs">{statusQuery.data.check_error}</p>
+                </div>
+            )}
+            {statusQuery.data?.asset_missing && !statusQuery.data.check_failed && (
+                <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-muted-foreground">{t('info.assetMissing')}</p>
             )}
 
             {/* 浏览器缓存问题警告 */}
