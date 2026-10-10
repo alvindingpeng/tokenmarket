@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { AlertCircle, ArrowDownToLine, ArrowRight, ArrowUpFromLine, Brain, Clock, Cpu, Database, DollarSign, Gauge, Globe, KeyRound, Loader2, Square, Zap, Percent } from 'lucide-react';
+import { AlertCircle, ArrowDownToLine, ArrowRight, ArrowUpFromLine, Brain, Clock, Cpu, Database, DollarSign, Gauge, Globe, KeyRound, Loader2, RotateCcw, Square, Zap, Percent } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import JsonView from '@uiw/react-json-view';
 import { githubDarkTheme } from '@uiw/react-json-view/githubDark';
@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { CopyIconButton } from '@/components/common/CopyButton';
 import { toast } from 'sonner';
 import { MemberStatus } from '@/components/modules/group/MemberStatus';
+import { ReplayPanel } from '@/components/modules/log/ReplayPanel';
 import {
     MorphingDialog,
     MorphingDialogTrigger,
@@ -177,7 +178,8 @@ function LogDetail({ log, now, errorRounds }: { log: RelayLogOverview; now: numb
     const [observedRoundKey, setObservedRoundKey] = useState(''); // observedRoundKey 是已记入 rounds 的最近一次日志快照, 用于跳过重复渲染。
     const [detailReady, setDetailReady] = useState(false); // 展开动画结束后才允许加载详情数据。
     const [switchingItemId, setSwitchingItemId] = useState<number | null>(null);
-    const requestBody = useLogRequestBody(log.id, log.started_at, detailReady && leftTab === 'request');
+    const [replayOpen, setReplayOpen] = useState(false); // 重放控制台开关: 打开时右栏切换为请求体重放面板。
+    const requestBody = useLogRequestBody(log.id, log.started_at, detailReady && (leftTab === 'request' || replayOpen));
     const responseBody = useLogResponseBody(log.id, log.started_at, detailReady && log.status === 'success');
     const { data: activeGroup } = useGroup(log.group_id, detailReady, detailReady);
     const updateActiveItem = useUpdateGroup();
@@ -403,6 +405,19 @@ function LogDetail({ log, now, errorRounds }: { log: RelayLogOverview; now: numb
                                         {t('cancelRequest')}
                                     </button>
                                 )}
+                                {!requestActive && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setReplayOpen((current) => !current)}
+                                        className={cn(
+                                            'flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors',
+                                            replayOpen ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                                        )}
+                                    >
+                                        <RotateCcw className="size-3.5" />
+                                        {t('replay')}
+                                    </button>
+                                )}
                                 {!requestFailed && !(log.status === 'running' && log.sending && activeGroup?.mode === 'manual') && (
                                     <Badge variant="secondary" className="text-xs">
                                         {responseCommitted
@@ -413,7 +428,13 @@ function LogDetail({ log, now, errorRounds }: { log: RelayLogOverview; now: numb
                             </div>
                         </div>
                         <div className="min-h-0 flex-1 overflow-auto">
-                            {!detailReady ? (
+                            {replayOpen ? (
+                                <ReplayPanel
+                                    requestId={log.id}
+                                    initialBody={requestBody.data ?? ''}
+                                    supported={log.protocol === Protocol.OpenAIChatCompletion || log.protocol === Protocol.OpenAIResponse || log.protocol === Protocol.AnthropicMessage}
+                                />
+                            ) : !detailReady ? (
                                 <div className="flex h-full items-center justify-center">
                                     <Loader2 className="size-5 animate-spin text-muted-foreground" />
                                 </div>

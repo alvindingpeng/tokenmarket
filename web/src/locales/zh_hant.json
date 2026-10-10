@@ -471,7 +471,7 @@
             "member_stream_idle_timeout_secondsHint": "連續無串流事件時中止，預設 60 秒。"
         },
         "memberPrice": "讀 {input} / 寫 {output}（每百萬 token）",
-        "modelPrice": "讀 {input} / 寫 {output} / 快取讀 {cacheRead} / 快取寫 {cacheWrite}（每百萬 token）"
+        "modelPrice": "讀 {input} / 寫 {output} / 快取讀 {cacheRead} / 快取寫 {cacheWrite}（m）"
     },
     "model": {
         "create": {
@@ -539,6 +539,16 @@
             "stopFailed": "取消目前輪次失敗",
             "cancelRequest": "取消目前請求",
             "cancelFailed": "取消目前請求失敗",
+            "replay": "重放",
+            "replayHint": "重放經原轉發鏈路執行, 計費與正常調用一致, 並產生一條新的調用日誌。",
+            "replayRequestBody": "請求體(可編輯後重放)",
+            "replayReset": "恢復原始",
+            "replaySend": "發送重放",
+            "replaySending": "重放中…",
+            "replayFailed": "重放失敗",
+            "replayUnsupported": "該請求保存的是請求體摘要, 不支援重放",
+            "replayResultDuration": "耗時 {ms} 毫秒",
+            "replayResultEmpty": "(無響應內容)",
             "waitingChannelSelection": "正在等待選擇供應源",
             "waitingResponse": "正在等待上游回應",
             "responseStreaming": "上游已回應，串流傳輸正在進行",
@@ -711,6 +721,8 @@
     "share": {
         "shareCode": "共享編碼",
         "copyCode": "複製編碼",
+        "copyLink": "複製分享連結",
+        "openPage": "打開分享頁",
         "notPublished": "未發佬",
         "manageListing": "模型上架與定價",
         "loadFailed": "渠道載入失敗",
@@ -719,7 +731,8 @@
         "toast": {
             "published": "已發佬，編碼 {code}",
             "unpublished": "已收回發佬",
-            "copied": "已複製"
+            "copied": "已複製",
+            "copiedLink": "已複製分享連結"
         },
         "listing": {
             "title": "模型上架與定價 — {name}",

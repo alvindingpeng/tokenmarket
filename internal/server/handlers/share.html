@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>模型供给清单</title>
+<style>
+:root {
+  --bg: #f7f8f9; --card: #ffffff; --border: #e4e7eb; --text: #1b222b; --muted: #64707d;
+  --accent: #466551; --accent-soft: rgba(70, 101, 81, .1); --hero-a: #466551; --hero-b: #6f9e7e;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12161b; --card: #1a1f26; --border: #2a313a; --text: #e8ebef; --muted: #97a2ae;
+    --accent: #8fbc8f; --accent-soft: rgba(143, 188, 143, .12); --hero-a: #2c4436; --hero-b: #466551;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+.hero { background: linear-gradient(135deg, var(--hero-a), var(--hero-b)); color: #fff; padding: 44px 20px 40px; }
+.hero-inner { max-width: 1020px; margin: 0 auto; }
+.brand { display: flex; align-items: center; gap: 10px; font-size: 13px; opacity: .92; }
+.brand-mark { width: 26px; height: 26px; border-radius: 8px; background: rgba(255, 255, 255, .18); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; }
+.hero h1 { margin: 14px 0 8px; font-size: clamp(22px, 4vw, 32px); line-height: 1.25; }
+.hero p { margin: 0; opacity: .88; max-width: 620px; font-size: 14.5px; }
+.hero-meta { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .22); padding: 4px 12px; border-radius: 999px; font-size: 12.5px; }
+.chip code { font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: .04em; }
+.wrap { max-width: 1020px; margin: 0 auto; padding: 24px 20px 64px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 18px; }
+.search { flex: 1 1 240px; position: relative; }
+.search input { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--text); font-size: 14px; outline: none; }
+.search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--card); }
+.toggle button { border: 0; background: transparent; color: var(--muted); padding: 9px 16px; font-size: 13px; cursor: pointer; }
+.toggle button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.count { color: var(--muted); font-size: 13px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(255px, 1fr)); gap: 14px; }
+.model { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
+.model-head { display: flex; align-items: center; gap: 10px; }
+.avatar { width: 34px; height: 34px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+.model-name { font-weight: 600; font-size: 14.5px; word-break: break-all; }
+.kind { margin-left: auto; font-size: 11px; color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 999px; flex-shrink: 0; }
+.prices { margin: 12px 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+.price-item { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; }
+.price-item .k { color: var(--muted); }
+.price-item .v { font-variant-numeric: tabular-nums; font-weight: 600; }
+.unit { margin: 10px 0 0; font-size: 11px; color: var(--muted); }
+table.list { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+table.list th, table.list td { padding: 10px 14px; text-align: left; font-size: 13px; border-top: 1px solid var(--border); }
+table.list thead th { border-top: 0; color: var(--muted); font-weight: 500; background: color-mix(in srgb, var(--text) 4%, transparent); white-space: nowrap; }
+table.list td.num { font-variant-numeric: tabular-nums; }
+table.list td.name { font-weight: 600; }
+.empty { text-align: center; color: var(--muted); padding: 56px 20px; background: var(--card); border: 1px dashed var(--border); border-radius: 14px; }
+.note { margin-top: 26px; padding: 16px 18px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; background: var(--card); font-size: 13px; color: var(--muted); }
+.note b { color: var(--text); }
+footer { margin-top: 34px; color: var(--muted); font-size: 12px; display: flex; flex-wrap: wrap; gap: 6px 16px; }
+@media (max-width: 560px) { .hero { padding: 32px 16px 30px; } .wrap { padding: 18px 16px 48px; } }
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="hero-inner">
+    <div class="brand"><span class="brand-mark">◈</span><span id="siteName">模型供给</span></div>
+    <h1 id="title">模型供给清单</h1>
+    <p id="subtitle">以下是本渠道公开上架的模型与对客单价, 按实际用量计费。</p>
+    <div class="hero-meta">
+      <span class="chip">发布编码 <code id="code">-</code></span>
+      <span class="chip" id="countChip">加载中…</span>
+    </div>
+  </div>
+</header>
+<main class="wrap">
+  <div class="toolbar">
+    <div class="search"><input id="search" type="search" placeholder="搜索模型名称…" autocomplete="off"></div>
+    <div class="toggle" role="group" aria-label="视图切换">
+      <button id="viewCards" class="on" type="button">卡片</button>
+      <button id="viewTable" type="button">表格</button>
+    </div>
+    <span class="count" id="count"></span>
+  </div>
+  <div id="content"></div>
+  <div class="note">
+    <b>计费口径:</b> 单价为对客价(供货价按平台上浮比例折算), 与账单一致;
+    <b>缓存读/缓存写</b>按上游命中的缓存 token 计量; 媒体模型按张或按秒计量。
+    实际调用以平台分配的模型名为准, 本页仅展示可供给的模型与价格。
+  </div>
+  <footer>
+    <span>发布编码 <code id="codeFoot">-</code></span>
+    <span id="generated"></span>
+  </footer>
+</main>
+<script>
+(function () {
+  var code = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
+  var all = [];
+  var view = localStorage.getItem('share-view') || 'cards';
+
+  function fmt(n) {
+    if (typeof n !== 'number') return '0';
+    var s = String(Math.round(n * 1e6) / 1e6);
+    return s;
+  }
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  function priceItems(model) {
+    if (model.kind === 'image' || model.kind === 'video') {
+      var rows = [];
+      if (model.user_media && model.user_media.per_image) rows.push(['每张', fmt(model.user_media.per_image)]);
+      if (model.user_media && model.user_media.per_second) rows.push(['每秒', fmt(model.user_media.per_second)]);
+      if (model.user_media && model.user_media.resolution) {
+        Object.keys(model.user_media.resolution).forEach(function (key) {
+          rows.push([key, fmt(model.user_media.resolution[key])]);
+        });
+      }
+      return rows;
+    }
+    var p = model.user_price || {};
+    return [
+      ['读', fmt(p.input)],
+      ['写', fmt(p.output)],
+      ['缓存读', fmt(p.cache_read)],
+      ['缓存写', fmt(p.cache_write)],
+    ];
+  }
+
+  function render() {
+    var keyword = (document.getElementById('search').value || '').trim().toLowerCase();
+    var items = all.filter(function (m) { return !keyword || m.name.toLowerCase().indexOf(keyword) >= 0; });
+    var content = document.getElementById('content');
+    content.innerHTML = '';
+    document.getElementById('count').textContent = items.length + ' / ' + all.length + ' 个模型';
+
+    if (!items.length) {
+      var empty = el('div', 'empty', all.length ? '没有匹配的模型' : '该发布编码下暂无公开上架的模型');
+      content.appendChild(empty);
+      return;
+    }
+
+    if (view === 'cards') {
+      var grid = el('div', 'grid');
+      items.forEach(function (model) {
+        var card = el('div', 'model');
+        var head = el('div', 'model-head');
+        head.appendChild(el('span', 'avatar', model.name.slice(0, 1).toUpperCase()));
+        head.appendChild(el('span', 'model-name', model.name));
+        if (model.kind) head.appendChild(el('span', 'kind', model.kind));
+        card.appendChild(head);
+        var prices = el('div', 'prices');
+        priceItems(model).forEach(function (pair) {
+          var row = el('div', 'price-item');
+          row.appendChild(el('span', 'k', pair[0]));
+          row.appendChild(el('span', 'v', pair[1]));
+          prices.appendChild(row);
+        });
+        card.appendChild(prices);
+        card.appendChild(el('div', 'unit', (model.kind === 'image' || model.kind === 'video') ? '单价: 元/张 · 元/秒' : '单价: 元 / m(百万 token)'));
+        grid.appendChild(card);
+      });
+      content.appendChild(grid);
+    } else {
+      var table = el('table', 'list');
+      var thead = el('thead');
+      var headRow = el('tr');
+      ['模型', '读', '写', '缓存读', '缓存写'].forEach(function (label) {
+        headRow.appendChild(el('th', null, label));
+      });
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+      var tbody = el('tbody');
+      items.forEach(function (model) {
+        var tr = el('tr');
+        tr.appendChild(el('td', 'name', model.name));
+        priceItems(model).forEach(function (pair) {
+          tr.appendChild(el('td', 'num', pair[1]));
+        });
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      content.appendChild(table);
+    }
+  }
+
+  function setView(next) {
+    view = next;
+    localStorage.setItem('share-view', next);
+    document.getElementById('viewCards').className = next === 'cards' ? 'on' : '';
+    document.getElementById('viewTable').className = next === 'table' ? 'on' : '';
+    render();
+  }
+
+  document.getElementById('code').textContent = code || '-';
+  document.getElementById('codeFoot').textContent = code || '-';
+  document.getElementById('generated').textContent = '页面生成于 ' + new Date().toLocaleString();
+  document.getElementById('search').addEventListener('input', render);
+  document.getElementById('viewCards').addEventListener('click', function () { setView('cards'); });
+  document.getElementById('viewTable').addEventListener('click', function () { setView('table'); });
+  setView(view);
+
+  fetch(new URL('../api/v1/share/' + encodeURIComponent(code), location.href)).then(function (r) {
+    return r.json().then(function (body) { return { ok: r.ok, body: body }; });
+  }).then(function (res) {
+    var payload = res.body && res.body.data !== undefined ? res.body.data : res.body;
+    if (!res.ok || !payload || !payload.models) {
+      document.getElementById('countChip').textContent = '未找到';
+      document.getElementById('content').innerHTML = '';
+      document.getElementById('content').appendChild(el('div', 'empty', '发布编码不存在或已收回发布'));
+      return;
+    }
+    all = payload.models;
+    document.getElementById('countChip').textContent = all.length + ' 个模型';
+    render();
+  }).catch(function () {
+    document.getElementById('countChip').textContent = '加载失败';
+    document.getElementById('content').innerHTML = '';
+    document.getElementById('content').appendChild(el('div', 'empty', '加载失败, 请刷新重试'));
+  });
+
+  fetch(new URL('../api/v1/site/config', location.href)).then(function (r) { return r.ok ? r.json() : null; }).then(function (body) {
+    var cfg = body && body.data !== undefined ? body.data : body;
+    if (cfg && cfg.name) {
+      document.getElementById('siteName').textContent = cfg.name;
+      document.title = cfg.name + ' · 模型供给清单';
+    }
+  }).catch(function () {});
+})();
+</script>
+</body>
+</html>
