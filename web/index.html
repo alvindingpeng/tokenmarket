@@ -52,47 +52,49 @@
         width: 120px;
         height: 120px;
       }
-      #initial-loader .octo-group {
-        animation: octoFade 2s ease-in-out infinite;
+      #initial-loader .logo-group {
+        animation: logoFade 2s ease-in-out infinite;
       }
-      #initial-loader path {
+      #initial-loader path,
+      #initial-loader circle {
         fill: none;
         stroke: currentColor;
-        stroke-width: 6;
+        stroke-width: 8;
         stroke-linecap: round;
         stroke-dasharray: 1 2;
         stroke-dashoffset: 1;
         opacity: 0;
       }
-      #initial-loader .octo-outline {
-        animation: octoDrawOuter 2s ease-in-out infinite both;
+      #initial-loader .logo-outline {
+        animation: logoDrawOuter 2s ease-in-out infinite both;
       }
-      #initial-loader .octo-inner {
-        animation: octoDrawInner 2s ease-in-out infinite both;
+      #initial-loader .logo-inner {
+        animation: logoDrawInner 2s ease-in-out infinite both;
       }
 
-      @keyframes octoDrawOuter {
+      @keyframes logoDrawOuter {
         0%   { stroke-dashoffset: 1; opacity: 0; }
         4%   { opacity: 1; }
         28%  { stroke-dashoffset: 0; opacity: 1; }
         100% { stroke-dashoffset: 0; opacity: 1; }
       }
-      @keyframes octoDrawInner {
+      @keyframes logoDrawInner {
         0%   { stroke-dashoffset: 1; opacity: 0; }
         32%  { stroke-dashoffset: 1; opacity: 0; }
         34%  { stroke-dashoffset: 1; opacity: 1; }
         58%  { stroke-dashoffset: 0; opacity: 1; }
         100% { stroke-dashoffset: 0; opacity: 1; }
       }
-      @keyframes octoFade {
+      @keyframes logoFade {
         0%   { opacity: 1; }
         70%  { opacity: 1; }
         100% { opacity: 0; }
       }
 
       @media (prefers-reduced-motion: reduce) {
-        #initial-loader .octo-group,
-        #initial-loader path {
+        #initial-loader .logo-group,
+        #initial-loader path,
+        #initial-loader circle {
           animation: none !important;
           opacity: 1 !important;
           stroke-dashoffset: 0 !important;
@@ -103,10 +105,11 @@
   <body class="antialiased">
     <div id="initial-loader" role="status" aria-label="Loading">
       <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-        <g class="octo-group">
-          <path class="octo-outline" pathLength="1" d="M20 90 Q30 90 30 83 Q30 80 27.88 77.88 C25 75 15 65 15 50 C15 30 30 15 50 15 C70 15 85 30 85 50 C85 65 75 75 72.12 77.88 Q70 80 70 83 Q70 90 80 90" />
-          <path class="octo-inner" pathLength="1" d="M43 77 L43 85 C43 87.76 40.76 90 38 90" />
-          <path class="octo-inner" pathLength="1" d="M62 90 C59.24 90 57 87.76 57 85 L57 77" />
+        <g class="logo-group">
+          <path class="logo-outline" pathLength="1" d="M41 43 L65.4 30.8" />
+          <path class="logo-outline" pathLength="1" d="M41 57 L65.4 69.2" />
+          <path class="logo-inner" pathLength="1" d="M64 25 A13 13 0 1 1 90 25 A13 13 0 1 1 64 25" />
+          <path class="logo-inner" pathLength="1" d="M64 75 A13 13 0 1 1 90 75 A13 13 0 1 1 64 75" />
         </g>
       </svg>
     </div>
