@@ -55,8 +55,25 @@
       #initial-loader .logo-group {
         animation: logoFade 2s ease-in-out infinite;
       }
-      #initial-loader path,
-      #initial-loader circle {
+      /* 网关方块与端点圆点: 实心形状按序淡入, 不用描边动画。 */
+      #initial-loader .logo-solid {
+        fill: currentColor;
+        opacity: 0;
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: logoPop 2s ease-in-out infinite both;
+      }
+      #initial-loader .logo-hub {
+        animation-delay: 0ms;
+      }
+      #initial-loader .logo-dot-a {
+        animation-delay: 180ms;
+      }
+      #initial-loader .logo-dot-b {
+        animation-delay: 300ms;
+      }
+      /* 连线用描边绘制, 表示接口分发。 */
+      #initial-loader .logo-link {
         fill: none;
         stroke: currentColor;
         stroke-width: 8;
@@ -64,26 +81,22 @@
         stroke-dasharray: 1 2;
         stroke-dashoffset: 1;
         opacity: 0;
+        animation: logoDraw 2s ease-in-out infinite both;
       }
-      #initial-loader .logo-outline {
-        animation: logoDrawOuter 2s ease-in-out infinite both;
-      }
-      #initial-loader .logo-inner {
-        animation: logoDrawInner 2s ease-in-out infinite both;
+      #initial-loader .logo-link-b {
+        animation-delay: 120ms;
       }
 
-      @keyframes logoDrawOuter {
+      @keyframes logoDraw {
         0%   { stroke-dashoffset: 1; opacity: 0; }
-        4%   { opacity: 1; }
-        28%  { stroke-dashoffset: 0; opacity: 1; }
+        10%  { opacity: 1; }
+        42%  { stroke-dashoffset: 0; opacity: 1; }
         100% { stroke-dashoffset: 0; opacity: 1; }
       }
-      @keyframes logoDrawInner {
-        0%   { stroke-dashoffset: 1; opacity: 0; }
-        32%  { stroke-dashoffset: 1; opacity: 0; }
-        34%  { stroke-dashoffset: 1; opacity: 1; }
-        58%  { stroke-dashoffset: 0; opacity: 1; }
-        100% { stroke-dashoffset: 0; opacity: 1; }
+      @keyframes logoPop {
+        0%   { opacity: 0; transform: scale(0.72); }
+        34%  { opacity: 1; transform: scale(1); }
+        100% { opacity: 1; transform: scale(1); }
       }
       @keyframes logoFade {
         0%   { opacity: 1; }
@@ -93,11 +106,12 @@
 
       @media (prefers-reduced-motion: reduce) {
         #initial-loader .logo-group,
-        #initial-loader path,
-        #initial-loader circle {
+        #initial-loader .logo-solid,
+        #initial-loader .logo-link {
           animation: none !important;
           opacity: 1 !important;
           stroke-dashoffset: 0 !important;
+          transform: none !important;
         }
       }
     </style>
@@ -106,10 +120,11 @@
     <div id="initial-loader" role="status" aria-label="Loading">
       <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
         <g class="logo-group">
-          <path class="logo-outline" pathLength="1" d="M41 43 L65.4 30.8" />
-          <path class="logo-outline" pathLength="1" d="M41 57 L65.4 69.2" />
-          <path class="logo-inner" pathLength="1" d="M64 25 A13 13 0 1 1 90 25 A13 13 0 1 1 64 25" />
-          <path class="logo-inner" pathLength="1" d="M64 75 A13 13 0 1 1 90 75 A13 13 0 1 1 64 75" />
+          <path class="logo-link" pathLength="1" d="M42 43 L70.2 27.8" />
+          <path class="logo-link logo-link-b" pathLength="1" d="M42 57 L70.2 72.2" />
+          <rect class="logo-solid logo-hub" x="10" y="34" width="32" height="32" rx="11" />
+          <circle class="logo-solid logo-dot-a" cx="79" cy="23" r="10" />
+          <circle class="logo-solid logo-dot-b" cx="79" cy="77" r="10" />
         </g>
       </svg>
     </div>

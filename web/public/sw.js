@@ -1,5 +1,5 @@
 // 缓存策略或预缓存结构变化时递增版本，以便激活阶段清理旧缓存。
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const BASE_PATH = new URL(self.registration.scope).pathname; // 当前应用所在目录，保留末尾斜杠。
 const CACHE_PREFIX = `octopus-${encodeURIComponent(BASE_PATH)}-`; // 按应用目录隔离缓存及其清理范围。
 const CACHE_NAMES = {
@@ -14,6 +14,9 @@ const CORE_ASSETS = [
     `${BASE_PATH}apple-icon.png`,
     `${BASE_PATH}web-app-manifest-192x192.png`,
     `${BASE_PATH}web-app-manifest-512x512.png`,
+    // 品牌标识一并预缓存: 它们是不带哈希的固定路径, 换 logo 时必须随版本一起换新。
+    `${BASE_PATH}logo.svg`,
+    `${BASE_PATH}logo-dark.svg`,
 ];
 
 // extractShellAssets 从构建后的 HTML 中提取根路径和相对路径资源。
