@@ -8,6 +8,7 @@ import (
 	"github.com/bestruirui/octopus/internal/server"
 	"github.com/bestruirui/octopus/internal/server/auth"
 	"github.com/bestruirui/octopus/internal/task"
+	"github.com/bestruirui/octopus/internal/update"
 	"github.com/bestruirui/octopus/internal/utils/shutdown"
 	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
@@ -73,6 +74,7 @@ var startCmd = &cobra.Command{
 
 		task.Init()
 		go task.RUN()
+		go update.HealthCheckAndRollback()
 		shutdown.Listen()
 	},
 }

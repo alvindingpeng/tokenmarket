@@ -23,6 +23,15 @@ import (
 
 const restartDelay = 1500 * time.Millisecond
 
+// updateMarkerPath 返回更新标记文件的路径(与可执行文件同目录)。
+func updateMarkerPath() string {
+	execPath, err := os.Executable()
+	if err != nil {
+		return filepath.Join(".", ".octopus-update-marker.json")
+	}
+	return filepath.Join(filepath.Dir(execPath), ".octopus-update-marker.json")
+}
+
 type Result struct {
 	From       string `json:"from"`
 	To         string `json:"to"`
@@ -132,6 +141,7 @@ func Apply(forceSameVersion bool) (*Result, error) {
 		return nil, fmt.Errorf("install new executable failed: %w", err)
 	}
 	log.Infof("update staged successfully: %s -> %s; rollback copy: %s", conf.Version, status.LatestVersion, backupPath)
+	writeMarker(backupPath, conf.Version, status.LatestVersion)
 	return &Result{From: conf.Version, To: status.LatestVersion, Asset: status.AssetName, ExecPath: execPath, BackupPath: backupPath}, nil
 }
 
