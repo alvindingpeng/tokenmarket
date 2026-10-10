@@ -16,7 +16,10 @@ type StatsTotal struct {
 }
 
 type StatsHourly struct {
-	Hour int    `json:"hour" gorm:"primaryKey"`
+	// Hour 是 0-23 的小时刻度, 由代码显式给出, 绝不能交给数据库自增:
+	// 整数主键默认按自增处理时, GORM 会把零值(午夜 0 点)当成"未设置"而从 INSERT 里省略该列,
+	// 于是午夜桶每次都落成新行而不是更新, 表里既有脏行又永远没有 hour=0。
+	Hour int    `json:"hour" gorm:"primaryKey;autoIncrement:false"`
 	Date string `json:"date" gorm:"not null"` // 记录最后更新日期，格式：20060102
 	StatsMetrics
 }

@@ -58,6 +58,9 @@ const (
 	// 探针鉴权: /metrics 默认开放(与 /healthz 一致, 便于本地抓取), 需要收敛时切成 bearer 并要求令牌。
 	SettingKeyMetricsAuth  SettingKey = "metrics_auth"  // off | bearer; /healthz 恒不鉴权(存活探针)。
 	SettingKeyMetricsToken SettingKey = "metrics_token" // bearer 模式下的抓取令牌, 内部键不外露。
+	// 登录防爆破: 按 IP+用户名 计量连续失败次数, 超限后指数退避锁定。在设置页面上独立配置以兼容多实例共享存储的场景。
+	SettingKeyLoginMaxAttempts    SettingKey = "login_max_attempts"    // 连续失败次数阈值, 默认 5; 0 表示不按次数锁定(但退避仍然生效)。
+	SettingKeyLoginLockoutSeconds SettingKey = "login_lockout_seconds" // 首次锁定的基础秒数, 默认 900 (15 分钟); 每次额外失败后翻倍, 封顶 1 小时。
 	// 内部键: 只存库不出任何读取接口, 也不进备份。
 	SettingKeyAuthSecret SettingKey = "auth_secret"
 )
@@ -116,6 +119,8 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyAlertFailStreak, Value: "3"},             // 连续 3 次失败判宕机
 		{Key: SettingKeyMetricsAuth, Value: "off"},               // 探针默认开放
 		{Key: SettingKeyMetricsToken, Value: ""},                 // 令牌留空, 开启鉴权时自动生成
+		{Key: SettingKeyLoginMaxAttempts, Value: "5"},            // 连续 5 次失败即触发退避锁定
+		{Key: SettingKeyLoginLockoutSeconds, Value: "900"},       // 锁定 15 分钟, 起效前每超一次翻倍
 	}
 }
 
@@ -231,6 +236,16 @@ func (s *Setting) Validate() error {
 		// 与渠道侧一致用 ECMAScript 方言校验, 避免设置能存但探测时编译失败。
 		if _, err := regexp2.Compile(s.Value, regexp2.ECMAScript); err != nil {
 			return fmt.Errorf("model filter regex is invalid: %w", err)
+		}
+		return nil
+	case SettingKeyLoginMaxAttempts:
+		if n, err := strconv.Atoi(s.Value); err != nil || n < 0 || n > 100 {
+			return fmt.Errorf("login max attempts must be an integer between 0 and 100")
+		}
+		return nil
+	case SettingKeyLoginLockoutSeconds:
+		if n, err := strconv.Atoi(s.Value); err != nil || n < 0 || n > 86400 {
+			return fmt.Errorf("login lockout seconds must be an integer between 0 and 86400")
 		}
 		return nil
 	case SettingKeyProxyURL:

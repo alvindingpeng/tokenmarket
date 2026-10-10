@@ -28,14 +28,14 @@ func Auth() gin.HandlerFunc {
 		}
 		claims, err := auth.VerifyJWTToken(token)
 		if err != nil {
-			c.SetCookie("auth", "", -1, "/", "", false, false)
+			c.SetCookie("auth", "", -1, "/", "", false, true)
 			resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
 			c.Abort()
 			return
 		}
 		user, err := op.UserGetByID(claims.UserID)
 		if err != nil || user.Status != model.StatusActive || user.TokenVersion != claims.TokenVersion {
-			c.SetCookie("auth", "", -1, "/", "", false, false)
+			c.SetCookie("auth", "", -1, "/", "", false, true)
 			resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
 			c.Abort()
 			return

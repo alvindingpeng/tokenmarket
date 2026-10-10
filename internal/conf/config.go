@@ -10,8 +10,9 @@ import (
 )
 
 type Server struct {
-	Host string `mapstructure:"host"`
-	Port int    `mapstructure:"port"`
+	Host           string   `mapstructure:"host"`
+	Port           int      `mapstructure:"port"`
+	TrustedProxies []string `mapstructure:"trusted_proxies"`
 }
 
 type Log struct {
