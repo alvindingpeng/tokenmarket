@@ -1,1177 +1,1180 @@
 {
-    "login": {
-        "username": "Username",
-        "usernamePlaceholder": "Enter your username",
-        "password": "Password",
-        "passwordPlaceholder": "Enter your password",
-        "trustDevice": "Trust this device",
-        "apikey": "API Key",
-        "apikeyPlaceholder": "Enter your API Key (sk-octopus-...)",
-        "mode": {
-            "user": "Account",
-            "apikey": "API Key",
-            "registerUser": "Register",
-            "registerReseller": "Reseller"
-        },
-        "error": {
-            "generic": "Login failed, please check your credentials"
-        },
-        "button": {
-            "loading": "Logging in...",
-            "submit": "Login",
-            "register": "Register"
-        },
-        "reason": "Reason",
-        "reasonPlaceholder": "Why do you want to become a reseller? (optional)",
-        "registerSuccess": "Registered successfully, please sign in.",
-        "registerPending": "Registration submitted, waiting for admin approval."
+  "login": {
+    "username": "Username",
+    "usernamePlaceholder": "Enter your username",
+    "password": "Password",
+    "passwordPlaceholder": "Enter your password",
+    "trustDevice": "Trust this device",
+    "apikey": "API Key",
+    "apikeyPlaceholder": "Enter your API Key (sk-octopus-...)",
+    "mode": {
+      "user": "Account",
+      "apikey": "API Key",
+      "registerUser": "Register",
+      "registerReseller": "Reseller"
     },
-    "apiKeyDashboard": {
-        "error": "Failed to load data",
-        "logout": "Logout",
-        "requestCount": "Requests",
-        "timeConsumed": "Time Consumed",
-        "totalToken": "Tokens Used",
-        "totalCost": "Total Cost",
-        "inputTokens": "Input Tokens",
+    "error": {
+      "generic": "Login failed, please check your credentials"
+    },
+    "button": {
+      "loading": "Logging in...",
+      "submit": "Login",
+      "register": "Register"
+    },
+    "reason": "Reason",
+    "reasonPlaceholder": "Why do you want to become a reseller? (optional)",
+    "registerSuccess": "Registered successfully, please sign in.",
+    "registerPending": "Registration submitted, waiting for admin approval."
+  },
+  "apiKeyDashboard": {
+    "error": "Failed to load data",
+    "logout": "Logout",
+    "requestCount": "Requests",
+    "timeConsumed": "Time Consumed",
+    "totalToken": "Tokens Used",
+    "totalCost": "Total Cost",
+    "inputTokens": "Input Tokens",
+    "inputCost": "Input Cost",
+    "outputTokens": "Output Tokens",
+    "outputCost": "Output Cost",
+    "successRequests": "Successful",
+    "failedRequests": "Failed",
+    "expireAt": "Expires",
+    "neverExpire": "Never",
+    "daysLeft": "days left",
+    "expired": "Expired",
+    "supportedModels": "Supported Models"
+  },
+  "navbar": {
+    "home": "Home",
+    "channel": "Channel",
+    "group": "Model Config",
+    "model": "Price",
+    "log": "Log",
+    "setting": "Setting",
+    "users": "Users",
+    "share": "Share",
+    "billing": "Billing",
+    "apikey": "API Keys",
+    "audit": "Audit Log",
+    "ratelimit": "Rate Limit",
+    "ops": "Ops"
+  },
+  "toolbar": {
+    "hideChannelName": "Blur channel names",
+    "share": "Share",
+    "popover": {
+      "ariaLabel": "View options",
+      "layout": "Layout",
+      "sort": "Sort",
+      "grid": "Grid",
+      "list": "List",
+      "nameAsc": "Name Asc",
+      "nameDesc": "Name Desc",
+      "filter": {
+        "title": "Filter",
+        "channel": {
+          "all": "All channels",
+          "enabled": "Enabled only",
+          "disabled": "Disabled only"
+        },
+        "group": {
+          "all": "All model configs",
+          "withMembers": "With members",
+          "empty": "Empty model configs"
+        },
+        "model": {
+          "all": "All models",
+          "priced": "Pricing configured",
+          "free": "Pricing not configured"
+        }
+      }
+    }
+  },
+  "site": {
+    "announcement": "Announcement",
+    "maintenance": "Maintenance",
+    "dismiss": "Dismiss"
+  },
+  "common": {
+    "copy": {
+      "success": "Copied",
+      "failed": "Copy failed",
+      "noContent": "Nothing to copy"
+    }
+  },
+  "home": {
+    "metric": {
+      "cost": "Cost",
+      "count": "Count",
+      "tokens": "Tokens"
+    },
+    "activity": {
+      "requestCount": "Requests",
+      "waitTime": "Time Consumed",
+      "totalToken": "Tokens Used",
+      "totalCost": "Total Cost",
+      "noData": "No Data"
+    },
+    "total": {
+      "requestStats": "Request Stats",
+      "totalStats": "Total Stats",
+      "inputStats": "Input Stats",
+      "outputStats": "Output Stats",
+      "requestCount": "Requests",
+      "timeConsumed": "Time Consumed",
+      "totalToken": "Tokens Used",
+      "totalCost": "Total Cost",
+      "inputTokens": "Input Tokens",
+      "inputCost": "Input Cost",
+      "outputTokens": "Output Tokens",
+      "outputCost": "Output Cost"
+    },
+    "chart": {
+      "title": "Trend",
+      "totalRequests": "Total Requests",
+      "totalCost": "Total Cost",
+      "totalTokens": "Total Tokens",
+      "timePeriod": "Time Period",
+      "period": {
+        "today": "Today",
+        "last7Days": "7 Days",
+        "last30Days": "30 Days"
+      }
+    },
+    "rank": {
+      "channel": "Channel",
+      "model": "Model",
+      "noData": "No ranking data",
+      "successRate": "Success Rate"
+    }
+  },
+  "setting": {
+    "appearance": "Appearance",
+    "system": "System",
+    "theme": {
+      "label": "Theme",
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System"
+    },
+    "language": {
+      "label": "Language",
+      "zh_hans": "Chinese (Simplified)",
+      "zh_hant": "Chinese (Traditional)",
+      "en": "English"
+    },
+    "proxyUrl": {
+      "label": "Proxy URL",
+      "placeholder": "Enter proxy URL"
+    },
+    "statsSaveInterval": {
+      "label": "Stats Save Interval",
+      "placeholder": "Enter interval in minutes"
+    },
+    "corsAllowOrigins": {
+      "label": "CORS Allowed Origins",
+      "hint": "Empty = deny all, * = allow all",
+      "example": "Only allow specific domains: https://example.com,https://example2.com"
+    },
+    "modelFilter": {
+      "label": "Global Model Filter",
+      "placeholder": "Enter filter regex",
+      "hint": "Applied along with the channel's own filter when fetching models (AND); empty means no filter"
+    },
+    "saved": "Saved",
+    "backup": {
+      "title": "Backup / Restore",
+      "export": {
+        "button": "Export",
+        "exporting": "Exporting...",
+        "success": "Export started"
+      },
+      "import": {
+        "title": "Import",
+        "button": "Import",
+        "importing": "Importing...",
+        "noFile": "Please select a JSON file first",
+        "success": "Import successful",
+        "failed": "Import failed",
+        "result": "Import result"
+      }
+    },
+    "apiKey": {
+      "title": "API Keys",
+      "empty": "No API keys",
+      "add": "Add Key",
+      "loadFailed": "Failed to load",
+      "form": {
+        "name": "Name",
+        "value": "Key Value",
+        "valuePlaceholder": "Leave empty to generate",
+        "maxCost": "Max Cost",
+        "maxCostPlaceholder": "Enter amount",
+        "unlimited": "Unlimited",
+        "expireAt": "Expire Date",
+        "selectDate": "Select date",
+        "neverExpire": "Never Expire",
+        "supportedModels": "Supported Models",
+        "noModels": "No models available",
+        "modelsHint": "Leave empty for unlimited",
+        "enabled": "Enabled",
+        "cancel": "Cancel",
+        "create": "Create",
+        "save": "Save",
+        "confirm": "Confirm"
+      },
+      "stats": {
+        "noData": "No statistics available",
+        "inputToken": "Input Token",
+        "outputToken": "Output Token",
         "inputCost": "Input Cost",
-        "outputTokens": "Output Tokens",
         "outputCost": "Output Cost",
-        "successRequests": "Successful",
-        "failedRequests": "Failed",
-        "expireAt": "Expires",
-        "neverExpire": "Never",
-        "daysLeft": "days left",
-        "expired": "Expired",
-        "supportedModels": "Supported Models"
+        "requestSuccess": "Request Success",
+        "requestFailed": "Request Failed"
+      },
+      "toast": {
+        "createSuccess": "API key created",
+        "createError": "Failed to create API key",
+        "updateSuccess": "API key updated",
+        "updateError": "Failed to update API key",
+        "deleteSuccess": "API key deleted",
+        "deleteError": "Failed to delete API key"
+      }
     },
-    "navbar": {
-        "home": "Home",
-        "channel": "Channel",
-        "group": "Model Config",
-        "model": "Price",
-        "log": "Log",
-        "setting": "Setting",
-        "users": "Users",
-        "share": "Share",
-        "billing": "Billing",
-        "apikey": "API Keys",
-        "audit": "Audit Log",
-        "ratelimit": "Rate Limit",
-        "ops": "Ops"
+    "llmPrice": {
+      "title": "Model Pricing",
+      "updateInterval": {
+        "label": "Auto Update Interval (hours)",
+        "placeholder": "Enter interval in hours"
+      },
+      "manualUpdate": {
+        "label": "Manual Price Update",
+        "button": "Update Now",
+        "updating": "Updating..."
+      },
+      "lastUpdate": "Last Update",
+      "neverUpdated": "Never updated",
+      "updateSuccess": "Price updated successfully",
+      "updateFailed": "Failed to update price",
+      "rebuild": {
+        "label": "Rebuild price data",
+        "description": "Rematch and clean up model prices\nManually configured prices will be reset",
+        "button": "Rebuild",
+        "cancel": "Cancel",
+        "confirm": "Confirm rebuild",
+        "rebuilding": "Rebuilding...",
+        "success": "Price data rebuilt for {count} models",
+        "failed": "Failed to rebuild price data"
+      }
     },
-    "toolbar": {
-        "hideChannelName": "Blur channel names",
-        "share": "Share",
-        "popover": {
-            "ariaLabel": "View options",
-            "layout": "Layout",
-            "sort": "Sort",
-            "grid": "Grid",
-            "list": "List",
-            "nameAsc": "Name Asc",
-            "nameDesc": "Name Desc",
-            "filter": {
-                "title": "Filter",
-                "channel": {
-                    "all": "All channels",
-                    "enabled": "Enabled only",
-                    "disabled": "Disabled only"
-                },
-                "group": {
-                    "all": "All model configs",
-                    "withMembers": "With members",
-                    "empty": "Empty model configs"
-                },
-                "model": {
-                    "all": "All models",
-                    "priced": "Pricing configured",
-                    "free": "Pricing not configured"
-                }
-            }
-        }
+    "account": {
+      "title": "Account Settings",
+      "save": "Save",
+      "saving": "Saving...",
+      "cancel": "Cancel",
+      "username": {
+        "label": "Change Username",
+        "placeholder": "Enter new username",
+        "empty": "Username cannot be empty",
+        "success": "Username changed successfully",
+        "failed": "Failed to change username"
+      },
+      "password": {
+        "label": "Change Password",
+        "oldPlaceholder": "Enter current password",
+        "newPlaceholder": "Enter new password",
+        "confirmPlaceholder": "Confirm new password",
+        "oldEmpty": "Please enter current password",
+        "newEmpty": "Please enter new password",
+        "mismatch": "Passwords do not match",
+        "tooShort": "Password must be at least 6 characters",
+        "change": "Change Password",
+        "success": "Password changed successfully",
+        "failed": "Failed to change password"
+      },
+      "logout": {
+        "label": "Sign Out",
+        "hint": "Sign out of the current session",
+        "button": "Sign Out",
+        "toast": "Signed out"
+      }
     },
-    "site": {
-        "announcement": "Announcement",
-        "maintenance": "Maintenance",
-        "dismiss": "Dismiss"
-    },
-    "common": {
-        "copy": {
-            "success": "Copied",
-            "failed": "Copy failed",
-            "noContent": "Nothing to copy"
-        }
-    },
-    "home": {
-        "metric": {
-            "cost": "Cost",
-            "count": "Count",
-            "tokens": "Tokens"
-        },
-        "activity": {
-            "requestCount": "Requests",
-            "waitTime": "Time Consumed",
-            "totalToken": "Tokens Used",
-            "totalCost": "Total Cost",
-            "noData": "No Data"
-        },
-        "total": {
-            "requestStats": "Request Stats",
-            "totalStats": "Total Stats",
-            "inputStats": "Input Stats",
-            "outputStats": "Output Stats",
-            "requestCount": "Requests",
-            "timeConsumed": "Time Consumed",
-            "totalToken": "Tokens Used",
-            "totalCost": "Total Cost",
-            "inputTokens": "Input Tokens",
-            "inputCost": "Input Cost",
-            "outputTokens": "Output Tokens",
-            "outputCost": "Output Cost"
-        },
-        "chart": {
-            "title": "Trend",
-            "totalRequests": "Total Requests",
-            "totalCost": "Total Cost",
-            "totalTokens": "Total Tokens",
-            "timePeriod": "Time Period",
-            "period": {
-                "today": "Today",
-                "last7Days": "7 Days",
-                "last30Days": "30 Days"
-            }
-        },
-        "rank": {
-            "channel": "Channel",
-            "model": "Model",
-            "noData": "No ranking data",
-            "successRate": "Success Rate"
-        }
-    },
-    "setting": {
-        "appearance": "Appearance",
-        "system": "System",
-        "theme": {
-            "label": "Theme",
-            "light": "Light",
-            "dark": "Dark",
-            "system": "System"
-        },
-        "language": {
-            "label": "Language",
-            "zh_hans": "Chinese (Simplified)",
-            "zh_hant": "Chinese (Traditional)",
-            "en": "English"
-        },
-        "proxyUrl": {
-            "label": "Proxy URL",
-            "placeholder": "Enter proxy URL"
-        },
-        "statsSaveInterval": {
-            "label": "Stats Save Interval",
-            "placeholder": "Enter interval in minutes"
-        },
-        "corsAllowOrigins": {
-            "label": "CORS Allowed Origins",
-            "hint": "Empty = deny all, * = allow all",
-            "example": "Only allow specific domains: https://example.com,https://example2.com"
-        },
-        "modelFilter": {
-            "label": "Global Model Filter",
-            "placeholder": "Enter filter regex",
-            "hint": "Applied along with the channel's own filter when fetching models (AND); empty means no filter"
-        },
-        "saved": "Saved",
-        "backup": {
-            "title": "Backup / Restore",
-            "export": {
-                "button": "Export",
-                "exporting": "Exporting...",
-                "success": "Export started"
-            },
-            "import": {
-                "title": "Import",
-                "button": "Import",
-                "importing": "Importing...",
-                "noFile": "Please select a JSON file first",
-                "success": "Import successful",
-                "failed": "Import failed",
-                "result": "Import result"
-            }
-        },
-        "apiKey": {
-            "title": "API Keys",
-            "empty": "No API keys",
-            "add": "Add Key",
-            "loadFailed": "Failed to load",
-            "form": {
-                "name": "Name",
-                "value": "Key Value",
-                "valuePlaceholder": "Leave empty to generate",
-                "maxCost": "Max Cost",
-                "maxCostPlaceholder": "Enter amount",
-                "unlimited": "Unlimited",
-                "expireAt": "Expire Date",
-                "selectDate": "Select date",
-                "neverExpire": "Never Expire",
-                "supportedModels": "Supported Models",
-                "noModels": "No models available",
-                "modelsHint": "Leave empty for unlimited",
-                "enabled": "Enabled",
-                "cancel": "Cancel",
-                "create": "Create",
-                "save": "Save",
-                "confirm": "Confirm"
-            },
-            "stats": {
-                "noData": "No statistics available",
-                "inputToken": "Input Token",
-                "outputToken": "Output Token",
-                "inputCost": "Input Cost",
-                "outputCost": "Output Cost",
-                "requestSuccess": "Request Success",
-                "requestFailed": "Request Failed"
-            },
-            "toast": {
-                "createSuccess": "API key created",
-                "createError": "Failed to create API key",
-                "updateSuccess": "API key updated",
-                "updateError": "Failed to update API key",
-                "deleteSuccess": "API key deleted",
-                "deleteError": "Failed to delete API key"
-            }
-        },
-        "llmPrice": {
-            "title": "Model Pricing",
-            "updateInterval": {
-                "label": "Auto Update Interval (hours)",
-                "placeholder": "Enter interval in hours"
-            },
-            "manualUpdate": {
-                "label": "Manual Price Update",
-                "button": "Update Now",
-                "updating": "Updating..."
-            },
-            "lastUpdate": "Last Update",
-            "neverUpdated": "Never updated",
-            "updateSuccess": "Price updated successfully",
-            "updateFailed": "Failed to update price",
-            "rebuild": {
-                "label": "Rebuild price data",
-                "description": "Rematch and clean up model prices\nManually configured prices will be reset",
-                "button": "Rebuild",
-                "cancel": "Cancel",
-                "confirm": "Confirm rebuild",
-                "rebuilding": "Rebuilding...",
-                "success": "Price data rebuilt for {count} models",
-                "failed": "Failed to rebuild price data"
-            }
-        },
-        "account": {
-            "title": "Account Settings",
-            "save": "Save",
-            "saving": "Saving...",
-            "cancel": "Cancel",
-            "username": {
-                "label": "Change Username",
-                "placeholder": "Enter new username",
-                "empty": "Username cannot be empty",
-                "success": "Username changed successfully",
-                "failed": "Failed to change username"
-            },
-            "password": {
-                "label": "Change Password",
-                "oldPlaceholder": "Enter current password",
-                "newPlaceholder": "Enter new password",
-                "confirmPlaceholder": "Confirm new password",
-                "oldEmpty": "Please enter current password",
-                "newEmpty": "Please enter new password",
-                "mismatch": "Passwords do not match",
-                "tooShort": "Password must be at least 6 characters",
-                "change": "Change Password",
-                "success": "Password changed successfully",
-                "failed": "Failed to change password"
-            },
-            "logout": {
-                "label": "Sign Out",
-                "hint": "Sign out of the current session",
-                "button": "Sign Out",
-                "toast": "Signed out"
-            }
-        },
-        "info": {
-            "title": "Version Info",
-            "currentVersion": "Current Version",
-            "latestVersion": "Latest Version",
-            "github": "GitHub Repository",
-            "unknown": "Unknown",
-            "versionMismatch": "Version Mismatch",
-            "versionMismatchHint": "Frontend version ({frontend}) does not match backend version ({backend}). This may be a browser cache issue. Please force refresh the page.",
-            "forceRefresh": "Force Refresh",
-            "newVersionAvailable": "New version available",
-            "newVersionAvailableHint": "Please backup your data first, then update the system",
-            "updateNow": "Update Now",
-            "updating": "Updating...",
-            "updateSuccess": "Update successful, service will restart shortly",
-            "updateFailed": "Update failed",
-            "checkNow": "Check for updates",
-            "checking": "Checking...",
-            "checkFailed": "Update check failed",
-            "assetMissing": "No update package is available for this platform",
-            "upToDate": "You are using the latest version",
-            "platform": "Platform",
-            "lastCheck": "Last checked",
-            "releaseNotes": "Release notes",
-            "viewRelease": "View release",
-            "confirmUpdate": "Confirm update",
-            "cancel": "Cancel"
-        },
-        "log": {
-            "title": "Log Settings",
-            "clear": {
-                "label": "Clear History Logs",
-                "button": "Clear",
-                "clearing": "Clearing..."
-            },
-            "clearSuccess": "Logs cleared",
-            "clearFailed": "Failed to clear logs"
-        },
-        "platform": {
-            "title": "Platform settings",
-            "markupRatio": "Markup ratio",
-            "markupRatioHint": "User price = supply price × (1 + ratio); e.g. 0.2 adds 20%.",
-            "userRegister": "User registration",
-            "userRegisterHint": "Allow new users to self-register.",
-            "resellerRegister": "Reseller registration",
-            "resellerRegisterHint": "Allow reseller self-registration with an application reason.",
-            "approvalRequired": "Registration approval",
-            "approvalRequiredHint": "New accounts stay pending until an admin approves them.",
-            "minBalance": "Minimum balance",
-            "minBalanceHint": "New requests are rejected once available balance would drop below this.",
-            "reserveCap": "Reserve output cap",
-            "reserveCapHint": "Estimated per-request output tokens used for balance reservation.",
-            "reserveImages": "Image reserve (images)",
-            "reserveImagesHint": "Images frozen per image-generation request when n is absent (default 4).",
-            "invalidNumber": "Please enter a valid number"
-        },
-        "scoreWeights": {
-            "label": "Score strategy defaults",
-            "hint": "System-default weight mix for the score routing strategy; applies whenever a group leaves a weight at 0 (uncustomized). Group-level custom values take precedence.",
-            "price": "Price",
-            "latency": "Latency",
-            "success": "Success"
-        },
-        "systemInfo": {
-            "title": "System Information",
-            "siteName": "Site name",
-            "siteNameHint": "Shown in the browser tab title, on the login page and in every header; leave empty to use the default name.",
-            "siteNamePlaceholder": "e.g. Octopus Gateway",
-            "siteContact": "Contact",
-            "siteContactHint": "How users can reach support; an email address or group link.",
-            "siteContactPlaceholder": "e.g. support@example.com",
-            "siteDescription": "Description",
-            "siteDescriptionHint": "One line describing this site, shown under the title on the login page.",
-            "siteDescriptionPlaceholder": "e.g. Fast and stable AI model API gateway",
-            "announcementEnabled": "Enable announcement",
-            "announcementEnabledHint": "Show the announcement as a banner to every signed-in user.",
-            "announcement": "Announcement",
-            "announcementHint": "Global announcement body; leave empty to hide it.",
-            "announcementPlaceholder": "e.g. Maintenance tonight from 23:00, about 30 minutes",
-            "maintenanceMode": "Maintenance mode",
-            "maintenanceModeHint": "When on, only administrators can sign in; other accounts are rejected and a banner is shown to everyone.",
-            "maintenanceNotice": "Maintenance notice",
-            "maintenanceNoticeHint": "Message shown to users whose sign-in is rejected.",
-            "maintenanceNoticePlaceholder": "e.g. The service is under maintenance, please retry later"
-        }
-    },
-    "group": {
-        "toast": {
-            "createFailed": "Create failed",
-            "updated": "Updated successfully",
-            "updateFailed": "Update failed",
-            "deleted": "Deleted successfully"
-        },
-        "create": {
-            "submit": "Create",
-            "submitting": "Creating..."
-        },
-        "card": {
-            "empty": "No rules",
-            "activate": "Set as active",
-            "cooling": "Cooling {seconds}s",
-            "affinity": "Affinity {seconds}s",
-            "metricTitle": "Sampled {samples} requests; sliding-average first-response latency and success rate used by routing strategies"
-        },
-        "detail": {
-            "actions": {
-                "cancel": "Cancel",
-                "save": "Save",
-                "confirmDelete": "Confirm Delete"
-            }
-        },
-        "form": {
-            "name": "Model Name",
-            "mode": "Routing Mode",
-            "modeHint": "Manual pins the selected member; the other strategies pick members automatically by their own dimension and switch on failure",
-            "manual": "Manual",
-            "failover": "Failover",
-            "members": "Members",
-            "relay": "Routing",
-            "presetHint": "Apply recommended defaults for this mode; existing manual values are not overwritten automatically",
-            "applyPreset": "Apply Mode Defaults",
-            "retryCount": "Maximum Attempts",
-            "retryCountHint": "Total attempts per member, including the first request",
-            "retryInterval": "Retry Interval (s)",
-            "retryIntervalHint": "Wait time between attempts on the same member",
-            "nonStreamTimeout": "Non-stream Timeout (s)",
-            "nonStreamTimeoutHint": "Maximum wait for a complete non-stream response",
-            "streamTimeout": "Stream First Event Timeout (s)",
-            "streamTimeoutHint": "Maximum wait for the first valid stream event",
-            "cooldown": "Cooldown (s)",
-            "cooldownHint": "Time a member is paused after retries are exhausted",
-            "affinity": "Failover Affinity (s)",
-            "affinityHint": "Time to keep the fallback member after its first successful request",
-            "items": "Member Order",
-            "addItem": "Add Model",
-            "autoAdd": "Auto Add",
-            "autoAddTitle": "Auto-add {count} matching unselected member(s)",
-            "autoAddNeedKeyword": "Type a model or channel keyword first",
-            "autoAddNoMatch": "No matches: adjust the keyword",
-            "autoAddAllAdded": "All matches already added",
-            "autoAddDone": "Auto-added {count} member(s)",
-            "clear": "Clear",
-            "price": "Lowest Price",
-            "latency": "Lowest Latency",
-            "success": "Highest Success",
-            "score": "Weighted Score",
-            "random": "Random",
-            "priceMetric": "Price Metric",
-            "priceMetricHint": "Which price dimension the lowest-price and weighted-score strategies compare",
-            "priceMetricBlended": "Avg of input & output",
-            "priceMetricInput": "Input only",
-            "priceMetricOutput": "Output only",
-            "metricWindow": "Metric Sample Window",
-            "metricWindowHint": "Smoothing window (5-200) for latency and success metrics; larger is stabler, smaller reacts faster",
-            "scorePriceWeight": "Score: Price Weight",
-            "scoreLatencyWeight": "Score: Latency Weight",
-            "scoreSuccessWeight": "Score: Success Weight",
-            "scoreWeightHint": "Weights are relative (0-100), any mix works; set 0 to leave a dimension uncustomized so it follows the system default (adjustable by admins on the settings page)",
-            "reliabilityFloor": "Score: Reliability Floor",
-            "reliabilityFloorHint": "Members below this success-rate percentage rank after healthy members; 0 follows the system default (70%)",
-            "request_timeout_seconds": "Request timeout (seconds)",
-            "request_timeout_secondsHint": "Includes queueing, retries and streaming; default 600 seconds.",
-            "max_total_attempts": "Maximum total attempts",
-            "max_total_attemptsHint": "Total attempts across all members; default 10.",
-            "max_wait_seconds": "Maximum cumulative wait (seconds)",
-            "max_wait_secondsHint": "0 disables waiting; requires positive queue capacity.",
-            "max_waiting_requests": "Waiting queue capacity",
-            "max_waiting_requestsHint": "Default 0 (disabled). Full queue or wait expiry returns 429.",
-            "member_stream_idle_timeout_seconds": "Stream idle timeout (seconds)",
-            "member_stream_idle_timeout_secondsHint": "Abort if no new stream events arrive; default 60 seconds."
-        },
-        "memberPrice": "Read {input} / write {output} per 1M tokens",
-        "modelPrice": "read {input} / write {output} / cache read {cacheRead} / cache write {cacheWrite} (per 1M tokens)"
-    },
-    "model": {
-        "create": {
-            "name": "Model Name",
-            "input": "Input Price",
-            "output": "Output Price",
-            "cacheRead": "Cache Read",
-            "cacheWrite": "Cache Write",
-            "cancel": "Cancel",
-            "submit": "Create",
-            "submitting": "Creating..."
-        },
-        "toast": {
-            "updated": "Model price updated",
-            "updateFailed": "Update failed",
-            "deleted": "Model deleted",
-            "deleteFailed": "Delete failed"
-        },
-        "card": {
-            "inputCache": "Input/Cache",
-            "outputCache": "Output/Cache",
-            "edit": "Edit",
-            "delete": "Delete"
-        },
-        "overlay": {
-            "cancel": "Cancel",
-            "deleting": "Deleting...",
-            "confirmDelete": "Confirm Delete",
-            "input": "Input",
-            "output": "Output",
-            "cacheRead": "Cache Read",
-            "cacheWrite": "Cache Write",
-            "save": "Save"
-        }
+    "info": {
+      "title": "Version Info",
+      "currentVersion": "Current Version",
+      "latestVersion": "Latest Version",
+      "github": "GitHub Repository",
+      "unknown": "Unknown",
+      "versionMismatch": "Version Mismatch",
+      "versionMismatchHint": "Frontend version ({frontend}) does not match backend version ({backend}). This may be a browser cache issue. Please force refresh the page.",
+      "forceRefresh": "Force Refresh",
+      "newVersionAvailable": "New version available",
+      "newVersionAvailableHint": "Please backup your data first, then update the system",
+      "updateNow": "Update Now",
+      "updating": "Updating...",
+      "updateSuccess": "Update successful, service will restart shortly",
+      "updateFailed": "Update failed",
+      "checkNow": "Check for updates",
+      "checking": "Checking...",
+      "checkFailed": "Update check failed",
+      "assetMissing": "No update package is available for this platform",
+      "upToDate": "You are using the latest version",
+      "platform": "Platform",
+      "lastCheck": "Last checked",
+      "releaseNotes": "Release notes",
+      "viewRelease": "View release",
+      "confirmUpdate": "Confirm update",
+      "cancel": "Cancel"
     },
     "log": {
-        "list": {
-            "empty": "No logs yet",
-            "disconnected": "Log stream disconnected, reconnecting"
-        },
-        "status": {
-            "committed": "Responding"
-        },
-        "card": {
-            "errorInfo": "Error Info",
-            "unknownModel": "Unknown model",
-            "detailUnavailable": "Body content unavailable",
-            "requestContent": "Request Body",
-            "group": "Group",
-            "groupUnavailable": "No group matches this request model",
-            "noGroupItems": "No channels are available in this group",
-            "channelChanged": "Channel switched",
-            "channelCleared": "Channel selection cleared",
-            "channelChangeFailed": "Failed to switch channel",
-            "responseContent": "Response Content",
-            "noRequestContent": "(No request content)",
-            "noResponseContent": "(No response content)",
-            "tokens": "tokens",
-            "retryIndex": "Retry {index}",
-            "retryDetails": "Retry Details",
-            "stopRound": "Cancel Current Round",
-            "stopFailed": "Failed to cancel current round",
-            "cancelRequest": "Cancel Current Request",
-            "cancelFailed": "Failed to cancel current request",
-            "waitingChannelSelection": "Waiting for channel selection",
-            "waitingResponse": "Waiting for upstream response",
-            "responseStreaming": "Upstream responded; streaming is in progress",
-            "timeline": "Route timeline",
-            "timelineEmpty": "No upstream attempts yet",
-            "routeReason": {
-                "unavailable": "Unavailable",
-                "rate_or_concurrency_limit": "Rate/concurrency limit",
-                "not_manual_target": "Not manual target",
-                "cooldown": "Cooling down",
-                "selected": "Selected",
-                "eligible": "Eligible",
-                "affinity": "Affinity",
-                "recovery_probe": "Recovery probe",
-                "route_selected": "Route selected",
-                "upstream_limit": "Upstream limited",
-                "upstream_success": "Upstream success",
-                "upstream_timeout": "Upstream timeout",
-                "upstream_failure": "Upstream failure",
-                "request_canceled": "Request canceled",
-                "strategy_manual": "Strategy: manual",
-                "strategy_failover": "Strategy: failover",
-                "strategy_price": "Strategy: price",
-                "strategy_latency": "Strategy: latency",
-                "strategy_success": "Strategy: success",
-                "strategy_score": "Strategy: score",
-                "strategy_random": "Strategy: random"
-            },
-            "attemptStatus": {
-                "running": "Running",
-                "success": "Success",
-                "failed": "Failed",
-                "limited": "Limited",
-                "timeout": "Timeout",
-                "canceled": "Canceled"
-            },
-            "eventPhase": {
-                "received": "Received",
-                "admission": "Admission",
-                "selection": "Selection",
-                "waiting": "Waiting",
-                "dispatch": "Dispatch",
-                "finished": "Finished"
-            },
-            "eventReason": {
-                "request_received": "Request received",
-                "user_admitted": "User admitted",
-                "waiting_for_upstream": "Waiting for upstream",
-                "upstream_admitted": "Upstream admitted",
-                "success": "Success",
-                "failed": "Failed",
-                "canceled": "Canceled",
-                "affinity": "Affinity",
-                "recovery_probe": "Recovery probe"
-            }
-        },
-        "group": "Model Config",
-        "tabs": {
-            "live": "Live",
-            "history": "History"
-        },
-        "history": {
-            "searchPlaceholder": "Search model / channel code / key / error…",
-            "filterIp": "Client IP",
-            "filterModel": "Model",
-            "filterChannel": "Channel",
-            "export": "Export CSV",
-            "search": "Search",
-            "statusAll": "All statuses",
-            "status": {
-                "success": "Success",
-                "failed": "Failed",
-                "canceled": "Canceled",
-                "committed": "Streaming",
-                "running": "Running"
-            },
-            "loading": "Loading…",
-            "loadFailed": "Failed to load history",
-            "retry": "Retry",
-            "empty": "No matching logs",
-            "pagination": {
-                "page": "Page {page} · {total} total",
-                "prev": "Prev",
-                "next": "Next"
-            }
-        }
+      "title": "Log Settings",
+      "clear": {
+        "label": "Clear History Logs",
+        "button": "Clear",
+        "clearing": "Clearing..."
+      },
+      "clearSuccess": "Logs cleared",
+      "clearFailed": "Failed to clear logs"
     },
-    "channel": {
-        "card": {
-            "requestCount": "Requests",
-            "totalCost": "Total Cost",
-            "model": "Model",
-            "successRequests": "Successful Requests",
-            "failedRequests": "Failed Requests",
-            "toast": {
-                "enabled": "Channel enabled",
-                "disabled": "Channel disabled"
-            }
-        },
-        "stats": {
-            "totalRequests": "Total Requests",
-            "totalToken": "Total Tokens",
-            "totalCost": "Total Cost",
-            "avgWaitTime": "Wait Time",
-            "models": "Model",
-            "noModels": "No models selected",
-            "sortByCost": "Cost",
-            "sortByCount": "Count",
-            "sortByTokens": "Tokens",
-            "edit": "Edit",
-            "delete": "Delete",
-            "confirmDelete": "Confirm Delete",
-            "cancel": "Cancel",
-            "cumulative": "Cumulative",
-            "trend": "Last 14 Days",
-            "trendChannel": "Channel total",
-            "trendDate": "Date",
-            "trendRequests": "Requests",
-            "trendSuccessRate": "Success Rate",
-            "trendAvgLatency": "Avg Latency",
-            "trendEmpty": "No data yet"
-        },
-        "form": {
-            "stepPreset": "Start",
-            "stepConnection": "Connection",
-            "stepKeys": "Credentials",
-            "stepGrants": "Models",
-            "stepAdvanced": "Advanced",
-            "name": "Channel name",
-            "baseUrl": "Base URL",
-            "apiKey": "API Key",
-            "enabled": "Enabled",
-            "proxy": "Use proxy",
-            "keys": "Credentials",
-            "keyAdd": "Add credential",
-            "keyName": "Name",
-            "keyEmpty": "Not set",
-            "keysRequiredFirst": "Add a credential first",
-            "detailLoading": "Loading channel configuration",
-            "detailFailed": "Failed to load channel configuration",
-            "grantExpandAll": "Expand all",
-            "grantCollapseAll": "Collapse all",
-            "modelAdd": "Add",
-            "modelCustomPlaceholder": "Model name",
-            "modelRefresh": "Fetch",
-            "modelNoSelected": "No models",
-            "modelRefreshSuccess": "Fetched {count} models",
-            "modelRefreshFailed": "Fetch failed",
-            "modelRefreshEmpty": "No models returned",
-            "channelProxy": "Channel proxy",
-            "matchRegex": "Match regex",
-            "modelAutoAdd": "Auto-add models on save",
-            "modelAutoAddHint": "Probe upstream /models after saving and merge into this channel: add-only, grant bits OR-merged, max 200 new per save.",
-            "paramOverride": "Param override",
-            "customHeader": "Custom headers",
-            "customHeaderKey": "Header key",
-            "customHeaderValue": "Header value",
-            "customHeaderAdd": "Add header",
-            "edit": "Edit",
-            "delete": "Delete",
-            "submit": "Create",
-            "save": "Save",
-            "cancel": "Cancel",
-            "backToStats": "Back to Stats",
-            "grantClearAll": "Clear all models",
-            "modelRemove": "Remove model",
-            "grantRemove": "Remove this key’s grant"
-        }
+    "platform": {
+      "title": "Platform settings",
+      "markupRatio": "Markup ratio",
+      "markupRatioHint": "User price = supply price × (1 + ratio); e.g. 0.2 adds 20%.",
+      "userRegister": "User registration",
+      "userRegisterHint": "Allow new users to self-register.",
+      "resellerRegister": "Reseller registration",
+      "resellerRegisterHint": "Allow reseller self-registration with an application reason.",
+      "approvalRequired": "Registration approval",
+      "approvalRequiredHint": "New accounts stay pending until an admin approves them.",
+      "minBalance": "Minimum balance",
+      "minBalanceHint": "New requests are rejected once available balance would drop below this.",
+      "reserveCap": "Reserve output cap",
+      "reserveCapHint": "Estimated per-request output tokens used for balance reservation.",
+      "reserveImages": "Image reserve (images)",
+      "reserveImagesHint": "Images frozen per image-generation request when n is absent (default 4).",
+      "invalidNumber": "Please enter a valid number"
     },
-    "share": {
-        "shareCode": "Share code",
-        "copyCode": "Copy code",
-        "notPublished": "Not published yet",
-        "manageListing": "Models & pricing",
-        "loadFailed": "Failed to load channels",
-        "loading": "Loading...",
-        "empty": "No channels yet",
-        "toast": {
-            "published": "Published as {code}",
-            "unpublished": "Publication withdrawn",
-            "copied": "Copied"
-        },
-        "listing": {
-            "title": "Models & pricing — {name}",
-            "loading": "Loading models...",
-            "empty": "No models. Fetch the model list in the channel editor first.",
-            "hint": "Listed models without a price bill at 0; prices are per 1M tokens.",
-            "save": "Save",
-            "toast": {
-                "saved": "Saved",
-                "fillNoRef": "No reference price for this model",
-                "fillNone": "No unpriced models to fill",
-                "fillDone": "Filled {count} models"
-            },
-            "column": {
-                "listed": "Listed",
-                "model": "Model",
-                "input": "Input",
-                "output": "Output",
-                "cacheRead": "Cache read",
-                "cacheWrite": "Cache write",
-                "fill": "Ref Price",
-                "userPrice": "User price (in/out)"
-            },
-            "search": "Search models",
-            "counts": "Showing {shown} / {total} models",
-            "changed": "{count} unsaved changes",
-            "zeroPriced": "{count} listed models have no price (e.g. {models}); listing bills them at 0 — set a price first",
-            "userPriceHint": "User price = supply price × (1 + global markup); this is what the user actually pays",
-            "userPriceValue": "in {input} / out {output}",
-            "userPricePerImage": "{value} / image",
-            "mediaHint": "Image models are priced per image (per_image above); token fields stay untouched.",
-            "fillAll": "Fill unpriced",
-            "fillOne": "Fill reference price",
-            "filter": {
-                "all": "All models",
-                "listed": "Listed only",
-                "unlisted": "Unlisted only",
-                "unpriced": "Unpriced only",
-                "empty": "No model matches the current filter"
-            },
-            "refHint": "Reference prices come from the global price table (auto-synced from models.dev and maintained by admin). Adjust to your supply terms before saving."
-        }
+    "scoreWeights": {
+      "label": "Score strategy defaults",
+      "hint": "System-default weight mix for the score routing strategy; applies whenever a group leaves a weight at 0 (uncustomized). Group-level custom values take precedence.",
+      "price": "Price",
+      "latency": "Latency",
+      "success": "Success"
     },
-    "billing": {
-        "loadFailed": "Failed to load",
-        "filters": {
-            "model": "Model",
-            "channel": "Channel",
-            "statusAll": "All statuses",
-            "apply": "Filter",
-            "export": "Export CSV"
-        },
-        "pagination": {
-            "summary": "Page {current}/{pages} · {count} rows"
-        },
-        "ledger": {
-            "title": "Balance Ledger",
-            "hint": "Every hold, release, charge and adjustment",
-            "empty": "No balance movements yet",
-            "kindAll": "All kinds",
-            "kind": {
-                "reserve": "Hold",
-                "settle": "Settle",
-                "release": "Release",
-                "adjust": "Adjust"
-            },
-            "column": {
-                "time": "Time",
-                "kind": "Kind",
-                "frozen": "Hold delta",
-                "amount": "Available delta",
-                "cost": "Charged",
-                "balance": "Balance after",
-                "note": "Note"
-            }
-        },
-        "account": {
-            "title": "Account Overview",
-            "balance": "Available Balance",
-            "frozen": "Frozen",
-            "frozenHint": "Pre-authorized",
-            "totalSpent": "Total Spent",
-            "totalRevenue": "Total Revenue",
-            "totalRecharged": "Total Recharged"
-        },
-        "details": {
-            "title": "Billing Details",
-            "hint": "Filter, page and export",
-            "empty": "No billing records yet",
-            "column": {
-                "time": "Time",
-                "model": "Model",
-                "channel": "Channel",
-                "tokens": "Tokens",
-                "spend": "Spend",
-                "revenue": "Revenue",
-                "unitPrice": "Price/1M",
-                "status": "Status"
-            }
-        },
-        "tokens": {
-            "input": "in",
-            "output": "out",
-            "cacheRead": "cr",
-            "cacheWrite": "cw",
-            "images": "img"
-        },
-        "status": {
-            "settled": "Settled",
-            "refunded": "Refunded"
-        },
-        "trend": {
-            "title": "Spending Trend",
-            "range": "Last 30 days",
-            "empty": "No spending data in the last 30 days",
-            "summary": "Total",
-            "column": {
-                "date": "Date",
-                "requests": "Requests",
-                "tokens": "Tokens",
-                "spend": "Spend"
-            }
-        },
-        "revenue": {
-            "title": "Revenue Trend",
-            "hint": "At supply price",
-            "empty": "No revenue data in the last 30 days",
-            "summary": "Total",
-            "column": {
-                "ownerRevenue": "Owner Revenue",
-                "commission": "Commission"
-            }
-        }
-    },
-    "users": {
-        "title": "User Management",
-        "create": "Create User",
-        "table": {
-            "username": "Username",
-            "role": "Role",
-            "status": "Status",
-            "balance": "Balance",
-            "frozen": "Frozen",
-            "totalSpent": "Total Spent",
-            "totalRevenue": "Total Revenue",
-            "createdAt": "Created At",
-            "actions": "Actions",
-            "unknownDate": "Unknown"
-        },
-        "role": {
-            "admin": "Administrator",
-            "reseller": "Reseller",
-            "user": "User"
-        },
-        "status": {
-            "active": "Active",
-            "pending": "Pending",
-            "disabled": "Disabled"
-        },
-        "form": {
-            "username": "Username",
-            "password": "Password",
-            "passwordOptional": "Password (optional)",
-            "passwordUnchanged": "Leave empty to keep the current password",
-            "role": "Role",
-            "status": "Status",
-            "cancel": "Cancel",
-            "submit": "Create",
-            "submitting": "Creating...",
-            "save": "Save",
-            "saving": "Saving...",
-            "balance": "Balance",
-            "balanceHint": "Set the absolute balance; leave unchanged to skip. Recharge feature comes later."
-        },
-        "action": {
-            "edit": "Edit",
-            "resetPassword": "Reset Password",
-            "delete": "Delete"
-        },
-        "reset": {
-            "description": "Set a new password for {username}.",
-            "newPassword": "New Password",
-            "submit": "Reset",
-            "resetting": "Resetting..."
-        },
-        "delete": {
-            "description": "Delete user {username}? This cannot be undone.",
-            "submit": "Delete",
-            "deleting": "Deleting..."
-        },
-        "toast": {
-            "created": "User created",
-            "createFailed": "Failed to create user",
-            "updated": "User updated",
-            "updateFailed": "Failed to update user",
-            "passwordReset": "Password reset",
-            "resetFailed": "Failed to reset password",
-            "deleted": "User deleted",
-            "deleteFailed": "Failed to delete user"
-        },
-        "list": {
-            "empty": "No users yet",
-            "error": "Failed to load users",
-            "retry": "Retry"
-        }
-    },
-    "audit": {
-        "title": "Audit Log",
-        "total": "{total} records",
-        "refresh": "Refresh",
-        "loading": "Loading...",
-        "error": "Failed to load audit records",
-        "retry": "Retry",
-        "empty": "No audit records yet",
-        "filters": {
-            "keyword": "Search operator, target, or detail",
-            "operator": "Operator",
-            "actionAll": "All actions",
-            "from": "Start date",
-            "to": "End date",
-            "search": "Search",
-            "reset": "Reset",
-            "clear": "Clear search",
-            "export": "Export CSV"
-        },
-        "table": {
-            "time": "Time",
-            "operator": "Operator",
-            "action": "Action",
-            "target": "Target",
-            "detail": "Detail"
-        },
-        "pagination": {
-            "page": "Page {page} / {total} records",
-            "prev": "Prev",
-            "next": "Next"
-        },
-        "action": {
-            "user.create": "Create user",
-            "user.update": "Update user",
-            "user.balance": "Adjust balance",
-            "user.reset-password": "Reset password",
-            "user.delete": "Delete user",
-            "setting.set": "Change setting",
-            "backup.export": "Export backup",
-            "backup.import": "Import backup",
-            "log.clear": "Clear logs",
-            "channel.publish": "Publish channel",
-            "model.create": "Create model price",
-            "model.update": "Update model price",
-            "model.delete": "Delete model price",
-            "model.update-price": "Sync model prices",
-            "model.rebuild-price": "Rebuild model prices",
-            "update.core": "Update core",
-            "audit.export": "Export audit logs"
-        }
-    },
-    "ratelimit": {
-        "title": "Rate Limit",
-        "total": "{total} policies",
-        "refresh": "Refresh",
-        "create": "New Policy",
-        "edit": "Edit Policy",
-        "loading": "Loading...",
-        "error": "Failed to load rate limit policies",
-        "retry": "Retry",
-        "empty": "No rate limit policies",
-        "filters": {
-            "scopeAll": "All scopes",
-            "clear": "Clear"
-        },
-        "scope": {
-            "system": "System",
-            "user": "User",
-            "api_key": "API Key",
-            "group": "Group",
-            "channel": "Channel",
-            "channel_key": "Channel Key",
-            "channel_model": "Channel Model"
-        },
-        "form": {
-            "scopeType": "Scope",
-            "scopeTarget": "Target",
-            "scopeTargetHint": "Select target",
-            "scopeIdHint": "Target ID",
-            "modelName": "Model",
-            "modelNameHint": "Empty means all models",
-            "rpm": "RPM (requests/min)",
-            "tpm": "TPM (tokens/min)",
-            "enabled": "Enabled",
-            "save": "Save",
-            "cancel": "Cancel",
-            "hint": "0 means unlimited. All-model budgets are shared; model-specific budgets also apply. System policies are per-entity defaults."
-        },
-        "table": {
-            "scope": "Scope",
-            "model": "Model",
-            "rpm": "RPM",
-            "tpm": "TPM",
-            "status": "Status",
-            "updated": "Updated",
-            "actions": "Actions",
-            "allModels": "All models",
-            "unlimited": "Unlimited",
-            "enabled": "Enabled",
-            "disabled": "Disabled"
-        },
-        "inspect": {
-            "title": "Live Usage",
-            "rpm": "Effective RPM",
-            "tpm": "Effective TPM",
-            "requests": "Requests this window",
-            "tokens": "Tokens this window",
-            "resetAt": "Window resets",
-            "blocked": "Blocked",
-            "empty": "Select a scope to view live usage"
-        },
-        "usage": {
-            "hour": "Hour",
-            "requests": "Requests",
-            "input": "Input tokens",
-            "output": "Output tokens",
-            "rejected": "Rejected"
-        },
-        "concurrent": "Concurrent limit",
-        "active": "Active requests"
-    },
-    "ops": {
-        "title": "Ops Center",
-        "overview": {
-            "requests": "24h Requests",
-            "successRate": "24h Success",
-            "tokens": "24h Tokens",
-            "cost": "24h Cost",
-            "active": "In Flight",
-            "channels": "Channels On/Total",
-            "alerts": "24h Alerts"
-        },
-        "saved": "Saved",
-        "saveFailed": "Save failed",
-        "refresh": "Refresh",
-        "running": "Running...",
-        "loading": "Loading...",
-        "empty": "No data yet",
-        "loadFailed": "Failed to load",
-        "tabs": {
-            "reconcile": "Billing Reconcile",
-            "flow": "Balance Flow",
-            "backup": "Backups",
-            "archive": "Log Archive",
-            "health": "Channel Health",
-            "alerts": "Alerts"
-        },
-        "reconcile": {
-            "desc": "Daily reconciliation of billing and settlements; mismatches plus backup/archive failures raise alerts and push to the webhook."
-        },
-        "flow": {
-            "desc": "Reserve/settle/release balance flow (latest 100). Admins may filter by user ID.",
-            "userFilter": "Filter by user ID",
-            "requestId": "Request ID",
-            "userId": "User ID",
-            "kind": "Kind",
-            "amount": "Amount",
-            "settled": "Settled",
-            "settledYes": "Settled",
-            "settledNo": "Unsettled",
-            "userCost": "User cost",
-            "time": "Time",
-            "kindReserve": "Reserve",
-            "kindSettle": "Settle",
-            "kindRelease": "Release"
-        },
-        "backup": {
-            "desc": "Consistent SQLite snapshots stored under data/backups/.",
-            "run": "Back up now",
-            "runSuccess": "Backup finished: {file}",
-            "runFailed": "Backup failed",
-            "name": "File",
-            "size": "Size",
-            "time": "Time"
-        },
-        "archive": {
-            "desc": "Request logs are archived as NDJSON per day before deletion; current retention is {days} days, archives live in data/archives/.",
-            "run": "Archive & clean now",
-            "runSuccess": "Done: archived {archived}, deleted {deleted}",
-            "runFailed": "Archive/clean failed",
-            "name": "File",
-            "size": "Size",
-            "time": "Time"
-        },
-        "health": {
-            "desc": "Channel probe records (enable health check in settings). 5 consecutive failures mark a channel down; a healthy probe slower than the threshold marks it degraded; recovery is announced automatically.",
-            "runNow": "Probe now",
-            "runSuccess": "Probe finished",
-            "runFailed": "Probe failed"
-        },
-        "alerts": {
-            "desc": "Down/recovered/degraded, reconcile diff, backup/archive and billing-settle failures; forwarded to the webhook when configured, deduplicated per kind for 10 minutes.",
-            "channel": "Channel",
-            "kind": "Kind",
-            "reason": "Reason",
-            "notified": "Notified",
-            "yes": "Yes",
-            "no": "No",
-            "time": "Time",
-            "kindDown": "Down",
-            "kindRecovered": "Recovered",
-            "kindDegraded": "Degraded",
-            "kindMismatch": "Reconcile diff",
-            "kindBackup": "Backup failed",
-            "kindArchive": "Archive failed",
-            "kindBilling": "Billing failed",
-            "kindTest": "Test",
-            "kindLowBalance": "Balance floor reached"
-        },
-        "settings": {
-            "title": "Operational Reliability",
-            "logRetention": "Log retention (days)",
-            "logRetentionHint": "Keep request logs for 1-3650 days, default 7",
-            "logStoreBody": "Store request/response bodies",
-            "logStoreBodyHint": "When off, only overview and usage are recorded",
-            "logArchive": "Archive before cleanup",
-            "logArchiveHint": "Expired logs are written to the archive dir before deletion",
-            "logMaskFields": "Extra mask fields",
-            "logMaskFieldsHint": "Comma-separated JSON field names",
-            "autoBackup": "Automatic backup",
-            "autoBackupHint": "Scheduled consistent SQLite snapshots",
-            "autoBackupKeep": "Backups to keep",
-            "autoBackupInterval": "Backup interval (hours)",
-            "healthCheck": "Channel health probe",
-            "healthCheckHint": "Sends real requests upstream, may incur cost",
-            "healthCheckInterval": "Probe interval (minutes)",
-            "webhook": "Alert webhook",
-            "webhookHint": "http/https URL; leave empty for in-app only",
-            "healthLatencyHint": "Healthy probes slower than this fire a degraded alert; 0 disables",
-            "healthLatency": "Latency warning threshold (ms)",
-            "webhookTest": "Test",
-            "webhookTesting": "Sending...",
-            "webhookTestOk": "Webhook is reachable",
-            "webhookTestFail": "Webhook test failed",
-            "backupEncrypt": "Backup encryption",
-            "backupEncryptHint": "Encrypt backups with AES-256; passphrase comes from config.json backup.passphrase or OCTOPUS_BACKUP_PASSPHRASE",
-            "backupRemote": "Offsite backup push",
-            "alertDedup": "Alert dedup window (minutes)",
-            "alertDedupHint": "Same channel, kind and reason alerts only once per window; 0 disables dedup",
-            "alertFailStreak": "Failures before marking down",
-            "alertFailStreakHint": "Consecutive failed probes required to declare a channel down; suppresses single blips, default 5",
-            "metricsAuth": "/metrics authentication",
-            "metricsAuthHint": "When on, scraping /metrics requires a token; /healthz stays open as a liveness probe",
-            "metricsToken": "Scrape token",
-            "metricsTokenHint": "Scrape with Authorization: Bearer <token> or ?token=<token>; the credential is never backed up — regenerate it after a restore",
-            "metricsTokenCopied": "Token copied",
-            "metricsTokenRotate": "Regenerate",
-            "metricsTokenRotated": "Token rotated; the old one no longer works",
-            "backupRemoteHint": "Push the backup and checksum to WebDAV; credentials live in config.json backup.remote_*, failures raise alerts"
-        }
+    "systemInfo": {
+      "title": "System Information",
+      "siteName": "Site name",
+      "siteNameHint": "Shown in the browser tab title, on the login page and in every header; leave empty to use the default name.",
+      "siteNamePlaceholder": "e.g. Octopus Gateway",
+      "siteContact": "Contact",
+      "siteContactHint": "How users can reach support; an email address or group link.",
+      "siteContactPlaceholder": "e.g. support@example.com",
+      "siteDescription": "Description",
+      "siteDescriptionHint": "One line describing this site, shown under the title on the login page.",
+      "siteDescriptionPlaceholder": "e.g. Fast and stable AI model API gateway",
+      "announcementEnabled": "Enable announcement",
+      "announcementEnabledHint": "Show the announcement as a banner to every signed-in user.",
+      "announcement": "Announcement",
+      "announcementHint": "Global announcement body; leave empty to hide it.",
+      "announcementPlaceholder": "e.g. Maintenance tonight from 23:00, about 30 minutes",
+      "maintenanceMode": "Maintenance mode",
+      "maintenanceModeHint": "When on, only administrators can sign in; other accounts are rejected and a banner is shown to everyone.",
+      "maintenanceNotice": "Maintenance notice",
+      "maintenanceNoticeHint": "Message shown to users whose sign-in is rejected.",
+      "maintenanceNoticePlaceholder": "e.g. The service is under maintenance, please retry later"
     }
+  },
+  "group": {
+    "toast": {
+      "createFailed": "Create failed",
+      "updated": "Updated successfully",
+      "updateFailed": "Update failed",
+      "deleted": "Deleted successfully"
+    },
+    "create": {
+      "submit": "Create",
+      "submitting": "Creating..."
+    },
+    "card": {
+      "empty": "No rules",
+      "activate": "Set as active",
+      "cooling": "Cooling {seconds}s",
+      "affinity": "Affinity {seconds}s",
+      "metricTitle": "Sampled {samples} requests; sliding-average first-response latency and success rate used by routing strategies"
+    },
+    "detail": {
+      "actions": {
+        "cancel": "Cancel",
+        "save": "Save",
+        "confirmDelete": "Confirm Delete"
+      }
+    },
+    "form": {
+      "name": "Model Name",
+      "mode": "Routing Mode",
+      "modeHint": "Manual pins the selected member; the other strategies pick members automatically by their own dimension and switch on failure",
+      "manual": "Manual",
+      "failover": "Failover",
+      "members": "Members",
+      "relay": "Routing",
+      "presetHint": "Apply recommended defaults for this mode; existing manual values are not overwritten automatically",
+      "applyPreset": "Apply Mode Defaults",
+      "retryCount": "Maximum Attempts",
+      "retryCountHint": "Total attempts per member, including the first request",
+      "retryInterval": "Retry Interval (s)",
+      "retryIntervalHint": "Wait time between attempts on the same member",
+      "nonStreamTimeout": "Non-stream Timeout (s)",
+      "nonStreamTimeoutHint": "Maximum wait for a complete non-stream response",
+      "streamTimeout": "Stream First Event Timeout (s)",
+      "streamTimeoutHint": "Maximum wait for the first valid stream event",
+      "cooldown": "Cooldown (s)",
+      "cooldownHint": "Time a member is paused after retries are exhausted",
+      "affinity": "Failover Affinity (s)",
+      "affinityHint": "Time to keep the fallback member after its first successful request",
+      "items": "Member Order",
+      "addItem": "Add Model",
+      "autoAdd": "Auto Add",
+      "autoAddTitle": "Auto-add {count} matching unselected member(s)",
+      "autoAddNeedKeyword": "Type a model or channel keyword first",
+      "autoAddNoMatch": "No matches: adjust the keyword",
+      "autoAddAllAdded": "All matches already added",
+      "autoAddDone": "Auto-added {count} member(s)",
+      "clear": "Clear",
+      "price": "Lowest Price",
+      "latency": "Lowest Latency",
+      "success": "Highest Success",
+      "score": "Weighted Score",
+      "random": "Random",
+      "priceMetric": "Price Metric",
+      "priceMetricHint": "Which price dimension the lowest-price and weighted-score strategies compare",
+      "priceMetricBlended": "Avg of input & output",
+      "priceMetricInput": "Input only",
+      "priceMetricOutput": "Output only",
+      "metricWindow": "Metric Sample Window",
+      "metricWindowHint": "Smoothing window (5-200) for latency and success metrics; larger is stabler, smaller reacts faster",
+      "scorePriceWeight": "Score: Price Weight",
+      "scoreLatencyWeight": "Score: Latency Weight",
+      "scoreSuccessWeight": "Score: Success Weight",
+      "scoreWeightHint": "Weights are relative (0-100), any mix works; set 0 to leave a dimension uncustomized so it follows the system default (adjustable by admins on the settings page)",
+      "reliabilityFloor": "Score: Reliability Floor",
+      "reliabilityFloorHint": "Members below this success-rate percentage rank after healthy members; 0 follows the system default (70%)",
+      "request_timeout_seconds": "Request timeout (seconds)",
+      "request_timeout_secondsHint": "Includes queueing, retries and streaming; default 600 seconds.",
+      "max_total_attempts": "Maximum total attempts",
+      "max_total_attemptsHint": "Total attempts across all members; default 10.",
+      "max_wait_seconds": "Maximum cumulative wait (seconds)",
+      "max_wait_secondsHint": "0 disables waiting; requires positive queue capacity.",
+      "max_waiting_requests": "Waiting queue capacity",
+      "max_waiting_requestsHint": "Default 0 (disabled). Full queue or wait expiry returns 429.",
+      "member_stream_idle_timeout_seconds": "Stream idle timeout (seconds)",
+      "member_stream_idle_timeout_secondsHint": "Abort if no new stream events arrive; default 60 seconds."
+    },
+    "memberPrice": "Read {input} / write {output} per 1M tokens",
+    "modelPrice": "read {input} / write {output} / cache read {cacheRead} / cache write {cacheWrite} (per 1M tokens)"
+  },
+  "model": {
+    "create": {
+      "name": "Model Name",
+      "input": "Input Price",
+      "output": "Output Price",
+      "cacheRead": "Cache Read",
+      "cacheWrite": "Cache Write",
+      "cancel": "Cancel",
+      "submit": "Create",
+      "submitting": "Creating..."
+    },
+    "toast": {
+      "updated": "Model price updated",
+      "updateFailed": "Update failed",
+      "deleted": "Model deleted",
+      "deleteFailed": "Delete failed"
+    },
+    "card": {
+      "inputCache": "Input/Cache",
+      "outputCache": "Output/Cache",
+      "edit": "Edit",
+      "delete": "Delete",
+      "scoreLine": "≈{latency} · {success}% ({samples} samples)",
+      "scoreTitle": "Routing score for this upstream model, sampled across every group and user: sliding-average first-response latency and success rate.",
+      "scoreCold": "No samples yet"
+    },
+    "overlay": {
+      "cancel": "Cancel",
+      "deleting": "Deleting...",
+      "confirmDelete": "Confirm Delete",
+      "input": "Input",
+      "output": "Output",
+      "cacheRead": "Cache Read",
+      "cacheWrite": "Cache Write",
+      "save": "Save"
+    }
+  },
+  "log": {
+    "list": {
+      "empty": "No logs yet",
+      "disconnected": "Log stream disconnected, reconnecting"
+    },
+    "status": {
+      "committed": "Responding"
+    },
+    "card": {
+      "errorInfo": "Error Info",
+      "unknownModel": "Unknown model",
+      "detailUnavailable": "Body content unavailable",
+      "requestContent": "Request Body",
+      "group": "Group",
+      "groupUnavailable": "No group matches this request model",
+      "noGroupItems": "No channels are available in this group",
+      "channelChanged": "Channel switched",
+      "channelCleared": "Channel selection cleared",
+      "channelChangeFailed": "Failed to switch channel",
+      "responseContent": "Response Content",
+      "noRequestContent": "(No request content)",
+      "noResponseContent": "(No response content)",
+      "tokens": "tokens",
+      "retryIndex": "Retry {index}",
+      "retryDetails": "Retry Details",
+      "stopRound": "Cancel Current Round",
+      "stopFailed": "Failed to cancel current round",
+      "cancelRequest": "Cancel Current Request",
+      "cancelFailed": "Failed to cancel current request",
+      "waitingChannelSelection": "Waiting for channel selection",
+      "waitingResponse": "Waiting for upstream response",
+      "responseStreaming": "Upstream responded; streaming is in progress",
+      "timeline": "Route timeline",
+      "timelineEmpty": "No upstream attempts yet",
+      "routeReason": {
+        "unavailable": "Unavailable",
+        "rate_or_concurrency_limit": "Rate/concurrency limit",
+        "not_manual_target": "Not manual target",
+        "cooldown": "Cooling down",
+        "selected": "Selected",
+        "eligible": "Eligible",
+        "affinity": "Affinity",
+        "recovery_probe": "Recovery probe",
+        "route_selected": "Route selected",
+        "upstream_limit": "Upstream limited",
+        "upstream_success": "Upstream success",
+        "upstream_timeout": "Upstream timeout",
+        "upstream_failure": "Upstream failure",
+        "request_canceled": "Request canceled",
+        "strategy_manual": "Strategy: manual",
+        "strategy_failover": "Strategy: failover",
+        "strategy_price": "Strategy: price",
+        "strategy_latency": "Strategy: latency",
+        "strategy_success": "Strategy: success",
+        "strategy_score": "Strategy: score",
+        "strategy_random": "Strategy: random"
+      },
+      "attemptStatus": {
+        "running": "Running",
+        "success": "Success",
+        "failed": "Failed",
+        "limited": "Limited",
+        "timeout": "Timeout",
+        "canceled": "Canceled"
+      },
+      "eventPhase": {
+        "received": "Received",
+        "admission": "Admission",
+        "selection": "Selection",
+        "waiting": "Waiting",
+        "dispatch": "Dispatch",
+        "finished": "Finished"
+      },
+      "eventReason": {
+        "request_received": "Request received",
+        "user_admitted": "User admitted",
+        "waiting_for_upstream": "Waiting for upstream",
+        "upstream_admitted": "Upstream admitted",
+        "success": "Success",
+        "failed": "Failed",
+        "canceled": "Canceled",
+        "affinity": "Affinity",
+        "recovery_probe": "Recovery probe"
+      }
+    },
+    "group": "Model Config",
+    "tabs": {
+      "live": "Live",
+      "history": "History"
+    },
+    "history": {
+      "searchPlaceholder": "Search model / channel code / key / error…",
+      "filterIp": "Client IP",
+      "filterModel": "Model",
+      "filterChannel": "Channel",
+      "export": "Export CSV",
+      "search": "Search",
+      "statusAll": "All statuses",
+      "status": {
+        "success": "Success",
+        "failed": "Failed",
+        "canceled": "Canceled",
+        "committed": "Streaming",
+        "running": "Running"
+      },
+      "loading": "Loading…",
+      "loadFailed": "Failed to load history",
+      "retry": "Retry",
+      "empty": "No matching logs",
+      "pagination": {
+        "page": "Page {page} · {total} total",
+        "prev": "Prev",
+        "next": "Next"
+      }
+    }
+  },
+  "channel": {
+    "card": {
+      "requestCount": "Requests",
+      "totalCost": "Total Cost",
+      "model": "Model",
+      "successRequests": "Successful Requests",
+      "failedRequests": "Failed Requests",
+      "toast": {
+        "enabled": "Channel enabled",
+        "disabled": "Channel disabled"
+      }
+    },
+    "stats": {
+      "totalRequests": "Total Requests",
+      "totalToken": "Total Tokens",
+      "totalCost": "Total Cost",
+      "avgWaitTime": "Wait Time",
+      "models": "Model",
+      "noModels": "No models selected",
+      "sortByCost": "Cost",
+      "sortByCount": "Count",
+      "sortByTokens": "Tokens",
+      "edit": "Edit",
+      "delete": "Delete",
+      "confirmDelete": "Confirm Delete",
+      "cancel": "Cancel",
+      "cumulative": "Cumulative",
+      "trend": "Last 14 Days",
+      "trendChannel": "Channel total",
+      "trendDate": "Date",
+      "trendRequests": "Requests",
+      "trendSuccessRate": "Success Rate",
+      "trendAvgLatency": "Avg Latency",
+      "trendEmpty": "No data yet"
+    },
+    "form": {
+      "stepPreset": "Start",
+      "stepConnection": "Connection",
+      "stepKeys": "Credentials",
+      "stepGrants": "Models",
+      "stepAdvanced": "Advanced",
+      "name": "Channel name",
+      "baseUrl": "Base URL",
+      "apiKey": "API Key",
+      "enabled": "Enabled",
+      "proxy": "Use proxy",
+      "keys": "Credentials",
+      "keyAdd": "Add credential",
+      "keyName": "Name",
+      "keyEmpty": "Not set",
+      "keysRequiredFirst": "Add a credential first",
+      "detailLoading": "Loading channel configuration",
+      "detailFailed": "Failed to load channel configuration",
+      "grantExpandAll": "Expand all",
+      "grantCollapseAll": "Collapse all",
+      "modelAdd": "Add",
+      "modelCustomPlaceholder": "Model name",
+      "modelRefresh": "Fetch",
+      "modelNoSelected": "No models",
+      "modelRefreshSuccess": "Fetched {count} models",
+      "modelRefreshFailed": "Fetch failed",
+      "modelRefreshEmpty": "No models returned",
+      "channelProxy": "Channel proxy",
+      "matchRegex": "Match regex",
+      "modelAutoAdd": "Auto-add models on save",
+      "modelAutoAddHint": "Probe upstream /models after saving and merge into this channel: add-only, grant bits OR-merged, max 200 new per save.",
+      "paramOverride": "Param override",
+      "customHeader": "Custom headers",
+      "customHeaderKey": "Header key",
+      "customHeaderValue": "Header value",
+      "customHeaderAdd": "Add header",
+      "edit": "Edit",
+      "delete": "Delete",
+      "submit": "Create",
+      "save": "Save",
+      "cancel": "Cancel",
+      "backToStats": "Back to Stats",
+      "grantClearAll": "Clear all models",
+      "modelRemove": "Remove model",
+      "grantRemove": "Remove this key’s grant"
+    }
+  },
+  "share": {
+    "shareCode": "Share code",
+    "copyCode": "Copy code",
+    "notPublished": "Not published yet",
+    "manageListing": "Models & pricing",
+    "loadFailed": "Failed to load channels",
+    "loading": "Loading...",
+    "empty": "No channels yet",
+    "toast": {
+      "published": "Published as {code}",
+      "unpublished": "Publication withdrawn",
+      "copied": "Copied"
+    },
+    "listing": {
+      "title": "Models & pricing — {name}",
+      "loading": "Loading models...",
+      "empty": "No models. Fetch the model list in the channel editor first.",
+      "hint": "Listed models without a price bill at 0; prices are per 1M tokens.",
+      "save": "Save",
+      "toast": {
+        "saved": "Saved",
+        "fillNoRef": "No reference price for this model",
+        "fillNone": "No unpriced models to fill",
+        "fillDone": "Filled {count} models"
+      },
+      "column": {
+        "listed": "Listed",
+        "model": "Model",
+        "input": "Input",
+        "output": "Output",
+        "cacheRead": "Cache read",
+        "cacheWrite": "Cache write",
+        "fill": "Ref Price",
+        "userPrice": "User price (in/out)"
+      },
+      "search": "Search models",
+      "counts": "Showing {shown} / {total} models",
+      "changed": "{count} unsaved changes",
+      "zeroPriced": "{count} listed models have no price (e.g. {models}); listing bills them at 0 — set a price first",
+      "userPriceHint": "User price = supply price × (1 + global markup); this is what the user actually pays",
+      "userPriceValue": "in {input} / out {output}",
+      "userPricePerImage": "{value} / image",
+      "mediaHint": "Image models are priced per image (per_image above); token fields stay untouched.",
+      "fillAll": "Fill unpriced",
+      "fillOne": "Fill reference price",
+      "filter": {
+        "all": "All models",
+        "listed": "Listed only",
+        "unlisted": "Unlisted only",
+        "unpriced": "Unpriced only",
+        "empty": "No model matches the current filter"
+      },
+      "refHint": "Reference prices come from the global price table (auto-synced from models.dev and maintained by admin). Adjust to your supply terms before saving."
+    }
+  },
+  "billing": {
+    "loadFailed": "Failed to load",
+    "filters": {
+      "model": "Model",
+      "channel": "Channel",
+      "statusAll": "All statuses",
+      "apply": "Filter",
+      "export": "Export CSV"
+    },
+    "pagination": {
+      "summary": "Page {current}/{pages} · {count} rows"
+    },
+    "ledger": {
+      "title": "Balance Ledger",
+      "hint": "Every hold, release, charge and adjustment",
+      "empty": "No balance movements yet",
+      "kindAll": "All kinds",
+      "kind": {
+        "reserve": "Hold",
+        "settle": "Settle",
+        "release": "Release",
+        "adjust": "Adjust"
+      },
+      "column": {
+        "time": "Time",
+        "kind": "Kind",
+        "frozen": "Hold delta",
+        "amount": "Available delta",
+        "cost": "Charged",
+        "balance": "Balance after",
+        "note": "Note"
+      }
+    },
+    "account": {
+      "title": "Account Overview",
+      "balance": "Available Balance",
+      "frozen": "Frozen",
+      "frozenHint": "Pre-authorized",
+      "totalSpent": "Total Spent",
+      "totalRevenue": "Total Revenue",
+      "totalRecharged": "Total Recharged"
+    },
+    "details": {
+      "title": "Billing Details",
+      "hint": "Filter, page and export",
+      "empty": "No billing records yet",
+      "column": {
+        "time": "Time",
+        "model": "Model",
+        "channel": "Channel",
+        "tokens": "Tokens",
+        "spend": "Spend",
+        "revenue": "Revenue",
+        "unitPrice": "Price/1M",
+        "status": "Status"
+      }
+    },
+    "tokens": {
+      "input": "in",
+      "output": "out",
+      "cacheRead": "cr",
+      "cacheWrite": "cw",
+      "images": "img"
+    },
+    "status": {
+      "settled": "Settled",
+      "refunded": "Refunded"
+    },
+    "trend": {
+      "title": "Spending Trend",
+      "range": "Last 30 days",
+      "empty": "No spending data in the last 30 days",
+      "summary": "Total",
+      "column": {
+        "date": "Date",
+        "requests": "Requests",
+        "tokens": "Tokens",
+        "spend": "Spend"
+      }
+    },
+    "revenue": {
+      "title": "Revenue Trend",
+      "hint": "At supply price",
+      "empty": "No revenue data in the last 30 days",
+      "summary": "Total",
+      "column": {
+        "ownerRevenue": "Owner Revenue",
+        "commission": "Commission"
+      }
+    }
+  },
+  "users": {
+    "title": "User Management",
+    "create": "Create User",
+    "table": {
+      "username": "Username",
+      "role": "Role",
+      "status": "Status",
+      "balance": "Balance",
+      "frozen": "Frozen",
+      "totalSpent": "Total Spent",
+      "totalRevenue": "Total Revenue",
+      "createdAt": "Created At",
+      "actions": "Actions",
+      "unknownDate": "Unknown"
+    },
+    "role": {
+      "admin": "Administrator",
+      "reseller": "Reseller",
+      "user": "User"
+    },
+    "status": {
+      "active": "Active",
+      "pending": "Pending",
+      "disabled": "Disabled"
+    },
+    "form": {
+      "username": "Username",
+      "password": "Password",
+      "passwordOptional": "Password (optional)",
+      "passwordUnchanged": "Leave empty to keep the current password",
+      "role": "Role",
+      "status": "Status",
+      "cancel": "Cancel",
+      "submit": "Create",
+      "submitting": "Creating...",
+      "save": "Save",
+      "saving": "Saving...",
+      "balance": "Balance",
+      "balanceHint": "Set the absolute balance; leave unchanged to skip. Recharge feature comes later."
+    },
+    "action": {
+      "edit": "Edit",
+      "resetPassword": "Reset Password",
+      "delete": "Delete"
+    },
+    "reset": {
+      "description": "Set a new password for {username}.",
+      "newPassword": "New Password",
+      "submit": "Reset",
+      "resetting": "Resetting..."
+    },
+    "delete": {
+      "description": "Delete user {username}? This cannot be undone.",
+      "submit": "Delete",
+      "deleting": "Deleting..."
+    },
+    "toast": {
+      "created": "User created",
+      "createFailed": "Failed to create user",
+      "updated": "User updated",
+      "updateFailed": "Failed to update user",
+      "passwordReset": "Password reset",
+      "resetFailed": "Failed to reset password",
+      "deleted": "User deleted",
+      "deleteFailed": "Failed to delete user"
+    },
+    "list": {
+      "empty": "No users yet",
+      "error": "Failed to load users",
+      "retry": "Retry"
+    }
+  },
+  "audit": {
+    "title": "Audit Log",
+    "total": "{total} records",
+    "refresh": "Refresh",
+    "loading": "Loading...",
+    "error": "Failed to load audit records",
+    "retry": "Retry",
+    "empty": "No audit records yet",
+    "filters": {
+      "keyword": "Search operator, target, or detail",
+      "operator": "Operator",
+      "actionAll": "All actions",
+      "from": "Start date",
+      "to": "End date",
+      "search": "Search",
+      "reset": "Reset",
+      "clear": "Clear search",
+      "export": "Export CSV"
+    },
+    "table": {
+      "time": "Time",
+      "operator": "Operator",
+      "action": "Action",
+      "target": "Target",
+      "detail": "Detail"
+    },
+    "pagination": {
+      "page": "Page {page} / {total} records",
+      "prev": "Prev",
+      "next": "Next"
+    },
+    "action": {
+      "user.create": "Create user",
+      "user.update": "Update user",
+      "user.balance": "Adjust balance",
+      "user.reset-password": "Reset password",
+      "user.delete": "Delete user",
+      "setting.set": "Change setting",
+      "backup.export": "Export backup",
+      "backup.import": "Import backup",
+      "log.clear": "Clear logs",
+      "channel.publish": "Publish channel",
+      "model.create": "Create model price",
+      "model.update": "Update model price",
+      "model.delete": "Delete model price",
+      "model.update-price": "Sync model prices",
+      "model.rebuild-price": "Rebuild model prices",
+      "update.core": "Update core",
+      "audit.export": "Export audit logs"
+    }
+  },
+  "ratelimit": {
+    "title": "Rate Limit",
+    "total": "{total} policies",
+    "refresh": "Refresh",
+    "create": "New Policy",
+    "edit": "Edit Policy",
+    "loading": "Loading...",
+    "error": "Failed to load rate limit policies",
+    "retry": "Retry",
+    "empty": "No rate limit policies",
+    "filters": {
+      "scopeAll": "All scopes",
+      "clear": "Clear"
+    },
+    "scope": {
+      "system": "System",
+      "user": "User",
+      "api_key": "API Key",
+      "group": "Group",
+      "channel": "Channel",
+      "channel_key": "Channel Key",
+      "channel_model": "Channel Model"
+    },
+    "form": {
+      "scopeType": "Scope",
+      "scopeTarget": "Target",
+      "scopeTargetHint": "Select target",
+      "scopeIdHint": "Target ID",
+      "modelName": "Model",
+      "modelNameHint": "Empty means all models",
+      "rpm": "RPM (requests/min)",
+      "tpm": "TPM (tokens/min)",
+      "enabled": "Enabled",
+      "save": "Save",
+      "cancel": "Cancel",
+      "hint": "0 means unlimited. All-model budgets are shared; model-specific budgets also apply. System policies are per-entity defaults."
+    },
+    "table": {
+      "scope": "Scope",
+      "model": "Model",
+      "rpm": "RPM",
+      "tpm": "TPM",
+      "status": "Status",
+      "updated": "Updated",
+      "actions": "Actions",
+      "allModels": "All models",
+      "unlimited": "Unlimited",
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "inspect": {
+      "title": "Live Usage",
+      "rpm": "Effective RPM",
+      "tpm": "Effective TPM",
+      "requests": "Requests this window",
+      "tokens": "Tokens this window",
+      "resetAt": "Window resets",
+      "blocked": "Blocked",
+      "empty": "Select a scope to view live usage"
+    },
+    "usage": {
+      "hour": "Hour",
+      "requests": "Requests",
+      "input": "Input tokens",
+      "output": "Output tokens",
+      "rejected": "Rejected"
+    },
+    "concurrent": "Concurrent limit",
+    "active": "Active requests"
+  },
+  "ops": {
+    "title": "Ops Center",
+    "overview": {
+      "requests": "24h Requests",
+      "successRate": "24h Success",
+      "tokens": "24h Tokens",
+      "cost": "24h Cost",
+      "active": "In Flight",
+      "channels": "Channels On/Total",
+      "alerts": "24h Alerts"
+    },
+    "saved": "Saved",
+    "saveFailed": "Save failed",
+    "refresh": "Refresh",
+    "running": "Running...",
+    "loading": "Loading...",
+    "empty": "No data yet",
+    "loadFailed": "Failed to load",
+    "tabs": {
+      "reconcile": "Billing Reconcile",
+      "flow": "Balance Flow",
+      "backup": "Backups",
+      "archive": "Log Archive",
+      "health": "Channel Health",
+      "alerts": "Alerts"
+    },
+    "reconcile": {
+      "desc": "Daily reconciliation of billing and settlements; mismatches plus backup/archive failures raise alerts and push to the webhook."
+    },
+    "flow": {
+      "desc": "Reserve/settle/release balance flow (latest 100). Admins may filter by user ID.",
+      "userFilter": "Filter by user ID",
+      "requestId": "Request ID",
+      "userId": "User ID",
+      "kind": "Kind",
+      "amount": "Amount",
+      "settled": "Settled",
+      "settledYes": "Settled",
+      "settledNo": "Unsettled",
+      "userCost": "User cost",
+      "time": "Time",
+      "kindReserve": "Reserve",
+      "kindSettle": "Settle",
+      "kindRelease": "Release"
+    },
+    "backup": {
+      "desc": "Consistent SQLite snapshots stored under data/backups/.",
+      "run": "Back up now",
+      "runSuccess": "Backup finished: {file}",
+      "runFailed": "Backup failed",
+      "name": "File",
+      "size": "Size",
+      "time": "Time"
+    },
+    "archive": {
+      "desc": "Request logs are archived as NDJSON per day before deletion; current retention is {days} days, archives live in data/archives/.",
+      "run": "Archive & clean now",
+      "runSuccess": "Done: archived {archived}, deleted {deleted}",
+      "runFailed": "Archive/clean failed",
+      "name": "File",
+      "size": "Size",
+      "time": "Time"
+    },
+    "health": {
+      "desc": "Channel probe records (enable health check in settings). 5 consecutive failures mark a channel down; a healthy probe slower than the threshold marks it degraded; recovery is announced automatically.",
+      "runNow": "Probe now",
+      "runSuccess": "Probe finished",
+      "runFailed": "Probe failed"
+    },
+    "alerts": {
+      "desc": "Down/recovered/degraded, reconcile diff, backup/archive and billing-settle failures; forwarded to the webhook when configured, deduplicated per kind for 10 minutes.",
+      "channel": "Channel",
+      "kind": "Kind",
+      "reason": "Reason",
+      "notified": "Notified",
+      "yes": "Yes",
+      "no": "No",
+      "time": "Time",
+      "kindDown": "Down",
+      "kindRecovered": "Recovered",
+      "kindDegraded": "Degraded",
+      "kindMismatch": "Reconcile diff",
+      "kindBackup": "Backup failed",
+      "kindArchive": "Archive failed",
+      "kindBilling": "Billing failed",
+      "kindTest": "Test",
+      "kindLowBalance": "Balance floor reached"
+    },
+    "settings": {
+      "title": "Operational Reliability",
+      "logRetention": "Log retention (days)",
+      "logRetentionHint": "Keep request logs for 1-3650 days, default 7",
+      "logStoreBody": "Store request/response bodies",
+      "logStoreBodyHint": "When off, only overview and usage are recorded",
+      "logArchive": "Archive before cleanup",
+      "logArchiveHint": "Expired logs are written to the archive dir before deletion",
+      "logMaskFields": "Extra mask fields",
+      "logMaskFieldsHint": "Comma-separated JSON field names",
+      "autoBackup": "Automatic backup",
+      "autoBackupHint": "Scheduled consistent SQLite snapshots",
+      "autoBackupKeep": "Backups to keep",
+      "autoBackupInterval": "Backup interval (hours)",
+      "healthCheck": "Channel health probe",
+      "healthCheckHint": "Sends real requests upstream, may incur cost",
+      "healthCheckInterval": "Probe interval (minutes)",
+      "webhook": "Alert webhook",
+      "webhookHint": "http/https URL; leave empty for in-app only",
+      "healthLatencyHint": "Healthy probes slower than this fire a degraded alert; 0 disables",
+      "healthLatency": "Latency warning threshold (ms)",
+      "webhookTest": "Test",
+      "webhookTesting": "Sending...",
+      "webhookTestOk": "Webhook is reachable",
+      "webhookTestFail": "Webhook test failed",
+      "backupEncrypt": "Backup encryption",
+      "backupEncryptHint": "Encrypt backups with AES-256; passphrase comes from config.json backup.passphrase or OCTOPUS_BACKUP_PASSPHRASE",
+      "backupRemote": "Offsite backup push",
+      "alertDedup": "Alert dedup window (minutes)",
+      "alertDedupHint": "Same channel, kind and reason alerts only once per window; 0 disables dedup",
+      "alertFailStreak": "Failures before marking down",
+      "alertFailStreakHint": "Consecutive failed probes required to declare a channel down; suppresses single blips, default 5",
+      "metricsAuth": "/metrics authentication",
+      "metricsAuthHint": "When on, scraping /metrics requires a token; /healthz stays open as a liveness probe",
+      "metricsToken": "Scrape token",
+      "metricsTokenHint": "Scrape with Authorization: Bearer <token> or ?token=<token>; the credential is never backed up — regenerate it after a restore",
+      "metricsTokenCopied": "Token copied",
+      "metricsTokenRotate": "Regenerate",
+      "metricsTokenRotated": "Token rotated; the old one no longer works",
+      "backupRemoteHint": "Push the backup and checksum to WebDAV; credentials live in config.json backup.remote_*, failures raise alerts"
+    }
+  }
 }

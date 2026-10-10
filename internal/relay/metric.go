@@ -1,6 +1,9 @@
 package relay
 
-import "sync"
+import (
+	"sort"
+	"sync"
+)
 
 // memberMetricKey 定位一个分组成员的运行指标。
 type memberMetricKey struct {
@@ -142,5 +145,28 @@ func MemberMetricViews(groupID int, itemIDs []int) []MemberMetricView {
 		}
 		views = append(views, MemberMetricView{ItemID: key.itemID, WaitMs: metric.emaWaitMs, Success: metric.emaSuccess, Samples: metric.samples})
 	}
+	return views
+}
+
+// ModelScoreView 是单个上游渠道模型的全局指标快照, 供模型页卡片展示评分。
+type ModelScoreView struct {
+	ChannelModelID int     `json:"channel_model_id"`
+	WaitMs         float64 `json:"wait_ms"`
+	Success        float64 `json:"success"`
+	Samples        int     `json:"samples"`
+}
+
+// ModelScoreViews 返回全部有观测的上游渠道模型的全局指标快照, 按模型 ID 定序。
+func ModelScoreViews() []ModelScoreView {
+	metricMu.Lock()
+	views := make([]ModelScoreView, 0, len(modelMetrics))
+	for id, metric := range modelMetrics {
+		if metric == nil || metric.samples <= 0 {
+			continue
+		}
+		views = append(views, ModelScoreView{ChannelModelID: id, WaitMs: metric.emaWaitMs, Success: metric.emaSuccess, Samples: metric.samples})
+	}
+	metricMu.Unlock()
+	sort.Slice(views, func(i, j int) bool { return views[i].ChannelModelID < views[j].ChannelModelID })
 	return views
 }

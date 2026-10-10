@@ -461,9 +461,9 @@ const maxMediaPricePerUnit = 1_000.0
 
 // ChannelModelListing 是一个渠道模型的上架配置提交形状。
 type ChannelModelListing struct {
-	Name        string           `json:"name"`                  // 渠道模型名称。
-	Listed      bool             `json:"listed"`                // 是否上架。
-	SupplyPrice model.LLMPrice   `json:"supply_price"`          // 供货价(读/写/缓存读/缓存写); 未设置即 0。
+	Name        string           `json:"name"`                   // 渠道模型名称。
+	Listed      bool             `json:"listed"`                 // 是否上架。
+	SupplyPrice model.LLMPrice   `json:"supply_price"`           // 供货价(读/写/缓存读/缓存写); 未设置即 0。
 	MediaSupply model.MediaPrice `json:"media_supply,omitempty"` // 媒体供货价(每张/每秒/分档); 仅媒体形态模型使用。
 	Kind        model.MediaKind  `json:"kind,omitempty"`         // 模型媒体形态; 只读回显, 由授权协议位推导。
 }
@@ -977,4 +977,37 @@ func clearActiveItems(tx *gorm.DB, grants any) error {
 // grantsOf 返回筛选指定列命中某组主键的授权主键子查询, 供 clearActiveItems 级联定位。
 func grantsOf(tx *gorm.DB, column string, ids []int) *gorm.DB {
 	return tx.Model(&model.ChannelGrant{}).Select("id").Where(column+" IN ?", ids)
+}
+
+// ChannelModelBrief 是渠道模型的展示要素: 上游模型名与归属渠道的对外展示名。
+type ChannelModelBrief struct {
+	ID          int
+	Name        string
+	ChannelName string // 已发布渠道示编码, 未发布渠道示真名。
+}
+
+// ChannelModelBriefs 返回对 scope 可见的渠道模型展示要素, 供模型页把评分按名称归并。
+// 与 ChannelGrantCandidates 同一供给侧口径: 未发布渠道或未上架模型不出现在他人视角,
+// 免得模型评分顺带泄漏内部渠道真名; 归属者与管理员仍可见自己的未发布渠道。
+func ChannelModelBriefs(scope model.Scope) []ChannelModelBrief {
+	briefs := make([]ChannelModelBrief, 0, channelModelCache.Len())
+	for _, channelModel := range channelModelCache.GetAll() {
+		channel, ok := channelCache.Get(channelModel.ChannelID)
+		if !ok {
+			continue
+		}
+		owner := scope.Owns(channel.UserID)
+		if !channel.Shared && !owner {
+			continue
+		}
+		if !channel.Shared && !channelModel.Listed && !owner {
+			continue
+		}
+		name := channel.Name
+		if channel.Shared && channel.ShareCode != "" {
+			name = channel.ShareCode
+		}
+		briefs = append(briefs, ChannelModelBrief{ID: channelModel.ID, Name: channelModel.Name, ChannelName: name})
+	}
+	return briefs
 }
