@@ -413,6 +413,31 @@ func releaseRouteProbe(group model.Group, itemID int) {
 	}
 }
 
+// hasOtherEligible 检查同分组内除了 excludeItemID 之外是否还有可用成员(未冷却、未限流、可用)。
+// 用于决定当前成员失败后是否立即换组, 还是等待重试当前成员。
+func hasOtherEligible(group model.Group, excludeItemID int) bool {
+	routeMu.Lock()
+	route := routes[group.ID]
+	routeMu.Unlock()
+
+	now := time.Now().UnixMilli()
+	for _, item := range group.Items {
+		if item.ID == excludeItemID {
+			continue
+		}
+		if !item.Available || upstreamItemLimited(item) {
+			continue
+		}
+		if route != nil {
+			if deadline, cooling := route.Cooldowns[item.ID]; cooling && deadline > now {
+				continue
+			}
+		}
+		return true
+	}
+	return false
+}
+
 // upstreamItemLimited 判断成员的任一上游维度当前窗口是否已限流触顶。
 func upstreamItemLimited(item model.GroupItem) bool {
 	for _, scope := range upstreamItemScopes(item) {

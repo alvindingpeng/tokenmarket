@@ -42,6 +42,21 @@ func InitSecret() error {
 	return nil
 }
 
+// RotateSecret 轮换全局签名密钥: 生成新密钥、持久化并立即生效, 所有已签发的 JWT 即刻失效。
+// 调用方应在确认轮换后提示管理员重新登录, 原有会话不会被主动吊销(密码验证不涉及 secret)。
+func RotateSecret() (string, error) {
+	buf := make([]byte, 24)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("failed to generate new auth secret: %w", err)
+	}
+	value := hex.EncodeToString(buf)
+	if err := op.SettingUpsert(model.SettingKeyAuthSecret, value); err != nil {
+		return "", fmt.Errorf("failed to persist new auth secret: %w", err)
+	}
+	secret = []byte(value)
+	return value, nil
+}
+
 func GenerateJWTToken(user model.User, expiresSec int) (string, int, error) {
 	now := time.Now()
 	maxAge := int((15 * time.Minute).Seconds())
