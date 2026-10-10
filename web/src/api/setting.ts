@@ -49,6 +49,15 @@ export const SettingKey = {
     AlertWebhookURL: 'alert_webhook_url', // 告警 Webhook 地址, 留空仅站内通知。
     AlertDedupMinutes: 'alert_dedup_minutes', // 告警去重窗口(分钟), 0 表示不去重。
     AlertFailStreak: 'alert_fail_streak', // 连续失败多少次判宕机(抖动抑制)。
+    AlertChannels: 'alert_channels', // 启用的告警渠道(逗号分隔): webhook,telegram,email; 空为仅 webhook。
+    AlertTelegramBotToken: 'alert_telegram_bot_token', // Telegram Bot Token。
+    AlertTelegramChatID: 'alert_telegram_chat_id', // Telegram Chat ID。
+    AlertEmailSMTPHost: 'alert_email_smtp_host', // SMTP 服务器地址。
+    AlertEmailSMTPPort: 'alert_email_smtp_port', // SMTP 端口。
+    AlertEmailUsername: 'alert_email_username', // SMTP 登录账号。
+    AlertEmailPassword: 'alert_email_password', // SMTP 登录密码。
+    AlertEmailFrom: 'alert_email_from', // 发件人地址。
+    AlertEmailTo: 'alert_email_to', // 收件人地址(逗号分隔)。
     MetricsAuth: 'metrics_auth', // 探针鉴权: off(默认开放) | bearer(需令牌)。
 } as const;
 

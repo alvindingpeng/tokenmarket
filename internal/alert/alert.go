@@ -34,6 +34,20 @@ type Alert struct {
 	Timestamp time.Time
 }
 
+// SendOnce 指定单个渠道发送一条告警, 供管理面板做连通性测试; 配置缺失或发送失败原样返回错误。
+func SendOnce(ctx context.Context, channel string, alert Alert) error {
+	switch channel {
+	case "webhook":
+		return sendWebhook(ctx, alert)
+	case "telegram":
+		return sendTelegram(ctx, alert)
+	case "email":
+		return sendEmail(ctx, alert)
+	default:
+		return fmt.Errorf("unknown alert channel %q", channel)
+	}
+}
+
 // Send 根据配置的渠道发送告警: webhook, telegram, email。
 func Send(ctx context.Context, alert Alert) {
 	channelsRaw, err := op.SettingGetString(model.SettingKeyAlertChannels)
