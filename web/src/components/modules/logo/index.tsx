@@ -1,10 +1,23 @@
-// Logo 渲染静态章鱼标识。
 export default function Logo({ size = 48 }: { size?: number | string }) {
     return (
         <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" width={size} height={size} className="text-primary">
-            <path d="M20 90 Q30 90 30 83 Q30 80 27.88 77.88 C25 75 15 65 15 50 C15 30 30 15 50 15 C70 15 85 30 85 50 C85 65 75 75 72.12 77.88 Q70 80 70 83 Q70 90 80 90" fill="none" stroke="currentColor" strokeWidth="6" strokeLinecap="round" />
-            <path d="M43 77 L43 85 C43 87.76 40.76 90 38 90" fill="none" stroke="currentColor" strokeWidth="6" strokeLinecap="round" />
-            <path d="M57 77 L57 85 C57 87.76 59.24 90 62 90" fill="none" stroke="currentColor" strokeWidth="6" strokeLinecap="round" />
+            <defs>
+                <linearGradient id="lg" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+                    <stop offset="0%" stopColor="currentColor"/>
+                    <stop offset="100%" stopColor="currentColor" stopOpacity="0.7"/>
+                </linearGradient>
+            </defs>
+            <path d="M22 50 C22 32 34 18 50 18 C66 18 78 32 78 50" fill="none" stroke="url(#lg)" strokeWidth="5" strokeLinecap="round"/>
+            <path d="M78 50 Q85 62 82 72 Q79 80 74 86" fill="none" stroke="url(#lg)" strokeWidth="4.5" strokeLinecap="round"/>
+            <path d="M74 48 Q82 58 80 68 Q78 74 76 78" fill="none" stroke="url(#lg)" strokeWidth="3.5" strokeLinecap="round"/>
+            <path d="M22 50 Q15 62 18 72 Q21 80 26 86" fill="none" stroke="url(#lg)" strokeWidth="4.5" strokeLinecap="round"/>
+            <path d="M26 48 Q18 58 20 68 Q22 74 24 78" fill="none" stroke="url(#lg)" strokeWidth="3.5" strokeLinecap="round"/>
+            <path d="M74 86 Q70 92 64 90" fill="none" stroke="url(#lg)" strokeWidth="3.5" strokeLinecap="round"/>
+            <path d="M26 86 Q30 92 36 90" fill="none" stroke="url(#lg)" strokeWidth="3.5" strokeLinecap="round"/>
+            <circle cx="50" cy="50" r="5" fill="url(#lg)"/>
+            <path d="M50 55 Q42 62 38 62" fill="none" stroke="url(#lg)" strokeWidth="2" strokeLinecap="round" strokeDasharray="2 3"/>
+            <path d="M50 55 Q58 62 62 62" fill="none" stroke="url(#lg)" strokeWidth="2" strokeLinecap="round" strokeDasharray="2 3"/>
+            <path d="M50 45 L50 32" fill="none" stroke="url(#lg)" strokeWidth="2.5" strokeLinecap="round"/>
         </svg>
     );
 }
