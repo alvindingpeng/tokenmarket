@@ -413,6 +413,11 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				if recordRouteFailure(group, item.ID, failures) {
 					continue
 				}
+				// 同组还有别的可用成员时立即切换, 不等待重试(避免同一失效端点反复阻塞)。
+				if hasOtherEligible(group, item.ID) {
+					recordRouteFailure(group, item.ID, group.RelayConfig.MemberMaxAttempts)
+					continue
+				}
 				timer := time.NewTimer(time.Duration(group.RelayConfig.MemberRetryIntervalSeconds) * time.Second)
 				select {
 				case <-ctx.Done():

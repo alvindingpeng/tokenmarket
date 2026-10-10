@@ -9,6 +9,7 @@ import (
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/relay"
+	"github.com/bestruirui/octopus/internal/server/auth"
 	"github.com/bestruirui/octopus/internal/server/middleware"
 	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/bestruirui/octopus/internal/server/router"
@@ -90,6 +91,11 @@ func init() {
 			router.NewRoute("/alerts/test-webhook", http.MethodPost).
 				Allow(model.RoleAdmin).
 				Handle(testAlertWebhook),
+		).
+		AddRoute(
+			router.NewRoute("/auth-secret/rotate", http.MethodPost).
+				Allow(model.RoleAdmin).
+				Handle(rotateAuthSecret),
 		)
 }
 
@@ -225,6 +231,18 @@ func rotateMetricsToken(c *gin.Context) {
 	}
 	audit(c, "ops.metrics-token-rotate", "", "")
 	resp.Success(c, gin.H{"mode": op.MetricsAuthMode(), "token": token})
+}
+
+// rotateAuthSecret 轮换 JWT 签名密钥: 生成新密钥并立即生效, 所有已签发的令牌即刻失效。
+func rotateAuthSecret(c *gin.Context) {
+	value, err := auth.RotateSecret()
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	audit(c, "ops.auth-secret-rotate", "", "")
+	resp.Success(c, gin.H{"message": "auth secret rotated, all sessions need to relogin"})
+	_ = value // 新密钥不对外暴露, 日志可查修改操作但不可见密钥本身。
 }
 
 // listChannelAlerts 返回告警记录。
