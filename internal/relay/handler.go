@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -254,8 +255,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				continue
 			}
 			channelModel := grant.ChannelModel
-			channelKey := grant.ChannelKey
-
+			
 			// 成员指向的渠道已被删除时同样等待, 该成员可能很快被改回可用渠道。
 			channel, err := op.ChannelGet(channelModel.ChannelID)
 			if err != nil {
@@ -263,6 +263,24 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					return
 				}
 				continue
+			}
+
+			// 动态选择渠道 Key：根据 channel.KeyRotationStrategy 从可用 keys 中选择
+			// 如果 Grant 绑定了固定 key (grant.ChannelKey != nil)，优先使用固定 key（向后兼容）
+			// 否则使用轮换策略动态选择
+			var channelKey *model.ChannelKey
+			if grant.ChannelKey != nil && grant.ChannelKey.Enabled {
+				// Grant 绑定了固定 key，直接使用（兼容旧行为）
+				channelKey = grant.ChannelKey
+			} else {
+				// 使用轮换策略动态选择 key
+				channelKey, err = op.SelectChannelKey(channelModel.ChannelID, channel.KeyRotationStrategy)
+				if err != nil {
+					if !waitAvailable() {
+						return
+					}
+					continue
+				}
 			}
 
 			// 将分组成员配置的真实模型写入本轮上游请求; multipart 表单按字段重写而非 JSON 路径。
@@ -401,6 +419,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				op.ChannelDailyStatsUpdate(channel.ID, metrics)
 				op.ChannelModelDailyStatsUpdate(channelModel.ID, metrics)
 				recordMemberMetric(group.ID, item.ID, channelModel.ID, group.RelayConfig.MetricWindowSize, time.Since(roundStartedAt).Milliseconds(), false)
+			// 记录 Key 错误用于故障熔断
+			if channelKey != nil {
+				op.RecordChannelKeyError(channelKey.ID, "upstream_error")
+			}
 
 				// 成员改变时重新开始累计该成员在本请求内的连续失败次数。
 				if failedItemID == item.ID {
@@ -454,6 +476,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			recordRouteSuccess(group, item.ID)
 			// 记录成员运行指标(首响应耗时与成功), 供延迟/成功率/综合评分策略排名。
 			recordMemberMetric(group.ID, item.ID, channelModel.ID, group.RelayConfig.MetricWindowSize, roundWaitTime, true)
+			// 成功请求重置 Key 错误计数
+			if channelKey != nil {
+				op.ResetChannelKeyErrors(channelKey.ID)
+			}
 			// 非流式已取得最终用量; 流式必须等到末帧聚合后才结算并释放并发租约。
 			if !metadata.Streaming {
 				settleUpstream(upstreamReservation, upstreamScopes, result.usage)
@@ -625,6 +651,16 @@ func reserveBalance(request *RequestState, group model.Group) error {
 		}
 		estimate += maxMediaImage * float64(reserveImages)
 	}
+	// API Key 配额检查: 在余额预扣之前检查请求数/token 配额。
+	if request.apiKeyID > 0 {
+		if err := op.CheckAPIKeyQuota(request.requestCtx, request.apiKeyID); err != nil {
+			if quotaErr, ok := err.(op.QuotaExceeded); ok {
+				return fmt.Errorf("quota exceeded: %s %d/%d", quotaErr.Kind, quotaErr.Current, quotaErr.Limit)
+			}
+			return fmt.Errorf("failed to check quota: %w", err)
+		}
+	}
+
 	reservationID, err := op.BillingReserve(request.UserID, request.ID, estimate)
 	if err != nil {
 		return err
