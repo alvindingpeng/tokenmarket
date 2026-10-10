@@ -93,27 +93,27 @@ func login(c *gin.Context) {
 		return
 	}
 	// 登录防爆破: 按 IP+账号 两个维度独立度量, 任一超限即拒绝, 避免凭据填充与 IP 绕行。
-	ipKey := "ip:" + c.ClientIP()
-	userKey := "u:" + user.Username
-	if retryAfter, ok := auth.LoginAllowed(ipKey); !ok {
+	keyIP := "ip:" + c.ClientIP()
+	keyUser := "u:" + user.Username
+	if retryAfter, ok := auth.LoginAllowed(keyIP); !ok {
 		c.Header("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
 		resp.Error(c, http.StatusTooManyRequests, "login throttled, try again later")
 		return
 	}
-	if retryAfter, ok := auth.LoginAllowed(userKey); !ok {
+	if retryAfter, ok := auth.LoginAllowed(keyUser); !ok {
 		c.Header("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
 		resp.Error(c, http.StatusTooManyRequests, "login throttled, try again later")
 		return
 	}
 	account, err := op.UserVerify(user.Username, user.Password)
 	if err != nil {
-		auth.LoginFailure(ipKey)
-		auth.LoginFailure(userKey)
+		auth.LoginFailure(keyIP)
+		auth.LoginFailure(keyUser)
 		resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
 		return
 	}
-	auth.LoginSuccess(ipKey)
-	auth.LoginSuccess(userKey)
+	auth.LoginSuccess(keyIP)
+	auth.LoginSuccess(keyUser)
 	// 维护模式: 开启后只放行管理员, 其余登录一律拒绝并返回维护提示。
 	if maintenance, _ := op.SettingGetBool(model.SettingKeyMaintenanceMode); maintenance && account.Role != model.RoleAdmin {
 		notice, _ := op.SettingGetString(model.SettingKeyMaintenanceNotice)

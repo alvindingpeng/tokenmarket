@@ -565,13 +565,14 @@ func usageMetrics(price model.LLMPrice, usage *llm.Usage) model.StatsMetrics {
 	if usage == nil {
 		return model.StatsMetrics{}
 	}
-	metrics := model.StatsMetrics{InputToken: usage.PromptTokens, OutputToken: usage.CompletionTokens}
+	metrics := model.StatsMetrics{OutputToken: usage.CompletionTokens}
 	cachedTokens, writeCachedTokens := int64(0), int64(0)
 	if usage.PromptTokensDetails != nil {
 		cachedTokens = usage.PromptTokensDetails.CachedTokens
 		writeCachedTokens = usage.PromptTokensDetails.WriteCachedTokens
 	}
 	inputTokens := max(int64(0), usage.PromptTokens-cachedTokens-writeCachedTokens)
+	metrics.InputToken = inputTokens // 与 billing/usageBuckets 同口径: 只记净输入"读"桶, 不包含缓存命中部分。
 	metrics.InputCost = (float64(inputTokens)*price.Input + float64(cachedTokens)*price.CacheRead + float64(writeCachedTokens)*price.CacheWrite) / 1_000_000
 	metrics.OutputCost = float64(usage.CompletionTokens) * price.Output / 1_000_000
 	return metrics
