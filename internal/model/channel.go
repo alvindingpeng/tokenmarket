@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 // 渠道支持的上游线协议, 以位掩码存储, 一条渠道授权可同时支持多个协议。
 type Protocol uint8
 
@@ -45,6 +47,7 @@ type ChannelConfig struct {
 	ParamOverride            string         `json:"param_override"`                                                                                     // 请求参数覆盖配置; 留空表示不覆盖。
 	MatchRegex               string         `json:"match_regex"`                                                                                        // 拉取模型列表时的过滤表达式; 留空表示不过滤。
 	ModelAutoAdd             bool           `json:"model_auto_add" gorm:"column:model_auto_add;default:false"`                                      // 保存后自动探测上游模型并入渠道; 默认关, 只增不删、授权按位 OR。
+	KeyRotationStrategy string         `json:"key_rotation_strategy" gorm:"default:roundrobin"`                                   // Key 轮换策略: roundrobin(轮询) / random(随机) / failover(故障切换)。
 }
 
 // 单个上游渠道的共享配置; 路径按协议分别配置, 凭据由 ChannelKey 提供。
@@ -65,6 +68,11 @@ type ChannelKeyConfig struct {
 	Name    string `json:"name" gorm:"not null;index:idx_channel_key,unique"` // 凭据名称, 界面展示与人工识别用。
 	Key     string `json:"key" gorm:"not null"`                               // 上游访问凭据。
 	Enabled bool   `json:"enabled" gorm:"default:true"`                       // 是否可用, 禁用后不参与选路但保留统计。
+	// Key 轮换与故障追踪。
+	Priority      int        `json:"priority" gorm:"default:0"`         // 优先级(failover 模式), 数值越小越优先。
+	ErrorCount    int        `json:"error_count" gorm:"default:0"`     // 累计错误次数。
+	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`          // 最后错误时间。
+	DisabledUntil *time.Time `json:"disabled_until,omitempty"`         // 自动禁用截止时间(故障熔断)。
 }
 
 // 渠道下的一份上游凭据; 不同凭据通常对应不同的额度与计费。

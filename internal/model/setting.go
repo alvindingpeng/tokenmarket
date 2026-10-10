@@ -56,7 +56,16 @@ const (
 	SettingKeyHealthLatencyMS    SettingKey = "health_latency_ms"     // 延迟告警阈值(毫秒), 0 表示关闭, 默认 1000。
 	SettingKeyAlertWebhookURL    SettingKey = "alert_webhook_url"     // 告警 Webhook 地址, 留空仅站内通知。
 	SettingKeyAlertDedupMinutes  SettingKey = "alert_dedup_minutes"   // 告警去重窗口(分钟), 同渠道同类型同原因在窗口内只告警一次, 默认 10。
-	SettingKeyAlertFailStreak    SettingKey = "alert_fail_streak"     // 连续失败多少次才判定渠道宕机, 默认 3(抖动抑制)。
+	SettingKeyAlertFailStreak       SettingKey = "alert_fail_streak"        // 连续失败多少次才判定渠道宕机, 默认 3(抖动抑制)。
+	SettingKeyAlertChannels         SettingKey = "alert_channels"          // 启用的告警渠道(逗号分隔): webhook,telegram,email, 默认仅 webhook。
+	SettingKeyAlertTelegramBotToken SettingKey = "alert_telegram_bot_token" // Telegram Bot Token。
+	SettingKeyAlertTelegramChatID   SettingKey = "alert_telegram_chat_id"   // Telegram Chat ID。
+	SettingKeyAlertEmailSMTPHost    SettingKey = "alert_email_smtp_host"    // SMTP 服务器地址。
+	SettingKeyAlertEmailSMTPPort    SettingKey = "alert_email_smtp_port"    // SMTP 端口。
+	SettingKeyAlertEmailUsername    SettingKey = "alert_email_username"     // SMTP 登录账号。
+	SettingKeyAlertEmailPassword    SettingKey = "alert_email_password"     // SMTP 登录密码。
+	SettingKeyAlertEmailFrom        SettingKey = "alert_email_from"         // 发件人地址。
+	SettingKeyAlertEmailTo          SettingKey = "alert_email_to"           // 收件人地址(逗号分隔)。
 	// 探针鉴权: /metrics 默认开放(与 /healthz 一致, 便于本地抓取), 需要收敛时切成 bearer 并要求令牌。
 	SettingKeyMetricsAuth  SettingKey = "metrics_auth"  // off | bearer; /healthz 恒不鉴权(存活探针)。
 	SettingKeyMetricsToken SettingKey = "metrics_token" // bearer 模式下的抓取令牌, 内部键不外露。
@@ -196,6 +205,19 @@ func (s *Setting) Validate() error {
 	case SettingKeyAlertFailStreak:
 		if n, err := strconv.Atoi(s.Value); err != nil || n < 1 || n > 100 {
 			return fmt.Errorf("alert fail streak must be an integer between 1 and 100")
+		}
+	case SettingKeyAlertChannels:
+		// 逗号分隔的渠道列表, 允许为空
+		return nil
+	case SettingKeyAlertTelegramBotToken, SettingKeyAlertTelegramChatID,
+		SettingKeyAlertEmailSMTPHost, SettingKeyAlertEmailUsername,
+		SettingKeyAlertEmailPassword, SettingKeyAlertEmailFrom, SettingKeyAlertEmailTo:
+		// 字符串配置, 允许为空
+		return nil
+	case SettingKeyAlertEmailSMTPPort:
+		port, err := strconv.Atoi(s.Value)
+		if err != nil || port < 1 || port > 65535 {
+			return fmt.Errorf("invalid SMTP port: must be 1-65535")
 		}
 		return nil
 	case SettingKeyMetricsAuth:

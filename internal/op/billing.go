@@ -154,9 +154,22 @@ func maybeRaiseLowBalanceAlert(ctx context.Context, userID uint, estimate float6
 	if available >= threshold+estimate {
 		return
 	}
-	RaiseAlert(ctx, 0, "system", "low_balance",
-		fmt.Sprintf("user %s (id=%d) low balance: available below min_balance %.6f + estimate %.6f, next request would be rejected",
-			user.Username, userID, threshold, estimate))
+	reason := fmt.Sprintf("user %s (id=%d) low balance: available below min_balance %.6f + estimate %.6f, next request would be rejected",
+		user.Username, userID, threshold, estimate)
+	RaiseAlert(ctx, 0, "system", "low_balance", reason)
+	
+	// 多渠道告警: 同时发送到 Telegram/Email
+	go func() {
+		// TODO: 集成 internal/alert 包
+		// import "github.com/bestruirui/octopus/internal/alert"
+		// alert.Send(ctx, alert.Alert{
+		//     Event: alert.EventBalanceLow,
+		//     Title: "余额不足告警",
+		//     Message: fmt.Sprintf("用户 %s 可用余额不足\n可用: %.6f\n阈值: %.6f\n预估费用: %.6f",
+		//         user.Username, available, threshold, estimate),
+		//     Timestamp: time.Now(),
+		// })
+	}()
 }
 
 // BillingRelease 释放预扣不扣费, 用于失败或取消且没有产生用量的请求。

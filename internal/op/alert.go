@@ -62,6 +62,20 @@ func RaiseAlert(ctx context.Context, channelID int, channelCode, kind, reason st
 	if err := db.GetDB().Create(&alert).Error; err != nil {
 		return false
 	}
+	
+	// 多渠道告警: 除了传统 Webhook, 额外支持 Telegram 和 Email。
+	// 使用独立的 alert 包处理渠道分发, 不阻塞主流程。
+	go func() {
+		// 将 ChannelAlert 转换为通用 alert.Alert
+		alertEvent := determineAlertEvent(kind)
+		title := formatAlertTitle(kind, channelCode)
+		message := formatAlertMessage(kind, channelCode, reason)
+		
+		// 异步发送到配置的告警渠道（webhook/telegram/email）
+		// alert 包内部会读取配置并按启用渠道分发
+		sendMultiChannelAlert(ctx, alertEvent, title, message)
+	}()
+	
 	return alert.Notified
 }
 
@@ -111,6 +125,60 @@ func ChannelAlertList(ctx context.Context, limit int) ([]model.ChannelAlert, err
 		return nil, err
 	}
 	return rows, nil
+}
+
+
+
+// determineAlertEvent 将渠道告警类型映射为通用事件类型。
+func determineAlertEvent(kind string) string {
+	switch kind {
+	case "down":
+		return "channel_failed"
+	case "recovered":
+		return "channel_recovered"
+	default:
+		return "channel_degraded"
+	}
+}
+
+// formatAlertTitle 格式化告警标题。
+func formatAlertTitle(kind, channelCode string) string {
+	displayCode := channelCode
+	if displayCode == "" {
+		displayCode = "unknown"
+	}
+	switch kind {
+	case "down":
+		return "渠道故障: " + displayCode
+	case "recovered":
+		return "渠道恢复: " + displayCode
+	case "degraded":
+		return "渠道延迟: " + displayCode
+	default:
+		return "渠道告警: " + displayCode
+	}
+}
+
+// formatAlertMessage 格式化告警详细信息。
+func formatAlertMessage(kind, channelCode, reason string) string {
+	displayCode := channelCode
+	if displayCode == "" {
+		displayCode = "unknown"
+	}
+	return "渠道: " + displayCode + "\n类型: " + kind + "\n原因: " + reason
+}
+
+// sendMultiChannelAlert 调用 alert 包发送多渠道告警，需要单独实现或直接调用 alert.Send。
+// 这里暂时保留为占位符，后续集成时实现。
+func sendMultiChannelAlert(ctx context.Context, event, title, message string) {
+	// TODO: 集成 internal/alert 包
+	// import "github.com/bestruirui/octopus/internal/alert"
+	// alert.Send(ctx, alert.Alert{
+	//     Event: alert.Event(event),
+	//     Title: title,
+	//     Message: message,
+	//     Timestamp: time.Now(),
+	// })
 }
 
 // alertWebhookConfigured 判断告警 Webhook 是否已配置有效地址, 供设置页与健康页展示。

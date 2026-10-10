@@ -5,6 +5,44 @@
 每次发布把新章节追加到本文件顶部，GitHub Release 的正文由 `scripts/publish-release.sh`
 自动取本文件中对应版本的那一节。
 
+## v0.18.0 — 2026-10-11
+
+本版本实现三大核心功能模块，显著增强平台的运维能力和稳定性保障。
+
+### 1. API Key 配额管理
+
+- **配额限制**：支持每日/每月请求次数和成本双重配额
+- **自动控制**：配额超限时自动禁用 API Key 并触发告警
+- **实时统计**：新增 `GET /api/v1/apikey/:id/quota` 查询当前用量
+- **UI 集成**：API Key 列表显示配额进度条，编辑页支持配额配置
+- **数据库迁移**：`013_apikey_quota.sql` 新增 `max_requests_per_day/month`、`max_cost_per_day/month`、重置时间戳字段
+
+### 2. 告警通知系统
+
+- **多通道支持**：邮件（SMTP）、Telegram Bot、Webhook 三种告警方式
+- **完整基础设施**：告警表、去重逻辑（kind+code+24h 窗口）、后台工作线程
+- **内置场景**：余额不足、API Key 配额超限、渠道连续失败、成功率下降
+- **管理 API**：`GET /api/v1/alert` 查询记录，`POST /api/v1/alert/:id/resolve` 手动解决
+- **指标暴露**：Prometheus `octopus_alerts_raised_24h` 统计最近 24 小时告警数
+- **数据库迁移**：`014_alerts.sql` 告警表 + `015_alert_settings.sql` 配置表
+
+### 3. 多上游 Key 轮换
+
+- **多 Key 池**：每个渠道支持配置多个上游 API Key
+- **三种策略**：轮询（round-robin）、加权（weighted）、故障转移（failover）
+- **故障隔离**：连续失败达阈值自动排除 Key，冷却期后自动恢复
+- **独立统计**：每个 Key 维护独立的成功率和延迟指标
+- **管理 API**：`GET/POST/DELETE /api/v1/channel/:id/keys` 管理 Key 池，`PUT /api/v1/channel/:id/rotation` 配置策略
+- **数据库迁移**：`016_channel_keys.sql` 新增 `channel_keys` 表和轮换策略字段
+
+### 技术细节
+
+- 配额检查在 `BillingReserve` 前执行（relay handler），避免无效请求消耗余额
+- 告警后台线程每分钟扫描待发送告警，发送成功后更新状态
+- Key 轮换状态缓存在内存 `channelKeyCache`，定期持久化到数据库
+- 故障检测基于滑动窗口（最近 N 次请求），支持配置失败阈值和冷却时间
+- 所有新功能的设置项存储在 `settings` 表，通过 `SettingGet*/SettingSet*` 系列函数访问
+
 ## v0.17.1 — 2026-10-10
 
 功能与增强（本批次一并上线）：

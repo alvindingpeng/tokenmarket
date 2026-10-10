@@ -5,8 +5,12 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	mathrand "math/rand"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/bestruirui/octopus/internal/db"
 	"github.com/bestruirui/octopus/internal/model"
@@ -1011,3 +1015,86 @@ func ChannelModelBriefs(scope model.Scope) []ChannelModelBrief {
 	}
 	return briefs
 }
+
+// SelectChannelKey 根据渠道的 Key 轮换策略从可用 keys 中选择一个。
+// 支持 roundrobin(轮询)、random(随机)、failover(故障切换) 三种策略。
+// 返回选中的 key；若无可用 key 则返回 error。
+func SelectChannelKey(channelID int, strategy string) (*model.ChannelKey, error) {
+	// 获取该渠道的所有启用的 keys，按优先级排序
+	var keys []model.ChannelKey
+	query := db.GetDB().Where("channel_id = ? AND enabled = ?", channelID, true)
+	
+	// 排除熔断中的 keys（DisabledUntil 在未来）
+	query = query.Where("disabled_until IS NULL OR disabled_until < ?", time.Now())
+	
+	if err := query.Order("priority ASC, id ASC").Find(&keys).Error; err != nil {
+		return nil, fmt.Errorf("query channel keys: %w", err)
+	}
+
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("no available keys for channel %d", channelID)
+	}
+
+	switch strategy {
+	case "failover":
+		// 故障切换: 返回优先级最高（priority 最小）且未熔断的第一个 key
+		return &keys[0], nil
+
+	case "random":
+		// 随机: 从可用 keys 中随机选择
+		idx := mathrand.Intn(len(keys))
+		return &keys[idx], nil
+
+	case "roundrobin":
+		fallthrough
+	default:
+		// 轮询(默认): 使用全局计数器对 keys 数量取模
+		// 为避免跨实例状态同步，使用简单的本地计数器
+		val, _ := keyRotationCounters.LoadOrStore(channelID, new(uint64))
+		counter := val.(*uint64)
+		idx := int(atomic.AddUint64(counter, 1) % uint64(len(keys)))
+		return &keys[idx], nil
+	}
+}
+
+// RecordChannelKeyError 记录某个 key 的错误，用于故障熔断。
+// 当错误次数达到阈值时自动禁用该 key 一段时间。
+func RecordChannelKeyError(channelKeyID int, errorType string) {
+	var key model.ChannelKey
+	if err := db.GetDB().First(&key, channelKeyID).Error; err != nil {
+		return
+	}
+
+	now := time.Now()
+	errorCount := key.ErrorCount + 1
+	
+	// 错误次数阈值和熔断时长可配置，这里使用固定值
+	const (
+		errorThreshold = 5     // 连续 5 次错误触发熔断
+		circuitBreakDuration = 5 * time.Minute // 熔断 5 分钟
+	)
+
+	updates := map[string]interface{}{
+		"error_count":  errorCount,
+		"last_error_at": &now,
+	}
+
+	// 达到阈值时启动熔断
+	if errorCount >= errorThreshold {
+		disabledUntil := now.Add(circuitBreakDuration)
+		updates["disabled_until"] = &disabledUntil
+		updates["error_count"] = 0 // 重置计数器
+	}
+
+	db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", channelKeyID).Updates(updates)
+}
+
+// ResetChannelKeyErrors 重置某个 key 的错误计数（成功请求时调用）。
+func ResetChannelKeyErrors(channelKeyID int) {
+	db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", channelKeyID).Updates(map[string]interface{}{
+		"error_count": 0,
+	})
+}
+
+// keyRotationCounters 为每个 channel 维护轮询计数器
+var keyRotationCounters sync.Map // map[int]*uint64
