@@ -56,6 +56,9 @@ type GroupRelayConfig struct {
 	ScorePriceWeight                      int    `json:"score_price_weight" binding:"omitempty,min=0,max=100"`                 // 综合评分中价格的相对权重, 0-100; 0 表示未自定义, 运行时跟随系统默认设置。
 	ScoreLatencyWeight                    int    `json:"score_latency_weight" binding:"omitempty,min=0,max=100"`               // 综合评分中延迟的相对权重, 0-100; 0 表示未自定义, 运行时跟随系统默认设置。
 	ScoreSuccessWeight                    int    `json:"score_success_weight" binding:"omitempty,min=0,max=100"`               // 综合评分中成功率的相对权重, 0-100; 0 表示未自定义, 运行时跟随系统默认设置。
+	// ReliabilityFloor 是综合评分的可靠性下限(百分比, 0-100): 成功率低于该值的成员排到全部达标成员之后。
+	// 0 表示未自定义, 运行时跟随系统默认设置; 用于避免最便宜的成员凭静态价格长期霸占首位。
+	ReliabilityFloor int `json:"reliability_floor" binding:"omitempty,min=0,max=100"`
 }
 
 // DefaultGroupRelayConfig 返回手动模式的默认参数, 兼容没有模式上下文的调用方。
@@ -180,19 +183,19 @@ type GroupItem struct {
 	ChannelGrant   *ChannelGrant `json:"-" gorm:"foreignKey:ChannelGrantID;references:ID;constraint:OnDelete:CASCADE"` // 仅用于声明级联外键, 授权被删除时成员随之删除; 读取时不填充, 展示所需字段见下方。
 	Priority       int           `json:"priority" gorm:"not null"`                                                     // Priority 决定界面展示和故障转移模式下的成员切换顺序。
 
-	ChannelID      int      `json:"channel_id" gorm:"-"`       // 授权所属渠道 ID。
-	ChannelKeyID   int      `json:"channel_key_id" gorm:"-"`   // 授权引用的凭据 ID, 供上游限流定位。
-	ChannelModelID int      `json:"channel_model_id" gorm:"-"` // 授权引用的渠道模型 ID, 供上游限流定位。
-	ChannelName    string   `json:"channel_name" gorm:"-"`     // 展示名: 已发布渠道一律显示发布唯一编码, 未发布渠道显示真名。
-	ModelName      string   `json:"model_name" gorm:"-"`       // 授权引用的上游模型名称。
-	KeyName        string   `json:"key_name" gorm:"-"`         // 授权引用的凭据名称; 非归属者视角为空(脱敏)。
-	Protocols      Protocol `json:"protocols" gorm:"-"`        // 授权支持的协议位掩码。
-	Available      bool     `json:"available" gorm:"-"`        // 渠道与凭据均启用且模型, 凭据均存在时为真; 为假表示该成员当前无法转发, 但仍需列出以便移除。
-	SupplyPrice    LLMPrice `json:"supply_price" gorm:"-"`     // 供货价(四类)。
-	UserPrice      LLMPrice `json:"user_price" gorm:"-"`       // 用户价(上浮后)。
-	MediaSupply    MediaPrice `json:"media_supply" gorm:"-"`   // 媒体供货价, 仅模型 kind=image|video 时使用。
-	UserMedia      MediaPrice `json:"user_media" gorm:"-"`     // 媒体用户价(上浮后)。
-	Kind           MediaKind `json:"kind,omitempty" gorm:"-"`  // 模型媒体形态, 文本留空。
+	ChannelID      int        `json:"channel_id" gorm:"-"`       // 授权所属渠道 ID。
+	ChannelKeyID   int        `json:"channel_key_id" gorm:"-"`   // 授权引用的凭据 ID, 供上游限流定位。
+	ChannelModelID int        `json:"channel_model_id" gorm:"-"` // 授权引用的渠道模型 ID, 供上游限流定位。
+	ChannelName    string     `json:"channel_name" gorm:"-"`     // 展示名: 已发布渠道一律显示发布唯一编码, 未发布渠道显示真名。
+	ModelName      string     `json:"model_name" gorm:"-"`       // 授权引用的上游模型名称。
+	KeyName        string     `json:"key_name" gorm:"-"`         // 授权引用的凭据名称; 非归属者视角为空(脱敏)。
+	Protocols      Protocol   `json:"protocols" gorm:"-"`        // 授权支持的协议位掩码。
+	Available      bool       `json:"available" gorm:"-"`        // 渠道与凭据均启用且模型, 凭据均存在时为真; 为假表示该成员当前无法转发, 但仍需列出以便移除。
+	SupplyPrice    LLMPrice   `json:"supply_price" gorm:"-"`     // 供货价(四类)。
+	UserPrice      LLMPrice   `json:"user_price" gorm:"-"`       // 用户价(上浮后)。
+	MediaSupply    MediaPrice `json:"media_supply" gorm:"-"`     // 媒体供货价, 仅模型 kind=image|video 时使用。
+	UserMedia      MediaPrice `json:"user_media" gorm:"-"`       // 媒体用户价(上浮后)。
+	Kind           MediaKind  `json:"kind,omitempty" gorm:"-"`   // 模型媒体形态, 文本留空。
 }
 
 // 创建分组请求; 成员顺序即优先级顺序。

@@ -28,6 +28,7 @@ export interface GroupRelayConfig {
     score_price_weight: number;
     score_latency_weight: number;
     score_success_weight: number;
+    reliability_floor: number;
 }
 
 // GroupMemberMetric 是分组成员的实时选路指标快照: 首响应耗时与成功率的滑动平均。

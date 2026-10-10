@@ -457,6 +457,8 @@
             "scoreLatencyWeight": "评分·延迟权重",
             "scoreSuccessWeight": "评分·成功率权重",
             "scoreWeightHint": "三个权重为相对值(0-100),可任意配比;填 0 表示该维度未自定义,运行时跟随系统默认参数(管理员可在设置页调整)",
+            "reliabilityFloor": "评分·可靠性下限",
+            "reliabilityFloorHint": "成功率低于此百分比的成员排到健康成员之后；填 0 跟随系统默认值（70%）",
             "request_timeout_seconds": "请求总超时（秒）",
             "request_timeout_secondsHint": "包含排队、重试和完整流式传输；默认 600 秒。",
             "max_total_attempts": "单请求最大尝试次数",

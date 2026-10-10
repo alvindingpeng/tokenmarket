@@ -400,7 +400,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				_ = op.ChannelKeyStatsUpdate(channelKey.ID, metrics)
 				op.ChannelDailyStatsUpdate(channel.ID, metrics)
 				op.ChannelModelDailyStatsUpdate(channelModel.ID, metrics)
-				recordMemberMetric(group.ID, item.ID, group.RelayConfig.MetricWindowSize, time.Since(roundStartedAt).Milliseconds(), false)
+				recordMemberMetric(group.ID, item.ID, channelModel.ID, group.RelayConfig.MetricWindowSize, time.Since(roundStartedAt).Milliseconds(), false)
 
 				// 成员改变时重新开始累计该成员在本请求内的连续失败次数。
 				if failedItemID == item.ID {
@@ -453,7 +453,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			// 上游成功后解除该成员的冷却与探测占用, 并按路由配置开始亲和。
 			recordRouteSuccess(group, item.ID)
 			// 记录成员运行指标(首响应耗时与成功), 供延迟/成功率/综合评分策略排名。
-			recordMemberMetric(group.ID, item.ID, group.RelayConfig.MetricWindowSize, roundWaitTime, true)
+			recordMemberMetric(group.ID, item.ID, channelModel.ID, group.RelayConfig.MetricWindowSize, roundWaitTime, true)
 			// 非流式已取得最终用量; 流式必须等到末帧聚合后才结算并释放并发租约。
 			if !metadata.Streaming {
 				settleUpstream(upstreamReservation, upstreamScopes, result.usage)

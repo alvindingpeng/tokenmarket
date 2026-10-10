@@ -457,6 +457,8 @@
             "scoreLatencyWeight": "Score: Latency Weight",
             "scoreSuccessWeight": "Score: Success Weight",
             "scoreWeightHint": "Weights are relative (0-100), any mix works; set 0 to leave a dimension uncustomized so it follows the system default (adjustable by admins on the settings page)",
+            "reliabilityFloor": "Score: Reliability Floor",
+            "reliabilityFloorHint": "Members below this success-rate percentage rank after healthy members; 0 follows the system default (70%)",
             "request_timeout_seconds": "Request timeout (seconds)",
             "request_timeout_secondsHint": "Includes queueing, retries and streaming; default 600 seconds.",
             "max_total_attempts": "Maximum total attempts",
