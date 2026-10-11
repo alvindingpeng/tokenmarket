@@ -138,17 +138,27 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyAlertWebhookURL, Value: ""},              // 默认仅站内通知
 		{Key: SettingKeyAlertDedupMinutes, Value: "10"},          // 去重窗口 10 分钟
 		{Key: SettingKeyAlertFailStreak, Value: "3"},             // 连续 3 次失败判宕机
-		{Key: SettingKeyMetricsAuth, Value: "off"},               // 探针默认开放
-		{Key: SettingKeyMetricsToken, Value: ""},                 // 令牌留空, 开启鉴权时自动生成
-		{Key: SettingKeyLoginMaxAttempts, Value: "5"},            // 连续 5 次失败即触发退避锁定
-		{Key: SettingKeyLoginLockoutSeconds, Value: "900"},       // 锁定 15 分钟, 起效前每超一次翻倍
-		{Key: SettingKeyBreakerKeyThreshold, Value: "5"},         // 连续 5 次错误熔断该凭据
-		{Key: SettingKeyBreakerKeyMinutes, Value: "5"},           // 凭据熔断 5 分钟
-		{Key: SettingKeyBreakerKeyHardMinutes, Value: "30"},      // 鉴权/额度错误立即熔断 30 分钟
-		{Key: SettingKeyBreakerModelThreshold, Value: "5"},       // 连续 5 次错误熔断该渠道模型
-		{Key: SettingKeyBreakerModelMinutes, Value: "5"},         // 渠道模型熔断 5 分钟
-		{Key: SettingKeyBreakerCoolAuthSeconds, Value: "60"},     // 鉴权/额度成员冷却 60 秒
-		{Key: SettingKeyBreakerCoolSoftSeconds, Value: "30"},     // 过载/模型缺失成员冷却 30 秒
+		// 告警渠道与投递凭据: 必须在默认值里播种, 否则设置键不会落库, 读取与写入都会以 "setting not found" 失败。
+		{Key: SettingKeyAlertChannels, Value: ""},            // 留空等同仅 webhook, 与后端回落一致
+		{Key: SettingKeyAlertTelegramBotToken, Value: ""},    // Telegram Bot Token, 留空表示未配置
+		{Key: SettingKeyAlertTelegramChatID, Value: ""},      // Telegram Chat ID, 留空表示未配置
+		{Key: SettingKeyAlertEmailSMTPHost, Value: ""},       // SMTP 服务器地址, 留空表示未配置
+		{Key: SettingKeyAlertEmailSMTPPort, Value: "587"},    // 默认 587(STARTTLS), 与发送端缺省一致
+		{Key: SettingKeyAlertEmailUsername, Value: ""},       // SMTP 登录账号
+		{Key: SettingKeyAlertEmailPassword, Value: ""},       // SMTP 登录密码
+		{Key: SettingKeyAlertEmailFrom, Value: ""},           // 发件人地址
+		{Key: SettingKeyAlertEmailTo, Value: ""},             // 收件人地址(逗号分隔)
+		{Key: SettingKeyMetricsAuth, Value: "off"},           // 探针默认开放
+		{Key: SettingKeyMetricsToken, Value: ""},             // 令牌留空, 开启鉴权时自动生成
+		{Key: SettingKeyLoginMaxAttempts, Value: "5"},        // 连续 5 次失败即触发退避锁定
+		{Key: SettingKeyLoginLockoutSeconds, Value: "900"},   // 锁定 15 分钟, 起效前每超一次翻倍
+		{Key: SettingKeyBreakerKeyThreshold, Value: "5"},     // 连续 5 次错误熔断该凭据
+		{Key: SettingKeyBreakerKeyMinutes, Value: "5"},       // 凭据熔断 5 分钟
+		{Key: SettingKeyBreakerKeyHardMinutes, Value: "30"},  // 鉴权/额度错误立即熔断 30 分钟
+		{Key: SettingKeyBreakerModelThreshold, Value: "5"},   // 连续 5 次错误熔断该渠道模型
+		{Key: SettingKeyBreakerModelMinutes, Value: "5"},     // 渠道模型熔断 5 分钟
+		{Key: SettingKeyBreakerCoolAuthSeconds, Value: "60"}, // 鉴权/额度成员冷却 60 秒
+		{Key: SettingKeyBreakerCoolSoftSeconds, Value: "30"}, // 过载/模型缺失成员冷却 30 秒
 
 	}
 }

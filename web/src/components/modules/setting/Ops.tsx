@@ -110,6 +110,8 @@ export function SettingOps() {
     };
 
     // saveNumber 数字输入: 失焦时夹取范围并保存。
+    // 数字框必须挂 onChange 只写本地草稿、失焦才提交: 受控输入只有 value 而没有 onChange 时,
+    // React 会把每次按键都回滚掉, 输入框看着能聚焦却永远打不进字。
     const saveNumber = (key: string, raw: string, min: number, max: number, fallback: string) => {
         const parsed = Number.parseInt(raw, 10);
         const normalized = Number.isFinite(parsed) ? String(Math.min(Math.max(parsed, min), max)) : fallback;
@@ -154,6 +156,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={1} max={3650} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.LogRetentionDays] ?? ''}
+                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.LogRetentionDays]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.LogRetentionDays, event.target.value.trim(), 1, 3650, '7')} />
             </div>
 
@@ -201,6 +204,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={1} max={365} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.AutoBackupKeep] ?? ''}
+                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AutoBackupKeep]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.AutoBackupKeep, event.target.value.trim(), 1, 365, '7')} />
             </div>
 
@@ -210,6 +214,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={1} max={720} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.AutoBackupInterval] ?? ''}
+                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AutoBackupInterval]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.AutoBackupInterval, event.target.value.trim(), 1, 720, '24')} />
             </div>
 
@@ -246,6 +251,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={1} max={1440} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.HealthCheckInterval] ?? ''}
+                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.HealthCheckInterval]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.HealthCheckInterval, event.target.value.trim(), 1, 1440, '30')} />
             </div>
 
@@ -256,6 +262,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={0} max={600000} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.HealthLatencyMS] ?? ''}
+                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.HealthLatencyMS]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.HealthLatencyMS, event.target.value.trim(), 0, 600000, '1000')} />
             </div>
 
@@ -266,6 +273,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={0} max={100} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.BreakerKeyThreshold] ?? ''}
+                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.BreakerKeyThreshold]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.BreakerKeyThreshold, event.target.value.trim(), 0, 100, '5')} />
             </div>
 
@@ -276,6 +284,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={1} max={1440} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.BreakerKeyMinutes] ?? ''}
+                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.BreakerKeyMinutes]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.BreakerKeyMinutes, event.target.value.trim(), 1, 1440, '5')} />
             </div>
 
@@ -286,6 +295,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={1} max={1440} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.BreakerKeyHardMinutes] ?? ''}
+                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.BreakerKeyHardMinutes]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.BreakerKeyHardMinutes, event.target.value.trim(), 1, 1440, '30')} />
             </div>
 
@@ -296,6 +306,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={0} max={100} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.BreakerModelThreshold] ?? ''}
+                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.BreakerModelThreshold]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.BreakerModelThreshold, event.target.value.trim(), 0, 100, '5')} />
             </div>
 
@@ -306,6 +317,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={1} max={1440} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.BreakerModelMinutes] ?? ''}
+                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.BreakerModelMinutes]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.BreakerModelMinutes, event.target.value.trim(), 1, 1440, '5')} />
             </div>
 
@@ -316,6 +328,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={0} max={600} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.BreakerCoolAuthSeconds] ?? ''}
+                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.BreakerCoolAuthSeconds]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.BreakerCoolAuthSeconds, event.target.value.trim(), 0, 600, '60')} />
             </div>
 
@@ -326,6 +339,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={0} max={600} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.BreakerCoolSoftSeconds] ?? ''}
+                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.BreakerCoolSoftSeconds]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.BreakerCoolSoftSeconds, event.target.value.trim(), 0, 600, '30')} />
             </div>
 
@@ -411,6 +425,7 @@ export function SettingOps() {
                         onBlur={(event) => save(SettingKey.AlertEmailSMTPHost, event.target.value.trim())} />
                     <Input type='number' min={1} max={65535} className='h-9 w-24 shrink-0 rounded-xl' placeholder='465'
                         value={values[SettingKey.AlertEmailSMTPPort] ?? ''}
+                        onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertEmailSMTPPort]: event.target.value }))}
                         onBlur={(event) => saveNumber(SettingKey.AlertEmailSMTPPort, event.target.value.trim(), 1, 65535, '465')} />
                 </div>
             </div>
@@ -461,6 +476,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={0} max={1440} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.AlertDedupMinutes] ?? ''}
+                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertDedupMinutes]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.AlertDedupMinutes, event.target.value.trim(), 0, 1440, '10')} />
             </div>
 
@@ -471,6 +487,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={1} max={100} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.AlertFailStreak] ?? ''}
+                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertFailStreak]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.AlertFailStreak, event.target.value.trim(), 1, 100, '5')} />
             </div>
 
