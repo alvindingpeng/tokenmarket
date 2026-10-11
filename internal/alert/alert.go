@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/smtp"
 	"strconv"
@@ -20,10 +21,10 @@ import (
 type Event string
 
 const (
-	EventChannelFailed    Event = "channel_failed"     // 渠道连续失败。
-	EventChannelRecovered Event = "channel_recovered"  // 渠道恢复。
-	EventBalanceLow       Event = "balance_low"        // 余额不足。
-	EventQuotaExceeded    Event = "quota_exceeded"     // 配额超限。
+	EventChannelFailed    Event = "channel_failed"    // 渠道连续失败。
+	EventChannelRecovered Event = "channel_recovered" // 渠道恢复。
+	EventBalanceLow       Event = "balance_low"       // 余额不足。
+	EventQuotaExceeded    Event = "quota_exceeded"    // 配额超限。
 )
 
 // Alert 表示一个待发送的告警。
@@ -118,7 +119,9 @@ func sendTelegram(ctx context.Context, alert Alert) error {
 	}
 
 	text := fmt.Sprintf("🔔 *%s*\n\n%s\n\n_%s_",
-		alert.Title, alert.Message, alert.Timestamp.Format("2006-01-02 15:04:05"))
+		escapeTelegramMarkdown(alert.Title),
+		escapeTelegramMarkdown(alert.Message),
+		escapeTelegramMarkdown(alert.Timestamp.Format("2006-01-02 15:04:05")))
 
 	payload := map[string]interface{}{
 		"chat_id":    chatID,
@@ -138,10 +141,36 @@ func sendTelegram(ctx context.Context, alert Alert) error {
 	}
 	defer resp.Body.Close()
 
+	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("telegram api returned status %d", resp.StatusCode)
+		return telegramError(resp.StatusCode, respBody)
 	}
 	return nil
+}
+
+// escapeTelegramMarkdown 转义 Telegram legacy Markdown 的实体起始字符。
+// Title 与 Message 是任意文本, 错误信息里下划线/星号/反引号很常见, 不转义会被 parse_mode
+// 当成实体起点, Telegram 直接回 400 "Can't parse entities", 整条告警发不出去。
+func escapeTelegramMarkdown(s string) string {
+	return strings.NewReplacer("\\", "\\\\", "_", "\\_", "*", "\\*", "`", "\\`", "[", "\\[").Replace(s)
+}
+
+// telegramError 把 Telegram 的错误响应还原成可读错误。
+// description 才是真正原因(例如 Bad Request: chat not found), 只报 HTTP 状态码等于把排查线索丢掉;
+// chat not found 额外给出最常见的成因, 免得在设置页对着一个 400 无从下手。
+func telegramError(status int, body []byte) error {
+	var payload struct {
+		OK          bool   `json:"ok"`
+		ErrorCode   int    `json:"error_code"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(body, &payload); err == nil && payload.Description != "" {
+		if strings.Contains(payload.Description, "chat not found") {
+			return fmt.Errorf("telegram api %d: %s(chat_id 无效, 或 bot 尚未加入该会话; 请确认 chat_id 符号与位数)", status, payload.Description)
+		}
+		return fmt.Errorf("telegram api %d: %s", status, payload.Description)
+	}
+	return fmt.Errorf("telegram api returned status %d", status)
 }
 
 // sendEmail 发送邮件告警。
