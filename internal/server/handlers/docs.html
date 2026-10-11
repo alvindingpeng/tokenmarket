@@ -43,6 +43,9 @@ h2.tag { margin: 36px 0 12px; font-size: 18px; }
 .schema td.type { color: var(--muted); white-space: nowrap; }
 .required { color: #c2410c; font-size: 11px; margin-left: 6px; }
 footer { margin-top: 48px; color: var(--muted); font-size: 12px; }
+.src-switch { display: inline-flex; gap: 6px; margin: 18px 0 0; padding: 4px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+.src-switch button { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 7px; cursor: pointer; }
+.src-switch button.active { background: var(--accent); color: #fff; }
 a { color: var(--accent); }
 </style>
 </head>
@@ -53,11 +56,15 @@ a { color: var(--accent); }
   <div class="ver" id="version"></div>
   <p class="desc" id="desc"></p>
 </header>
+<nav class="src-switch" id="src-switch">
+  <button type="button" data-src="openapi.json" class="active">转发面 API</button>
+  <button type="button" data-src="openapi-admin.json">管理面 API</button>
+</nav>
 <div class="auth" id="auth"></div>
 <div id="paths"></div>
 <h2 class="tag">数据模型</h2>
 <div id="schemas"></div>
-<footer>本文档由服务端根据 <a href="./openapi.json">openapi.json</a> 实时渲染, 机器可读的 OpenAPI 规范可直接供 SDK 与代码生成器使用。</footer>
+<footer>本文档由服务端根据 <a href="./openapi.json">openapi.json</a>(转发面)与 <a href="./openapi-admin.json">openapi-admin.json</a>(管理面)实时渲染, 机器可读的 OpenAPI 规范可直接供 SDK 与代码生成器使用。</footer>
 </div>
 <script>
 (function () {
@@ -78,16 +85,25 @@ a { color: var(--accent); }
       return;
     }
   }
-  fetch('./openapi.json').then(function (r) { return r.json(); }).then(function (spec) {
+  var current = 'openapi.json';
+  function load(src) {
+    fetch('./' + src).then(function (r) { return r.json(); }).then(function (spec) {
     document.getElementById('title').textContent = spec.info.title;
     document.getElementById('version').textContent = '版本 ' + spec.info.version;
     document.getElementById('desc').textContent = spec.info.description;
-    document.getElementById('auth').innerHTML = '认证: <code>Authorization: Bearer &lt;API Key&gt;</code> &nbsp;·&nbsp; 机读规范: <a href="./openapi.json">openapi.json</a>';
+    var cookieAuth = spec.components && spec.components.securitySchemes && spec.components.securitySchemes.session;
+    document.getElementById('auth').innerHTML = (cookieAuth
+      ? '认证: 登录后浏览器自动携带 HttpOnly 会话 Cookie <code>auth</code>'
+      : '认证: <code>Authorization: Bearer &lt;API Key&gt;</code>')
+      + ' &nbsp;·&nbsp; 机读规范: <a href="./' + src + '">' + src + '</a>';
+    document.getElementById('paths').innerHTML = '';
+    document.getElementById('schemas').innerHTML = '';
 
     var byTag = {};
     Object.keys(spec.paths).forEach(function (path) {
       var item = spec.paths[path];
       Object.keys(item).forEach(function (method) {
+        if (['get', 'post', 'put', 'delete', 'patch', 'head', 'options'].indexOf(method) < 0) return;
         var op = item[method];
         (op.tags || ['other']).forEach(function (tag) {
           (byTag[tag] = byTag[tag] || []).push({ path: path, method: method, op: op });
@@ -158,7 +174,16 @@ a { color: var(--accent); }
       }
       schemasHost.appendChild(card);
     });
+    });
+  }
+  document.querySelectorAll('#src-switch button').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('#src-switch button').forEach(function (b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      load(btn.getAttribute('data-src'));
+    });
   });
+  load(current);
 })();
 </script>
 </body>
