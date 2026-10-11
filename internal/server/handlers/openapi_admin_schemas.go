@@ -562,7 +562,7 @@ func openAPIAdminSchemas() gin.H {
 			"started_at":      datetime(""),
 			"first_token_ms":  fieldNumber("integer", ""),
 			"duration_ms":     fieldNumber("integer", ""),
-			"status":          gin.H{"type": "string", "enum": []string{"success", "failed", "limited", "canceled", "timeout"}},
+			"status":          gin.H{"type": "string", "enum": []string{"success", "failed", "limited", "canceled", "timeout", "client_error", "policy_blocked", "auth_error", "quota", "overloaded", "model_missing"}},
 			"error":           fieldString(""),
 			"decision":        fieldString("本轮路由决策说明(JSON 文本)"),
 		}),
