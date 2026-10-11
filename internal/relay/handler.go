@@ -433,9 +433,12 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					op.ChannelDailyStatsUpdate(channel.ID, metrics)
 					op.ChannelModelDailyStatsUpdate(channelModel.ID, metrics)
 					recordMemberMetric(group.ID, item.ID, channelModel.ID, group.RelayConfig.MetricWindowSize, time.Since(roundStartedAt).Milliseconds(), false)
-					// 记录 Key 错误用于故障熔断
-					if channelKey != nil {
+					// 记录 Key / 渠道模型错误用于故障熔断
+					// 凭据失效/余额不足在 Key 级熔断(影响该 Key 所有模型); 过载/临时故障在渠道模型级熔断(隔离故障面)。
+					if channelKey != nil && (class == ErrorClassAuth || class == ErrorClassQuota) {
 						op.RecordChannelKeyError(channelKey.ID, string(class))
+					} else if class == ErrorClassOverload || class == ErrorClassTransient || class == ErrorClassUnknown {
+						op.RecordChannelModelError(channelModel.ID, string(class))
 					}
 				}
 				// 凭据失效/额度耗尽/过载/模型缺失: 原地重试无益, 冷却当前成员后立即换渠道;
@@ -507,6 +510,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			// 成功请求重置 Key 错误计数
 			if channelKey != nil {
 				op.ResetChannelKeyErrors(channelKey.ID)
+				op.ResetChannelModelErrors(channelModel.ID)
 			}
 			// 非流式已取得最终用量; 流式必须等到末帧聚合后才结算并释放并发租约。
 			if !metadata.Streaming {
