@@ -182,7 +182,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				if status == http.StatusTooManyRequests {
 					c.Header("Retry-After", "1")
 				}
-				response := inbound.TransformError(context.WithoutCancel(ctx), &llm.ResponseError{StatusCode: status, Detail: llm.ErrorDetail{Message: cause.Error(), Type: "relay_unavailable"}})
+				response := inbound.TransformError(context.WithoutCancel(ctx), relayResponseError(cause, status))
 				c.Data(response.StatusCode, "application/json", response.Body)
 			}
 		}
@@ -255,7 +255,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				continue
 			}
 			channelModel := grant.ChannelModel
-			
+
 			// 成员指向的渠道已被删除时同样等待, 该成员可能很快被改回可用渠道。
 			channel, err := op.ChannelGet(channelModel.ChannelID)
 			if err != nil {
@@ -384,6 +384,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			}
 
 			if err != nil {
+				// 按错误分类决定重试/换渠道/透传: 语义(code/type/文本)优先、状态码兜底, 规则见 upstream_error.go。
+				class, ruleName := classifyUpstreamError(err)
+				request.addRouteEvent("error_class", ruleName)
 				// 记录本轮上游调用已经结束及其失败原因。
 				request.finishRound(err.Error(), attemptStatusOf(err))
 				// 父上下文结束说明客户端已经取消, 归还探测占用并以取消终态结束请求。
@@ -400,30 +403,55 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					upstreamReservation.Settle(0, 0, true)
 					continue
 				}
-				// 上游 429 视为限流而非故障: 标记该上游当前窗口触顶供选路跳过, 不计失败率也不冷却。
-				if isUpstreamRateLimited(err) {
+				// 上游限流视为限流而非故障: 标记该上游当前窗口触顶供选路跳过, 不计失败率也不冷却。
+				if class == ErrorClassRate {
 					releaseRouteProbe(group, item.ID)
 					upstreamReservation.Settle(0, 0, true)
 					limiter.MarkBlocked(upstreamScopes, upEstIn, upEstOut)
 					cancelRound()
 					continue
 				}
+				// 请求本身有问题或内容被安全策略拦截: 换渠道必然同样失败, 直接透传上游错误。
+				// 内容拦截不换渠道, 是为了不跨供应商绕过内容审查。
+				if class == ErrorClassClient || class == ErrorClassPolicy {
+					releaseRouteProbe(group, item.ID)
+					upstreamReservation.Settle(0, 0, true)
+					cancelRound()
+					stop(err, upstreamStatus(err))
+					return
+				}
 				// 其余失败未产生用量, 退还本次尝试的限流预留。
 				upstreamReservation.Settle(0, 0, true)
 				cancelRound()
 				// 本轮真实失败只计入当前渠道和成员, 客户端取消与人工中止不计为渠道故障。
-				metrics := model.StatsMetrics{WaitTime: time.Since(roundStartedAt).Milliseconds(), RequestFailed: 1}
-				_ = op.ChannelStatsUpdate(channel.ID, metrics)
-				_ = op.ChannelModelStatsUpdate(channelModel.ID, metrics)
-				_ = op.ChannelKeyStatsUpdate(channelKey.ID, metrics)
-				op.ChannelDailyStatsUpdate(channel.ID, metrics)
-				op.ChannelModelDailyStatsUpdate(channelModel.ID, metrics)
-				recordMemberMetric(group.ID, item.ID, channelModel.ID, group.RelayConfig.MetricWindowSize, time.Since(roundStartedAt).Milliseconds(), false)
-			// 记录 Key 错误用于故障熔断
-			if channelKey != nil {
-				op.RecordChannelKeyError(channelKey.ID, "upstream_error")
-			}
-
+				// 模型没上架不是渠道故障: 只换路不计失败率, 避免拉低健康渠道的成功率。
+				if class != ErrorClassModel {
+					metrics := model.StatsMetrics{WaitTime: time.Since(roundStartedAt).Milliseconds(), RequestFailed: 1}
+					_ = op.ChannelStatsUpdate(channel.ID, metrics)
+					_ = op.ChannelModelStatsUpdate(channelModel.ID, metrics)
+					_ = op.ChannelKeyStatsUpdate(channelKey.ID, metrics)
+					op.ChannelDailyStatsUpdate(channel.ID, metrics)
+					op.ChannelModelDailyStatsUpdate(channelModel.ID, metrics)
+					recordMemberMetric(group.ID, item.ID, channelModel.ID, group.RelayConfig.MetricWindowSize, time.Since(roundStartedAt).Milliseconds(), false)
+					// 记录 Key 错误用于故障熔断
+					if channelKey != nil {
+						op.RecordChannelKeyError(channelKey.ID, string(class))
+					}
+				}
+				// 凭据失效/额度耗尽/过载/模型缺失: 原地重试无益, 冷却当前成员后立即换渠道;
+				// 没有其他可用成员时等待同样无益, 立即透传最后错误(模型缺失包一层友好提示)。
+				if class == ErrorClassAuth || class == ErrorClassQuota || class == ErrorClassOverload || class == ErrorClassModel {
+					coolItem(group, item.ID, classCooldownSeconds(class))
+					if group.Mode != model.GroupModeManual && hasOtherEligible(group, item.ID) {
+						continue
+					}
+					if class == ErrorClassModel {
+						stop(modelUnavailableError(request.Model), http.StatusNotFound)
+					} else {
+						stop(err, upstreamStatus(err))
+					}
+					return
+				}
 				// 成员改变时重新开始累计该成员在本请求内的连续失败次数。
 				if failedItemID == item.ID {
 					failures++
@@ -669,38 +697,19 @@ func reserveBalance(request *RequestState, group model.Group) error {
 	return nil
 }
 
-// isUpstreamRateLimited 判断上游错误是否为限流 429。
-func isUpstreamRateLimited(err error) bool {
-	if err == nil {
-		return false
-	}
-	var responseErr *llm.ResponseError
-	if errors.As(err, &responseErr) {
-		return responseErr.StatusCode == http.StatusTooManyRequests
-	}
-	// 透传路径的非 2xx 上游响应以 httpclient.Error 承载, 与转换路径同判。
-	var httpErr *httpclient.Error
-	if errors.As(err, &httpErr) {
-		return httpErr.StatusCode == http.StatusTooManyRequests
-	}
-	return strings.Contains(err.Error(), "429")
-}
-
-// attemptStatusOf 把上游错误映射为尝试终态: success / limited / timeout / canceled / failed。
+// attemptStatusOf 上游结果的尝试终态: 人工中止/客户端断开为 canceled, 超时单列, 其余按错误分类映射。
 func attemptStatusOf(err error) string {
 	if err == nil {
 		return "success"
 	}
-	if isUpstreamRateLimited(err) {
-		return "limited"
-	}
 	if errors.Is(err, context.Canceled) {
 		return "canceled"
 	}
-	if errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "timeout") {
+	if isTimeoutError(err) {
 		return "timeout"
 	}
-	return "failed"
+	class, _ := classifyUpstreamError(err)
+	return attemptStatusOfClass(class)
 }
 
 // rejectRateLimited 以 429 拒绝触顶的请求, 带 Retry-After 与限流错误类型供客户端退避。

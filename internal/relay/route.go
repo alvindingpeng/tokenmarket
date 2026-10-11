@@ -574,3 +574,31 @@ func CloseRouteStream(stream chan RouteState) {
 		close(stream)
 	}
 }
+
+// coolItem 立即把成员打入冷却并让出当前路由, 冷却时长由调用方按错误类别给出。
+// 与 recordRouteFailure 的区别: 不看尝试次数、时长不取配置值, 供凭据/额度/过载/模型类错误快速换路。
+func coolItem(group model.Group, itemID int, seconds int) {
+	if group.Mode == model.GroupModeManual {
+		return
+	}
+	if seconds < 1 {
+		seconds = 1
+	}
+	routeMu.Lock()
+	defer routeMu.Unlock()
+	route := routes[group.ID]
+	if route == nil {
+		return
+	}
+	route.Cooldowns[itemID] = time.Now().UnixMilli() + int64(seconds)*1000
+	if route.ProbeItemID == itemID {
+		route.ProbeItemID = 0
+	}
+	// 当前路由失败才需要下一个成员开始亲和。
+	if route.CurrentItemID == itemID {
+		route.CurrentItemID = 0
+		route.AffinityUntil = 0
+		route.affinityArmed = true
+	}
+	publishRouteLocked(route)
+}

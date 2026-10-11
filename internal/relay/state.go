@@ -77,13 +77,13 @@ type RequestState struct {
 	rateReservation *ratelimit.Reservation
 
 	// 计费上下文: admin 账号不计费(reservationID 为 0); 目标信息随最终轮次覆盖。
-	reservationID     uint64          // 余额预扣记录 ID, 0 表示未预扣。
-	targetChannelID   int             // 最终轮次落地渠道 ID。
-	targetOwnerID     uint            // 最终轮次落地渠道的归属用户, 供货价收入计入该用户。
-	targetShareCode   string          // 最终轮次落地渠道的发布编码, 计费明细脱敏展示用。
-	targetSupplyPrice model.LLMPrice  // 最终轮次落地模型的供货价快照(token 模型)。
+	reservationID     uint64           // 余额预扣记录 ID, 0 表示未预扣。
+	targetChannelID   int              // 最终轮次落地渠道 ID。
+	targetOwnerID     uint             // 最终轮次落地渠道的归属用户, 供货价收入计入该用户。
+	targetShareCode   string           // 最终轮次落地渠道的发布编码, 计费明细脱敏展示用。
+	targetSupplyPrice model.LLMPrice   // 最终轮次落地模型的供货价快照(token 模型)。
 	targetMediaSupply model.MediaPrice // 最终轮次落地模型的媒体供货价快照(图片/视频), text 模型为零值。
-	targetKind        model.MediaKind // 最终轮次落地模型的媒体形态, 用于区分计费路径。
+	targetKind        model.MediaKind  // 最终轮次落地模型的媒体形态, 用于区分计费路径。
 
 	requestCtx    context.Context    // 请求级上下文, 同时约束等待、当前轮次和后续重试。
 	requestCancel context.CancelFunc // 中止整个请求, 同时打断等待、当前轮次和后续重试。
@@ -217,7 +217,7 @@ func (r *RequestState) SetReservation(reservationID uint64) {
 }
 
 // finishRound 记录本轮上游结果并落库本轮尝试; errText 为空表示已取得可提交响应。
-// attemptStatus 为尝试终态: success / failed / limited / timeout / canceled。
+// attemptStatus 为尝试终态: 除 success / failed / limited / timeout / canceled 外, 还有按错误分类的新值(client_error / policy_blocked / auth_error / quota / overloaded / model_missing)。
 func (r *RequestState) finishRound(errText, attemptStatus string) {
 	mu.Lock()
 	defer mu.Unlock()

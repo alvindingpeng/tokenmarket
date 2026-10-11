@@ -1030,10 +1030,10 @@ func SelectChannelKey(channelID int, strategy string) (*model.ChannelKey, error)
 	// 获取该渠道的所有启用的 keys，按优先级排序
 	var keys []model.ChannelKey
 	query := db.GetDB().Where("channel_id = ? AND enabled = ?", channelID, true)
-	
+
 	// 排除熔断中的 keys（DisabledUntil 在未来）
 	query = query.Where("disabled_until IS NULL OR disabled_until < ?", time.Now())
-	
+
 	if err := query.Order("priority ASC, id ASC").Find(&keys).Error; err != nil {
 		return nil, fmt.Errorf("query channel keys: %w", err)
 	}
@@ -1074,16 +1074,26 @@ func RecordChannelKeyError(channelKeyID int, errorType string) {
 
 	now := time.Now()
 	errorCount := key.ErrorCount + 1
-	
+
 	// 错误次数阈值和熔断时长可配置，这里使用固定值
 	const (
-		errorThreshold = 5     // 连续 5 次错误触发熔断
+		errorThreshold       = 5               // 连续 5 次错误触发熔断
 		circuitBreakDuration = 5 * time.Minute // 熔断 5 分钟
 	)
 
 	updates := map[string]interface{}{
-		"error_count":  errorCount,
+		"error_count":   errorCount,
 		"last_error_at": &now,
+	}
+
+	// 凭据失效与额度耗尽在可见的将来都不会自愈: 跳过计数阈值立即熔断 30 分钟,
+	// 避免后续请求继续拿废 Key 反复打上游; 其余错误维持连续 5 次的阈值。
+	if errorType == "auth" || errorType == "quota" {
+		disabledUntil := now.Add(30 * time.Minute)
+		updates["disabled_until"] = &disabledUntil
+		updates["error_count"] = 0
+		db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", channelKeyID).Updates(updates)
+		return
 	}
 
 	// 达到阈值时启动熔断
