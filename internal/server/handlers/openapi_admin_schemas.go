@@ -141,8 +141,11 @@ func openAPIAdminSchemas() gin.H {
 		}),
 
 		"ChannelModelStats": withStatsFlatten(gin.H{
-			"model_id":   fieldNumber("integer", "渠道模型主键"),
-			"model_name": fieldString("上游模型名称"),
+			"model_id":       fieldNumber("integer", "渠道模型主键"),
+			"model_name":     fieldString("上游模型名称"),
+			"error_count":    fieldNumber("integer", "累计错误次数(渠道模型级熔断)"),
+			"last_error_at":  gin.H{"type": "string", "format": "date-time", "nullable": true, "description": "最后错误时间; 从未出错为 null"},
+			"disabled_until": gin.H{"type": "string", "format": "date-time", "nullable": true, "description": "渠道模型级熔断截止时间; 未熔断为 null"},
 		}),
 
 		"ChannelGrantCandidate": withStatsFlatten(gin.H{

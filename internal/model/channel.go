@@ -32,22 +32,22 @@ const (
 // 不带 binding 约束: 保存与探测都收这一份配置, 但两者的必填项不同 —— 探测发生在渠道尚未命名时,
 // 故必填校验分别由 normalizeChannelConfig 与 fetchUpstreamModels 按各自的需要给出。
 type ChannelConfig struct {
-	Name                     string         `json:"name" gorm:"uniqueIndex:idx_channel_owner_name;not null"`                                            // 渠道名称。
-	Dialect                  Dialect        `json:"dialect" gorm:"not null;default:generic"`                                                            // 上游方言, 决定出站转换器的厂商特化配置。
-	Enabled                  bool           `json:"enabled" gorm:"default:true"`                                                                        // 渠道是否可用。
-	BaseURL                  string         `json:"base_url"`                                                                                           // 上游地址, 各协议共用。
-	OpenAIChatCompletionPath string         `json:"openai_chat_completion_path" gorm:"column:openai_chat_completion_path;default:/v1/chat/completions"` // OpenAI Chat Completions 请求路径; 留空由后端填默认路径。
-	OpenAIResponsePath       string         `json:"openai_response_path" gorm:"column:openai_response_path;default:/v1/responses"`                      // OpenAI Responses 请求路径; 留空由后端填默认路径。
-	OpenAIImageGenerationPath string        `json:"openai_image_generation_path" gorm:"column:openai_image_generation_path;default:/v1/images/generations"` // OpenAI Images 协议: 图像生成请求路径; 留空由后端填默认路径。
-	OpenAIImageEditPath      string         `json:"openai_image_edit_path" gorm:"column:openai_image_edit_path;default:/v1/images/edits"`                       // OpenAI Images 协议: 图像编辑请求路径; 留空由后端填默认路径。
-	AnthropicMessagePath     string         `json:"anthropic_message_path" gorm:"column:anthropic_message_path;default:/v1/messages"`                   // Anthropic Messages 请求路径; 留空由后端填默认路径。
-	Proxy                    bool           `json:"proxy" gorm:"default:false"`                                                                         // 是否使用代理。
-	ChannelProxy             string         `json:"channel_proxy"`                                                                                      // 渠道专用代理地址; 留空表示不用渠道专用代理。
-	CustomHeader             []CustomHeader `json:"custom_header" gorm:"serializer:json"`                                                               // 追加到上游请求的 Header。
-	ParamOverride            string         `json:"param_override"`                                                                                     // 请求参数覆盖配置; 留空表示不覆盖。
-	MatchRegex               string         `json:"match_regex"`                                                                                        // 拉取模型列表时的过滤表达式; 留空表示不过滤。
-	ModelAutoAdd             bool           `json:"model_auto_add" gorm:"column:model_auto_add;default:false"`                                      // 保存后自动探测上游模型并入渠道; 默认关, 只增不删、授权按位 OR。
-	KeyRotationStrategy string         `json:"key_rotation_strategy" gorm:"default:roundrobin"`                                   // Key 轮换策略: roundrobin(轮询) / random(随机) / failover(故障切换)。
+	Name                      string         `json:"name" gorm:"uniqueIndex:idx_channel_owner_name;not null"`                                                // 渠道名称。
+	Dialect                   Dialect        `json:"dialect" gorm:"not null;default:generic"`                                                                // 上游方言, 决定出站转换器的厂商特化配置。
+	Enabled                   bool           `json:"enabled" gorm:"default:true"`                                                                            // 渠道是否可用。
+	BaseURL                   string         `json:"base_url"`                                                                                               // 上游地址, 各协议共用。
+	OpenAIChatCompletionPath  string         `json:"openai_chat_completion_path" gorm:"column:openai_chat_completion_path;default:/v1/chat/completions"`     // OpenAI Chat Completions 请求路径; 留空由后端填默认路径。
+	OpenAIResponsePath        string         `json:"openai_response_path" gorm:"column:openai_response_path;default:/v1/responses"`                          // OpenAI Responses 请求路径; 留空由后端填默认路径。
+	OpenAIImageGenerationPath string         `json:"openai_image_generation_path" gorm:"column:openai_image_generation_path;default:/v1/images/generations"` // OpenAI Images 协议: 图像生成请求路径; 留空由后端填默认路径。
+	OpenAIImageEditPath       string         `json:"openai_image_edit_path" gorm:"column:openai_image_edit_path;default:/v1/images/edits"`                   // OpenAI Images 协议: 图像编辑请求路径; 留空由后端填默认路径。
+	AnthropicMessagePath      string         `json:"anthropic_message_path" gorm:"column:anthropic_message_path;default:/v1/messages"`                       // Anthropic Messages 请求路径; 留空由后端填默认路径。
+	Proxy                     bool           `json:"proxy" gorm:"default:false"`                                                                             // 是否使用代理。
+	ChannelProxy              string         `json:"channel_proxy"`                                                                                          // 渠道专用代理地址; 留空表示不用渠道专用代理。
+	CustomHeader              []CustomHeader `json:"custom_header" gorm:"serializer:json"`                                                                   // 追加到上游请求的 Header。
+	ParamOverride             string         `json:"param_override"`                                                                                         // 请求参数覆盖配置; 留空表示不覆盖。
+	MatchRegex                string         `json:"match_regex"`                                                                                            // 拉取模型列表时的过滤表达式; 留空表示不过滤。
+	ModelAutoAdd              bool           `json:"model_auto_add" gorm:"column:model_auto_add;default:false"`                                              // 保存后自动探测上游模型并入渠道; 默认关, 只增不删、授权按位 OR。
+	KeyRotationStrategy       string         `json:"key_rotation_strategy" gorm:"default:roundrobin"`                                                        // Key 轮换策略: roundrobin(轮询) / random(随机) / failover(故障切换)。
 }
 
 // 单个上游渠道的共享配置; 路径按协议分别配置, 凭据由 ChannelKey 提供。
@@ -69,10 +69,10 @@ type ChannelKeyConfig struct {
 	Key     string `json:"key" gorm:"not null"`                               // 上游访问凭据。
 	Enabled bool   `json:"enabled" gorm:"default:true"`                       // 是否可用, 禁用后不参与选路但保留统计。
 	// Key 轮换与故障追踪。
-	Priority      int        `json:"priority" gorm:"default:0"`         // 优先级(failover 模式), 数值越小越优先。
-	ErrorCount    int        `json:"error_count" gorm:"default:0"`     // 累计错误次数。
-	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`          // 最后错误时间。
-	DisabledUntil *time.Time `json:"disabled_until,omitempty"`         // 自动禁用截止时间(故障熔断)。
+	Priority      int        `json:"priority" gorm:"default:0"`    // 优先级(failover 模式), 数值越小越优先。
+	ErrorCount    int        `json:"error_count" gorm:"default:0"` // 累计错误次数。
+	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`      // 最后错误时间。
+	DisabledUntil *time.Time `json:"disabled_until,omitempty"`     // 自动禁用截止时间(故障熔断)。
 }
 
 // 渠道下的一份上游凭据; 不同凭据通常对应不同的额度与计费。
@@ -85,14 +85,18 @@ type ChannelKey struct {
 
 // 渠道提供的单个上游模型。
 type ChannelModel struct {
-	ID           int       `json:"id" gorm:"primaryKey"`                                      // 渠道模型主键。
-	ChannelID    int       `json:"channel_id" gorm:"not null;index:idx_channel_model,unique"` // 所属渠道 ID。
-	Name         string    `json:"name" gorm:"not null;index:idx_channel_model,unique"`       // 上游模型名称。
-	Listed       bool      `json:"listed" gorm:"default:false"`                               // 是否上架: 已发布渠道中只有上架的模型对用户可见。
-	SupplyPrice  LLMPrice  `json:"supply_price" gorm:"serializer:json"`                       // 供货价(读/写/缓存读/缓存写, 每百万 token); 未设置即 0。
-	MediaSupply  MediaPrice `json:"media_supply" gorm:"serializer:json"`                     // 媒体供货价(每张 / 每秒 / 分档); 仅 kind=image|video 时使用, 老库迁移为零值。
-	Kind         MediaKind `json:"kind,omitempty" gorm:"column:kind;default:''"`              // 模型媒体形态; 文本留空, image=P1 生图, video=P2 视频。
-	StatsMetrics                                                                                  // 该模型自身的累计统计。
+	ID           int        `json:"id" gorm:"primaryKey"`                                      // 渠道模型主键。
+	ChannelID    int        `json:"channel_id" gorm:"not null;index:idx_channel_model,unique"` // 所属渠道 ID。
+	Name         string     `json:"name" gorm:"not null;index:idx_channel_model,unique"`       // 上游模型名称。
+	Listed       bool       `json:"listed" gorm:"default:false"`                               // 是否上架: 已发布渠道中只有上架的模型对用户可见。
+	SupplyPrice  LLMPrice   `json:"supply_price" gorm:"serializer:json"`                       // 供货价(读/写/缓存读/缓存写, 每百万 token); 未设置即 0。
+	MediaSupply  MediaPrice `json:"media_supply" gorm:"serializer:json"`                       // 媒体供货价(每张 / 每秒 / 分档); 仅 kind=image|video 时使用, 老库迁移为零值。
+	Kind         MediaKind  `json:"kind,omitempty" gorm:"column:kind;default:''"`              // 模型媒体形态; 文本留空, image=P1 生图, video=P2 视频。
+	StatsMetrics            // 该模型自身的累计统计。
+	// 渠道模型级故障熔断: 区分于 Key 级熔断, 隔离同渠道其它模型与该模型的其它 Key。
+	ErrorCount    int        `json:"error_count" gorm:"default:0"` // 累计错误次数。
+	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`      // 最后错误时间。
+	DisabledUntil *time.Time `json:"disabled_until,omitempty"`     // 自动禁用截止时间(故障熔断)。
 }
 
 // UserPrice 按比例放大 LLMPrice 形式供货价得到用户单价。

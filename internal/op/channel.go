@@ -1115,3 +1115,48 @@ func ResetChannelKeyErrors(channelKeyID int) {
 
 // keyRotationCounters 为每个 channel 维护轮询计数器
 var keyRotationCounters sync.Map // map[int]*uint64
+
+// isCircuitBroken 判断熔断截止时间是否在未来(仍处于熔断窗口内)。
+func isCircuitBroken(disabledUntil *time.Time) bool {
+	return disabledUntil != nil && disabledUntil.After(time.Now())
+}
+
+// RecordChannelModelError 记录某个渠道模型的错误, 用于渠道模型级故障熔断(区分于 Key 级熔断)。
+// 适用于过载/临时故障等渠道模型级错误: 同渠道下其它模型正常, 或该模型的其它 Key 正常, 隔离故障面。
+// 凭据失效/余额不足仍在 Key 级熔断(影响该 Key 所有模型); 模型缺失/内容拦截/请求错误不记错误不熔断。
+func RecordChannelModelError(channelModelID int, errorType string) {
+	var channelModel model.ChannelModel
+	if err := db.GetDB().First(&channelModel, channelModelID).Error; err != nil {
+		return
+	}
+
+	now := time.Now()
+	errorCount := channelModel.ErrorCount + 1
+
+	// 5 次错误触发 5 分钟熔断: 与 Key 的阈值机制一致但时长更短(模型级故障波动更频繁)。
+	const (
+		errorThreshold       = 5
+		circuitBreakDuration = 5 * time.Minute
+	)
+
+	updates := map[string]interface{}{
+		"error_count":   errorCount,
+		"last_error_at": &now,
+	}
+
+	// 达到阈值时启动熔断
+	if errorCount >= errorThreshold {
+		disabledUntil := now.Add(circuitBreakDuration)
+		updates["disabled_until"] = &disabledUntil
+		updates["error_count"] = 0 // 重置计数器
+	}
+
+	db.GetDB().Model(&model.ChannelModel{}).Where("id = ?", channelModelID).Updates(updates)
+}
+
+// ResetChannelModelErrors 重置某个渠道模型的错误计数(成功请求时调用)。
+func ResetChannelModelErrors(channelModelID int) {
+	db.GetDB().Model(&model.ChannelModel{}).Where("id = ?", channelModelID).Updates(map[string]interface{}{
+		"error_count": 0,
+	})
+}

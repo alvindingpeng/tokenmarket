@@ -374,7 +374,7 @@ func groupSnapshot(group model.Group, scope model.Scope) model.Group {
 		item.UserMedia = channelModel.MediaSupply.Scale(markup)
 		item.Kind = channelModel.Kind
 		item.ChannelName = channel.Name
-		item.Available = channel.Enabled && channelKey.Enabled
+		item.Available = channel.Enabled && channelKey.Enabled && !isCircuitBroken(channelKey.DisabledUntil) && !isCircuitBroken(channelModel.DisabledUntil)
 		// 展示名定稿: 已发布渠道一律显示发布唯一编码, 上游名称不出分组管理; 凭据名按归属脱敏。
 		if channel.ShareCode != "" {
 			item.ChannelName = channel.ShareCode
