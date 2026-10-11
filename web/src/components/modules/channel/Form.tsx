@@ -125,7 +125,7 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
     // 高度取 SHELL_HEIGHT: 既夹住矮屏(按钮行 shrink-0 常驻可见, 步骤区自己滚动消化超高内容),
     // 又在正常视口保持固定尺寸不随步骤跳动。详情视图取同一高度以对齐尺寸。
     return (
-        <form onSubmit={submit} className={`flex flex-col md:flex-row gap-6 ${SHELL_HEIGHT}`}>
+        <form onSubmit={submit} className={`flex min-h-0 flex-col overflow-hidden md:flex-row gap-6 ${SHELL_HEIGHT}`}>
             <nav className="md:w-28 shrink-0 flex md:flex-col gap-1 overflow-x-auto pt-1">
                 {steps.map((s) => (
                     <button
