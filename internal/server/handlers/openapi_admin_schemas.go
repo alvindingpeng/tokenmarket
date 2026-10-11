@@ -130,6 +130,49 @@ func openAPIAdminSchemas() gin.H {
 			"detail": fieldString("变更内容摘要, 同时写入审计"),
 		}),
 
+		"ChannelRepriceRequest": object(gin.H{
+			"id":         fieldNumber("integer", "渠道 ID"),
+			"multiplier": fieldNumber("number", "统一倍率: 目标供货价 = 官方价 × 倍率; 取值 (0,100]"),
+			"names":      gin.H{"type": "array", "items": gin.H{"type": "string"}, "description": "只改这些模型; 省略或留空表示改全部可改的行"},
+		}, "id", "multiplier"),
+
+		"ChannelRepriceRow": object(gin.H{
+			"name":     fieldString("渠道模型名称"),
+			"kind":     gin.H{"type": "string", "enum": []string{"", "image", "video"}, "description": "媒体形态; 非文本模型不参与 token 口径改价"},
+			"listed":   fieldBool("是否已上架; 改价不改上架状态"),
+			"current":  refWithDesc("LLMPrice", "当前供货价"),
+			"official": refWithDesc("LLMPrice", "官方价(取自本地价格库 llm_infos)"),
+			"next":     refWithDesc("LLMPrice", "官方价 × 统一倍率"),
+			"changed":  fieldBool("新价与当前价是否有差异"),
+			"skipped":  gin.H{"type": "string", "enum": []string{"", "no_official_price", "media_model", "over_cap"}, "description": "跳过原因; 空串表示该行已被计算"},
+		}),
+
+		"ChannelRepriceResult": object(gin.H{
+			"channel_id": fieldNumber("integer", "渠道 ID"),
+			"multiplier": fieldNumber("number", "本次使用的统一倍率"),
+			"rows":       gin.H{"type": "array", "items": ref("ChannelRepriceRow"), "description": "逐个模型的计算结果, 按名称定序"},
+			"changed":    fieldNumber("integer", "价格发生变化的行数"),
+			"skipped":    fieldNumber("integer", "被跳过的行数"),
+			"updated":    fieldNumber("integer", "实际写入的行数; 预览接口恒为 0"),
+		}),
+
+		"ChannelBreakerResetRequest": object(gin.H{
+			"id":          fieldNumber("integer", "渠道 ID"),
+			"key_names":   gin.H{"type": "array", "items": gin.H{"type": "string"}, "description": "要解除熔断的凭据名称; 与 model_names 至少给一个"},
+			"model_names": gin.H{"type": "array", "items": gin.H{"type": "string"}, "description": "要解除熔断的渠道模型名称; 与 key_names 至少给一个"},
+		}, "id"),
+
+		"ModelCapability": object(gin.H{
+			"name":       fieldString("模型名, 统一小写; 可能带厂商前缀(如 openai/gpt-image-1)"),
+			"input":      fieldString("逗号分隔的输入模态: text,image,audio,video,pdf"),
+			"output":     fieldString("逗号分隔的输出模态: text,image,video,audio,pdf"),
+			"context":    fieldNumber("integer", "上下文窗口(token); 0 表示官方未登记"),
+			"max_output": fieldNumber("integer", "单次最大输出(token); 0 表示官方未登记"),
+			"family":     fieldString("官方系列名, 仅供排错与展示"),
+			"source":     gin.H{"type": "string", "enum": []string{"models.dev", "manual"}, "description": "来源; manual 为人工补录, 同步时不覆盖也不删除"},
+			"updated_at": datetime(""),
+		}),
+
 		"ChannelStats": withStatsFlatten(gin.H{
 			"channel_id":   fieldNumber("integer", "渠道主键"),
 			"user_id":      fieldNumber("integer", "归属用户"),

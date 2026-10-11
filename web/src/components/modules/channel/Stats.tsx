@@ -12,6 +12,7 @@ import {
     FileText,
     MessageSquare,
     Pencil,
+    RotateCcw,
     Share2,
     Trash2,
     X,
@@ -19,7 +20,7 @@ import {
 import { snapdom } from '@zumer/snapdom';
 import { toast } from 'sonner';
 import { useTranslations } from 'use-intl';
-import { type ChannelStatsFormatted, useChannelDailyStats, useDeleteChannel } from '@/api/channel';
+import { type ChannelStatsFormatted, useChannelDailyStats, useDeleteChannel, useResetChannelBreaker } from '@/api/channel';
 import { formatStatsMetrics, type StatsMetricsFormatted } from '@/api/stats';
 import { formatTime } from '@/lib/utils';
 import { useMorphingDialog } from '@/components/ui/morphing-dialog';
@@ -33,6 +34,24 @@ type ModelSortKey = 'cost' | 'count' | 'tokens';
 const successRate = (success: number, failed: number) => {
     const total = success + failed;
     return total > 0 ? (success / total) * 100 : 0;
+};
+
+// 熔断状态: 后端按时间自愈, 前端只负责如实展示"熔断中"与剩余时长。
+// disabledUntil 是后端给的绝对时间, 本地时钟偏差会让它偏一点, 这里只做展示, 不参与任何判定。
+const isBroken = (disabledUntil: string | null | undefined) => {
+    if (!disabledUntil) return false;
+    const until = Date.parse(disabledUntil);
+    return Number.isFinite(until) && until > Date.now();
+};
+
+// remainText 把熔断截止时间渲染成"还剩多久"。
+const remainText = (disabledUntil: string | null | undefined) => {
+    const until = disabledUntil ? Date.parse(disabledUntil) : NaN;
+    if (!Number.isFinite(until)) return '';
+    const seconds = Math.max(0, Math.floor((until - Date.now()) / 1000));
+    if (seconds >= 3600) return Math.floor(seconds / 3600) + 'h' + Math.floor((seconds % 3600) / 60) + 'm';
+    if (seconds >= 60) return Math.floor(seconds / 60) + 'm';
+    return seconds + 's';
 };
 
 // MetricValue 统一渲染数值与单位
@@ -134,6 +153,7 @@ export function ChannelStats({ channel, onEdit }: {
     const tCommon = useTranslations('common');
     const { setIsOpen } = useMorphingDialog();
     const deleteChannel = useDeleteChannel();
+    const resetBreaker = useResetChannelBreaker();
     const [modelSort, setModelSort] = useState<ModelSortKey>('cost');
     // 隐藏渠道名称, 分享图也跟随此状态
     const [isNameHidden, setIsNameHidden] = useState(false);
@@ -217,6 +237,10 @@ export function ChannelStats({ channel, onEdit }: {
             return {
                 id: channelModel.model_id,
                 name: channelModel.model_name,
+                // 熔断状态随统计同源下发: 熔断中的模型请求会直接失败, 排行里必须能一眼看出,
+                // 否则只会看到成功率变 0 却找不到原因。
+                disabledUntil: channelModel.disabledUntil,
+                errorCount: channelModel.error_count,
                 weight: modelSort === 'cost'
                     ? formatted.total_cost.raw
                     : modelSort === 'tokens' ? formatted.total_token.raw : formatted.request_count.raw,
@@ -420,7 +444,30 @@ export function ChannelStats({ channel, onEdit }: {
                                     className="grid gap-2 rounded-2xl border bg-card p-3 @md/stats:grid-cols-[minmax(0,1fr)_auto] @md/stats:items-center @md/stats:gap-4"
                                 >
                                     <div className="min-w-0 space-y-1.5">
-                                        <span className="block truncate text-sm font-medium text-card-foreground">{model.name}</span>
+                                        <span className="flex items-center gap-1.5">
+                                            <span className="truncate text-sm font-medium text-card-foreground">{model.name}</span>
+                                            {isBroken(model.disabledUntil) && (
+                                                <button
+                                                    type="button"
+                                                    data-share-exclude
+                                                    disabled={resetBreaker.isPending}
+                                                    title={t('breakerTitle', { count: model.errorCount })}
+                                                    onClick={() => resetBreaker.mutate(
+                                                        { id: channel.channel_id, model_names: [model.name] },
+                                                        {
+                                                            onSuccess: (result) => result.reset > 0
+                                                                ? toast.success(t('breakerReset', { name: model.name }))
+                                                                : toast.info(t('breakerAlreadyClear', { name: model.name })),
+                                                            onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
+                                                        }
+                                                    )}
+                                                    className="flex shrink-0 items-center gap-0.5 rounded-md bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive transition-colors hover:bg-destructive/20 disabled:opacity-50"
+                                                >
+                                                    <RotateCcw className="size-2.5" />
+                                                    {t('breakerBadge', { time: remainText(model.disabledUntil) })}
+                                                </button>
+                                            )}
+                                        </span>
                                         <div className="flex items-center gap-2">
                                             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
                                                 <div className="h-full rounded-full bg-primary" style={{ width: `${model.share}%` }} />

@@ -42,22 +42,22 @@ const (
 	SettingKeyMaintenanceMode         SettingKey = "maintenance_mode"          // 维护模式, 开启后非管理员登录将被拒绝
 	SettingKeyMaintenanceNotice       SettingKey = "maintenance_notice"        // 维护提示文案
 	// 日志生命周期与备份: 留存、脱敏与自动备份。
-	SettingKeyLogRetentionDays   SettingKey = "log_retention_days"    // 调用日志留存天数, 默认 7。
-	SettingKeyLogArchiveEnabled  SettingKey = "log_archive_enabled"   // 是否在清理前归档, 默认 true。
-	SettingKeyLogStoreBody       SettingKey = "log_store_body"        // 是否保存请求/响应正文, 默认 true。
-	SettingKeyLogMaskFields      SettingKey = "log_mask_fields"       // 正文脱敏字段(逗号分隔的 JSON key)。
-	SettingKeyAutoBackupEnabled  SettingKey = "auto_backup_enabled"   // 自动备份开关, 默认 true。
-	SettingKeyAutoBackupKeep     SettingKey = "auto_backup_keep"      // 自动备份保留份数, 默认 7。
-	SettingKeyAutoBackupInterval SettingKey = "auto_backup_interval"  // 自动备份间隔(小时), 默认 24。
-	SettingKeyBackupEncrypt      SettingKey = "backup_encrypt"        // 备份加密开关, 默认 false; 口令在 config.json backup.passphrase。
-	SettingKeyBackupRemote       SettingKey = "backup_remote"         // 备份异地推送开关, 默认 false; 地址与凭据在 config.json backup.remote_*。
-	SettingKeyHealthCheckEnabled SettingKey = "health_check_enabled"  // 渠道健康探测开关, 默认 false(可能产生上游费用)。
-	SettingKeyHealthCheckMinutes SettingKey = "health_check_interval" // 渠道健康探测间隔(分钟), 默认 30。
-	SettingKeyHealthLatencyMS    SettingKey = "health_latency_ms"     // 延迟告警阈值(毫秒), 0 表示关闭, 默认 1000。
-	SettingKeyAlertWebhookURL    SettingKey = "alert_webhook_url"     // 告警 Webhook 地址, 留空仅站内通知。
-	SettingKeyAlertDedupMinutes  SettingKey = "alert_dedup_minutes"   // 告警去重窗口(分钟), 同渠道同类型同原因在窗口内只告警一次, 默认 10。
+	SettingKeyLogRetentionDays      SettingKey = "log_retention_days"       // 调用日志留存天数, 默认 7。
+	SettingKeyLogArchiveEnabled     SettingKey = "log_archive_enabled"      // 是否在清理前归档, 默认 true。
+	SettingKeyLogStoreBody          SettingKey = "log_store_body"           // 是否保存请求/响应正文, 默认 true。
+	SettingKeyLogMaskFields         SettingKey = "log_mask_fields"          // 正文脱敏字段(逗号分隔的 JSON key)。
+	SettingKeyAutoBackupEnabled     SettingKey = "auto_backup_enabled"      // 自动备份开关, 默认 true。
+	SettingKeyAutoBackupKeep        SettingKey = "auto_backup_keep"         // 自动备份保留份数, 默认 7。
+	SettingKeyAutoBackupInterval    SettingKey = "auto_backup_interval"     // 自动备份间隔(小时), 默认 24。
+	SettingKeyBackupEncrypt         SettingKey = "backup_encrypt"           // 备份加密开关, 默认 false; 口令在 config.json backup.passphrase。
+	SettingKeyBackupRemote          SettingKey = "backup_remote"            // 备份异地推送开关, 默认 false; 地址与凭据在 config.json backup.remote_*。
+	SettingKeyHealthCheckEnabled    SettingKey = "health_check_enabled"     // 渠道健康探测开关, 默认 false(可能产生上游费用)。
+	SettingKeyHealthCheckMinutes    SettingKey = "health_check_interval"    // 渠道健康探测间隔(分钟), 默认 30。
+	SettingKeyHealthLatencyMS       SettingKey = "health_latency_ms"        // 延迟告警阈值(毫秒), 0 表示关闭, 默认 1000。
+	SettingKeyAlertWebhookURL       SettingKey = "alert_webhook_url"        // 告警 Webhook 地址, 留空仅站内通知。
+	SettingKeyAlertDedupMinutes     SettingKey = "alert_dedup_minutes"      // 告警去重窗口(分钟), 同渠道同类型同原因在窗口内只告警一次, 默认 10。
 	SettingKeyAlertFailStreak       SettingKey = "alert_fail_streak"        // 连续失败多少次才判定渠道宕机, 默认 3(抖动抑制)。
-	SettingKeyAlertChannels         SettingKey = "alert_channels"          // 启用的告警渠道(逗号分隔): webhook,telegram,email, 默认仅 webhook。
+	SettingKeyAlertChannels         SettingKey = "alert_channels"           // 启用的告警渠道(逗号分隔): webhook,telegram,email, 默认仅 webhook。
 	SettingKeyAlertTelegramBotToken SettingKey = "alert_telegram_bot_token" // Telegram Bot Token。
 	SettingKeyAlertTelegramChatID   SettingKey = "alert_telegram_chat_id"   // Telegram Chat ID。
 	SettingKeyAlertEmailSMTPHost    SettingKey = "alert_email_smtp_host"    // SMTP 服务器地址。
@@ -72,6 +72,15 @@ const (
 	// 登录防爆破: 按 IP+用户名 计量连续失败次数, 超限后指数退避锁定。在设置页面上独立配置以兼容多实例共享存储的场景。
 	SettingKeyLoginMaxAttempts    SettingKey = "login_max_attempts"    // 连续失败次数阈值, 默认 5; 0 表示不按次数锁定(但退避仍然生效)。
 	SettingKeyLoginLockoutSeconds SettingKey = "login_lockout_seconds" // 首次锁定的基础秒数, 默认 900 (15 分钟); 每次额外失败后翻倍, 封顶 1 小时。
+	// 熔断参数: 上游故障的计数阈值与隔离时长, 全部可调; 阈值 0 表示不按计数熔断(立即熔断与冷却仍生效)。
+	SettingKeyBreakerKeyThreshold    SettingKey = "breaker_key_threshold"     // 凭据级熔断的错误次数阈值, 默认 5。
+	SettingKeyBreakerKeyMinutes      SettingKey = "breaker_key_minutes"       // 凭据级熔断时长(分钟), 默认 5。
+	SettingKeyBreakerKeyHardMinutes  SettingKey = "breaker_key_hard_minutes"  // 鉴权/额度错误的立即熔断时长(分钟), 默认 30。
+	SettingKeyBreakerModelThreshold  SettingKey = "breaker_model_threshold"   // 渠道模型级熔断的错误次数阈值, 默认 5。
+	SettingKeyBreakerModelMinutes    SettingKey = "breaker_model_minutes"     // 渠道模型级熔断时长(分钟), 默认 5。
+	SettingKeyBreakerCoolAuthSeconds SettingKey = "breaker_cool_auth_seconds" // 换路冷却: 鉴权/额度错误后该成员冷却秒数, 默认 60。
+	SettingKeyBreakerCoolSoftSeconds SettingKey = "breaker_cool_soft_seconds" // 换路冷却: 过载/模型缺失等软错误后该成员冷却秒数, 默认 30。
+
 	// 内部键: 只存库不出任何读取接口, 也不进备份。
 	SettingKeyAuthSecret SettingKey = "auth_secret"
 )
@@ -133,6 +142,14 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyMetricsToken, Value: ""},                 // 令牌留空, 开启鉴权时自动生成
 		{Key: SettingKeyLoginMaxAttempts, Value: "5"},            // 连续 5 次失败即触发退避锁定
 		{Key: SettingKeyLoginLockoutSeconds, Value: "900"},       // 锁定 15 分钟, 起效前每超一次翻倍
+		{Key: SettingKeyBreakerKeyThreshold, Value: "5"},         // 连续 5 次错误熔断该凭据
+		{Key: SettingKeyBreakerKeyMinutes, Value: "5"},           // 凭据熔断 5 分钟
+		{Key: SettingKeyBreakerKeyHardMinutes, Value: "30"},      // 鉴权/额度错误立即熔断 30 分钟
+		{Key: SettingKeyBreakerModelThreshold, Value: "5"},       // 连续 5 次错误熔断该渠道模型
+		{Key: SettingKeyBreakerModelMinutes, Value: "5"},         // 渠道模型熔断 5 分钟
+		{Key: SettingKeyBreakerCoolAuthSeconds, Value: "60"},     // 鉴权/额度成员冷却 60 秒
+		{Key: SettingKeyBreakerCoolSoftSeconds, Value: "30"},     // 过载/模型缺失成员冷却 30 秒
+
 	}
 }
 
@@ -218,6 +235,30 @@ func (s *Setting) Validate() error {
 		port, err := strconv.Atoi(s.Value)
 		if err != nil || port < 1 || port > 65535 {
 			return fmt.Errorf("invalid SMTP port: must be 1-65535")
+		}
+		return nil
+	case SettingKeyBreakerKeyThreshold, SettingKeyBreakerModelThreshold:
+		// 0 关闭计数熔断(只剩立即熔断与冷却), 上限 100 次以免阈值形同虚设。
+		if n, err := strconv.Atoi(s.Value); err != nil || n < 0 || n > 100 {
+			return fmt.Errorf("breaker error threshold must be an integer between 0 and 100")
+		}
+		return nil
+	case SettingKeyBreakerKeyMinutes, SettingKeyBreakerModelMinutes:
+		// 至少 1 分钟, 上限一天; 熔断时长为 0 等于不熔断, 应改用阈值 0。
+		if n, err := strconv.Atoi(s.Value); err != nil || n < 1 || n > 1440 {
+			return fmt.Errorf("breaker duration must be an integer between 1 and 1440 minutes")
+		}
+		return nil
+	case SettingKeyBreakerKeyHardMinutes:
+		// 鉴权与额度的立即熔断至少 1 分钟, 上限一天。
+		if n, err := strconv.Atoi(s.Value); err != nil || n < 1 || n > 1440 {
+			return fmt.Errorf("breaker hard duration must be an integer between 1 and 1440 minutes")
+		}
+		return nil
+	case SettingKeyBreakerCoolAuthSeconds, SettingKeyBreakerCoolSoftSeconds:
+		// 冷却只防本轮重复选中, 上限 10 分钟。
+		if n, err := strconv.Atoi(s.Value); err != nil || n < 0 || n > 600 {
+			return fmt.Errorf("breaker cooldown must be an integer between 0 and 600 seconds")
 		}
 		return nil
 	case SettingKeyMetricsAuth:

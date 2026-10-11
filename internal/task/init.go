@@ -32,8 +32,16 @@ func Init() {
 	priceUpdateInterval := time.Duration(priceUpdateIntervalHours) * time.Hour
 	// 注册价格更新任务
 	Register(string(model.SettingKeyModelInfoUpdateInterval), priceUpdateInterval, true, func() {
-		if err := price.UpdateLLMPrice(context.Background()); err != nil {
+		ctx := context.Background()
+		capabilities, err := price.UpdateLLMPrice(ctx)
+		if err != nil {
 			log.Warnf("failed to update price info: %v", err)
+		}
+		// 能力登记与价格同源却各自独立: 价格解析失败时能力未必也失败, 故分开处理, 互不阻塞。
+		if len(capabilities) > 0 {
+			if err := op.CapabilityReplaceFromModelsDev(capabilities, ctx); err != nil {
+				log.Warnf("failed to update model capabilities: %v", err)
+			}
 		}
 	})
 

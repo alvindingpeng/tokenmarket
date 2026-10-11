@@ -25,6 +25,13 @@ const OPS_KEYS = [
     SettingKey.HealthCheckEnabled,
     SettingKey.HealthCheckInterval,
     SettingKey.HealthLatencyMS,
+    SettingKey.BreakerKeyThreshold,
+    SettingKey.BreakerKeyMinutes,
+    SettingKey.BreakerKeyHardMinutes,
+    SettingKey.BreakerModelThreshold,
+    SettingKey.BreakerModelMinutes,
+    SettingKey.BreakerCoolAuthSeconds,
+    SettingKey.BreakerCoolSoftSeconds,
     SettingKey.AlertWebhookURL,
     SettingKey.AlertDedupMinutes,
     SettingKey.AlertFailStreak,
@@ -250,6 +257,76 @@ export function SettingOps() {
                 <Input type='number' min={0} max={600000} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.HealthLatencyMS] ?? ''}
                     onBlur={(event) => saveNumber(SettingKey.HealthLatencyMS, event.target.value.trim(), 0, 600000, '1000')} />
+            </div>
+
+            <div className={rowClass + ' ' + dividerClass}>
+                <div className='min-w-0'>
+                    <Label className='text-sm font-medium'>{t('breakerKeyThreshold')}</Label>
+                    <p className='text-xs text-muted-foreground'>{t('breakerKeyThresholdHint')}</p>
+                </div>
+                <Input type='number' min={0} max={100} className='h-9 w-28 rounded-xl'
+                    value={values[SettingKey.BreakerKeyThreshold] ?? ''}
+                    onBlur={(event) => saveNumber(SettingKey.BreakerKeyThreshold, event.target.value.trim(), 0, 100, '5')} />
+            </div>
+
+            <div className={rowClass + ' ' + dividerClass}>
+                <div className='min-w-0'>
+                    <Label className='text-sm font-medium'>{t('breakerKeyMinutes')}</Label>
+                    <p className='text-xs text-muted-foreground'>{t('breakerKeyMinutesHint')}</p>
+                </div>
+                <Input type='number' min={1} max={1440} className='h-9 w-28 rounded-xl'
+                    value={values[SettingKey.BreakerKeyMinutes] ?? ''}
+                    onBlur={(event) => saveNumber(SettingKey.BreakerKeyMinutes, event.target.value.trim(), 1, 1440, '5')} />
+            </div>
+
+            <div className={rowClass + ' ' + dividerClass}>
+                <div className='min-w-0'>
+                    <Label className='text-sm font-medium'>{t('breakerKeyHardMinutes')}</Label>
+                    <p className='text-xs text-muted-foreground'>{t('breakerKeyHardMinutesHint')}</p>
+                </div>
+                <Input type='number' min={1} max={1440} className='h-9 w-28 rounded-xl'
+                    value={values[SettingKey.BreakerKeyHardMinutes] ?? ''}
+                    onBlur={(event) => saveNumber(SettingKey.BreakerKeyHardMinutes, event.target.value.trim(), 1, 1440, '30')} />
+            </div>
+
+            <div className={rowClass + ' ' + dividerClass}>
+                <div className='min-w-0'>
+                    <Label className='text-sm font-medium'>{t('breakerModelThreshold')}</Label>
+                    <p className='text-xs text-muted-foreground'>{t('breakerModelThresholdHint')}</p>
+                </div>
+                <Input type='number' min={0} max={100} className='h-9 w-28 rounded-xl'
+                    value={values[SettingKey.BreakerModelThreshold] ?? ''}
+                    onBlur={(event) => saveNumber(SettingKey.BreakerModelThreshold, event.target.value.trim(), 0, 100, '5')} />
+            </div>
+
+            <div className={rowClass + ' ' + dividerClass}>
+                <div className='min-w-0'>
+                    <Label className='text-sm font-medium'>{t('breakerModelMinutes')}</Label>
+                    <p className='text-xs text-muted-foreground'>{t('breakerModelMinutesHint')}</p>
+                </div>
+                <Input type='number' min={1} max={1440} className='h-9 w-28 rounded-xl'
+                    value={values[SettingKey.BreakerModelMinutes] ?? ''}
+                    onBlur={(event) => saveNumber(SettingKey.BreakerModelMinutes, event.target.value.trim(), 1, 1440, '5')} />
+            </div>
+
+            <div className={rowClass + ' ' + dividerClass}>
+                <div className='min-w-0'>
+                    <Label className='text-sm font-medium'>{t('breakerCoolAuthSeconds')}</Label>
+                    <p className='text-xs text-muted-foreground'>{t('breakerCoolAuthSecondsHint')}</p>
+                </div>
+                <Input type='number' min={0} max={600} className='h-9 w-28 rounded-xl'
+                    value={values[SettingKey.BreakerCoolAuthSeconds] ?? ''}
+                    onBlur={(event) => saveNumber(SettingKey.BreakerCoolAuthSeconds, event.target.value.trim(), 0, 600, '60')} />
+            </div>
+
+            <div className={rowClass + ' ' + dividerClass}>
+                <div className='min-w-0'>
+                    <Label className='text-sm font-medium'>{t('breakerCoolSoftSeconds')}</Label>
+                    <p className='text-xs text-muted-foreground'>{t('breakerCoolSoftSecondsHint')}</p>
+                </div>
+                <Input type='number' min={0} max={600} className='h-9 w-28 rounded-xl'
+                    value={values[SettingKey.BreakerCoolSoftSeconds] ?? ''}
+                    onBlur={(event) => saveNumber(SettingKey.BreakerCoolSoftSeconds, event.target.value.trim(), 0, 600, '30')} />
             </div>
 
             <div className={rowClass + ' ' + dividerClass}>

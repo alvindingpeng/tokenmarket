@@ -193,6 +193,28 @@ func openAPIAdminPathsAuth() gin.H {
 				}), true),
 		},
 
+		"/api/v1/channel/models/reprice": gin.H{
+			"post": adminPath("channel", "一键改价预览",
+				"按统一倍率算出渠道内每个模型的目标供货价(官方价 × 倍率), 不写库。"+adminNewLine+adminNewLine+
+					"只处理文本模型: 官方价格表是每百万 token 的口径, 生图/生视频模型按张与秒计价, 用 token 价覆盖媒体价等于改错收入口径, 故一律跳过。"+adminNewLine+
+					"跳过的行在 skipped 里给出原因: no_official_price(价格库无此模型) / media_model(媒体形态模型) / over_cap(超出供货价上限)。",
+				"ChannelRepriceRequest", adminEnvelope("改价预览", ref("ChannelRepriceResult")), true),
+		},
+		"/api/v1/channel/models/reprice/apply": gin.H{
+			"post": adminPath("channel", "一键改价执行",
+				"按预览结果写库, 只改供货价, 不动上架状态。"+adminNewLine+adminNewLine+
+					"names 省略或留空表示改全部可改的行; 指定时只改这些模型。实际写入条数在 updated 中给出。"+adminNewLine+
+					"改价会同步重建分组快照(用户价 = 供货价 × 上浮比例), 并写入 channel.model-reprice 审计。",
+				"ChannelRepriceRequest", adminEnvelope("改价结果", ref("ChannelRepriceResult")), true),
+		},
+		"/api/v1/channel/breaker/reset": gin.H{
+			"post": adminPath("channel", "解除渠道熔断",
+				"按名称手动清零渠道凭据或渠道模型的错误计数并清掉熔断截止时间。"+adminNewLine+adminNewLine+
+					"自动熔断按时间自愈, 上游修好(换 Key, 补额度)后用它立刻恢复, 不必干等熔断到期。"+adminNewLine+
+					"key_names 与 model_names 至少要给一个, 两者都为空为 400; 返回实际解锁的条数。"+adminNewLine+
+					"熔断的参数(阈值与时长)在系统设置的运维参数页配置。",
+				"ChannelBreakerResetRequest", adminEnvelope("解锁条数", gin.H{"type": "object", "properties": gin.H{"reset": gin.H{"type": "integer"}}}), true),
+		},
 		// ---------------- 分组(客户端可见模型) ----------------
 		"/api/v1/group/list": gin.H{
 			"get": adminPath("group", "分组列表",
@@ -262,6 +284,26 @@ func openAPIAdminPathsAuth() gin.H {
 				"先清理幽灵模型(有价无引用), 再按价格源全量重写单价, 返回处理条数。"+adminNewLine+adminNewLine+
 					"渠道上手工设置过的价格会被覆盖, 慎用。", "",
 				adminEnvelope("重建条数", gin.H{"type": "object", "properties": gin.H{"count": gin.H{"type": "integer"}}}), true),
+		},
+		"/api/v1/model/capability": gin.H{
+			"get": adminPath("model", "模型能力登记",
+				"官方登记的模型输入输出模态与规模上限(models.dev 自动同步 + 人工补录)。"+adminNewLine+adminNewLine+
+					"它决定探测渠道模型时预勾选哪些协议位: 只输出图像的判为生图, 只输出视频的判为生视频, 图文混合的既不判生图也不预勾选 —— "+adminNewLine+
+					"混合模型一旦被判生图就会按张计费, 聊天流量会被算成图片。"+adminNewLine+
+					"媒体单价官方不提供, 仍由管理员按每张/每秒填写, 与本登记无关。",
+				"", adminArray("能力登记", "ModelCapability"), false),
+		},
+		"/api/v1/model/capability/save": gin.H{
+			"post": adminPath("model", "人工补录模型能力",
+				"覆盖或新建一条能力登记, 来源固定记为 manual。"+adminNewLine+adminNewLine+
+					"官方未收录的小众模型靠它兜底, 后续同步不会覆盖也不会删除人工条目。"+adminNewLine+
+					"模态用逗号分隔, 例如 output=image 表示只出图。",
+				"ModelCapability", adminItem("保存后的能力登记", "ModelCapability"), true),
+		},
+		"/api/v1/model/capability/delete": gin.H{
+			"post": adminPath("model", "删除模型能力登记",
+				"请求体只需 name; 同步会重新写回官方来源的条目, 人工条目删除后不再恢复。",
+				"ModelNameRequest", adminOk(), true),
 		},
 		"/api/v1/model/last-update-time": gin.H{
 			"get": adminPath("model", "价格库最后同步时间",

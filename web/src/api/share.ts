@@ -66,6 +66,64 @@ export function useChannelListings(channelID: number, enabled = true) {
 }
 
 /**
+ * 一键改价的单行结果：current 为当前供货价, official 为官方价, next 为官方价 × 倍率。
+ * skipped 给出跳过原因（no_official_price / media_model / over_cap），空串表示该行已参与计算。
+ */
+export type ChannelRepriceRow = {
+    name: string;
+    kind?: string;
+    listed: boolean;
+    current: LLMPrice;
+    official: LLMPrice;
+    next: LLMPrice;
+    changed: boolean;
+    skipped?: string;
+};
+
+export type ChannelRepriceResult = {
+    channel_id: number;
+    multiplier: number;
+    rows: ChannelRepriceRow[];
+    changed: number;
+    skipped: number;
+    updated: number;
+};
+
+export type ChannelRepriceRequest = {
+    id: number;
+    multiplier: number;
+    names?: string[];
+};
+
+/**
+ * usePreviewChannelReprice 按统一倍率试算目标供货价，不写库。
+ * 改价直接影响收入口径，故先预览再执行：每一行的旧价、官方价与新价都在写入前可见。
+ */
+export function usePreviewChannelReprice() {
+    return useMutation({
+        mutationFn: (data: ChannelRepriceRequest) =>
+            apiRequest<ChannelRepriceResult>('/api/v1/channel/models/reprice', { method: 'POST', body: data }),
+    });
+}
+
+/**
+ * useApplyChannelReprice 按统一倍率改价并落库；只改供货价，不动上架状态。
+ */
+export function useApplyChannelReprice() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (data: ChannelRepriceRequest) =>
+            apiRequest<ChannelRepriceResult>('/api/v1/channel/models/reprice/apply', { method: 'POST', body: data }),
+        onSuccess: (_data, variables) => {
+            // 与逐行保存同一套失效范围：供货价变了，上架配置、授权候选与分组用户价都要重取。
+            void queryClient.invalidateQueries({ queryKey: ['channels', 'models', variables.id] });
+            void queryClient.invalidateQueries({ queryKey: ['channels', 'grants'] });
+            void queryClient.invalidateQueries({ queryKey: ['groups'] });
+        },
+    });
+}
+
+/**
  * usePublishChannel 发布或下架渠道。
  */
 export function usePublishChannel() {

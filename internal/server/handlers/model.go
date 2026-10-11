@@ -56,6 +56,20 @@ func init() {
 		AddRoute(
 			router.NewRoute("/scores", http.MethodGet).
 				Handle(listModelScores),
+		).
+		AddRoute(
+			router.NewRoute("/capability", http.MethodGet).
+				Handle(listModelCapability),
+		).
+		AddRoute(
+			router.NewRoute("/capability/save", http.MethodPost).
+				Allow(model.RoleAdmin).
+				Handle(saveModelCapability),
+		).
+		AddRoute(
+			router.NewRoute("/capability/delete", http.MethodPost).
+				Allow(model.RoleAdmin).
+				Handle(deleteModelCapability),
 		)
 	router.NewGroupRouter("/v1").
 		Use(middleware.APIKeyAuth()).
@@ -180,13 +194,63 @@ func deleteLLM(c *gin.Context) {
 	resp.Success(c, nil)
 }
 
+// listModelCapability 返回模型能力登记, 供价格库页面展示与排错。
+// 与价格分开: 能力登记是"这个模型输出什么", 价格是"它值多少钱", 两者来源相同但语义不同。
+func listModelCapability(c *gin.Context) {
+	resp.Success(c, op.CapabilityList())
+}
+
+// saveModelCapability 人工补录或覆盖一条能力登记, 来源固定记为 manual, 后续同步不会覆盖它。
+func saveModelCapability(c *gin.Context) {
+	var capability model.ModelCapability
+	if err := c.ShouldBindJSON(&capability); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	if err := op.CapabilitySaveManual(capability, c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	audit(c, "model.capability-save", capability.Name,
+		fmt.Sprintf("input=%s output=%s context=%d", capability.Input, capability.Output, capability.Context))
+	saved, _ := op.CapabilityGet(capability.Name)
+	resp.Success(c, saved)
+}
+
+// deleteModelCapability 删除一条能力登记, 供清理错误条目。
+func deleteModelCapability(c *gin.Context) {
+	var request struct {
+		Name string `json:"name"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	if err := op.CapabilityDelete(request.Name, c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	audit(c, "model.capability-delete", request.Name, "")
+	resp.Success(c, nil)
+}
+
 func updateLLMPrice(c *gin.Context) {
-	err := price.UpdateLLMPrice(c.Request.Context())
+	ctx := c.Request.Context()
+	// 一次抓取同时更新价格表与模型能力登记: 能力登记决定探测渠道模型时预勾选的协议位。
+	capabilities, err := price.UpdateLLMPrice(ctx)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	audit(c, "model.update-price", "", "sync from models.dev")
+	capabilityCount := 0
+	if len(capabilities) > 0 {
+		if err := op.CapabilityReplaceFromModelsDev(capabilities, ctx); err != nil {
+			resp.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		capabilityCount = len(capabilities)
+	}
+	audit(c, "model.update-price", "", fmt.Sprintf("sync from models.dev, capabilities=%d", capabilityCount))
 	resp.Success(c, nil)
 }
 

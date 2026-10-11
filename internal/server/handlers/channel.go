@@ -82,7 +82,90 @@ func init() {
 			router.NewRoute("/models/update", http.MethodPost).
 				Allow(model.RoleAdmin, model.RoleReseller).
 				Handle(updateChannelModelListings),
+		).
+		AddRoute(
+			router.NewRoute("/models/reprice", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(previewChannelReprice),
+		).
+		AddRoute(
+			router.NewRoute("/models/reprice/apply", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(applyChannelReprice),
+		).
+		AddRoute(
+			router.NewRoute("/breaker/reset", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(resetChannelBreaker),
 		)
+}
+
+// channelRepriceRequest 是一键改价的提交形状, 预览与执行共用。
+// multiplier 是"官方价 × 倍率"里的倍率, 不是上浮比例: 2 表示官方价的两倍, 与用户价的 markup 口径不同。
+type channelRepriceRequest struct {
+	ID         int      `json:"id"`
+	Multiplier float64  `json:"multiplier"`
+	Names      []string `json:"names,omitempty"` // 只改这些模型; 省略或留空表示改全部可改的行。
+}
+
+// previewChannelReprice 按统一倍率算出目标价并回执, 不写库。
+// 先预览再执行: 改价直接影响收入口径, 必须让人在写入前看清每一行的旧价与新价。
+func previewChannelReprice(c *gin.Context) {
+	var request channelRepriceRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	result, err := op.ChannelRepricePlan(request.ID, scopeOf(c), request.Multiplier)
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	resp.Success(c, result)
+}
+
+// applyChannelReprice 按统一倍率改价并落库, 回执与预览同形, 便于界面直接续用同一份预览。
+// 改价是收入口径的变更, 故写入审计, 使调价可追溯。
+func applyChannelReprice(c *gin.Context) {
+	var request channelRepriceRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	result, err := op.ChannelRepriceApply(request.ID, scopeOf(c), request.Multiplier, request.Names, c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if result.Updated > 0 {
+		audit(c, "channel.model-reprice", fmt.Sprintf("channel#%d", request.ID),
+			fmt.Sprintf("multiplier=%g updated=%d", result.Multiplier, result.Updated))
+	}
+	resp.Success(c, result)
+}
+
+// resetChannelBreaker 手动解除渠道下凭据或渠道模型的熔断。
+// 自动熔断按时间自愈, 上游修好(换 Key、补额度)后需要能立刻恢复, 否则只能干等熔断到期。
+func resetChannelBreaker(c *gin.Context) {
+	var request struct {
+		ID         int      `json:"id"`
+		KeyNames   []string `json:"key_names,omitempty"`
+		ModelNames []string `json:"model_names,omitempty"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	count, err := op.ChannelBreakerReset(request.ID, request.KeyNames, request.ModelNames, scopeOf(c), c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if count > 0 {
+		audit(c, "channel.breaker-reset", fmt.Sprintf("channel#%d", request.ID),
+			fmt.Sprintf("keys=%v models=%v count=%d", request.KeyNames, request.ModelNames, count))
+	}
+	resp.Success(c, gin.H{"reset": count})
 }
 
 // scopeOf 从上下文取访问者作用域。
