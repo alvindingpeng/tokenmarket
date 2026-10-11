@@ -97,9 +97,13 @@ func pickGroupItem(group model.Group) model.GroupItem {
 		}
 	}
 
-	// 按优先级扫描: 未冷却成员进入候选, 首个冷却到期的成员登记为探测候选。
+	// 按优先级扫描: 未冷却成员进入候选; 冷却已到期的成员同样回池, 额外登记首个为探测候选。
+	// 到期成员必须回池: 冷却条目只在探测成功或成员被移除时才删除, 若把到期成员一律挡在候选外、
+	// 又只对"优先级压过全部健康成员"者放行探测, 那么优先级低的成员一次失败后就再也拿不到流量 ——
+	// 冷却早已到期却永久饿死, 价格优先/综合评分等策略随之失效(最便宜的成员被永久踢出局)。
 	candidates := make([]model.GroupItem, 0, len(group.Items))
 	var probeCandidate *model.GroupItem
+	bestHealthyPriority, hasHealthy := 0, false
 	for i := range group.Items {
 		item := &group.Items[i]
 		// 上游限流触顶的成员直接出局: 与冷却不同, 不计失败率也不设恢复惩罚。
@@ -114,15 +118,17 @@ func pickGroupItem(group model.Group) model.GroupItem {
 			if probeCandidate == nil {
 				probeCandidate = item
 			}
-			continue
+		} else if !hasHealthy || item.Priority < bestHealthyPriority {
+			bestHealthyPriority, hasHealthy = item.Priority, true
 		}
 		candidates = append(candidates, *item)
 	}
 
-	// 冷却到期的成员优先级高于全部候选时放行一个探测请求(与故障转移原语义一致);
-	// 没有任何候选时也探测, 避免全组冷却时请求永久等待。探测占用被其它请求持有时跳过。
+	// 冷却到期的成员优先级高于全部健康候选时先放一个探测请求(与故障转移原语义一致);
+	// 全组都在恢复时也探测, 避免请求永久等待。探测占用被其它请求持有时跳过, 该成员此时
+	// 留在候选池里照常参与选择, 不会因为探测被占用而再次从路由里消失。
 	if probeCandidate != nil && route.ProbeItemID == 0 &&
-		(len(candidates) == 0 || probeCandidate.Priority < candidates[0].Priority) {
+		(!hasHealthy || probeCandidate.Priority < bestHealthyPriority) {
 		route.ProbeItemID = probeCandidate.ID
 		publishRouteLocked(route)
 		return *probeCandidate
@@ -398,10 +404,15 @@ func recordRouteSuccess(group model.Group, itemID int) {
 	now := time.Now().UnixMilli()
 	changed := false
 
-	// 探测成功说明该成员已恢复, 解除冷却; 若当前路由不在亲和期内则立即切回该成员。
+	// 任何一次成功都证明该成员可用: 清掉残留的冷却条目。
+	// 不清的话条目会一直挂在冷却表里, 让该成员反复被登记为"恢复探测"候选。
+	if _, cooling := route.Cooldowns[itemID]; cooling {
+		delete(route.Cooldowns, itemID)
+		changed = true
+	}
+	// 探测成功说明该成员已恢复; 若当前路由不在亲和期内则立即切回该成员。
 	if route.ProbeItemID == itemID {
 		route.ProbeItemID = 0
-		delete(route.Cooldowns, itemID)
 		if route.CurrentItemID == 0 || route.AffinityUntil <= now {
 			route.CurrentItemID = itemID
 			route.AffinityUntil = 0
