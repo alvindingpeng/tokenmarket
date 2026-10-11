@@ -31,19 +31,42 @@ export interface GroupRelayConfig {
     reliability_floor: number;
 }
 
-// GroupMemberMetric 是分组成员的实时选路指标快照: 首响应耗时与成功率的滑动平均。
+// GroupScoreBasis 是综合评分实际采用的权重与可靠性下限, 解析顺序为
+// 分组自定义 > 系统设置 > 内置兜底, 与选路的取值完全一致。
+export interface GroupScoreBasis {
+    price_weight: number;
+    latency_weight: number;
+    success_weight: number;
+    reliability_floor: number; // 0..1, 低于此值按比例折减总分。
+}
+
+// GroupMemberMetric 是分组成员的实时选路指标与综合评分快照。
+// 指标是首响应耗时与成功率的滑动平均; 评分按 basis 的配比在本分组全部成员内归一化后加权,
+// 口径与选路一致, 冷成员(samples=0)的延迟与成功率按中性值 50 参与。
 export interface GroupMemberMetric {
     item_id: number;
     wait_ms: number;
     success: number;
     samples: number;
+    score: number; // 0-100 综合得分, 已含可靠性软惩罚。
+    price_score: number;
+    latency_score: number;
+    success_score: number;
+    cold: boolean;
+    healthy: boolean;
 }
 
-// useGroupMetrics 轮询分组成员的实时选路指标; 未指定分组时不请求, 由 MemberStatus 按成员取用。
+// GroupMetrics 是分组成员指标接口的响应: 评分依据 + 全部成员(含冷成员)。
+export interface GroupMetrics {
+    basis: GroupScoreBasis;
+    items: GroupMemberMetric[];
+}
+
+// useGroupMetrics 轮询分组成员的实时选路指标与综合评分; 未指定分组时不请求, 由 MemberStatus 按成员取用。
 export function useGroupMetrics(groupId?: number) {
     return useQuery({
         queryKey: ['group', 'metrics', groupId],
-        queryFn: () => apiRequest<GroupMemberMetric[]>(`/api/v1/group/metrics/${groupId}`),
+        queryFn: () => apiRequest<GroupMetrics>(`/api/v1/group/metrics/${groupId}`),
         enabled: !!groupId,
         refetchInterval: 20000,
         refetchOnMount: 'always',

@@ -405,7 +405,13 @@
             "activate": "设为活动项",
             "cooling": "冷却 {seconds}s",
             "affinity": "亲和 {seconds}s",
-            "metricTitle": "选路采样 {samples} 次;按滑动平均估算首响应耗时与成功率,供路由策略参考"
+            "metricTitle": "选路采样 {samples} 次;按滑动平均估算首响应耗时与成功率,供路由策略参考",
+            "scoreBadge": "评分 {score}",
+            "scoreTitle": "综合评分 {score} / 100",
+            "scoreDims": "维度: 价格 {price} · 延迟 {latency} · 成功率 {success}",
+            "scoreBasis": "配比: 价格 {price} / 延迟 {latency} / 成功率 {success},可靠性下限 {floor}%",
+            "scoreCold": "暂无采样,延迟与成功率按中性值参与",
+            "scoreUnhealthy": "成功率低于可靠性下限,总分已按比例折减"
         },
         "detail": {
             "actions": {
@@ -474,7 +480,7 @@
             "member_stream_idle_timeout_seconds": "流式空闲超时（秒）",
             "member_stream_idle_timeout_secondsHint": "连续无流事件时中止，默认 60 秒。"
         },
-        "memberPrice": "读 {input} / 写 {output}（每百万 token）",
+        "memberPrice": "读 {input} / 写 {output}（m）",
         "modelPrice": "读 {input} / 写 {output} / 缓存读 {cacheRead} / 缓存写 {cacheWrite}（m）"
     },
     "model": {

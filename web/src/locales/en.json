@@ -405,7 +405,13 @@
             "activate": "Set as active",
             "cooling": "Cooling {seconds}s",
             "affinity": "Affinity {seconds}s",
-            "metricTitle": "Sampled {samples} requests; sliding-average first-response latency and success rate used by routing strategies"
+            "metricTitle": "Sampled {samples} requests; sliding-average first-response latency and success rate used by routing strategies",
+            "scoreBadge": "Score {score}",
+            "scoreTitle": "Composite score {score} / 100",
+            "scoreDims": "Dimensions: price {price} · latency {latency} · success {success}",
+            "scoreBasis": "Weights: price {price} / latency {latency} / success {success}, reliability floor {floor}%",
+            "scoreCold": "No samples yet; latency and success use neutral values",
+            "scoreUnhealthy": "Success rate is below the reliability floor; the total is discounted"
         },
         "detail": {
             "actions": {
@@ -474,7 +480,7 @@
             "member_stream_idle_timeout_seconds": "Stream idle timeout (seconds)",
             "member_stream_idle_timeout_secondsHint": "Abort if no new stream events arrive; default 60 seconds."
         },
-        "memberPrice": "Read {input} / write {output} per 1M tokens",
+        "memberPrice": "Read {input} / write {output} (m)",
         "modelPrice": "read {input} / write {output} / cache read {cacheRead} / cache write {cacheWrite} (m)"
     },
     "model": {

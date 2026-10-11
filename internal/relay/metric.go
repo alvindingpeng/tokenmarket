@@ -122,35 +122,6 @@ func seedModelMetric(channelModelID int, waitMs, success float64, samples int) {
 	}
 }
 
-// MemberMetricView 是分组成员指标的可视快照, 供分组页展示。
-type MemberMetricView struct {
-	ItemID  int     `json:"item_id"` // 分组成员 ID, 与分组条目的 id 对应。
-	WaitMs  float64 `json:"wait_ms"` // 首响应耗时 EMA, 毫秒。
-	Success float64 `json:"success"` // 成功率 EMA, 0..1。
-	Samples int     `json:"samples"` // 已累计样本数。
-}
-
-// MemberMetricViews 返回指定分组在给定成员集合内的指标快照, 无样本的成员不返回。
-func MemberMetricViews(groupID int, itemIDs []int) []MemberMetricView {
-	allowed := make(map[int]struct{}, len(itemIDs))
-	for _, id := range itemIDs {
-		allowed[id] = struct{}{}
-	}
-	metricMu.Lock()
-	defer metricMu.Unlock()
-	views := make([]MemberMetricView, 0, len(itemIDs))
-	for key, metric := range memberMetrics {
-		if key.groupID != groupID {
-			continue
-		}
-		if _, ok := allowed[key.itemID]; !ok {
-			continue
-		}
-		views = append(views, MemberMetricView{ItemID: key.itemID, WaitMs: metric.emaWaitMs, Success: metric.emaSuccess, Samples: metric.samples})
-	}
-	return views
-}
-
 // ModelScoreView 是单个上游渠道模型的全局指标快照, 供模型页卡片展示评分。
 type ModelScoreView struct {
 	ChannelModelID int     `json:"channel_model_id"`
