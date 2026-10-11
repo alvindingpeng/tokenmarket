@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/httpclient"
 )
@@ -184,12 +185,17 @@ func modelUnavailableError(modelName string) error {
 
 // classCooldownSeconds 换路类错误的成员冷却时长(秒): 只为防止本轮立刻又选中同一成员, 不做长惩罚——
 // 凭据/额度问题的长惩罚由 Key 熔断承担, 不拖累该渠道下其他 Key 与其他模型。
+// 两档时长都是运维参数(熔断与冷却设置), 缺键或非法值回退内置默认。
 func classCooldownSeconds(class ErrorClass) int {
 	switch class {
 	case ErrorClassAuth, ErrorClassQuota:
-		return 60
+		if v := op.BreakerCoolAuthSeconds(); v > 0 {
+			return v
+		}
 	case ErrorClassOverload, ErrorClassModel:
-		return 30
+		if v := op.BreakerCoolSoftSeconds(); v > 0 {
+			return v
+		}
 	}
 	return 1
 }

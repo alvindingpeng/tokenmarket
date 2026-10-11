@@ -81,10 +81,15 @@ export type ChannelDetail = {
     model_auto_add: boolean; // 保存后自动探测上游模型并入渠道; 默认关, 只增不删、授权按位 OR。
 };
 
-// ChannelModelStats 是单个渠道模型的累计统计，自带名称。
+// ChannelModelStats 是单个渠道模型的累计统计，自带名称与熔断状态。
+// 熔断字段来自渠道模型自身（不是统计表）：count 与熔断共用同一列，熔断触发时清零，
+// 故它表示"熔断前的连续错误数"。disabled_until 有值即表示当前正在熔断。
 export type ChannelModelStats = StatsMetrics & {
     model_id: number;
     model_name: string;
+    error_count?: number;
+    last_error_at?: string | null;
+    disabled_until?: string | null;
 };
 
 // ChannelStats 是单个渠道及其模型的累计统计，自带名称与启停状态。
@@ -101,9 +106,13 @@ export type ChannelStats = StatsMetrics & {
 };
 
 // ChannelModelStatsFormatted 是单个渠道模型的展示用统计。
+// disabledUntil 保留原始时间戳而非格式化字符串：界面要按"还剩多久"实时倒计时，需要可比较的时间值。
 export type ChannelModelStatsFormatted = {
     model_id: number;
     model_name: string;
+    error_count: number;
+    disabledUntil: string | null;
+    lastErrorAt: string | null;
     formatted: StatsMetricsFormatted;
 };
 
@@ -164,6 +173,9 @@ const channelStatsFormattedQueryOptions = queryOptions({
         models: item.models.map((channelModel) => ({
             model_id: channelModel.model_id,
             model_name: channelModel.model_name,
+            error_count: channelModel.error_count ?? 0,
+            disabledUntil: channelModel.disabled_until ?? null,
+            lastErrorAt: channelModel.last_error_at ?? null,
             formatted: formatStatsMetrics(channelModel),
         })),
         formatted: formatStatsMetrics(item),
@@ -291,6 +303,23 @@ export function useDeleteChannel() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['channels'] });
             queryClient.invalidateQueries({ queryKey: modelListQueryOptions.queryKey });
+            queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
+        },
+    });
+}
+
+/**
+ * useResetChannelBreaker 手动解除渠道下的熔断。
+ * 上游修好(换 Key, 补额度)后不必等熔断到期; 名称由后端在渠道范围内匹配, 不存在的名称不会报错。
+ */
+export function useResetChannelBreaker() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (data: { id: number; key_names?: string[]; model_names?: string[] }) =>
+            apiRequest<{ reset: number }>('/api/v1/channel/breaker/reset', { method: 'POST', body: data }),
+        onSuccess: () => {
+            // 熔断状态随统计下发, 解锁后立刻重取, 否则界面还会显示"熔断中"。
+            queryClient.invalidateQueries({ queryKey: ['channels'] });
             queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
         },
     });

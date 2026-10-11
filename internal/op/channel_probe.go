@@ -132,12 +132,31 @@ func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key str
 
 	models := make([]model.ChannelFetchModel, 0, len(order))
 	for _, name := range order {
-		// 生图模型无法从 /models 端点确认能力, 按名称关键词补一个生图协议位的默认勾选;
-		// 管理员在授权矩阵中仍可自由增删该位, 这里只影响探测后的初始状态。
-		if matchesImageModelName(name) {
-			protocolsByModel[name] |= model.ProtocolOpenAIImage
+		// 生图模型无法从 /models 端点确认能力, 故按能力登记预勾选生图协议位; 管理员在授权矩阵中
+		// 仍可自由增删该位, 这里只影响探测后的初始状态。
+		// 图文混合模型(如 gemini-flash-image)同样登记了 image 输出, 但它同时能聊天: 预勾生图位会被
+		// 判成按张计费, 聊天流量就会按图片计价, 故这类模型只提示、不预勾, 由管理员自己决定。
+		protocols := protocolsByModel[name]
+		fetched := model.ChannelFetchModel{Name: name}
+		if capability, ok := CapabilityGet(name); ok {
+			fetched.Capability = capability.MediaKind()
+			fetched.Source = model.CapabilitySourceModelsDev
+			if !capability.MixedMedia() {
+				if capability.OutputsImage() {
+					protocols |= model.ProtocolOpenAIImage
+				}
+				if capability.OutputsVideo() {
+					protocols |= model.ProtocolOpenAIVideo
+				}
+			}
+		} else if matchesImageModelName(name) {
+			// 能力登记里没有的模型(自建、小众供应商、新模型)退回名称关键词兜底, 保持既有行为不倒退。
+			protocols |= model.ProtocolOpenAIImage
+			fetched.Capability = model.MediaKindImage
+			fetched.Source = "keyword"
 		}
-		models = append(models, model.ChannelFetchModel{Name: name, Protocols: protocolsByModel[name]})
+		fetched.Protocols = protocols
+		models = append(models, fetched)
 	}
 	return models, nil
 }
@@ -257,4 +276,3 @@ func decodeModelList[T any](response *http.Response) (T, error) {
 	}
 	return result, nil
 }
-

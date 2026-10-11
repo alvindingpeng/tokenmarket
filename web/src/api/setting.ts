@@ -59,6 +59,13 @@ export const SettingKey = {
     AlertEmailFrom: 'alert_email_from', // 发件人地址。
     AlertEmailTo: 'alert_email_to', // 收件人地址(逗号分隔)。
     MetricsAuth: 'metrics_auth', // 探针鉴权: off(默认开放) | bearer(需令牌)。
+    BreakerKeyThreshold: 'breaker_key_threshold', // 凭据级熔断的错误次数阈值, 0 表示不按计数熔断, 默认 5。
+    BreakerKeyMinutes: 'breaker_key_minutes', // 凭据级熔断时长(分钟), 默认 5。
+    BreakerKeyHardMinutes: 'breaker_key_hard_minutes', // 鉴权/额度错误的立即熔断时长(分钟), 默认 30。
+    BreakerModelThreshold: 'breaker_model_threshold', // 渠道模型级熔断的错误次数阈值, 0 表示不按计数熔断, 默认 5。
+    BreakerModelMinutes: 'breaker_model_minutes', // 渠道模型级熔断时长(分钟), 默认 5。
+    BreakerCoolAuthSeconds: 'breaker_cool_auth_seconds', // 鉴权/额度错误后该成员换路冷却秒数, 默认 60。
+    BreakerCoolSoftSeconds: 'breaker_cool_soft_seconds', // 过载/模型缺失等软错误后该成员换路冷却秒数, 默认 30。
 } as const;
 
 /**

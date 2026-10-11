@@ -50,9 +50,12 @@ func ChannelStatsList(scope model.Scope) []model.ChannelStats {
 	modelsByChannel := make(map[int][]model.ChannelModelStats, channelCache.Len())
 	for _, channelModel := range channelModelCache.GetAll() {
 		modelsByChannel[channelModel.ChannelID] = append(modelsByChannel[channelModel.ChannelID], model.ChannelModelStats{
-			ModelID:      channelModel.ID,
-			ModelName:    channelModel.Name,
-			StatsMetrics: channelModel.StatsMetrics,
+			ModelID:       channelModel.ID,
+			ModelName:     channelModel.Name,
+			StatsMetrics:  channelModel.StatsMetrics,
+			ErrorCount:    channelModel.ErrorCount,
+			LastErrorAt:   channelModel.LastErrorAt,
+			DisabledUntil: channelModel.DisabledUntil,
 		})
 	}
 	stats := make([]model.ChannelStats, 0, channelCache.Len())
@@ -949,6 +952,11 @@ func syncChannelModelKinds(tx *gorm.DB, channelID int) error {
 		if imageModels[channelModel.ID] {
 			kind = model.MediaKindImage
 		}
+		// 能力登记里明确只输出视频的模型, 即使没勾任何媒体协议位也按视频形态落库:
+		// 形态决定预扣与结算口径, 视频模型按 token 计费会把时长流量算成文本流量。
+		if capability, ok := CapabilityGet(channelModel.Name); ok && capability.MediaKind() == model.MediaKindVideo {
+			kind = model.MediaKindVideo
+		}
 		if channelModel.Kind == kind {
 			continue
 		}
@@ -1075,30 +1083,29 @@ func RecordChannelKeyError(channelKeyID int, errorType string) {
 	now := time.Now()
 	errorCount := key.ErrorCount + 1
 
-	// 错误次数阈值和熔断时长可配置，这里使用固定值
-	const (
-		errorThreshold       = 5               // 连续 5 次错误触发熔断
-		circuitBreakDuration = 5 * time.Minute // 熔断 5 分钟
-	)
+	// 阈值与时长来自系统设置(运维参数), 缺键或非法值回退到内置默认。
+	threshold := breakerKeyThreshold()
+	duration := time.Minute * time.Duration(breakerKeyMinutes())
+	hardDuration := time.Minute * time.Duration(breakerKeyHardMinutes())
 
 	updates := map[string]interface{}{
 		"error_count":   errorCount,
 		"last_error_at": &now,
 	}
 
-	// 凭据失效与额度耗尽在可见的将来都不会自愈: 跳过计数阈值立即熔断 30 分钟,
-	// 避免后续请求继续拿废 Key 反复打上游; 其余错误维持连续 5 次的阈值。
+	// 凭据失效与额度耗尽在可见的将来都不会自愈: 跳过计数阈值按硬熔断时长立即熔断,
+	// 避免后续请求继续拿废 Key 反复打上游; 其余错误走计数阈值。
 	if errorType == "auth" || errorType == "quota" {
-		disabledUntil := now.Add(30 * time.Minute)
+		disabledUntil := now.Add(hardDuration)
 		updates["disabled_until"] = &disabledUntil
 		updates["error_count"] = 0
 		db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", channelKeyID).Updates(updates)
 		return
 	}
 
-	// 达到阈值时启动熔断
-	if errorCount >= errorThreshold {
-		disabledUntil := now.Add(circuitBreakDuration)
+	// 达到阈值时启动熔断; 阈值为 0 表示关闭计数熔断, 只保留鉴权/额度的立即熔断。
+	if threshold > 0 && errorCount >= threshold {
+		disabledUntil := now.Add(duration)
 		updates["disabled_until"] = &disabledUntil
 		updates["error_count"] = 0 // 重置计数器
 	}
@@ -1115,6 +1122,57 @@ func ResetChannelKeyErrors(channelKeyID int) {
 
 // keyRotationCounters 为每个 channel 维护轮询计数器
 var keyRotationCounters sync.Map // map[int]*uint64
+
+// 熔断参数读取: 全部走系统设置, 缺键、非法或越界时回退到下面的默认值,
+// 使老库(没有这些键)与手工改库都保持既有行为, 转发路径不会因配置缺失而中断。
+const (
+	defaultBreakerKeyThreshold   = 5
+	defaultBreakerKeyMinutes     = 5
+	defaultBreakerKeyHardMinutes = 30
+	defaultBreakerModelThreshold = 5
+	defaultBreakerModelMinutes   = 5
+
+	defaultBreakerCoolAuthSeconds = 60
+	defaultBreakerCoolSoftSeconds = 30
+)
+
+func breakerSetting(key model.SettingKey, fallback int, max int) int {
+	v := SettingGetIntDefault(key, fallback)
+	if v < 0 || v > max {
+		return fallback
+	}
+	return v
+}
+
+func breakerKeyThreshold() int {
+	return breakerSetting(model.SettingKeyBreakerKeyThreshold, defaultBreakerKeyThreshold, 100)
+}
+
+func breakerKeyMinutes() int {
+	return breakerSetting(model.SettingKeyBreakerKeyMinutes, defaultBreakerKeyMinutes, 1440)
+}
+
+func breakerKeyHardMinutes() int {
+	return breakerSetting(model.SettingKeyBreakerKeyHardMinutes, defaultBreakerKeyHardMinutes, 1440)
+}
+
+func breakerModelThreshold() int {
+	return breakerSetting(model.SettingKeyBreakerModelThreshold, defaultBreakerModelThreshold, 100)
+}
+
+func breakerModelMinutes() int {
+	return breakerSetting(model.SettingKeyBreakerModelMinutes, defaultBreakerModelMinutes, 1440)
+}
+
+// BreakerCoolAuthSeconds 换路冷却: 鉴权/额度错误后该成员被跳过的秒数(转发路径读取)。
+func BreakerCoolAuthSeconds() int {
+	return breakerSetting(model.SettingKeyBreakerCoolAuthSeconds, defaultBreakerCoolAuthSeconds, 600)
+}
+
+// BreakerCoolSoftSeconds 换路冷却: 过载/模型缺失等软错误后该成员被跳过的秒数(转发路径读取)。
+func BreakerCoolSoftSeconds() int {
+	return breakerSetting(model.SettingKeyBreakerCoolSoftSeconds, defaultBreakerCoolSoftSeconds, 600)
+}
 
 // isCircuitBroken 判断熔断截止时间是否在未来(仍处于熔断窗口内)。
 func isCircuitBroken(disabledUntil *time.Time) bool {
@@ -1133,20 +1191,18 @@ func RecordChannelModelError(channelModelID int, errorType string) {
 	now := time.Now()
 	errorCount := channelModel.ErrorCount + 1
 
-	// 5 次错误触发 5 分钟熔断: 与 Key 的阈值机制一致但时长更短(模型级故障波动更频繁)。
-	const (
-		errorThreshold       = 5
-		circuitBreakDuration = 5 * time.Minute
-	)
+	// 与 Key 同一套机制, 阈值与时长各自独立可配。
+	threshold := breakerModelThreshold()
+	duration := time.Minute * time.Duration(breakerModelMinutes())
 
 	updates := map[string]interface{}{
 		"error_count":   errorCount,
 		"last_error_at": &now,
 	}
 
-	// 达到阈值时启动熔断
-	if errorCount >= errorThreshold {
-		disabledUntil := now.Add(circuitBreakDuration)
+	// 达到阈值时启动熔断; 阈值为 0 表示关闭该级的计数熔断。
+	if threshold > 0 && errorCount >= threshold {
+		disabledUntil := now.Add(duration)
 		updates["disabled_until"] = &disabledUntil
 		updates["error_count"] = 0 // 重置计数器
 	}

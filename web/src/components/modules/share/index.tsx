@@ -1,9 +1,17 @@
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'use-intl';
-import { Copy, ExternalLink, Link2, PackageCheck, Wand2 } from 'lucide-react';
+import { Copy, ExternalLink, Link2, PackageCheck, RefreshCw, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useChannelStats, type ChannelStatsFormatted } from '@/api/channel';
-import { useChannelListings, usePublishChannel, useUpdateChannelListings, type ChannelModelListing } from '@/api/share';
+import {
+    useApplyChannelReprice,
+    useChannelListings,
+    usePreviewChannelReprice,
+    usePublishChannel,
+    useUpdateChannelListings,
+    type ChannelModelListing,
+    type ChannelRepriceResult,
+} from '@/api/share';
 import { useModelList } from '@/api/model';
 import { useSettingList } from '@/api/setting';
 import { Button } from '@/components/ui/button';
@@ -148,6 +156,53 @@ function ListingRows({ channelID }: { channelID: number }) {
         );
     };
 
+    // reprice 区: 按统一倍率从官方价重算供货价。
+    // 先试算再写入: 倍率是拍脑袋给的量, 必须先看清每一行会变成多少, 才能决定要不要落库。
+    // 媒体模型(kind 非空)不参与 —— 它们按张/秒计价, 官方表里是 token 价, 不是同一个口径。
+    const [multiplier, setMultiplier] = useState('1');
+    const [preview, setPreview] = useState<ChannelRepriceResult | null>(null);
+    const previewReprice = usePreviewChannelReprice();
+    const applyReprice = useApplyChannelReprice();
+
+    // repriceValue 解析倍率输入; 非法或超出后端上限时给 0, 由按钮的禁用态挡掉。
+    const repriceValue = (() => {
+        const parsed = Number(multiplier);
+        return Number.isFinite(parsed) && parsed > 0 && parsed <= 100 ? parsed : 0;
+    })();
+
+    const runPreview = () => {
+        if (repriceValue === 0) {
+            toast.error(t('reprice.badMultiplier'));
+            return;
+        }
+        previewReprice.mutate(
+            { id: channelID, multiplier: repriceValue },
+            {
+                onSuccess: (result) => {
+                    setPreview(result);
+                    if (result.changed === 0) toast.info(t('reprice.noChange'));
+                },
+                onError: (error) => toast.error(error.message),
+            }
+        );
+    };
+
+    const runApply = () => {
+        if (!preview || preview.changed === 0) return;
+        applyReprice.mutate(
+            { id: channelID, multiplier: preview.multiplier },
+            {
+                onSuccess: (result) => {
+                    toast.success(t('reprice.applied', { count: result.updated }));
+                    // 落库后草稿里的旧价已经过时, 清空以改用服务端重取的结果, 避免误存回旧价。
+                    setDraft(null);
+                    setPreview(null);
+                },
+                onError: (error) => toast.error(error.message),
+            }
+        );
+    };
+
     if (isLoading && rows.length === 0) {
         return <p className="py-8 text-center text-sm text-muted-foreground">{t('loading')}</p>;
     }
@@ -171,11 +226,55 @@ function ListingRows({ channelID }: { channelID: number }) {
                 </Select>
                 <span className="text-xs text-muted-foreground">{t('counts', { shown: visible.length, total: rows.length })}</span>
                 <div className="flex-1" />
+                <div className="flex items-center gap-2">
+                    {/* 统一倍率改价: 目标供货价 = 官方价 × 倍率。先试算, 看清每一行的新价再决定是否落库。 */}
+                    <span className="text-xs text-muted-foreground">{t('reprice.multiplier')}</span>
+                    <Input type="number" min={0} step="any" className="h-8 w-20 rounded-xl" value={multiplier}
+                        disabled={previewReprice.isPending || applyReprice.isPending}
+                        onChange={(event) => { setMultiplier(event.target.value); setPreview(null); }} />
+                    <Button variant="outline" size="sm" onClick={runPreview}
+                        disabled={repriceValue === 0 || previewReprice.isPending || applyReprice.isPending}>
+                        <RefreshCw className="size-3.5" />
+                        {previewReprice.isPending ? t('reprice.previewing') : t('reprice.preview')}
+                    </Button>
+                    {preview && preview.changed > 0 && (
+                        <Button size="sm" onClick={runApply} disabled={applyReprice.isPending}>
+                            {applyReprice.isPending ? t('reprice.applying') : t('reprice.apply', { count: preview.changed })}
+                        </Button>
+                    )}
+                </div>
                 <Button variant="outline" size="sm" onClick={fillUnpriced} disabled={updateListings.isPending}>
                     <Wand2 className="size-3.5" />
                     {t('fillAll')}
                 </Button>
             </div>
+            {preview && (
+                <div className="rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
+                        <span>{t('reprice.summary', { multiplier: preview.multiplier, changed: preview.changed, skipped: preview.skipped })}</span>
+                        {preview.changed === 0 && <span>{t('reprice.noChange')}</span>}
+                    </div>
+                    {preview.rows.filter((row) => row.changed).length > 0 && (
+                        <ul className="mt-1 space-y-0.5">
+                            {preview.rows.filter((row) => row.changed).slice(0, 5).map((row) => (
+                                <li key={row.name} className="truncate text-muted-foreground">
+                                    {t('reprice.row', {
+                                        name: row.name,
+                                        before: formatMoney(row.current.input),
+                                        after: formatMoney(row.next.input),
+                                        beforeOut: formatMoney(row.current.output),
+                                        afterOut: formatMoney(row.next.output),
+                                    })}
+                                </li>
+                            ))}
+                            {preview.rows.filter((row) => row.changed).length > 5 && (
+                                <li className="text-muted-foreground">{t('reprice.more', { count: preview.rows.filter((row) => row.changed).length - 5 })}</li>
+                            )}
+                        </ul>
+                    )}
+                    {preview.skipped > 0 && <p className="mt-1 text-muted-foreground">{t('reprice.skippedHint')}</p>}
+                </div>
+            )}
             {/* 列数多(上架勾选+模型名+四价+用户价+参考价), 容器窄于 40rem 时整体横向滚动而不是被裁掉后半段; 表头与行共享最小宽度, 滚动对齐一致。 */}
             <div className="min-h-0 flex-1 overflow-auto overscroll-contain md:max-h-80 md:flex-none">
             <div className="min-w-[40rem]">

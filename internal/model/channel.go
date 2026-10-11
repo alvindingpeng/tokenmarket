@@ -159,6 +159,10 @@ type ChannelModelStats struct {
 	ModelID      int    `json:"model_id"`   // 渠道模型主键。
 	ModelName    string `json:"model_name"` // 上游模型名称。
 	StatsMetrics        // 该模型自身的累计统计。
+	// 渠道模型级熔断状态随统计一并外露: 界面据此展示「熔断中/剩余时长」, 无需另开接口。
+	ErrorCount    int        `json:"error_count"`              // 熔断计数(与熔断共用同一列, 熔断后清零)。
+	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`  // 最后错误时间, 从未出错不给出。
+	DisabledUntil *time.Time `json:"disabled_until,omitempty"` // 熔断截止时间, 未熔断不给出。
 }
 
 // 供分组页选取的一条候选授权, 字段与分组成员的展示字段一一对应。
@@ -193,7 +197,11 @@ type ChannelFetchModelRequest struct {
 }
 
 // 探测到的单个上游模型及其支持的协议集合。
+// 能力来源与媒体形态一并带回界面: 前者说明协议位是查官方登记得来的还是按名称关键词兜底猜的,
+// 后者用于在授权矩阵上提示"这个模型其实是生图/生视频模型", 免得管理员按文本渠道去配。
 type ChannelFetchModel struct {
-	Name      string   `json:"name"`      // 上游模型名称。
-	Protocols Protocol `json:"protocols"` // 由探测结果得出的协议位掩码。
+	Name       string    `json:"name"`                 // 上游模型名称。
+	Protocols  Protocol  `json:"protocols"`            // 由探测结果得出的协议位掩码。
+	Capability MediaKind `json:"capability,omitempty"` // 官方登记推出的媒体形态; text 表示文本或未知。
+	Source     string    `json:"source,omitempty"`     // 判定依据: models.dev | keyword | 空(无依据)。
 }
