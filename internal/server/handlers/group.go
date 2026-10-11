@@ -192,8 +192,10 @@ func getGroup(c *gin.Context) {
 	resp.Success(c, groupResponse{Group: group, Runtime: relay.RouteStateOf(group)})
 }
 
-// getGroupMetrics 返回分组各成员的实时选路指标(首响应耗时与成功率的滑动平均)。
-// 指标由 Relay 在每次转发后更新, 进程内存储, 无样本的成员不返回。
+// getGroupMetrics 返回分组各成员的实时选路指标与综合评分。
+// 指标由 Relay 在每次转发后更新, 进程内存储; 综合评分按分组当前生效的评分配比(分组自定义 >
+// 系统设置 > 内置兜底)算出, 与实际选路同一套归一化与可靠性软惩罚, 只是把全部成员的分数都给出。
+// 全部成员都会返回(冷成员 samples 为 0), 让每个渠道模型都能显示评分, 而不只是已有观测的那些。
 func getGroupMetrics(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -206,11 +208,10 @@ func getGroupMetrics(c *gin.Context) {
 		resp.Error(c, http.StatusNotFound, err.Error())
 		return
 	}
-	itemIDs := make([]int, 0, len(group.Items))
-	for _, item := range group.Items {
-		itemIDs = append(itemIDs, item.ID)
-	}
-	resp.Success(c, relay.MemberMetricViews(group.ID, itemIDs))
+	resp.Success(c, gin.H{
+		"basis": relay.MemberScoreBasis(group),
+		"items": relay.MemberScoreViews(group),
+	})
 }
 
 func createGroup(c *gin.Context) {

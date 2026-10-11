@@ -3,7 +3,7 @@ import { CircleCheck } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { useGroupMetrics, type Group } from '@/api/group';
+import { useGroupMetrics, type Group, type GroupMemberMetric, type GroupScoreBasis } from '@/api/group';
 
 // MemberStatusProps 描述成员的冷却和亲和状态。
 interface MemberStatusProps {
@@ -54,12 +54,36 @@ export function useRuntimeClock(source?: Group | Group[]) {
 // formatLatency 把毫秒形式的滑动平均耗时缩写为展示文本。
 const formatLatency = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`);
 
+// scoreTooltip 组装综合评分的悬浮说明: 各维度得分 + 本次评分实际采用的权重与可靠性下限。
+// 权重由后端按「分组自定义 > 系统设置 > 内置兜底」解析后给出, 与选路取值一致, 前端不做二次推断。
+function scoreTooltip(metric: GroupMemberMetric, basis: GroupScoreBasis | undefined, t: ReturnType<typeof useTranslations>) {
+    const lines = [
+        t('scoreTitle', { score: Math.round(metric.score) }),
+        t('scoreDims', {
+            price: Math.round(metric.price_score),
+            latency: Math.round(metric.latency_score),
+            success: Math.round(metric.success_score),
+        }),
+    ];
+    if (basis) {
+        lines.push(t('scoreBasis', {
+            price: basis.price_weight,
+            latency: basis.latency_weight,
+            success: basis.success_weight,
+            floor: Math.round(basis.reliability_floor * 100),
+        }));
+    }
+    if (metric.cold) lines.push(t('scoreCold'));
+    else if (!metric.healthy) lines.push(t('scoreUnhealthy'));
+    return lines.join('\n');
+}
+
 // MemberStatus 展示成员的冷却、亲和倒计时、实时选路指标或当前使用圆点。
 // 冷却与亲和对所有动态选路模式生效, 实时指标来自 Relay 的滑动平均采样。
 export function MemberStatus({ group, itemId, now, active = false, activeClassName }: MemberStatusProps) {
     const t = useTranslations('group.card');
     const { data: metrics } = useGroupMetrics(group?.id);
-    const metric = metrics?.find((m) => m.item_id === itemId);
+    const metric = metrics?.items.find((m) => m.item_id === itemId);
 
     const metricBadge = metric && metric.samples > 0 && itemId !== undefined && (
         <span
@@ -102,8 +126,24 @@ export function MemberStatus({ group, itemId, now, active = false, activeClassNa
         }
     }
 
+    // 综合评分对全部成员都给出(冷成员按中性值参与), 故不受 samples 限制。
+    const scoreBadge = metric && (
+        <span
+            title={scoreTooltip(metric, metrics?.basis, t)}
+            className={cn(
+                'shrink-0 rounded-md px-1.5 py-0 text-[10px] font-medium tabular-nums',
+                metric.healthy
+                    ? 'bg-primary/10 text-primary'
+                    : 'bg-destructive/10 text-destructive'
+            )}
+        >
+            {t('scoreBadge', { score: Math.round(metric.score) })}
+        </span>
+    );
+
     return (
         <span className="inline-flex shrink-0 items-center gap-1">
+            {scoreBadge}
             {metricBadge}
             {status}
         </span>

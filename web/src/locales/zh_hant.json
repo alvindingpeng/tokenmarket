@@ -405,7 +405,13 @@
             "activate": "設為活動項",
             "cooling": "冷卻 {seconds}s",
             "affinity": "親和 {seconds}s",
-            "metricTitle": "選路採樣 {samples} 次;按滑動平均估算首回應耗時與成功率,供路由策略參考"
+            "metricTitle": "選路採樣 {samples} 次;按滑動平均估算首回應耗時與成功率,供路由策略參考",
+            "scoreBadge": "評分 {score}",
+            "scoreTitle": "綜合評分 {score} / 100",
+            "scoreDims": "維度: 價格 {price} · 延遲 {latency} · 成功率 {success}",
+            "scoreBasis": "配比: 價格 {price} / 延遲 {latency} / 成功率 {success},可靠性下限 {floor}%",
+            "scoreCold": "暫無採樣,延遲與成功率按中性值參與",
+            "scoreUnhealthy": "成功率低於可靠性下限,總分已按比例折減"
         },
         "detail": {
             "actions": {
@@ -474,7 +480,7 @@
             "member_stream_idle_timeout_seconds": "串流閒置逾時（秒）",
             "member_stream_idle_timeout_secondsHint": "連續無串流事件時中止，預設 60 秒。"
         },
-        "memberPrice": "讀 {input} / 寫 {output}（每百萬 token）",
+        "memberPrice": "讀 {input} / 寫 {output}（m）",
         "modelPrice": "讀 {input} / 寫 {output} / 快取讀 {cacheRead} / 快取寫 {cacheWrite}（m）"
     },
     "model": {
