@@ -82,7 +82,7 @@ func setSetting(c *gin.Context) {
 			resp.Error(c, http.StatusInternalServerError, err.Error())
 			return
 		}
-		audit(c, "setting.set", string(setting.Key), setting.Value)
+		audit(c, "setting.set", string(setting.Key), auditSettingValue(setting))
 		resp.Success(c, gin.H{"key": setting.Key, "value": setting.Value, "metrics_token": token})
 		return
 	}
@@ -99,8 +99,17 @@ func setSetting(c *gin.Context) {
 		// 否则界面还会拿限流期间那份失败结论糊弄管理员。
 		update.Invalidate()
 	}
-	audit(c, "setting.set", string(setting.Key), setting.Value)
+	audit(c, "setting.set", string(setting.Key), auditSettingValue(setting))
 	resp.Success(c, setting)
+}
+
+// auditSettingValue 供审计记录使用: 密钥类设置项(令牌/密码)绝不写原文。
+// 审计日志是长期留存且随备份外传的, 一旦写入令牌等于把凭据铺开到备份副本里。
+func auditSettingValue(setting model.Setting) string {
+	if model.IsSecretSetting(setting.Key) {
+		return model.TokenConfiguredMask
+	}
+	return setting.Value
 }
 
 func exportDB(c *gin.Context) {
