@@ -42,6 +42,14 @@ func Start() error {
 		r.Use(middleware.Logger())
 	}
 	r.Use(middleware.Cors())
+	// 请求体上限: 网关会把请求体读进内存做改写与留痕, 不设上限时一个几百 MB 的 body
+	// 就足以把内存吃穿。分三档 —— 管理端缺省 32 MiB; 转发接口(/v1)更宽(生图底图、
+	// 生视频素材是正常业务); 整库导入豁免(导出文件的大小由库本身决定, 生产库可达 GB 级,
+	// 套上限等于把恢复数据的通道堵死)。豁免项都有管理员鉴权, 风险面不同。
+	r.Use(middleware.BodyLimit(conf.MaxBodyBytes(),
+		middleware.BodyLimitRule{Prefix: "/v1", MaxBytes: conf.RelayMaxBodyBytes()},
+		middleware.BodyLimitRule{Prefix: "/api/v1/setting/import", MaxBytes: 0},
+	))
 	r.Use(middleware.StaticEmbed("/", static.StaticFS))
 
 	if err := router.RegisterAll(r); err != nil {

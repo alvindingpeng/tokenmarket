@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bestruirui/octopus/internal/alert"
 	"github.com/bestruirui/octopus/internal/conf"
 	"github.com/bestruirui/octopus/internal/db"
 	"github.com/bestruirui/octopus/internal/model"
@@ -93,10 +94,18 @@ func AutoBackupRun() (AutoBackupResult, error) {
 	if remote, _ := SettingGetBool(model.SettingKeyBackupRemote); remote {
 		if !BackupRemoteConfigured() {
 			result.Remote = "failed"
-			RaiseAlert(context.Background(), 0, "system", "backup_failed", "backup remote push skipped: backup.remote_url is not configured")
+			RaiseAlertFacts(context.Background(), AlertFacts{
+				Kind:   "backup_failed",
+				Reason: "backup remote push skipped: backup.remote_url is not configured",
+				Fields: backupFields(result, "异地开关已打开但没有配置推送地址, 本次备份只留在本机"),
+			})
 		} else if err := PushBackupRemote(artifact, BackupChecksumFile(artifact)); err != nil {
 			result.Remote = "failed"
-			RaiseAlert(context.Background(), 0, "system", "backup_failed", "backup remote push failed: "+err.Error())
+			RaiseAlertFacts(context.Background(), AlertFacts{
+				Kind:   "backup_failed",
+				Reason: "backup remote push failed",
+				Fields: backupFields(result, "异地推送失败: "+err.Error()),
+			})
 		} else {
 			result.Remote = "ok"
 		}
@@ -109,6 +118,37 @@ func AutoBackupRun() (AutoBackupResult, error) {
 	}
 	result.Pruned = pruneBackups(keep)
 	return result, nil
+}
+
+// backupFields 组装备份类告警的明细行: 管理员要知道有没有新恢复点、文件在哪、多大、能不能打开。
+// extra 放本次特有的结论(异地失败原因等), 排在最后。
+func backupFields(result AutoBackupResult, extra string) []alert.Field {
+	fields := []alert.Field{
+		{Label: "备份文件", Value: result.File},
+		{Label: "大小", Value: fmt.Sprintf("%.1f MB", float64(result.Size)/(1024*1024))},
+		{Label: "完整性校验", Value: map[bool]string{true: "通过", false: "未通过"}[result.Verified]},
+		{Label: "加密", Value: map[bool]string{true: "是", false: "否"}[result.Encrypted]},
+		{Label: "校验和文件", Value: result.Checksum},
+		{Label: "异地状态", Value: remoteStatusLabel(result.Remote)},
+		{Label: "清理旧备份", Value: fmt.Sprintf("%d 份", result.Pruned)},
+	}
+	if extra != "" {
+		fields = append(fields, alert.Field{Label: "本次异常", Value: extra})
+	}
+	return append(fields, alert.Field{Label: "影响", Value: "此刻起数据库没有可用的新恢复点"})
+}
+
+// remoteStatusLabel 异地推送状态的中文说明。
+func remoteStatusLabel(remote string) string {
+	switch remote {
+	case "ok":
+		return "已推送异地"
+	case "skipped":
+		return "未开启异地"
+	case "failed":
+		return "异地推送失败"
+	}
+	return remote
 }
 
 // verifyBackup 打开备份文件并检查关键表存在, 返回是否通过。

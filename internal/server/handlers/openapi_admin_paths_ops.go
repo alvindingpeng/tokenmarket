@@ -204,7 +204,10 @@ func openAPIAdminPathsOps() gin.H {
 		},
 		"/api/v1/ops/alerts/list": gin.H{
 			"get": adminPath("ops", "告警记录",
-				"渠道宕机、恢复等告警的历史记录; limit 超出 1-500 一律按 50。", "",
+				"全部告警的历史记录: 渠道宕机/延迟降级/恢复、凭据与模型熔断、对账差异、计费结算失败、"+
+					"备份与归档失败、后台任务连续失败、配额与余额触顶、新版本可用。"+adminNewLine+
+					"每条带 subject(真实渠道名/用户名/任务名)与 detail(结构化明细), 与外发通知同源。"+adminNewLine+
+					"limit 超出 1-500 一律按 50。", "",
 				itemsArray("告警记录", "ChannelAlert"), true,
 				intQuery("limit", "条数", 50)),
 		},

@@ -68,6 +68,10 @@ export const SettingKey = {
     BreakerCoolSoftSeconds: 'breaker_cool_soft_seconds', // 过载/模型缺失等软错误后该成员换路冷却秒数, 默认 30。
     // 更新检查用的 GitHub 访问令牌: 只抬高 API 限流, 不填走匿名。回显为占位符, 不回传真值。
     GithubToken: 'github_token',
+    // 更新检查此前只能改令牌: 开关与周期在设置页根本没有入口,
+    // 想停掉每小时一次的匿名 GitHub 请求只能去数据库改行。现在与令牌并排管理。
+    UpdateCheckEnabled: 'update_check_enabled', // 是否自动检查 Release 更新, 默认 true。
+    UpdateCheckMinutes: 'update_check_interval', // 自动检查间隔(分钟), 默认 60, 范围 1-1440。
 } as const;
 
 /**

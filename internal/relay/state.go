@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/bestruirui/octopus/internal/alert"
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/ratelimit"
@@ -584,8 +585,19 @@ func (r *RequestState) settleBillingLocked(usage *llm.Usage) {
 	record.OwnerRevenue = ownerRevenue
 	if err := op.BillingSettle(reservationID, record); err != nil {
 		log.Warnf("billing settle failed for reservation %d request %d: %v", reservationID, r.ID, err)
-		op.RaiseAlert(context.Background(), 0, "system", "billing_failed",
-			fmt.Sprintf("billing settle failed: request=%d reservation=%d err=%v", r.ID, reservationID, err))
+		// 结算失败等于这笔钱没扣出去, 成本由网关方垫付: 管理员要能按请求号回到现场。
+		op.RaiseAlertFacts(context.Background(), op.AlertFacts{
+			Kind:   "billing_failed",
+			Reason: fmt.Sprintf("billing settle failed: reservation=%d", reservationID),
+			Fields: []alert.Field{
+				{Label: "调用请求", Value: fmt.Sprintf("#%d", r.ID)},
+				{Label: "预扣记录", Value: fmt.Sprintf("#%d", reservationID)},
+				{Label: "模型", Value: r.Model},
+				{Label: "应扣费用", Value: fmt.Sprintf("%.6f", record.UserCost)},
+				{Label: "错误", Value: err.Error()},
+				{Label: "建议", Value: "该笔费用未落账, 请在运维页对账后手工处理"},
+			},
+		})
 	}
 }
 

@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	TaskPriceUpdate      = "price_update"
+	TaskPriceUpdate      = string(model.SettingKeyModelInfoUpdateInterval) // 任务名与设置键同名, 便于按设置热更新。
 	TaskStatsSave        = "stats_save"
 	TaskCleanLLM         = "clean_llm"
 	TaskBillingRollback  = "billing_rollback"  // 回滚超时未结算的余额预扣。
@@ -24,120 +24,245 @@ const (
 	TaskVideoJobCleanup  = "video_job_cleanup" // 清理过期的生视频任务归属。
 )
 
+// 后台任务的周期都来自可改的系统设置。改造前只有模型信息更新会跟随设置变化,
+// 其余(统计落库、自动备份、健康探测、更新检查)改了要重启进程才生效 —— 管理员在界面上
+// 把备份周期从 24 小时改成 6 小时, 保存成功、日志也记了, 实际仍然 24 小时一次。
+// 现在每个任务都用 Interval 函数声明周期, 改完设置经 ApplySetting 立刻重算。
+// settingTasks 设置键到受其影响的任务名。新增周期类设置时在这里登记一行,
+// 设置处理器就会自动负责热更新; 漏登记的后果是界面报 ErrNotRegistered 而不是静默失效。
+var settingTasks = map[model.SettingKey][]string{
+	model.SettingKeyModelInfoUpdateInterval: {TaskPriceUpdate},
+	model.SettingKeyStatsSaveInterval:       {TaskStatsSave},
+	model.SettingKeyAutoBackupEnabled:       {TaskAutoBackup},
+	model.SettingKeyAutoBackupInterval:      {TaskAutoBackup},
+	model.SettingKeyHealthCheckEnabled:      {TaskChannelHealth},
+	model.SettingKeyHealthCheckMinutes:      {TaskChannelHealth},
+	model.SettingKeyUpdateCheckEnabled:      {TaskUpdateCheck},
+	model.SettingKeyUpdateCheckMinutes:      {TaskUpdateCheck},
+}
+
+// ApplySetting 重算某项设置影响到的全部任务周期。
+// 没有任务登记在这个设置上时返回 ErrNotRegistered: 与"改完了但没人应用"是同一件事,
+// 交给调用方决定是报错还是忽略(设置处理器选择回给界面, 让漏配可见)。
+func ApplySetting(key model.SettingKey) error {
+	names, ok := settingTasks[key]
+	if !ok {
+		return ErrNotRegistered
+	}
+	for _, name := range names {
+		if err := Apply(name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SettingHasTask 判断某项设置是否挂了可热更新的任务, 供设置处理器区分"没配任务"与"配了但没注册"。
+func SettingHasTask(key model.SettingKey) bool {
+	_, ok := settingTasks[key]
+	return ok
+}
+
 func Init() {
-	priceUpdateIntervalHours, err := op.SettingGetInt(model.SettingKeyModelInfoUpdateInterval)
-	if err != nil {
-		log.Errorf("failed to get model info update interval: %v", err)
-		return
-	}
-	priceUpdateInterval := time.Duration(priceUpdateIntervalHours) * time.Hour
-	// 注册价格更新任务
-	Register(string(model.SettingKeyModelInfoUpdateInterval), priceUpdateInterval, true, func() {
-		ctx := context.Background()
-		capabilities, err := price.UpdateLLMPrice(ctx)
-		if err != nil {
-			log.Warnf("failed to update price info: %v", err)
-		}
-		// 能力登记与价格同源却各自独立: 价格解析失败时能力未必也失败, 故分开处理, 互不阻塞。
-		if len(capabilities) > 0 {
-			if err := op.CapabilityReplaceFromModelsDev(capabilities, ctx); err != nil {
-				log.Warnf("failed to update model capabilities: %v", err)
+	// 价格与能力更新: 拉 models.dev 价格表并同步能力登记。
+	Define(Spec{
+		Name:       TaskPriceUpdate,
+		Interval:   hoursInterval(model.SettingKeyModelInfoUpdateInterval, 24),
+		RunOnStart: true,
+		Fn: func() error {
+			ctx := context.Background()
+			capabilities, err := price.UpdateLLMPrice(ctx)
+			if err != nil {
+				log.Warnf("failed to update price info: %v", err)
 			}
-		}
+			// 能力登记与价格同源却各自独立: 价格解析失败时能力未必也失败, 故分开处理, 互不阻塞。
+			if len(capabilities) > 0 {
+				if capErr := op.CapabilityReplaceFromModelsDev(capabilities, ctx); capErr != nil {
+					log.Warnf("failed to update model capabilities: %v", capErr)
+				}
+			}
+			// 价格解析失败要按任务失败计数: 连续失败达到阈值后由告警出口通知管理员。
+			return err
+		},
 	})
 
-	// 注册统计保存任务
-	statsSaveIntervalMinutes, err := op.SettingGetInt(model.SettingKeyStatsSaveInterval)
-	if err != nil {
-		log.Warnf("failed to get stats save interval: %v", err)
-		return
-	}
-	statsSaveInterval := time.Duration(statsSaveIntervalMinutes) * time.Minute
-	Register(TaskStatsSave, statsSaveInterval, false, op.StatsSaveDBTask)
-
-	// 注册余额预扣回滚任务: 30 分钟仍未结算的预扣按泄漏处理, 释放其冻结额。
-	Register(TaskBillingRollback, 10*time.Minute, true, func() {
-		if err := op.BillingReleaseStale(30 * time.Minute); err != nil {
-			log.Warnf("failed to release stale balance reservations: %v", err)
-		}
+	// 统计落库。
+	Define(Spec{
+		Name:     TaskStatsSave,
+		Interval: minutesInterval(model.SettingKeyStatsSaveInterval, 10),
+		Fn: func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			if err := op.StatsSaveDB(ctx); err != nil {
+				log.Errorf("stats save db error: %v", err)
+				return err
+			}
+			return nil
+		},
 	})
 
-	// 对账任务: 每天核对昨日账目, 只登记结论与差异, 绝不自动改余额。
-	Register(TaskBillingReconcile, 24*time.Hour, true, func() {
-		if _, err := op.ReconcileRun(context.Background(), 1); err != nil {
-			log.Warnf("failed to reconcile billing: %v", err)
-		}
+	// 余额预扣回滚: 30 分钟仍未结算的预扣按泄漏处理, 释放其冻结额。
+	Define(Spec{
+		Name:       TaskBillingRollback,
+		Interval:   fixedInterval(10 * time.Minute),
+		RunOnStart: true,
+		Fn:         func() error { return op.BillingReleaseStale(30 * time.Minute) },
+	})
+
+	// 对账: 每天核对昨日账目, 只登记结论与差异, 绝不自动改余额。
+	Define(Spec{
+		Name:       TaskBillingReconcile,
+		Interval:   fixedInterval(24 * time.Hour),
+		RunOnStart: true,
+		Fn: func() error {
+			_, err := op.ReconcileRun(context.Background(), 1)
+			return err
+		},
 	})
 
 	// 日志生命周期: 每小时归档并清理超出留存期的调用日志。
-	Register(TaskLogArchive, time.Hour, true, func() {
-		result, err := op.LogLifecycleRun(context.Background())
-		if err != nil {
-			log.Warnf("failed to run log lifecycle: %v", err)
-			op.RaiseAlert(context.Background(), 0, "system", "archive_failed", "auto archive failed: "+err.Error())
-			return
-		}
-		log.Infof("log lifecycle: cutoff=%s archived=%d requests=%d attempts=%d bodies=%d",
-			result.Cutoff.Format("2006-01-02"), result.Archived, result.RequestsDel, result.AttemptsDel, result.BodyCleared)
+	// 归档本身失败时 op 已按 archive_failed 告过警, 这里只把错误交回调度按任务失败计数。
+	Define(Spec{
+		Name:       TaskLogArchive,
+		Interval:   fixedInterval(time.Hour),
+		RunOnStart: true,
+		Fn: func() error {
+			result, err := op.LogLifecycleRun(context.Background())
+			if err != nil {
+				return err
+			}
+			log.Infof("log lifecycle: cutoff=%s archived=%d requests=%d attempts=%d bodies=%d",
+				result.Cutoff.Format("2006-01-02"), result.Archived, result.RequestsDel, result.AttemptsDel, result.BodyCleared)
+			return nil
+		},
 	})
 
 	// 生视频任务归属: 上游任务本身会过期, 归属记录超过保留期就没有查询价值, 定时清理避免表随调用量增长。
-	Register(TaskVideoJobCleanup, time.Hour, true, func() {
-		deleted, err := op.VideoJobCleanup()
-		if err != nil {
-			log.Warnf("failed to clean up video jobs: %v", err)
-			return
-		}
-		if deleted > 0 {
-			log.Infof("video jobs cleaned up: %d", deleted)
-		}
+	Define(Spec{
+		Name:       TaskVideoJobCleanup,
+		Interval:   fixedInterval(time.Hour),
+		RunOnStart: true,
+		Fn: func() error {
+			deleted, err := op.VideoJobCleanup()
+			if err != nil {
+				return err
+			}
+			if deleted > 0 {
+				log.Infof("video jobs cleaned up: %d", deleted)
+			}
+			return nil
+		},
 	})
 
-	// 自动备份任务: 每天一致性备份数据库并校验, 保留固定份数。
-	backupInterval, err := op.SettingGetInt(model.SettingKeyAutoBackupInterval)
-	if err != nil || backupInterval < 1 {
-		backupInterval = 24
-	}
-	Register(TaskAutoBackup, time.Duration(backupInterval)*time.Hour, true, func() {
-		if enabled, _ := op.SettingGetBool(model.SettingKeyAutoBackupEnabled); !enabled {
-			return
-		}
-		result, err := op.AutoBackupRun()
-		if err != nil {
-			log.Warnf("failed to run auto backup: %v", err)
-			op.RaiseAlert(context.Background(), 0, "system", "backup_failed", "auto backup failed: "+err.Error())
-			return
-		}
-		log.Infof("auto backup: file=%s size=%d verified=%v pruned=%d", result.File, result.Size, result.Verified, result.Pruned)
+	// 自动备份: 一致性备份数据库并校验, 保留固定份数。关掉开关时周期为 0, 任务就地停摆。
+	Define(Spec{
+		Name:       TaskAutoBackup,
+		Interval:   enabledHoursInterval(model.SettingKeyAutoBackupEnabled, model.SettingKeyAutoBackupInterval, 24),
+		RunOnStart: true,
+		Fn: func() error {
+			result, err := op.AutoBackupRun()
+			if err != nil {
+				return err
+			}
+			log.Infof("auto backup: file=%s size=%d verified=%v pruned=%d remote=%s",
+				result.File, result.Size, result.Verified, result.Pruned, result.Remote)
+			return nil
+		},
 	})
 
-	// 渠道健康探测任务: 默认关闭, 开启后按配置间隔探测。
-	healthInterval, err := op.SettingGetInt(model.SettingKeyHealthCheckMinutes)
-	if err != nil || healthInterval < 1 {
-		healthInterval = 30
-	}
-	Register(TaskChannelHealth, time.Duration(healthInterval)*time.Minute, true, func() {
-		if enabled, _ := op.SettingGetBool(model.SettingKeyHealthCheckEnabled); !enabled {
-			return
-		}
-		if err := op.ChannelHealthCheckAll(context.Background()); err != nil {
-			log.Warnf("channel health check failed: %v", err)
-		}
+	// 渠道健康探测: 默认关闭(可能产生上游费用), 开启后按配置间隔探测。
+	Define(Spec{
+		Name:       TaskChannelHealth,
+		Interval:   enabledMinutesInterval(model.SettingKeyHealthCheckEnabled, model.SettingKeyHealthCheckMinutes, 30),
+		RunOnStart: true,
+		Fn: func() error {
+			if err := op.ChannelHealthCheckAll(context.Background()); err != nil {
+				log.Warnf("channel health check failed: %v", err)
+				return err
+			}
+			return nil
+		},
 	})
 
 	// 更新检查只读取 Release 元数据, 不下载、不替换二进制; 真正更新必须由管理员点击按钮。
-	updateInterval := update.CheckIntervalMinutes()
-	Register(TaskUpdateCheck, time.Duration(updateInterval)*time.Minute, false, func() {
-		if !update.CheckEnabled() {
-			return
-		}
-		status, err := update.CheckNow()
-		if err != nil {
-			log.Warnf("update check failed: %v", err)
-			return
-		}
-		if status != nil {
-			log.Infof("system update available: current=%s latest=%s asset=%s", status.CurrentVersion, status.LatestVersion, status.AssetName)
-		}
+	Define(Spec{
+		Name:     TaskUpdateCheck,
+		Interval: updateCheckInterval,
+		Fn: func() error {
+			status, err := update.CheckNow()
+			if err != nil {
+				log.Warnf("update check failed: %v", err)
+				return err
+			}
+			if status != nil {
+				log.Infof("system update available: current=%s latest=%s asset=%s", status.CurrentVersion, status.LatestVersion, status.AssetName)
+			}
+			return nil
+		},
 	})
+}
+
+// fixedInterval 固定周期。
+func fixedInterval(d time.Duration) func() time.Duration {
+	return func() time.Duration { return d }
+}
+
+// hoursInterval 以小时为单位的设置项 -> 周期; 读取失败或非法值回退 fallback。
+func hoursInterval(key model.SettingKey, fallback int) func() time.Duration {
+	return func() time.Duration {
+		return time.Duration(settingInt(key, fallback)) * time.Hour
+	}
+}
+
+// minutesInterval 以分钟为单位的设置项 -> 周期。
+func minutesInterval(key model.SettingKey, fallback int) func() time.Duration {
+	return func() time.Duration {
+		return time.Duration(settingInt(key, fallback)) * time.Minute
+	}
+}
+
+// enabledHoursInterval 带开关的小时周期: 开关关闭返回 0, 任务被就地停用而不是空转。
+func enabledHoursInterval(enabledKey, intervalKey model.SettingKey, fallback int) func() time.Duration {
+	return func() time.Duration {
+		if !settingBool(enabledKey) {
+			return 0
+		}
+		return time.Duration(settingInt(intervalKey, fallback)) * time.Hour
+	}
+}
+
+// enabledMinutesInterval 带开关的分钟周期。
+func enabledMinutesInterval(enabledKey, intervalKey model.SettingKey, fallback int) func() time.Duration {
+	return func() time.Duration {
+		if !settingBool(enabledKey) {
+			return 0
+		}
+		return time.Duration(settingInt(intervalKey, fallback)) * time.Minute
+	}
+}
+
+// updateCheckInterval 更新检查周期; 开关关闭返回 0。
+func updateCheckInterval() time.Duration {
+	if !update.CheckEnabled() {
+		return 0
+	}
+	return time.Duration(update.CheckIntervalMinutes()) * time.Minute
+}
+
+// settingInt 读取正整数设置; 缺键、非法或 <1 时回退, 与改造前的兜底行为一致。
+func settingInt(key model.SettingKey, fallback int) int {
+	v, err := op.SettingGetInt(key)
+	if err != nil || v < 1 {
+		return fallback
+	}
+	return v
+}
+
+// settingBool 读取布尔设置; 缺键或非法值按 false 处理(功能默认关比默认开安全)。
+func settingBool(key model.SettingKey) bool {
+	v, err := op.SettingGetBool(key)
+	if err != nil {
+		return false
+	}
+	return v
 }

@@ -364,25 +364,50 @@ function HealthSection() {
 function AlertsSection() {
     const t = useTranslations('ops');
     const { data, isLoading, isError, refetch, isRefetching } = useChannelAlerts(50);
+    // kindBadge 告警类型徽章。新增的熔断/任务/配额类型同样要有中文标签,
+    // 否则管理员在列表里只看到裸英文 kind, 分不清是渠道挂了还是后台任务挂了。
     const kindBadge = (kind: string) => {
         const map: Record<string, { label: string; className: string }> = {
             down: { label: t('alerts.kindDown'), className: 'bg-red-500/15 text-red-600 dark:text-red-400' },
             recovered: { label: t('alerts.kindRecovered'), className: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
             degraded: { label: t('alerts.kindDegraded'), className: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },
+            key_disabled: { label: t('alerts.kindKeyDisabled'), className: 'bg-orange-500/15 text-orange-600 dark:text-orange-500' },
+            model_disabled: { label: t('alerts.kindModelDisabled'), className: 'bg-orange-500/15 text-orange-600 dark:text-orange-500' },
             mismatch: { label: t('alerts.kindMismatch'), className: 'bg-red-500/15 text-red-600 dark:text-red-400' },
             backup_failed: { label: t('alerts.kindBackup'), className: 'bg-red-500/15 text-red-600 dark:text-red-400' },
             archive_failed: { label: t('alerts.kindArchive'), className: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },
             billing_failed: { label: t('alerts.kindBilling'), className: 'bg-red-500/15 text-red-600 dark:text-red-400' },
             low_balance: { label: t('alerts.kindLowBalance'), className: 'bg-orange-500/15 text-orange-600 dark:text-orange-500' },
+            quota_exceeded: { label: t('alerts.kindQuota'), className: 'bg-orange-500/15 text-orange-600 dark:text-orange-500' },
+            task_failed: { label: t('alerts.kindTaskFailed'), className: 'bg-red-500/15 text-red-600 dark:text-red-400' },
+            task_recovered: { label: t('alerts.kindTaskRecovered'), className: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
+            update_available: { label: t('alerts.kindUpdate'), className: 'bg-sky-500/15 text-sky-600 dark:text-sky-400' },
             test: { label: t('alerts.kindTest'), className: 'bg-muted text-muted-foreground' },
         };
         const item = map[kind] ?? { label: kind, className: 'bg-muted text-muted-foreground' };
         return <Badge variant='outline' className={item.className}>{item.label}</Badge>;
     };
+    // 主体列取 subject(真实渠道名/用户名/任务名): 旧数据没有 subject 时回退分享码,
+    // 再回退渠道 ID —— 总比空单元格好读。detail 用原生 details 折叠, 列表保持一屏,
+    // 点开就能看到延迟、错误、建议这些与外发通知同源的明细。
     const columns: Col<ChannelAlert>[] = [
-        { key: 'channel_code', label: t('alerts.channel') },
+        { key: 'subject', label: t('alerts.subject'), render: (row) => (
+            <span className='block max-w-56 truncate' title={row.subject || row.channel_code}>
+                {row.subject || row.channel_code || (row.channel_id ? '#' + row.channel_id : t('alerts.system'))}
+            </span>
+        ) },
         { key: 'kind', label: t('alerts.kind'), render: (row) => kindBadge(row.kind) },
-        { key: 'reason', label: t('alerts.reason'), render: (row) => <span className='block max-w-96 truncate' title={row.reason}>{row.reason || '-'}</span> },
+        { key: 'reason', label: t('alerts.reason'), render: (row) => (
+            <span className='block max-w-80 truncate' title={row.reason}>{row.reason || '-'}</span>
+        ) },
+        { key: 'detail', label: t('alerts.detail'), render: (row) => (
+            row.detail ? (
+                <details className='max-w-80'>
+                    <summary className='cursor-pointer text-xs text-muted-foreground'>{t('alerts.detailShow')}</summary>
+                    <pre className='mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-xl bg-muted/60 p-2 text-xs'>{row.detail}</pre>
+                </details>
+            ) : <span className='text-xs text-muted-foreground'>-</span>
+        ) },
         { key: 'notified', label: t('alerts.notified'), render: (row) => (row.notified ? t('alerts.yes') : t('alerts.no')) },
         { key: 'created_at', label: t('alerts.time'), render: (row) => formatTime(row.created_at) },
     ];

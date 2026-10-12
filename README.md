@@ -427,7 +427,7 @@ in the same frame instead of after a reload. Details in
 
 ```json
 {
-  "server":   { "host": "0.0.0.0", "port": 8080 },
+  "server":   { "host": "0.0.0.0", "port": 8080, "max_body_bytes": 33554432, "relay_max_body_bytes": 536870912 },
   "database": { "type": "sqlite",  "path": "data/data.db" },
   "log":      { "level": "info" },
   "backup":   { "passphrase": "", "remote_url": "", "remote_user": "", "remote_password": "" }
@@ -438,12 +438,20 @@ in the same frame instead of after a reload. Details in
 |--------|-------------|---------|
 | `server.host` | Listen address | `0.0.0.0` |
 | `server.port` | Server port | `8080` |
+| `server.max_body_bytes` | Request-body cap for the console API; `0` falls back to the built-in default | `33554432` (32 MiB) |
+| `server.relay_max_body_bytes` | Request-body cap for `/v1` relay traffic (image inputs, video assets) | `536870912` (512 MiB) |
 | `database.type` | `sqlite` \| `mysql` \| `postgres` | `sqlite` |
 | `database.path` | SQLite file path, or DSN | `data/data.db` |
 | `log.level` | `debug` \| `info` \| `warn` \| `error` | `info` |
 | `backup.passphrase` | Backup encryption passphrase; empty = unencrypted | `""` |
 | `backup.remote_url` | WebDAV directory; empty = no offsite push | `""` |
 | `backup.remote_user` / `backup.remote_password` | WebDAV credentials | `""` |
+
+The gateway reads request bodies into memory to rewrite and record them, so an uncapped body is
+a denial-of-service vector: over the limit the server answers `413` before the handler runs.
+`/api/v1/setting/import` is exempt from both caps — a full-database export is as large as the
+database it recovers, and capping it would block the one action that brings an instance back.
+Both caps are read once at startup, so changing them takes a restart.
 
 Every key is overridable through the environment as `OCTOPUS_` + the path joined with `_`
 (`OCTOPUS_SERVER_PORT`, `OCTOPUS_DATABASE_TYPE`, `OCTOPUS_DATABASE_PATH`, `OCTOPUS_LOG_LEVEL`,
@@ -468,6 +476,11 @@ registration switches, reserve caps, score weights, log retention, backup cadenc
 alert thresholds, metrics auth, site identity — live in the database under the `setting` table and are
 edited in the console. They are **exportable and importable** as JSON (`/api/v1/setting/export`,
 `/api/v1/setting/import`), so a tuned instance can be reproduced on another.
+
+Saving one of the cadence settings (statistics flush, model sync, log retention, archive and backup
+intervals, health probe cadence, update-check interval and its on/off switches) reschedules the running
+background task immediately — no restart. A setting that fails to apply returns an error rather than
+reporting success, because a silently-ignored interval is worse than a visible failure.
 
 > ⚠️ **Shutdown with `Ctrl+C` or `SIGTERM`, never `kill -9`.** Statistics accumulate in memory and flush to
 > the database every `stats_save_interval` minutes (default 10); a forced kill drops whatever is buffered.

@@ -705,13 +705,23 @@ func openAPIAdminSchemas() gin.H {
 		}),
 
 		"ChannelAlert": object(gin.H{
-			"id":           fieldNumber("integer", ""),
-			"channel_id":   fieldNumber("integer", "0 表示系统级告警"),
-			"channel_code": fieldString(""),
-			"kind":         gin.H{"type": "string", "description": "告警类型: down / recovered / test / archive_failed / backup_failed 等"},
-			"reason":       fieldString("触发原因"),
-			"notified":     fieldBool("是否已推送到告警渠道"),
-			"created_at":   datetime(""),
+			"id": fieldNumber("integer", ""),
+			// 主体是"谁出事了": 真实渠道名 / 用户名 / 任务名 / 系统; 由产生告警的一方填好。
+			"channel_id": fieldNumber("integer", "0 表示系统级告警"),
+			"subject":    fieldString("告警主体: 渠道真名、用户名、任务名或系统"),
+			// 分享码只用于对外分享的渠道, 不能当渠道名用, 故保留这一列供老数据回退。
+			"channel_code": fieldString("渠道分享码(可能为空)"),
+			"kind": gin.H{"type": "string", "description": "告警类型", "enum": []string{
+				"down", "recovered", "degraded", "key_disabled", "model_disabled",
+				"mismatch", "billing_failed", "backup_failed", "archive_failed",
+				"low_balance", "quota_exceeded", "task_failed", "task_recovered",
+				"update_available", "test",
+			}},
+			"reason": fieldString("触发原因(用于去重, 不含时间戳等易变值)"),
+			// 明细与外发通知取自同一批结构化字段: 延迟、错误、建议等逐行文本。
+			"detail":     fieldString("结构化明细, 每行 \"字段: 值\""),
+			"notified":   fieldBool("是否已推送到告警渠道"),
+			"created_at": datetime(""),
 		}),
 
 		"AlertRule": object(gin.H{

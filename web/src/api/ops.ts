@@ -22,9 +22,16 @@ export type ChannelHealth = {
     status_code: number; error: string; healthy: boolean; checked_at: string;
 };
 
+// ChannelAlert 是一条站内告警。
+// subject: 告警主体(真实渠道名 / 用户名 / 任务名), 由产生告警的一方填好。
+// channel_code: 保留为分享码, 只有对外分享的渠道才有, 不能当名字用。
+// detail: 逐行 "标签: 值" 的结构化明细, 展开查看用; 外部通知正文取自同一批字段。
 export type ChannelAlert = {
-    id: number; channel_id: number; channel_code: string;
-    kind: 'down' | 'recovered' | 'degraded' | 'mismatch' | 'backup_failed' | 'archive_failed' | 'billing_failed' | 'test';
+    id: number; channel_id: number; channel_code: string; subject: string; detail: string;
+    kind: 'down' | 'recovered' | 'degraded' | 'key_disabled' | 'model_disabled'
+        | 'mismatch' | 'billing_failed' | 'backup_failed' | 'archive_failed'
+        | 'low_balance' | 'quota_exceeded' | 'task_failed' | 'task_recovered'
+        | 'update_available' | 'test';
     reason: string;
     notified: boolean; created_at: string;
 };

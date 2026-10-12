@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'use-intl';
-import { Monitor, Globe, Clock, Shield, Filter, HelpCircle, SlidersHorizontal, X } from 'lucide-react';
+import { Monitor, Globe, Clock, Shield, Filter, HelpCircle, SlidersHorizontal, X, RefreshCw } from 'lucide-react';
 import Github from '@thesvg/react/github';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useSettingList, useSetSetting, SettingKey } from '@/api/setting';
 import { toast } from 'sonner';
@@ -24,6 +25,8 @@ export function SettingSystem() {
     const [modelFilter, setModelFilter] = useState('');
     const [scoreWeights, setScoreWeights] = useState({ price: '', latency: '', success: '' });
     const [githubToken, setGithubToken] = useState('');
+    const [updateCheckEnabled, setUpdateCheckEnabled] = useState(true);
+    const [updateCheckMinutes, setUpdateCheckMinutes] = useState('');
 
     const initialProxyUrl = useRef('');
     const initialStatsSaveInterval = useRef('');
@@ -31,6 +34,8 @@ export function SettingSystem() {
     const initialModelFilter = useRef('');
     const initialScoreWeights = useRef({ price: '', latency: '', success: '' });
     const initialGithubToken = useRef('');
+    const initialUpdateCheckEnabled = useRef('');
+    const initialUpdateCheckMinutes = useRef('');
 
     useEffect(() => {
         if (settings) {
@@ -72,6 +77,18 @@ export function SettingSystem() {
                 queueMicrotask(() => setGithubToken(value));
                 initialGithubToken.current = value;
             }
+
+            // 更新检查开关与周期: 与令牌同区管理, 保存后热应用到调度器(无需重启)。
+            const enabled = settings.find(s => s.key === SettingKey.UpdateCheckEnabled);
+            if (enabled) {
+                queueMicrotask(() => setUpdateCheckEnabled(enabled.value === 'true'));
+                initialUpdateCheckEnabled.current = enabled.value;
+            }
+            const minutes = settings.find(s => s.key === SettingKey.UpdateCheckMinutes);
+            if (minutes) {
+                queueMicrotask(() => setUpdateCheckMinutes(minutes.value));
+                initialUpdateCheckMinutes.current = minutes.value;
+            }
         }
     }, [settings]);
 
@@ -91,6 +108,10 @@ export function SettingSystem() {
                     initialModelFilter.current = value;
                 } else if (key === SettingKey.GithubToken) {
                     initialGithubToken.current = value;
+                } else if (key === SettingKey.UpdateCheckEnabled) {
+                    initialUpdateCheckEnabled.current = value;
+                } else if (key === SettingKey.UpdateCheckMinutes) {
+                    initialUpdateCheckMinutes.current = value;
                 } else if (key === SettingKey.ScorePriceWeight) {
                     initialScoreWeights.current = { ...initialScoreWeights.current, price: value };
                 } else if (key === SettingKey.ScoreLatencyWeight) {
@@ -111,6 +132,15 @@ export function SettingSystem() {
         const normalized = Number.isFinite(parsed) ? String(Math.min(Math.max(parsed, 0), 100)) : '0';
         setScoreWeights(prev => ({ ...prev, [dimension]: normalized }));
         handleSave(key, normalized, initialScoreWeights.current[dimension]);
+    };
+
+    // saveUpdateCheckMinutes 归一化后落库: 后端已限制 1-1440 分钟, 这里同样夹住,
+    // 免得管理员填 0 或负数把更新检查变成每秒钟打一次 GitHub API。
+    const saveUpdateCheckMinutes = (raw: string) => {
+        const parsed = Number.parseInt(raw.trim(), 10);
+        const normalized = String(Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 1440) : 60);
+        setUpdateCheckMinutes(normalized);
+        handleSave(SettingKey.UpdateCheckMinutes, normalized, initialUpdateCheckMinutes.current);
     };
 
     const corsAllowOriginsList = useMemo(() => {
@@ -359,6 +389,56 @@ export function SettingSystem() {
                     placeholder={t('githubToken.placeholder')}
                     autoComplete="off"
                     className="w-48 rounded-xl"
+                />
+            </div>
+
+            {/* 更新检查开关: 关掉即停止向 GitHub 轮询版本; 站内版本信息仍照常显示当前版本。 */}
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                    <RefreshCw className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-sm font-medium">{t('updateCheckEnabled.label')}</span>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" sideOffset={10} align="center" className="max-w-72">
+                            {t('updateCheckEnabled.hint')}
+                        </TooltipContent>
+                    </Tooltip>
+                </div>
+                <Switch
+                    checked={updateCheckEnabled}
+                    onCheckedChange={(checked) => {
+                        setUpdateCheckEnabled(checked);
+                        handleSave(SettingKey.UpdateCheckEnabled, String(checked), initialUpdateCheckEnabled.current);
+                    }}
+                />
+            </div>
+
+            {/* 更新检查间隔: 保存后调度器立刻按新周期重排, 不需要重启进程。 */}
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                    <Clock className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-sm font-medium">{t('updateCheckInterval.label')}</span>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" sideOffset={10} align="center" className="max-w-72">
+                            {t('updateCheckInterval.hint')}
+                        </TooltipContent>
+                    </Tooltip>
+                </div>
+                <Input
+                    type="number"
+                    min={1}
+                    max={1440}
+                    disabled={!updateCheckEnabled}
+                    value={updateCheckMinutes}
+                    onChange={(e) => setUpdateCheckMinutes(e.target.value)}
+                    onBlur={(e) => saveUpdateCheckMinutes(e.target.value)}
+                    placeholder={t('updateCheckInterval.placeholder')}
+                    className="w-48 rounded-xl disabled:opacity-50"
                 />
             </div>
         </div>

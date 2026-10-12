@@ -3,6 +3,7 @@ package op
 import (
 	"context"
 	"fmt"
+	"github.com/bestruirui/octopus/internal/alert"
 	"net/http"
 	"time"
 
@@ -79,13 +80,23 @@ func saveHealthRecord(record model.ChannelHealthRecord) {
 // evaluateAlerts 基于本次探测结果与历史记录评估告警(带抖动抑制):
 // 连续 alert_fail_streak 次异常才判定 down; 恢复时若最近告警是 down/degraded 则补发 recovered;
 // 健康但延迟超过 health_latency_ms 阈值则发 degraded。同类型告警的去重由 RaiseAlert 负责。
+//
+// 主体一律留空交给 resolveSubject 补真实渠道名 —— 改造前传的是 ShareCode,
+// 管理员在 Telegram 里收到的是"8fKd2xQ 渠道告警"这种读不出来的随机码。共享编码仍进 ChannelCode 列。
 func evaluateAlerts(ctx context.Context, channel model.Channel, record model.ChannelHealthRecord) {
 	if record.Healthy {
 		// 延迟告警: 健康但超过阈值; 阈值 0 表示关闭该规则。
 		threshold := SettingGetIntDefault(model.SettingKeyHealthLatencyMS, 1000)
 		if threshold > 0 && record.LatencyMs >= int64(threshold) {
-			RaiseAlert(ctx, channel.ID, channel.ShareCode, "degraded",
-				fmt.Sprintf("probe latency over threshold %dms", threshold))
+			RaiseAlertFacts(ctx, AlertFacts{
+				ChannelID: channel.ID,
+				Kind:      "degraded",
+				Reason:    fmt.Sprintf("probe latency over threshold %dms", threshold),
+				Fields: healthFields(channel, record, []alert.Field{
+					{Label: "延迟阈值", Value: fmt.Sprintf("%d ms", threshold)},
+					{Label: "说明", Value: "渠道仍可响应, 只是明显变慢"},
+				}),
+			})
 			return
 		}
 		// 恢复: 本渠道最近一条告警是 down 或 degraded 时补发 recovered。
@@ -94,7 +105,14 @@ func evaluateAlerts(ctx context.Context, channel model.Channel, record model.Cha
 			Where("channel_id = ?", channel.ID).
 			Order("id DESC").First(&last).Error
 		if err == nil && (last.Kind == "down" || last.Kind == "degraded") {
-			RaiseAlert(ctx, channel.ID, channel.ShareCode, "recovered", "channel healthy again")
+			RaiseAlertFacts(ctx, AlertFacts{
+				ChannelID: channel.ID,
+				Kind:      "recovered",
+				Reason:    "channel healthy again",
+				Fields: healthFields(channel, record, []alert.Field{
+					{Label: "此前告警", Value: alertKindLabel(last.Kind)},
+				}),
+			})
 		}
 		return
 	}
@@ -119,8 +137,51 @@ func evaluateAlerts(ctx context.Context, channel model.Channel, record model.Cha
 			return
 		}
 	}
-	RaiseAlert(ctx, channel.ID, channel.ShareCode, "down",
-		fmt.Sprintf("%d consecutive failed probes", streak))
+	RaiseAlertFacts(ctx, AlertFacts{
+		ChannelID: channel.ID,
+		Kind:      "down",
+		Reason:    fmt.Sprintf("%d consecutive failed probes", streak),
+		Fields: healthFields(channel, record, []alert.Field{
+			{Label: "连续失败", Value: fmt.Sprintf("%d 次", streak)},
+		}),
+	})
+}
+
+// healthFields 组装探测类告警的公共明细行, 末尾再接该告警特有的几行。
+// 管理员需要一眼看到"哪家渠道、探的哪个地址、这次到底怎么了", 而不是只有一句结论。
+func healthFields(channel model.Channel, record model.ChannelHealthRecord, extra []alert.Field) []alert.Field {
+	status := "无响应"
+	if record.StatusCode > 0 {
+		status = fmt.Sprintf("HTTP %d", record.StatusCode)
+	}
+	fields := []alert.Field{
+		{Label: "渠道", Value: channelDisplayName(channel)},
+		{Label: "探测地址", Value: channel.BaseURL},
+		{Label: "延迟", Value: fmt.Sprintf("%d ms", record.LatencyMs)},
+		{Label: "状态", Value: status},
+	}
+	// 没有错误就不写"探测错误"这行: 降级告警里出现一句占位的错误描述,
+	// 管理员会以为是探测本身失败了, 而实际只是慢。
+	if record.Error != "" {
+		fields = append(fields, alert.Field{Label: "探测错误", Value: record.Error})
+	}
+	fields = append(fields, alert.Field{Label: "探测时间", Value: record.CheckedAt.Format("2006-01-02 15:04:05")})
+	return append(fields, extra...)
+}
+
+// alertKindLabel 站内告警类型的中文说明(恢复告警里回指此前那条用)。
+func alertKindLabel(kind string) string {
+	switch kind {
+	case "down":
+		return "渠道故障"
+	case "degraded":
+		return "渠道延迟降级"
+	case "key_disabled":
+		return "渠道凭据熔断"
+	case "model_disabled":
+		return "渠道模型熔断"
+	}
+	return kind
 }
 
 // ChannelHealthList 返回某渠道的最近健康记录。

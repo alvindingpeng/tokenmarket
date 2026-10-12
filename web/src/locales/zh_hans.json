@@ -394,6 +394,15 @@
             "label": "GitHub 访问令牌",
             "placeholder": "留空即匿名访问",
             "hint": "可选。GitHub 对匿名调用限流 60 次/小时，填一个只读的 Personal Access Token 可提到 5000 次/小时，更新检查就不会取不到仓库版本。令牌只存在本机数据库，不会回显到页面。环境变量 OCTOPUS_GITHUB_PAT 仍然可用且优先级更低。"
+        },
+        "updateCheckEnabled": {
+            "label": "自动检查更新",
+            "hint": "开启后按下方周期向 GitHub 查询本分支的 Release, 有新版本时在系统信息里提示并可一键升级。关闭不影响已展示的版本信息, 只是不再轮询。"
+        },
+        "updateCheckInterval": {
+            "label": "更新检查间隔(分钟)",
+            "placeholder": "默认 60",
+            "hint": "取值 1-1440。保存后立即按新周期重排任务, 不需要重启进程。GitHub 匿名调用限流 60 次/小时, 未填令牌时不宜把间隔压得太小。"
         }
     },
     "group": {
@@ -1166,23 +1175,33 @@
             "runFailed": "探测失败"
         },
         "alerts": {
-            "desc": "宕机/恢复/降级/对账差异/备份与归档失败/计费结算失败告警; 配置 Webhook 后自动外发, 同类型告警 10 分钟去重。",
+            "desc": "渠道宕机/延迟降级/恢复、凭据与模型熔断、对账差异、计费结算失败、备份与归档失败、后台任务连续失败、配额触顶与余额触底、新版本可用的告警; 配置通知渠道后自动外发, 同一渠道同类型同原因在去重窗口内只发一次。",
+            "subject": "对象",
             "channel": "渠道",
             "kind": "类型",
             "reason": "原因",
+            "detail": "明细",
+            "detailShow": "展开明细",
             "notified": "已外发",
             "yes": "是",
             "no": "否",
             "time": "时间",
+            "system": "系统",
             "kindDown": "宕机",
             "kindRecovered": "已恢复",
             "kindDegraded": "降级",
+            "kindKeyDisabled": "凭据熔断",
+            "kindModelDisabled": "模型熔断",
             "kindMismatch": "对账差异",
+            "kindBilling": "计费失败",
             "kindBackup": "备份失败",
             "kindArchive": "归档失败",
-            "kindBilling": "计费失败",
-            "kindTest": "测试",
-            "kindLowBalance": "余额触底"
+            "kindLowBalance": "余额触底",
+            "kindQuota": "配额触顶",
+            "kindTaskFailed": "任务失败",
+            "kindTaskRecovered": "任务恢复",
+            "kindUpdate": "新版本",
+            "kindTest": "测试"
         },
         "settings": {
             "title": "运营可靠性",

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"time"
 
 	"github.com/bestruirui/octopus/internal/alert"
 	"github.com/bestruirui/octopus/internal/conf"
@@ -47,14 +46,22 @@ var startCmd = &cobra.Command{
 		// 告警外发接线: op 负责站内告警落库, alert 负责按 alert_channels 分发到 webhook/telegram/email。
 		// alert 读设置要 op、op 发告警要 alert, 直接互相 import 会成环, 故两个方向都在这里注入。
 		// 必须在 InitCache 之后: 设置读取依赖设置缓存。
+		// 告警外发接线: op 负责站内告警落库, alert 负责按 alert_channels 分发到 webhook/telegram/email。
+		// alert 读设置要 op、op 发告警要 alert, 直接互相 import 会成环, 故两个方向都在这里注入。
+		// 必须在 InitCache 之后: 设置读取依赖设置缓存。
 		alert.SettingsProvider = op.SettingGetString
-		op.AlertDispatcher = func(ctx context.Context, event, title, message string) bool {
-			return alert.Send(ctx, alert.Alert{
-				Event:     alert.Event(event),
-				Title:     title,
-				Message:   message,
-				Timestamp: time.Now(),
-			})
+		op.AlertDispatcher = func(ctx context.Context, a alert.Alert) bool {
+			return alert.Send(ctx, a)
+		}
+
+		// 后台任务故障接线: 任务连续失败达到阈值后经同一条告警管道通知管理员。
+		// 改造前任务失败只有 log.Warnf —— 备份不再产出、归档停在原地都没人知道,
+		// 直到日志把磁盘写满才暴露。
+		task.OnTaskFailure = func(name string, consecutive int, reason string) {
+			op.RaiseTaskFailureAlert(name, consecutive, reason)
+		}
+		task.OnTaskRecovered = func(name string, consecutive int) {
+			op.RaiseTaskRecoveredAlert(name, consecutive)
 		}
 
 		if err := op.UserInit(); err != nil {
