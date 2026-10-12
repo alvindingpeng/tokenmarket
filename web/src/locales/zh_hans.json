@@ -324,13 +324,14 @@
             "checking": "检查中...",
             "checkFailed": "更新检查失败",
             "assetMissing": "当前平台没有可用的更新包",
-            "upToDate": "当前已是最新版本",
+            "upToDate": "当前已是最新版本，无需更新。",
             "platform": "运行平台",
             "lastCheck": "上次检查",
             "releaseNotes": "更新说明",
             "viewRelease": "查看发行页",
             "confirmUpdate": "确认更新",
-            "cancel": "取消"
+            "cancel": "取消",
+            "staleBadge": "可能已过期"
         },
         "log": {
             "title": "日志设置",
@@ -388,6 +389,11 @@
             "maintenanceNotice": "维护提示",
             "maintenanceNoticeHint": "用户登录被拒时看到的提示文案。",
             "maintenanceNoticePlaceholder": "例如: 系统升级维护中, 请稍后再试"
+        },
+        "githubToken": {
+            "label": "GitHub 访问令牌",
+            "placeholder": "留空即匿名访问",
+            "hint": "可选。GitHub 对匿名调用限流 60 次/小时，填一个只读的 Personal Access Token 可提到 5000 次/小时，更新检查就不会取不到仓库版本。令牌只存在本机数据库，不会回显到页面。环境变量 OCTOPUS_GITHUB_PAT 仍然可用且优先级更低。"
         }
     },
     "group": {

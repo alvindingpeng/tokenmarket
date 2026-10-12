@@ -324,13 +324,14 @@
             "checking": "Checking...",
             "checkFailed": "Update check failed",
             "assetMissing": "No update package is available for this platform",
-            "upToDate": "You are using the latest version",
+            "upToDate": "You are on the latest version; nothing to update.",
             "platform": "Platform",
             "lastCheck": "Last checked",
             "releaseNotes": "Release notes",
             "viewRelease": "View release",
             "confirmUpdate": "Confirm update",
-            "cancel": "Cancel"
+            "cancel": "Cancel",
+            "staleBadge": "may be stale"
         },
         "log": {
             "title": "Log Settings",
@@ -388,6 +389,11 @@
             "maintenanceNotice": "Maintenance notice",
             "maintenanceNoticeHint": "Message shown to users whose sign-in is rejected.",
             "maintenanceNoticePlaceholder": "e.g. The service is under maintenance, please retry later"
+        },
+        "githubToken": {
+            "label": "GitHub access token",
+            "placeholder": "Leave empty for anonymous",
+            "hint": "Optional. GitHub rate-limits anonymous calls to 60 per hour; a read-only personal access token raises that to 5000 so the update check never fails to read the repository version. The token is stored in this instance's database only and is never sent back to the page. The OCTOPUS_GITHUB_PAT environment variable still works and has lower priority."
         }
     },
     "group": {

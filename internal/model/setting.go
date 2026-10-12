@@ -19,6 +19,9 @@ const (
 	SettingKeyModelFilter             SettingKey = "model_filter"               // 渠道获取模型时的全局过滤表达式; 留空表示不过滤
 	SettingKeyUpdateCheckEnabled      SettingKey = "update_check_enabled"       // 是否自动检查本分支 Release 更新
 	SettingKeyUpdateCheckMinutes      SettingKey = "update_check_interval"      // 自动检查间隔(分钟)
+	// GitHub 访问令牌: 只用来抬高 GitHub API 的匿名限流(60 次/小时), 可选。
+	// 环境变量 OCTOPUS_GITHUB_PAT 仍优先, 设置项作为界面可改的后备, 免得改令牌还得进机器改 systemd。
+	SettingKeyGithubToken SettingKey = "github_token"
 	// 多用户与计费。
 	SettingKeyMarkupRatio             SettingKey = "markup_ratio"               // 上浮比例: 用户价 = 供货价 × (1 + 上浮比例)
 	SettingKeyRegisterUserEnabled     SettingKey = "register_user_enabled"      // 用户注册开关, 默认关
@@ -91,6 +94,18 @@ func IsInternalSetting(key SettingKey) bool {
 	return key == SettingKeyAuthSecret || key == SettingKeyMetricsToken
 }
 
+// TokenConfiguredMask 是密钥类设置项回显给界面的占位符: 真实值不出接口,
+// 界面据此知道"已配置", 提交该占位符时后端保持原值不变。
+const TokenConfiguredMask = "__configured__"
+
+// IsSecretSetting 是需要占位回显的密钥类设置项。与 IsInternalSetting 的区别:
+// 内部键(read-only)连键都不出现, 这里要出现但值被替换成占位符。
+func IsSecretSetting(key SettingKey) bool {
+	return key == SettingKeyGithubToken ||
+		key == SettingKeyAlertTelegramBotToken ||
+		key == SettingKeyAlertEmailPassword
+}
+
 type Setting struct {
 	Key   SettingKey `json:"key" gorm:"primaryKey"`
 	Value string     `json:"value" gorm:"not null"`
@@ -105,6 +120,7 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyModelFilter, Value: ""},                  // 默认不过滤模型
 		{Key: SettingKeyUpdateCheckEnabled, Value: "true"},       // 默认开启更新检查
 		{Key: SettingKeyUpdateCheckMinutes, Value: "60"},         // 每小时检查一次
+		{Key: SettingKeyGithubToken, Value: ""},                  // 默认匿名访问 GitHub API, 可在此填令牌抬高限流
 		{Key: SettingKeyMarkupRatio, Value: "0.2"},               // 默认上浮 20%
 		{Key: SettingKeyRegisterUserEnabled, Value: "false"},     // 用户注册默认关闭
 		{Key: SettingKeyRegisterResellerEnabled, Value: "false"}, // 渠道商注册默认关闭

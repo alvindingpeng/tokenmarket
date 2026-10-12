@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'use-intl';
 import { Monitor, Globe, Clock, Shield, Filter, HelpCircle, SlidersHorizontal, X } from 'lucide-react';
+import Github from '@thesvg/react/github';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useSettingList, useSetSetting, SettingKey } from '@/api/setting';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+
+// TOKEN_CONFIGURED 是后端对「已配置令牌」的回显占位: 真实令牌不会下发到浏览器,
+// 输入框留空即保持原值; 要清空请填 - 之外的写法见输入框提示。
+const TOKEN_CONFIGURED = '__configured__';
 
 export function SettingSystem() {
     const t = useTranslations('setting');
@@ -18,12 +23,14 @@ export function SettingSystem() {
     const [corsInputValue, setCorsInputValue] = useState('');
     const [modelFilter, setModelFilter] = useState('');
     const [scoreWeights, setScoreWeights] = useState({ price: '', latency: '', success: '' });
+    const [githubToken, setGithubToken] = useState('');
 
     const initialProxyUrl = useRef('');
     const initialStatsSaveInterval = useRef('');
     const initialCorsAllowOrigins = useRef('');
     const initialModelFilter = useRef('');
     const initialScoreWeights = useRef({ price: '', latency: '', success: '' });
+    const initialGithubToken = useRef('');
 
     useEffect(() => {
         if (settings) {
@@ -57,6 +64,14 @@ export function SettingSystem() {
             };
             queueMicrotask(() => setScoreWeights(next));
             initialScoreWeights.current = next;
+
+            // GitHub 访问令牌: 只用于抬高更新检查的 API 限流; 留空即匿名访问。
+            const token = settings.find(s => s.key === SettingKey.GithubToken);
+            if (token) {
+                const value = token.value === TOKEN_CONFIGURED ? '' : token.value;
+                queueMicrotask(() => setGithubToken(value));
+                initialGithubToken.current = value;
+            }
         }
     }, [settings]);
 
@@ -74,6 +89,8 @@ export function SettingSystem() {
                     initialCorsAllowOrigins.current = value;
                 } else if (key === SettingKey.ModelFilter) {
                     initialModelFilter.current = value;
+                } else if (key === SettingKey.GithubToken) {
+                    initialGithubToken.current = value;
                 } else if (key === SettingKey.ScorePriceWeight) {
                     initialScoreWeights.current = { ...initialScoreWeights.current, price: value };
                 } else if (key === SettingKey.ScoreLatencyWeight) {
@@ -319,6 +336,30 @@ export function SettingSystem() {
                         </div>
                     </PopoverContent>
                 </Popover>
+            </div>
+            {/* GitHub 访问令牌 */}
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                    <Github variant="mono" className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-sm font-medium">{t('githubToken.label')}</span>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" sideOffset={10} align="center" className="max-w-72">
+                            {t('githubToken.hint')}
+                        </TooltipContent>
+                    </Tooltip>
+                </div>
+                <Input
+                    type="password"
+                    value={githubToken}
+                    onChange={(e) => setGithubToken(e.target.value)}
+                    onBlur={() => handleSave(SettingKey.GithubToken, githubToken, initialGithubToken.current)}
+                    placeholder={t('githubToken.placeholder')}
+                    autoComplete="off"
+                    className="w-48 rounded-xl"
+                />
             </div>
         </div>
     );
