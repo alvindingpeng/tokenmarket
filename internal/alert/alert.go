@@ -13,9 +13,21 @@ import (
 	"time"
 
 	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/op"
 	"github.com/charmbracelet/log"
 )
+
+// SettingsProvider 读取一条告警相关设置, 由启动时注入(见 cmd/start.go)。
+// alert 不直接 import op: op 需要调用告警外发, alert 又需要 op 读设置, 直接互相依赖会形成导入环。
+// 这里只声明"取设置"的函数类型, 由外部把 op.SettingGetString 接上。
+var SettingsProvider func(key model.SettingKey) (string, error)
+
+// settingString 读取一条设置; 未注入 provider 时按"未配置"处理并说明原因, 不让调用方误判为已配置。
+func settingString(key model.SettingKey) (string, error) {
+	if SettingsProvider == nil {
+		return "", fmt.Errorf("alert settings provider not injected")
+	}
+	return SettingsProvider(key)
+}
 
 // Event 告警事件类型。
 type Event string
@@ -49,36 +61,45 @@ func SendOnce(ctx context.Context, channel string, alert Alert) error {
 	}
 }
 
-// Send 根据配置的渠道发送告警: webhook, telegram, email。
-func Send(ctx context.Context, alert Alert) {
-	channelsRaw, err := op.SettingGetString(model.SettingKeyAlertChannels)
+// Send 根据配置的渠道发送告警: webhook, telegram, email; 返回是否至少有一个渠道发送成功。
+// 这是全站唯一的外发入口, 调用方(op.RaiseAlert)据返回值回填"已通知"标记。
+func Send(ctx context.Context, alert Alert) bool {
+	channelsRaw, err := settingString(model.SettingKeyAlertChannels)
 	if err != nil || channelsRaw == "" {
 		channelsRaw = "webhook" // 默认仅 webhook
 	}
 	channels := strings.Split(channelsRaw, ",")
 
+	sent := false
 	for _, ch := range channels {
 		ch = strings.TrimSpace(ch)
 		switch ch {
 		case "webhook":
 			if err := sendWebhook(ctx, alert); err != nil {
 				log.Errorf("failed to send webhook alert: %v", err)
+			} else {
+				sent = true
 			}
 		case "telegram":
 			if err := sendTelegram(ctx, alert); err != nil {
 				log.Errorf("failed to send telegram alert: %v", err)
+			} else {
+				sent = true
 			}
 		case "email":
 			if err := sendEmail(ctx, alert); err != nil {
 				log.Errorf("failed to send email alert: %v", err)
+			} else {
+				sent = true
 			}
 		}
 	}
+	return sent
 }
 
 // sendWebhook 发送 Webhook 告警。
 func sendWebhook(ctx context.Context, alert Alert) error {
-	url, err := op.SettingGetString(model.SettingKeyAlertWebhookURL)
+	url, err := settingString(model.SettingKeyAlertWebhookURL)
 	if err != nil || url == "" {
 		return fmt.Errorf("webhook url not configured")
 	}
@@ -109,11 +130,11 @@ func sendWebhook(ctx context.Context, alert Alert) error {
 
 // sendTelegram 发送 Telegram 告警。
 func sendTelegram(ctx context.Context, alert Alert) error {
-	botToken, err := op.SettingGetString(model.SettingKeyAlertTelegramBotToken)
+	botToken, err := settingString(model.SettingKeyAlertTelegramBotToken)
 	if err != nil || botToken == "" {
 		return fmt.Errorf("telegram bot token not configured")
 	}
-	chatID, err := op.SettingGetString(model.SettingKeyAlertTelegramChatID)
+	chatID, err := settingString(model.SettingKeyAlertTelegramChatID)
 	if err != nil || chatID == "" {
 		return fmt.Errorf("telegram chat id not configured")
 	}
@@ -175,12 +196,12 @@ func telegramError(status int, body []byte) error {
 
 // sendEmail 发送邮件告警。
 func sendEmail(ctx context.Context, alert Alert) error {
-	smtpHost, _ := op.SettingGetString(model.SettingKeyAlertEmailSMTPHost)
-	smtpPortStr, _ := op.SettingGetString(model.SettingKeyAlertEmailSMTPPort)
-	username, _ := op.SettingGetString(model.SettingKeyAlertEmailUsername)
-	password, _ := op.SettingGetString(model.SettingKeyAlertEmailPassword)
-	from, _ := op.SettingGetString(model.SettingKeyAlertEmailFrom)
-	toRaw, _ := op.SettingGetString(model.SettingKeyAlertEmailTo)
+	smtpHost, _ := settingString(model.SettingKeyAlertEmailSMTPHost)
+	smtpPortStr, _ := settingString(model.SettingKeyAlertEmailSMTPPort)
+	username, _ := settingString(model.SettingKeyAlertEmailUsername)
+	password, _ := settingString(model.SettingKeyAlertEmailPassword)
+	from, _ := settingString(model.SettingKeyAlertEmailFrom)
+	toRaw, _ := settingString(model.SettingKeyAlertEmailTo)
 
 	if smtpHost == "" || username == "" || password == "" || from == "" || toRaw == "" {
 		return fmt.Errorf("email settings incomplete")

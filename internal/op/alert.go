@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bestruirui/octopus/internal/db"
 	"github.com/bestruirui/octopus/internal/model"
+	"github.com/charmbracelet/log"
 )
 
 // alertDedupDefaultMinutes 告警去重窗口默认值(分钟): 设置为 0 或读取失败时回退到此值。
@@ -30,7 +32,8 @@ func alertDedupWindow() time.Duration {
 var webhookClient = &http.Client{Timeout: 10 * time.Second}
 
 // RaiseAlert 是全站唯一的告警出口: 对账差异、备份失败、健康降级都经由这里。
-// 它负责去重、持久化 ChannelAlert 并在配置了 Webhook 时外发通知, 返回是否外发成功。
+// 它负责去重、持久化 ChannelAlert, 并把外发交给注入的分发器(按 alert_channels 决定渠道)。
+// 返回是否已记录(命中去重窗口返回 false); 外发是异步的, 成功后回填 notified 标记。
 func RaiseAlert(ctx context.Context, channelID int, channelCode, kind, reason string) bool {
 	if kind == "" || reason == "" {
 		return false
@@ -46,37 +49,34 @@ func RaiseAlert(ctx context.Context, channelID int, channelCode, kind, reason st
 			return false
 		}
 	}
-	alert := model.ChannelAlert{
+	// 局部变量不可命名为 alert: 那会遮蔽 alert 包名, 使本文件无法引用包内的分发函数。
+	record := model.ChannelAlert{
 		ChannelID:   channelID,
 		ChannelCode: channelCode,
 		Kind:        kind,
 		Reason:      reason,
 		CreatedAt:   time.Now(),
 	}
-	// Webhook 通知(可选): 配置了地址才外发, 外发失败不影响站内落库。
-	if webhookURL, err := SettingGetString(model.SettingKeyAlertWebhookURL); err == nil && alertWebhookConfigured(webhookURL) {
-		if sendWebhook(ctx, webhookURL, alert) {
-			alert.Notified = true
-		}
-	}
-	if err := db.GetDB().Create(&alert).Error; err != nil {
+	if err := db.GetDB().Create(&record).Error; err != nil {
 		return false
 	}
-	
-	// 多渠道告警: 除了传统 Webhook, 额外支持 Telegram 和 Email。
-	// 使用独立的 alert 包处理渠道分发, 不阻塞主流程。
+
+	// 外发只走这一条路: 分发器按 alert_channels 决定渠道(默认含 webhook)并使用 alert_webhook_url。
+	// 这里不再单独发一次 webhook —— 否则 alert_channels 含 webhook 时同一条告警会外发两次。
+	event := determineAlertEvent(kind)
+	title := formatAlertTitle(kind, channelCode)
+	message := formatAlertMessage(kind, channelCode, reason)
+	// 外发要在调用方返回之后继续, 故脱掉请求的取消信号(保留其中的值):
+	// 直接用请求 ctx 的话, HTTP 处理函数一返回 ctx 就被取消, 发送会半路失败。
+	sendCtx := context.WithoutCancel(ctx)
 	go func() {
-		// 将 ChannelAlert 转换为通用 alert.Alert
-		alertEvent := determineAlertEvent(kind)
-		title := formatAlertTitle(kind, channelCode)
-		message := formatAlertMessage(kind, channelCode, reason)
-		
-		// 异步发送到配置的告警渠道（webhook/telegram/email）
-		// alert 包内部会读取配置并按启用渠道分发
-		sendMultiChannelAlert(ctx, alertEvent, title, message)
+		if sendMultiChannelAlert(sendCtx, event, title, message) {
+			// 回填「已通知」, 让界面能区分「已外发」与「仅站内」。
+			db.GetDB().Model(&model.ChannelAlert{}).Where("id = ?", record.ID).Update("notified", true)
+		}
 	}()
-	
-	return alert.Notified
+
+	return true
 }
 
 // sendWebhook 发送告警到 Webhook, 返回是否成功。
@@ -127,8 +127,6 @@ func ChannelAlertList(ctx context.Context, limit int) ([]model.ChannelAlert, err
 	return rows, nil
 }
 
-
-
 // determineAlertEvent 将渠道告警类型映射为通用事件类型。
 func determineAlertEvent(kind string) string {
 	switch kind {
@@ -168,17 +166,26 @@ func formatAlertMessage(kind, channelCode, reason string) string {
 	return "渠道: " + displayCode + "\n类型: " + kind + "\n原因: " + reason
 }
 
-// sendMultiChannelAlert 调用 alert 包发送多渠道告警，需要单独实现或直接调用 alert.Send。
-// 这里暂时保留为占位符，后续集成时实现。
-func sendMultiChannelAlert(ctx context.Context, event, title, message string) {
-	// TODO: 集成 internal/alert 包
-	// import "github.com/bestruirui/octopus/internal/alert"
-	// alert.Send(ctx, alert.Alert{
-	//     Event: alert.Event(event),
-	//     Title: title,
-	//     Message: message,
-	//     Timestamp: time.Now(),
-	// })
+// AlertDispatcher 把一条站内告警外发到设置里启用的渠道(webhook/telegram/email), 由启动时注入(见 cmd/start.go)。
+// op 不直接 import internal/alert: alert 读取告警设置需要 op, 两边直接互相依赖会形成导入环,
+// 故这里只声明分发函数的签名, 由 cmd 把 alert.Send 接上。未注入时(例如单元测试)只保留站内告警, 不外发。
+// 返回是否至少有一个渠道发送成功。
+var AlertDispatcher func(ctx context.Context, event, title, message string) bool
+
+// alertDispatchMissingOnce 让「未接线」只提示一次, 避免每条告警都刷日志。
+var alertDispatchMissingOnce sync.Once
+
+// sendMultiChannelAlert 把告警交给注入的分发器; 分发器内部按 alert_channels 决定实际渠道。
+func sendMultiChannelAlert(ctx context.Context, event, title, message string) bool {
+	if AlertDispatcher == nil {
+		// 未接线时告警只会留在站内, 配好的 Telegram/Email 收不到。
+		// 这正是曾经的静默失效点, 故留下一条可见日志而不是直接 return。
+		alertDispatchMissingOnce.Do(func() {
+			log.Warnf("alert dispatcher not injected: 站内告警不会外发到配置的告警渠道 (event=%s)", event)
+		})
+		return false
+	}
+	return AlertDispatcher(ctx, event, title, message)
 }
 
 // alertWebhookConfigured 判断告警 Webhook 是否已配置有效地址, 供设置页与健康页展示。

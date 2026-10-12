@@ -273,9 +273,11 @@ model grants, and per-credential cost.
 
 ### Model capabilities
 
-Image-capable models are classified by name pattern (dall-e, flux, …) when auto-added, and the
-classification is recomputed when grants change. This is a deliberate approximation — a capability probe
-is on the roadmap.
+Image-capable models are classified from the **capability registry** first: models covered by the official
+price library (models.dev) come with their media kind, and models it does not cover can be registered by hand
+on the price-library page (source recorded as `manual`, never overwritten by later syncs). Only when neither
+has an entry does the name pattern (dall-e, flux, …) act as a fallback, so existing behaviour does not regress.
+Classification is recomputed when grants change, and the UI shows the source of each record.
 
 ### Rate limiting
 
@@ -740,7 +742,7 @@ Known gaps in this fork, with the reasoning kept where the code is:
 |------|--------|
 | Video generation (`/v1/videos`, per-second billing) | Protocol bit `1 << 5` reserved, route not implemented |
 | Streaming image results (`partial_images`) and upstream usage reconciliation | Not started |
-| Model capability detection by probe instead of name keywords | Not started |
+| Model capability detection by probe instead of name keywords | Done (v0.19.0): driven by the capability registry, name keywords kept only as fallback |
 | Scheduled channel model sync (cron rather than on-save) | Rejected for now: unbounded upstream cost and churn risk |
 | Automatic pricing / automatic listing on auto-add | Deliberately excluded: both are money-moving actions |
 | In-app self-update | Enabled for admins; checks this fork's Releases and atomically replaces the service binary from the matching `octopus-<os>-<arch>.zip` asset |
