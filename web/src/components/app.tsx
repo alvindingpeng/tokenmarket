@@ -15,6 +15,7 @@ import {
 import { userManageListQueryOptions } from '@/api/usermanage';
 import { AppShell } from '@/components/app-shell';
 import { LoginForm } from '@/components/modules/login';
+import { LandingPage } from '@/components/modules/landing';
 import { APIKeyDashboard } from '@/components/modules/apikey-dashboard';
 import { useAppStore } from '@/stores/app';
 import { useApplySiteTitle } from '@/lib/site-title';
@@ -61,6 +62,8 @@ export function AppContainer() {
     useApplySiteTitle();
     const authMode = isAPIKeyAuth ? 'apikey' : 'user'; // authMode 区分两种认证模式各自需要的初始 API。
     const [readyMode, setReadyMode] = useState<string | null>(null); // readyMode 记录已完成初始请求的认证模式。
+    // guestView 控制未登录访客看到落地页还是登录表单; 退出登录也回到落地页入口。
+    const [guestView, setGuestView] = useState<'landing' | 'login'>('landing');
     const currentPage = useAppStore((state) => state.currentPage);
     // visibleItem 延迟提交页面切换，等待 lazy 模块在 Suspense 中准备完成。
     const visibleItem = useDeferredValue(currentPage);
@@ -103,13 +106,21 @@ export function AppContainer() {
         };
     }, [authMode, authLoading, isAPIKeyAuth, isAuthenticated, queryClient, role]);
 
+    useEffect(() => {
+        if (!authLoading && !isAuthenticated) setGuestView('landing');
+    }, [authLoading, isAuthenticated]);
+
     if (authLoading) return null;
 
-    // 登录页面
+    // 未登录访客: 默认展示落地页, 从 CTA 进入登录表单; 退出登录同样先回到落地页。
     if (!isAuthenticated) {
         return (
             <InitialLoadingGate>
-                <LoginForm />
+                {guestView === 'landing' ? (
+                    <LandingPage onEnter={() => setGuestView('login')} />
+                ) : (
+                    <LoginForm onBack={() => setGuestView('landing')} />
+                )}
             </InitialLoadingGate>
         );
     }

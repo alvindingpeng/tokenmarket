@@ -6,7 +6,7 @@
 
 **自托管的 LLM API 网关：聚合、路由、计费与运维，全部装进一个二进制**
 
-`v0.15.0` · [English](README.md) | 简体中文
+`v0.21.0` · [English](README.md) | 简体中文
 
 </div>
 

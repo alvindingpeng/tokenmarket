@@ -24,7 +24,8 @@
         "reason": "申请理由",
         "reasonPlaceholder": "申请成为渠道商的理由（选填）",
         "registerSuccess": "注册成功，请登录。",
-        "registerPending": "已提交注册，等待管理员审批。"
+        "registerPending": "已提交注册，等待管理员审批。",
+        "backToHome": "返回首页"
     },
     "apiKeyDashboard": {
         "error": "加载数据失败",
@@ -1253,6 +1254,77 @@
             "metricsTokenRotate": "重新生成",
             "metricsTokenRotated": "令牌已轮换, 旧令牌立即失效",
             "backupRemoteHint": "WebDAV 推送副本与校验和; 地址凭据在 config.json backup.remote_*, 失败自动告警"
+        }
+    },
+    "landing": {
+        "nav": {
+            "features": "核心能力",
+            "media": "接入与计费",
+            "roles": "适用角色"
+        },
+        "hero": {
+            "badge": "自托管 LLM API 网关",
+            "title": "把多家模型的调用，收进一个网关",
+            "subtitle": "Octopus 在供应商与客户端之间只隔一层：聚合渠道、智能选路、按次计费、可观测运维 —— 全部装进一个自托管二进制。",
+            "ctaPrimary": "进入控制台",
+            "ctaSecondary": "了解全站功能",
+            "chip1": "OpenAI · Anthropic 多协议",
+            "chip2": "文本 / 图像 / 视频",
+            "chip3": "三语 · 深浅色 · 多端自适应"
+        },
+        "features": {
+            "title": "全站功能一览",
+            "subtitle": "从接入到运维，一个后台全部管理。",
+            "gatewayTitle": "统一网关",
+            "gatewayDesc": "OpenAI Chat / Responses 与 Anthropic Messages 协议互转，一把密钥调所有模型。",
+            "channelsTitle": "渠道与授权",
+            "channelsDesc": "一个模型名背后可挂多个渠道，各自的密钥、协议位与限额独立管理。",
+            "groupsTitle": "模型配置与选路",
+            "groupsDesc": "分组即模型名，支持顺序、价格、延迟、成功率、综合评分等 7 种选路，故障自动切换。",
+            "billingTitle": "精确计费",
+            "billingDesc": "调用前预扣、调用后结算、每日对账；文本按 token、图像按张、视频按条加时长计价。",
+            "mediaTitle": "图像与视频",
+            "mediaDesc": "生图与生视频完整转发，任务归属落库可追踪，查询与取消都不计费。",
+            "opsTitle": "可观测与运维",
+            "opsDesc": "实时统计、日志检索、审计与限流、健康探测与告警、加密备份与异地推送。",
+            "accessTitle": "用户与访问控制",
+            "accessDesc": "管理员 / 渠道商 / 用户三种角色，独立 API 密钥与余额，注册可选审批。",
+            "whiteLabelTitle": "白标与多语言",
+            "whiteLabelDesc": "站点名称、描述与联系方式可配置，支持中简 / 中繁 / 英文与深浅色主题。"
+        },
+        "media": {
+            "title": "接入协议与计费方式",
+            "subtitle": "对客户端始终是 OpenAI 形态的入口，后台按形态分别计费。",
+            "protocolsTitle": "入站协议",
+            "protocolsDesc": "OpenAI Chat Completions · OpenAI Responses · Anthropic Messages · 图像生成与编辑 · 视频生成",
+            "textTitle": "文本对话",
+            "textDesc": "聊天与思考模型按 token 计费。",
+            "textPrice": "输入 / 输出 / 缓存分别计价",
+            "imageTitle": "图像生成",
+            "imageDesc": "generations 与 edits（多图输入）完整转发。",
+            "imagePrice": "按张计费，分辨率分档可选",
+            "videoTitle": "视频生成",
+            "videoDesc": "创建任务后轮询取回，任务归属落库可追踪。",
+            "videoPrice": "每条起步价 + 每秒时长价，分辨率分档可选"
+        },
+        "roles": {
+            "title": "三种角色，各有所用",
+            "subtitle": "导航按角色裁剪，界面只出现你有权使用的功能。",
+            "adminTitle": "管理员",
+            "adminDesc": "全站管理：渠道与授权、用户、审计、限流、运维中心与系统设置",
+            "resellerTitle": "渠道商",
+            "resellerDesc": "自有渠道：接入上游、上架模型、定价、API 密钥与计费",
+            "userTitle": "用户",
+            "userDesc": "模型配置、API 密钥、余额与调用日志"
+        },
+        "cta": {
+            "title": "准备好开始了吗？",
+            "subtitle": "进入控制台，配置你的第一个模型网关。",
+            "button": "进入控制台"
+        },
+        "footer": {
+            "tagline": "自托管部署 · 数据与余额都在自己手里",
+            "contact": "联系管理员"
         }
     }
 }
