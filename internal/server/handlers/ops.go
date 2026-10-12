@@ -150,7 +150,17 @@ func listBalanceFlow(c *gin.Context) {
 func runLogLifecycle(c *gin.Context) {
 	result, err := op.LogLifecycleRun(context.Background())
 	if err != nil {
-		op.RaiseAlert(context.Background(), 0, "system", "archive_failed", "manual archive failed: "+err.Error())
+		// 手动触发失败也要进告警: 管理员点了"立即归档"却没成, 只回一个 500 容易被他当成页面卡住。
+		op.RaiseAlertFacts(c.Request.Context(), op.AlertFacts{
+			Kind:   "archive_failed",
+			Reason: "manual log archive failed",
+			Fields: []alert.Field{
+				{Label: "触发方式", Value: "运维页手动执行"},
+				{Label: "操作者", Value: operatorName(c)},
+				{Label: "错误", Value: err.Error()},
+				{Label: "影响", Value: "日志表继续膨胀, 磁盘写满会拖垮整个网关"},
+			},
+		})
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -172,7 +182,16 @@ func listArchives(c *gin.Context) {
 func runAutoBackup(c *gin.Context) {
 	result, err := op.AutoBackupRun()
 	if err != nil {
-		op.RaiseAlert(context.Background(), 0, "system", "backup_failed", "manual backup failed: "+err.Error())
+		op.RaiseAlertFacts(c.Request.Context(), op.AlertFacts{
+			Kind:   "backup_failed",
+			Reason: "manual backup failed",
+			Fields: []alert.Field{
+				{Label: "触发方式", Value: "运维页手动执行"},
+				{Label: "操作者", Value: operatorName(c)},
+				{Label: "错误", Value: err.Error()},
+				{Label: "影响", Value: "数据库没有可用的新恢复点"},
+			},
+		})
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -271,15 +290,16 @@ func testAlertWebhook(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, "alert webhook url is not configured")
 		return
 	}
-	mock := model.ChannelAlert{
-		ChannelID:   0,
-		ChannelCode: "system",
-		Kind:        "test",
-		Reason:      "webhook connectivity test from admin panel",
-		CreatedAt:   time.Now(),
+	mock := alert.Alert{
+		Event:     alert.EventTest,
+		Kind:      "test",
+		Scope:     "系统",
+		Message:   "webhook connectivity test from admin panel",
+		Timestamp: time.Now(),
 	}
-	if !op.SendWebhookTest(c.Request.Context(), webhookURL, mock) {
-		resp.Error(c, http.StatusBadGateway, "webhook returned non-2xx or unreachable")
+	if err := alert.SendWebhookTo(c.Request.Context(), webhookURL, mock); err != nil {
+		// 原样回报失败原因: 403 与 connection refused 的处置完全不同, 只说"不可达"等于让管理员猜。
+		resp.Error(c, http.StatusBadGateway, "webhook unreachable: "+err.Error())
 		return
 	}
 	audit(c, "alert.test_webhook", "", webhookURL)

@@ -1097,6 +1097,8 @@ func RecordChannelKeyError(channelKeyID int, errorType string) {
 
 	now := time.Now()
 	errorCount := key.ErrorCount + 1
+	// breakerAt 记录本轮是否触发熔断以及截止时间, 决定要不要给管理员发告警。
+	var breakerAt *time.Time
 
 	// 阈值与时长来自系统设置(运维参数), 缺键或非法值回退到内置默认。
 	threshold := breakerKeyThreshold()
@@ -1115,6 +1117,9 @@ func RecordChannelKeyError(channelKeyID int, errorType string) {
 		updates["disabled_until"] = &disabledUntil
 		updates["error_count"] = 0
 		db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", channelKeyID).Updates(updates)
+		key.DisabledUntil = &disabledUntil
+		// 熔断是一次自动降级决策, 必须让管理员知道: 哪家渠道、哪个凭据、停到几点。
+		raiseKeyBreakerAlert(key, errorType, disabledUntil, 0)
 		return
 	}
 
@@ -1123,9 +1128,15 @@ func RecordChannelKeyError(channelKeyID int, errorType string) {
 		disabledUntil := now.Add(duration)
 		updates["disabled_until"] = &disabledUntil
 		updates["error_count"] = 0 // 重置计数器
+		key.DisabledUntil = &disabledUntil
+		breakerAt = &disabledUntil
 	}
 
 	db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", channelKeyID).Updates(updates)
+	// 告警放在写库之后: 库里没落上就发通知, 管理员会看到一条查无实据的熔断。
+	if breakerAt != nil {
+		raiseKeyBreakerAlert(key, errorType, *breakerAt, threshold)
+	}
 }
 
 // ResetChannelKeyErrors 重置某个 key 的错误计数（成功请求时调用）。
@@ -1216,13 +1227,20 @@ func RecordChannelModelError(channelModelID int, errorType string) {
 	}
 
 	// 达到阈值时启动熔断; 阈值为 0 表示关闭该级的计数熔断。
+	var breakerAt *time.Time
 	if threshold > 0 && errorCount >= threshold {
 		disabledUntil := now.Add(duration)
 		updates["disabled_until"] = &disabledUntil
 		updates["error_count"] = 0 // 重置计数器
+		channelModel.DisabledUntil = &disabledUntil
+		breakerAt = &disabledUntil
 	}
 
 	db.GetDB().Model(&model.ChannelModel{}).Where("id = ?", channelModelID).Updates(updates)
+	// 与 Key 级熔断同理: 熔断落地后再告警, 并给出渠道名与模型名。
+	if breakerAt != nil {
+		raiseModelBreakerAlert(channelModel, errorType, *breakerAt, threshold)
+	}
 }
 
 // ResetChannelModelErrors 重置某个渠道模型的错误计数(成功请求时调用)。

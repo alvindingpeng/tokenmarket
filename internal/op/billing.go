@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alvindingpeng/switchyard/internal/alert"
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"gorm.io/gorm"
@@ -154,10 +155,22 @@ func maybeRaiseLowBalanceAlert(ctx context.Context, userID uint, estimate float6
 	if available >= threshold+estimate {
 		return
 	}
-	reason := fmt.Sprintf("user %s (id=%d) low balance: available below min_balance %.6f + estimate %.6f, next request would be rejected",
-		user.Username, userID, threshold, estimate)
-	// 多渠道外发(Telegram/Email)由 RaiseAlert 统一处理, 此处不再重复分发。
-	RaiseAlert(ctx, 0, "system", "low_balance", reason)
+	// reason 刻意不含余额数字: 去重按 reason 匹配, 混入余额会导致每次结算都生成新记录、
+	// 绕过去重变成骚扰推送。数字进明细行, 每次外发都带最新余额。
+	RaiseAlertFacts(ctx, AlertFacts{
+		Subject: "用户 " + user.Username,
+		Kind:    "low_balance",
+		Reason:  fmt.Sprintf("user %s (id=%d) low balance: next request would be rejected", user.Username, userID),
+		Fields: []alert.Field{
+			{Label: "用户", Value: fmt.Sprintf("%s (#%d)", user.Username, userID)},
+			{Label: "可用余额", Value: fmt.Sprintf("%.6f", available)},
+			{Label: "账户余额", Value: fmt.Sprintf("%.6f", user.Balance)},
+			{Label: "冻结额", Value: fmt.Sprintf("%.6f", user.Frozen)},
+			{Label: "起扣门槛", Value: fmt.Sprintf("%.6f = 最低余额 %.6f + 本笔预估 %.6f", threshold+estimate, threshold, estimate)},
+			{Label: "影响", Value: "该用户下一次同规格调用会被拒绝"},
+			{Label: "建议", Value: "通知用户充值, 或调整最低余额与额度"},
+		},
+	})
 }
 
 // BillingRelease 释放预扣不扣费, 用于失败或取消且没有产生用量的请求。

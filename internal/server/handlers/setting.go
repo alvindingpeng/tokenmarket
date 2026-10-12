@@ -2,10 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -86,14 +86,19 @@ func setSetting(c *gin.Context) {
 		resp.Success(c, gin.H{"key": setting.Key, "value": setting.Value, "metrics_token": token})
 		return
 	}
-	switch setting.Key {
-	case model.SettingKeyModelInfoUpdateInterval:
-		hours, err := strconv.Atoi(setting.Value)
-		if err != nil {
-			resp.Error(c, http.StatusBadRequest, err.Error())
+	// 周期类设置改完立刻重算对应任务的定时器。改造前只有 model_info_update_interval
+	// 会做这件事, 其余(统计落库、自动备份、健康探测、更新检查)要重启进程才生效。
+	if err := task.ApplySetting(setting.Key); err != nil {
+		if errors.Is(err, task.ErrNotRegistered) {
+			// 该设置没有挂任务, 属正常路径。
+		} else {
+			// 挂了任务但应用失败要如实回报: 静默返回成功会让管理员以为新周期已经生效。
+			audit(c, "setting.apply_failed", string(setting.Key), err.Error())
+			resp.Error(c, http.StatusInternalServerError, "saved but not applied: "+err.Error())
 			return
 		}
-		task.Update(string(setting.Key), time.Duration(hours)*time.Hour)
+	}
+	switch setting.Key {
 	case model.SettingKeyGithubToken:
 		// 令牌直接决定限流额度, 改完必须让下一次读取重新问一次 GitHub,
 		// 否则界面还会拿限流期间那份失败结论糊弄管理员。

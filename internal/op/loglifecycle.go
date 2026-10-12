@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alvindingpeng/switchyard/internal/alert"
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
 )
@@ -140,7 +141,19 @@ func LogLifecycleRun(ctx context.Context) (ArchiveResult, error) {
 		if err != nil {
 			// 归档失败不继续删除: 先保留数据, 保证不丢未归档记录。
 			result.ArchiveError = err.Error()
-			RaiseAlert(ctx, 0, "system", "archive_failed", "log archive failed: "+err.Error())
+			RaiseAlertFacts(ctx, AlertFacts{
+				Kind:   "archive_failed",
+				Reason: "log archive failed",
+				Fields: []alert.Field{
+					{Label: "清理截止", Value: cutoff.Format("2006-01-02")},
+					{Label: "归档文件", Value: file},
+					{Label: "已归档", Value: fmt.Sprintf("%d 条", archived)},
+					{Label: "错误", Value: err.Error()},
+					{Label: "保护动作", Value: "归档失败时本轮不删除任何日志, 数据不会丢"},
+					{Label: "影响", Value: "日志表持续膨胀, 磁盘写满会拖垮整个网关"},
+					{Label: "建议", Value: "检查归档目录是否存在、可写、磁盘余量是否足够"},
+				},
+			})
 			return result, nil
 		}
 	}

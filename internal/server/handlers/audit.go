@@ -149,6 +149,19 @@ func describeAuditFilter(filter op.AuditLogFilter) string {
 	return strings.Join(parts, " ")
 }
 
+// operatorName 返回当前登录者的用户名, 供告警明细标明"是谁触发的"。
+// 取不到身份时返回固定占位: 告警里没有操作者比留空更好读。
+func operatorName(c *gin.Context) string {
+	userID, _ := middleware.CurrentUser(c)
+	if userID == 0 {
+		return "未知操作者"
+	}
+	if account, err := op.UserGetByID(userID); err == nil && account.Username != "" {
+		return fmt.Sprintf("%s (#%d)", account.Username, userID)
+	}
+	return fmt.Sprintf("用户 #%d", userID)
+}
+
 // audit 记录一条操作审计; 审计写入失败只记警告, 不影响主流程。
 func audit(c *gin.Context, action, target, detail string) {
 	userID, _ := middleware.CurrentUser(c)

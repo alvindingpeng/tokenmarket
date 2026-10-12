@@ -7,6 +7,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/alvindingpeng/switchyard/internal/alert"
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"gorm.io/gorm/clause"
@@ -89,10 +90,37 @@ func ReconcileDay(ctx context.Context, day time.Time) (model.BillingReconcile, e
 	}
 	// 告警闭环: 对账差异/长期预扣等都触发告警, 由 RaiseAlert 统一去重。
 	if result.Status != model.ReconcileStatusBalanced {
-		RaiseAlert(ctx, 0, "system", "mismatch", fmt.Sprintf("reconcile %s: status=%s missing=%d duplicated=%d stale=%d",
-			result.Day, result.Status, result.Missing, result.Duplicated, result.StaleHold))
+		// 差异数字进明细而不进 reason: reason 是去重键, 带上每天都在变的数值会让每一天
+		// 的对账都成为"新告警", 去重窗口形同虚设。
+		RaiseAlertFacts(ctx, AlertFacts{
+			Kind:   "mismatch",
+			Reason: fmt.Sprintf("reconcile status %s", result.Status),
+			Fields: []alert.Field{
+				{Label: "对账日期", Value: result.Day},
+				{Label: "结论", Value: reconcileStatusLabel(result.Status)},
+				{Label: "明细条数", Value: fmt.Sprintf("%d", result.Records)},
+				{Label: "用户成本", Value: fmt.Sprintf("%.6f", result.UserCost)},
+				{Label: "缺失调用", Value: fmt.Sprintf("%d", result.Missing)},
+				{Label: "重复结算", Value: fmt.Sprintf("%d", result.Duplicated)},
+				{Label: "长期预扣", Value: fmt.Sprintf("%d", result.StaleHold)},
+				{Label: "建议", Value: "对账只登记差异, 不会自动改余额; 请人工核对后处理"},
+			},
+		})
 	}
 	return result, nil
+}
+
+// reconcileStatusLabel 对账结论的中文说明: 告警里管理员不该只看到裸的 "review"。
+func reconcileStatusLabel(status string) string {
+	switch status {
+	case model.ReconcileStatusBalanced:
+		return "账目对平"
+	case model.ReconcileStatusMismatch:
+		return "发现差异, 待人工核查"
+	case model.ReconcileStatusReview:
+		return "存在待核查项(重复/漏结算/长期预扣)"
+	}
+	return status
 }
 
 // ReconcileRun 对最近若干天执行对账, 返回逐日结果。

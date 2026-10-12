@@ -394,6 +394,15 @@
             "label": "GitHub 存取權杖",
             "placeholder": "留空即匿名存取",
             "hint": "可選。GitHub 對匿名呼叫限流 60 次/小時，填一個唯讀的 Personal Access Token 可提高到 5000 次/小時，更新檢查就不會取不到倉庫版本。權杖只存在本機資料庫，不會回顯到頁面。環境變數 SWITCHYARD_GITHUB_PAT 仍然可用且優先順序較低。"
+        },
+        "updateCheckEnabled": {
+            "label": "自動檢查更新",
+            "hint": "開啟後依下方周期向 GitHub 查詢本分支的 Release, 有新版本時在系統資訊裡提示並可一鍵升級。關閉不影響已顯示的版本資訊, 只是不再輪詢。"
+        },
+        "updateCheckInterval": {
+            "label": "更新檢查間隔(分鐘)",
+            "placeholder": "預設 60",
+            "hint": "取值 1-1440。儲存後立即依新周期重排任務, 不需要重啟進程。GitHub 對匿名呼叫限流 60 次/小時, 未填權杖時不宜把間隔壓得太小。"
         }
     },
     "group": {
@@ -1166,23 +1175,33 @@
             "runFailed": "探測失敗"
         },
         "alerts": {
-            "desc": "宕機/恢復/降級/對帳差異/備份與歸檔失敗/計費結算失敗告警; 設定 Webhook 後自動外發, 同類型告警 10 分鐘去重。",
+            "desc": "渠道宕機/延遲降級/恢復、憑據與模型熔斷、對帳差異、計費結算失敗、備份與歸檔失敗、背景任務連續失敗、配額觸頂與餘額觸底、新版本可用的告警; 設定通知渠道後自動外發, 同一渠道同類型同原因在去重窗口內只發一次。",
+            "subject": "對象",
             "channel": "渠道",
             "kind": "類型",
             "reason": "原因",
+            "detail": "明細",
+            "detailShow": "展開明細",
             "notified": "已外發",
             "yes": "是",
             "no": "否",
             "time": "時間",
+            "system": "系統",
             "kindDown": "宕機",
             "kindRecovered": "已恢復",
             "kindDegraded": "降級",
+            "kindKeyDisabled": "憑據熔斷",
+            "kindModelDisabled": "模型熔斷",
             "kindMismatch": "對帳差異",
+            "kindBilling": "計費失敗",
             "kindBackup": "備份失敗",
             "kindArchive": "歸檔失敗",
-            "kindBilling": "計費失敗",
-            "kindTest": "測試",
-            "kindLowBalance": "餘額觸底"
+            "kindLowBalance": "餘額觸底",
+            "kindQuota": "配額觸頂",
+            "kindTaskFailed": "任務失敗",
+            "kindTaskRecovered": "任務恢復",
+            "kindUpdate": "新版本",
+            "kindTest": "測試"
         },
         "settings": {
             "title": "營運可靠性",

@@ -9,10 +9,40 @@ import (
 	"github.com/spf13/viper"
 )
 
+// 请求体上限的缺省值: 网关会把请求体读进内存做改写与留痕, 不设上限时一个大 body
+// 就足以把内存吃穿; 正常文本补全请求远小于 32 MiB。生图底图与生视频素材是真正的
+// 例外, 故转发接口(/v1)单列一档而不是直接豁免。
+const (
+	DefaultMaxBodyBytes      int64 = 32 << 20
+	DefaultRelayMaxBodyBytes int64 = 512 << 20
+)
+
+// MaxBodyBytes 返回管理端请求体上限; 配置为 0 或负数时回退缺省值。
+func MaxBodyBytes() int64 {
+	if AppConfig.Server.MaxBodyBytes > 0 {
+		return AppConfig.Server.MaxBodyBytes
+	}
+	return DefaultMaxBodyBytes
+}
+
+// RelayMaxBodyBytes 返回转发接口(/v1)的请求体上限。
+func RelayMaxBodyBytes() int64 {
+	if AppConfig.Server.RelayMaxBodyBytes > 0 {
+		return AppConfig.Server.RelayMaxBodyBytes
+	}
+	return DefaultRelayMaxBodyBytes
+}
+
 type Server struct {
 	Host           string   `mapstructure:"host"`
 	Port           int      `mapstructure:"port"`
 	TrustedProxies []string `mapstructure:"trusted_proxies"`
+	// MaxBodyBytes 管理端请求体上限(字节), 缺省 32 MiB; <=0 用内置默认值。
+	// 网关会把请求体读进内存做改写与留痕, 不设上限时一个大 body 就能把内存吃穿。
+	MaxBodyBytes int64 `mapstructure:"max_body_bytes"`
+	// RelayMaxBodyBytes 转发接口(/v1)的请求体上限; 生图底图与生视频素材需要更宽的一档,
+	// 但仍是上限而不是豁免。缺省 512 MiB。
+	RelayMaxBodyBytes int64 `mapstructure:"relay_max_body_bytes"`
 }
 
 type Log struct {
@@ -82,6 +112,9 @@ func Load(path string) error {
 func setDefaults() {
 	viper.SetDefault("server.host", "0.0.0.0")
 	viper.SetDefault("server.port", 8080)
+	// 缺省值与下方常量保持一致。
+	viper.SetDefault("server.max_body_bytes", DefaultMaxBodyBytes)
+	viper.SetDefault("server.relay_max_body_bytes", DefaultRelayMaxBodyBytes)
 	viper.SetDefault("database.type", "sqlite")
 	viper.SetDefault("database.path", "data/data.db")
 	viper.SetDefault("log.level", "info")

@@ -3,8 +3,10 @@ package op
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/alvindingpeng/switchyard/internal/alert"
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
 )
@@ -123,7 +125,40 @@ func GetAPIKeyQuotaUsage(ctx context.Context, apiKeyID int) (requests, inputToke
 
 // raiseQuotaAlert 在 API Key 配额超限时触发告警。
 func raiseQuotaAlert(ctx context.Context, apiKeyID int, keyName, kind string, current, limit int64) {
-	reason := fmt.Sprintf("api_key %s (id=%d) quota exceeded: %s %d/%d", keyName, apiKeyID, kind, current, limit)
-	// 去重逻辑与多渠道外发(Telegram/Email)都由 RaiseAlert 内部处理。
-	RaiseAlert(ctx, 0, "system", "quota_exceeded", reason)
+	subject := quotaSubject(keyName, apiKeyID)
+	// reason 是去重键, 因此带固定的身份(API Key 与配额类型)但不带每小时都在涨的用量数字:
+	// 数字进明细行, 每次外发都带最新值; 掺进 reason 会让同一把钥匙每轮都刷一条新告警。
+	RaiseAlertFacts(ctx, AlertFacts{
+		Subject: subject,
+		Kind:    "quota_exceeded",
+		Reason:  fmt.Sprintf("api key %s (id=%d) quota exceeded: %s", subject, apiKeyID, kind),
+		Fields: []alert.Field{
+			{Label: "API Key", Value: fmt.Sprintf("%s (#%d)", subject, apiKeyID)},
+			{Label: "配额类型", Value: quotaKindLabel(kind)},
+			{Label: "当前用量", Value: fmt.Sprintf("%d / %d", current, limit)},
+			{Label: "影响", Value: "该 API Key 在下一个重置周期前会被拒绝"},
+			{Label: "建议", Value: "确认是本人放量还是外泄滥用; 需要继续服务请上调配额或重置周期"},
+		},
+	})
+}
+
+// quotaSubject 告警主体: 配额挂在 API Key 上, 用钥匙名比笼统的"系统"更有指向性。
+func quotaSubject(keyName string, apiKeyID int) string {
+	if strings.TrimSpace(keyName) != "" {
+		return strings.TrimSpace(keyName)
+	}
+	return fmt.Sprintf("API Key #%d", apiKeyID)
+}
+
+// quotaKindLabel 配额类型的中文说明。
+func quotaKindLabel(kind string) string {
+	switch kind {
+	case "requests":
+		return "请求数"
+	case "input_tokens":
+		return "输入 Token 数"
+	case "output_tokens":
+		return "输出 Token 数"
+	}
+	return kind
 }
