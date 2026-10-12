@@ -40,11 +40,11 @@
 | P1 | 生图同步转发: /v1/images/generations + /v1/images/edits(多图), 协议位 1<<4, 授权矩阵/出站/多图 multipart 透传 | ✅ 已完成 |
 | P1 | 按张计费: ChannelModel.MediaSupply(每张/每秒/分档) + BillingRecord media_units, 旧账单行兼容; 改价工作台按张编辑 | ✅ 已完成 |
 | P1 | 预扣参数 balance_reserve_images(默认 4, 后台可改, 1-64 校验) | ✅ 已完成 |
-| P2 | 生视频: /v1/videos 异步任务, 按秒计价, 协议位 1<<5 已预留 | ⬜ 未开始 |
+| P2 | 生视频: /v1/videos 异步任务, 按次计价, 协议位 1<<5 | ✅ 已完成(v0.20.0): 见 docs/video-generation.md |
 | P2 | 生图流式(partial_images 事件流)与上游用量对账 | ⬜ 未开始 |
 | P3 | 模型能力探测: 用 /models 元数据或试算替代名称关键词归类 | ✅ 已完成(v0.19.0): `op.CapabilityGet` 改走能力登记(models.dev 官方收录 + 人工补录), 名称关键词退为兜底, 见 `internal/op/channel_probe.go` |
 
-见 docs/image-generation.md。
+见 docs/image-generation.md 与 docs/video-generation.md。
 
 ## 渠道模型自动添加(2026-10-09)
 
@@ -85,9 +85,23 @@
 
 | 优先级 | 事项 | 状态 |
 |---|---|---|
-| P2 | 生视频: `/v1/videos` 异步任务, 按秒计价 | ⬜ 未开始。协议位 `1<<5` 已预留并列入 `definedProtocols`, 探测也会置位, 但**没有路由实现**, 勾了也不会真转发 |
+| P2 | 生视频: `/v1/videos` 异步任务, 按次计价 | ✅ 已完成(v0.20.0): 创建/查询/取消三条路由 + 任务归属追踪 + 按条与按秒计费, 见 `docs/video-generation.md` |
 | P2 | 生图流式(`partial_images` 事件流)与上游用量对账 | ⬜ 未开始。全代码 0 引用 |
 | P3 | 充值功能 | ⬜ 未开始。界面提示「充值功能后续上线」, 后端无任何实现, 目前只能管理员手工调账 |
+
+## 媒体定价(2026-10-12 定稿)
+
+生图与生视频都不走 token 计价, 三个维度各自独立按形态取用:
+
+| 字段 | 含义 | 适用形态 |
+|---|---|---|
+| `per_image` | 每张单价 | 生图 |
+| `per_video` | 每条固定起步价, 与时长无关 | 生视频 |
+| `per_second` | 每秒时长单价 | 生视频 |
+| `resolution` | 分辨率分档价, 命中时覆盖 `per_image` / `per_second` 的单价 | 两者 |
+
+结算公式: 生图 `张数 × 单价`, 生视频 `条数 × per_video + 秒数 × 每秒单价`。
+分档只覆盖「每张/每秒多少钱」, 不参与与时长无关的起步价。详见 `docs/video-generation.md`。
 
 ## 文档过期修正(2026-10-12)
 

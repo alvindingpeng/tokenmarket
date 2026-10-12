@@ -65,6 +65,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		} else {
 			inbound = openai.NewImageGenerationInboundTransformer()
 		}
+	case llm.APIFormatOpenAIVideo:
+		// 生视频: 创建任务同步返回任务对象, 真正的视频由客户端轮询 /v1/videos/{id} 取回。
+		requestProtocol = model.ProtocolOpenAIVideo
+		inbound = openai.NewVideoInboundTransformer()
 	default:
 		inbound = openai.NewInboundTransformer()
 	}
@@ -102,10 +106,17 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			return
 		}
 
-		// 生图当前只支持同步响应: 上游以事件流下发部分图片的做法尚未纳入 P1 范围。
-		if requestProtocol == model.ProtocolOpenAIImage && metadata.Streaming {
-			rejectRequest(c, inbound, errors.New("image generation does not support streaming"))
-			return
+		// 生图与生视频都只支持同步响应: 上游以事件流下发部分图片或视频的做法尚未纳入范围。
+		// 生视频的「异步」体现在任务对象上, 由客户端轮询取回, 不是流式响应。
+		if metadata.Streaming {
+			switch requestProtocol {
+			case model.ProtocolOpenAIImage:
+				rejectRequest(c, inbound, errors.New("image generation does not support streaming"))
+				return
+			case model.ProtocolOpenAIVideo:
+				rejectRequest(c, inbound, errors.New("video generation does not support streaming"))
+				return
+			}
 		}
 
 		// API Key 限定了模型范围时只放行范围内的模型, 为空表示不限制。
@@ -129,7 +140,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		// 用户侧限流: RPM/TPM 按用户与 API Key 双维度一次预留, 触顶直接 429, 不产生日志行。
 		// 预留按估算 token 数, 请求结束时按真实用量结算; 生图正文可能是数 MB 的 base64, 与 token 无关, 按 1 计。
 		estIn, estOut := int64(1), int64(1)
-		if requestProtocol != model.ProtocolOpenAIImage {
+		if !isMediaProtocol(requestProtocol) {
 			estIn, estOut = estimateTokens(raw.Body)
 		}
 		userScopes := userRateScopes(keyUserID, c.GetInt("api_key_id"), metadata.Model)
@@ -156,6 +167,11 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		}
 		request := newRequestState(c.Request.Context(), metadata.Model, reasoningEffort, group.ID, requestProtocol, bodyForLog, c.GetInt("api_key_id"), keyUserID, clientIP, group.RelayConfig.RequestTimeoutSeconds)
 		request.setRateScopes(userScopes, userDecision.Reservation)
+		// 生视频的计费用量来自请求本身(seconds 与分辨率档位), 预扣与结算回落都用它;
+		// 其余协议的请求没有媒体用量, 保持零值。
+		if requestProtocol == model.ProtocolOpenAIVideo {
+			request.setRequestedMedia(parseVideoRequestUnits(raw.Body))
+		}
 		ctx := request.requestCtx
 
 		// 余额预扣: 全量计费, 不区分角色(admin 同样计费); 按分组内最高用户价与输出上限估算并冻结, 结束按实际用量结算。
@@ -319,15 +335,15 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				channel.ID, channel.UserID, channel.ShareCode, channelModel.SupplyPrice, item.ID)
 			// 媒体计费上下文: 仅媒体形态模型登记; 文本模型此项保持零值, settlement 走 token 路径不变。
 			// 选择上游时只在本组成员内挑选 kind=image 的成员, 故只要命中即可认定本轮用媒体计费。
-			if channelModel.Kind == model.MediaKindImage {
-				request.setMediaTarget(model.MediaKindImage, channelModel.MediaSupply)
+			if channelModel.Kind != model.MediaKindText {
+				request.setMediaTarget(channelModel.Kind, channelModel.MediaSupply, grant.ID)
 			}
 
 			// 上游侧限流: 每次实际尝试独立预留 RPM/TPM 额度, 触顶即记为限流尝试并跳过该成员:
 			// 不计失败率、不冷却, 由选路侧自动跳过受限成员。
 			upstreamScopes := upstreamRateScopes(channel.ID, channelKey.ID, channelModel.ID, channelModel.Name)
 			upEstIn, upEstOut := int64(1), int64(1)
-			if requestProtocol != model.ProtocolOpenAIImage {
+			if !isMediaProtocol(requestProtocol) {
 				upEstIn, upEstOut = estimateTokens(raw.Body)
 			}
 			var upstreamReservation *ratelimit.Reservation
@@ -660,14 +676,19 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 // 模型里包含媒体形态(image)成员时, 额外按生图保守张数冻结一张最高价的金额, 文本成员冻结照旧。
 // 取最大而非求和是因为同时按多个上游冻结没有意义 -- 实际只会按选路命中其中一个, 与冻结方式无关。
 func reserveBalance(request *RequestState, group model.Group) error {
-	var maxInput, maxOutput, maxMediaImage float64
-	var hasImageItem bool
+	var maxInput, maxOutput, maxMediaImage, maxMediaVideo float64
+	var hasImageItem, hasVideoItem bool
+	requested := request.requestedMediaUnits()
 	for _, item := range group.Items {
 		maxInput = max(maxInput, item.UserPrice.Input)
 		maxOutput = max(maxOutput, item.UserPrice.Output)
-		if item.Kind == model.MediaKindImage {
+		switch item.Kind {
+		case model.MediaKindImage:
 			hasImageItem = true
 			maxMediaImage = max(maxMediaImage, item.UserMedia.MaxImagesPerRequest())
+		case model.MediaKindVideo:
+			hasVideoItem = true
+			maxMediaVideo = max(maxMediaVideo, item.UserMedia.MaxVideosPerRequest(videoReserveSeconds(requested.Seconds)))
 		}
 	}
 	capTokens, err := op.SettingGetInt(model.SettingKeyBalanceReserveCap)
@@ -682,6 +703,10 @@ func reserveBalance(request *RequestState, group model.Group) error {
 			reserveImages = 4 // 默认 4 张, 与新增设置的种子值一致; 缺失键时回落。
 		}
 		estimate += maxMediaImage * float64(reserveImages)
+	}
+	// 生视频的时长由请求自带(seconds 字段), 无需像生图那样按倍数保守估算: 一次请求只产出一条视频, 冻结一次即可。
+	if hasVideoItem {
+		estimate += maxMediaVideo
 	}
 	// API Key 配额检查: 在余额预扣之前检查请求数/token 配额。
 	if request.apiKeyID > 0 {

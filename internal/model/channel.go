@@ -40,6 +40,7 @@ type ChannelConfig struct {
 	OpenAIResponsePath        string         `json:"openai_response_path" gorm:"column:openai_response_path;default:/v1/responses"`                          // OpenAI Responses 请求路径; 留空由后端填默认路径。
 	OpenAIImageGenerationPath string         `json:"openai_image_generation_path" gorm:"column:openai_image_generation_path;default:/v1/images/generations"` // OpenAI Images 协议: 图像生成请求路径; 留空由后端填默认路径。
 	OpenAIImageEditPath       string         `json:"openai_image_edit_path" gorm:"column:openai_image_edit_path;default:/v1/images/edits"`                   // OpenAI Images 协议: 图像编辑请求路径; 留空由后端填默认路径。
+	OpenAIVideoBasePath       string         `json:"openai_video_base_path" gorm:"column:openai_video_base_path;default:/v1"`                                // OpenAI Videos 协议: 视频接口基路径; 留空由后端填默认路径。
 	AnthropicMessagePath      string         `json:"anthropic_message_path" gorm:"column:anthropic_message_path;default:/v1/messages"`                       // Anthropic Messages 请求路径; 留空由后端填默认路径。
 	Proxy                     bool           `json:"proxy" gorm:"default:false"`                                                                             // 是否使用代理。
 	ChannelProxy              string         `json:"channel_proxy"`                                                                                          // 渠道专用代理地址; 留空表示不用渠道专用代理。

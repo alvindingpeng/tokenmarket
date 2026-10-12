@@ -786,7 +786,12 @@
             "userPriceHint": "User price = supply price × (1 + global markup); this is what the user actually pays",
             "userPriceValue": "in {input} / out {output}",
             "userPricePerImage": "{value} / image",
-            "mediaHint": "Image models are priced per image (per_image above); token fields stay untouched.",
+            "perVideoLabel": "Per video",
+            "perSecondLabel": "Per second",
+            "userPricePerVideo": "{value} / video",
+            "userPricePerSecond": "{value} / second",
+            "mediaHint": "Image billing is per image: cost = images × per_image, or the resolution tier price when the requested resolution matches. Token fields stay untouched.",
+            "videoHint": "Video billing is a fixed price per video plus a duration price: cost = videos × per_video + seconds × per_second; a matched resolution tier overrides the per-second price and never the per-video price. Images are billed per image.",
             "fillAll": "Fill unpriced",
             "fillOne": "Fill reference price",
             "filter": {
@@ -861,7 +866,8 @@
             "output": "out",
             "cacheRead": "cr",
             "cacheWrite": "cw",
-            "images": "img"
+            "images": "img",
+            "seconds": "s"
         },
         "status": {
             "settled": "Settled",

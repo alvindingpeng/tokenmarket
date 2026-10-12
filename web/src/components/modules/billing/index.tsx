@@ -266,6 +266,7 @@ function SpendingTable({ owner }: { owner: boolean }) {
                                     { label: t('tokens.cacheRead'), value: record.cache_read_token },
                                     { label: t('tokens.cacheWrite'), value: record.cache_write_token },
                                     ...(record.media_units?.images ? [{ label: t('tokens.images'), value: record.media_units.images }] : []),
+                                    ...(record.media_units?.seconds ? [{ label: t('tokens.seconds'), value: Math.round(record.media_units.seconds) }] : []),
                                 ]} />
 
                                 <span className="text-right font-medium tabular-nums text-red-500">{formatMoney(record.user_cost)}</span>

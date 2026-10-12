@@ -786,7 +786,12 @@
             "userPriceHint": "用戶價 = 供貨價 × (1 + 全域上浮比例), 用戶實際支付的單價",
             "userPriceValue": "入 {input} / 出 {output}",
             "userPricePerImage": "{value} / 張",
-            "mediaHint": "生圖模型按張計價(上方輸入每張供貨價), token 四類價保持原值不動。",
+            "perVideoLabel": "每條價",
+            "perSecondLabel": "每秒價",
+            "userPricePerVideo": "{value} / 條",
+            "userPricePerSecond": "{value} / 秒",
+            "mediaHint": "生圖按張計費: 費用 = 張數 × 每張價, resolution 命中檔位時按檔位價。token 四類價保持原值不動。",
+            "videoHint": "生視頻按每條固定價 + 時長價計費: 費用 = 條數 × 每條價 + 秒數 × 每秒價; resolution 命中檔位時覆蓋每秒價, 每條價與解析度無關。生圖則按張計費。",
             "fillAll": "填充未定價項",
             "fillOne": "填入參考價",
             "filter": {
@@ -861,7 +866,8 @@
             "output": "輸出",
             "cacheRead": "快取讀",
             "cacheWrite": "快取寫",
-            "images": "圖"
+            "images": "圖",
+            "seconds": "秒"
         },
         "status": {
             "settled": "已結算",

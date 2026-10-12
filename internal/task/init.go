@@ -21,6 +21,7 @@ const (
 	TaskAutoBackup       = "auto_backup"       // 定时一致性备份。
 	TaskChannelHealth    = "channel_health"    // 低频渠道健康探测。
 	TaskUpdateCheck      = "update_check"      // 检查本分支 Release 是否有新版本。
+	TaskVideoJobCleanup  = "video_job_cleanup" // 清理过期的生视频任务归属。
 )
 
 func Init() {
@@ -78,6 +79,18 @@ func Init() {
 		}
 		log.Infof("log lifecycle: cutoff=%s archived=%d requests=%d attempts=%d bodies=%d",
 			result.Cutoff.Format("2006-01-02"), result.Archived, result.RequestsDel, result.AttemptsDel, result.BodyCleared)
+	})
+
+	// 生视频任务归属: 上游任务本身会过期, 归属记录超过保留期就没有查询价值, 定时清理避免表随调用量增长。
+	Register(TaskVideoJobCleanup, time.Hour, true, func() {
+		deleted, err := op.VideoJobCleanup()
+		if err != nil {
+			log.Warnf("failed to clean up video jobs: %v", err)
+			return
+		}
+		if deleted > 0 {
+			log.Infof("video jobs cleaned up: %d", deleted)
+		}
 	})
 
 	// 自动备份任务: 每天一致性备份数据库并校验, 保留固定份数。

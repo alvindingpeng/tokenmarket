@@ -59,11 +59,11 @@ function ListingRows({ channelID }: { channelID: number }) {
         return map;
     }, [refModels]);
 
-    // unpriced 判定沿用后端口径: 四价全 0 且无媒体价(每张/每秒/分档)即未定价。
-    // 生图模型(kind=image)以每张价为准, 四类 token 价可以保持 0。
+    // unpriced 判定沿用后端口径: 四价全 0 且无媒体价(每张/每条/每秒/分档)即未定价。
+    // 媒体模型(生图按每张价, 生视频按每条价 + 每秒价)以媒体价为准, 四类 token 价可以保持 0。
     const hasMediaPrice = (row: ChannelModelListing) => {
         const media = row.media_supply ?? {};
-        return !!(media.per_image || media.per_second || (media.resolution && Object.values(media.resolution).some((v) => v > 0)));
+        return !!(media.per_image || media.per_video || media.per_second || (media.resolution && Object.values(media.resolution).some((v) => v > 0)));
     };
     const isUnpriced = (row: ChannelModelListing) =>
         !row.supply_price.input && !row.supply_price.output && !row.supply_price.cache_read && !row.supply_price.cache_write && !hasMediaPrice(row);
@@ -92,6 +92,7 @@ function ListingRows({ channelID }: { channelID: number }) {
                 old.supply_price.cache_read !== row.supply_price.cache_read ||
                 old.supply_price.cache_write !== row.supply_price.cache_write ||
                 (old.media_supply?.per_image ?? 0) !== (row.media_supply?.per_image ?? 0) ||
+                (old.media_supply?.per_video ?? 0) !== (row.media_supply?.per_video ?? 0) ||
                 (old.media_supply?.per_second ?? 0) !== (row.media_supply?.per_second ?? 0);
         }).length;
     }, [rows, data]);
@@ -108,9 +109,9 @@ function ListingRows({ channelID }: { channelID: number }) {
     };
 
     // fillRow 将单行四类单价替换为参考价; 未匹配到参考价时提示。
-    // 生图模型按张计价, 参考价表是 token 口径, 不适用。
+    // 生图/生视频按媒体单位计价, 参考价表是 token 口径, 不适用; 保持已填的媒体价, 不写 0 覆盖。
     const fillRow = (index: number) => {
-        if (rows[index].kind === 'image') {
+        if (rows[index].kind === 'image' || rows[index].kind === 'video') {
             toast.error(t('toast.fillNoRef'));
             return;
         }
@@ -122,14 +123,14 @@ function ListingRows({ channelID }: { channelID: number }) {
         mutateRow(index, { supply_price: { ...ref } });
     };
 
-    // fillUnpriced 批量填充四价全为 0 的行, 不覆盖已手填的价格; 生图行按张计价, 跳过。
+    // fillUnpriced 批量填充四价全为 0 的行, 不覆盖已手填的价格; 生图/生视频行按媒体单位计价, 跳过。
     const fillUnpriced = () => {
         let count = 0;
         const next = rows.map((row) => {
             const p = row.supply_price;
             const unpriced = !p.input && !p.output && !p.cache_read && !p.cache_write;
             const ref = refPrices.get(row.name.toLowerCase());
-            if (!unpriced || !ref || row.kind === 'image') {
+            if (!unpriced || !ref || row.kind === 'image' || row.kind === 'video') {
                 return row;
             }
             count += 1;
@@ -323,6 +324,50 @@ function ListingRows({ channelID }: { channelID: number }) {
                                     {t('userPricePerImage', { value: formatMoney((row.media_supply?.per_image ?? 0) * (1 + markup)) })}
                                 </span>
                             </>
+                        ) : row.kind === 'video' ? (
+                            <>
+                                {/* 生视频行: 每条固定起步价与每秒时长价并排, 各自带小标题; 这一格与左侧四类 token 价同宽。 */}
+                                <div className="col-span-4 grid grid-cols-2 gap-2">
+                                    <label className="flex min-w-0 flex-col gap-0.5">
+                                        <span className="truncate text-[10px] leading-none text-muted-foreground">{t('perVideoLabel')}</span>
+                                        <Input
+                                            type="number"
+                                            min={0}
+                                            step="any"
+                                            className="h-8 px-2 text-xs"
+                                            title={t('videoHint')}
+                                            value={row.media_supply?.per_video ?? 0}
+                                            disabled={updateListings.isPending}
+                                            onChange={(e) => mutateRow(index, {
+                                                media_supply: { ...row.media_supply, per_video: Number(e.target.value) || 0 },
+                                            })}
+                                        />
+                                    </label>
+                                    <label className="flex min-w-0 flex-col gap-0.5">
+                                        <span className="truncate text-[10px] leading-none text-muted-foreground">{t('perSecondLabel')}</span>
+                                        <Input
+                                            type="number"
+                                            min={0}
+                                            step="any"
+                                            className="h-8 px-2 text-xs"
+                                            title={t('videoHint')}
+                                            value={row.media_supply?.per_second ?? 0}
+                                            disabled={updateListings.isPending}
+                                            onChange={(e) => mutateRow(index, {
+                                                media_supply: { ...row.media_supply, per_second: Number(e.target.value) || 0 },
+                                            })}
+                                        />
+                                    </label>
+                                </div>
+                                <span className="min-w-0 text-xs tabular-nums text-muted-foreground" title={t('userPriceHint')}>
+                                    <span className="block truncate">
+                                        {t('userPricePerVideo', { value: formatMoney((row.media_supply?.per_video ?? 0) * (1 + markup)) })}
+                                    </span>
+                                    <span className="block truncate">
+                                        {t('userPricePerSecond', { value: formatMoney((row.media_supply?.per_second ?? 0) * (1 + markup)) })}
+                                    </span>
+                                </span>
+                            </>
                         ) : (
                             <>
                                 {(Object.keys({ input: 0, output: 0, cache_read: 0, cache_write: 0 }) as Array<'input' | 'output' | 'cache_read' | 'cache_write'>).map((field) => (
@@ -366,6 +411,9 @@ function ListingRows({ channelID }: { channelID: number }) {
             <p className="text-xs text-muted-foreground">{t('hint')}</p>
             {rows.some((row) => row.kind === 'image') && (
                 <p className="text-xs text-muted-foreground">{t('mediaHint')}</p>
+            )}
+            {rows.some((row) => row.kind === 'video') && (
+                <p className="text-xs text-muted-foreground">{t('videoHint')}</p>
             )}
             <p className="text-xs text-muted-foreground">{t('refHint')}</p>
             {zeroPricedListed.length > 0 && (

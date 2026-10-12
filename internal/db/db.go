@@ -83,6 +83,7 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.RateLimitUsageHourly{},
 		&model.BillingReconcile{},
 		&model.ChannelHealthRecord{},
+		&model.VideoJob{},
 		&model.ChannelAlert{},
 		&migrate.MigrationRecord{},
 	); err != nil {
