@@ -45,8 +45,20 @@ jobs:
         run: |
           VERSION=$(grep '^// Version ' main.go | sed 's|^// Version ||' | tr -d ' ')
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          git tag "${VERSION}"
-          git push origin "${VERSION}"
+          # 本地 post-commit 钩子(scripts/publish-release.sh)会先一步建 tag 并推 Release,
+          # 这里必须幂等: tag 已存在就复用; 只有它指向别的提交时才是真问题, 显式报错。
+          if git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null || git fetch origin "refs/tags/${VERSION}:refs/tags/${VERSION}" 2>/dev/null; then
+            TAG_SHA="$(git rev-parse "refs/tags/${VERSION}^{commit}")"
+            HEAD_SHA="$(git rev-parse HEAD)"
+            if [ "${TAG_SHA}" != "${HEAD_SHA}" ]; then
+              echo "::error::tag ${VERSION} 已指向 ${TAG_SHA}, 与本次提交 ${HEAD_SHA} 不一致" >&2
+              exit 1
+            fi
+            echo "tag ${VERSION} 已存在且指向当前提交, 跳过创建"
+          else
+            git tag "${VERSION}"
+            git push origin "${VERSION}"
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -94,7 +106,14 @@ jobs:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
 
       - name: Generate changelog
-        run: npx changelogithub
+        # 本地钩子已按 CHANGELOG.md 建好带正文的 Release 时, 不要再用自动生成的笔记覆盖它。
+        # CHANGELOG.md 才是本项目发布说明的唯一来源(见其文件头)。
+        run: |
+          if BODY=$(gh release view "${{ steps.version.outputs.version }}" --json body -q .body 2>/dev/null) && [ -n "${BODY// /}" ]; then
+            echo "Release 正文已存在(来自 CHANGELOG.md), 跳过自动笔记"
+          else
+            npx changelogithub
+          fi
         env:
           GITHUB_TOKEN: ${{ github.token }}
 

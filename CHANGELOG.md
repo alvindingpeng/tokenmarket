@@ -5,6 +5,25 @@
 每次发布把新章节追加到本文件顶部，GitHub Release 的正文由 `scripts/publish-release.sh`
 自动取本文件中对应版本的那一节。
 
+## v0.21.2 — 2026-10-12
+
+安全修复与发布链路收尾。
+
+### 1. 令牌/密码不再明文写入审计日志（安全）
+
+- `setting.set` 的审计记录此前把设置值原样落库：配置 GitHub 令牌、Telegram Bot Token、
+  SMTP 密码时，凭据明文进了审计表，并随数据库备份外传。
+- 现在密钥类设置项的审计值统一记为 `__configured__` 占位符；顺带修正 v0.21.1 更新说明里
+  “真值不写日志”的承诺与实现不符的问题。
+
+### 2. 发布链路两个入口打架（CI 失败）
+
+- 本地 post-commit 钩子（`scripts/publish-release.sh`）会先一步建 tag 并按 CHANGELOG.md
+  建 Release，而 `release.yaml` 的 Publish tag 步骤无条件 `git tag`，撞上已存在的 tag 就
+  `fatal: tag already exists` 失败（v0.21.1 实际发生了）。
+- 现在 Publish tag 幂等：tag 已存在且指向当前提交就复用；指向别的提交才报错。
+- Generate changelog 步骤也改为：Release 已有正文（来自 CHANGELOG.md）时不再用自动笔记覆盖。
+
 ## v0.21.1 — 2026-10-12
 
 本版本修掉两个让「检查更新」形同虚设的问题，并补回 GitHub 上的发布链路。
