@@ -18,6 +18,11 @@ func SettingList(ctx context.Context) ([]model.Setting, error) {
 		if model.IsInternalSetting(key) {
 			continue
 		}
+		// 密钥类设置项(如 GitHub 令牌)只回显"已配置"占位符: 真值一旦下发到浏览器,
+		// 任何一个能打开设置页的会话都能把它读走, 而它对更新检查只是抬高限流而已。
+		if model.IsSecretSetting(key) && value != "" {
+			value = model.TokenConfiguredMask
+		}
 		settings = append(settings, model.Setting{
 			Key:   key,
 			Value: value,

@@ -15,6 +15,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/alvindingpeng/switchyard/internal/server/router"
 	"github.com/alvindingpeng/switchyard/internal/task"
+	"github.com/alvindingpeng/switchyard/internal/update"
 	"github.com/gin-gonic/gin"
 )
 
@@ -64,6 +65,12 @@ func setSetting(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	// 界面拿到的是占位符而不是真值; 原样提交占位符表示"没改", 不能把掩码写进库。
+	if model.IsSecretSetting(setting.Key) && setting.Value == model.TokenConfiguredMask {
+		audit(c, "setting.set", string(setting.Key), "")
+		resp.Success(c, model.Setting{Key: setting.Key, Value: model.TokenConfiguredMask})
+		return
+	}
 	if err := op.SettingSetString(setting.Key, setting.Value); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -87,6 +94,10 @@ func setSetting(c *gin.Context) {
 			return
 		}
 		task.Update(string(setting.Key), time.Duration(hours)*time.Hour)
+	case model.SettingKeyGithubToken:
+		// 令牌直接决定限流额度, 改完必须让下一次读取重新问一次 GitHub,
+		// 否则界面还会拿限流期间那份失败结论糊弄管理员。
+		update.Invalidate()
 	}
 	audit(c, "setting.set", string(setting.Key), setting.Value)
 	resp.Success(c, setting)

@@ -324,13 +324,14 @@
             "checking": "檢查中...",
             "checkFailed": "更新檢查失敗",
             "assetMissing": "目前平台沒有可用的更新包",
-            "upToDate": "目前已是最新版本",
+            "upToDate": "目前已是最新版本，無需更新。",
             "platform": "執行平台",
             "lastCheck": "上次檢查",
             "releaseNotes": "更新說明",
             "viewRelease": "查看發行頁",
             "confirmUpdate": "確認更新",
-            "cancel": "取消"
+            "cancel": "取消",
+            "staleBadge": "可能已過期"
         },
         "log": {
             "title": "日誌設定",
@@ -388,6 +389,11 @@
             "maintenanceNotice": "維護提示",
             "maintenanceNoticeHint": "使用者登入被拒時看到的提示文案。",
             "maintenanceNoticePlaceholder": "例如: 系統升級維護中, 請稍後再試"
+        },
+        "githubToken": {
+            "label": "GitHub 存取權杖",
+            "placeholder": "留空即匿名存取",
+            "hint": "可選。GitHub 對匿名呼叫限流 60 次/小時，填一個唯讀的 Personal Access Token 可提高到 5000 次/小時，更新檢查就不會取不到倉庫版本。權杖只存在本機資料庫，不會回顯到頁面。環境變數 SWITCHYARD_GITHUB_PAT 仍然可用且優先順序較低。"
         }
     },
     "group": {

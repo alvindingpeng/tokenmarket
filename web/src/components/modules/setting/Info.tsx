@@ -24,6 +24,9 @@ export function SettingInfo() {
     const isCacheMismatch = !!backendNowVersion && backendNowVersion !== APP_VERSION;
     // 只有仓库有更新且本平台产物已上传时才显示可点击的更新按钮。
     const hasNewVersion = !!statusQuery.data?.update_available && !statusQuery.data.asset_missing;
+    // 检查失败时后端会保留上一次成功看到的版本号; 此时必须标明它是旧的,
+    // 否则界面会把一个过期版本当成"仓库当前最新版", 正是让管理员误判的原因。
+    const staleLatest = !!statusQuery.data?.check_failed;
 
     // clearCacheAndReload 清理当前应用目录的缓存和 Service Worker 注册后刷新页面。
     const clearCacheAndReload = async () => {
@@ -113,9 +116,16 @@ export function SettingInfo() {
                         {statusQuery.isLoading ? (
                             <Loader2 className="size-4 animate-spin text-muted-foreground" />
                         ) : (
-                            <code className="text-sm font-mono text-muted-foreground">
-                                {latestVersion || t('info.unknown')}
-                            </code>
+                            <span className="flex items-center gap-2">
+                                <code className="text-sm font-mono text-muted-foreground">
+                                    {latestVersion || t('info.unknown')}
+                                </code>
+                                {staleLatest && (
+                                    <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-600 dark:text-amber-400">
+                                        {t('info.staleBadge')}
+                                    </span>
+                                )}
+                            </span>
                         )}
                     </div>
                 </div>
@@ -125,6 +135,11 @@ export function SettingInfo() {
                 <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
                     <div className="flex items-center justify-between gap-2"><span>{t('info.checkFailed')}</span><Button variant="outline" size="sm" onClick={() => checkUpdate.mutate()} disabled={checkUpdate.isPending}><RefreshCw className="mr-1 size-3" />{t('info.checkNow')}</Button></div>
                     <p className="mt-1 break-words text-xs">{statusQuery.data.check_error}</p>
+                    {statusQuery.data.last_check_at > 0 && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            {t('info.lastCheck', { time: new Date(statusQuery.data.last_check_at * 1000).toLocaleString() })}
+                        </p>
+                    )}
                 </div>
             )}
             {statusQuery.data?.asset_missing && !statusQuery.data.check_failed && (
@@ -184,6 +199,12 @@ export function SettingInfo() {
                         </Button>
                     </div>
                 </div>
+            )}
+            {/* 已是最新: 明确说一句, 免得管理员看到相同的两个版本号仍怀疑没检查成功 */}
+            {statusQuery.data?.up_to_date && !staleLatest && (
+                <p className="rounded-xl border border-border bg-accent/30 p-3 text-xs text-muted-foreground">
+                    {t('info.upToDate')}
+                </p>
             )}
         </div>
     );

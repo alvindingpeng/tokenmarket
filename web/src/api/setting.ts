@@ -66,6 +66,8 @@ export const SettingKey = {
     BreakerModelMinutes: 'breaker_model_minutes', // 渠道模型级熔断时长(分钟), 默认 5。
     BreakerCoolAuthSeconds: 'breaker_cool_auth_seconds', // 鉴权/额度错误后该成员换路冷却秒数, 默认 60。
     BreakerCoolSoftSeconds: 'breaker_cool_soft_seconds', // 过载/模型缺失等软错误后该成员换路冷却秒数, 默认 30。
+    // 更新检查用的 GitHub 访问令牌: 只抬高 API 限流, 不填走匿名。回显为占位符, 不回传真值。
+    GithubToken: 'github_token',
 } as const;
 
 /**

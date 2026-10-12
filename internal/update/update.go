@@ -116,9 +116,20 @@ type cachedCheck struct {
 
 var cache cachedCheck
 
-// githubPAT 用于抬高 GitHub API 限流并访问私有仓库, 完全可选:
-// 环境变量 SWITCHYARD_GITHUB_PAT。
-var githubPAT = strings.TrimSpace(os.Getenv(strings.ToUpper(conf.APP_NAME) + "_GITHUB_PAT"))
+// githubPAT 读取 GitHub 访问令牌, 用于抬高 API 限流并访问私有仓库, 完全可选。
+//
+// 取值顺序: 管理后台设置项 github_token > 环境变量 SWITCHYARD_GITHUB_PAT。
+// 设置项优先, 因为它是管理员在界面上能改的那个; 环境变量保留给容器/编排部署
+// (凭据只从 secret 注入, 不想落库)。每次读都现取, 改完令牌不必重启进程。
+// 只读取, 绝不写日志或回显。
+func githubPAT() string {
+	if token, err := op.SettingGetString(model.SettingKeyGithubToken); err == nil {
+		if token = strings.TrimSpace(token); token != "" {
+			return token
+		}
+	}
+	return strings.TrimSpace(os.Getenv(strings.ToUpper(conf.APP_NAME) + "_GITHUB_PAT"))
+}
 
 func (c *cachedCheck) load() (*ReleaseInfo, error, int64) {
 	c.mu.RLock()
@@ -405,8 +416,8 @@ func doRequest(url string, useProxy bool) ([]byte, error) {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	req.Header.Set("User-Agent", conf.APP_NAME+"-updater/"+conf.Version)
-	if githubPAT != "" {
-		req.Header.Set("Authorization", "Bearer "+githubPAT)
+	if token := githubPAT(); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := hc.Do(req)
