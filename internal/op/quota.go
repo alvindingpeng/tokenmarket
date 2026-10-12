@@ -121,23 +121,9 @@ func GetAPIKeyQuotaUsage(ctx context.Context, apiKeyID int) (requests, inputToke
 	return usage.Requests, usage.InputTokens, usage.OutputTokens, nil
 }
 
-
 // raiseQuotaAlert 在 API Key 配额超限时触发告警。
 func raiseQuotaAlert(ctx context.Context, apiKeyID int, keyName, kind string, current, limit int64) {
 	reason := fmt.Sprintf("api_key %s (id=%d) quota exceeded: %s %d/%d", keyName, apiKeyID, kind, current, limit)
-	// 使用统一告警接口，去重逻辑在 RaiseAlert 内部处理
+	// 去重逻辑与多渠道外发(Telegram/Email)都由 RaiseAlert 内部处理。
 	RaiseAlert(ctx, 0, "system", "quota_exceeded", reason)
-	
-	// 多渠道告警
-	go func() {
-		// TODO: 集成 internal/alert 包
-		// import "github.com/alvindingpeng/switchyard/internal/alert"
-		// alert.Send(ctx, alert.Alert{
-		//     Event: alert.EventQuotaExceeded,
-		//     Title: "API Key 配额超限",
-		//     Message: fmt.Sprintf("API Key: %s\n配额类型: %s\n当前用量: %d\n配额上限: %d",
-		//         keyName, kind, current, limit),
-		//     Timestamp: time.Now(),
-		// })
-	}()
 }

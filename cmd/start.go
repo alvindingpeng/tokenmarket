@@ -1,6 +1,10 @@
 package cmd
 
 import (
+	"context"
+	"time"
+
+	"github.com/alvindingpeng/switchyard/internal/alert"
 	"github.com/alvindingpeng/switchyard/internal/conf"
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/op"
@@ -39,6 +43,19 @@ var startCmd = &cobra.Command{
 			return
 		}
 		shutdown.Register(op.SaveCache)
+
+		// 告警外发接线: op 负责站内告警落库, alert 负责按 alert_channels 分发到 webhook/telegram/email。
+		// alert 读设置要 op、op 发告警要 alert, 直接互相 import 会成环, 故两个方向都在这里注入。
+		// 必须在 InitCache 之后: 设置读取依赖设置缓存。
+		alert.SettingsProvider = op.SettingGetString
+		op.AlertDispatcher = func(ctx context.Context, event, title, message string) bool {
+			return alert.Send(ctx, alert.Alert{
+				Event:     alert.Event(event),
+				Title:     title,
+				Message:   message,
+				Timestamp: time.Now(),
+			})
+		}
 
 		if err := op.UserInit(); err != nil {
 			log.Errorf("user init error: %v", err)

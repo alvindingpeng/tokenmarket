@@ -42,7 +42,7 @@
 | P1 | 预扣参数 balance_reserve_images(默认 4, 后台可改, 1-64 校验) | ✅ 已完成 |
 | P2 | 生视频: /v1/videos 异步任务, 按秒计价, 协议位 1<<5 已预留 | ⬜ 未开始 |
 | P2 | 生图流式(partial_images 事件流)与上游用量对账 | ⬜ 未开始 |
-| P3 | 模型能力探测: 用 /models 元数据或试算替代名称关键词归类 | ⬜ 未开始 |
+| P3 | 模型能力探测: 用 /models 元数据或试算替代名称关键词归类 | ✅ 已完成(v0.19.0): `op.CapabilityGet` 改走能力登记(models.dev 官方收录 + 人工补录), 名称关键词退为兜底, 见 `internal/op/channel_probe.go` |
 
 见 docs/image-generation.md。
 
@@ -62,4 +62,39 @@
 依赖: 探测客户端按渠道代理配置构建(直连/应用代理/渠道专用), 与手动刷新一致; 失败为 best-effort 只记日志, 不影响已成功的保存。生图协议位仍按名称关键词默认勾选(dall-e/flux 等), kind 随授权重算。
 
 已排期外: B4/B5 自动定价/自动上架(P2), A3 定时同步(不建议) 未纳入本版。
+
+## 告警外发接线(2026-10-12)
+
+`internal/op/alert.go` 的 `sendMultiChannelAlert` 长期是空占位函数: `RaiseAlert` 把事件/标题/正文算好后
+交给一个什么都不做的函数, 而 `billing.go` / `quota.go` 里两处 `alert.Send` 也一直停在注释状态。
+
+后果是**静默失效**: 站内告警照常落库(复核时表里 243 条全部 `notified=0`), 但设置里配好的 Telegram / Email
+一条都收不到, 而设置页的连通性测试却是通的 —— 故障只在「该收到告警时收不到」时才暴露。
+
+根因是导入环: `internal/alert` 读告警设置要调 `op.SettingGetString`, 所以 `op` 不能反向 import `alert`,
+作者只能把调用点留成 TODO。**这是依赖方向问题, 不是漏写。**
+
+| 优先级 | 事项 | 状态 |
+|---|---|---|
+| P0 | 双向解耦: `alert.SettingsProvider` 与 `op.AlertDispatcher` 两个注入点, 由 `cmd/start.go` 接线 | ✅ 已完成(v0.19.5) |
+| P0 | 单一外发路径: 去掉 `RaiseAlert` 内重复的 webhook 发送, 统一走 `alert.Send`(按 `alert_channels` 分发) | ✅ 已完成(v0.19.5): 否则 `alert_channels` 含 webhook 时同一条告警会外发两次 |
+| P1 | 外发脱掉请求取消信号(`context.WithoutCancel`)并按结果回填 `notified` | ✅ 已完成(v0.19.5) |
+| P2 | 未接线时打印一次可见日志, 把静默失效变成可发现 | ✅ 已完成(v0.19.5) |
+
+## 仍未实现(2026-10-12 复核)
+
+| 优先级 | 事项 | 状态 |
+|---|---|---|
+| P2 | 生视频: `/v1/videos` 异步任务, 按秒计价 | ⬜ 未开始。协议位 `1<<5` 已预留并列入 `definedProtocols`, 探测也会置位, 但**没有路由实现**, 勾了也不会真转发 |
+| P2 | 生图流式(`partial_images` 事件流)与上游用量对账 | ⬜ 未开始。全代码 0 引用 |
+| P3 | 充值功能 | ⬜ 未开始。界面提示「充值功能后续上线」, 后端无任何实现, 目前只能管理员手工调账 |
+
+## 文档过期修正(2026-10-12)
+
+复核时发现下列描述与代码不符, 已就地更正:
+
+- 「模型能力探测未开始」: v0.19.0 已实现, 见上表。
+- 「界面内自更新停用(`/api/v1/update` 回 `update paused`)」: 实测 `GET /api/v1/update` 返回 `paused=false`,
+  自更新对管理员可用; 该描述是 v0.15.1 当时的临时状态, 之后已恢复。
+
 
