@@ -30,6 +30,12 @@ func buildPassthroughRequest(format llm.APIFormat, raw *httpclient.Request, chan
 		probeRequest.RequestType = llm.RequestTypeImage
 		probeRequest.APIFormat = format
 		probeRequest.Image = &llm.ImageRequest{Prompt: "probe", Images: [][]byte{[]byte("probe")}}
+	case llm.APIFormatOpenAIVideo:
+		// 生视频的探测体同理: 出站按 RequestTypeVideo 分派到 {BaseURL}/videos 的地址拼接,
+		// 缺 Video 载荷会落到聊天分支, 拼出错误的端点。
+		probeRequest.RequestType = llm.RequestTypeVideo
+		probeRequest.APIFormat = format
+		probeRequest.Video = &llm.VideoRequest{Model: modelName, Content: []llm.VideoContent{{Type: "text", Text: "probe"}}}
 	default:
 		probeText := "probe"
 		probeRequest.Messages = []llm.Message{{Role: "user", Content: llm.MessageContent{Content: &probeText}}}

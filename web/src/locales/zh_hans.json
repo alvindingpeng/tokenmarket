@@ -786,7 +786,12 @@
             "userPriceHint": "用户价 = 供货价 × (1 + 全局上浮比例), 用户实际支付的单价",
             "userPriceValue": "入 {input} / 出 {output}",
             "userPricePerImage": "{value} / 张",
-            "mediaHint": "生图模型按张计价(上面输入每张供货价), token 四类价保持原值不动。",
+            "perVideoLabel": "每条价",
+            "perSecondLabel": "每秒价",
+            "userPricePerVideo": "{value} / 条",
+            "userPricePerSecond": "{value} / 秒",
+            "mediaHint": "生图按张计费: 费用 = 张数 × 每张价, resolution 命中档位时按档位价。token 四类价保持原值不动。",
+            "videoHint": "生视频按每条固定价 + 时长价计费: 费用 = 条数 × 每条价 + 秒数 × 每秒价; resolution 命中档位时覆盖每秒价, 每条价与分辨率无关。生图则按张计费。",
             "fillAll": "填充未定价项",
             "fillOne": "填入参考价",
             "refHint": "参考价来自全局价格表(models.dev 自动同步、管理员维护),仅供快速预填,保存前请按你的供货协议调整。",
@@ -861,7 +866,8 @@
             "output": "输出",
             "cacheRead": "缓存读",
             "cacheWrite": "缓存写",
-            "images": "图"
+            "images": "图",
+            "seconds": "秒"
         },
         "status": {
             "settled": "已结算",

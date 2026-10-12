@@ -740,7 +740,7 @@ Known gaps in this fork, with the reasoning kept where the code is:
 
 | Area | Status |
 |------|--------|
-| Video generation (`/v1/videos`, per-second billing) | Protocol bit `1 << 5` reserved, route not implemented |
+| Video generation (`/v1/videos` create/retrieve/cancel) | Done: billed per video plus per second, with job ownership stored so polling can locate the upstream |
 | Streaming image results (`partial_images`) and upstream usage reconciliation | Not started |
 | Model capability detection by probe instead of name keywords | Done (v0.19.0): driven by the capability registry, name keywords kept only as fallback |
 | Scheduled channel model sync (cron rather than on-save) | Rejected for now: unbounded upstream cost and churn risk |

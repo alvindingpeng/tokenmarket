@@ -41,10 +41,12 @@ export type BillingRecord = {
     };
     media_user?: {
         per_image?: number;
+        per_video?: number;
         per_second?: number;
     };
     media_supply?: {
         per_image?: number;
+        per_video?: number;
         per_second?: number;
     };
     user_cost: number;

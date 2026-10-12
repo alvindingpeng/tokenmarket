@@ -84,6 +84,8 @@ type RequestState struct {
 	targetSupplyPrice model.LLMPrice   // 最终轮次落地模型的供货价快照(token 模型)。
 	targetMediaSupply model.MediaPrice // 最终轮次落地模型的媒体供货价快照(图片/视频), text 模型为零值。
 	targetKind        model.MediaKind  // 最终轮次落地模型的媒体形态, 用于区分计费路径。
+	targetGrantID     int              // 最终轮次落地渠道授权 ID, 生视频任务据此落库归属供后续查询定位上游。
+	requestedMedia    model.MediaUnits // 客户端请求声明的媒体用量(生视频的时长与分辨率档位), 上游未回显时按此结算。
 
 	requestCtx    context.Context    // 请求级上下文, 同时约束等待、当前轮次和后续重试。
 	requestCancel context.CancelFunc // 中止整个请求, 同时打断等待、当前轮次和后续重试。
@@ -170,11 +172,52 @@ func (r *RequestState) startRound(cancel context.CancelFunc, channelKeyName, mod
 
 // setMediaTarget 在 startRound 之后追加媒体定价与形态, 供图片/视频计费使用; 文本模型不调用。
 // 在锁内写入避免与状态流发布互相踩踏。
-func (r *RequestState) setMediaTarget(kind model.MediaKind, media model.MediaPrice) {
+func (r *RequestState) setMediaTarget(kind model.MediaKind, media model.MediaPrice, grantID int) {
 	mu.Lock()
 	defer mu.Unlock()
 	r.targetKind = kind
 	r.targetMediaSupply = media
+	r.targetGrantID = grantID
+}
+
+// recordVideoJob 把生视频任务的归属落库, 供后续 /v1/videos/{id} 查询与取消定位上游。
+// 只在拿到任务 ID 的成功响应上调用; 落库失败只记日志, 不影响已经完成的转发与计费。
+func (r *RequestState) recordVideoJob() {
+	if r.targetGrantID <= 0 || r.responseBody == "" {
+		return
+	}
+	var parsed struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(r.responseBody), &parsed); err != nil || parsed.ID == "" {
+		return
+	}
+	job := model.VideoJob{
+		JobID:          parsed.ID,
+		UserID:         r.UserID,
+		GroupID:        r.GroupID,
+		ChannelGrantID: r.targetGrantID,
+		ModelName:      r.TargetModel,
+		CreatedAt:      time.Now(),
+	}
+	if err := op.VideoJobSave(job); err != nil {
+		log.Warnf("failed to record video job %s: %v", job.JobID, err)
+	}
+}
+
+// setRequestedMedia 登记客户端请求声明的媒体用量(生视频的 seconds 与分辨率档位)。
+// 只在请求开始时写一次, 结算时优先用上游回显的时长, 上游未回显才回落到这里的声明值。
+func (r *RequestState) setRequestedMedia(units model.MediaUnits) {
+	mu.Lock()
+	defer mu.Unlock()
+	r.requestedMedia = units
+}
+
+// requestedMediaUnits 返回请求声明的媒体用量快照, 供预扣阶段在锁外安全读取。
+func (r *RequestState) requestedMediaUnits() model.MediaUnits {
+	mu.Lock()
+	defer mu.Unlock()
+	return r.requestedMedia
 }
 
 // firstFormValue 取 multipart 表单字段的第一个值; 缺失返回空串。
@@ -379,9 +422,18 @@ func (r *RequestState) finishLocked(usage *llm.Usage) {
 	metrics := usageMetrics(r.targetSupplyPrice.Scale(op.SettingGetFloat(model.SettingKeyMarkupRatio)), usage)
 	r.Cost = metrics.InputCost + metrics.OutputCost
 	// 媒体计费: 按张/按秒的费用折入输出侧桶, 图表与统计的输入/输出两桶口径保持不变。
-	if r.targetKind == model.MediaKindImage {
+	switch r.targetKind {
+	case model.MediaKindImage:
 		if images := mediaImageCount(r.responseBody); images > 0 {
 			mediaCost := r.targetMediaSupply.Scale(op.SettingGetFloat(model.SettingKeyMarkupRatio)).CostImages(images, "")
+			metrics.OutputCost += mediaCost
+			r.Cost += mediaCost
+		}
+	case model.MediaKindVideo:
+		if units := mediaVideoUnits(r.responseBody, r.requestedMedia); units.Videos > 0 {
+			r.recordVideoJob()
+			userMedia := r.targetMediaSupply.Scale(op.SettingGetFloat(model.SettingKeyMarkupRatio))
+			mediaCost := userMedia.CostVideos(units.Videos, units.Seconds, units.Resolution)
 			metrics.OutputCost += mediaCost
 			r.Cost += mediaCost
 		}
@@ -495,23 +547,32 @@ func (r *RequestState) settleBillingLocked(usage *llm.Usage) {
 		CacheReadToken:  cacheRead,
 		CacheWriteToken: cacheWrite,
 	}
-	// 媒体计费: 按响应中的实际张数结算, token 用量(上游返回时)照常叠加;
-	// 张数从最终响应体的 data 数组解析, 兼容透传与转换两条路径, 失败/取消行没有 data 数组即 0。
-	if r.targetKind == model.MediaKindImage {
-		images := mediaImageCount(r.responseBody)
-		if images == 0 && usage == nil {
-			// 无张数也无 token 用量: 视为未产生计费用量, 全额释放预扣。
+	// 媒体计费: 按响应中的实际用量结算, token 用量(上游返回时)照常叠加。
+	// 用量从最终响应体解析, 兼容透传与转换两条路径: 生图数 data 数组的张数, 生视频数任务对象里的条数与时长。
+	// 解析不出用量的行(失败/取消/上游未回显)按 0 处理, 据此释放预扣而不计费。
+	var mediaUnits model.MediaUnits
+	switch r.targetKind {
+	case model.MediaKindImage:
+		mediaUnits.Images = mediaImageCount(r.responseBody)
+	case model.MediaKindVideo:
+		mediaUnits = mediaVideoUnits(r.responseBody, r.requestedMedia)
+	}
+	if r.targetKind != model.MediaKindText {
+		if mediaUnits == (model.MediaUnits{}) && usage == nil {
+			// 无媒体用量也无 token 用量: 视为未产生计费用量, 全额释放预扣。
 			if err := op.BillingRelease(reservationID); err != nil {
 				log.Warnf("billing release failed for reservation %d: %v", reservationID, err)
 			}
 			return
 		}
 		userMedia := r.targetMediaSupply.Scale(markupRatio)
-		userCost += userMedia.CostImages(images, "")
-		ownerRevenue += r.targetMediaSupply.CostImages(images, "")
+		userCost += userMedia.CostImages(mediaUnits.Images, mediaUnits.Resolution) +
+			userMedia.CostVideos(mediaUnits.Videos, mediaUnits.Seconds, mediaUnits.Resolution)
+		ownerRevenue += r.targetMediaSupply.CostImages(mediaUnits.Images, mediaUnits.Resolution) +
+			r.targetMediaSupply.CostVideos(mediaUnits.Videos, mediaUnits.Seconds, mediaUnits.Resolution)
 		record.MediaSupply = r.targetMediaSupply
 		record.MediaUser = userMedia
-		record.MediaUnits = model.MediaUnits{Images: images}
+		record.MediaUnits = mediaUnits
 		record.PriceSource = "channel_model_media"
 	} else if usage == nil {
 		if err := op.BillingRelease(reservationID); err != nil {

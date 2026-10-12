@@ -31,5 +31,17 @@ func init() {
 		AddRoute(
 			router.NewRoute("/images/edits", http.MethodPost).
 				Handle(relay.Forward(llm.APIFormatOpenAIImageEdit)),
+		).
+		AddRoute(
+			router.NewRoute("/videos", http.MethodPost).
+				Handle(relay.Forward(llm.APIFormatOpenAIVideo)),
+		).
+		AddRoute(
+			router.NewRoute("/videos/:id", http.MethodGet).
+				Handle(relay.ForwardVideoTask(false)),
+		).
+		AddRoute(
+			router.NewRoute("/videos/:id", http.MethodDelete).
+				Handle(relay.ForwardVideoTask(true)),
 		)
 }

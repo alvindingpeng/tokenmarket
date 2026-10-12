@@ -25,10 +25,10 @@ import (
 func buildOutbound(channel model.Channel, grant model.ChannelGrant, channelKey model.ChannelKey, want model.Protocol, inboundFormat llm.APIFormat) (transformer.Outbound, model.Protocol, bool, error) {
 	protocol, passthrough := want, grant.Protocols&want != 0
 	if !passthrough {
-		// 生图不走跨协议回退: 客户端发起的生图请求只能由带生图位的授权承接,
-		// 回退到 chat/response/anthropic 只会把图片请求转成聊天请求打向错误端点。
-		// want=Image 且授权无生图位时保持 protocol=0, 由 default 分支报错并换下一个成员。
-		if want != model.ProtocolOpenAIImage {
+		// 媒体协议不走跨协议回退: 客户端发起的生图/生视频请求只能由带对应协议位的授权承接,
+		// 回退到 chat/response/anthropic 只会把图片或视频请求转成聊天请求打向错误端点。
+		// want=Image/Video 且授权无对应位时保持 protocol=0, 由 default 分支报错并换下一个成员。
+		if want != model.ProtocolOpenAIImage && want != model.ProtocolOpenAIVideo {
 			switch {
 			case grant.Protocols&model.ProtocolAnthropicMessage != 0:
 				protocol = model.ProtocolAnthropicMessage
@@ -62,6 +62,12 @@ func buildOutbound(channel model.Channel, grant model.ChannelGrant, channelKey m
 			endpointPath = channel.OpenAIImageGenerationPath
 		}
 		outbound, err := openai.NewOutboundTransformerWithConfig(&openai.Config{PlatformType: openai.PlatformOpenAI, BaseURL: channel.BaseURL, EndpointPath: endpointPath, APIKeyProvider: key})
+		return outbound, protocol, passthrough, err
+	case model.ProtocolOpenAIVideo:
+		// 视频出站由转换器在 BaseURL 之后自行拼接 /videos(创建) 与 /videos/{id}(查询/删除), 不接受 EndpointPath,
+		// 因此把渠道的基路径并入 BaseURL 一并交给转换器, 而不是走上面几个协议的路径字段。
+		baseURL := strings.TrimSuffix(channel.BaseURL, "/") + channel.OpenAIVideoBasePath
+		outbound, err := openai.NewOutboundTransformerWithConfig(&openai.Config{PlatformType: openai.PlatformOpenAI, BaseURL: baseURL, APIKeyProvider: key})
 		return outbound, protocol, passthrough, err
 	default:
 		return nil, 0, false, fmt.Errorf("channel grant %d supports no known protocol: %d", grant.ID, grant.Protocols)

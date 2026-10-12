@@ -16,10 +16,15 @@ export type LLMPrice = {
  * 未设置价格的已上架模型按 0 计费，不回退到全局价格表。
  */
 /**
- * 媒体定价(每张/每秒/分档): 仅媒体形态模型使用, 与 token 四类价互不干扰。
+ * 媒体定价(每张/每条/每秒/分档): 仅媒体形态模型使用, 与 token 四类价互不干扰。
+ * 计费口径:
+ *   生图: 张数 × (resolution 命中档位价, 否则 per_image);
+ *   生视频: 条数 × per_video + 秒数 × (resolution 命中档位价, 否则 per_second)。
+ * 即 per_video 是每条固定起步价, 与时长无关; resolution 只覆盖按张/按秒的单价, 不参与起步价。
  */
 export type MediaPrice = {
     per_image?: number;
+    per_video?: number;
     per_second?: number;
     resolution?: Record<string, number>;
 };
@@ -27,7 +32,8 @@ export type MediaPrice = {
 /**
  * 渠道模型上架条目：listed 决定用户可见性，supply_price 为供货价（渠道商收入口径）。
  * 未设置价格的已上架模型按 0 计费，不回退到全局价格表。
- * kind === 'image' 的行按 media_supply.per_image 计价(元/张)。
+ * kind 标出媒体形态: 'image'(生图, 按张计价)与 'video'(生视频, 按条 + 秒计价)两种,
+ * 两者的价格都落在 media_supply, 文本模型的 kind 为空并以四类 token 价计价。
  */
 export type ChannelModelListing = {
     name: string;

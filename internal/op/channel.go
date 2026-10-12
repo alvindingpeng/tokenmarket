@@ -188,6 +188,12 @@ func normalizeChannelConfig(config model.ChannelConfig) (model.ChannelConfig, er
 	if config.OpenAIImageEditPath, err = normalizedPath(config.OpenAIImageEditPath, "/v1/images/edits"); err != nil {
 		return config, err
 	}
+	if config.OpenAIVideoBasePath, err = normalizedPath(config.OpenAIVideoBasePath, "/v1"); err != nil {
+		return config, err
+	}
+	// 视频出站由转换器在基路径后拼接 /videos 与 /videos/{id}, 基路径结尾多一个斜杠会拼出双斜杠。
+	// 只填 "/" 表示视频直接挂在域名根下, 去掉后为空是预期结果。
+	config.OpenAIVideoBasePath = strings.TrimSuffix(config.OpenAIVideoBasePath, "/")
 	if config.AnthropicMessagePath, err = normalizedPath(config.AnthropicMessagePath, "/v1/messages"); err != nil {
 		return config, err
 	}
@@ -546,6 +552,7 @@ func ChannelModelListingUpdate(id int, listings []ChannelModelListing, scope mod
 			value float64
 		}{
 			{"per_image", media.PerImage},
+			{"per_video", media.PerVideo},
 			{"per_second", media.PerSecond},
 		} {
 			if pair.value < 0 {
@@ -566,7 +573,7 @@ func ChannelModelListingUpdate(id int, listings []ChannelModelListing, scope mod
 		// 上架但不定价 = 该模型对用户可见却按 0 计费, 是实打实的收入泄漏, 故直接拒绝。
 		// 媒体形态模型以媒体价为准: token 四类全零但按张定价同样视为已定价。
 		unpriced := price.Input == 0 && price.Output == 0 && price.CacheRead == 0 && price.CacheWrite == 0
-		mediaUnpriced := media.PerImage == 0 && media.PerSecond == 0 && len(media.Resolution) == 0
+		mediaUnpriced := media.PerImage == 0 && media.PerVideo == 0 && media.PerSecond == 0 && len(media.Resolution) == 0
 		if listing.Listed && unpriced && mediaUnpriced {
 			return fmt.Errorf("channel model %s is listed but has no supply price", listing.Name)
 		}
@@ -942,9 +949,13 @@ func syncChannelModelKinds(tx *gorm.DB, channelID int) error {
 		return fmt.Errorf("failed to load channel grants for kind sync: %w", err)
 	}
 	imageModels := make(map[int]bool, len(models))
+	videoModels := make(map[int]bool, len(models))
 	for _, grant := range grants {
 		if grant.Protocols&model.ProtocolOpenAIImage != 0 {
 			imageModels[grant.ChannelModelID] = true
+		}
+		if grant.Protocols&model.ProtocolOpenAIVideo != 0 {
+			videoModels[grant.ChannelModelID] = true
 		}
 	}
 	for _, channelModel := range models {
@@ -955,6 +966,10 @@ func syncChannelModelKinds(tx *gorm.DB, channelID int) error {
 		// 能力登记里明确只输出视频的模型, 即使没勾任何媒体协议位也按视频形态落库:
 		// 形态决定预扣与结算口径, 视频模型按 token 计费会把时长流量算成文本流量。
 		if capability, ok := CapabilityGet(channelModel.Name); ok && capability.MediaKind() == model.MediaKindVideo {
+			kind = model.MediaKindVideo
+		}
+		// 显式勾了生视频协议位的模型一律按视频形态落库: 管理员的直接授权意图优先于能力登记与生图位。
+		if videoModels[channelModel.ID] {
 			kind = model.MediaKindVideo
 		}
 		if channelModel.Kind == kind {
