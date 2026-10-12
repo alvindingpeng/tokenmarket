@@ -4,6 +4,13 @@ on:
   push:
     tags:
       - 'v*'
+  # 手动补齐漏发的 Release: 指定 tag 即可重跑构建与上传, 不必删标签重推。
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 要重建产物的 tag(例如 v0.21.0)
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -16,7 +23,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          # 手动补齐时必须检出目标 tag, 否则打出来的是默认分支的最新代码。
+          ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
+
+      - name: Resolve tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          TAG="${INPUT_TAG:-$REF_NAME}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "resolved tag: ${TAG}"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -32,7 +51,7 @@ jobs:
       - name: Build frontend
         working-directory: web
         env:
-          VITE_APP_VERSION: ${{ github.ref_name }}
+          VITE_APP_VERSION: ${{ steps.tag.outputs.tag }}
           VITE_GITHUB_REPO: https://github.com/alvindingpeng/tokenmarket
         run: |
           pnpm install --frozen-lockfile
@@ -60,11 +79,19 @@ jobs:
       - name: Upload release assets without replacing release notes
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
+          set -euo pipefail
+          # release.yaml 负责带变更日志创建 Release, 这里只往它上面挂产物。
+          # 但那边一旦没跑成(例如分支名不匹配), 单纯 upload 会以 release not found
+          # 失败, 产物就永远挂不上去 —— 所以等不到就自己建一个, 保证产物有落点。
           for attempt in 1 2 3 4 5 6; do
             if gh release view "$TAG" >/dev/null 2>&1; then break; fi
             echo "Release $TAG is not visible yet (attempt $attempt); waiting"
             sleep 10
           done
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG does not exist; creating it so the archives have somewhere to go"
+            gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
+          fi
           gh release upload "$TAG" build/archives/* --clobber
