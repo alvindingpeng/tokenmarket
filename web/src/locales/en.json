@@ -24,7 +24,8 @@
         "reason": "Reason",
         "reasonPlaceholder": "Why do you want to become a reseller? (optional)",
         "registerSuccess": "Registered successfully, please sign in.",
-        "registerPending": "Registration submitted, waiting for admin approval."
+        "registerPending": "Registration submitted, waiting for admin approval.",
+        "backToHome": "Back to landing"
     },
     "apiKeyDashboard": {
         "error": "Failed to load data",
@@ -1253,6 +1254,77 @@
             "metricsTokenRotate": "Regenerate",
             "metricsTokenRotated": "Token rotated; the old one no longer works",
             "backupRemoteHint": "Push the backup and checksum to WebDAV; credentials live in config.json backup.remote_*, failures raise alerts"
+        }
+    },
+    "landing": {
+        "nav": {
+            "features": "Features",
+            "media": "Protocols & Billing",
+            "roles": "Roles"
+        },
+        "hero": {
+            "badge": "Self-hosted LLM API Gateway",
+            "title": "Every model provider, one aggregate gateway",
+            "subtitle": "Switchyard sits between providers and your clients: aggregated channels, smart routing, usage-based billing, and full observability — all packed into a single self-hosted binary.",
+            "ctaPrimary": "Enter Console",
+            "ctaSecondary": "Explore Features",
+            "chip1": "OpenAI · Anthropic protocols",
+            "chip2": "Text / Image / Video",
+            "chip3": "3 languages · themes · responsive"
+        },
+        "features": {
+            "title": "Everything in one console",
+            "subtitle": "From onboarding to operations, managed in a single dashboard.",
+            "gatewayTitle": "Unified gateway",
+            "gatewayDesc": "OpenAI Chat / Responses and Anthropic Messages translate between protocols; one key calls every model.",
+            "channelsTitle": "Channels & grants",
+            "channelsDesc": "A model name can back onto many channels, each with its own keys, protocol bits, and limits.",
+            "groupsTitle": "Groups & routing",
+            "groupsDesc": "A group is the model name clients see; 7 routing modes (priority, price, latency, success rate, composite score...) with automatic failover.",
+            "billingTitle": "Precise billing",
+            "billingDesc": "Reserve before the call, settle after, reconcile daily; text by token, images per image, video per video plus duration.",
+            "mediaTitle": "Images & video",
+            "mediaDesc": "Full image and video generation forwarding; job ownership is persisted and traceable; queries and cancels are free.",
+            "opsTitle": "Observability & ops",
+            "opsDesc": "Live stats, log search, audit and rate limits, health probes and alerts, encrypted backups with off-site push.",
+            "accessTitle": "Users & access control",
+            "accessDesc": "Three roles — admin, reseller, user — with separate API keys and balances; registration with optional approval.",
+            "whiteLabelTitle": "White-label & languages",
+            "whiteLabelDesc": "Configurable site name, description, and contact; Simplified / Traditional Chinese and English, light and dark themes."
+        },
+        "media": {
+            "title": "Protocols & billing",
+            "subtitle": "The inbound API always keeps the OpenAI shape; billing is per modality.",
+            "protocolsTitle": "Inbound protocols",
+            "protocolsDesc": "OpenAI Chat Completions · OpenAI Responses · Anthropic Messages · Image generation & edits · Video generation",
+            "textTitle": "Text chat",
+            "textDesc": "Chat and reasoning models billed by token.",
+            "textPrice": "Input / output / cache priced separately",
+            "imageTitle": "Image generation",
+            "imageDesc": "Full forwarding for generations and edits (multi-image).",
+            "imagePrice": "Per image; resolution tiers optional",
+            "videoTitle": "Video generation",
+            "videoDesc": "Create a task and poll for the result; job ownership is persisted and traceable.",
+            "videoPrice": "Per-video base + per-second rate; resolution tiers optional"
+        },
+        "roles": {
+            "title": "Three roles, each scoped",
+            "subtitle": "Navigation is trimmed by role; you only see what you can use.",
+            "adminTitle": "Administrator",
+            "adminDesc": "Platform-wide: channels & grants, users, audit, rate limits, ops center, and settings",
+            "resellerTitle": "Reseller",
+            "resellerDesc": "Your channels: connect upstreams, publish models, set prices, manage API keys and billing",
+            "userTitle": "User",
+            "userDesc": "Model configs, API keys, balance, and call logs"
+        },
+        "cta": {
+            "title": "Ready to get started?",
+            "subtitle": "Enter the console and configure your first model gateway.",
+            "button": "Enter Console"
+        },
+        "footer": {
+            "tagline": "Self-hosted · your data and balance stay with you",
+            "contact": "Contact operator"
         }
     }
 }

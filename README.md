@@ -6,7 +6,7 @@
 
 **A self-hosted LLM API gateway: aggregate, route, meter, and operate — as a single binary**
 
-`v0.15.0` · English | [简体中文](README_zh.md)
+`v0.21.0` · English | [简体中文](README_zh.md)
 
 </div>
 

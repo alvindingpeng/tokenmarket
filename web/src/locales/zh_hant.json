@@ -24,7 +24,8 @@
         "reason": "申請理由",
         "reasonPlaceholder": "申請成為渠道商的理由（選填）",
         "registerSuccess": "註冊成功，請登入。",
-        "registerPending": "已提交註冊，等待管理員審批。"
+        "registerPending": "已提交註冊，等待管理員審批。",
+        "backToHome": "返回首頁"
     },
     "apiKeyDashboard": {
         "error": "載入資料失敗",
@@ -1253,6 +1254,77 @@
             "metricsTokenRotate": "重新生成",
             "metricsTokenRotated": "令牌已輪換, 舊令牌立即失效",
             "backupRemoteHint": "WebDAV 推送副本與校驗和; 地址憑據在 config.json backup.remote_*, 失敗自動告警"
+        }
+    },
+    "landing": {
+        "nav": {
+            "features": "核心能力",
+            "media": "接入與計費",
+            "roles": "適用角色"
+        },
+        "hero": {
+            "badge": "自託管 LLM API 閘道",
+            "title": "把多家模型的呼叫，收進一個閘道",
+            "subtitle": "Switchyard 在供應商與用戶端之間只隔一層：聚合供應源、智慧選路、按次計費、可觀測維運 —— 全部裝進一個自託管二進位檔。",
+            "ctaPrimary": "進入控制台",
+            "ctaSecondary": "了解全站功能",
+            "chip1": "OpenAI · Anthropic 多協定",
+            "chip2": "文字 / 圖像 / 影片",
+            "chip3": "三語 · 深淺色 · 多端自適應"
+        },
+        "features": {
+            "title": "全站功能一覽",
+            "subtitle": "從接入到維運，一個後台全部管理。",
+            "gatewayTitle": "統一閘道",
+            "gatewayDesc": "OpenAI Chat / Responses 與 Anthropic Messages 協定互轉，一把金鑰呼叫所有模型。",
+            "channelsTitle": "供應源與授權",
+            "channelsDesc": "一個模型名稱背後可掛多個供應源，各自的金鑰、協定位與額度獨立管理。",
+            "groupsTitle": "模型配置與選路",
+            "groupsDesc": "分組即模型名稱，支援順序、價格、延遲、成功率、綜合評分等 7 種選路，故障自動切換。",
+            "billingTitle": "精確計費",
+            "billingDesc": "呼叫前預扣、呼叫後結算、每日對帳；文字按 token、圖像按張、影片按條加時長計價。",
+            "mediaTitle": "圖像與影片",
+            "mediaDesc": "生圖與生影片完整轉發，任務歸屬落庫可追蹤，查詢與取消都不計費。",
+            "opsTitle": "可觀測與維運",
+            "opsDesc": "即時統計、日誌檢索、審計與限流、健康探測與告警、加密備份與異地推送。",
+            "accessTitle": "使用者與存取控制",
+            "accessDesc": "管理員 / 渠道商 / 使用者三種角色，獨立 API 金鑰與餘額，註冊可選審批。",
+            "whiteLabelTitle": "白標與多語言",
+            "whiteLabelDesc": "站點名稱、描述與聯絡方式可設定，支援簡體 / 繁體 / 英文與深淺色主題。"
+        },
+        "media": {
+            "title": "接入協定與計費方式",
+            "subtitle": "對用戶端始終是 OpenAI 形態的入口，後台按形態分別計費。",
+            "protocolsTitle": "入站協定",
+            "protocolsDesc": "OpenAI Chat Completions · OpenAI Responses · Anthropic Messages · 圖像生成與編輯 · 影片生成",
+            "textTitle": "文字對話",
+            "textDesc": "聊天與思考模型按 token 計費。",
+            "textPrice": "輸入 / 輸出 / 快取分別計價",
+            "imageTitle": "圖像生成",
+            "imageDesc": "generations 與 edits（多圖輸入）完整轉發。",
+            "imagePrice": "按張計費，解析度分檔可選",
+            "videoTitle": "影片生成",
+            "videoDesc": "建立任務後輪詢取回，任務歸屬落庫可追蹤。",
+            "videoPrice": "每條起步價 + 每秒時長價，解析度分檔可選"
+        },
+        "roles": {
+            "title": "三種角色，各有所用",
+            "subtitle": "導覽按角色裁剪，介面只出現你有權使用的功能。",
+            "adminTitle": "管理員",
+            "adminDesc": "全站管理：供應源與授權、使用者、審計、限流、維運中心與系統設定",
+            "resellerTitle": "渠道商",
+            "resellerDesc": "自有供應源：接入上游、上架模型、定價、API 金鑰與計費",
+            "userTitle": "使用者",
+            "userDesc": "模型配置、API 金鑰、餘額與呼叫日誌"
+        },
+        "cta": {
+            "title": "準備好開始了嗎？",
+            "subtitle": "進入控制台，設定你的第一個模型閘道。",
+            "button": "進入控制台"
+        },
+        "footer": {
+            "tagline": "自託管部署 · 資料與餘額都在自己手裡",
+            "contact": "聯絡管理員"
         }
     }
 }

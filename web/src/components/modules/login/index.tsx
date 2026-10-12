@@ -10,7 +10,7 @@ import { useAPIKeyLogin } from "@/api/apikey"
 import { useSiteConfig, DEFAULT_SITE_NAME } from "@/api/site"
 import { SiteBanners } from "@/components/site-banners"
 import Logo from "@/components/modules/logo"
-import { KeyRound, Store, User } from "lucide-react"
+import { ArrowLeft, KeyRound, Store, User } from "lucide-react"
 import {
   Tabs,
   TabsList,
@@ -28,7 +28,7 @@ function contactHref(value: string): string | undefined {
 }
 
 // LoginForm 渲染用户密码、API Key 与注册表单；注册入口按后端开关显隐。
-export function LoginForm() {
+export function LoginForm({ onBack }: { onBack?: () => void }) {
   const t = useTranslations('login')
   const [mode, setMode] = useState<LoginMode>('user')
   const [username, setUsername] = useState("")
@@ -89,6 +89,16 @@ export function LoginForm() {
   return (
     <div className="min-h-screen flex animate-in items-center justify-center px-6 text-foreground fade-in duration-300">
       <div className="w-full max-w-sm space-y-8">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            {t('backToHome')}
+          </button>
+        )}
         <header className="flex flex-col items-center gap-3">
           <Logo size={48} />
           {/* 站点名称/描述/联系方式来自「系统信息配置」; 名称留空回退默认品牌。 */}
