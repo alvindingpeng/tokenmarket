@@ -19,39 +19,8 @@ import {
 import Logo from '@/components/modules/logo';
 import { SiteBanners } from '@/components/site-banners';
 import { Button } from '@/components/ui/button';
+import { LanguageSwitch } from '@/components/language-switch';
 import { DEFAULT_SITE_NAME, useSiteConfig, type SiteConfig } from '@/api/site';
-import { useSettingStore, type Locale } from '@/stores/setting';
-import { cn } from '@/lib/utils';
-
-// LanguageSwitch 复用全局语言偏好(useSettingStore): 切换立即由 LocaleProvider 用新语言重新渲染。
-function LanguageSwitch() {
-    const { locale, setLocale } = useSettingStore();
-    const options: { value: Locale; label: string }[] = [
-        { value: 'zh_hans', label: '简' },
-        { value: 'zh_hant', label: '繁' },
-        { value: 'en', label: 'EN' },
-    ];
-    return (
-        <div className="flex items-center rounded-full border border-border bg-background p-0.5" role="group" aria-label="Language">
-            {options.map((option) => (
-                <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setLocale(option.value)}
-                    aria-pressed={locale === option.value}
-                    className={cn(
-                        'rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
-                        locale === option.value
-                            ? 'bg-primary text-primary-foreground'
-                            : 'text-muted-foreground hover:text-foreground'
-                    )}
-                >
-                    {option.label}
-                </button>
-            ))}
-        </div>
-    );
-}
 
 // LandingHeader 顶部吸顶栏: 品牌 + 锚点导航 + 语言切换 + 控制台入口; 移动端只保留品牌、语言与按钮。
 function LandingHeader({ siteName, onEnter }: { siteName: string; onEnter: () => void }) {
