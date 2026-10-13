@@ -239,6 +239,20 @@ func openAPIAdminPathsOps() gin.H {
 				"作废旧令牌并签发新的; 抓取端需同步更新 Authorization 头。", "",
 				adminEnvelope("新令牌", metricsTokenSchema()), true),
 		},
+		"/api/v1/ops/metrics/reset": gin.H{
+			"post": adminPath("ops", "重置评分指标",
+				"清掉某个渠道模型(或单个成员)的历史评分观测, 内存与持久化快照一并清理, 清零后随新请求重新积累。"+adminNewLine+adminNewLine+
+					"作用域二选一: channel_model_id 清该渠道模型下全部成员观测; group_id+item_id 只清单个成员, 并按剩余观测重播该渠道模型的全局指标。"+adminNewLine+adminNewLine+
+					"用途: 观测被陈旧样本污染导致评分异常时手工纠偏, 例如一条孤例失败把整个渠道模型钉死 0 分。只清指标, 不动配置、余额与日志。",
+				"MetricsResetRequest", adminEnvelope("重置结果", gin.H{"type": "object", "properties": gin.H{
+					"scope":            fieldString("channel_model 或 member"),
+					"channel_model_id": fieldNumber("integer", "受影响的渠道模型 ID"),
+					"group_id":         fieldNumber("integer", "成员口径时的分组 ID"),
+					"item_id":          fieldNumber("integer", "成员口径时的成员 ID"),
+					"cleared_members":  fieldNumber("integer", "渠道模型口径下清理的成员观测条数"),
+				}}), true),
+		},
+
 		"/api/v1/ops/auth-secret/rotate": gin.H{
 			"post": adminPath("ops", "轮换会话密钥",
 				"更换 JWT 签名密钥: 所有已登录会话立即失效, 全部用户需重新登录。新密钥本身不回显。", "",

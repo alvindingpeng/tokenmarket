@@ -90,6 +90,11 @@ func init() {
 				Handle(rotateMetricsToken),
 		).
 		AddRoute(
+			router.NewRoute("/metrics/reset", http.MethodPost).
+				Allow(model.RoleAdmin).
+				Handle(resetRouteMetrics),
+		).
+		AddRoute(
 			router.NewRoute("/alerts/test-webhook", http.MethodPost).
 				Allow(model.RoleAdmin).
 				Handle(testAlertWebhook),
@@ -257,6 +262,42 @@ func rotateMetricsToken(c *gin.Context) {
 	}
 	audit(c, "ops.metrics-token-rotate", "", "")
 	resp.Success(c, gin.H{"mode": op.MetricsAuthMode(), "token": token})
+}
+
+// resetRouteMetrics 运维重置评分指标: 清掉某个渠道模型(或单个成员)的历史观测, 内存与持久化一并清理。
+// 用途: 观测被陈旧样本污染导致评分异常(如一条孤例失败把整个模型钉死 0 分)时手工纠偏,
+// 清零后随新请求重新积累, 不必等自然滚动衰减。只清指标, 不动配置、余额与日志。
+// 二选一的作用域: channel_model_id 清该渠道模型下全部成员观测; group_id+item_id 只清单个成员。
+func resetRouteMetrics(c *gin.Context) {
+	var req struct {
+		ChannelModelID int `json:"channel_model_id"`
+		GroupID        int `json:"group_id"`
+		ItemID         int `json:"item_id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	switch {
+	case req.ChannelModelID > 0 && req.GroupID == 0 && req.ItemID == 0:
+		cleared, err := relay.ResetModelMetric(req.ChannelModelID)
+		if err != nil {
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		audit(c, "ops.metrics-reset", "", "channel_model_id="+strconv.Itoa(req.ChannelModelID)+" cleared="+strconv.Itoa(cleared))
+		resp.Success(c, gin.H{"scope": "channel_model", "channel_model_id": req.ChannelModelID, "cleared_members": cleared})
+	case req.ChannelModelID == 0 && req.GroupID > 0 && req.ItemID > 0:
+		channelModelID, err := relay.ResetMemberMetric(req.GroupID, req.ItemID)
+		if err != nil {
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		audit(c, "ops.metrics-reset", "", "group_id="+strconv.Itoa(req.GroupID)+" item_id="+strconv.Itoa(req.ItemID))
+		resp.Success(c, gin.H{"scope": "member", "group_id": req.GroupID, "item_id": req.ItemID, "channel_model_id": channelModelID})
+	default:
+		resp.Error(c, http.StatusBadRequest, "channel_model_id 或 group_id+item_id 必须给出一个")
+	}
 }
 
 // rotateAuthSecret 轮换 JWT 签名密钥: 生成新密钥并立即生效, 所有已签发的令牌即刻失效。

@@ -295,18 +295,14 @@ func RestorePersist() error {
 		}
 	}
 	routeMu.Unlock()
-	metricMu.Lock()
-	for _, metric := range metrics {
-		if metric.Samples <= 0 {
-			continue
-		}
-		memberMetrics[memberMetricKey{groupID: metric.GroupID, itemID: metric.ItemID}] = &memberMetric{
-			emaWaitMs:  metric.EmaWaitMs,
-			emaSuccess: metric.EmaSuccess,
-			samples:    metric.Samples,
-		}
+	// 解析成员 → 渠道模型映射, 恢复后按「样本数最大的观测」播种每个渠道模型的全局指标:
+	// 否则首个被访问的成员观测会单方面定下共享成绩, 一条陈旧小样本足以把整个模型钉死在 0 分。
+	itemModels, err := op.RouteMetricItemChannelModels()
+	if err != nil {
+		log.Warnf("load item channel models failed: %v", err)
+		itemModels = map[int]int{}
 	}
-	metricMu.Unlock()
+	restoreMemberMetrics(metrics, itemModels)
 	log.Infof("route state restored: %d groups, %d metrics", len(states), len(metrics))
 	return nil
 }

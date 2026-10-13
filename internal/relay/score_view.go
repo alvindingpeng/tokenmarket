@@ -40,13 +40,16 @@ func MemberScoreBasis(group model.Group) ScoreBasis {
 	}
 }
 
-// memberMetricSnapshot 只读地取成员的评分指标: 优先用渠道模型全局指标, 缺失时回落本分组观测。
-// 与 memberScopeMetric 的取值口径完全一致, 但不做冷启动播种 —— 播种是选路的副作用,
-// 一次展示不该顺手改写全局指标。
+// memberMetricSnapshot 只读地取成员的评分指标: 优先用渠道模型全局指标, 缺失时回落样本数最大的
+// 成员观测, 再缺回落本分组观测。与 memberScopeMetric 的取值口径完全一致, 但不做冷启动播种 ——
+// 播种是选路的副作用, 一次展示不该顺手改写全局指标。
 func memberMetricSnapshot(group model.Group, item model.GroupItem) (waitMs float64, success float64, samples int) {
 	groupWait, groupSuccess, groupSamples := memberMetricOf(group.ID, item.ID)
 	if item.ChannelModelID != 0 {
-		if waitMs, success, samples = modelMetricOf(item.ChannelModelID); samples > 0 {
+		metricMu.Lock()
+		waitMs, success, samples = modelMetricSnapshotLocked(item.ChannelModelID)
+		metricMu.Unlock()
+		if samples > 0 {
 			return waitMs, success, samples
 		}
 	}
@@ -89,11 +92,9 @@ func MemberScoreViews(group model.Group) []MemberScoreView {
 			view.LatencyScore = normalizedDim(waits, i, false) * 100
 			view.SuccessScore = normalizedDim(rates, i, true) * 100
 		}
-		// 与 selectByScore 同一套算法: 加权求和后再按可靠性软惩罚折减, 冷成员不惩罚。
+		// 与 selectByScore 同一套算法: 加权求和后按可靠性软惩罚折减, 折减强度随样本置信度缩放。
 		score := memberScore(basis.PriceWeight, basis.LatencyWeight, basis.SuccessWeight, i, prices, waits, rates, known)
-		if known[i] && rates[i] < basis.ReliabilityFloor {
-			score *= rates[i] / basis.ReliabilityFloor
-		}
+		score *= reliabilityPenalty(rates[i], samples[i], basis.ReliabilityFloor)
 		view.Score = score * 100
 		views[i] = view
 	}
