@@ -1,10 +1,13 @@
 package relay
 
 import (
+	"errors"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 )
 
@@ -15,11 +18,13 @@ type memberMetricKey struct {
 }
 
 // memberMetric 成员的运行指标: 首响应耗时与成功率的指数滑动平均(EMA)。
-// 只存进程内: 指标仅服务于选路, 重启后从冷启动重新积累, 跨分组同名成员互不影响。
+// 只存进程内: 指标仅服务于选路, 重启后从持久化快照恢复历史成绩再继续积累。
 type memberMetric struct {
-	emaWaitMs  float64 // 首响应耗时 EMA, 毫秒; 流式为首帧, 非流式为完整响应。
-	emaSuccess float64 // 成功率 EMA, 0..1。
-	samples    int     // 已累计样本数, 0 表示冷成员(尚无任何请求结果)。
+	emaWaitMs      float64 // 首响应耗时 EMA, 毫秒; 流式为首帧, 非流式为完整响应。
+	emaSuccess     float64 // 成功率 EMA, 0..1。
+	samples        int     // 已累计样本数, 0 表示冷成员(尚无任何请求结果)。
+	channelModelID int     // 该观测归属的渠道模型 ID; 0 表示未知(如映射缺失的残留行)。
+	updatedAt      int64   // 最近一次观测写入时间(Unix 毫秒), 同样本数时用于定序。
 }
 
 // metricAlpha 根据配置的样本窗口计算 EMA 新样本占比; window 越大越平滑。
@@ -57,6 +62,7 @@ func applySample(metric *memberMetric, window int, waitMs int64, success bool) {
 		metric.emaSuccess = alpha*s + (1-alpha)*metric.emaSuccess
 	}
 	metric.samples++
+	metric.updatedAt = time.Now().UnixMilli()
 }
 
 // recordMemberMetric 记录一次成员请求结果, 供延迟/成功率/综合评分策略排名使用。
@@ -70,6 +76,9 @@ func recordMemberMetric(groupID, itemID, channelModelID, window int, waitMs int6
 	if metric == nil {
 		metric = &memberMetric{}
 		memberMetrics[key] = metric
+	}
+	if channelModelID != 0 {
+		metric.channelModelID = channelModelID
 	}
 	applySample(metric, window, waitMs, success)
 
@@ -109,16 +118,106 @@ func modelMetricOf(channelModelID int) (waitMs float64, success float64, samples
 	return metric.emaWaitMs, metric.emaSuccess, metric.samples
 }
 
-// seedModelMetric 恢复持久化指标时并入一条历史观测, 保持全局模型指标的连续性。
-func seedModelMetric(channelModelID int, waitMs, success float64, samples int) {
-	if channelModelID == 0 || samples <= 0 {
-		return
+// betterSeed 判定候选播种行优劣: 样本数大者优先, 同数取观测更新更近的, 仍同则取 (分组, 成员) 更小者保证确定性。
+func betterSeed(a *memberMetric, aKey memberMetricKey, b *memberMetric, bKey memberMetricKey) bool {
+	if a.samples != b.samples {
+		return a.samples > b.samples
 	}
+	if a.updatedAt != b.updatedAt {
+		return a.updatedAt > b.updatedAt
+	}
+	if aKey.groupID != bKey.groupID {
+		return aKey.groupID < bKey.groupID
+	}
+	return aKey.itemID < bKey.itemID
+}
+
+// bestMemberMetricLocked 在成员观测里挑该渠道模型样本数最大的一条。调用方需持有 metricMu。
+func bestMemberMetricLocked(channelModelID int) *memberMetric {
+	var best *memberMetric
+	var bestKey memberMetricKey
+	for key, metric := range memberMetrics {
+		if metric.channelModelID != channelModelID || metric.samples <= 0 {
+			continue
+		}
+		if best == nil || betterSeed(metric, key, best, bestKey) {
+			best, bestKey = metric, key
+		}
+	}
+	return best
+}
+
+// seedModelMetricBestLocked 取渠道模型的有效指标并做冷启动播种:
+// 全局指标缺失时, 用该模型已有成员观测里「样本数最大」的一条补上, 并非谁先被访问就用谁的观测。
+// 之前的首个访问播种会让一条陈旧小样本钉死整个模型的成绩(生产上 1 个失败样本把共享评分乘成 0)。
+// 调用方需持有 metricMu; 返回 (waitMs, success, samples), 无观测时全零。
+func seedModelMetricBestLocked(channelModelID int) (float64, float64, int) {
+	if channelModelID == 0 {
+		return 0, 0, 0
+	}
+	if metric := modelMetrics[channelModelID]; metric != nil && metric.samples > 0 {
+		return metric.emaWaitMs, metric.emaSuccess, metric.samples
+	}
+	best := bestMemberMetricLocked(channelModelID)
+	if best == nil {
+		return 0, 0, 0
+	}
+	modelMetrics[channelModelID] = &memberMetric{
+		emaWaitMs:      best.emaWaitMs,
+		emaSuccess:     best.emaSuccess,
+		samples:        best.samples,
+		channelModelID: channelModelID,
+		updatedAt:      best.updatedAt,
+	}
+	return best.emaWaitMs, best.emaSuccess, best.samples
+}
+
+// seedModelMetricBest 取渠道模型的有效指标(全局优先, 缺失时按样本数最大的成员观测播种)。
+func seedModelMetricBest(channelModelID int) (float64, float64, int) {
 	metricMu.Lock()
 	defer metricMu.Unlock()
-	metric := modelMetrics[channelModelID]
-	if metric == nil || metric.samples < samples {
-		modelMetrics[channelModelID] = &memberMetric{emaWaitMs: waitMs, emaSuccess: success, samples: samples}
+	return seedModelMetricBestLocked(channelModelID)
+}
+
+// modelMetricSnapshotLocked 与 seedModelMetricBestLocked 同口径但绝不写回: 供展示侧只读取值。
+func modelMetricSnapshotLocked(channelModelID int) (float64, float64, int) {
+	if channelModelID == 0 {
+		return 0, 0, 0
+	}
+	if metric := modelMetrics[channelModelID]; metric != nil && metric.samples > 0 {
+		return metric.emaWaitMs, metric.emaSuccess, metric.samples
+	}
+	if best := bestMemberMetricLocked(channelModelID); best != nil {
+		return best.emaWaitMs, best.emaSuccess, best.samples
+	}
+	return 0, 0, 0
+}
+
+// restoreMemberMetrics 把持久化指标快照装回内存, 并按渠道模型播种全局指标。
+// itemModels 是成员 ID → 渠道模型 ID 映射(由 group_items ⋈ channel_grants 解析),
+// 每个渠道模型取样本数最大的一行播种, 保证重启后共享评分从最有据的观测起步。
+func restoreMemberMetrics(records []model.RouteMetricRecord, itemModels map[int]int) {
+	metricMu.Lock()
+	defer metricMu.Unlock()
+	seeded := make(map[int]bool)
+	for _, record := range records {
+		if record.Samples <= 0 {
+			continue
+		}
+		channelModelID := itemModels[record.ItemID]
+		memberMetrics[memberMetricKey{groupID: record.GroupID, itemID: record.ItemID}] = &memberMetric{
+			emaWaitMs:      record.EmaWaitMs,
+			emaSuccess:     record.EmaSuccess,
+			samples:        record.Samples,
+			channelModelID: channelModelID,
+			updatedAt:      record.UpdatedAt.UnixMilli(),
+		}
+		if channelModelID != 0 {
+			seeded[channelModelID] = true
+		}
+	}
+	for channelModelID := range seeded {
+		seedModelMetricBestLocked(channelModelID)
 	}
 }
 
@@ -205,3 +304,54 @@ func ModelScoreBriefs(briefs []op.ChannelModelBrief, views []ModelScoreView) []M
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
+
+// ResetModelMetric 清空一个渠道模型的全部评分历史: 全局指标与其名下各成员观测(内存与持久化)一并清理,
+// 供运维在观测被陈旧样本污染时手工纠偏。返回清理的成员观测条数。
+func ResetModelMetric(channelModelID int) (int, error) {
+	if channelModelID <= 0 {
+		return 0, errInvalidMetricScope
+	}
+	metricMu.Lock()
+	cleared := 0
+	delete(modelMetrics, channelModelID)
+	for key, metric := range memberMetrics {
+		if metric.channelModelID == channelModelID {
+			delete(memberMetrics, key)
+			cleared++
+		}
+	}
+	metricMu.Unlock()
+	if _, err := op.RouteMetricDeleteByChannelModel(channelModelID); err != nil {
+		return cleared, err
+	}
+	return cleared, nil
+}
+
+// ResetMemberMetric 清空单个分组成员的评分观测(内存与持久化), 并按其余观测重播该渠道模型的全局指标
+// (无剩余观测则一并清空), 使被清掉的陈旧行不再参与任何打分。返回其归属的渠道模型 ID。
+func ResetMemberMetric(groupID, itemID int) (int, error) {
+	if groupID <= 0 || itemID <= 0 {
+		return 0, errInvalidMetricScope
+	}
+	metricMu.Lock()
+	key := memberMetricKey{groupID: groupID, itemID: itemID}
+	metric := memberMetrics[key]
+	channelModelID := 0
+	if metric != nil {
+		channelModelID = metric.channelModelID
+	}
+	delete(memberMetrics, key)
+	if channelModelID != 0 {
+		// 观测被移除后全局指标可能已陈旧: 删掉按剩余观测重播, 与恢复播种同一套择优规则。
+		delete(modelMetrics, channelModelID)
+		seedModelMetricBestLocked(channelModelID)
+	}
+	metricMu.Unlock()
+	if err := op.RouteMetricDelete(groupID, itemID); err != nil {
+		return channelModelID, err
+	}
+	return channelModelID, nil
+}
+
+// errInvalidMetricScope 指标重置作用域非法(渠道模型 ID 或分组成员 ID 未给出)。
+var errInvalidMetricScope = errors.New("channel_model_id 或 group_id+item_id 必须给出一个")

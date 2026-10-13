@@ -253,20 +253,15 @@ func memberRate(group model.Group, item model.GroupItem) (float64, bool) {
 }
 
 // memberScopeMetric 取成员的评分指标: 优先用渠道模型全局指标, 缺失时回落本分组观测。
-// 全局指标冷启动时用本分组已有观测播种, 保证重启后评分仍从历史成绩起步而非全部归零。
+// 全局指标冷启动时按「该渠道模型样本数最大的成员观测」播种, 保证重启后评分从最有据的历史成绩
+// 起步; 旧实现用首个被访问的成员播种, 一条陈旧小样本足以把整个模型钉死在 0 分(生产实证)。
 func memberScopeMetric(group model.Group, item model.GroupItem) (waitMs float64, success float64, samples int) {
-	groupWait, groupSuccess, groupSamples := memberMetricOf(group.ID, item.ID)
 	if item.ChannelModelID != 0 {
-		waitMs, success, samples = modelMetricOf(item.ChannelModelID)
-		if samples > 0 {
+		if waitMs, success, samples = seedModelMetricBest(item.ChannelModelID); samples > 0 {
 			return waitMs, success, samples
 		}
-		if groupSamples > 0 {
-			seedModelMetric(item.ChannelModelID, groupWait, groupSuccess, groupSamples)
-			return groupWait, groupSuccess, groupSamples
-		}
 	}
-	return groupWait, groupSuccess, groupSamples
+	return memberMetricOf(group.ID, item.ID)
 }
 
 // selectByScore 综合评分: 价格(低好), 延迟(低好)与成功率(高好)各自在候选集内归一化后加权求和。
@@ -282,11 +277,12 @@ func selectByScore(group model.Group, candidates []model.GroupItem) model.GroupI
 	prices := make([]float64, len(candidates))
 	waits := make([]float64, len(candidates))
 	rates := make([]float64, len(candidates))
+	samples := make([]int, len(candidates))
 	known := make([]bool, len(candidates))
 	for i, item := range candidates {
 		prices[i] = memberPrice(group, item)
-		waits[i], known[i] = memberWait(group, item)
-		rates[i], _ = memberRate(group, item)
+		waits[i], rates[i], samples[i] = memberScopeMetric(group, item)
+		known[i] = samples[i] > 0
 	}
 
 	// 可靠性软性惩罚: 成功率低于下限的成员按 succ/floor 比例折减总分, 而非无条件垫底。
@@ -297,10 +293,9 @@ func selectByScore(group model.Group, candidates []model.GroupItem) model.GroupI
 	best, bestScore := candidates[0], math.Inf(-1)
 	for i, item := range candidates {
 		score := memberScore(priceWeight, latencyWeight, successWeight, i, prices, waits, rates, known)
-		// 冷成员(无样本)不惩罚, 保留一次试用机会; 仅对确有观测且低于下限者按比例折减。
-		if known[i] && rates[i] < floor {
-			score *= rates[i] / floor
-		}
+		// 折减强度按样本置信度缩放: 一条孤例观测不足以把分数乘到 0(否则评分归零后永不被选中,
+		// 也就永远翻不了身), 样本充足的失败模型仍被压到近 0 分垫底。
+		score *= reliabilityPenalty(rates[i], samples[i], floor)
 		if score > bestScore {
 			best, bestScore = item, score
 		}
@@ -310,6 +305,22 @@ func selectByScore(group model.Group, candidates []model.GroupItem) model.GroupI
 
 // reliabilityFloorDefault 是成员可靠性下限的内置兜底: 成功率(EMA)低于该值视为不健康成员。
 const reliabilityFloorDefault = 0.7
+
+// penaltyConfidenceK 是可靠性软惩罚的置信度常数: 观测样本数 n 对应的惩罚强度为 n/(n+k)。
+// 样本越少惩罚越轻, 让一次孤例观测(哪怕恰好失败)不足以把分数直接乘到 0;
+// 样本充足后强度趋近 1, 行为与全额软惩罚一致。
+const penaltyConfidenceK = 5
+
+// reliabilityPenalty 返回可靠性软惩罚系数(≤1): 成功率低于下限时按 rate/floor 折减,
+// 折减强度再按样本置信度 n/(n+penaltyConfidenceK) 缩放 —— 单条陈旧观测不足以钉死评分,
+// 而样本充足的失败模型仍会被压到近 0 分垫底。冷成员(无样本)恒不惩罚, 保留一次试用机会。
+func reliabilityPenalty(rate float64, samples int, floor float64) float64 {
+	if floor <= 0 || samples <= 0 || rate >= floor {
+		return 1
+	}
+	strength := float64(samples) / (float64(samples) + penaltyConfidenceK)
+	return 1 - strength*(1-rate/floor)
+}
 
 // effectiveReliabilityFloor 解析可靠性下限: 分组自定义优先, 否则用系统设置, 均缺失回落内置值。
 func effectiveReliabilityFloor(config model.GroupRelayConfig) float64 {

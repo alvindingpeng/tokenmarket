@@ -750,6 +750,12 @@ func openAPIAdminSchemas() gin.H {
 			"id": fieldNumber("integer", "待删除的策略 ID, 必须大于 0"),
 		}, "id"),
 
+		"MetricsResetRequest": object(gin.H{
+			"channel_model_id": fieldNumber("integer", "渠道模型 ID; 与 group_id+item_id 二选一, 清该渠道模型下全部成员观测"),
+			"group_id":         fieldNumber("integer", "分组 ID; 与 item_id 成对使用, 只清单个成员观测"),
+			"item_id":          fieldNumber("integer", "分组成员 ID; 与 group_id 成对使用"),
+		}),
+
 		"RateLimitInspect": object(gin.H{
 			"budgets":    gin.H{"type": "array", "items": ref("RateLimitBudget"), "description": "该 scope 覆盖的每个模型的独立预算; 未指定 model 时逐项给出"},
 			"scope_type": fieldString(""),
