@@ -82,7 +82,7 @@ export function SettingInfo() {
                         href={GITHUB_REPO}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-sm text-primary hover:underline"
+                        className="inline-flex min-h-7 items-center text-sm text-primary hover:underline"
                     >
                         {GITHUB_REPO.replace(/^https?:\/\/(www\.)?github\.com\//, '')}
                     </a>

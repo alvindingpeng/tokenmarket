@@ -28,7 +28,7 @@ export function LanguageSwitch() {
                     title={t('language.' + option.value)}
                     aria-pressed={locale === option.value}
                     className={cn(
-                        'rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
+                        'min-h-7 rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
                         locale === option.value
                             ? 'bg-primary text-primary-foreground'
                             : 'text-muted-foreground hover:text-foreground'

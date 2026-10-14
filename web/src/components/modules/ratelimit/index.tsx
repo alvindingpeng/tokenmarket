@@ -289,7 +289,8 @@ export default function RateLimit() {
                 )}
                 {(inspect.data?.budgets?.length ?? 0) > 1 && <div className="mt-2 space-y-1 text-xs text-muted-foreground">{inspect.data?.budgets?.map(budget => <div key={budget.model_name}>{budget.model_name || t('table.allModels')}: RPM {budget.requests}/{budget.rpm || t('table.unlimited')} · TPM {budget.tokens}/{budget.tpm || t('table.unlimited')} · {t('active')} {budget.active}/{budget.concurrent || t('table.unlimited')}</div>)}</div>}
                 {(usage.data?.items ?? []).length > 0 && (
-                    <table className="mt-3 w-full min-w-[560px] text-sm">
+                    <div className="mt-3 overflow-x-auto">
+                    <table className="w-full min-w-[560px] text-sm">
                         <thead className="text-left text-xs text-muted-foreground"><tr>
                             <th className="py-2 font-medium">{t('usage.hour')}</th><th className="py-2 font-medium">{t('usage.requests')}</th><th className="py-2 font-medium">{t('usage.input')}</th><th className="py-2 font-medium">{t('usage.output')}</th><th className="py-2 font-medium">{t('usage.rejected')}</th>
                         </tr></thead>
@@ -301,6 +302,7 @@ export default function RateLimit() {
                             <td className={'py-2 tabular-nums' + (row.rejected > 0 ? ' text-destructive' : '')}>{formatTokens(row.rejected)}</td>
                         </tr>)}</tbody>
                     </table>
+                    </div>
                 )}
             </div>
         </div>

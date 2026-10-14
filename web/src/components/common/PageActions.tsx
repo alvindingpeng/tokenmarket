@@ -140,7 +140,7 @@ export function PageActions({
                         value={searchTerm}
                         onChange={(event) => onSearchTermChange(event.target.value)}
                         tabIndex={searchExpanded ? 0 : -1}
-                        className="w-20 shrink-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                        className="h-full w-20 shrink-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                     />
                     <button
                         type="button"
@@ -149,7 +149,7 @@ export function PageActions({
                             onSearchTermChange('');
                             setSearchExpanded(false);
                         }}
-                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                        className="flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
                     >
                         <X className="size-3.5" />
                     </button>

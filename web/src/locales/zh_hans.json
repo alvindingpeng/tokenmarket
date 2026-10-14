@@ -1016,23 +1016,39 @@
             "next": "下一页"
         },
         "action": {
-            "user.create": "创建用户",
-            "user.update": "修改用户",
-            "user.balance": "调整余额",
-            "user.reset-password": "重置密码",
-            "user.delete": "删除用户",
-            "setting.set": "修改设置",
-            "backup.export": "导出备份",
-            "backup.import": "导入备份",
-            "log.clear": "清空日志",
-            "channel.publish": "发布渠道",
-            "model.create": "新增模型价格",
-            "model.update": "修改模型价格",
-            "model.delete": "删除模型价格",
-            "model.update-price": "同步模型价格",
-            "model.rebuild-price": "重建模型价格",
-            "update.core": "更新内核",
-            "audit.export": "导出审计记录"
+            "user": {
+                "create": "创建用户",
+                "update": "修改用户",
+                "balance": "调整余额",
+                "reset-password": "重置密码",
+                "delete": "删除用户"
+            },
+            "setting": {
+                "set": "修改设置"
+            },
+            "backup": {
+                "export": "导出备份",
+                "import": "导入备份"
+            },
+            "log": {
+                "clear": "清空日志"
+            },
+            "channel": {
+                "publish": "发布渠道"
+            },
+            "model": {
+                "create": "新增模型价格",
+                "update": "修改模型价格",
+                "delete": "删除模型价格",
+                "update-price": "同步模型价格",
+                "rebuild-price": "重建模型价格"
+            },
+            "update": {
+                "core": "更新内核"
+            },
+            "audit": {
+                "export": "导出审计记录"
+            }
         }
     },
     "ratelimit": {
@@ -1132,7 +1148,27 @@
             "alerts": "告警记录"
         },
         "reconcile": {
-            "desc": "每日自动核对计费明细与预扣结算; 对账差异与备份/归档失败会自动生成告警并推送 Webhook。"
+            "desc": "每日自动核对计费明细与预扣结算; 对账差异与备份/归档失败会自动生成告警并推送 Webhook。",
+            "day": "日期",
+            "records": "记录数",
+            "userCost": "用户消费",
+            "ownerRevenue": "归属者收入",
+            "platformRevenue": "平台收入",
+            "duplicated": "重复项",
+            "missing": "缺失项",
+            "staleHold": "悬空预扣",
+            "unsettled": "未结算",
+            "status": "状态",
+            "time": "时间",
+            "days1": "近 1 天",
+            "days3": "近 3 天",
+            "days7": "近 7 天",
+            "run": "立即对账",
+            "runSuccess": "对账完成",
+            "runFailed": "对账失败",
+            "statusBalanced": "对平",
+            "statusMismatch": "不平",
+            "statusReview": "需复核"
         },
         "flow": {
             "desc": "余额预扣/结算/释放流水(最近 100 条), 管理员可按用户 ID 过滤。",

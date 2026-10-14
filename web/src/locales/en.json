@@ -1016,23 +1016,39 @@
             "next": "Next"
         },
         "action": {
-            "user.create": "Create user",
-            "user.update": "Update user",
-            "user.balance": "Adjust balance",
-            "user.reset-password": "Reset password",
-            "user.delete": "Delete user",
-            "setting.set": "Change setting",
-            "backup.export": "Export backup",
-            "backup.import": "Import backup",
-            "log.clear": "Clear logs",
-            "channel.publish": "Publish channel",
-            "model.create": "Create model price",
-            "model.update": "Update model price",
-            "model.delete": "Delete model price",
-            "model.update-price": "Sync model prices",
-            "model.rebuild-price": "Rebuild model prices",
-            "update.core": "Update core",
-            "audit.export": "Export audit logs"
+            "user": {
+                "create": "Create user",
+                "update": "Update user",
+                "balance": "Adjust balance",
+                "reset-password": "Reset password",
+                "delete": "Delete user"
+            },
+            "setting": {
+                "set": "Change setting"
+            },
+            "backup": {
+                "export": "Export backup",
+                "import": "Import backup"
+            },
+            "log": {
+                "clear": "Clear logs"
+            },
+            "channel": {
+                "publish": "Publish channel"
+            },
+            "model": {
+                "create": "Create model price",
+                "update": "Update model price",
+                "delete": "Delete model price",
+                "update-price": "Sync model prices",
+                "rebuild-price": "Rebuild model prices"
+            },
+            "update": {
+                "core": "Update core"
+            },
+            "audit": {
+                "export": "Export audit logs"
+            }
         }
     },
     "ratelimit": {
@@ -1132,7 +1148,27 @@
             "alerts": "Alerts"
         },
         "reconcile": {
-            "desc": "Daily reconciliation of billing and settlements; mismatches plus backup/archive failures raise alerts and push to the webhook."
+            "desc": "Daily reconciliation of billing and settlements; mismatches plus backup/archive failures raise alerts and push to the webhook.",
+            "day": "Date",
+            "records": "Records",
+            "userCost": "User Cost",
+            "ownerRevenue": "Owner Revenue",
+            "platformRevenue": "Platform Revenue",
+            "duplicated": "Duplicated",
+            "missing": "Missing",
+            "staleHold": "Stale Holds",
+            "unsettled": "Unsettled",
+            "status": "Status",
+            "time": "Time",
+            "days1": "Last 1 day",
+            "days3": "Last 3 days",
+            "days7": "Last 7 days",
+            "run": "Run Now",
+            "runSuccess": "Reconcile completed",
+            "runFailed": "Reconcile failed",
+            "statusBalanced": "Balanced",
+            "statusMismatch": "Mismatch",
+            "statusReview": "Needs review"
         },
         "flow": {
             "desc": "Reserve/settle/release balance flow (latest 100). Admins may filter by user ID.",

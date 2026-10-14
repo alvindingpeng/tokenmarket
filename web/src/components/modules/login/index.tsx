@@ -122,36 +122,36 @@ export function LoginForm({ onBack }: { onBack?: () => void }) {
         <SiteBanners className="flex flex-none flex-col gap-2" includeAnnouncement={false} />
 
         <Tabs value={mode} onValueChange={handleModeChange}>
-          <TabsList className="flex w-full rounded-2xl bg-muted p-1">
+          <TabsList className="flex w-full gap-1 overflow-x-auto rounded-2xl bg-muted p-1">
             <TabsTrigger
               value="user"
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-medium transition-colors data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground"
+              className="flex min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-2 py-2.5 text-xs font-medium transition-colors data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground sm:gap-2 sm:px-4 sm:text-sm"
             >
-              <User className="w-4 h-4" />
+              <User className="hidden size-4 sm:block" />
               {t('mode.user')}
             </TabsTrigger>
             <TabsTrigger
               value="apikey"
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-medium transition-colors data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground"
+              className="flex min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-2 py-2.5 text-xs font-medium transition-colors data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground sm:gap-2 sm:px-4 sm:text-sm"
             >
-              <KeyRound className="w-4 h-4" />
+              <KeyRound className="hidden size-4 sm:block" />
               {t('mode.apikey')}
             </TabsTrigger>
             {registerConfig?.user_enabled && (
               <TabsTrigger
                 value="register-user"
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-medium transition-colors data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground"
+                className="flex min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-2 py-2.5 text-xs font-medium transition-colors data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground sm:gap-2 sm:px-4 sm:text-sm"
               >
-                <User className="w-4 h-4" />
+                <User className="hidden size-4 sm:block" />
                 {t('mode.registerUser')}
               </TabsTrigger>
             )}
             {registerConfig?.reseller_enabled && (
               <TabsTrigger
                 value="register-reseller"
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-medium transition-colors data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground"
+                className="flex min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-2 py-2.5 text-xs font-medium transition-colors data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground sm:gap-2 sm:px-4 sm:text-sm"
               >
-                <Store className="w-4 h-4" />
+                <Store className="hidden size-4 sm:block" />
                 {t('mode.registerReseller')}
               </TabsTrigger>
             )}
