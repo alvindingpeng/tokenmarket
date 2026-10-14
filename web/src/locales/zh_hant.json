@@ -1016,23 +1016,39 @@
             "next": "下一頁"
         },
         "action": {
-            "user.create": "建立使用者",
-            "user.update": "修改使用者",
-            "user.balance": "調整餘額",
-            "user.reset-password": "重設密碼",
-            "user.delete": "刪除使用者",
-            "setting.set": "修改設定",
-            "backup.export": "匯出備份",
-            "backup.import": "匯入備份",
-            "log.clear": "清空日誌",
-            "channel.publish": "發布渠道",
-            "model.create": "新增模型價格",
-            "model.update": "修改模型價格",
-            "model.delete": "刪除模型價格",
-            "model.update-price": "同步模型價格",
-            "model.rebuild-price": "重建模型價格",
-            "update.core": "更新核心",
-            "audit.export": "匯出審計記錄"
+            "user": {
+                "create": "建立使用者",
+                "update": "修改使用者",
+                "balance": "調整餘額",
+                "reset-password": "重設密碼",
+                "delete": "刪除使用者"
+            },
+            "setting": {
+                "set": "修改設定"
+            },
+            "backup": {
+                "export": "匯出備份",
+                "import": "匯入備份"
+            },
+            "log": {
+                "clear": "清空日誌"
+            },
+            "channel": {
+                "publish": "發布渠道"
+            },
+            "model": {
+                "create": "新增模型價格",
+                "update": "修改模型價格",
+                "delete": "刪除模型價格",
+                "update-price": "同步模型價格",
+                "rebuild-price": "重建模型價格"
+            },
+            "update": {
+                "core": "更新核心"
+            },
+            "audit": {
+                "export": "匯出審計記錄"
+            }
         }
     },
     "ratelimit": {
@@ -1132,7 +1148,27 @@
             "alerts": "告警記錄"
         },
         "reconcile": {
-            "desc": "每日自動核對計費明細與預扣結算; 對帳差異與備份/歸檔失敗會自動產生告警並推送 Webhook。"
+            "desc": "每日自動核對計費明細與預扣結算; 對帳差異與備份/歸檔失敗會自動產生告警並推送 Webhook。",
+            "day": "日期",
+            "records": "記錄數",
+            "userCost": "用戶消費",
+            "ownerRevenue": "歸屬者收入",
+            "platformRevenue": "平台收入",
+            "duplicated": "重複項",
+            "missing": "缺失項",
+            "staleHold": "懸空預扣",
+            "unsettled": "未結算",
+            "status": "狀態",
+            "time": "時間",
+            "days1": "近 1 天",
+            "days3": "近 3 天",
+            "days7": "近 7 天",
+            "run": "立即對帳",
+            "runSuccess": "對帳完成",
+            "runFailed": "對帳失敗",
+            "statusBalanced": "對平",
+            "statusMismatch": "不平",
+            "statusReview": "需複核"
         },
         "flow": {
             "desc": "餘額預扣/結算/釋放流水(最近 100 筆), 管理員可按使用者 ID 篩選。",

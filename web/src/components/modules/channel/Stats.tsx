@@ -318,9 +318,9 @@ export function ChannelStats({ channel, onEdit }: {
             <div className="grid flex-1 gap-4 @2xl/stats:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
                 {/* 左列: 渠道汇总 */}
                 <section className="flex min-h-0 flex-col gap-2">
-                    {/* min-h-6 由最高的子元素(size-6 图标按钮)决定, 不锁死上限;
+                    {/* min-h-7 由最高的子元素(size-7 图标按钮)决定, 不锁死上限;
                         与右列表头取同一下限, 两列的卡片顶边才对齐。 */}
-                    <div className="flex min-h-6 items-center gap-1">
+                    <div className="flex min-h-7 items-center gap-1">
                         <h3 className={`truncate text-xs font-semibold tracking-wider text-muted-foreground ${isNameHidden ? 'select-none blur-[3px]' : ''}`}>
                             {channel.channel_name}
                         </h3>
@@ -329,11 +329,11 @@ export function ChannelStats({ channel, onEdit }: {
                                 type="button"
                                 onClick={() => setIsNameHidden(!isNameHidden)}
                                 aria-pressed={isNameHidden}
-                                className="flex size-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground disabled:opacity-50"
+                                className="flex size-7 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground disabled:opacity-50"
                             >
                                 {isNameHidden ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
                             </button>
-                            <button type="button" onClick={handleShare} disabled={isSharing} className="flex size-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground disabled:opacity-50">
+                            <button type="button" onClick={handleShare} disabled={isSharing} className="flex size-7 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground disabled:opacity-50">
                                 <Share2 className="size-3.5" />
                             </button>
                             {isConfirmingDelete ? (
@@ -342,7 +342,7 @@ export function ChannelStats({ channel, onEdit }: {
                                         type="button"
                                         onClick={() => setIsConfirmingDelete(false)}
                                         aria-label={t('cancel')}
-                                        className="flex size-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground"
+                                        className="flex size-7 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground"
                                     >
                                         <X className="size-3.5" />
                                     </button>
@@ -354,7 +354,7 @@ export function ChannelStats({ channel, onEdit }: {
                                         })}
                                         disabled={deleteChannel.isPending}
                                         aria-label={t('confirmDelete')}
-                                        className="flex size-6 items-center justify-center rounded-md text-destructive transition-colors hover:text-destructive/70 disabled:opacity-50"
+                                        className="flex size-7 items-center justify-center rounded-md text-destructive transition-colors hover:text-destructive/70 disabled:opacity-50"
                                     >
                                         <Check className="size-3.5" />
                                     </button>
@@ -365,7 +365,7 @@ export function ChannelStats({ channel, onEdit }: {
                                         type="button"
                                         onClick={onEdit}
                                         aria-label={t('edit')}
-                                        className="flex size-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground"
+                                        className="flex size-7 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground"
                                     >
                                         <Pencil className="size-3.5" />
                                     </button>
@@ -373,7 +373,7 @@ export function ChannelStats({ channel, onEdit }: {
                                         type="button"
                                         onClick={() => setIsConfirmingDelete(true)}
                                         aria-label={t('delete')}
-                                        className="flex size-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-destructive"
+                                        className="flex size-7 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-destructive"
                                     >
                                         <Trash2 className="size-3.5" />
                                     </button>
@@ -418,7 +418,7 @@ export function ChannelStats({ channel, onEdit }: {
                                         type="button"
                                         onClick={() => setModelSort(key)}
                                         aria-pressed={modelSort === key}
-                                        className={`transition-colors ${modelSort === key
+                                        className={`min-h-7 px-1.5 transition-colors ${modelSort === key
                                             ? 'font-medium text-foreground'
                                             : 'text-muted-foreground/50 hover:text-muted-foreground'}`}
                                     >

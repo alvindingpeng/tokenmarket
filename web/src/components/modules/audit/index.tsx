@@ -69,7 +69,7 @@ export default function Audit() {
     };
 
     return (
-        <div className="flex h-full min-h-0 flex-col gap-3">
+        <div className="flex h-full min-h-0 flex-col gap-3 pb-24 md:pb-0">
             <div className="flex shrink-0 items-center justify-between gap-4">
                 <h2 className="flex items-center gap-2 text-lg font-bold text-card-foreground">
                     <ClipboardList className="size-5" />
@@ -116,7 +116,7 @@ export default function Audit() {
                 }), '_blank')}><ArrowDownToLine className="size-4" />{t('filters.export')}</Button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-auto overscroll-contain rounded-3xl border border-border bg-card pb-24 md:pb-0">
+            <div className="min-h-0 flex-1 overflow-auto overscroll-contain rounded-3xl border border-border bg-card">
                 {isLoading ? (
                     <div className="flex h-full items-center justify-center gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" />{t('loading')}</div>
                 ) : isError ? (
