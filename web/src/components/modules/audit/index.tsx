@@ -11,6 +11,7 @@ const KNOWN_ACTIONS = [
     'user.create', 'user.update', 'user.balance', 'user.reset-password', 'user.delete',
     'setting.set', 'backup.export', 'backup.import', 'log.clear', 'channel.publish',
     'model.create', 'model.update', 'model.delete', 'model.update-price', 'model.rebuild-price', 'update.core',
+    'audit.export', 'redemption.generate', 'redemption.redeem', 'redemption.disable',
 ];
 
 function formatTime(value: string): string {

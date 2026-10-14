@@ -64,6 +64,7 @@ interface AuthState {
     balance: number; // 当前可用余额，计费页展示用。
     frozen: number; // 当前冻结额（预扣中），计费页展示用。
     username: string; // 当前用户名，顶栏与账户页展示用。
+    userId: number; // 当前用户 id，钱包页查本人流水与管理层引用用。
 
     // Actions
     setAuth: (user: UserView) => void;
@@ -86,6 +87,7 @@ export const useAuthStore = create<AuthState>()(
             balance: 0,
             frozen: 0,
             username: '',
+            userId: 0,
 
             setAuth: (user: UserView) => {
                 setAPIKey(null);
@@ -97,6 +99,7 @@ export const useAuthStore = create<AuthState>()(
                     balance: user.balance,
                     frozen: user.frozen,
                     username: user.username,
+                    userId: user.id,
                     isLoading: false
                 });
             },

@@ -8,6 +8,8 @@ const (
 	LedgerKindSettle  = "settle"  // 请求结束, 解冻预估并扣除实际费用。
 	LedgerKindRelease = "release" // 驳回: 无用量, 解冻预估并退还。
 	LedgerKindAdjust  = "adjust"  // 管理员直接设置余额(充值/扣减)。
+	LedgerKindTopup   = "topup"   // 充值入账。
+	LedgerKindRedeem  = "redemption" // 兑换码入账。
 )
 
 // BillingLedger 余额流水: 每一次可用余额或冻结额的变化逐条留痕, 供用户自查与运维对账。
