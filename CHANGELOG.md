@@ -1,5 +1,39 @@
 # 更新说明
 
+## v0.24.0 — 2026-10-14
+
+上线钱包底座与兑换码全链路(充值/提现的前置能力, P1): 统一入账入口、兑换码生成/兑换/管理、用户钱包页。
+余额、流水、累计充值三者在同一条入账路径上恒等; 并发重复兑换至多一次成功。
+
+### 1. 统一入账入口与流水扩展
+
+- 新增 `op.WalletCredit` / `walletCreditTx`: 充值性入账(充值/兑换)只走这一条路, 同一事务内更新余额、累计充值(`total_recharged`)并写余额流水, 三者同生同灭; 旁路直接改余额会让对账对不上。
+- 余额流水新增 `topup`(充值)与 `redemption`(兑换)两类, 钱包页可按类型筛选。
+
+### 2. 兑换码: 生成 / 兑换 / 管理
+
+- 管理端新增「兑换码」页: 批次生成弹窗(名称/单张面额/张数/码前缀/单用户上限/过期时间)、批次发放进度表(已兑/可用/禁用张数)、码明细表(状态/使用者/兑换时间/禁用)。生成后一键复制全部码或下载 CSV。
+- 兑换以状态条件更新抢占(`WHERE status='enabled'`), 并发重复兑换至多一次成功; 兑换与入账同一事务, 不可能出坏账。
+- **用户兑换张数不限**(批次 `per_user_limit` 默认 0=不限, 同一用户可连续兑换任意多张); 保留批次级限额能力供特定活动配置。
+- 防爆破: 连续 5 次兑换**不存在**的码, 按用户与来源 IP 双维度锁 10 分钟; 已兑/已禁用/已过期是已知码的状态变化, 不计入误伤。
+
+### 3. 用户端钱包页
+
+- 全角色新页面「钱包」: 余额卡片(可用/冻结/累计充值/累计消费/累计收益) + 兑换码输入卡(即时回执到账额与新余额) + 余额流水表(按类型筛选)。
+- 每笔兑换进流水, 用户可自查到账记录。
+
+### 4. 接口
+
+- 用户: `POST /api/v1/redemption/redeem`、`GET /api/v1/redemption/history`、`GET /api/v1/wallet/summary`
+- 管理员: `POST /api/v1/redemption/batch/create`、`GET /api/v1/redemption/batch/list`、`GET /api/v1/redemption/code/list`、`POST /api/v1/redemption/code/disable`
+- 审计新增动作 `redemption.generate` / `redemption.redeem` / `redemption.disable`, 三语标签同步。
+
+### 5. 质量
+
+- 新增 6 项后端测试: 并发 8 路抢同一张码只成功一次且余额/累计/流水恒等、张数不限、批次限额拦截、防爆破锁定与隔离、禁用后不可兑。
+- 360/390/768/1280 四视口 UI 验证: 无横向溢出、无原始 i18n key、无 MISSING_MESSAGE、命中盒不小于 28px、生成弹窗全视口可用, 兑换全链路在各视口跑通。
+
+
 本项目遵循[语义化版本](https://semver.org/lang/zh-CN/)，版本号唯一来源是 `main.go` 里的
 `// Version vX.Y.Z` 标记（`scripts/version.sh` 读取它，CI 的 release workflow 也解析同一行）。
 每次发布把新章节追加到本文件顶部，GitHub Release 的正文由 `scripts/publish-release.sh`

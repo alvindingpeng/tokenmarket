@@ -352,7 +352,7 @@ v2 对接支付宝转账/微信商家转账 API 自动打款。
 | **D2** | 余额计价与汇率 | 余额币种维持**美元**；人民币按 **1 USD = 7 CNY** 折算（`recharge_rate` 默认 7.0 可配）；**预留汇率采集接口**（`RateProvider`），支撑后续多币种充值扩展 |
 | **D3** | 提现打款 | **先人工**打款+凭证，后接自动转账 API |
 | **D4** | 普通用户提现 | **不允许**；仅渠道商收益可提现 |
-| **D5** | 兑换码形态 | **限用户**：批次 `per_user_limit` 限制单用户可兑张数（1 张即每用户限兑一次） |
+| **D5** | 兑换码形态 | **用户兑换张数不限**：`per_user_limit` 默认 0＝不限，任何用户可连续兑换多张；保留批次级限额能力供特定活动配置 |
 | **D6** | 充值满赠 | 做成**配置开关**（`recharge_bonus_enabled` + `recharge_bonus_rules`），默认关 |
 
 ### 11.1 汇率与多币种（D2 落地）
@@ -372,10 +372,11 @@ type RateProvider interface {
 - 外币支付（D1 预留）：`PaymentGateway.CreatePayment` / `VerifyCallback` 已带
   `amountCents int64 + currency string`，Stripe 直接映射最小货币单位。
 
-### 11.2 兑换码限用户（D5 落地）
+### 11.2 兑换张数不限（D5 落地）
 
-- 批次级 `per_user_limit`：0=不限；1=每用户限兑一次；N=限 N 张。
-- 兑换事务内按 `used_by = ? AND batch_id = ?` 统计已兑张数，超限拒绝。
+- **默认口径：用户兑换张数不限**（`per_user_limit = 0`），同一用户可连续兑换任意多张。
+- 保留批次级 `per_user_limit` 作为活动配置能力：N>0 时兑换事务内按 `used_by = ? AND batch_id = ?` 统计已兑张数，超限拒绝。
+- 防爆破只针对「猜码」：连续 5 次兑换**不存在**的码，按用户与来源 IP 双维度锁 10 分钟；已兑/已禁用/已过期是已知码状态变化，不计入。
 - 若后续需要「绑定指定用户才能兑换」，再给 `redemption_codes` 加 `bound_user_id` 约束即可（预留字段位）。
 
 ---

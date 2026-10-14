@@ -59,7 +59,9 @@
         "apikey": "API Keys",
         "audit": "Audit Log",
         "ratelimit": "Rate Limit",
-        "ops": "Ops"
+        "ops": "Ops",
+        "wallet": "Wallet",
+        "redemption": "Redemption Codes"
     },
     "toolbar": {
         "hideChannelName": "Blur channel names",
@@ -1048,6 +1050,11 @@
             },
             "audit": {
                 "export": "Export audit logs"
+            },
+            "redemption": {
+                "generate": "Generate redemption codes",
+                "redeem": "Redeem code",
+                "disable": "Disable redemption code"
             }
         }
     },
@@ -1386,6 +1393,114 @@
         "footer": {
             "tagline": "Self-hosted · your data and balance stay with you",
             "contact": "Contact operator"
+        }
+    },
+    "wallet": {
+        "title": "Wallet",
+        "refresh": "Refresh",
+        "loading": "Loading...",
+        "error": "Failed to load",
+        "retry": "Retry",
+        "empty": "No transactions yet",
+        "card": {
+            "balance": "Available balance",
+            "frozen": "Frozen",
+            "recharged": "Total recharged",
+            "spent": "Total spent",
+            "revenue": "Total revenue"
+        },
+        "redeem": {
+            "title": "Redemption code",
+            "desc": "Enter a code to credit your balance",
+            "placeholder": "Enter redemption code",
+            "submit": "Redeem",
+            "ok": "Redeemed: {credits} credited, balance {balance}",
+            "failed": "Redemption failed"
+        },
+        "ledger": {
+            "title": "Balance ledger",
+            "kindAll": "All types"
+        },
+        "kind": {
+            "topup": "Top-up",
+            "redemption": "Redemption",
+            "reserve": "Hold",
+            "settle": "Settle",
+            "release": "Release",
+            "adjust": "Adjust"
+        },
+        "table": {
+            "time": "Time",
+            "kind": "Type",
+            "amount": "Amount",
+            "balance": "Balance after",
+            "note": "Note"
+        }
+    },
+    "redemption": {
+        "title": "Redemption codes",
+        "refresh": "Refresh",
+        "generate": "Generate codes",
+        "loading": "Loading...",
+        "error": "Failed to load",
+        "retry": "Retry",
+        "empty": "No codes yet",
+        "toast": {
+            "generated": "Generated {count} codes",
+            "generateFailed": "Failed to generate",
+            "copied": "Codes copied",
+            "disabled": "Code disabled",
+            "disableFailed": "Failed to disable"
+        },
+        "form": {
+            "name": "Batch name",
+            "credits": "Credits per code",
+            "count": "Number of codes",
+            "prefix": "Code prefix (optional)",
+            "perUserLimit": "Per-user limit (0 = unlimited)",
+            "expiresAt": "Expires at (optional)",
+            "expiresHint": "Leave empty for no expiry",
+            "cancel": "Cancel",
+            "submit": "Generate"
+        },
+        "result": {
+            "desc": "Generated {count} codes. They cannot be exported again after closing, so copy or download them now.",
+            "copy": "Copy all",
+            "export": "Download CSV",
+            "close": "Done"
+        },
+        "batch": {
+            "name": "Batch",
+            "credits": "Credits",
+            "count": "Total",
+            "used": "Progress",
+            "usedOf": "{used} used / {enabled} available / {disabled} disabled",
+            "limit": "Per-user limit",
+            "unlimited": "Unlimited",
+            "expires": "Expires",
+            "never": "Never",
+            "created": "Created",
+            "empty": "No batches yet"
+        },
+        "codes": {
+            "title": "Codes",
+            "batchAll": "All batches",
+            "statusAll": "All statuses",
+            "code": "Code",
+            "credits": "Credits",
+            "status": "Status",
+            "usedBy": "Used by",
+            "usedAt": "Redeemed at",
+            "action": "Action",
+            "disable": "Disable",
+            "total": "{total} codes",
+            "prev": "Prev",
+            "next": "Next"
+        },
+        "status": {
+            "enabled": "Available",
+            "used": "Used",
+            "disabled": "Disabled"
         }
     }
 }

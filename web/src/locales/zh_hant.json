@@ -59,7 +59,9 @@
         "apikey": "API 金鑰",
         "audit": "審計記錄",
         "ratelimit": "限流管理",
-        "ops": "維運中心"
+        "ops": "維運中心",
+        "wallet": "錢包",
+        "redemption": "兌換碼"
     },
     "toolbar": {
         "hideChannelName": "模糊渠道名稱",
@@ -1048,6 +1050,11 @@
             },
             "audit": {
                 "export": "匯出審計記錄"
+            },
+            "redemption": {
+                "generate": "產生兌換碼",
+                "redeem": "兌換",
+                "disable": "停用兌換碼"
             }
         }
     },
@@ -1386,6 +1393,114 @@
         "footer": {
             "tagline": "自託管部署 · 資料與餘額都在自己手裡",
             "contact": "聯絡管理員"
+        }
+    },
+    "wallet": {
+        "title": "錢包",
+        "refresh": "重新整理",
+        "loading": "載入中…",
+        "error": "載入失敗",
+        "retry": "重試",
+        "empty": "暫無流水",
+        "card": {
+            "balance": "可用餘額",
+            "frozen": "凍結中",
+            "recharged": "累計儲值",
+            "spent": "累計消費",
+            "revenue": "累計收益"
+        },
+        "redeem": {
+            "title": "兌換碼",
+            "desc": "輸入兌換碼為帳戶餘額入帳",
+            "placeholder": "請輸入兌換碼",
+            "submit": "兌換",
+            "ok": "兌換成功: 到帳 {credits}, 目前餘額 {balance}",
+            "failed": "兌換失敗"
+        },
+        "ledger": {
+            "title": "餘額流水",
+            "kindAll": "全部類型"
+        },
+        "kind": {
+            "topup": "儲值",
+            "redemption": "兌換",
+            "reserve": "預扣",
+            "settle": "結算",
+            "release": "釋放",
+            "adjust": "調帳"
+        },
+        "table": {
+            "time": "時間",
+            "kind": "類型",
+            "amount": "金額",
+            "balance": "變動後餘額",
+            "note": "備註"
+        }
+    },
+    "redemption": {
+        "title": "兌換碼",
+        "refresh": "重新整理",
+        "generate": "產生兌換碼",
+        "loading": "載入中…",
+        "error": "載入失敗",
+        "retry": "重試",
+        "empty": "暫無兌換碼",
+        "toast": {
+            "generated": "已產生 {count} 張兌換碼",
+            "generateFailed": "產生失敗",
+            "copied": "已複製兌換碼",
+            "disabled": "已停用",
+            "disableFailed": "停用失敗"
+        },
+        "form": {
+            "name": "批次名稱",
+            "credits": "單張面額",
+            "count": "產生張數",
+            "prefix": "碼前綴(可選)",
+            "perUserLimit": "單用戶限兌(0=不限)",
+            "expiresAt": "過期時間(可選)",
+            "expiresHint": "留空表示不過期",
+            "cancel": "取消",
+            "submit": "產生"
+        },
+        "result": {
+            "desc": "共產生 {count} 張, 對話框關閉後無法再次匯出, 請立即複製或下載",
+            "copy": "複製全部",
+            "export": "下載 CSV",
+            "close": "完成"
+        },
+        "batch": {
+            "name": "批次",
+            "credits": "面額",
+            "count": "張數",
+            "used": "進度",
+            "usedOf": "已兌 {used} / 可用 {enabled} / 停用 {disabled}",
+            "limit": "單用戶上限",
+            "unlimited": "不限",
+            "expires": "過期時間",
+            "never": "不過期",
+            "created": "建立時間",
+            "empty": "暫無批次"
+        },
+        "codes": {
+            "title": "兌換碼明細",
+            "batchAll": "全部批次",
+            "statusAll": "全部狀態",
+            "code": "兌換碼",
+            "credits": "面額",
+            "status": "狀態",
+            "usedBy": "使用者",
+            "usedAt": "兌換時間",
+            "action": "操作",
+            "disable": "停用",
+            "total": "共 {total} 張",
+            "prev": "上一頁",
+            "next": "下一頁"
+        },
+        "status": {
+            "enabled": "可兌",
+            "used": "已兌",
+            "disabled": "已停用"
         }
     }
 }

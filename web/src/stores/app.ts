@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { LucideIcon } from 'lucide-react';
-import { Home, Radio, Sparkles, FolderTree, Settings, Logs, Users, Share2, Wallet, KeyRound, ClipboardList, Gauge, HeartPulse } from 'lucide-react';
+import { Home, Radio, Sparkles, FolderTree, Settings, Logs, Users, Share2, Wallet, KeyRound, ClipboardList, Gauge, HeartPulse, Coins, Ticket } from 'lucide-react';
 import type { Role } from '@/api/user';
 
 // Page 表示应用支持的固定页面集合。
-export type Page = 'home' | 'channel' | 'group' | 'model' | 'users' | 'audit' | 'ratelimit' | 'ops' | 'share' | 'billing' | 'apikey' | 'log' | 'setting';
+export type Page = 'home' | 'channel' | 'group' | 'model' | 'users' | 'audit' | 'ratelimit' | 'ops' | 'share' | 'wallet' | 'redemption' | 'billing' | 'apikey' | 'log' | 'setting';
 
 // NavItem 描述导航按钮使用的页面标识、文案和图标。
 type NavItem = { id: Page; label: string; icon: LucideIcon };
@@ -21,6 +21,8 @@ export const NAV_ITEMS: NavItem[] = [
     { id: 'ratelimit', label: 'RateLimit', icon: Gauge },
     { id: 'ops', label: 'Ops', icon: HeartPulse },
     { id: 'share', label: 'Share', icon: Share2 },
+    { id: 'wallet', label: 'Wallet', icon: Coins },
+    { id: 'redemption', label: 'Redemption', icon: Ticket },
     { id: 'billing', label: 'Billing', icon: Wallet },
     { id: 'apikey', label: 'API Key', icon: KeyRound },
     { id: 'log', label: 'Log', icon: Logs },
@@ -29,9 +31,9 @@ export const NAV_ITEMS: NavItem[] = [
 
 // NAV_PAGES_BY_ROLE 按角色声明可见页面: 用户无渠道与管理后台, 渠道商多渠道与发布, 管理员全量。
 const NAV_PAGES_BY_ROLE: Record<string, Page[]> = {
-    admin: ['home', 'channel', 'group', 'model', 'users', 'audit', 'ratelimit', 'ops', 'share', 'billing', 'apikey', 'log', 'setting'],
-    reseller: ['home', 'channel', 'group', 'share', 'billing', 'apikey', 'log', 'setting'],
-    user: ['home', 'group', 'billing', 'apikey', 'log', 'setting'],
+    admin: ['home', 'channel', 'group', 'model', 'users', 'audit', 'ratelimit', 'ops', 'share', 'wallet', 'redemption', 'billing', 'apikey', 'log', 'setting'],
+    reseller: ['home', 'channel', 'group', 'share', 'wallet', 'billing', 'apikey', 'log', 'setting'],
+    user: ['home', 'group', 'wallet', 'billing', 'apikey', 'log', 'setting'],
 };
 
 // navItemsFor 返回角色可见的导航项，按 NAV_ITEMS 的全局顺序排列。

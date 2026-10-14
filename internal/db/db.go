@@ -66,6 +66,8 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.BillingRecord{},
 		&model.BalanceReservation{},
 		&model.BillingLedger{},
+		&model.RedemptionBatch{},
+		&model.RedemptionCode{},
 		&model.Setting{},
 		&model.AuditLog{},
 		&model.StatsTotal{},

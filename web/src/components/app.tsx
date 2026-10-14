@@ -31,6 +31,8 @@ const Audit = lazy(() => pageImports.audit());
 const RateLimit = lazy(() => pageImports.ratelimit());
 const Ops = lazy(() => pageImports.ops());
 const Share = lazy(() => pageImports.share());
+const Wallet = lazy(() => pageImports.wallet());
+const Redemption = lazy(() => pageImports.redemption());
 const Billing = lazy(() => pageImports.billing());
 const Apikey = lazy(() => pageImports.apikey());
 const Log = lazy(() => pageImports.log().then((module) => ({ default: module.Log })));
@@ -176,6 +178,8 @@ export function AppContainer() {
                             {visibleItem === 'ratelimit' && <RateLimit />}
                             {visibleItem === 'ops' && <Ops />}
                             {visibleItem === 'share' && <Share />}
+                            {visibleItem === 'wallet' && <Wallet />}
+                            {visibleItem === 'redemption' && <Redemption />}
                             {visibleItem === 'billing' && <Billing />}
                             {visibleItem === 'apikey' && <Apikey />}
                             {visibleItem === 'channel' && <Channel />}

@@ -59,7 +59,9 @@
         "apikey": "API 密钥",
         "audit": "审计记录",
         "ratelimit": "限流管理",
-        "ops": "运维中心"
+        "ops": "运维中心",
+        "wallet": "钱包",
+        "redemption": "兑换码"
     },
     "toolbar": {
         "hideChannelName": "模糊渠道名称",
@@ -1048,6 +1050,11 @@
             },
             "audit": {
                 "export": "导出审计记录"
+            },
+            "redemption": {
+                "generate": "生成兑换码",
+                "redeem": "兑换",
+                "disable": "禁用兑换码"
             }
         }
     },
@@ -1386,6 +1393,114 @@
         "footer": {
             "tagline": "自托管部署 · 数据与余额都在自己手里",
             "contact": "联系管理员"
+        }
+    },
+    "wallet": {
+        "title": "钱包",
+        "refresh": "刷新",
+        "loading": "加载中…",
+        "error": "加载失败",
+        "retry": "重试",
+        "empty": "暂无流水",
+        "card": {
+            "balance": "可用余额",
+            "frozen": "冻结中",
+            "recharged": "累计充值",
+            "spent": "累计消费",
+            "revenue": "累计收益"
+        },
+        "redeem": {
+            "title": "兑换码",
+            "desc": "输入兑换码为账户余额入账",
+            "placeholder": "请输入兑换码",
+            "submit": "兑换",
+            "ok": "兑换成功: 到账 {credits}, 当前余额 {balance}",
+            "failed": "兑换失败"
+        },
+        "ledger": {
+            "title": "余额流水",
+            "kindAll": "全部类型"
+        },
+        "kind": {
+            "topup": "充值",
+            "redemption": "兑换",
+            "reserve": "预扣",
+            "settle": "结算",
+            "release": "释放",
+            "adjust": "调账"
+        },
+        "table": {
+            "time": "时间",
+            "kind": "类型",
+            "amount": "金额",
+            "balance": "变动后余额",
+            "note": "备注"
+        }
+    },
+    "redemption": {
+        "title": "兑换码",
+        "refresh": "刷新",
+        "generate": "生成兑换码",
+        "loading": "加载中…",
+        "error": "加载失败",
+        "retry": "重试",
+        "empty": "暂无兑换码",
+        "toast": {
+            "generated": "已生成 {count} 张兑换码",
+            "generateFailed": "生成失败",
+            "copied": "已复制兑换码",
+            "disabled": "已禁用",
+            "disableFailed": "禁用失败"
+        },
+        "form": {
+            "name": "批次名称",
+            "credits": "单张面额",
+            "count": "生成张数",
+            "prefix": "码前缀(可选)",
+            "perUserLimit": "单用户限兑(0=不限)",
+            "expiresAt": "过期时间(可选)",
+            "expiresHint": "留空表示不过期",
+            "cancel": "取消",
+            "submit": "生成"
+        },
+        "result": {
+            "desc": "共生成 {count} 张, 弹窗关闭后无法再次导出, 请立即复制或下载",
+            "copy": "复制全部",
+            "export": "下载 CSV",
+            "close": "完成"
+        },
+        "batch": {
+            "name": "批次",
+            "credits": "面额",
+            "count": "张数",
+            "used": "进度",
+            "usedOf": "已兑 {used} / 可用 {enabled} / 禁用 {disabled}",
+            "limit": "单用户上限",
+            "unlimited": "不限",
+            "expires": "过期时间",
+            "never": "不过期",
+            "created": "创建时间",
+            "empty": "暂无批次"
+        },
+        "codes": {
+            "title": "兑换码明细",
+            "batchAll": "全部批次",
+            "statusAll": "全部状态",
+            "code": "兑换码",
+            "credits": "面额",
+            "status": "状态",
+            "usedBy": "使用者",
+            "usedAt": "兑换时间",
+            "action": "操作",
+            "disable": "禁用",
+            "total": "共 {total} 张",
+            "prev": "上一页",
+            "next": "下一页"
+        },
+        "status": {
+            "enabled": "可兑",
+            "used": "已兑",
+            "disabled": "已禁用"
         }
     }
 }
