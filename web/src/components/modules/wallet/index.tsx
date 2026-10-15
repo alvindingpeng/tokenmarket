@@ -43,8 +43,13 @@ function formatTime(value: string | null, fallback: string): string {
 // KINDS 流水筛选项; 空串表示全部。
 const KINDS = ['', 'topup', 'bonus', 'redemption', 'reserve', 'settle', 'release', 'adjust'];
 
-// submitToGateway 自动提交收银台表单完成跳转; 易支付是浏览器表单跳转而非接口调用。
+// submitToGateway 完成收银台跳转: 表单渠道(易支付/支付宝)自动提交表单,
+// 链接渠道(Stripe/Creem)直接跳转; 都是浏览器跳转而非接口调用。
 function submitToGateway(form: PayForm) {
+    if (!form.fields || Object.keys(form.fields).length === 0) {
+        window.location.href = form.redirect_url;
+        return;
+    }
     const element = document.createElement('form');
     element.method = 'POST';
     element.action = form.action;
@@ -66,22 +71,32 @@ function RechargeDialogContent() {
     const { setIsOpen } = useMorphingDialog();
     const view = useRechargeView();
     const [amount, setAmount] = useState('10');
+    const [provider, setProvider] = useState('');
     const [method, setMethod] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const amountCents = Math.round(Number(amount) * 100) || 0;
     const quote = useRechargeQuote(amountCents);
     const configured = view.data?.configured ?? false;
+    // 只列已配置渠道; 默认选第一个可用的(未显式选择时)。
+    const channels = (view.data?.channels ?? []).filter((channel) => channel.configured);
+    const activeChannel = channels.find((channel) => channel.id === provider) ?? channels[0];
     // 方法选项按后台白名单出; 未配置白名单时给全量默认项, "auto" 永远可用(收银台自选)。
-    const methodOptions = (view.data?.pay_types ?? []).length > 0
-        ? (view.data?.pay_types ?? [])
+    const methodOptions = (activeChannel?.pay_types ?? view.data?.pay_types ?? []).length > 0
+        ? (activeChannel?.pay_types ?? view.data?.pay_types ?? [])
         : ["alipay", "wechat", "qq"];
+    const showMethod = (activeChannel?.id ?? 'epay') === 'epay';
+    // 非人民币渠道按汇率快照折算渠道币种面额, 下单前先看到实付。
+    const channelCurrency = activeChannel?.currency ?? 'CNY';
+    const foreignAmount = channelCurrency.toUpperCase() === 'CNY'
+        ? null
+        : amountCents / 100 / (view.data?.rate || 7);
 
     // handlePay 下单后自动提交收银台表单; 失败留在弹窗内透出原因。
     const handlePay = async () => {
         if (amountCents <= 0 || submitting) return;
         setSubmitting(true);
         try {
-            const { form } = await createRecharge({ amount_cents: amountCents, method });
+            const { form } = await createRecharge({ amount_cents: amountCents, provider: activeChannel?.id ?? 'epay', method });
             submitToGateway(form);
         } catch (error) {
             setSubmitting(false);
@@ -95,6 +110,25 @@ function RechargeDialogContent() {
                 <div className="space-y-4">
                     {!configured && (
                         <p className="rounded-2xl border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">{t('recharge.notConfigured')}</p>
+                    )}
+                    {channels.length > 1 && (
+                        <div className="space-y-2">
+                            <Label>{t('recharge.channel')}</Label>
+                            <div className="flex flex-wrap gap-2">
+                                {channels.map((channel) => (
+                                    <Button
+                                        key={channel.id}
+                                        type="button"
+                                        variant={activeChannel?.id === channel.id ? 'default' : 'outline'}
+                                        size="sm"
+                                        className="h-8 rounded-xl"
+                                        onClick={() => { setProvider(channel.id); setMethod(''); }}
+                                    >
+                                        {channel.name}
+                                    </Button>
+                                ))}
+                            </div>
+                        </div>
                     )}
                     <div className="space-y-2">
                         <Label htmlFor="recharge-amount">{t('recharge.amount')}</Label>
@@ -117,18 +151,20 @@ function RechargeDialogContent() {
                             </div>
                         )}
                     </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="recharge-method">{t('recharge.method')}</Label>
-                        <Select value={method || 'auto'} onValueChange={(value) => setMethod(value === 'auto' ? '' : value)}>
-                            <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="auto">{t('recharge.methodAuto')}</SelectItem>
-                                {methodOptions.map((option) => (
-                                    <SelectItem key={option} value={option}>{t('recharge.' + option)}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
+                    {showMethod && (
+                        <div className="space-y-2">
+                            <Label htmlFor="recharge-method">{t('recharge.method')}</Label>
+                            <Select value={method || 'auto'} onValueChange={(value) => setMethod(value === 'auto' ? '' : value)}>
+                                <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="auto">{t('recharge.methodAuto')}</SelectItem>
+                                    {methodOptions.map((option) => (
+                                        <SelectItem key={option} value={option}>{t('recharge.' + option)}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    )}
                     <div className="rounded-2xl border border-border bg-muted/40 px-3 py-2 text-sm">
                         <div className="flex items-center justify-between">
                             <span className="text-muted-foreground">{t('recharge.credits')}</span>
@@ -144,6 +180,12 @@ function RechargeDialogContent() {
                             <span>{t('recharge.rate')}</span>
                             <span className="tabular-nums">{t('recharge.rateValue', { rate: view.data?.rate ?? 7 })}</span>
                         </div>
+                        {foreignAmount !== null && amountCents > 0 ? (
+                            <div className="flex items-center justify-between text-xs">
+                                <span className="text-muted-foreground">{t('recharge.payForeign')}</span>
+                                <span className="tabular-nums font-medium">{channelCurrency.toLowerCase() === 'usd' ? '$' : ''}{foreignAmount.toFixed(2)} {channelCurrency.toUpperCase()}</span>
+                            </div>
+                        ) : null}
                     </div>
                     <div className="flex justify-end gap-2">
                         <Button type="button" variant="outline" size="sm" className="rounded-xl" onClick={() => setIsOpen(false)}>{t('recharge.cancel')}</Button>

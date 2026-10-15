@@ -16,8 +16,14 @@ const (
 	RechargeStatusRefunded = "refunded"
 )
 
-// PayProviderEpay 易支付(D1 首发渠道); 后续 Stripe/支付宝直连按同一 PaymentGateway 接口接入。
-const PayProviderEpay = "epay"
+// 收款渠道(P4 多渠道, 对齐 New API 的 payment_provider 口径):
+// 易支付/支付宝按面值收 CNY, Stripe 按设置币种换算, Creem 按商品档位定价。
+const (
+	PayProviderEpay   = "epay"
+	PayProviderAlipay = "alipay"
+	PayProviderStripe = "stripe"
+	PayProviderCreem  = "creem"
+)
 
 // RechargeOrder 充值订单: 金额一律"最小货币单位 + 币种"(D1 外币支付预留),
 // 入账余额在下单时按汇率定格, 回调只做验签与金额核对, 不再重算。
@@ -27,8 +33,10 @@ type RechargeOrder struct {
 	UserID      uint       `json:"user_id" gorm:"index"`
 	Provider    string     `json:"provider" gorm:"size:16;not null"`
 	Method      string     `json:"method" gorm:"size:16;not null"`                  // alipay|wechat|qq|空=收银台自选
-	AmountCents int64      `json:"amount_cents" gorm:"not null"`                    // 实付法币(分)
-	Currency    string     `json:"currency" gorm:"size:8;not null;default:CNY"`
+	AmountCents int64      `json:"amount_cents" gorm:"not null"`                    // CNY 分基准(展示与入账口径)
+	Currency    string     `json:"currency" gorm:"size:8;not null;default:CNY"`     // 基准币种, 恒为 CNY
+	PayCents    int64      `json:"pay_cents" gorm:"not null;default:0"`             // 渠道实付额(渠道币种分); 0=商品定价不核金额
+	PayCurrency string     `json:"pay_currency" gorm:"size:8;not null;default:CNY"` // 渠道收款币种
 	Credits     float64    `json:"credits" gorm:"type:decimal(18,6);not null"`      // 入账余额(不含赠送)
 	Bonus       float64    `json:"bonus" gorm:"type:decimal(18,6);not null;default:0"` // 满赠送的余额
 	Subject     string     `json:"subject" gorm:"size:128;not null"`

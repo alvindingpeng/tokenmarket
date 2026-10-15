@@ -4,8 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"math"
 	"math/big"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -43,21 +43,119 @@ func (StaticRateProvider) Rate(_ context.Context, target string) (float64, error
 
 // epayConfig 从后台设置读取易支付参数; 商户信息后配即可用。
 func epayConfig() pay.EpayConfig {
-	gatewayURL, _ := SettingGetString(model.SettingKeyEpayGatewayURL)
-	pid, _ := SettingGetString(model.SettingKeyEpayPID)
-	key, _ := SettingGetString(model.SettingKeyEpayKey)
-	payTypes, _ := SettingGetString(model.SettingKeyEpayPayTypes)
-	return pay.EpayConfig{GatewayURL: gatewayURL, PID: pid, Key: key, PayTypes: payTypes}
+	return pay.EpayConfig{
+		GatewayURL: mustSettingString(model.SettingKeyEpayGatewayURL),
+		PID:        mustSettingString(model.SettingKeyEpayPID),
+		Key:        mustSettingString(model.SettingKeyEpayKey),
+		PayTypes:   mustSettingString(model.SettingKeyEpayPayTypes),
+	}
+}
+
+// alipayConfig 从后台设置读取支付宝参数。
+func alipayConfig() pay.AlipayConfig {
+	return pay.AlipayConfig{
+		GatewayURL: mustSettingString(model.SettingKeyAlipayGatewayURL),
+		AppID:      mustSettingString(model.SettingKeyAlipayAppID),
+		PrivateKey: mustSettingString(model.SettingKeyAlipayPrivateKey),
+		PublicKey:  mustSettingString(model.SettingKeyAlipayPublicKey),
+	}
+}
+
+// stripeConfig 从后台设置读取 Stripe 参数。
+func stripeConfig() pay.StripeConfig {
+	return pay.StripeConfig{
+		SecretKey:     mustSettingString(model.SettingKeyStripeSecretKey),
+		WebhookSecret: mustSettingString(model.SettingKeyStripeWebhook),
+		APIBase:       mustSettingString(model.SettingKeyStripeAPIBase),
+		Currency:      mustSettingString(model.SettingKeyStripeCurrency),
+	}
+}
+
+// creemConfig 从后台设置读取 Creem 参数(含充值档位)。
+func creemConfig() pay.CreemConfig {
+	products, _ := model.ParseCreemProducts(mustSettingString(model.SettingKeyCreemProducts))
+	return pay.CreemConfig{
+		APIKey:        mustSettingString(model.SettingKeyCreemAPIKey),
+		WebhookSecret: mustSettingString(model.SettingKeyCreemWebhook),
+		APIBase:       mustSettingString(model.SettingKeyCreemAPIBase),
+		Products:      products,
+	}
+}
+
+// gatewayFor 按渠道取网关; 空渠道默认易支付, 未配置或未知渠道直接拒绝。
+func gatewayFor(provider string) (pay.PaymentGateway, error) {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case pay.ProviderEpay, "":
+		config := epayConfig()
+		if !config.Configured() {
+			return nil, fmt.Errorf("payment gateway is not configured")
+		}
+		return pay.NewEpay(config), nil
+	case pay.ProviderAlipay:
+		config := alipayConfig()
+		if !config.Configured() {
+			return nil, fmt.Errorf("alipay is not configured")
+		}
+		gateway, err := pay.NewAlipay(config)
+		if err != nil {
+			return nil, err
+		}
+		return gateway, nil
+	case pay.ProviderStripe:
+		config := stripeConfig()
+		if !config.Configured() {
+			return nil, fmt.Errorf("stripe is not configured")
+		}
+		return pay.NewStripe(config), nil
+	case pay.ProviderCreem:
+		config := creemConfig()
+		if !config.Configured() {
+			return nil, fmt.Errorf("creem is not configured")
+		}
+		return pay.NewCreem(config), nil
+	default:
+		return nil, fmt.Errorf("unsupported payment provider: %s", provider)
+	}
+}
+
+// PayChannel 渠道视图(对齐 New API 的 pay_methods): 前端按配置状态决定可选渠道。
+type PayChannel struct {
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+	Configured bool     `json:"configured"`
+	Currency   string   `json:"currency"`
+	PayTypes   []string `json:"pay_types,omitempty"`
 }
 
 // RechargeView 充值配置视图: 弹窗据是否已配置决定展示充值入口还是"支付未配置"。
 type RechargeView struct {
-	Configured   bool      `json:"configured"`
-	Rate         float64   `json:"rate"`
-	MinCNY       float64   `json:"min_cny"`
-	AmountTiers  []float64 `json:"amount_tiers"`
-	BonusEnabled bool      `json:"bonus_enabled"`
-	PayTypes     []string  `json:"pay_types"` // 支付方式白名单; 空表示收银台自选全开放
+	Configured   bool         `json:"configured"`
+	Rate         float64      `json:"rate"`
+	MinCNY       float64      `json:"min_cny"`
+	AmountTiers  []float64    `json:"amount_tiers"`
+	BonusEnabled bool         `json:"bonus_enabled"`
+	PayTypes     []string     `json:"pay_types"` // 易支付方式白名单; 空表示收银台自选全开放
+	Channels     []PayChannel `json:"channels"`
+}
+
+// channelViews 汇总各渠道的配置状态; 名称即渠道展示名。
+func channelViews() []PayChannel {
+	epay := epayConfig()
+	channels := []PayChannel{{ID: pay.ProviderEpay, Name: "易支付", Configured: epay.Configured(), Currency: "CNY"}}
+	var payTypes []string
+	for _, item := range strings.Split(epay.PayTypes, ",") {
+		if item = strings.ToLower(strings.TrimSpace(item)); item != "" {
+			payTypes = append(payTypes, item)
+		}
+	}
+	channels[0].PayTypes = payTypes
+	alipay := alipayConfig()
+	channels = append(channels, PayChannel{ID: pay.ProviderAlipay, Name: "支付宝", Configured: alipay.Configured(), Currency: "CNY"})
+	stripe := stripeConfig()
+	channels = append(channels, PayChannel{ID: pay.ProviderStripe, Name: "Stripe", Configured: stripe.Configured(), Currency: strings.ToUpper(strings.TrimSpace(stripe.Currency))})
+	creem := creemConfig()
+	channels = append(channels, PayChannel{ID: pay.ProviderCreem, Name: "Creem", Configured: creem.Configured(), Currency: "CNY"})
+	return channels
 }
 
 // RechargeView 返回充值配置视图。
@@ -66,19 +164,21 @@ func RechargeViewGet(ctx context.Context) RechargeView {
 	minCNY := SettingGetFloat(model.SettingKeyRechargeMinCNY)
 	tiers, _ := model.ParseAmountTiers(mustSettingString(model.SettingKeyRechargeAmountTiers))
 	bonusOn, _ := strconv.ParseBool(mustSettingString(model.SettingKeyRechargeBonusEnabled))
-	var payTypes []string
-	for _, item := range strings.Split(mustSettingString(model.SettingKeyEpayPayTypes), ",") {
-		if item = strings.ToLower(strings.TrimSpace(item)); item != "" {
-			payTypes = append(payTypes, item)
+	channels := channelViews()
+	configured := false
+	for _, channel := range channels {
+		if channel.Configured {
+			configured = true
 		}
 	}
 	return RechargeView{
-		Configured:   epayConfig().Configured(),
+		Configured:   configured,
 		Rate:         rate,
 		MinCNY:       minCNY,
 		AmountTiers:  tiers,
 		BonusEnabled: bonusOn,
-		PayTypes:     payTypes,
+		PayTypes:     channels[0].PayTypes,
+		Channels:     channels,
 	}
 }
 
@@ -115,27 +215,65 @@ func rechargeOrderNo() string {
 	return now.Format("20060102150405") + fmt.Sprintf("%06d", suffix.Int64())
 }
 
-// RechargeCreate 创建充值订单并返回收银台表单; 未配置支付或金额不合规直接拒绝。
-func RechargeCreate(ctx context.Context, userID uint, amountCents int64, method, notifyURL, returnURL string) (*model.RechargeOrder, *pay.Form, error) {
-	config := epayConfig()
-	if !config.Configured() {
-		return nil, nil, fmt.Errorf("payment gateway is not configured")
+// channelPayAmount 计算渠道实付额(渠道币种分): CNY 渠道按面值,
+// 其他币种按汇率快照换算(目前支持 USD, 与余额币种同源)。
+func channelPayAmount(ctx context.Context, gateway pay.PaymentGateway, amountCents int64) (int64, string, error) {
+	currency := strings.ToUpper(strings.TrimSpace(gateway.ChargeCurrency()))
+	if currency == "" || currency == "CNY" {
+		return amountCents, "CNY", nil
+	}
+	if currency != "USD" {
+		return 0, "", fmt.Errorf("unsupported charge currency: %s", currency)
+	}
+	rate, err := StaticRateProvider{}.Rate(ctx, "CNY")
+	if err != nil || rate <= 0 {
+		return 0, "", fmt.Errorf("rate is unavailable")
+	}
+	return int64(math.Round(float64(amountCents) / 100 / rate * 100)), currency, nil
+}
+
+// RechargeCreate 创建充值订单并返回收银台跳转; 未配置支付或金额不合规直接拒绝。
+// amountCents 是 CNY 分基准(展示与入账口径), 渠道实付额按渠道币种另记。
+func RechargeCreate(ctx context.Context, userID uint, amountCents int64, provider, method, notifyURL, returnURL string) (*model.RechargeOrder, *pay.Form, error) {
+	gateway, err := gatewayFor(provider)
+	if err != nil {
+		return nil, nil, err
+	}
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	if provider == "" {
+		provider = pay.ProviderEpay
 	}
 	minCNY := SettingGetFloat(model.SettingKeyRechargeMinCNY)
 	if amountCents < int64(minCNY*100) {
 		return nil, nil, fmt.Errorf("amount is below the minimum recharge amount")
 	}
+	payCents, payCurrency, err := channelPayAmount(ctx, gateway, amountCents)
+	if err != nil {
+		return nil, nil, err
+	}
 	credits, bonus, _, err := RechargeQuote(ctx, amountCents)
 	if err != nil {
 		return nil, nil, err
 	}
+	// Creem 是商品化档位: 入账以档位配置为准, 金额只作档位匹配。
+	if provider == pay.ProviderCreem {
+		creem := pay.NewCreem(creemConfig())
+		product, ok := creem.ProductFor(amountCents)
+		if !ok {
+			return nil, nil, fmt.Errorf("no creem product matches this amount")
+		}
+		credits, bonus = product.Credits, 0
+		payCents = 0 // 商品定价, 回调不核金额只核商品
+	}
 	order := &model.RechargeOrder{
 		OrderNo:     rechargeOrderNo(),
 		UserID:      userID,
-		Provider:    model.PayProviderEpay,
+		Provider:    provider,
 		Method:      strings.ToLower(strings.TrimSpace(method)),
 		AmountCents: amountCents,
 		Currency:    "CNY",
+		PayCents:    payCents,
+		PayCurrency: payCurrency,
 		Credits:     credits,
 		Bonus:       bonus,
 		Subject:     "余额充值",
@@ -145,24 +283,36 @@ func RechargeCreate(ctx context.Context, userID uint, amountCents int64, method,
 	if err := db.GetDB().WithContext(ctx).Create(order).Error; err != nil {
 		return nil, nil, fmt.Errorf("failed to create recharge order: %w", err)
 	}
-	form, err := pay.NewEpay(config).CreatePayment(order, notifyURL, returnURL)
+	// 回跳带上业务单号, 无签名回跳渠道(Stripe/Creem)据单号查状态给提示。
+	separator := "?"
+	if strings.Contains(returnURL, "?") {
+		separator = "&"
+	}
+	form, err := gateway.CreatePayment(order, notifyURL, returnURL+separator+"order_no="+order.OrderNo)
 	if err != nil {
 		return nil, nil, err
 	}
 	return order, form, nil
 }
 
-// RechargeNotify 支付回调: 验签、核金额、条件更新抢占入账, 重复投递天然幂等。
-func RechargeNotify(ctx context.Context, query url.Values) error {
-	config := epayConfig()
-	tradeNo, orderNo, amountCents, err := pay.NewEpay(config).VerifyCallback(query)
+// RechargeNotify 支付回调: 按渠道验签、核金额、条件更新抢占入账, 重复投递天然幂等。
+func RechargeNotify(ctx context.Context, provider string, req *pay.CallbackRequest) error {
+	gateway, err := gatewayFor(provider)
 	if err != nil {
 		return err
 	}
-	if strings.ToUpper(query.Get("trade_status")) != "TRADE_SUCCESS" {
-		return fmt.Errorf("trade status is not success")
+	tradeNo, orderNo, amountCents, err := gateway.VerifyCallback(req)
+	if err != nil {
+		return err
 	}
-	raw := query.Encode()
+	raw := ""
+	if req != nil {
+		if len(req.Body) > 0 {
+			raw = string(req.Body)
+		} else if req.Form != nil {
+			raw = req.Form.Encode()
+		}
+	}
 	var order model.RechargeOrder
 	err = db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("order_no = ?", orderNo).Take(&order).Error; err != nil {
@@ -175,8 +325,9 @@ func RechargeNotify(ctx context.Context, query url.Values) error {
 		if order.Status != model.RechargeStatusPending {
 			return fmt.Errorf("order is %s", order.Status)
 		}
-		if amountCents != order.AmountCents {
-			return fmt.Errorf("amount mismatch: order %d, callback %d", order.AmountCents, amountCents)
+		// 金额核对按渠道实付额; 商品定价渠道(PayCents=0)只核商品不核金额。
+		if order.PayCents > 0 && amountCents != order.PayCents {
+			return fmt.Errorf("amount mismatch: order %d, callback %d", order.PayCents, amountCents)
 		}
 		// 抢占: 状态条件更新, 并发重复回调至多一个事务改到行。
 		result := tx.Model(&model.RechargeOrder{}).
@@ -226,9 +377,22 @@ func RechargeNotify(ctx context.Context, query url.Values) error {
 	return nil
 }
 
-// RechargeVerifyReturn 校验浏览器回跳签名; 只用于决定提示语, 入账一律以 notify 为准。
-func RechargeVerifyReturn(query url.Values) (string, string, int64, error) {
-	return pay.NewEpay(epayConfig()).VerifyCallback(query)
+// RechargeVerifyReturn 校验浏览器回跳签名(表单类渠道); 只用于决定提示语, 入账一律以 notify 为准。
+func RechargeVerifyReturn(provider string, req *pay.CallbackRequest) (string, string, int64, error) {
+	gateway, err := gatewayFor(provider)
+	if err != nil {
+		return "", "", 0, err
+	}
+	return gateway.VerifyCallback(req)
+}
+
+// RechargeOrderStatus 查订单状态(无签名回跳渠道据单号给结果提示)。
+func RechargeOrderStatus(ctx context.Context, orderNo string) string {
+	var order model.RechargeOrder
+	if err := db.GetDB().WithContext(ctx).Where("order_no = ?", orderNo).Take(&order).Error; err != nil {
+		return ""
+	}
+	return order.Status
 }
 
 // RechargeCloseExpired 关闭超时未支付订单; 下单与列表时懒执行, 不额外起定时器。
