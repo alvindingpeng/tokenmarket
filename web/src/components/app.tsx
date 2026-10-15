@@ -1,4 +1,4 @@
-import { lazy, Suspense, useDeferredValue, useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useDeferredValue, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAuth } from '@/api/user';
@@ -17,7 +17,7 @@ import { AppShell } from '@/components/app-shell';
 import { LoginForm } from '@/components/modules/login';
 import { LandingPage } from '@/components/modules/landing';
 import { APIKeyDashboard } from '@/components/modules/apikey-dashboard';
-import { useAppStore } from '@/stores/app';
+import { navItemsFor, useAppStore } from '@/stores/app';
 import { useApplySiteTitle } from '@/lib/site-title';
 import { pageImports } from '@/lib/page-preload';
 
@@ -26,13 +26,9 @@ const Home = lazy(() => pageImports.home().then((module) => ({ default: module.H
 const Channel = lazy(() => pageImports.channel().then((module) => ({ default: module.Channel })));
 const Group = lazy(() => pageImports.group().then((module) => ({ default: module.Group })));
 const Model = lazy(() => pageImports.model().then((module) => ({ default: module.Model })));
-const Users = lazy(() => pageImports.users());
-const Audit = lazy(() => pageImports.audit());
-const RateLimit = lazy(() => pageImports.ratelimit());
 const Ops = lazy(() => pageImports.ops());
 const Share = lazy(() => pageImports.share());
 const Wallet = lazy(() => pageImports.wallet());
-const Redemption = lazy(() => pageImports.redemption());
 const Withdrawals = lazy(() => pageImports.withdrawals());
 const Billing = lazy(() => pageImports.billing());
 const Apikey = lazy(() => pageImports.apikey());
@@ -68,8 +64,15 @@ export function AppContainer() {
     // guestView 控制未登录访客看到落地页还是登录表单; 退出登录也回到落地页入口。
     const [guestView, setGuestView] = useState<'landing' | 'login'>('landing');
     const currentPage = useAppStore((state) => state.currentPage);
+    const setCurrentPage = useAppStore((state) => state.setCurrentPage);
+    // allowedPages 是当前角色可见的一级页面。持久化的页面可能已经失效
+    // (例如用户管理/审计记录等已并入设置页二级菜单), 必须回落到首页, 否则会渲染出空白页。
+    const allowedPages = useMemo(() => navItemsFor(role).map((item) => item.id), [role]);
+    useEffect(() => {
+        if (!allowedPages.includes(currentPage)) setCurrentPage('home');
+    }, [allowedPages, currentPage, setCurrentPage]);
     // visibleItem 延迟提交页面切换，等待 lazy 模块在 Suspense 中准备完成。
-    const visibleItem = useDeferredValue(currentPage);
+    const visibleItem = useDeferredValue(allowedPages.includes(currentPage) ? currentPage : 'home');
     // 认证模式与已完成的模式不一致时仍需等待，避免退出登录后残留的完成标记让应用提前渲染。
     const apiReady = readyMode === authMode;
 
@@ -174,13 +177,9 @@ export function AppContainer() {
                             className="absolute inset-0 min-h-0 overflow-hidden"
                         >
                             {visibleItem === 'home' && <Home />}
-                            {visibleItem === 'users' && <Users />}
-                            {visibleItem === 'audit' && <Audit />}
-                            {visibleItem === 'ratelimit' && <RateLimit />}
                             {visibleItem === 'ops' && <Ops />}
                             {visibleItem === 'share' && <Share />}
                             {visibleItem === 'wallet' && <Wallet />}
-                            {visibleItem === 'redemption' && <Redemption />}
                             {visibleItem === 'withdrawals' && <Withdrawals />}
                             {visibleItem === 'billing' && <Billing />}
                             {visibleItem === 'apikey' && <Apikey />}
