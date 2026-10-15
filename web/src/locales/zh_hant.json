@@ -154,6 +154,14 @@
         }
     },
     "setting": {
+        "sections": {
+            "label": "設定分組",
+            "personal": "個人",
+            "site": "站點",
+            "system": "系統",
+            "billing": "支付",
+            "ops": "維運"
+        },
         "appearance": "外觀",
         "system": "系統",
         "theme": {

@@ -7,6 +7,9 @@ import type { Role } from '@/api/user';
 // Page 表示应用支持的固定页面集合。
 export type Page = 'home' | 'channel' | 'group' | 'model' | 'users' | 'audit' | 'ratelimit' | 'ops' | 'share' | 'wallet' | 'redemption' | 'withdrawals' | 'billing' | 'apikey' | 'log' | 'setting';
 
+// SettingSectionID 设置页二级菜单的分组标识; 分组定义见 components/modules/setting/sections.ts。
+export type SettingSectionID = 'personal' | 'site' | 'system' | 'billing' | 'ops';
+
 // NavItem 描述导航按钮使用的页面标识、文案和图标。
 type NavItem = { id: Page; label: string; icon: LucideIcon };
 
@@ -48,7 +51,9 @@ const NAV_ORDER: Page[] = NAV_ITEMS.map((item) => item.id); // NAV_ORDER 用于�
 interface AppState {
     currentPage: Page; // 当前选中的固定页面。
     direction: number; // 页面名称切换时的滚动方向。
+    settingSection: SettingSectionID; // 设置页二级菜单当前分组(持久化, 重开仍在原分组)。
     setCurrentPage: (page: Page) => void; // 切换当前页面。
+    setSettingSection: (section: SettingSectionID) => void; // 切换设置页分组。
 }
 
 // useAppStore 保存应用当前页面及页面名称切换方向。
@@ -57,11 +62,13 @@ export const useAppStore = create<AppState>()(
         (set, get) => ({
             currentPage: 'home',
             direction: 0,
+            settingSection: 'personal',
             setCurrentPage: (page) => {
                 const currentIndex = NAV_ORDER.indexOf(get().currentPage);
                 const nextIndex = NAV_ORDER.indexOf(page);
                 set({ currentPage: page, direction: nextIndex > currentIndex ? 1 : -1 });
             },
+            setSettingSection: (section) => set({ settingSection: section }),
         }),
         {
             name: 'nav-storage',
