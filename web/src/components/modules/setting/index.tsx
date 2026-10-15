@@ -9,6 +9,7 @@ import { SettingInfo } from './Info';
 import { SettingLog } from './Log';
 import { SettingOps } from './Ops';
 import { SettingBackup } from './Backup';
+import { SettingPayment } from './Payment';
 
 // Setting 渲染设置页面正文; 系统设置、全局价表、备份与更新属管理后台, 仅管理员可见。
 export function Setting() {
@@ -24,6 +25,7 @@ export function Setting() {
                 {isAdmin && <SettingSystemInfo />}
                 {isAdmin && <SettingSystem />}
                 {isAdmin && <SettingPlatform />}
+                {isAdmin && <SettingPayment />}
                 {isAdmin && <SettingLog />}
                 {isAdmin && <SettingOps />}
                 {isAdmin && <SettingLLMPrice />}

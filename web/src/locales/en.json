@@ -405,6 +405,27 @@
             "label": "Update check interval (minutes)",
             "placeholder": "Default 60",
             "hint": "Between 1 and 1440. Saving reschedules the task immediately - no restart needed. Anonymous GitHub calls are limited to 60 per hour, so keep this large unless an access token is set."
+        },
+        "payment": {
+            "title": "Recharge & payment",
+            "desc": "Epay merchant parameters, exchange rate and bonus rules. All parameterized - fill in and they apply immediately.",
+            "gatewayURL": "Epay gateway URL",
+            "pid": "Merchant ID",
+            "key": "Merchant key",
+            "keyPlaceholder": "Configured; leave empty to keep",
+            "payTypes": "Allowed methods (optional)",
+            "notifyBase": "Public callback base URL",
+            "notifyHint": "Leave empty to derive from the request. Set it explicitly behind reverse proxies or sub-path deployments.",
+            "rate": "Rate (1 USD = ? CNY)",
+            "minCNY": "Minimum amount (CNY)",
+            "tiers": "Quick amounts (CNY)",
+            "bonusEnabled": "Recharge bonus",
+            "bonusHint": "When off, no amount receives a bonus.",
+            "bonusRules": "Bonus rules",
+            "bonusRulesHint": "Compact format 'minCNY:percent', comma separated, e.g. 100:5,500:10. Highest tier wins.",
+            "save": "Save payment settings",
+            "saved": "Payment settings saved",
+            "saveFailed": "Save failed"
         }
     },
     "group": {
@@ -1055,6 +1076,10 @@
                 "generate": "Generate redemption codes",
                 "redeem": "Redeem code",
                 "disable": "Disable redemption code"
+            },
+            "recharge": {
+                "create": "Create recharge order",
+                "complete": "Manual order completion"
             }
         }
     },
@@ -1427,7 +1452,8 @@
             "reserve": "Hold",
             "settle": "Settle",
             "release": "Release",
-            "adjust": "Adjust"
+            "adjust": "Adjust",
+            "bonus": "Bonus"
         },
         "table": {
             "time": "Time",
@@ -1435,6 +1461,45 @@
             "amount": "Amount",
             "balance": "Balance after",
             "note": "Note"
+        },
+        "tab": {
+            "ledger": "Balance ledger",
+            "orders": "Recharge orders"
+        },
+        "recharge": {
+            "open": "Top up",
+            "amount": "Amount (CNY)",
+            "tier": "¥{amount}",
+            "method": "Payment method",
+            "methodAuto": "Choose at cashier",
+            "alipay": "Alipay",
+            "wechat": "WeChat Pay",
+            "qq": "QQ Wallet",
+            "credits": "Credits to receive",
+            "bonus": "Bonus",
+            "rate": "Rate",
+            "rateValue": "1 USD = {rate} CNY",
+            "submit": "Pay now",
+            "cancel": "Cancel",
+            "failed": "Failed to create order",
+            "notConfigured": "Payment is not configured yet. Ask the admin to fill in merchant settings.",
+            "returnPaid": "Payment completed for order {order}; credit lands once the callback arrives",
+            "returnFailed": "Payment not completed. If you were charged, contact the admin"
+        },
+        "orders": {
+            "empty": "No recharge orders yet",
+            "no": "Order no",
+            "amount": "Paid",
+            "credits": "Credited",
+            "status": "Status",
+            "time": "Time"
+        },
+        "status": {
+            "pending": "Pending",
+            "paid": "Paid",
+            "failed": "Failed",
+            "expired": "Closed",
+            "refunded": "Refunded"
         }
     },
     "redemption": {

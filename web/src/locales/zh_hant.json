@@ -405,6 +405,27 @@
             "label": "更新檢查間隔(分鐘)",
             "placeholder": "預設 60",
             "hint": "取值 1-1440。儲存後立即依新周期重排任務, 不需要重啟進程。GitHub 對匿名呼叫限流 60 次/小時, 未填權杖時不宜把間隔壓得太小。"
+        },
+        "payment": {
+            "title": "儲值與支付",
+            "desc": "易支付商戶參數、匯率與滿贈規則; 全部參數化設定, 填好即生效, 無需重新部署。",
+            "gatewayURL": "易支付網關地址",
+            "pid": "商戶 ID",
+            "key": "商戶密鑰",
+            "keyPlaceholder": "已設定, 留空保持不變",
+            "payTypes": "限定支付方式(可選)",
+            "notifyBase": "對外回呼基址",
+            "notifyHint": "留空按當前請求地址推斷; 反代或子路徑部署請顯式填寫對外可存取的基址。",
+            "rate": "匯率(1 USD = ? CNY)",
+            "minCNY": "單筆最低金額(元)",
+            "tiers": "彈窗快捷金額(元)",
+            "bonusEnabled": "儲值滿贈",
+            "bonusHint": "開關關閉時任何金額都不贈送。",
+            "bonusRules": "滿贈規則",
+            "bonusRulesHint": "緊湊格式「滿X元送Y%」, 多檔用逗號分隔, 如 100:5,500:10; 命中最高檔。",
+            "save": "儲存支付設定",
+            "saved": "支付設定已儲存",
+            "saveFailed": "儲存失敗"
         }
     },
     "group": {
@@ -1055,6 +1076,10 @@
                 "generate": "產生兌換碼",
                 "redeem": "兌換",
                 "disable": "停用兌換碼"
+            },
+            "recharge": {
+                "create": "建立儲值訂單",
+                "complete": "人工補單"
             }
         }
     },
@@ -1427,7 +1452,8 @@
             "reserve": "預扣",
             "settle": "結算",
             "release": "釋放",
-            "adjust": "調帳"
+            "adjust": "調帳",
+            "bonus": "滿贈"
         },
         "table": {
             "time": "時間",
@@ -1435,6 +1461,45 @@
             "amount": "金額",
             "balance": "變動後餘額",
             "note": "備註"
+        },
+        "tab": {
+            "ledger": "餘額流水",
+            "orders": "儲值記錄"
+        },
+        "recharge": {
+            "open": "儲值",
+            "amount": "儲值金額(元)",
+            "tier": "¥{amount}",
+            "method": "支付方式",
+            "methodAuto": "收銀台自選",
+            "alipay": "支付寶",
+            "wechat": "微信支付",
+            "qq": "QQ 錢包",
+            "credits": "預計到帳",
+            "bonus": "滿贈送",
+            "rate": "匯率",
+            "rateValue": "1 USD = {rate} CNY",
+            "submit": "去支付",
+            "cancel": "取消",
+            "failed": "下單失敗",
+            "notConfigured": "支付渠道尚未設定, 請聯絡管理員在「支付設定」中填寫商戶資訊。",
+            "returnPaid": "支付完成: 訂單 {order}; 到帳以回呼為準, 通常數秒內完成",
+            "returnFailed": "支付未完成, 如已扣款請聯絡管理員核對"
+        },
+        "orders": {
+            "empty": "暫無儲值記錄",
+            "no": "訂單號",
+            "amount": "實付",
+            "credits": "到帳",
+            "status": "狀態",
+            "time": "時間"
+        },
+        "status": {
+            "pending": "待支付",
+            "paid": "已支付",
+            "failed": "支付失敗",
+            "expired": "已關閉",
+            "refunded": "已退款"
         }
     },
     "redemption": {
