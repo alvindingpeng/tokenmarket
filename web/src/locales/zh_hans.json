@@ -61,7 +61,8 @@
         "ratelimit": "限流管理",
         "ops": "运维中心",
         "wallet": "钱包",
-        "redemption": "兑换码"
+        "redemption": "兑换码",
+        "withdrawals": "提现管理"
     },
     "toolbar": {
         "hideChannelName": "模糊渠道名称",
@@ -425,7 +426,16 @@
             "bonusRulesHint": "紧凑格式「满X元送Y%」, 多档用逗号分隔, 如 100:5,500:10; 命中最高档。",
             "save": "保存支付设置",
             "saved": "支付设置已保存",
-            "saveFailed": "保存失败"
+            "saveFailed": "保存失败",
+            "withdrawTitle": "提现规则(收益池)",
+            "withdrawMinAmount": "单笔最低提现额",
+            "withdrawFeeRate": "手续费率(0.01 = 1%)",
+            "withdrawFeeMin": "最低手续费",
+            "withdrawCooldownDays": "收益冷却天数",
+            "withdrawDailyCountLimit": "单日笔数上限",
+            "withdrawDailyAmountLimit": "单日总额上限",
+            "withdrawAccountLockDays": "账户锁定天数",
+            "withdrawHint": "0 表示不限/不冷却/不锁; 冷却期内的新收益暂不可提(防刷单套利)。仅渠道商收益可提, 充值余额不可提现。"
         }
     },
     "group": {
@@ -1080,6 +1090,13 @@
             "recharge": {
                 "create": "创建充值订单",
                 "complete": "人工补单"
+            },
+            "withdrawal": {
+                "apply": "申请提现",
+                "cancel": "取消提现",
+                "review": "审核提现",
+                "paid": "提现打款",
+                "rollback": "打款回滚"
             }
         }
     },
@@ -1464,7 +1481,8 @@
         },
         "tab": {
             "ledger": "余额流水",
-            "orders": "充值记录"
+            "orders": "充值记录",
+            "withdrawals": "提现记录"
         },
         "recharge": {
             "open": "充值",
@@ -1500,6 +1518,41 @@
             "failed": "支付失败",
             "expired": "已关闭",
             "refunded": "已退款"
+        },
+        "withdraw": {
+            "open": "提现",
+            "available": "可提余额(收益池)",
+            "amount": "提现金额",
+            "method": "收款方式",
+            "bank": "银行卡",
+            "accountName": "收款人姓名",
+            "accountNo": "收款账号",
+            "fee": "手续费",
+            "feeHint": "手续费 = max(最低 {min}, 金额 × {rate}%); 仅渠道商收益可提",
+            "actual": "预计到账",
+            "submit": "申请提现",
+            "applied": "提现申请已提交, 等待管理员审核",
+            "cancelled": "提现申请已取消, 金额已解冻",
+            "failed": "提现失败",
+            "cancelOrder": "取消申请",
+            "empty": "暂无提现记录",
+            "notAllowed": "仅渠道商收益可提现: 普通用户的充值余额不可提现(防套现)。"
+        },
+        "wtable": {
+            "id": "单号",
+            "amount": "申请额",
+            "fee": "手续费",
+            "actual": "打款金额",
+            "status": "状态",
+            "time": "申请时间",
+            "actions": "操作"
+        },
+        "wstatus": {
+            "pending": "待审核",
+            "approved": "已通过",
+            "paid": "已打款",
+            "rejected": "已拒绝",
+            "cancelled": "已取消"
         }
     },
     "redemption": {
@@ -1566,6 +1619,59 @@
             "enabled": "可兑",
             "used": "已兑",
             "disabled": "已禁用"
+        }
+    },
+    "withdrawals": {
+        "title": "提现管理",
+        "refresh": "刷新",
+        "filterAll": "全部状态",
+        "loading": "加载中...",
+        "error": "加载失败",
+        "retry": "重试",
+        "empty": "暂无提现申请",
+        "actionFailed": "操作失败",
+        "table": {
+            "id": "单号",
+            "user": "申请人",
+            "amount": "申请额",
+            "fee": "手续费",
+            "actual": "打款金额",
+            "account": "收款账号",
+            "status": "状态",
+            "time": "申请时间",
+            "actions": "操作"
+        },
+        "status": {
+            "pending": "待审核",
+            "approved": "已通过",
+            "paid": "已打款",
+            "rejected": "已拒绝",
+            "cancelled": "已取消"
+        },
+        "method": {
+            "alipay": "支付宝",
+            "wechat": "微信",
+            "bank": "银行卡"
+        },
+        "action": {
+            "approve": "通过",
+            "reject": "拒绝",
+            "markPaid": "标记打款",
+            "rollback": "打款回滚",
+            "cancel": "取消"
+        },
+        "review": {
+            "approved": "提现单 #{id} 已通过",
+            "rejected": "提现单 #{id} 已拒绝并解冻",
+            "notePlaceholder": "审核备注(可选)"
+        },
+        "paid": {
+            "done": "提现单 #{id} 已标记打款",
+            "confirm": "确认打款",
+            "refPlaceholder": "打款凭证号(必填)"
+        },
+        "rollback": {
+            "done": "提现单 #{id} 已回滚到已通过"
         }
     }
 }

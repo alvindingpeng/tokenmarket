@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'use-intl';
-import { AlertCircle, Coins, CreditCard, Loader2, RefreshCw, Ticket } from 'lucide-react';
+import { AlertCircle, Coins, CreditCard, Landmark, Loader2, RefreshCw, Ticket } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +19,12 @@ import {
 import { useWalletLedger, useWalletSummary } from '@/api/wallet';
 import { useRedeem } from '@/api/redemption';
 import { createRecharge, useRechargeOrders, useRechargeQuote, useRechargeView, type PayForm } from '@/api/recharge';
+import {
+    applyWithdrawal,
+    cancelWithdrawal,
+    useWithdrawals,
+    useWithdrawSummary,
+} from '@/api/withdrawal';
 import { useAuthStore } from '@/api/user';
 
 // money 金额千分位展示; 余额是 6 位小数口径, 展示截到 4 位可读精度。
@@ -172,7 +179,132 @@ function RechargeButton() {
     );
 }
 
-// Wallet 钱包页: 余额卡片 + 充值 + 兑换码 + 流水/充值记录。
+
+// WithdrawDialogContent 提现表单: 可提余额 + 费用预览 + 收款账户; 仅渠道商可提(D4)。
+function WithdrawDialogContent({ onApplied }: { onApplied: () => void }) {
+    const t = useTranslations('wallet');
+    const { setIsOpen } = useMorphingDialog();
+    const summary = useWithdrawSummary();
+    const [amount, setAmount] = useState('');
+    const [method, setMethod] = useState('alipay');
+    const [accountName, setAccountName] = useState('');
+    const [accountNo, setAccountNo] = useState('');
+    const [submitting, setSubmitting] = useState(false);
+    const value = Number(amount) || 0;
+    const rules = summary.data;
+    // 费用预览: fee = max(最低费, 金额×费率), 打款按申请时汇率折人民币。
+    const fee = rules ? Math.min(value, Math.max(rules.fee_min, value * rules.fee_rate)) : 0;
+    const actual = value - fee;
+    const actualCNY = actual * (rules?.rate ?? 0);
+    const canSubmit = (rules?.can_apply ?? false) && value > 0 && accountName.trim() !== '' && accountNo.trim() !== '' && !submitting;
+
+    // handleApply 申请提现; 失败留在弹窗透出原因(低于最低/可提不足/限额)。
+    const handleApply = async () => {
+        if (!canSubmit) return;
+        setSubmitting(true);
+        try {
+            await applyWithdrawal({ amount: value, method, account_name: accountName.trim(), account_no: accountNo.trim() });
+            toast.success(t('withdraw.applied'));
+            onApplied();
+            setIsOpen(false);
+        } catch (error) {
+            setSubmitting(false);
+            toast.error(t('withdraw.failed'), { description: (error as Error).message });
+        }
+    };
+
+    return (
+        <div className="w-screen max-w-full md:max-w-md">
+            <MorphingDialogDescription>
+                <div className="space-y-4">
+                    {!(rules?.can_apply ?? false) && (
+                        <p className="rounded-2xl border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">{t('withdraw.notAllowed')}</p>
+                    )}
+                    <div className="flex items-center justify-between rounded-2xl border border-border bg-muted/40 px-3 py-2 text-sm">
+                        <span className="text-muted-foreground">{t('withdraw.available')}</span>
+                        <span className="tabular-nums font-medium">{money(rules?.available ?? 0)}</span>
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="withdraw-amount">{t('withdraw.amount')}</Label>
+                        <Input
+                            id="withdraw-amount"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={amount}
+                            onChange={(event) => setAmount(event.target.value)}
+                            className="rounded-xl"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                            {t('withdraw.feeHint', { min: rules?.fee_min ?? 1, rate: Math.round((rules?.fee_rate ?? 0.01) * 1000) / 10 })}
+                        </p>
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="withdraw-method">{t('withdraw.method')}</Label>
+                        <Select value={method} onValueChange={setMethod}>
+                            <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="alipay">{t('recharge.alipay')}</SelectItem>
+                                <SelectItem value="wechat">{t('recharge.wechat')}</SelectItem>
+                                <SelectItem value="bank">{t('withdraw.bank')}</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                            <Label htmlFor="withdraw-name">{t('withdraw.accountName')}</Label>
+                            <Input id="withdraw-name" className="rounded-xl" value={accountName} onChange={(event) => setAccountName(event.target.value)} autoComplete="off" />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="withdraw-account">{t('withdraw.accountNo')}</Label>
+                            <Input id="withdraw-account" className="rounded-xl" value={accountNo} onChange={(event) => setAccountNo(event.target.value)} autoComplete="off" />
+                        </div>
+                    </div>
+                    <div className="rounded-2xl border border-border bg-muted/40 px-3 py-2 text-sm">
+                        <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground">{t('withdraw.fee')}</span>
+                            <span className="tabular-nums">{money(fee)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground">{t('withdraw.actual')}</span>
+                            <span className="tabular-nums font-medium">{money(actual)} (≈¥{money(actualCNY)})</span>
+                        </div>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                        <Button type="button" variant="outline" size="sm" className="rounded-xl" onClick={() => setIsOpen(false)}>{t('recharge.cancel')}</Button>
+                        <Button type="button" size="sm" className="rounded-xl" disabled={!canSubmit} onClick={() => void handleApply()}>
+                            {submitting && <Loader2 className="size-4 animate-spin" />}
+                            {t('withdraw.submit')}
+                        </Button>
+                    </div>
+                </div>
+            </MorphingDialogDescription>
+        </div>
+    );
+}
+
+// WithdrawButton 钱包页提现入口; 普通用户点开可见"仅渠道商可提"的解释。
+function WithdrawButton({ onApplied }: { onApplied: () => void }) {
+    const t = useTranslations('wallet');
+    return (
+        <MorphingDialog>
+            <MorphingDialogTrigger className="flex h-9 items-center gap-1.5 rounded-xl border border-border bg-card px-4 text-sm font-medium text-card-foreground transition-colors hover:bg-muted">
+                <Landmark className="size-4" />
+                {t('withdraw.open')}
+            </MorphingDialogTrigger>
+            <MorphingDialogContainer>
+                <MorphingDialogContent
+                    dismissOnClickOutside={false}
+                    className="flex max-h-[calc(100dvh-2rem)] w-fit max-w-full flex-col overflow-hidden rounded-3xl bg-card px-6 py-5 text-card-foreground"
+                >
+                    <WithdrawDialogContent onApplied={onApplied} />
+                </MorphingDialogContent>
+            </MorphingDialogContainer>
+        </MorphingDialog>
+    );
+}
+
+// Wallet 钱包页: 余额卡片 + 充值 + 兑换码 + 流水/充值记录/提现记录。
 export default function Wallet() {
     const t = useTranslations('wallet');
     const role = useAuthStore((state) => state.role);
@@ -183,6 +315,12 @@ export default function Wallet() {
     const summary = useWalletSummary();
     const ledger = useWalletLedger(kind, role === 'admin' ? uid : 0);
     const orders = useRechargeOrders(role === 'admin' ? uid : 0);
+    const withdrawals = useWithdrawals('', role === 'admin' ? uid : 0);
+    const queryClient = useQueryClient();
+    // invalidateWithdraw 提现资金状态每变一次就作废提现缓存, 列表与口径都回服务端。
+    const invalidateWithdraw = () => {
+        void queryClient.invalidateQueries({ queryKey: ['withdraw'] });
+    };
     const redeem = useRedeem();
 
     // 支付回跳只决定提示语; 入账以服务端回调为准, 回来立刻拉一次余额与订单。
@@ -203,6 +341,7 @@ export default function Wallet() {
 
     const items = ledger.data?.items ?? [];
     const orderItems = orders.data?.items ?? [];
+    const withdrawItems = withdrawals.data?.items ?? [];
     const cards = [
         { key: 'balance', value: summary.data?.balance },
         { key: 'frozen', value: summary.data?.frozen },
@@ -237,6 +376,7 @@ export default function Wallet() {
                         {t('refresh')}
                     </Button>
                     <RechargeButton />
+                    <WithdrawButton onApplied={invalidateWithdraw} />
                 </div>
             </div>
 
@@ -276,6 +416,7 @@ export default function Wallet() {
                     <TabsList className="rounded-2xl bg-muted p-1">
                         <TabsTrigger value="ledger" className="rounded-xl">{t('tab.ledger')}</TabsTrigger>
                         <TabsTrigger value="orders" className="rounded-xl">{t('tab.orders')}</TabsTrigger>
+                        <TabsTrigger value="withdrawals" className="rounded-xl">{t('tab.withdrawals')}</TabsTrigger>
                     </TabsList>
                 </Tabs>
                 {tab === 'ledger' && (
@@ -323,7 +464,7 @@ export default function Wallet() {
                         </div>
                     )}
                 </div>
-            ) : (
+            ) : tab === 'orders' ? (
                 <div className="min-h-0 flex-1 overflow-auto overscroll-contain rounded-3xl border border-border bg-card">
                     {orders.isLoading ? (
                         <div className="flex h-full items-center justify-center gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" />{t('loading')}</div>
@@ -349,6 +490,58 @@ export default function Wallet() {
                                             <td className="px-4 py-3 tabular-nums">{money(order.credits + order.bonus)}</td>
                                             <td className="px-4 py-3">{t('status.' + order.status)}</td>
                                             <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatTime(order.paid_at ?? order.created_at, '-')}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <div className="min-h-0 flex-1 overflow-auto overscroll-contain rounded-3xl border border-border bg-card">
+                    {withdrawals.isLoading ? (
+                        <div className="flex h-full items-center justify-center gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" />{t('loading')}</div>
+                    ) : withdrawals.isError ? (
+                        <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground"><AlertCircle className="size-8" /><p>{t('error')}</p><Button variant="outline" size="sm" onClick={() => void withdrawals.refetch()} className="rounded-xl">{t('retry')}</Button></div>
+                    ) : withdrawItems.length === 0 ? (
+                        <div className="flex h-full items-center justify-center text-muted-foreground">{t('withdraw.empty')}</div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[760px] text-sm">
+                                <thead className="sticky top-0 bg-card text-left text-xs text-muted-foreground"><tr>
+                                    <th className="px-4 py-3 font-medium">{t('wtable.id')}</th>
+                                    <th className="px-4 py-3 font-medium">{t('wtable.amount')}</th>
+                                    <th className="px-4 py-3 font-medium">{t('wtable.fee')}</th>
+                                    <th className="px-4 py-3 font-medium">{t('wtable.actual')}</th>
+                                    <th className="px-4 py-3 font-medium">{t('wtable.status')}</th>
+                                    <th className="px-4 py-3 font-medium">{t('wtable.time')}</th>
+                                    <th className="px-4 py-3 font-medium">{t('wtable.actions')}</th>
+                                </tr></thead>
+                                <tbody>
+                                    {withdrawItems.map((order) => (
+                                        <tr key={order.id} className="border-t border-border">
+                                            <td className="px-4 py-3 font-mono text-xs">#{order.id}</td>
+                                            <td className="px-4 py-3 tabular-nums">{money(order.amount)}</td>
+                                            <td className="px-4 py-3 tabular-nums">{money(order.fee)}</td>
+                                            <td className="px-4 py-3 tabular-nums font-medium">¥{money(order.actual_cents / 100)}</td>
+                                            <td className="px-4 py-3">{t('wstatus.' + order.status)}</td>
+                                            <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatTime(order.applied_at, '-')}</td>
+                                            <td className="px-4 py-3">
+                                                {order.status === 'pending' ? (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="h-8 rounded-xl"
+                                                        onClick={() => cancelWithdrawal(order.id).then(() => { toast.success(t('withdraw.cancelled')); invalidateWithdraw(); }).catch((error) => toast.error(t('withdraw.failed'), { description: (error as Error).message }))}
+                                                    >
+                                                        {t('withdraw.cancelOrder')}
+                                                    </Button>
+                                                ) : order.status === 'paid' ? (
+                                                    <span className="text-xs text-muted-foreground">{order.paid_ref}</span>
+                                                ) : (
+                                                    <span className="text-xs text-muted-foreground">{order.review_note || '-'}</span>
+                                                )}
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>

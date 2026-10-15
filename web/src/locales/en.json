@@ -61,7 +61,8 @@
         "ratelimit": "Rate Limit",
         "ops": "Ops",
         "wallet": "Wallet",
-        "redemption": "Redemption Codes"
+        "redemption": "Redemption Codes",
+        "withdrawals": "Withdrawals"
     },
     "toolbar": {
         "hideChannelName": "Blur channel names",
@@ -425,7 +426,16 @@
             "bonusRulesHint": "Compact format 'minCNY:percent', comma separated, e.g. 100:5,500:10. Highest tier wins.",
             "save": "Save payment settings",
             "saved": "Payment settings saved",
-            "saveFailed": "Save failed"
+            "saveFailed": "Save failed",
+            "withdrawTitle": "Withdrawal rules (revenue pool)",
+            "withdrawMinAmount": "Minimum per request",
+            "withdrawFeeRate": "Fee rate (0.01 = 1%)",
+            "withdrawFeeMin": "Minimum fee",
+            "withdrawCooldownDays": "Revenue cooldown (days)",
+            "withdrawDailyCountLimit": "Daily count limit",
+            "withdrawDailyAmountLimit": "Daily amount limit",
+            "withdrawAccountLockDays": "Account lock (days)",
+            "withdrawHint": "0 means unlimited / no cooldown / no lock. Fresh revenue is not withdrawable during cooldown. Reseller revenue only."
         }
     },
     "group": {
@@ -1080,6 +1090,13 @@
             "recharge": {
                 "create": "Create recharge order",
                 "complete": "Manual order completion"
+            },
+            "withdrawal": {
+                "apply": "Apply withdrawal",
+                "cancel": "Cancel withdrawal",
+                "review": "Review withdrawal",
+                "paid": "Pay withdrawal",
+                "rollback": "Rollback payout"
             }
         }
     },
@@ -1464,7 +1481,8 @@
         },
         "tab": {
             "ledger": "Balance ledger",
-            "orders": "Recharge orders"
+            "orders": "Recharge orders",
+            "withdrawals": "Withdrawals"
         },
         "recharge": {
             "open": "Top up",
@@ -1500,6 +1518,41 @@
             "failed": "Failed",
             "expired": "Closed",
             "refunded": "Refunded"
+        },
+        "withdraw": {
+            "open": "Withdraw",
+            "available": "Withdrawable (revenue pool)",
+            "amount": "Amount",
+            "method": "Payout method",
+            "bank": "Bank card",
+            "accountName": "Account name",
+            "accountNo": "Account number",
+            "fee": "Fee",
+            "feeHint": "Fee = max(min {min}, amount x {rate}%); reseller revenue only",
+            "actual": "You receive",
+            "submit": "Apply",
+            "applied": "Withdrawal applied; waiting for admin review",
+            "cancelled": "Withdrawal cancelled and unfrozen",
+            "failed": "Withdrawal failed",
+            "cancelOrder": "Cancel",
+            "empty": "No withdrawals yet",
+            "notAllowed": "Only reseller revenue is withdrawable. Recharged balance cannot be withdrawn (anti-cash-out)."
+        },
+        "wtable": {
+            "id": "No",
+            "amount": "Amount",
+            "fee": "Fee",
+            "actual": "Payout",
+            "status": "Status",
+            "time": "Applied",
+            "actions": "Actions"
+        },
+        "wstatus": {
+            "pending": "Pending",
+            "approved": "Approved",
+            "paid": "Paid",
+            "rejected": "Rejected",
+            "cancelled": "Cancelled"
         }
     },
     "redemption": {
@@ -1566,6 +1619,59 @@
             "enabled": "Available",
             "used": "Used",
             "disabled": "Disabled"
+        }
+    },
+    "withdrawals": {
+        "title": "Withdrawals",
+        "refresh": "Refresh",
+        "filterAll": "All statuses",
+        "loading": "Loading...",
+        "error": "Failed to load",
+        "retry": "Retry",
+        "empty": "No withdrawal requests",
+        "actionFailed": "Action failed",
+        "table": {
+            "id": "No",
+            "user": "Applicant",
+            "amount": "Amount",
+            "fee": "Fee",
+            "actual": "Payout",
+            "account": "Account",
+            "status": "Status",
+            "time": "Applied",
+            "actions": "Actions"
+        },
+        "status": {
+            "pending": "Pending",
+            "approved": "Approved",
+            "paid": "Paid",
+            "rejected": "Rejected",
+            "cancelled": "Cancelled"
+        },
+        "method": {
+            "alipay": "Alipay",
+            "wechat": "WeChat",
+            "bank": "Bank"
+        },
+        "action": {
+            "approve": "Approve",
+            "reject": "Reject",
+            "markPaid": "Mark paid",
+            "rollback": "Rollback",
+            "cancel": "Cancel"
+        },
+        "review": {
+            "approved": "Withdrawal #{id} approved",
+            "rejected": "Withdrawal #{id} rejected and unfrozen",
+            "notePlaceholder": "Review note (optional)"
+        },
+        "paid": {
+            "done": "Withdrawal #{id} marked paid",
+            "confirm": "Confirm payout",
+            "refPlaceholder": "Payout reference (required)"
+        },
+        "rollback": {
+            "done": "Withdrawal #{id} rolled back to approved"
         }
     }
 }

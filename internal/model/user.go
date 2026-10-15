@@ -41,7 +41,11 @@ type User struct {
 	TotalSpent   float64 `json:"total_spent" gorm:"type:decimal(18,6);not null;default:0"`
 	TotalRevenue float64 `json:"total_revenue" gorm:"type:decimal(18,6);not null;default:0"`
 	// TotalRecharged 预留: 充值功能上线后累计充值额。
-	TotalRecharged float64   `json:"total_recharged" gorm:"type:decimal(18,6);not null;default:0"`
+	TotalRecharged float64 `json:"total_recharged" gorm:"type:decimal(18,6);not null;default:0"`
+	// 收益池提现口径(P3): 可提 = TotalRevenue - TotalWithdrawn - WithdrawFrozen;
+	// 提现只在这三个字段之间迁移, 永不动 Balance(充值款不可提现, 防套现)。
+	TotalWithdrawn float64   `json:"total_withdrawn" gorm:"type:decimal(18,6);not null;default:0"`
+	WithdrawFrozen float64   `json:"withdraw_frozen" gorm:"type:decimal(18,6);not null;default:0"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 
@@ -87,8 +91,10 @@ type UserView struct {
 	Balance      float64    `json:"balance"`
 	Frozen       float64    `json:"frozen"`
 	TotalSpent   float64    `json:"total_spent"`
-	TotalRevenue float64    `json:"total_revenue"`
-	CreatedAt    time.Time  `json:"created_at"`
+	TotalRevenue   float64    `json:"total_revenue"`
+	TotalWithdrawn float64    `json:"total_withdrawn"`
+	WithdrawFrozen float64    `json:"withdraw_frozen"`
+	CreatedAt      time.Time  `json:"created_at"`
 }
 
 // View 返回账号的对外副本。
@@ -101,8 +107,10 @@ func (u *User) View() UserView {
 		Balance:      u.Balance,
 		Frozen:       u.Frozen,
 		TotalSpent:   u.TotalSpent,
-		TotalRevenue: u.TotalRevenue,
-		CreatedAt:    u.CreatedAt,
+		TotalRevenue:   u.TotalRevenue,
+		TotalWithdrawn: u.TotalWithdrawn,
+		WithdrawFrozen: u.WithdrawFrozen,
+		CreatedAt:      u.CreatedAt,
 	}
 }
 

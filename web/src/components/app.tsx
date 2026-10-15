@@ -33,6 +33,7 @@ const Ops = lazy(() => pageImports.ops());
 const Share = lazy(() => pageImports.share());
 const Wallet = lazy(() => pageImports.wallet());
 const Redemption = lazy(() => pageImports.redemption());
+const Withdrawals = lazy(() => pageImports.withdrawals());
 const Billing = lazy(() => pageImports.billing());
 const Apikey = lazy(() => pageImports.apikey());
 const Log = lazy(() => pageImports.log().then((module) => ({ default: module.Log })));
@@ -180,6 +181,7 @@ export function AppContainer() {
                             {visibleItem === 'share' && <Share />}
                             {visibleItem === 'wallet' && <Wallet />}
                             {visibleItem === 'redemption' && <Redemption />}
+                            {visibleItem === 'withdrawals' && <Withdrawals />}
                             {visibleItem === 'billing' && <Billing />}
                             {visibleItem === 'apikey' && <Apikey />}
                             {visibleItem === 'channel' && <Channel />}

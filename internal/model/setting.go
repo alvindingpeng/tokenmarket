@@ -42,6 +42,14 @@ const (
 	SettingKeyRechargeAmountTiers  SettingKey = "recharge_amount_tiers"   // 充值弹窗快捷金额(元, 逗号分隔), 留空不出快捷按钮
 	SettingKeyRechargeBonusEnabled SettingKey = "recharge_bonus_enabled"   // 满赠开关(D6), 默认关
 	SettingKeyRechargeBonusRules   SettingKey = "recharge_bonus_rules"     // 满赠规则 "满X元送Y%" 紧凑格式: 100:5,500:10
+	// 提现规则(P3): 全部可配; 金额为收益池口径(USD), 打款按申请时汇率快照折人民币分。
+	SettingKeyWithdrawalMinAmount        SettingKey = "withdrawal_min_amount"         // 单笔最低提现额, 默认 50
+	SettingKeyWithdrawalFeeRate          SettingKey = "withdrawal_fee_rate"           // 手续费率(0.01 = 1%), 默认 1%
+	SettingKeyWithdrawalFeeMin           SettingKey = "withdrawal_fee_min"            // 最低手续费, 默认 1
+	SettingKeyWithdrawalCooldownDays     SettingKey = "withdrawal_cooldown_days"      // 收益冷却天数(产生后 N 天才可提), 0 不冷却
+	SettingKeyWithdrawalDailyCountLimit  SettingKey = "withdrawal_daily_count_limit"  // 单日笔数上限, 0 不限
+	SettingKeyWithdrawalDailyAmountLimit SettingKey = "withdrawal_daily_amount_limit" // 单日总额上限(池口径), 0 不限
+	SettingKeyWithdrawalAccountLockDays  SettingKey = "withdrawal_account_lock_days"  // 提现账户锁定天数(防盗号改卡), 0 不锁
 	// 路由策略系统默认: 分组内未自定义(权重为 0)时按这里的配比执行。
 	SettingKeyScorePriceWeight   SettingKey = "score_price_weight"   // 综合评分默认价格权重(0-100)
 	SettingKeyScoreLatencyWeight SettingKey = "score_latency_weight" // 综合评分默认延迟权重(0-100)
@@ -152,6 +160,13 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyRechargeAmountTiers, Value: "10,50,100,500"}, // 弹窗快捷金额(元)
 		{Key: SettingKeyRechargeBonusEnabled, Value: "false"},   // 满赠默认关(D6)
 		{Key: SettingKeyRechargeBonusRules, Value: ""},          // 满赠规则, 如 100:5,500:10
+		{Key: SettingKeyWithdrawalMinAmount, Value: "50"},       // 单笔最低提现额(收益池口径)
+		{Key: SettingKeyWithdrawalFeeRate, Value: "0.01"},       // 手续费 1%
+		{Key: SettingKeyWithdrawalFeeMin, Value: "1"},           // 最低手续费 1
+		{Key: SettingKeyWithdrawalCooldownDays, Value: "0"},     // 默认不冷却
+		{Key: SettingKeyWithdrawalDailyCountLimit, Value: "0"},  // 默认不限笔数
+		{Key: SettingKeyWithdrawalDailyAmountLimit, Value: "0"}, // 默认不限总额
+		{Key: SettingKeyWithdrawalAccountLockDays, Value: "0"},  // 默认不锁账户
 		{Key: SettingKeyScorePriceWeight, Value: "40"},           // 综合评分默认配比: 价格 40
 		{Key: SettingKeyScoreLatencyWeight, Value: "30"},         // 综合评分默认配比: 延迟 30
 		{Key: SettingKeyScoreSuccessWeight, Value: "30"},         // 综合评分默认配比: 成功率 30
@@ -257,6 +272,31 @@ func (s *Setting) Validate() error {
 	case SettingKeyRechargeAmountTiers:
 		if _, err := ParseAmountTiers(s.Value); err != nil {
 			return err
+		}
+		return nil
+	case SettingKeyWithdrawalMinAmount:
+		if amount, err := strconv.ParseFloat(s.Value, 64); err != nil || amount < 0 {
+			return fmt.Errorf("withdrawal minimum amount must be a non-negative number")
+		}
+		return nil
+	case SettingKeyWithdrawalFeeRate:
+		if rate, err := strconv.ParseFloat(s.Value, 64); err != nil || rate < 0 || rate > 1 {
+			return fmt.Errorf("withdrawal fee rate must be a number between 0 and 1")
+		}
+		return nil
+	case SettingKeyWithdrawalFeeMin:
+		if fee, err := strconv.ParseFloat(s.Value, 64); err != nil || fee < 0 {
+			return fmt.Errorf("withdrawal fee minimum must be a non-negative number")
+		}
+		return nil
+	case SettingKeyWithdrawalCooldownDays, SettingKeyWithdrawalDailyCountLimit, SettingKeyWithdrawalAccountLockDays:
+		if days, err := strconv.Atoi(s.Value); err != nil || days < 0 {
+			return fmt.Errorf("%s must be a non-negative integer", s.Key)
+		}
+		return nil
+	case SettingKeyWithdrawalDailyAmountLimit:
+		if amount, err := strconv.ParseFloat(s.Value, 64); err != nil || amount < 0 {
+			return fmt.Errorf("withdrawal daily amount limit must be a non-negative number")
 		}
 		return nil
 	case SettingKeyScorePriceWeight, SettingKeyScoreLatencyWeight, SettingKeyScoreSuccessWeight,

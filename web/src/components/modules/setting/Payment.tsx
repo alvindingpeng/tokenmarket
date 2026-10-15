@@ -19,6 +19,13 @@ const PAYMENT_FIELDS = [
     'recharge_min_cny',
     'recharge_amount_tiers',
     'recharge_bonus_rules',
+    'withdrawal_min_amount',
+    'withdrawal_fee_rate',
+    'withdrawal_fee_min',
+    'withdrawal_cooldown_days',
+    'withdrawal_daily_count_limit',
+    'withdrawal_daily_amount_limit',
+    'withdrawal_account_lock_days',
 ] as const;
 
 // SettingPayment 充值与支付配置: 易支付商户参数、汇率、满赠规则, 全部参数化后配即生效。
@@ -114,6 +121,42 @@ export function SettingPayment() {
                 <Label htmlFor="pay-bonus">{t('payment.bonusRules')}</Label>
                 <Input id="pay-bonus" className="rounded-xl" placeholder="100:5,500:10" value={valueOf('recharge_bonus_rules')} onChange={(event) => setValue('recharge_bonus_rules', event.target.value)} autoComplete="off" />
                 <p className="text-xs text-muted-foreground">{t('payment.bonusRulesHint')}</p>
+            </div>
+
+
+            <div className="space-y-3 rounded-2xl border border-border px-3 py-3">
+                <div className="text-sm font-medium">{t('payment.withdrawTitle')}</div>
+                <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                        <Label htmlFor="wd-min">{t('payment.withdrawMinAmount')}</Label>
+                        <Input id="wd-min" type="number" min="0" step="0.01" className="rounded-xl" value={valueOf('withdrawal_min_amount')} onChange={(event) => setValue('withdrawal_min_amount', event.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="wd-fee-rate">{t('payment.withdrawFeeRate')}</Label>
+                        <Input id="wd-fee-rate" type="number" min="0" max="1" step="0.001" className="rounded-xl" value={valueOf('withdrawal_fee_rate')} onChange={(event) => setValue('withdrawal_fee_rate', event.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="wd-fee-min">{t('payment.withdrawFeeMin')}</Label>
+                        <Input id="wd-fee-min" type="number" min="0" step="0.01" className="rounded-xl" value={valueOf('withdrawal_fee_min')} onChange={(event) => setValue('withdrawal_fee_min', event.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="wd-cooldown">{t('payment.withdrawCooldownDays')}</Label>
+                        <Input id="wd-cooldown" type="number" min="0" step="1" className="rounded-xl" value={valueOf('withdrawal_cooldown_days')} onChange={(event) => setValue('withdrawal_cooldown_days', event.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="wd-count">{t('payment.withdrawDailyCountLimit')}</Label>
+                        <Input id="wd-count" type="number" min="0" step="1" className="rounded-xl" value={valueOf('withdrawal_daily_count_limit')} onChange={(event) => setValue('withdrawal_daily_count_limit', event.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="wd-amount">{t('payment.withdrawDailyAmountLimit')}</Label>
+                        <Input id="wd-amount" type="number" min="0" step="0.01" className="rounded-xl" value={valueOf('withdrawal_daily_amount_limit')} onChange={(event) => setValue('withdrawal_daily_amount_limit', event.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="wd-lock">{t('payment.withdrawAccountLockDays')}</Label>
+                        <Input id="wd-lock" type="number" min="0" step="1" className="rounded-xl" value={valueOf('withdrawal_account_lock_days')} onChange={(event) => setValue('withdrawal_account_lock_days', event.target.value)} />
+                    </div>
+                </div>
+                <p className="text-xs text-muted-foreground">{t('payment.withdrawHint')}</p>
             </div>
 
             <Button type="button" className="w-full rounded-xl" onClick={() => void saveAll()} disabled={saving}>

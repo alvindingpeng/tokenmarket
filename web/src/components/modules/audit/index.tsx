@@ -13,6 +13,7 @@ const KNOWN_ACTIONS = [
     'model.create', 'model.update', 'model.delete', 'model.update-price', 'model.rebuild-price', 'update.core',
     'audit.export', 'redemption.generate', 'redemption.redeem', 'redemption.disable',
     'recharge.create', 'recharge.complete',
+    'withdrawal.apply', 'withdrawal.cancel', 'withdrawal.review', 'withdrawal.paid', 'withdrawal.rollback',
 ];
 
 function formatTime(value: string): string {

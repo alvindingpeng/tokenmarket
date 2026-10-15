@@ -13,6 +13,7 @@ export const pageImports = {
     share: () => import('@/components/modules/share'),
     wallet: () => import('@/components/modules/wallet'),
     redemption: () => import('@/components/modules/redemption'),
+    withdrawals: () => import('@/components/modules/withdrawals'),
     billing: () => import('@/components/modules/billing'),
     apikey: () => import('@/components/modules/apikey'),
     log: () => import('@/components/modules/log'),
