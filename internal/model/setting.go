@@ -50,6 +50,19 @@ const (
 	SettingKeyWithdrawalDailyCountLimit  SettingKey = "withdrawal_daily_count_limit"  // 单日笔数上限, 0 不限
 	SettingKeyWithdrawalDailyAmountLimit SettingKey = "withdrawal_daily_amount_limit" // 单日总额上限(池口径), 0 不限
 	SettingKeyWithdrawalAccountLockDays  SettingKey = "withdrawal_account_lock_days"  // 提现账户锁定天数(防盗号改卡), 0 不锁
+	// 充值渠道(P4 多渠道, 对齐 New API): 每渠道一套参数, 商户信息后配即可用。
+	SettingKeyAlipayGatewayURL  SettingKey = "alipay_gateway_url"  // 支付宝网关, 默认官方 openapi.alipay.com
+	SettingKeyAlipayAppID       SettingKey = "alipay_app_id"       // 支付宝应用 ID
+	SettingKeyAlipayPrivateKey  SettingKey = "alipay_private_key"  // 应用私钥(RSA, 密钥类设置)
+	SettingKeyAlipayPublicKey   SettingKey = "alipay_public_key"   // 支付宝公钥(验签)
+	SettingKeyStripeSecretKey   SettingKey = "stripe_secret_key"   // Stripe 密钥(密钥类设置)
+	SettingKeyStripeWebhook     SettingKey = "stripe_webhook_secret" // Stripe Webhook 签名密钥(密钥类设置)
+	SettingKeyStripeAPIBase     SettingKey = "stripe_api_base"     // Stripe API 根地址, 留空官方
+	SettingKeyStripeCurrency    SettingKey = "stripe_currency"     // Stripe 收款币种, 默认 usd
+	SettingKeyCreemAPIKey       SettingKey = "creem_api_key"       // Creem API Key(密钥类设置)
+	SettingKeyCreemWebhook      SettingKey = "creem_webhook_secret" // Creem Webhook 签名密钥(密钥类设置)
+	SettingKeyCreemAPIBase      SettingKey = "creem_api_base"      // Creem API 根地址, 留空官方
+	SettingKeyCreemProducts     SettingKey = "creem_products"      // Creem 充值档位 JSON 数组
 	// 路由策略系统默认: 分组内未自定义(权重为 0)时按这里的配比执行。
 	SettingKeyScorePriceWeight   SettingKey = "score_price_weight"   // 综合评分默认价格权重(0-100)
 	SettingKeyScoreLatencyWeight SettingKey = "score_latency_weight" // 综合评分默认延迟权重(0-100)
@@ -124,7 +137,12 @@ func IsSecretSetting(key SettingKey) bool {
 	return key == SettingKeyGithubToken ||
 		key == SettingKeyAlertTelegramBotToken ||
 		key == SettingKeyAlertEmailPassword ||
-		key == SettingKeyEpayKey
+		key == SettingKeyEpayKey ||
+		key == SettingKeyAlipayPrivateKey ||
+		key == SettingKeyStripeSecretKey ||
+		key == SettingKeyStripeWebhook ||
+		key == SettingKeyCreemAPIKey ||
+		key == SettingKeyCreemWebhook
 }
 
 type Setting struct {
@@ -167,6 +185,18 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyWithdrawalDailyCountLimit, Value: "0"},  // 默认不限笔数
 		{Key: SettingKeyWithdrawalDailyAmountLimit, Value: "0"}, // 默认不限总额
 		{Key: SettingKeyWithdrawalAccountLockDays, Value: "0"},  // 默认不锁账户
+		{Key: SettingKeyAlipayGatewayURL, Value: "https://openapi.alipay.com/gateway.do"}, // 支付宝官方网关
+		{Key: SettingKeyAlipayAppID, Value: ""},              // 应用 ID 后配
+		{Key: SettingKeyAlipayPrivateKey, Value: ""},         // 私钥后配(密钥类设置)
+		{Key: SettingKeyAlipayPublicKey, Value: ""},          // 公钥后配
+		{Key: SettingKeyStripeSecretKey, Value: ""},          // Stripe 密钥后配(密钥类设置)
+		{Key: SettingKeyStripeWebhook, Value: ""},            // Webhook 密钥后配(密钥类设置)
+		{Key: SettingKeyStripeAPIBase, Value: ""},            // 留空走官方
+		{Key: SettingKeyStripeCurrency, Value: "usd"},        // 默认美元收款
+		{Key: SettingKeyCreemAPIKey, Value: ""},              // Creem Key 后配(密钥类设置)
+		{Key: SettingKeyCreemWebhook, Value: ""},             // Webhook 密钥后配(密钥类设置)
+		{Key: SettingKeyCreemAPIBase, Value: ""},             // 留空走官方
+		{Key: SettingKeyCreemProducts, Value: ""},            // 档位后配, 空表示未配置
 		{Key: SettingKeyScorePriceWeight, Value: "40"},           // 综合评分默认配比: 价格 40
 		{Key: SettingKeyScoreLatencyWeight, Value: "30"},         // 综合评分默认配比: 延迟 30
 		{Key: SettingKeyScoreSuccessWeight, Value: "30"},         // 综合评分默认配比: 成功率 30
@@ -297,6 +327,16 @@ func (s *Setting) Validate() error {
 	case SettingKeyWithdrawalDailyAmountLimit:
 		if amount, err := strconv.ParseFloat(s.Value, 64); err != nil || amount < 0 {
 			return fmt.Errorf("withdrawal daily amount limit must be a non-negative number")
+		}
+		return nil
+	case SettingKeyStripeCurrency:
+		if length := len(strings.TrimSpace(s.Value)); length < 2 || length > 8 {
+			return fmt.Errorf("stripe currency must be a currency code")
+		}
+		return nil
+	case SettingKeyCreemProducts:
+		if _, err := ParseCreemProducts(s.Value); err != nil {
+			return err
 		}
 		return nil
 	case SettingKeyScorePriceWeight, SettingKeyScoreLatencyWeight, SettingKeyScoreSuccessWeight,

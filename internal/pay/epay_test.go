@@ -25,7 +25,7 @@ func TestEpaySignRoundtrip(t *testing.T) {
 	for name, value := range params {
 		query.Set(name, value)
 	}
-	tradeNo, orderNo, amountCents, err := gateway.VerifyCallback(query)
+	tradeNo, orderNo, amountCents, err := gateway.VerifyCallback(&CallbackRequest{Form: query})
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestEpayVerifyRejectsTampered(t *testing.T) {
 		query.Set(name, value)
 	}
 	query.Set("money", "0.01") // 篡改: 只付 1 分钱却要 10 元的入账
-	if _, _, _, err := gateway.VerifyCallback(query); err == nil {
+	if _, _, _, err := gateway.VerifyCallback(&CallbackRequest{Form: query}); err == nil {
 		t.Fatal("tampered callback must be rejected")
 	}
 }
@@ -60,7 +60,7 @@ func TestEpayVerifyRejectsMissingSign(t *testing.T) {
 	query.Set("trade_no", "T100")
 	query.Set("out_trade_no", "O1")
 	query.Set("money", "10.00")
-	if _, _, _, err := gateway.VerifyCallback(query); err == nil {
+	if _, _, _, err := gateway.VerifyCallback(&CallbackRequest{Form: query}); err == nil {
 		t.Fatal("unsigned callback must be rejected")
 	}
 }

@@ -1,6 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './client';
 
+// PayChannel 充值渠道(对齐 New API pay_methods): 前端按 configured 决定可选渠道。
+export type PayChannel = {
+    id: string; // epay|alipay|stripe|creem
+    name: string;
+    configured: boolean;
+    currency: string;
+    pay_types?: string[];
+};
+
 // RechargeView 充值配置视图: 未配置商户参数时充值入口优雅降级。
 export type RechargeView = {
     configured: boolean;
@@ -8,7 +17,8 @@ export type RechargeView = {
     min_cny: number;
     amount_tiers: number[];
     bonus_enabled: boolean;
-    pay_types: string[]; // 支付方式白名单; 空表示收银台自选全开放
+    pay_types: string[]; // 易支付方式白名单; 空表示收银台自选全开放
+    channels: PayChannel[];
 };
 
 // RechargeOrder 充值订单; amount_cents 为实付法币分, credits/bonus 为入账口径。
@@ -20,6 +30,8 @@ export type RechargeOrder = {
     method: string;
     amount_cents: number;
     currency: string;
+    pay_cents: number; // 渠道实付额(渠道币种分)
+    pay_currency: string;
     credits: number;
     bonus: number;
     subject: string;
@@ -31,8 +43,8 @@ export type RechargeOrder = {
     paid_at: string | null;
 };
 
-// PayForm 收银台提交表单: 浏览器自动 POST 跳转。
-export type PayForm = { action: string; fields: Record<string, string> };
+// PayForm 收银台跳转: fields 非空走表单自动 POST, 否则直接跳 redirect_url。
+export type PayForm = { action: string; fields: Record<string, string>; redirect_url: string };
 
 export type RechargeQuote = { credits: number; bonus: number; rate: number };
 
@@ -57,8 +69,8 @@ export function useRechargeQuote(amountCents: number) {
     });
 }
 
-// createRecharge 下单并返回收银台表单; 成功后由调用方自动提交表单跳转。
-export function createRecharge(input: { amount_cents: number; method: string }) {
+// createRecharge 下单并返回收银台跳转; 成功后由调用方提交表单或跳转链接。
+export function createRecharge(input: { amount_cents: number; provider: string; method: string }) {
     return apiRequest<{ order: RechargeOrder; form: PayForm }>('/api/v1/recharge/create', {
         method: 'POST',
         body: input,

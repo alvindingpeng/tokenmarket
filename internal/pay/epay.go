@@ -5,29 +5,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
-	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 )
-
-// PaymentGateway 支付网关抽象(D1 外币支付预留): 金额一律"最小货币单位 + 币种",
-// 后续 Stripe/支付宝直连按同一接口即插即用, 订单与入账层不动。
-type PaymentGateway interface {
-	// CreatePayment 创建支付单, 返回要提交给收银台的表单。
-	CreatePayment(order *model.RechargeOrder, notifyURL, returnURL string) (*Form, error)
-	// VerifyCallback 验签并解析回调, 返回第三方流水号、业务单号与实付金额(分)。
-	// 验签不过一律拒绝, 回调里的任何字段都不可信。
-	VerifyCallback(query url.Values) (tradeNo, orderNo string, amountCents int64, err error)
-}
-
-// Form 收银台提交表单: 浏览器自动 POST 到 Action 完成跳转。
-type Form struct {
-	Action string            `json:"action"`
-	Fields map[string]string `json:"fields"`
-}
 
 // EpayConfig 易支付参数; 全部来自后台设置, 商户信息后配即可用。
 type EpayConfig struct {
@@ -117,13 +100,19 @@ func (e *Epay) CreatePayment(order *model.RechargeOrder, notifyURL, returnURL st
 	}, nil
 }
 
+// ChargeCurrency 易支付收人民币, 按面值收。
+func (e *Epay) ChargeCurrency() string { return "CNY" }
+
 // VerifyCallback 验签并解析回调; 签名不符或字段缺失一律拒绝。
-func (e *Epay) VerifyCallback(query url.Values) (string, string, int64, error) {
+func (e *Epay) VerifyCallback(req *CallbackRequest) (string, string, int64, error) {
 	if !e.Config.Configured() {
 		return "", "", 0, fmt.Errorf("payment gateway is not configured")
 	}
+	if req == nil || req.Form == nil {
+		return "", "", 0, fmt.Errorf("callback form is missing")
+	}
 	params := map[string]string{}
-	for name, values := range query {
+	for name, values := range req.Form {
 		if len(values) > 0 {
 			params[name] = values[0]
 		}

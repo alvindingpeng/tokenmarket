@@ -14,6 +14,18 @@ const PAYMENT_FIELDS = [
     'epay_pid',
     'epay_key',
     'epay_pay_types',
+    'alipay_gateway_url',
+    'alipay_app_id',
+    'alipay_private_key',
+    'alipay_public_key',
+    'stripe_secret_key',
+    'stripe_webhook_secret',
+    'stripe_api_base',
+    'stripe_currency',
+    'creem_api_key',
+    'creem_webhook_secret',
+    'creem_api_base',
+    'creem_products',
     'recharge_notify_base',
     'recharge_rate',
     'recharge_min_cny',
@@ -91,6 +103,84 @@ export function SettingPayment() {
                 </div>
             </div>
             <p className="text-xs text-muted-foreground">{t('payment.notifyHint')}</p>
+
+            {/* 支付宝官方直连: RSA2 密钥对, 留空不启用该渠道 */}
+            <div className="space-y-3 rounded-2xl border border-border p-3">
+                <p className="text-sm font-medium text-card-foreground">{t('payment.alipaySection')}</p>
+                <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                        <Label htmlFor="alipay-gateway">{t('payment.alipayGateway')}</Label>
+                        <Input id="alipay-gateway" className="rounded-xl" placeholder="https://openapi.alipay.com/gateway.do" value={valueOf('alipay_gateway_url')} onChange={(event) => setValue('alipay_gateway_url', event.target.value)} autoComplete="off" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="alipay-appid">{t('payment.alipayAppID')}</Label>
+                        <Input id="alipay-appid" className="rounded-xl" value={valueOf('alipay_app_id')} onChange={(event) => setValue('alipay_app_id', event.target.value)} autoComplete="off" />
+                    </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                        <Label htmlFor="alipay-private">{t('payment.alipayPrivateKey')}</Label>
+                        <Input id="alipay-private" type="password" className="rounded-xl" placeholder={t('payment.keyPlaceholder')} value={valueOf('alipay_private_key')} onChange={(event) => setValue('alipay_private_key', event.target.value)} autoComplete="new-password" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="alipay-public">{t('payment.alipayPublicKey')}</Label>
+                        <Input id="alipay-public" type="password" className="rounded-xl" value={valueOf('alipay_public_key')} onChange={(event) => setValue('alipay_public_key', event.target.value)} autoComplete="new-password" />
+                    </div>
+                </div>
+                <p className="text-xs text-muted-foreground">{t('payment.alipayHint')}</p>
+            </div>
+
+            {/* Stripe: 卡收款, 币种可配(默认 usd, 按汇率快照折算) */}
+            <div className="space-y-3 rounded-2xl border border-border p-3">
+                <p className="text-sm font-medium text-card-foreground">{t('payment.stripeSection')}</p>
+                <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                        <Label htmlFor="stripe-key">{t('payment.stripeSecretKey')}</Label>
+                        <Input id="stripe-key" type="password" className="rounded-xl" placeholder="sk_..." value={valueOf('stripe_secret_key')} onChange={(event) => setValue('stripe_secret_key', event.target.value)} autoComplete="new-password" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="stripe-webhook">{t('payment.stripeWebhook')}</Label>
+                        <Input id="stripe-webhook" type="password" className="rounded-xl" placeholder="whsec_..." value={valueOf('stripe_webhook_secret')} onChange={(event) => setValue('stripe_webhook_secret', event.target.value)} autoComplete="new-password" />
+                    </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                        <Label htmlFor="stripe-base">{t('payment.stripeAPIBase')}</Label>
+                        <Input id="stripe-base" className="rounded-xl" placeholder="https://api.stripe.com" value={valueOf('stripe_api_base')} onChange={(event) => setValue('stripe_api_base', event.target.value)} autoComplete="off" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="stripe-currency">{t('payment.stripeCurrency')}</Label>
+                        <Input id="stripe-currency" className="rounded-xl" placeholder="usd" value={valueOf('stripe_currency')} onChange={(event) => setValue('stripe_currency', event.target.value)} autoComplete="off" />
+                    </div>
+                </div>
+                <p className="text-xs text-muted-foreground">{t('payment.stripeHint')}</p>
+            </div>
+
+            {/* Creem: 商品化档位, 金额档对应 Creem 后台商品 */}
+            <div className="space-y-3 rounded-2xl border border-border p-3">
+                <p className="text-sm font-medium text-card-foreground">{t('payment.creemSection')}</p>
+                <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                        <Label htmlFor="creem-key">{t('payment.creemAPIKey')}</Label>
+                        <Input id="creem-key" type="password" className="rounded-xl" value={valueOf('creem_api_key')} onChange={(event) => setValue('creem_api_key', event.target.value)} autoComplete="new-password" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="creem-webhook">{t('payment.creemWebhook')}</Label>
+                        <Input id="creem-webhook" type="password" className="rounded-xl" value={valueOf('creem_webhook_secret')} onChange={(event) => setValue('creem_webhook_secret', event.target.value)} autoComplete="new-password" />
+                    </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                        <Label htmlFor="creem-base">{t('payment.creemAPIBase')}</Label>
+                        <Input id="creem-base" className="rounded-xl" placeholder="https://api.creem.io" value={valueOf('creem_api_base')} onChange={(event) => setValue('creem_api_base', event.target.value)} autoComplete="off" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="creem-products">{t('payment.creemProducts')}</Label>
+                        <Input id="creem-products" className="rounded-xl" placeholder='[{"product_id":"prod_x","name":"充值","amount_cents":7000,"credits":10}]' value={valueOf('creem_products')} onChange={(event) => setValue('creem_products', event.target.value)} autoComplete="off" />
+                    </div>
+                </div>
+                <p className="text-xs text-muted-foreground">{t('payment.creemHint')}</p>
+            </div>
 
             <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-2">

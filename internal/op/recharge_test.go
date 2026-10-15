@@ -90,7 +90,7 @@ func TestRechargeCreateNotConfigured(t *testing.T) {
 	if err := SettingUpsert(model.SettingKeyEpayGatewayURL, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := RechargeCreate(context.Background(), 1, 1000, "alipay", "n", "r"); err == nil {
+	if _, _, err := RechargeCreate(context.Background(), 1, 1000, "epay", "alipay", "n", "r"); err == nil {
 		t.Fatal("unconfigured gateway must reject")
 	}
 }
@@ -98,15 +98,15 @@ func TestRechargeCreateNotConfigured(t *testing.T) {
 // TestRechargeNotifyIdempotent 回调重复投递只入账一次。
 func TestRechargeNotifyIdempotent(t *testing.T) {
 	user := rechargeTestSetup(t, "idempotent")
-	order, _, err := RechargeCreate(context.Background(), user.ID, 7000, "alipay", "https://api/n", "https://api/r")
+	order, _, err := RechargeCreate(context.Background(), user.ID, 7000, "epay", "alipay", "https://api/n", "https://api/r")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	query := rechargeTestQuery(order.OrderNo, "T100", "70.00")
-	if err := RechargeNotify(context.Background(), query); err != nil {
+	if err := RechargeNotify(context.Background(), "epay", &pay.CallbackRequest{Form: query}); err != nil {
 		t.Fatalf("notify #1: %v", err)
 	}
-	if err := RechargeNotify(context.Background(), query); err != nil {
+	if err := RechargeNotify(context.Background(), "epay", &pay.CallbackRequest{Form: query}); err != nil {
 		t.Fatalf("notify #2 (重复投递应幂等成功): %v", err)
 	}
 	balance, recharged := redemptionTestBalance(t, user.ID)
@@ -131,11 +131,11 @@ func TestRechargeNotifyBonusLedger(t *testing.T) {
 	if err := SettingUpsert(model.SettingKeyRechargeBonusRules, "50:10"); err != nil {
 		t.Fatal(err)
 	}
-	order, _, err := RechargeCreate(context.Background(), user.ID, 7000, "alipay", "https://api/n", "https://api/r")
+	order, _, err := RechargeCreate(context.Background(), user.ID, 7000, "epay", "alipay", "https://api/n", "https://api/r")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := RechargeNotify(context.Background(), rechargeTestQuery(order.OrderNo, "T200", "70.00")); err != nil {
+	if err := RechargeNotify(context.Background(), "epay", &pay.CallbackRequest{Form: rechargeTestQuery(order.OrderNo, "T200", "70.00")}); err != nil {
 		t.Fatalf("notify: %v", err)
 	}
 	balance, recharged := redemptionTestBalance(t, user.ID)
@@ -154,11 +154,11 @@ func TestRechargeNotifyBonusLedger(t *testing.T) {
 // TestRechargeNotifyAmountMismatch 金额不符拒绝入账。
 func TestRechargeNotifyAmountMismatch(t *testing.T) {
 	user := rechargeTestSetup(t, "mismatch")
-	order, _, err := RechargeCreate(context.Background(), user.ID, 7000, "alipay", "https://api/n", "https://api/r")
+	order, _, err := RechargeCreate(context.Background(), user.ID, 7000, "epay", "alipay", "https://api/n", "https://api/r")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := RechargeNotify(context.Background(), rechargeTestQuery(order.OrderNo, "T300", "0.01")); err == nil {
+	if err := RechargeNotify(context.Background(), "epay", &pay.CallbackRequest{Form: rechargeTestQuery(order.OrderNo, "T300", "0.01")}); err == nil {
 		t.Fatal("amount mismatch must be rejected")
 	}
 	balance, _ := redemptionTestBalance(t, user.ID)
@@ -170,7 +170,7 @@ func TestRechargeNotifyAmountMismatch(t *testing.T) {
 // TestRechargeManualComplete 人工补单入账, 二次补单拒绝。
 func TestRechargeManualComplete(t *testing.T) {
 	user := rechargeTestSetup(t, "manual")
-	order, _, err := RechargeCreate(context.Background(), user.ID, 7000, "alipay", "https://api/n", "https://api/r")
+	order, _, err := RechargeCreate(context.Background(), user.ID, 7000, "epay", "alipay", "https://api/n", "https://api/r")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestRechargeManualComplete(t *testing.T) {
 // TestRechargeCloseExpired 超时订单自动关闭, 关闭后不能再入账。
 func TestRechargeCloseExpired(t *testing.T) {
 	user := rechargeTestSetup(t, "expired")
-	order, _, err := RechargeCreate(context.Background(), user.ID, 7000, "alipay", "https://api/n", "https://api/r")
+	order, _, err := RechargeCreate(context.Background(), user.ID, 7000, "epay", "alipay", "https://api/n", "https://api/r")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestRechargeCloseExpired(t *testing.T) {
 	if err := RechargeCloseExpired(context.Background()); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	if err := RechargeNotify(context.Background(), rechargeTestQuery(order.OrderNo, "T400", "70.00")); err == nil {
+	if err := RechargeNotify(context.Background(), "epay", &pay.CallbackRequest{Form: rechargeTestQuery(order.OrderNo, "T400", "70.00")}); err == nil {
 		t.Fatal("expired order must not credit")
 	}
 	balance, _ := redemptionTestBalance(t, user.ID)
