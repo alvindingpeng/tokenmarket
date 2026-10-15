@@ -12,6 +12,7 @@ const KNOWN_ACTIONS = [
     'setting.set', 'backup.export', 'backup.import', 'log.clear', 'channel.publish',
     'model.create', 'model.update', 'model.delete', 'model.update-price', 'model.rebuild-price', 'update.core',
     'audit.export', 'redemption.generate', 'redemption.redeem', 'redemption.disable',
+    'recharge.create', 'recharge.complete',
 ];
 
 function formatTime(value: string): string {

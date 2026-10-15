@@ -10,6 +10,7 @@ const (
 	LedgerKindAdjust  = "adjust"  // 管理员直接设置余额(充值/扣减)。
 	LedgerKindTopup   = "topup"   // 充值入账。
 	LedgerKindRedeem  = "redemption" // 兑换码入账。
+	LedgerKindBonus   = "bonus"   // 充值满赠送的余额(D6); 不计入累计充值口径。
 )
 
 // BillingLedger 余额流水: 每一次可用余额或冻结额的变化逐条留痕, 供用户自查与运维对账。

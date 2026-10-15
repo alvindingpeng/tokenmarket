@@ -30,6 +30,18 @@ const (
 	SettingKeyBalanceReserveCap       SettingKey = "balance_reserve_output_cap" // 余额预扣估算的默认输出 token 上限。
 	SettingKeyBalanceReserveImages    SettingKey = "balance_reserve_images"     // 生图预扣保守张数(无 N 时使用), 默认 4。
 	SettingKeyMinBalance              SettingKey = "min_balance"                // 允许的最低余额, 0 表示不足即拒
+
+	// 充值与支付(D1 易支付首发, 网关参数全部后台可配, 商户信息后配即可用)。
+	SettingKeyEpayGatewayURL       SettingKey = "epay_gateway_url"        // 易支付网关地址, 如 https://pay.example.com; 留空表示支付未配置
+	SettingKeyEpayPID              SettingKey = "epay_pid"                // 商户 ID
+	SettingKeyEpayKey              SettingKey = "epay_key"                // 商户密钥(加密存储/掩码回显)
+	SettingKeyEpayPayTypes         SettingKey = "epay_pay_types"          // 限定支付方式(逗号分隔: alipay,wechat,qq), 留空用网关默认
+	SettingKeyRechargeNotifyBase   SettingKey = "recharge_notify_base"    // 对外回调基址(如 https://api.example.com), 留空按请求 Host 推断
+	SettingKeyRechargeRate         SettingKey = "recharge_rate"           // 汇率: 1 余额币种(USD) 折多少 CNY, 默认 7.0
+	SettingKeyRechargeMinCNY       SettingKey = "recharge_min_cny"        // 单笔最低充值金额(元), 默认 1
+	SettingKeyRechargeAmountTiers  SettingKey = "recharge_amount_tiers"   // 充值弹窗快捷金额(元, 逗号分隔), 留空不出快捷按钮
+	SettingKeyRechargeBonusEnabled SettingKey = "recharge_bonus_enabled"   // 满赠开关(D6), 默认关
+	SettingKeyRechargeBonusRules   SettingKey = "recharge_bonus_rules"     // 满赠规则 "满X元送Y%" 紧凑格式: 100:5,500:10
 	// 路由策略系统默认: 分组内未自定义(权重为 0)时按这里的配比执行。
 	SettingKeyScorePriceWeight   SettingKey = "score_price_weight"   // 综合评分默认价格权重(0-100)
 	SettingKeyScoreLatencyWeight SettingKey = "score_latency_weight" // 综合评分默认延迟权重(0-100)
@@ -103,7 +115,8 @@ const TokenConfiguredMask = "__configured__"
 func IsSecretSetting(key SettingKey) bool {
 	return key == SettingKeyGithubToken ||
 		key == SettingKeyAlertTelegramBotToken ||
-		key == SettingKeyAlertEmailPassword
+		key == SettingKeyAlertEmailPassword ||
+		key == SettingKeyEpayKey
 }
 
 type Setting struct {
@@ -128,6 +141,17 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyBalanceReserveCap, Value: "4096"},        // 预扣估算默认输出上限
 		{Key: SettingKeyBalanceReserveImages, Value: "4"},        // 生图预扣保守张数, 4 张覆盖 dall-e-3 / gpt-image-1 n=4 上限
 		{Key: SettingKeyMinBalance, Value: "0"},                  // 不允许透支
+		// 充值与支付: 全部留空/默认, 商户信息在管理端补上即启用。
+		{Key: SettingKeyEpayGatewayURL, Value: ""},              // 留空表示支付未配置, 充值入口优雅降级
+		{Key: SettingKeyEpayPID, Value: ""},                     // 商户 ID 后配
+		{Key: SettingKeyEpayKey, Value: ""},                     // 商户密钥后配(密钥类设置)
+		{Key: SettingKeyEpayPayTypes, Value: ""},                // 不限定支付方式
+		{Key: SettingKeyRechargeNotifyBase, Value: ""},          // 留空按请求 Host 推断回调地址
+		{Key: SettingKeyRechargeRate, Value: "7.0"},             // 1 USD = 7 CNY(D2)
+		{Key: SettingKeyRechargeMinCNY, Value: "1"},             // 单笔最低 1 元
+		{Key: SettingKeyRechargeAmountTiers, Value: "10,50,100,500"}, // 弹窗快捷金额(元)
+		{Key: SettingKeyRechargeBonusEnabled, Value: "false"},   // 满赠默认关(D6)
+		{Key: SettingKeyRechargeBonusRules, Value: ""},          // 满赠规则, 如 100:5,500:10
 		{Key: SettingKeyScorePriceWeight, Value: "40"},           // 综合评分默认配比: 价格 40
 		{Key: SettingKeyScoreLatencyWeight, Value: "30"},         // 综合评分默认配比: 延迟 30
 		{Key: SettingKeyScoreSuccessWeight, Value: "30"},         // 综合评分默认配比: 成功率 30
@@ -206,6 +230,33 @@ func (s *Setting) Validate() error {
 	case SettingKeyMinBalance:
 		if _, err := strconv.ParseFloat(s.Value, 64); err != nil {
 			return fmt.Errorf("min balance must be a number")
+		}
+		return nil
+	case SettingKeyRechargeRate:
+		// 汇率必须为正且在常识区间, 0 或负值会让充值金额算出负入账。
+		rate, err := strconv.ParseFloat(s.Value, 64)
+		if err != nil || rate < 0.1 || rate > 1000 {
+			return fmt.Errorf("recharge rate must be a number between 0.1 and 1000")
+		}
+		return nil
+	case SettingKeyRechargeMinCNY:
+		if amount, err := strconv.ParseFloat(s.Value, 64); err != nil || amount < 0 {
+			return fmt.Errorf("minimum recharge amount must be a non-negative number")
+		}
+		return nil
+	case SettingKeyRechargeBonusEnabled:
+		if _, err := strconv.ParseBool(s.Value); err != nil {
+			return fmt.Errorf("%s must be a boolean", s.Key)
+		}
+		return nil
+	case SettingKeyRechargeBonusRules:
+		if _, err := ParseBonusRules(s.Value); err != nil {
+			return err
+		}
+		return nil
+	case SettingKeyRechargeAmountTiers:
+		if _, err := ParseAmountTiers(s.Value); err != nil {
+			return err
 		}
 		return nil
 	case SettingKeyScorePriceWeight, SettingKeyScoreLatencyWeight, SettingKeyScoreSuccessWeight,

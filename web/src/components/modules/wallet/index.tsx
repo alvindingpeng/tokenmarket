@@ -1,12 +1,23 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslations } from 'use-intl';
-import { AlertCircle, Coins, Loader2, RefreshCw, Ticket } from 'lucide-react';
+import { AlertCircle, Coins, CreditCard, Loader2, RefreshCw, Ticket } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+    MorphingDialog,
+    MorphingDialogContainer,
+    MorphingDialogContent,
+    MorphingDialogDescription,
+    MorphingDialogTrigger,
+    useMorphingDialog,
+} from '@/components/ui/morphing-dialog';
 import { useWalletLedger, useWalletSummary } from '@/api/wallet';
 import { useRedeem } from '@/api/redemption';
+import { createRecharge, useRechargeOrders, useRechargeQuote, useRechargeView, type PayForm } from '@/api/recharge';
 import { useAuthStore } from '@/api/user';
 
 // money 金额千分位展示; 余额是 6 位小数口径, 展示截到 4 位可读精度。
@@ -14,27 +25,184 @@ function money(value: number): string {
     return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 4 });
 }
 
-// formatTime 将后端 RFC3339 时间格式化为本地时间; 非法值原样展示。
-function formatTime(value: string): string {
+// formatTime 将后端 RFC3339 时间格式化为本地时间; 非法值或零值显示占位符。
+function formatTime(value: string | null, fallback: string): string {
+    if (!value) return fallback;
     const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+    if (Number.isNaN(date.getTime()) || date.getUTCFullYear() === 1) return fallback;
+    return date.toLocaleString();
 }
 
 // KINDS 流水筛选项; 空串表示全部。
-const KINDS = ['', 'topup', 'redemption', 'reserve', 'settle', 'release', 'adjust'];
+const KINDS = ['', 'topup', 'bonus', 'redemption', 'reserve', 'settle', 'release', 'adjust'];
 
-// Wallet 钱包页: 余额卡片 + 兑换码 + 余额流水; 充值与提现入口在后续阶段接入同一页面。
+// submitToGateway 自动提交收银台表单完成跳转; 易支付是浏览器表单跳转而非接口调用。
+function submitToGateway(form: PayForm) {
+    const element = document.createElement('form');
+    element.method = 'POST';
+    element.action = form.action;
+    element.style.display = 'none';
+    for (const [name, value] of Object.entries(form.fields)) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = name;
+        input.value = value;
+        element.appendChild(input);
+    }
+    document.body.appendChild(element);
+    element.submit();
+}
+
+// RechargeDialogContent 充值表单: 金额快捷档 + 实时报价 + 一键跳收银台。
+function RechargeDialogContent() {
+    const t = useTranslations('wallet');
+    const { setIsOpen } = useMorphingDialog();
+    const view = useRechargeView();
+    const [amount, setAmount] = useState('10');
+    const [method, setMethod] = useState('');
+    const [submitting, setSubmitting] = useState(false);
+    const amountCents = Math.round(Number(amount) * 100) || 0;
+    const quote = useRechargeQuote(amountCents);
+    const configured = view.data?.configured ?? false;
+    // 方法选项按后台白名单出; 未配置白名单时给全量默认项, "auto" 永远可用(收银台自选)。
+    const methodOptions = (view.data?.pay_types ?? []).length > 0
+        ? (view.data?.pay_types ?? [])
+        : ["alipay", "wechat", "qq"];
+
+    // handlePay 下单后自动提交收银台表单; 失败留在弹窗内透出原因。
+    const handlePay = async () => {
+        if (amountCents <= 0 || submitting) return;
+        setSubmitting(true);
+        try {
+            const { form } = await createRecharge({ amount_cents: amountCents, method });
+            submitToGateway(form);
+        } catch (error) {
+            setSubmitting(false);
+            toast.error(t('recharge.failed'), { description: (error as Error).message });
+        }
+    };
+
+    return (
+        <div className="w-screen max-w-full md:max-w-md">
+            <MorphingDialogDescription>
+                <div className="space-y-4">
+                    {!configured && (
+                        <p className="rounded-2xl border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">{t('recharge.notConfigured')}</p>
+                    )}
+                    <div className="space-y-2">
+                        <Label htmlFor="recharge-amount">{t('recharge.amount')}</Label>
+                        <Input
+                            id="recharge-amount"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={amount}
+                            onChange={(event) => setAmount(event.target.value)}
+                            className="rounded-xl"
+                        />
+                        {(view.data?.amount_tiers ?? []).length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                                {(view.data?.amount_tiers ?? []).map((tier) => (
+                                    <Button key={tier} type="button" variant="outline" size="sm" className="h-8 rounded-xl" onClick={() => setAmount(String(tier))}>
+                                        {t('recharge.tier', { amount: tier })}
+                                    </Button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="recharge-method">{t('recharge.method')}</Label>
+                        <Select value={method || 'auto'} onValueChange={(value) => setMethod(value === 'auto' ? '' : value)}>
+                            <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="auto">{t('recharge.methodAuto')}</SelectItem>
+                                {methodOptions.map((option) => (
+                                    <SelectItem key={option} value={option}>{t('recharge.' + option)}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="rounded-2xl border border-border bg-muted/40 px-3 py-2 text-sm">
+                        <div className="flex items-center justify-between">
+                            <span className="text-muted-foreground">{t('recharge.credits')}</span>
+                            <span className="tabular-nums font-medium">{money(quote.data?.credits ?? 0)}</span>
+                        </div>
+                        {quote.data?.bonus ? (
+                            <div className="flex items-center justify-between">
+                                <span className="text-muted-foreground">{t('recharge.bonus')}</span>
+                                <span className="tabular-nums font-medium text-emerald-500">+{money(quote.data.bonus)}</span>
+                            </div>
+                        ) : null}
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span>{t('recharge.rate')}</span>
+                            <span className="tabular-nums">{t('recharge.rateValue', { rate: view.data?.rate ?? 7 })}</span>
+                        </div>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                        <Button type="button" variant="outline" size="sm" className="rounded-xl" onClick={() => setIsOpen(false)}>{t('recharge.cancel')}</Button>
+                        <Button type="button" size="sm" className="rounded-xl" disabled={!configured || amountCents <= 0 || submitting} onClick={() => void handlePay()}>
+                            {submitting && <Loader2 className="size-4 animate-spin" />}
+                            {t('recharge.submit')}
+                        </Button>
+                    </div>
+                </div>
+            </MorphingDialogDescription>
+        </div>
+    );
+}
+
+// RechargeButton 钱包页充值入口; 未配置支付时按钮置灰但仍可点开看提示。
+function RechargeButton() {
+    const t = useTranslations('wallet');
+    return (
+        <MorphingDialog>
+            <MorphingDialogTrigger className="flex h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
+                <CreditCard className="size-4" />
+                {t('recharge.open')}
+            </MorphingDialogTrigger>
+            <MorphingDialogContainer>
+                <MorphingDialogContent
+                    dismissOnClickOutside={false}
+                    className="flex max-h-[calc(100dvh-2rem)] w-fit max-w-full flex-col overflow-hidden rounded-3xl bg-card px-6 py-5 text-card-foreground"
+                >
+                    <RechargeDialogContent />
+                </MorphingDialogContent>
+            </MorphingDialogContainer>
+        </MorphingDialog>
+    );
+}
+
+// Wallet 钱包页: 余额卡片 + 充值 + 兑换码 + 流水/充值记录。
 export default function Wallet() {
     const t = useTranslations('wallet');
     const role = useAuthStore((state) => state.role);
     const uid = useAuthStore((state) => state.userId);
+    const [tab, setTab] = useState('ledger');
     const [kind, setKind] = useState('');
     const [code, setCode] = useState('');
     const summary = useWalletSummary();
     const ledger = useWalletLedger(kind, role === 'admin' ? uid : 0);
+    const orders = useRechargeOrders(role === 'admin' ? uid : 0);
     const redeem = useRedeem();
 
+    // 支付回跳只决定提示语; 入账以服务端回调为准, 回来立刻拉一次余额与订单。
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const result = params.get('recharge_result');
+        if (!result) return;
+        if (result === 'paid') {
+            toast.success(t('recharge.returnPaid', { order: params.get('order_no') ?? '' }));
+        } else {
+            toast.error(t('recharge.returnFailed'));
+        }
+        window.history.replaceState({}, '', window.location.pathname);
+        void summary.refetch();
+        void orders.refetch();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const items = ledger.data?.items ?? [];
+    const orderItems = orders.data?.items ?? [];
     const cards = [
         { key: 'balance', value: summary.data?.balance },
         { key: 'frozen', value: summary.data?.frozen },
@@ -63,10 +231,13 @@ export default function Wallet() {
                     <Coins className="size-5" />
                     {t('title')}
                 </h2>
-                <Button variant="outline" size="sm" onClick={() => { void summary.refetch(); void ledger.refetch(); }} disabled={summary.isRefetching} className="rounded-xl">
-                    <RefreshCw className={'size-4' + (summary.isRefetching ? ' animate-spin' : '')} />
-                    {t('refresh')}
-                </Button>
+                <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => { void summary.refetch(); void ledger.refetch(); void orders.refetch(); }} disabled={summary.isRefetching} className="rounded-xl">
+                        <RefreshCw className={'size-4' + (summary.isRefetching ? ' animate-spin' : '')} />
+                        {t('refresh')}
+                    </Button>
+                    <RechargeButton />
+                </div>
             </div>
 
             <div className="grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
@@ -101,49 +272,91 @@ export default function Wallet() {
             </div>
 
             <div className="flex shrink-0 flex-wrap items-center gap-2">
-                <div className="text-sm font-medium text-card-foreground">{t('ledger.title')}</div>
-                <Select value={kind || 'all'} onValueChange={(value) => setKind(value === 'all' ? '' : value)}>
-                    <SelectTrigger className="w-40 rounded-xl"><SelectValue placeholder={t('ledger.kindAll')} /></SelectTrigger>
-                    <SelectContent>
-                        {KINDS.map((value) => (
-                            <SelectItem key={value} value={value || 'all'}>{value === '' ? t('ledger.kindAll') : t('kind.' + value)}</SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-auto overscroll-contain rounded-3xl border border-border bg-card">
-                {ledger.isLoading ? (
-                    <div className="flex h-full items-center justify-center gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" />{t('loading')}</div>
-                ) : ledger.isError ? (
-                    <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground"><AlertCircle className="size-8" /><p>{t('error')}</p><Button variant="outline" size="sm" onClick={() => void ledger.refetch()} className="rounded-xl">{t('retry')}</Button></div>
-                ) : items.length === 0 ? (
-                    <div className="flex h-full items-center justify-center text-muted-foreground">{t('empty')}</div>
-                ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full min-w-[640px] text-sm">
-                            <thead className="sticky top-0 bg-card text-left text-xs text-muted-foreground"><tr>
-                                <th className="px-4 py-3 font-medium">{t('table.time')}</th>
-                                <th className="px-4 py-3 font-medium">{t('table.kind')}</th>
-                                <th className="px-4 py-3 font-medium">{t('table.amount')}</th>
-                                <th className="px-4 py-3 font-medium">{t('table.balance')}</th>
-                                <th className="px-4 py-3 font-medium">{t('table.note')}</th>
-                            </tr></thead>
-                            <tbody>
-                                {items.map((item) => (
-                                    <tr key={item.id} className="border-t border-border">
-                                        <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatTime(item.created_at)}</td>
-                                        <td className="px-4 py-3">{t('kind.' + item.kind)}</td>
-                                        <td className={'px-4 py-3 tabular-nums font-medium ' + (item.amount >= 0 ? 'text-emerald-500' : 'text-destructive')}>{money(item.amount)}</td>
-                                        <td className="px-4 py-3 tabular-nums">{money(item.balance_after)}</td>
-                                        <td className="px-4 py-3 text-muted-foreground">{item.note || (item.model_name ? item.model_name : '-')}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                <Tabs value={tab} onValueChange={setTab}>
+                    <TabsList className="rounded-2xl bg-muted p-1">
+                        <TabsTrigger value="ledger" className="rounded-xl">{t('tab.ledger')}</TabsTrigger>
+                        <TabsTrigger value="orders" className="rounded-xl">{t('tab.orders')}</TabsTrigger>
+                    </TabsList>
+                </Tabs>
+                {tab === 'ledger' && (
+                    <Select value={kind || 'all'} onValueChange={(value) => setKind(value === 'all' ? '' : value)}>
+                        <SelectTrigger className="w-40 rounded-xl"><SelectValue placeholder={t('ledger.kindAll')} /></SelectTrigger>
+                        <SelectContent>
+                            {KINDS.map((value) => (
+                                <SelectItem key={value} value={value || 'all'}>{value === '' ? t('ledger.kindAll') : t('kind.' + value)}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 )}
             </div>
+
+            {tab === 'ledger' ? (
+                <div className="min-h-0 flex-1 overflow-auto overscroll-contain rounded-3xl border border-border bg-card">
+                    {ledger.isLoading ? (
+                        <div className="flex h-full items-center justify-center gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" />{t('loading')}</div>
+                    ) : ledger.isError ? (
+                        <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground"><AlertCircle className="size-8" /><p>{t('error')}</p><Button variant="outline" size="sm" onClick={() => void ledger.refetch()} className="rounded-xl">{t('retry')}</Button></div>
+                    ) : items.length === 0 ? (
+                        <div className="flex h-full items-center justify-center text-muted-foreground">{t('empty')}</div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[640px] text-sm">
+                                <thead className="sticky top-0 bg-card text-left text-xs text-muted-foreground"><tr>
+                                    <th className="px-4 py-3 font-medium">{t('table.time')}</th>
+                                    <th className="px-4 py-3 font-medium">{t('table.kind')}</th>
+                                    <th className="px-4 py-3 font-medium">{t('table.amount')}</th>
+                                    <th className="px-4 py-3 font-medium">{t('table.balance')}</th>
+                                    <th className="px-4 py-3 font-medium">{t('table.note')}</th>
+                                </tr></thead>
+                                <tbody>
+                                    {items.map((item) => (
+                                        <tr key={item.id} className="border-t border-border">
+                                            <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatTime(item.created_at, '-')}</td>
+                                            <td className="px-4 py-3">{t('kind.' + item.kind)}</td>
+                                            <td className={'px-4 py-3 tabular-nums font-medium ' + (item.amount >= 0 ? 'text-emerald-500' : 'text-destructive')}>{money(item.amount)}</td>
+                                            <td className="px-4 py-3 tabular-nums">{money(item.balance_after)}</td>
+                                            <td className="px-4 py-3 text-muted-foreground">{item.note || (item.model_name ? item.model_name : '-')}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <div className="min-h-0 flex-1 overflow-auto overscroll-contain rounded-3xl border border-border bg-card">
+                    {orders.isLoading ? (
+                        <div className="flex h-full items-center justify-center gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" />{t('loading')}</div>
+                    ) : orders.isError ? (
+                        <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground"><AlertCircle className="size-8" /><p>{t('error')}</p><Button variant="outline" size="sm" onClick={() => void orders.refetch()} className="rounded-xl">{t('retry')}</Button></div>
+                    ) : orderItems.length === 0 ? (
+                        <div className="flex h-full items-center justify-center text-muted-foreground">{t('orders.empty')}</div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[720px] text-sm">
+                                <thead className="sticky top-0 bg-card text-left text-xs text-muted-foreground"><tr>
+                                    <th className="px-4 py-3 font-medium">{t('orders.no')}</th>
+                                    <th className="px-4 py-3 font-medium">{t('orders.amount')}</th>
+                                    <th className="px-4 py-3 font-medium">{t('orders.credits')}</th>
+                                    <th className="px-4 py-3 font-medium">{t('orders.status')}</th>
+                                    <th className="px-4 py-3 font-medium">{t('orders.time')}</th>
+                                </tr></thead>
+                                <tbody>
+                                    {orderItems.map((order) => (
+                                        <tr key={order.id} className="border-t border-border">
+                                            <td className="px-4 py-3 font-mono text-xs">{order.order_no}</td>
+                                            <td className="px-4 py-3 tabular-nums">{money(order.amount_cents / 100)} {order.currency}</td>
+                                            <td className="px-4 py-3 tabular-nums">{money(order.credits + order.bonus)}</td>
+                                            <td className="px-4 py-3">{t('status.' + order.status)}</td>
+                                            <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatTime(order.paid_at ?? order.created_at, '-')}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
