@@ -154,6 +154,14 @@
         }
     },
     "setting": {
+        "sections": {
+            "label": "设置分组",
+            "personal": "个人",
+            "site": "站点",
+            "system": "系统",
+            "billing": "支付",
+            "ops": "运维"
+        },
         "appearance": "外观",
         "system": "系统",
         "theme": {

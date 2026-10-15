@@ -154,6 +154,14 @@
         }
     },
     "setting": {
+        "sections": {
+            "label": "Settings sections",
+            "personal": "Personal",
+            "site": "Site",
+            "system": "System",
+            "billing": "Billing",
+            "ops": "Operations"
+        },
         "appearance": "Appearance",
         "system": "System",
         "theme": {
