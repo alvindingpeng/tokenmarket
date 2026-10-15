@@ -157,6 +157,10 @@
         "sections": {
             "label": "Settings sections",
             "personal": "Personal",
+            "users": "Users",
+            "audit": "Audit log",
+            "ratelimit": "Rate limits",
+            "redemption": "Redemption codes",
             "site": "Site",
             "system": "System",
             "billing": "Billing",

@@ -157,6 +157,10 @@
         "sections": {
             "label": "设置分组",
             "personal": "个人",
+            "users": "用户管理",
+            "audit": "审计记录",
+            "ratelimit": "限流管理",
+            "redemption": "兑换码",
             "site": "站点",
             "system": "系统",
             "billing": "支付",

@@ -1,14 +1,15 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { LucideIcon } from 'lucide-react';
-import { Home, Radio, Sparkles, FolderTree, Settings, Logs, Users, Share2, Wallet, KeyRound, ClipboardList, Gauge, HeartPulse, Coins, Ticket, Landmark } from 'lucide-react';
+import { Home, Radio, Sparkles, FolderTree, Settings, Logs, Share2, Wallet, KeyRound, HeartPulse, Coins, Landmark } from 'lucide-react';
 import type { Role } from '@/api/user';
 
-// Page 表示应用支持的固定页面集合。
-export type Page = 'home' | 'channel' | 'group' | 'model' | 'users' | 'audit' | 'ratelimit' | 'ops' | 'share' | 'wallet' | 'redemption' | 'withdrawals' | 'billing' | 'apikey' | 'log' | 'setting';
+// Page 是 Dock 一级导航的页面集合; 用户管理/审计记录/限流管理/兑换码已并入设置页二级菜单, 不再是独立页面。
+export type Page = 'home' | 'channel' | 'group' | 'model' | 'ops' | 'share' | 'wallet' | 'withdrawals' | 'billing' | 'apikey' | 'log' | 'setting';
 
 // SettingSectionID 设置页二级菜单的分组标识; 分组定义见 components/modules/setting/sections.ts。
-export type SettingSectionID = 'personal' | 'site' | 'system' | 'billing' | 'ops';
+// 管理后台能力(用户/审计/限流/兑换码)与配置分组共用同一层菜单。
+export type SettingSectionID = 'personal' | 'users' | 'audit' | 'ratelimit' | 'redemption' | 'site' | 'system' | 'billing' | 'ops';
 
 // NavItem 描述导航按钮使用的页面标识、文案和图标。
 type NavItem = { id: Page; label: string; icon: LucideIcon };
@@ -19,13 +20,9 @@ export const NAV_ITEMS: NavItem[] = [
     { id: 'channel', label: 'Channel', icon: Radio },
     { id: 'group', label: 'Group', icon: FolderTree },
     { id: 'model', label: 'Model', icon: Sparkles },
-    { id: 'users', label: 'Users', icon: Users },
-    { id: 'audit', label: 'Audit', icon: ClipboardList },
-    { id: 'ratelimit', label: 'RateLimit', icon: Gauge },
     { id: 'ops', label: 'Ops', icon: HeartPulse },
     { id: 'share', label: 'Share', icon: Share2 },
     { id: 'wallet', label: 'Wallet', icon: Coins },
-    { id: 'redemption', label: 'Redemption', icon: Ticket },
     { id: 'withdrawals', label: 'Withdrawals', icon: Landmark },
     { id: 'billing', label: 'Billing', icon: Wallet },
     { id: 'apikey', label: 'API Key', icon: KeyRound },
@@ -35,7 +32,7 @@ export const NAV_ITEMS: NavItem[] = [
 
 // NAV_PAGES_BY_ROLE 按角色声明可见页面: 用户无渠道与管理后台, 渠道商多渠道与发布, 管理员全量。
 const NAV_PAGES_BY_ROLE: Record<string, Page[]> = {
-    admin: ['home', 'channel', 'group', 'model', 'users', 'audit', 'ratelimit', 'ops', 'share', 'wallet', 'redemption', 'withdrawals', 'billing', 'apikey', 'log', 'setting'],
+    admin: ['home', 'channel', 'group', 'model', 'ops', 'share', 'wallet', 'withdrawals', 'billing', 'apikey', 'log', 'setting'],
     reseller: ['home', 'channel', 'group', 'share', 'wallet', 'billing', 'apikey', 'log', 'setting'],
     user: ['home', 'group', 'wallet', 'billing', 'apikey', 'log', 'setting'],
 };
