@@ -95,3 +95,21 @@ func TestShareCodeBackfillMigration(t *testing.T) {
 		t.Fatalf("next code = %q, err = %v, want 1006", code, err)
 	}
 }
+func TestShareCodeBackfillAdvancesCounter(t *testing.T) {
+	ctx, _, admin := reviewTestEnv(t)
+	created, err := ChannelCreate(reviewTestDetail("seq-only"), admin, ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 全部存量都是旧随机码(无任何已合规编码), 回填后计数器也要推到分配结果, 不留起点悬空。
+	if err := db.GetDB().Model(&model.Channel{}).Where("id = ?", created.ID).Update("share_code", "aB12cd34Ef").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ShareCodeBackfill(ctx); err != nil {
+		t.Fatal(err)
+	}
+	code, err := nextShareCode(ctx)
+	if err != nil || code != "1002" {
+		t.Fatalf("next code = %q, err = %v, want 1002", code, err)
+	}
+}
