@@ -568,6 +568,10 @@ func ShareCodeBackfill(ctx context.Context) (int, error) {
 			channelCache.Set(channel.ID, cached)
 		}
 		taken[code] = true
+		// 新分配的号同样要推进计数器, 否则全部存量都是旧码时计数器停在起点, 取号要靠冲突跳过兜底。
+		if v, _ := parseShareCode(code); v > maxUsed {
+			maxUsed = v
+		}
 		next++
 		updated++
 	}
