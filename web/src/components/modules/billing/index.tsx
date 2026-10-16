@@ -254,7 +254,7 @@ function SpendingTable({ owner, onView }: { owner: boolean; onView: (id: number)
 
                                 <span className="min-w-0">
                                     {record.share_code ? (
-                                        <code className="block truncate rounded-lg bg-muted/60 px-1.5 py-0.5 font-mono text-xs">{record.share_code}</code>
+                                        <code className="block truncate rounded-lg bg-muted/60 px-1.5 py-0.5 font-mono text-xs">{'#' + record.share_code}</code>
                                     ) : (
                                         <span className="text-xs text-muted-foreground">—</span>
                                     )}

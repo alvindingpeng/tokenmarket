@@ -101,7 +101,7 @@ export type ChannelStats = StatsMetrics & {
     channel_name: string;
     enabled: boolean;
     shared: boolean; // 是否已发布给用户。
-    share_code: string; // 发布后对外展示的唯一编码，未发布为空。
+    share_code: string; // 发布后对外展示的编码（4 位纯数字，1001 起），未发布为空。
     review_status: ChannelReviewStatus; // 准入审核状态，卡片徽章与发布闸口提示都从这里取。
     review_note: string; // 提交说明 / 审核意见 / 驳回原因。
     submitted_at?: string | null;

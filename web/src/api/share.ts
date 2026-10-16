@@ -52,7 +52,7 @@ export type ChannelPublishRequest = {
 };
 
 /**
- * 发布结果：share_code 为对外展示的渠道名称（大小写字母与数字组成的唯一编码）。
+ * 发布结果：share_code 为对外展示的渠道名称（4 位纯数字编码，1001 起；界面展示为 #1001 形式）。
  */
 export type ChannelPublishResult = {
     id: number;

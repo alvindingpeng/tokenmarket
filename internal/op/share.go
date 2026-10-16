@@ -19,7 +19,8 @@ type ShareModel struct {
 // ShareChannelModels 返回发布编码对应渠道公开上架的模型清单(对客价口径), 按名称定序。
 // 供给侧隔离同内部口径: 未发布渠道与未上架模型一律不出现; 编码不存在返回错误。
 func ShareChannelModels(code string) ([]ShareModel, error) {
-	code = strings.TrimSpace(code)
+	// 兼容 "#1001" 形式: 界面展示带 # 前缀, 用户照抄来查也能中。
+	code = strings.TrimPrefix(strings.TrimSpace(code), "#")
 	if code == "" {
 		return nil, fmt.Errorf("share code required")
 	}

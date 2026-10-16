@@ -73,7 +73,7 @@ type Channel struct {
 	ID            int            `json:"id" gorm:"primaryKey"`                                                 // 渠道主键。
 	UserID        uint           `json:"user_id" gorm:"uniqueIndex:idx_channel_owner_name;not null;default:0"` // 归属用户; 渠道名在归属内唯一, 跨用户可重名。
 	Shared        bool           `json:"shared" gorm:"default:false"`                                          // 是否已发布到用户侧(共享)。
-	ShareCode     string         `json:"share_code" gorm:"index"`                                              // 发布时生成的唯一编码(大小写字母+数字), 用户侧显示为渠道名称; 唯一性由发布流程保证(空串不参与)。
+	ShareCode     string         `json:"share_code" gorm:"index"`                                              // 发布编码: 4 位纯数字(1001 起), 界面展示为 "#1001"; 用户侧显示为渠道名称, 唯一性由发布流程保证(空串不参与)。
 	// 准入审核(P1): 发布与对外候选都要过审; 关键配置指纹失配自动转 stale 待复审。
 	ReviewStatus      string     `json:"review_status" gorm:"size:16;not null;default:draft;index"`    // 审核状态 draft|pending|approved|rejected|stale。
 	ReviewNote        string     `json:"review_note" gorm:"size:512;not null;default:''"`             // 提交说明 / 审核意见 / 驳回原因。

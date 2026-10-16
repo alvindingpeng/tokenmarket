@@ -393,7 +393,7 @@ function AlertsSection() {
     const columns: Col<ChannelAlert>[] = [
         { key: 'subject', label: t('alerts.subject'), render: (row) => (
             <span className='block max-w-56 truncate' title={row.subject || row.channel_code}>
-                {row.subject || row.channel_code || (row.channel_id ? '#' + row.channel_id : t('alerts.system'))}
+                {row.subject || (row.channel_code ? '#' + row.channel_code : '') || (row.channel_id ? '#' + row.channel_id : t('alerts.system'))}
             </span>
         ) },
         { key: 'kind', label: t('alerts.kind'), render: (row) => kindBadge(row.kind) },
