@@ -51,12 +51,40 @@ type ChannelConfig struct {
 	KeyRotationStrategy       string         `json:"key_rotation_strategy" gorm:"default:roundrobin"`                                                        // Key 轮换策略: roundrobin(轮询) / random(随机) / failover(故障切换)。
 }
 
+// 渠道准入审核状态(ReviewStatus)。
+const (
+	ChannelReviewDraft    = "draft"    // 草稿: 新建默认态, 不能发布/进公开候选。
+	ChannelReviewPending  = "pending"  // 待审核: 已提交, 等管理员审批; 同一渠道只允许一条 pending。
+	ChannelReviewApproved = "approved" // 已通过: 允许发布与进入对外候选。
+	ChannelReviewRejected = "rejected" // 已驳回: 附驳回原因, 修改后可重新提交。
+	ChannelReviewStale    = "stale"    // 待复审: 审核通过后关键配置指纹失配; 只挡新暴露, 存量分组流量不断。
+)
+
+// 渠道信任分级(TrustLevel, 观察期评估使用, P1 仅迁移交列)。
+const (
+	ChannelTrustObserving = "observing" // 观察期: 审核通过后的试运行阶段。
+	ChannelTrustTrusted   = "trusted"   // 转正: 观察期毕业。
+	ChannelTrustProbation = "probation" // 延长观察: 观察期首次不达标。
+	ChannelTrustRevoked   = "revoked"   // 收回: 再次不达标, 禁止发布。
+)
+
 // 单个上游渠道的共享配置; 路径按协议分别配置, 凭据由 ChannelKey 提供。
 type Channel struct {
 	ID            int            `json:"id" gorm:"primaryKey"`                                                 // 渠道主键。
 	UserID        uint           `json:"user_id" gorm:"uniqueIndex:idx_channel_owner_name;not null;default:0"` // 归属用户; 渠道名在归属内唯一, 跨用户可重名。
 	Shared        bool           `json:"shared" gorm:"default:false"`                                          // 是否已发布到用户侧(共享)。
 	ShareCode     string         `json:"share_code" gorm:"index"`                                              // 发布时生成的唯一编码(大小写字母+数字), 用户侧显示为渠道名称; 唯一性由发布流程保证(空串不参与)。
+	// 准入审核(P1): 发布与对外候选都要过审; 关键配置指纹失配自动转 stale 待复审。
+	ReviewStatus      string     `json:"review_status" gorm:"size:16;not null;default:draft;index"`    // 审核状态 draft|pending|approved|rejected|stale。
+	ReviewNote        string     `json:"review_note" gorm:"size:512;not null;default:''"`             // 提交说明 / 审核意见 / 驳回原因。
+	SubmittedAt       *time.Time `json:"submitted_at,omitempty"`                                       // 最近一次提交审核时间。
+	ReviewedBy        uint       `json:"reviewed_by" gorm:"not null;default:0"`                       // 审核人用户 ID, 从未审核为 0。
+	ReviewedAt        *time.Time `json:"reviewed_at,omitempty"`                                        // 最近一次审核时间。
+	ConfigFingerprint string     `json:"config_fingerprint" gorm:"size:64"`                            // 审核通过时的关键配置指纹; 更新后比对失配触发 stale。
+	// 信任分级(P2 列, P1 一并迁移): 观察期升降级写这几列, 与资金口径完全正交。
+	TrustLevel       string     `json:"trust_level" gorm:"size:16;not null;default:observing;index"` // observing|trusted|probation|revoked。
+	ObservationStart *time.Time `json:"observation_start,omitempty"`                                  // 观察期起算时间。
+	ObservationUntil *time.Time `json:"observation_until,omitempty"`                                  // 观察期截止时间。
 	ChannelConfig                // 可编辑配置, 平铺为 channels 的各列。
 	Keys          []ChannelKey   `json:"-" gorm:"foreignKey:ChannelID;constraint:OnDelete:CASCADE"` // 渠道下的上游凭据; 不出 JSON, 读取走 ChannelDetail。
 	Models        []ChannelModel `json:"-" gorm:"foreignKey:ChannelID;constraint:OnDelete:CASCADE"` // 渠道提供的模型; 不出 JSON, 读取走 ChannelDetail。
@@ -151,6 +179,11 @@ type ChannelStats struct {
 	Shared       bool                `json:"shared"`       // 是否已发布到用户侧。
 	ShareCode    string              `json:"share_code"`   // 发布唯一编码; 未发布为空。
 	Enabled      bool                `json:"enabled"`      // 渠道是否可用, 供列表页的开关与过滤使用。
+	// 准入审核状态随列表一并外露: 卡片徽章与发布闸口提示只消费这一条查询, 无需另开接口。
+	ReviewStatus string     `json:"review_status"`             // 审核状态 draft|pending|approved|rejected|stale。
+	ReviewNote   string     `json:"review_note"`               // 提交说明 / 审核意见 / 驳回原因。
+	SubmittedAt  *time.Time `json:"submitted_at,omitempty"`    // 最近提交审核时间。
+	ReviewedAt   *time.Time `json:"reviewed_at,omitempty"`     // 最近审核时间。
 	Models       []ChannelModelStats `json:"models"`       // 该渠道各模型的独立统计, 恒为数组; 长度即渠道的模型个数。
 	StatsMetrics                     // 渠道自身的累计统计。
 }
@@ -164,6 +197,24 @@ type ChannelModelStats struct {
 	ErrorCount    int        `json:"error_count"`              // 熔断计数(与熔断共用同一列, 熔断后清零)。
 	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`  // 最后错误时间, 从未出错不给出。
 	DisabledUntil *time.Time `json:"disabled_until,omitempty"` // 熔断截止时间, 未熔断不给出。
+}
+
+// 审核队列条目: 审核决策所需的最小字段集, 不外露路径、代理与凭据。
+// 管理员看全量, 渠道商只看自有提交; 两侧消费同一形状, 前端无需分叉。
+type ChannelReviewItem struct {
+	ChannelID    int        `json:"channel_id"`             // 渠道主键。
+	UserID       uint       `json:"user_id"`                // 归属用户 ID。
+	OwnerName    string     `json:"owner_name"`             // 归属用户名, 供管理员队列展示。
+	ChannelName  string     `json:"channel_name"`           // 渠道名称。
+	ReviewStatus string     `json:"review_status"`          // 审核状态 draft|pending|approved|rejected|stale。
+	ReviewNote   string     `json:"review_note"`            // 提交说明 / 审核意见 / 驳回原因。
+	SubmittedAt  *time.Time `json:"submitted_at,omitempty"` // 最近提交审核时间, 从未提交不给出。
+	ReviewedBy   uint       `json:"reviewed_by"`            // 审核人用户 ID, 从未审核为 0。
+	ReviewerName string     `json:"reviewer_name"`          // 审核人用户名, 从未审核为空。
+	ReviewedAt   *time.Time `json:"reviewed_at,omitempty"`  // 最近审核时间, 从未审核不给出。
+	Shared       bool       `json:"shared"`                 // 是否已发布到用户侧。
+	Enabled      bool       `json:"enabled"`                // 渠道是否可用。
+	ModelCount   int        `json:"model_count"`            // 渠道模型个数, 供队列概览。
 }
 
 // 供分组页选取的一条候选授权, 字段与分组成员的展示字段一一对应。

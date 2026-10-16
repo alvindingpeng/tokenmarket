@@ -439,7 +439,11 @@ function ShareCard({ channel }: { channel: ChannelStatsFormatted }) {
     const t = useTranslations('share');
     const publishChannel = usePublishChannel();
 
+    // 发布闸口(P1): 未过审(含 stale 待复审)不能发布; 已发布的渠道下线不受审核状态限制。
+    const publishBlocked = channel.review_status !== 'approved';
+
     const handlePublish = (checked: boolean) => {
+        if (checked && publishBlocked) return;
         publishChannel.mutate(
             { id: channel.channel_id, shared: checked },
             {
@@ -469,9 +473,13 @@ function ShareCard({ channel }: { channel: ChannelStatsFormatted }) {
                 <Switch
                     checked={channel.shared}
                     onCheckedChange={handlePublish}
-                    disabled={publishChannel.isPending}
+                    disabled={publishChannel.isPending || (!channel.shared && publishBlocked)}
                 />
             </header>
+            {/* 未过审时开关禁用并解释原因; 已发布的渠道转 stale 不自动下线, 只挡重新发布。 */}
+            {!channel.shared && publishBlocked && (
+                <p className="text-xs text-muted-foreground">{t('reviewGate.' + channel.review_status)}</p>
+            )}
 
             <div className="rounded-2xl border border-border/70 bg-background/80 p-3">
                 <p className="text-xs text-muted-foreground">{t('shareCode')}</p>

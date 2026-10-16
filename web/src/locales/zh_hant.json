@@ -805,6 +805,48 @@
             "grantClearAll": "清空全部模型",
             "modelRemove": "移除模型",
             "grantRemove": "移除該憑據的授權"
+        },
+        "review": {
+            "tabChannels": "渠道列表",
+            "tabReview": "審核隊列",
+            "title": "渠道准入審核",
+            "subtitle": "通過審核後才能發佈給用戶",
+            "filterAll": "全部狀態",
+            "loading": "載入中…",
+            "error": "載入失敗",
+            "retry": "重試",
+            "empty": "暫無審核記錄",
+            "shared": " · 已發佈",
+            "status": {
+                "draft": "草稿",
+                "pending": "待審核",
+                "approved": "已通過",
+                "rejected": "已駁回",
+                "stale": "待複審"
+            },
+            "table": {
+                "channel": "渠道",
+                "owner": "歸屬",
+                "models": "模型數",
+                "status": "狀態",
+                "time": "時間",
+                "note": "說明",
+                "actions": "操作",
+                "submittedAt": "提交",
+                "reviewedAt": "審核"
+            },
+            "action": {
+                "submit": "提交審核",
+                "approve": "批准",
+                "reject": "駁回"
+            },
+            "notePlaceholder": "審核意見(駁回必填原因)",
+            "submitNotePlaceholder": "提交說明(可留空)",
+            "toast": {
+                "submitted": "{name} 已提交審核({status})",
+                "approved": "{name} 審核通過",
+                "rejected": "{name} 已駁回"
+            }
         }
     },
     "share": {
@@ -881,6 +923,13 @@
                 "empty": "沒有符合當前篩選的模型"
             },
             "refHint": "參考價來自全局價格表(models.dev 自動同步、管理員維護),僅供快速預填,儲存前請按你的供貨協議調整。"
+        },
+        "reviewGate": {
+            "draft": "渠道尚未提交審核, 通過審核後才能發佈。",
+            "pending": "審核中, 批准後才能發佈。",
+            "approved": "",
+            "rejected": "審核被駁回, 請修改後重新提交審核。",
+            "stale": "關鍵配置已變更, 需重新審核後才能發佈。"
         }
     },
     "billing": {

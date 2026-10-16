@@ -90,7 +90,17 @@ func ChannelCreate(detail *model.ChannelDetail, scope model.Scope, ctx context.C
 		return nil, err
 	}
 
-	channel := model.Channel{UserID: scope.ID, ChannelConfig: detail.ChannelConfig}
+	channel := model.Channel{UserID: scope.ID, ChannelConfig: detail.ChannelConfig,
+		ReviewStatus: model.ChannelReviewDraft, TrustLevel: model.ChannelTrustObserving}
+	// 管理员免审渠道建即过审: 免得管理员自有渠道被提交-审批流程卡住(开关默认开)。
+	// 指纹在创建时定稿: 此刻模型清单与配置就是审核看到的样子, 后续改动靠指纹比对触发 stale。
+	if channelReviewBypass(channel.UserID) {
+		now := time.Now()
+		channel.ReviewStatus = model.ChannelReviewApproved
+		channel.ReviewedBy = scope.ID
+		channel.ReviewedAt = &now
+		channel.ConfigFingerprint = channelConfigFingerprint(detail.ChannelConfig, detail.Models)
+	}
 	if err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&channel).Error; err != nil {
 			return fmt.Errorf("failed to create channel: %w", err)
@@ -145,6 +155,15 @@ func ChannelUpdate(detail *model.ChannelDetail, scope model.Scope, ctx context.C
 		channel.UserID = cached.UserID
 		channel.Shared = cached.Shared
 		channel.ShareCode = cached.ShareCode
+		channel.ReviewStatus = cached.ReviewStatus
+		channel.ReviewNote = cached.ReviewNote
+		channel.SubmittedAt = cached.SubmittedAt
+		channel.ReviewedBy = cached.ReviewedBy
+		channel.ReviewedAt = cached.ReviewedAt
+		channel.ConfigFingerprint = cached.ConfigFingerprint
+		channel.TrustLevel = cached.TrustLevel
+		channel.ObservationStart = cached.ObservationStart
+		channel.ObservationUntil = cached.ObservationUntil
 	}
 	channelCache.Set(detail.ID, channel)
 	channelStatsNeedUpdateLock.Unlock()
@@ -155,6 +174,18 @@ func ChannelUpdate(detail *model.ChannelDetail, scope model.Scope, ctx context.C
 	}
 	if err := groupRefreshCache(ctx); err != nil {
 		return nil, fmt.Errorf("failed to refresh groups: %w", err)
+	}
+	// 指纹比对触发 stale: 已过审渠道的关键配置被改即转 stale, 复审前不新增暴露;
+	// 存量分组成员走 group_items 直连, 不看审核状态, 流量零中断。
+	// 管理员免审渠道不进复审流程, 直接换基线(基线随人工改动推进)。
+	if channel.ReviewStatus == model.ChannelReviewApproved && channelFingerprintOf(channel) != channel.ConfigFingerprint {
+		if channelReviewBypass(channel.UserID) {
+			if err := channelReviewSyncBaseline(ctx, channel.ID); err != nil {
+				return nil, err
+			}
+		} else if err := channelReviewMarkStale(ctx, scope.ID, channel.ID); err != nil {
+			return nil, err
+		}
 	}
 	updated := channelDetail(channel)
 	return &updated, nil
@@ -367,7 +398,9 @@ func ChannelGrantCandidates(scope model.Scope) []model.ChannelGrantCandidate {
 		}
 		owner := scope.Owns(channel.UserID)
 		// 供给侧隔离: 未发布渠道或未上架模型不出候选, 归属者与管理员也不例外。
-		if !channel.Shared || !channelModel.Listed {
+		// 过审闸口(P1): 进对外候选即被分组选走的新暴露, 额外要求 approved;
+		// draft/pending/rejected/stale 都不新增暴露, 已在分组里的存量成员不受影响。
+		if !channel.Shared || channel.ReviewStatus != model.ChannelReviewApproved || !channelModel.Listed {
 			continue
 		}
 		candidate := model.ChannelGrantCandidate{
@@ -411,6 +444,15 @@ func ChannelPublish(id int, shared bool, scope model.Scope, ctx context.Context)
 	channel, ok := channelCache.Get(id)
 	if !ok || !scope.Owns(channel.UserID) {
 		return model.Channel{}, fmt.Errorf("channel not found")
+	}
+	// 发布闸口(P1): 发布即新暴露到用户侧, 必须已过审且未被撤销信任; 取消发布不受限。
+	if shared {
+		if channel.ReviewStatus != model.ChannelReviewApproved {
+			return model.Channel{}, fmt.Errorf("channel review not approved")
+		}
+		if channel.TrustLevel == model.ChannelTrustRevoked {
+			return model.Channel{}, fmt.Errorf("channel trust revoked")
+		}
 	}
 	updates := map[string]any{"shared": shared}
 	if shared {
