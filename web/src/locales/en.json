@@ -805,6 +805,48 @@
             "grantClearAll": "Clear all models",
             "modelRemove": "Remove model",
             "grantRemove": "Remove this key’s grant"
+        },
+        "review": {
+            "tabChannels": "Channels",
+            "tabReview": "Review Queue",
+            "title": "Channel Admission Review",
+            "subtitle": "Publishing requires approval",
+            "filterAll": "All statuses",
+            "loading": "Loading…",
+            "error": "Failed to load",
+            "retry": "Retry",
+            "empty": "No review records",
+            "shared": " · Published",
+            "status": {
+                "draft": "Draft",
+                "pending": "Pending",
+                "approved": "Approved",
+                "rejected": "Rejected",
+                "stale": "Needs Review"
+            },
+            "table": {
+                "channel": "Channel",
+                "owner": "Owner",
+                "models": "Models",
+                "status": "Status",
+                "time": "Time",
+                "note": "Note",
+                "actions": "Actions",
+                "submittedAt": "Submitted",
+                "reviewedAt": "Reviewed"
+            },
+            "action": {
+                "submit": "Submit",
+                "approve": "Approve",
+                "reject": "Reject"
+            },
+            "notePlaceholder": "Review note (required to reject)",
+            "submitNotePlaceholder": "Submit note (optional)",
+            "toast": {
+                "submitted": "{name} submitted ({status})",
+                "approved": "{name} approved",
+                "rejected": "{name} rejected"
+            }
         }
     },
     "share": {
@@ -881,6 +923,13 @@
                 "empty": "No model matches the current filter"
             },
             "refHint": "Reference prices come from the global price table (auto-synced from models.dev and maintained by admin). Adjust to your supply terms before saving."
+        },
+        "reviewGate": {
+            "draft": "Not submitted for review yet; approval is required before publishing.",
+            "pending": "Under review; approval is required before publishing.",
+            "approved": "",
+            "rejected": "Review rejected; fix the issues and resubmit.",
+            "stale": "Key configuration changed; re-approval is required before publishing."
         }
     },
     "billing": {

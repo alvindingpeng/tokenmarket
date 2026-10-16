@@ -69,6 +69,15 @@ var startCmd = &cobra.Command{
 			return
 		}
 
+		// 渠道准入审核存量回填(P1): 上线前已发布的渠道直接置 approved 并写指纹基线。
+		// 幂等条件 shared=1 且 review_status=draft 只命中历史行, 重复启动零副作用; 回填写一条汇总审计。
+		if backfilled, err := op.ChannelReviewBackfill(context.Background()); err != nil {
+			log.Errorf("channel review backfill error: %v", err)
+			return
+		} else if backfilled > 0 {
+			log.Infof("channel review backfill: %d legacy shared channels approved", backfilled)
+		}
+
 		// 限流策略缓存与路由状态恢复: 必须在服务就绪前完成, 保证重启后限流口径与选路状态连续。
 		if err := op.RatePolicyInit(); err != nil {
 			log.Errorf("rate policy init error: %v", err)

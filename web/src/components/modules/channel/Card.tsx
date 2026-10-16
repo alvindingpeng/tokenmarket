@@ -8,6 +8,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import { CheckCircle2, DollarSign, Layers, MessageSquare, XCircle } from 'lucide-react';
 import { type ChannelStatsFormatted, useEnableChannel } from '@/api/channel';
+import { ReviewBadge } from './Review';
 import { usePageActionsStore } from '@/components/common/PageActions';
 import { ChannelStats } from './Stats';
 import { ChannelForm, SHELL_HEIGHT } from './Form';
@@ -72,6 +73,8 @@ export function Card({ channel }: { channel: ChannelStatsFormatted }) {
                                 {channel.channel_name}
                             </TooltipContent>
                         </Tooltip>
+                        {/* 审核状态徽章(P1): 五态一眼可见, 详情与说明在审核队列 Tab。 */}
+                        <ReviewBadge status={channel.review_status} />
                         <div className="flex shrink-0 items-center gap-1">
                             <Switch
                                 checked={channel.enabled}

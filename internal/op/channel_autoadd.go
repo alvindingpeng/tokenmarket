@@ -94,6 +94,11 @@ func AutoAddChannelModels(ctx context.Context, channelID int, config model.Chann
 		if err := AuditLogAdd(ctx, actorID, "channel.model-added", fmt.Sprintf("channel#%d", channelID), detail); err != nil {
 			log.Warnf("auto-add: audit channel %d failed: %v", channelID, err)
 		}
+		// 自动发现的模型不触发复审: 它来自已过审的同一上游(地址与路径未动), 只是枚举供给面;
+		// 基线随发现推进, 免得下一次人工保存被误判指纹失配。人工增删模型仍走 update 的指纹比对触发 stale。
+		if err := channelReviewSyncBaseline(ctx, channelID); err != nil {
+			log.Warnf("auto-add: sync review baseline for channel %d failed: %v", channelID, err)
+		}
 	}
 	return nil
 }

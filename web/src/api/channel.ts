@@ -102,7 +102,33 @@ export type ChannelStats = StatsMetrics & {
     enabled: boolean;
     shared: boolean; // 是否已发布给用户。
     share_code: string; // 发布后对外展示的唯一编码，未发布为空。
+    review_status: ChannelReviewStatus; // 准入审核状态，卡片徽章与发布闸口提示都从这里取。
+    review_note: string; // 提交说明 / 审核意见 / 驳回原因。
+    submitted_at?: string | null;
+    reviewed_at?: string | null;
     models: ChannelModelStats[];
+};
+
+// ChannelReviewStatus 是渠道准入审核状态机的五个态（P1）。
+// draft 新建默认；pending 已提交待审；approved 允许发布与进对外候选；
+// rejected 附原因待改；stale 通过后关键配置指纹失配待复审——只挡新暴露，存量分组流量不断。
+export type ChannelReviewStatus = 'draft' | 'pending' | 'approved' | 'rejected' | 'stale';
+
+// ChannelReviewItem 是审核队列条目，只带审核决策需要的字段，不含路径与凭据。
+export type ChannelReviewItem = {
+    channel_id: number;
+    user_id: number;
+    owner_name: string;
+    channel_name: string;
+    review_status: ChannelReviewStatus;
+    review_note: string;
+    submitted_at?: string | null;
+    reviewed_by: number;
+    reviewer_name: string;
+    reviewed_at?: string | null;
+    shared: boolean;
+    enabled: boolean;
+    model_count: number;
 };
 
 // ChannelModelStatsFormatted 是单个渠道模型的展示用统计。
@@ -126,6 +152,10 @@ export type ChannelStatsFormatted = {
     enabled: boolean;
     shared: boolean;
     share_code: string;
+    review_status: ChannelReviewStatus;
+    review_note: string;
+    submitted_at: string | null;
+    reviewed_at: string | null;
     models: ChannelModelStatsFormatted[];
     formatted: StatsMetricsFormatted;
 };
@@ -170,6 +200,10 @@ const channelStatsFormattedQueryOptions = queryOptions({
         enabled: item.enabled,
         shared: item.shared,
         share_code: item.share_code,
+        review_status: item.review_status,
+        review_note: item.review_note,
+        submitted_at: item.submitted_at ?? null,
+        reviewed_at: item.reviewed_at ?? null,
         models: item.models.map((channelModel) => ({
             model_id: channelModel.model_id,
             model_name: channelModel.model_name,
@@ -366,5 +400,50 @@ export function useFetchModel() {
     return useMutation({
         mutationFn: (data: FetchModelRequest) =>
             apiRequest<FetchModel[]>('/api/v1/channel/fetch-model', { method: 'POST', body: data }),
+    });
+}
+
+// channelReviewInvalidate 审核动作成功后统一失效渠道与审核队列: 两者共享 review_status, 必须同步刷新。
+const channelReviewInvalidate = (queryClient: ReturnType<typeof useQueryClient>) => {
+    queryClient.invalidateQueries({ queryKey: ['channels'] });
+    queryClient.invalidateQueries({ queryKey: ['channels', 'review'] });
+};
+
+// useChannelReviewList 拉取审核队列: 管理员全量, 渠道商只看自有提交; status 空为全部状态。
+export function useChannelReviewList(status?: ChannelReviewStatus) {
+    return useQuery({
+        queryKey: ['channels', 'review', 'list', status ?? ''],
+        queryFn: () => apiRequest<{ items: ChannelReviewItem[] }>(`/api/v1/channel/review/list?status=${status ?? ''}`),
+        refetchOnMount: 'always',
+    });
+}
+
+// useSubmitChannelReview 提交审核: draft|rejected|stale → pending; 管理员免审渠道提交即通过。
+export function useSubmitChannelReview() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (data: { id: number; note: string }) =>
+            apiRequest<{ id: number; review_status: ChannelReviewStatus }>('/api/v1/channel/review/submit', { method: 'POST', body: data }),
+        onSuccess: () => channelReviewInvalidate(queryClient),
+    });
+}
+
+// useApproveChannelReview 批准审核(管理员): pending → approved 并写配置指纹基线。
+export function useApproveChannelReview() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (data: { id: number; note: string }) =>
+            apiRequest<{ id: number; review_status: ChannelReviewStatus }>('/api/v1/channel/review/approve', { method: 'POST', body: data }),
+        onSuccess: () => channelReviewInvalidate(queryClient),
+    });
+}
+
+// useRejectChannelReview 驳回审核(管理员): pending → rejected, 原因必填。
+export function useRejectChannelReview() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (data: { id: number; note: string }) =>
+            apiRequest<{ id: number; review_status: ChannelReviewStatus }>('/api/v1/channel/review/reject', { method: 'POST', body: data }),
+        onSuccess: () => channelReviewInvalidate(queryClient),
     });
 }
