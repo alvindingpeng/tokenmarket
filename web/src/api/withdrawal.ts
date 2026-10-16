@@ -45,8 +45,9 @@ export function useWithdrawSummary() {
 }
 
 // useWithdrawals 提现记录; status 为空不过滤, userId 非零供管理员按用户筛。
-export function useWithdrawals(status: string, userId: number) {
+export function useWithdrawals(status: string, userId: number, enabled = true) {
     return useQuery({
+        enabled,
         queryKey: ['withdraw', 'list', status, userId],
         queryFn: () => {
             const params = new URLSearchParams({ limit: '50' });

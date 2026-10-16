@@ -811,6 +811,7 @@
             "tabReview": "審核隊列",
             "title": "渠道准入審核",
             "subtitle": "通過審核後才能發佈給用戶",
+            "subtitleReadonly": "僅可查看審核狀態，審核操作由管理員執行",
             "filterAll": "全部狀態",
             "loading": "載入中…",
             "error": "載入失敗",
