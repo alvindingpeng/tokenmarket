@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { ArrowDownToLine, ArrowUpFromLine, ChevronLeft, ChevronRight, CreditCard, Database, Download, Loader2, PiggyBank, Receipt, Search, Snowflake } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, ChevronLeft, ChevronRight, CreditCard, Database, Download, Eye, FileText, Loader2, PiggyBank, Receipt, Search, Shield, Snowflake, TrendingUp } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import dayjs from 'dayjs';
-import { billingExportUrl, useAccountProfile, useBalanceLedger, useBillingDaily, useBillingRecords, useRevenueDaily, type BillingDaily, type BillingFilter } from '@/api/billing';
+import { billingExportUrl, createDispute, generateSettlement, reviewDispute, useAccountProfile, useBalanceLedger, useBillingDaily, useBillingRecords, useDisputes, useProfitMargin, useRevenueDaily, useSettlements, useTradeDetail, type BillingDaily, type BillingFilter, type Dispute } from '@/api/billing';
 import { formatPlainMoney } from '@/lib/money';
 import { useAuth } from '@/api/user';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { MorphingDialog, MorphingDialogContainer, MorphingDialogContent, useMorphingDialog } from '@/components/ui/morphing-dialog';
 
 // 计费金额可能不足 0.001, 固定 6 位小数再截尾零（与 share 模块同一口径, 实现见 lib/money）。
 const formatMoney = formatPlainMoney;
@@ -27,7 +28,6 @@ function dayLabel(date: string): string {
 
 // TokenCell 是四类词元的紧凑展示, 行内自动换行而不是横向溢出。
 function TokenCell({ values }: { values: { label: string; value: number }[] }) {
-    const t = useTranslations('billing');
     return (
         <span className="flex min-w-0 flex-wrap gap-x-3 gap-y-0.5 font-mono text-xs tabular-nums">
             {values.map(({ label, value }) => (
@@ -157,7 +157,7 @@ function Pager({ page, total, onChange, label }: { page: number; total: number; 
 }
 
 // SpendingTable 渲染计费明细表: 模型/渠道/状态/时间筛选 + 分页 + CSV 导出; 收入列只在渠道商/管理员视图展示。
-function SpendingTable({ owner }: { owner: boolean }) {
+function SpendingTable({ owner, onView }: { owner: boolean; onView: (id: number) => void }) {
     const t = useTranslations('billing');
     const [page, setPage] = useState(1);
     const [draftModel, setDraftModel] = useState('');
@@ -277,10 +277,9 @@ function SpendingTable({ owner }: { owner: boolean }) {
                                     <span className="block">{t('tokens.input')} {record.user_price.input}</span>
                                     <span className="block">{t('tokens.output')} {record.user_price.output}</span>
                                 </span>
-                                <span className="flex justify-end">
-                                    <Badge variant="outline" className={cn('px-1.5 py-0 text-[10px] font-medium', record.status === 'settled' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'border-orange-500/30 bg-orange-500/10 text-orange-600 dark:text-orange-400')}>
-                                        {t('status.' + record.status)}
-                                    </Badge>
+                                <span className="flex items-center justify-end gap-1">
+                                    <Badge variant="outline" className={cn('px-1.5 py-0 text-[10px] font-medium', record.status === 'settled' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'border-orange-500/30 bg-orange-500/10 text-orange-600 dark:text-orange-400')}>{t('status.' + record.status)}</Badge>
+                                    <Button variant="ghost" size="sm" className="size-7 rounded-lg p-0" onClick={() => onView(record.id)} title={t('trade.title')}><Eye className="size-3.5" /></Button>
                                 </span>
                             </div>
                         ))}
@@ -518,18 +517,56 @@ function Trends({ owner }: { owner: boolean }) {
 
 // Billing 渲染计费页面: 账户概览、消费明细、消费趋势, 收入相关区块按角色开放。
 export default function Billing() {
-    // 角色取自登录态（API Key 登录时为 null）; 不是渠道商或管理员就按普通用户裁剪收入区块。
-    const { role } = useAuth();
-    const owner = role === 'reseller' || role === 'admin';
-
-    return (
-        <div className="flex h-full min-h-0 flex-col">
-            <div className="mx-auto flex w-full max-w-6xl min-h-0 flex-1 flex-col gap-6 overflow-y-auto overscroll-contain px-4 py-6 pb-24">
-                <Overview owner={owner} />
-                <SpendingTable owner={owner} />
-                <BalanceLedgerTable />
-                <Trends owner={owner} />
-            </div>
-        </div>
-    );
+    const { role } = useAuth(); const owner = role === 'reseller' || role === 'admin'; const [detailId, setDetailId] = useState<number | null>(null); const openDetail = (id: number) => setDetailId(id);
+    return <div className="flex h-full min-h-0 flex-col"><div className="mx-auto flex w-full max-w-6xl min-h-0 flex-1 flex-col gap-6 overflow-y-auto overscroll-contain px-4 py-6 pb-24"><Overview owner={owner} /><SpendingTable owner={owner} onView={openDetail} /><BalanceLedgerTable />{owner && <DisputeList />}{owner && <SettlementTable />}{role === 'admin' && <MarginDashboard />}<Trends owner={owner} /></div>{detailId && <MorphingDialog><TradeDetailPanel recordId={detailId} /></MorphingDialog>}</div>;
 }
+// TradeDetailPanel 交易详情弹窗: 统一展示调用记录、计费账目、流水与申诉操作入口。
+function TradeDetailPanel({ recordId }: { recordId: number }) {
+    const t = useTranslations('billing');
+    const { setIsOpen } = useMorphingDialog();
+    const { data, isLoading, isError } = useTradeDetail(recordId);
+    const [reason, setReason] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [message, setMessage] = useState('');
+    const [submitError, setSubmitError] = useState(false);
+    const submit = async () => {
+        if (!reason.trim()) return;
+        setBusy(true); setMessage(''); setSubmitError(false);
+        try { await createDispute({ record_id: recordId, reason: reason.trim() }); setReason(''); setMessage(t('trade.disputeSuccess')); }
+        catch (error) { setSubmitError(true); setMessage(error instanceof Error ? error.message : t('trade.disputeFailed')); }
+        finally { setBusy(false); }
+    };
+    return <MorphingDialogContainer><MorphingDialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+        <div className="mb-4 flex items-center justify-between"><h2 className="text-base font-semibold">{t('trade.title')}</h2><button className="text-sm text-muted-foreground" onClick={() => setIsOpen(false)}>{t('trade.close')}</button></div>
+        {isLoading ? <div className="flex h-40 items-center justify-center"><Loader2 className="size-5 animate-spin" /></div> : isError || !data ? <p className="py-10 text-center text-sm text-destructive">{t('loadFailed')}</p> : <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-2 text-sm"><span className="text-muted-foreground">{t('trade.recordId')}</span><span>#{data.record.id}</span><span className="text-muted-foreground">{t('trade.requestId')}</span><span>#{data.record.request_id || '—'}</span><span className="text-muted-foreground">{t('trade.userCost')}</span><span>{formatMoney(data.record.user_cost)}</span><span className="text-muted-foreground">{t('trade.ownerRevenue')}</span><span>{formatMoney(data.record.owner_revenue)}</span><span className="text-muted-foreground">{t('trade.platformRevenue')}</span><span>{formatMoney(data.record.platform_revenue)}</span></div>
+            {data.request && <div className="rounded-xl bg-muted/50 p-3"><h3 className="mb-2 text-sm font-medium">{t('trade.requestContext')}</h3><div className="grid grid-cols-2 gap-2 text-xs"><span className="text-muted-foreground">Model</span><span>{data.request.model}</span><span className="text-muted-foreground">{t('trade.requestStatus')}</span><span>{data.request.status}</span><span className="text-muted-foreground">{t('trade.latency')}</span><span>{Math.round((data.request.duration_ns || 0) / 1e6)} ms</span><span className="text-muted-foreground">{t('trade.firstToken')}</span><span>{Math.round((data.request.first_token_duration_ns || 0) / 1e6)} ms</span></div>{data.request.error && <p className="mt-2 text-xs text-destructive">{data.request.error}</p>}</div>}
+            {data.disputes.length > 0 && <div><h3 className="mb-2 text-sm font-medium">{t('trade.disputes')}</h3>{data.disputes.map(item => <div key={item.id} className="mb-2 rounded-lg bg-muted/50 p-3 text-xs"><div className="flex justify-between text-muted-foreground"><span>#{item.id}</span><span>{item.status}</span></div>{item.reason}</div>)}</div>}
+            {data.record.status === 'settled' && <div className="rounded-xl border p-3"><h3 className="mb-2 text-sm font-medium">{t('trade.disputeAction')}</h3><textarea className="mb-2 w-full rounded-lg border bg-background p-2 text-sm" rows={2} value={reason} onChange={event => setReason(event.target.value)} placeholder={t('trade.disputeReasonPlaceholder')} />{message && <p className={cn('mb-2 text-xs', submitError ? 'text-destructive' : 'text-emerald-600')}>{message}</p>}<Button size="sm" disabled={busy || !reason.trim()} onClick={submit}>{t('trade.submitDispute')}</Button></div>}
+        </div>}
+    </MorphingDialogContent></MorphingDialogContainer>;
+}
+
+// DisputeList 管理员审核交易申诉；同一事务中完成退款与余额冲正。
+function DisputeList() {
+    const t = useTranslations('billing'); const [status, setStatus] = useState(''); const [page, setPage] = useState(1); const [target, setTarget] = useState<Dispute | null>(null); const [note, setNote] = useState('');
+    const { data, isLoading } = useDisputes(status, PAGE_SIZE, (page - 1) * PAGE_SIZE); const rows = data?.items ?? [];
+    const review = async (approve: boolean) => { if (!target) return; try { await reviewDispute({ dispute_id: target.id, approve, review_note: note }); setTarget(null); setNote(''); } catch { alert(t('dispute.reviewFailed')); } };
+    return <section className="rounded-3xl bg-card border-border border p-4"><header className="mb-2 flex items-center justify-between gap-2"><h2 className="flex items-center gap-2 text-base font-semibold"><Shield className="size-4 text-muted-foreground" />{t('dispute.title')}</h2><Select value={status} onValueChange={value => { setStatus(value); setPage(1); }}><SelectTrigger className="h-8 w-28 rounded-xl"><SelectValue placeholder={t('dispute.status.all')} /></SelectTrigger><SelectContent><SelectItem value="">{t('dispute.status.all')}</SelectItem><SelectItem value="pending">{t('dispute.status.pending')}</SelectItem><SelectItem value="approved">{t('dispute.status.approved')}</SelectItem><SelectItem value="rejected">{t('dispute.status.rejected')}</SelectItem></SelectContent></Select></header>{isLoading ? <Skeleton /> : rows.length === 0 ? <p className="py-10 text-center text-sm text-muted-foreground">{t('dispute.empty')}</p> : <div className="overflow-x-auto"><div className="min-w-[780px]"><div className="grid grid-cols-[70px_110px_90px_100px_minmax(180px,1fr)_100px_100px_90px] gap-3 border-b py-2 text-xs text-muted-foreground"><span>{t('dispute.column.id')}</span><span>{t('dispute.column.recordId')}</span><span>{t('dispute.column.user')}</span><span className="text-right">{t('dispute.column.amount')}</span><span>{t('dispute.column.reason')}</span><span>{t('dispute.column.status')}</span><span>{t('dispute.column.review')}</span><span>{t('dispute.column.actions')}</span></div>{rows.map(item => <div key={item.id} className="grid grid-cols-[70px_110px_90px_100px_minmax(180px,1fr)_100px_100px_90px] gap-3 border-b py-2.5 text-xs"><span className="font-mono text-muted-foreground">#{item.id}</span><span className="font-mono">{item.record_id}/{item.request_id}</span><span className="font-mono">{item.user_id}</span><span className="text-right">{formatMoney(item.user_cost)}</span><span className="truncate text-muted-foreground">{item.reason}</span><Badge variant="outline" className="justify-self-start px-1.5 py-0 text-[10px]">{t('dispute.status.' + item.status)}</Badge><span className="truncate text-muted-foreground">{item.review_note || '—'}</span>{item.status === 'pending' ? <Button variant="outline" size="sm" className="h-7 rounded-lg" onClick={() => setTarget(item)}>{t('dispute.column.actions')}</Button> : <span className="text-muted-foreground">—</span>}</div>)}</div></div>}<Pager page={page} total={data?.total ?? 0} onChange={setPage} label={(current, pages, count) => t('pagination.summary', { current, pages, count })} />{target && <MorphingDialog><MorphingDialogContainer><MorphingDialogContent className="max-w-md"><h2 className="mb-3 text-base font-semibold">#{target.id}</h2><div className="mb-3 rounded-lg bg-muted/50 p-3 text-sm"><div>{t('dispute.column.amount')}: {formatMoney(target.user_cost)}</div><div className="mt-1 text-xs text-muted-foreground">{target.reason}</div></div><Input className="mb-3 rounded-xl" value={note} onChange={event => setNote(event.target.value)} placeholder={t('dispute.reviewNotePlaceholder')} /><div className="flex gap-2"><Button className="flex-1" disabled={!note.trim()} onClick={() => review(true)}>{t('dispute.approve')}</Button><Button variant="outline" className="flex-1" disabled={!note.trim()} onClick={() => review(false)}>{t('dispute.reject')}</Button></div></MorphingDialogContent></MorphingDialogContainer></MorphingDialog>}</section>;
+}
+
+// SettlementTable 渠道商结算单；由服务端按自然日聚合计费与退款冲正，口径幂等。
+function SettlementTable() {
+    const t = useTranslations('billing'); const [page, setPage] = useState(1); const [period, setPeriod] = useState(''); const [busy, setBusy] = useState(false); const { role } = useAuth();
+    const { data, isLoading } = useSettlements(period, PAGE_SIZE, (page - 1) * PAGE_SIZE);
+    const generate = async () => { setBusy(true); try { await generateSettlement(); alert(t('settlement.generateSuccess')); } finally { setBusy(false); } };
+    return <section className="rounded-3xl bg-card border-border border p-4"><header className="mb-2 flex items-center justify-between gap-2"><h2 className="flex items-center gap-2 text-base font-semibold"><FileText className="size-4 text-muted-foreground" />{t('settlement.title')}</h2><div className="flex items-center gap-2"><Select value={period} onValueChange={value => { setPeriod(value); setPage(1); }}><SelectTrigger className="h-8 w-28 rounded-xl"><SelectValue placeholder={t('dispute.status.all')} /></SelectTrigger><SelectContent><SelectItem value="">{t('dispute.status.all')}</SelectItem><SelectItem value={dayjs().subtract(1, 'day').format('YYYYMMDD')}>昨日</SelectItem><SelectItem value={dayjs().format('YYYYMMDD')}>今日</SelectItem></SelectContent></Select>{role === 'admin' && <Button variant="outline" size="sm" className="h-8" disabled={busy} onClick={generate}>{busy ? t('settlement.generating') : t('settlement.generate')}</Button>}</div></header>{isLoading ? <Skeleton /> : (data?.items ?? []).length === 0 ? <p className="py-10 text-center text-sm text-muted-foreground">{t('settlement.empty')}</p> : <div className="overflow-x-auto"><div className="min-w-[760px]"><div className="grid grid-cols-[minmax(130px,1fr)_80px_80px_90px_100px_90px_100px_80px] gap-3 border-b py-2 text-xs text-muted-foreground"><span>{t('settlement.column.statementNo')}</span><span>{t('settlement.column.period')}</span><span className="text-right">{t('settlement.column.requests')}</span><span className="text-right">{t('settlement.column.tokens')}</span><span className="text-right">{t('settlement.column.gross')}</span><span className="text-right">{t('settlement.column.refund')}</span><span className="text-right">{t('settlement.column.net')}</span><span>{t('settlement.column.status')}</span></div>{(data?.items ?? []).map(item => <div key={item.id} className="grid grid-cols-[minmax(130px,1fr)_80px_80px_90px_100px_90px_100px_80px] gap-3 border-b py-2.5 text-xs"><span className="font-mono text-muted-foreground">{item.statement_no}</span><span>{item.period}</span><span className="text-right tabular-nums">{item.request_count}</span><span className="text-right tabular-nums">{item.input_token + item.output_token}</span><span className="text-right tabular-nums">{formatMoney(item.gross_revenue)}</span><span className="text-right tabular-nums text-red-500">{item.refund_deduction ? '-' + formatMoney(item.refund_deduction) : '—'}</span><span className="text-right font-medium tabular-nums">{formatMoney(item.net_revenue)}</span><span>{item.status}</span></div>)}</div></div>}<Pager page={page} total={data?.total ?? 0} onChange={setPage} label={(current, pages, count) => t('pagination.summary', { current, pages, count })} /></section>;
+}
+
+// MarginDashboard 管理员经营毛利看板；充值金额仅作现金流参考，不混入应收毛利。
+function MarginDashboard() {
+    const t = useTranslations('billing'); const { data, isLoading } = useProfitMargin(); const total = data?.overall; const rows = data?.trends ?? [];
+    return <section className="space-y-4"><div className="grid grid-cols-2 gap-3 md:grid-cols-4"><AccountCard label={t('margin.userCost')} icon={CreditCard} iconBg="bg-blue-500/10" value={total ? formatMoney(total.user_cost) : ''} /><AccountCard label={t('margin.ownerRevenue')} icon={ArrowUpFromLine} iconBg="bg-purple-500/10" value={total ? formatMoney(total.owner_revenue) : ''} /><AccountCard label={t('margin.platformRevenue')} icon={TrendingUp} iconBg="bg-emerald-500/10" value={total ? formatMoney(total.platform_revenue) : ''} /><AccountCard label={t('margin.marginRate')} icon={PiggyBank} iconBg="bg-amber-500/10" value={total ? total.margin_rate.toFixed(1) + '%' : ''} /></div><div className="rounded-3xl bg-card border-border border p-4"><h2 className="mb-2 flex items-center gap-2 text-base font-semibold"><TrendingUp className="size-4 text-muted-foreground" />{t('margin.trendTitle')}</h2>{isLoading ? <Skeleton /> : rows.length === 0 ? <p className="py-10 text-center text-sm text-muted-foreground">{t('margin.empty')}</p> : <div className="overflow-x-auto"><div className="min-w-[650px]"><div className="grid grid-cols-[80px_100px_100px_100px_100px_90px] gap-3 border-b py-2 text-xs text-muted-foreground"><span>{t('margin.column.date')}</span><span className="text-right">{t('margin.column.gmv')}</span><span className="text-right">{t('margin.column.cost')}</span><span className="text-right">{t('margin.column.profit')}</span><span className="text-right">{t('margin.column.marginRate')}</span><span className="text-right">{t('margin.column.requests')}</span></div>{rows.map(row => <div key={row.period} className="grid grid-cols-[80px_100px_100px_100px_100px_90px] gap-3 border-b py-2.5 text-xs"><span>{dayjs(row.period, 'YYYYMMDD').format('MM/DD')}</span><span className="text-right tabular-nums">{formatMoney(row.user_cost)}</span><span className="text-right tabular-nums">{formatMoney(row.owner_revenue)}</span><span className="text-right font-medium tabular-nums">{formatMoney(row.platform_revenue)}</span><span className="text-right tabular-nums">{row.margin_rate.toFixed(1)}%</span><span className="text-right tabular-nums">{row.request_count}</span></div>)}</div></div>}</div></section>;
+}
+
+
