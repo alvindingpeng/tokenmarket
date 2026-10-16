@@ -89,6 +89,8 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.ChannelHealthRecord{},
 		&model.VideoJob{},
 		&model.ChannelAlert{},
+		&model.Dispute{},
+		&model.SettlementStatement{},
 		&migrate.MigrationRecord{},
 	); err != nil {
 		return err

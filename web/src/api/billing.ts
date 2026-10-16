@@ -169,3 +169,119 @@ export function useAccountProfile() {
         queryFn: () => apiRequest<UserView>('/api/v1/user/status'),
     });
 }
+
+export type RelayRequestView = {
+    id: string;
+    user_id: number;
+    api_key_name: string;
+    model: string;
+    status: string;
+    client_ip?: string;
+    duration_ns: number;
+    first_token_duration_ns: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    cost: number;
+    target_channel_code?: string;
+    target_model?: string;
+    error?: string;
+    started_at: string;
+};
+
+export type TradeDetail = {
+    record: BillingRecord;
+    request?: RelayRequestView;
+    ledgers: BalanceLedger[];
+    disputes: Dispute[];
+};
+
+export type Dispute = {
+    id: number;
+    record_id: number;
+    request_id: string;
+    user_id: number;
+    owner_id: number;
+    channel_id: number;
+    model_name: string;
+    user_cost: number;
+    reason: string;
+    status: "pending" | "approved" | "rejected";
+    review_note: string;
+    reviewed_by: number;
+    reviewed_at?: string;
+    created_at: string;
+};
+
+export type SettlementStatement = {
+    id: number;
+    statement_no: string;
+    owner_id: number;
+    period: string;
+    request_count: number;
+    input_token: number;
+    output_token: number;
+    gross_revenue: number;
+    refund_deduction: number;
+    net_revenue: number;
+    status: string;
+    created_at: string;
+};
+
+export type ProfitMarginSummary = {
+    period: string;
+    user_cost: number;
+    owner_revenue: number;
+    platform_revenue: number;
+    margin_rate: number;
+    request_count: number;
+    refund_amount: number;
+    recharge_amount: number;
+};
+
+export function useTradeDetail(recordID: number | null) {
+    return useQuery({
+        queryKey: ["trade", "detail", recordID],
+        queryFn: () => recordID ? apiRequest<TradeDetail>(`/api/v1/trade/detail?record_id=${recordID}`) : Promise.resolve(null),
+        enabled: Boolean(recordID),
+    });
+}
+
+export function createDispute(data: { record_id: number; reason: string }) {
+    return apiRequest<Dispute>("/api/v1/dispute/create", { method: "POST", body: data });
+}
+
+export function useDisputes(status = "", limit = 20, offset = 0) {
+    const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (status) query.set("status", status);
+    return useQuery({
+        queryKey: ["dispute", "list", status, limit, offset],
+        queryFn: () => apiRequest<{ items: Dispute[]; total: number }>("/api/v1/dispute/list?" + query.toString()),
+    });
+}
+
+export function reviewDispute(data: { dispute_id: number; approve: boolean; review_note: string }) {
+    return apiRequest<string>("/api/v1/dispute/review", { method: "POST", body: data });
+}
+
+export function useSettlements(period = "", limit = 20, offset = 0) {
+    const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (period) query.set("period", period);
+    return useQuery({
+        queryKey: ["settlement", "list", period, limit, offset],
+        queryFn: () => apiRequest<{ items: SettlementStatement[]; total: number }>("/api/v1/settlement/list?" + query.toString()),
+    });
+}
+
+export function generateSettlement(day?: string) {
+    return apiRequest<string>("/api/v1/settlement/generate", { method: "POST", body: { day } });
+}
+
+export function useProfitMargin(from = "", to = "") {
+    const query = new URLSearchParams();
+    if (from) query.set("from", from);
+    if (to) query.set("to", to);
+    return useQuery({
+        queryKey: ["profit", "margin", from, to],
+        queryFn: () => apiRequest<{ overall: ProfitMarginSummary; trends: ProfitMarginSummary[] }>("/api/v1/settlement/margin?" + query.toString()),
+    });
+}

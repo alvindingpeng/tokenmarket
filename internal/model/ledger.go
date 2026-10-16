@@ -11,6 +11,7 @@ const (
 	LedgerKindTopup   = "topup"   // 充值入账。
 	LedgerKindRedeem  = "redemption" // 兑换码入账。
 	LedgerKindBonus   = "bonus"   // 充值满赠送的余额(D6); 不计入累计充值口径。
+	LedgerKindRefund  = "refund"  // 申诉退款返还余额并记录冲正。
 	// 提现三态 + 打款回滚(P3): 记在收益池口径, Balance 不动(充值款不可提现),
 	// amount = 可提余额的变动(freeze -a / unfreeze +a), paid 与 rollback 可提不变故记 0。
 	LedgerKindWithdrawFreeze   = "withdraw_freeze"

@@ -973,6 +973,98 @@
                 "ownerRevenue": "Owner Revenue",
                 "commission": "Commission"
             }
+        },
+        "trade": {
+            "title": "交易详情",
+            "recordId": "计费明细编号",
+            "requestId": "调用请求编号",
+            "userCost": "用户支出",
+            "ownerRevenue": "渠道分成",
+            "platformRevenue": "平台毛利",
+            "status": "交易状态",
+            "requestContext": "调用上下文",
+            "requestStatus": "请求状态",
+            "clientIp": "客户端 IP",
+            "latency": "耗时",
+            "firstToken": "首字耗时",
+            "error": "错误信息",
+            "ledgerRecords": "关联余额流水",
+            "disputes": "申诉历史",
+            "disputeAction": "发起退款申诉",
+            "disputeReason": "申诉原因",
+            "disputeReasonPlaceholder": "请描述调用失败、异常扣费或用量不符的具体情况",
+            "submitDispute": "提交申诉",
+            "disputeSuccess": "申诉提交成功，请等待管理员审核",
+            "disputeFailed": "申诉提交失败",
+            "disputeExists": "已存在待审核申诉",
+            "close": "关闭"
+        },
+        "dispute": {
+            "title": "交易申诉与退款",
+            "hint": "用户争议处理、审核及冲正退款",
+            "empty": "暂无申诉记录",
+            "status": {
+                "all": "全部申诉",
+                "pending": "待审核",
+                "approved": "已退款",
+                "rejected": "已驳回"
+            },
+            "column": {
+                "id": "申诉编号",
+                "recordId": "交易/请求",
+                "user": "申诉用户",
+                "amount": "申请退款金额",
+                "reason": "申诉原因",
+                "status": "状态",
+                "review": "审核说明",
+                "time": "时间",
+                "actions": "操作"
+            },
+            "approve": "同意退款",
+            "reject": "驳回",
+            "reviewNote": "审核说明 / 驳回原因",
+            "reviewNotePlaceholder": "请输入核实说明或驳回理由",
+            "reviewSuccess": "审核处理成功",
+            "reviewFailed": "审核处理失败"
+        },
+        "settlement": {
+            "title": "渠道商日结算单",
+            "hint": "每日汇总渠道商供货应收、退款扣减与净收益",
+            "empty": "暂无结算单记录",
+            "generate": "生成/刷新今日结算单",
+            "generating": "结算单生成中...",
+            "generateSuccess": "结算单已生成并对账完毕",
+            "column": {
+                "statementNo": "结算单号",
+                "period": "账期",
+                "owner": "渠道商 ID",
+                "requests": "请求数",
+                "tokens": "总 Tokens",
+                "gross": "供货毛收入",
+                "refund": "退款冲正",
+                "net": "净结算金额",
+                "status": "对账状态"
+            }
+        },
+        "margin": {
+            "title": "经营毛利分析",
+            "hint": "平台实际 GMV、渠道供货成本与净毛利看板",
+            "userCost": "用户消费流水 (GMV)",
+            "ownerRevenue": "渠道供货成本",
+            "platformRevenue": "平台净毛利",
+            "marginRate": "综合毛利率",
+            "refundAmount": "累计退款冲正",
+            "rechargeAmount": "现金充值流入",
+            "trendTitle": "毛利每日趋势 (近 30 天)",
+            "empty": "暂无经营数据",
+            "column": {
+                "date": "日期",
+                "gmv": "用户消费",
+                "cost": "渠道成本",
+                "profit": "平台毛利",
+                "marginRate": "毛利率",
+                "requests": "请求数"
+            }
         }
     },
     "users": {
