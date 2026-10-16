@@ -73,8 +73,10 @@ export function Card({ channel }: { channel: ChannelStatsFormatted }) {
                                 {channel.channel_name}
                             </TooltipContent>
                         </Tooltip>
-                        {/* 审核状态徽章(P1): 五态一眼可见, 详情与说明在审核队列 Tab。 */}
-                        <ReviewBadge status={channel.review_status} />
+                        {/* 审核状态徽章(P1): 五态一眼可见。队列与审核操作仅管理员, 渠道商在此查看状态与审核意见(悬停)。 */}
+                        <span className="inline-flex" title={channel.review_note || undefined}>
+                            <ReviewBadge status={channel.review_status} />
+                        </span>
                         <div className="flex shrink-0 items-center gap-1">
                             <Switch
                                 checked={channel.enabled}

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ArrowUpAZ, ShieldCheck, LayoutGrid } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { useChannelStats } from '@/api/channel';
+import { useAuth } from '@/api/user';
 import { PageActions, usePageActionsStore } from '@/components/common/PageActions';
 import { MorphingDialogDescription } from '@/components/ui/morphing-dialog';
 import { Card } from './Card';
@@ -58,6 +59,9 @@ export function ChannelActions() {
 // 审核队列自带状态筛选与审批动作, 不进虚拟滚动; 两个视图都撑满剩余高度, 切换不改外层布局。
 export function Channel() {
     const tReview = useTranslations('channel.review');
+    // 审核队列仅管理员可见: 渠道商只在卡片查看审核状态(与审核意见), 不进队列、无任何审核功能。
+    const { role } = useAuth();
+    const isAdmin = role === 'admin';
     const [view, setView] = useState<'channels' | 'review'>('channels');
     const { data: statsData } = useChannelStats();
     const searchTerm = usePageActionsStore((state) => state.searchTerms.channel || '');
@@ -85,7 +89,7 @@ export function Channel() {
     // Tab 条: 两态分段按钮, 与统计排序切换同一交互语义(aria-pressed + 高亮态)。
     const tabs: { key: 'channels' | 'review'; label: string; icon: React.ReactNode }[] = [
         { key: 'channels', label: tReview('tabChannels'), icon: <LayoutGrid className="size-3.5" /> },
-        { key: 'review', label: tReview('tabReview'), icon: <ShieldCheck className="size-3.5" /> },
+        ...(isAdmin ? [{ key: 'review' as const, label: tReview('tabReview'), icon: <ShieldCheck className="size-3.5" /> }] : []),
     ];
 
     return (
@@ -107,7 +111,7 @@ export function Channel() {
                     </button>
                 ))}
             </div>
-            {view === 'review' ? (
+            {view === 'review' && isAdmin ? (
                 <ChannelReviewQueue />
             ) : (
                 <VirtualizedGrid

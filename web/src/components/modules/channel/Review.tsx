@@ -45,8 +45,9 @@ export function ReviewBadge({ status }: { status: ChannelReviewStatus }) {
     );
 }
 
-// ChannelReviewQueue 渠道准入审核队列(P1): 管理员审批 pending, 渠道商提交 draft/rejected/stale;
+// ChannelReviewQueue 渠道准入审核队列(P1): 管理员审批 pending 并代提交 draft/rejected/stale;
 // 驳回必填原因(op 层二次校验), 提交说明可留空。列表按作用域过滤, 渠道商只看自有渠道。
+// 渠道商只读: 审核功能(提交/审批)已收归管理员, 渠道商仅查看审核状态与审核意见, 无任何操作入口(后端 /submit 同步收紧)。
 export function ChannelReviewQueue() {
     const t = useTranslations('channel.review');
     const { role } = useAuth();
@@ -110,7 +111,7 @@ export function ChannelReviewQueue() {
                 <h3 className="flex items-center gap-2 text-sm font-semibold">
                     <ShieldCheck className="size-4 text-primary" />
                     {t('title')}
-                    <span className="text-xs font-normal text-muted-foreground">{t('subtitle')}</span>
+                    <span className="text-xs font-normal text-muted-foreground">{isAdmin ? t('subtitle') : t('subtitleReadonly')}</span>
                 </h3>
                 <Select value={status} onValueChange={(value) => setStatus(value)}>
                     <SelectTrigger className="h-8 w-32 rounded-xl text-xs">
@@ -146,7 +147,7 @@ export function ChannelReviewQueue() {
                                 <th className="px-4 py-3 font-medium">{t('table.status')}</th>
                                 <th className="px-4 py-3 font-medium">{t('table.time')}</th>
                                 <th className="px-4 py-3 font-medium">{t('table.note')}</th>
-                                <th className="px-4 py-3 font-medium">{t('table.actions')}</th>
+                                {isAdmin && <th className="px-4 py-3 font-medium">{t('table.actions')}</th>}
                             </tr>
                         </thead>
                         <tbody>
@@ -176,8 +177,9 @@ export function ChannelReviewQueue() {
                                     <td className="max-w-48 px-4 py-3 text-xs text-muted-foreground">
                                         <span className="block truncate" title={item.review_note}>{item.review_note || '-'}</span>
                                     </td>
-                                    <td className="px-4 py-3">
-                                        {item.review_status === 'pending' && isAdmin ? (
+                                    {/* 渠道商只读: 审核操作已屏蔽, 操作列整列不渲染, 仅展示状态与审核意见。 */}
+                                    {isAdmin && <td className="px-4 py-3">
+                                        {item.review_status === 'pending' ? (
                                             <div className="flex flex-col gap-1.5">
                                                 <div className="flex gap-1.5">
                                                     <Button size="sm" className="h-8 rounded-xl" disabled={pending} onClick={() => handleApprove(item)}>
@@ -215,7 +217,7 @@ export function ChannelReviewQueue() {
                                         ) : (
                                             <span className="text-xs text-muted-foreground">-</span>
                                         )}
-                                    </td>
+                                    </td>}
                                 </tr>
                             ))}
                         </tbody>

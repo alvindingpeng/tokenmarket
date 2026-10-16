@@ -13,26 +13,30 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// 提现接口: 申请/查询/取消对用户(仅渠道商可申请), 审核/打款/回滚对管理员。
+// 提现接口: 申请/查询/取消对渠道商, 审核/打款/回滚对管理员; 普通用户整个提现功能屏蔽(路由级403, 界面隐藏入口)。
 func init() {
 	router.NewGroupRouter("/api/v1/withdrawal").
 		Use(middleware.Auth()).
 		AddRoute(
 			router.NewRoute("/summary", http.MethodGet).
+				Allow(model.RoleAdmin, model.RoleReseller).
 				Handle(withdrawSummary),
 		).
 		AddRoute(
 			router.NewRoute("/apply", http.MethodPost).
 				Use(middleware.RequireJSON()).
+				Allow(model.RoleAdmin, model.RoleReseller).
 				Handle(applyWithdrawal),
 		).
 		AddRoute(
 			router.NewRoute("/list", http.MethodGet).
+				Allow(model.RoleAdmin, model.RoleReseller).
 				Handle(listWithdrawals),
 		).
 		AddRoute(
 			router.NewRoute("/cancel", http.MethodPost).
 				Use(middleware.RequireJSON()).
+				Allow(model.RoleAdmin, model.RoleReseller).
 				Handle(cancelWithdrawal),
 		).
 		AddRoute(

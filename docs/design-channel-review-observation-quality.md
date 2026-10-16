@@ -116,8 +116,8 @@ type Channel struct {
 ### 3.4 API 与审计
 
 ```
-POST /api/v1/channel/review/submit    {id, note}           渠道商/管理员 → pending
-GET  /api/v1/channel/review/list      ?status=&page=       管理员全量, 渠道商只看自有提交
+POST /api/v1/channel/review/submit    {id, note}           管理员 → pending(渠道商不接触审核功能, 自有渠道由管理员代提交)
+GET  /api/v1/channel/review/list      ?status=&page=       管理员全量(渠道商屏蔽队列, 仅在渠道卡片查看审核状态与审核意见)
 POST /api/v1/channel/review/approve   {id, note}           管理员 → approved + 写指纹
 POST /api/v1/channel/review/reject    {id, note}           管理员 → rejected(必填原因)
 ```
@@ -238,9 +238,10 @@ GET /api/v1/share/:code                   (现有接口) 响应新增 quality �
 
 | 动作 | 普通用户 | 渠道商 | 管理员 |
 |---|---|---|---|
-| 提交审核 | — | 自有渠道 | 全部 |
+| 提交审核 | — | —(屏蔽, 管理员代提交) | 全部 |
 | 批准/驳回 | — | — | ✓ |
-| 查看审核队列 | — | 仅自有提交 | 全量 |
+| 查看审核队列 | — | —(屏蔽) | 全量 |
+| 查看审核状态 | — | 自有渠道(卡片徽章+审核意见) | 全部 |
 | 质量明细(内部) | — | 自有渠道 | 全部 |
 | 质量摘要(公开) | 经分享码 | 经分享码 | 经分享码 |
 

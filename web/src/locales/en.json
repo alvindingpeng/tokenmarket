@@ -811,6 +811,7 @@
             "tabReview": "Review Queue",
             "title": "Channel Admission Review",
             "subtitle": "Publishing requires approval",
+            "subtitleReadonly": "View review status only; review actions are admin-only",
             "filterAll": "All statuses",
             "loading": "Loading…",
             "error": "Failed to load",

@@ -325,7 +325,7 @@ function WithdrawDialogContent({ onApplied }: { onApplied: () => void }) {
     );
 }
 
-// WithdrawButton 钱包页提现入口; 普通用户点开可见"仅渠道商可提"的解释。
+// WithdrawButton 钱包页提现入口; 提现功能按角色屏蔽, 普通用户不渲染此入口(canWithdraw 门)。
 function WithdrawButton({ onApplied }: { onApplied: () => void }) {
     const t = useTranslations('wallet');
     return (
@@ -357,7 +357,9 @@ export default function Wallet() {
     const summary = useWalletSummary();
     const ledger = useWalletLedger(kind, role === 'admin' ? uid : 0);
     const orders = useRechargeOrders(role === 'admin' ? uid : 0);
-    const withdrawals = useWithdrawals('', role === 'admin' ? uid : 0);
+    // canWithdraw 提现功能按角色屏蔽: 普通用户无提现入口与记录页签, 查询同步停发(路由层亦 403)。
+    const canWithdraw = role === 'admin' || role === 'reseller';
+    const withdrawals = useWithdrawals('', role === 'admin' ? uid : 0, canWithdraw);
     const queryClient = useQueryClient();
     // invalidateWithdraw 提现资金状态每变一次就作废提现缓存, 列表与口径都回服务端。
     const invalidateWithdraw = () => {
@@ -418,7 +420,7 @@ export default function Wallet() {
                         {t('refresh')}
                     </Button>
                     <RechargeButton />
-                    <WithdrawButton onApplied={invalidateWithdraw} />
+                    {canWithdraw && <WithdrawButton onApplied={invalidateWithdraw} />}
                 </div>
             </div>
 
@@ -458,7 +460,7 @@ export default function Wallet() {
                     <TabsList className="rounded-2xl bg-muted p-1">
                         <TabsTrigger value="ledger" className="rounded-xl">{t('tab.ledger')}</TabsTrigger>
                         <TabsTrigger value="orders" className="rounded-xl">{t('tab.orders')}</TabsTrigger>
-                        <TabsTrigger value="withdrawals" className="rounded-xl">{t('tab.withdrawals')}</TabsTrigger>
+                        {canWithdraw && <TabsTrigger value="withdrawals" className="rounded-xl">{t('tab.withdrawals')}</TabsTrigger>}
                     </TabsList>
                 </Tabs>
                 {tab === 'ledger' && (

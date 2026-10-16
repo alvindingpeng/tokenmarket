@@ -20,12 +20,12 @@ func init() {
 		Use(middleware.RequireJSON()).
 		AddRoute(
 			router.NewRoute("/submit", http.MethodPost).
-				Allow(model.RoleAdmin, model.RoleReseller).
+				Allow(model.RoleAdmin).
 				Handle(submitChannelReview),
 		).
 		AddRoute(
 			router.NewRoute("/list", http.MethodGet).
-				Allow(model.RoleAdmin, model.RoleReseller).
+				Allow(model.RoleAdmin).
 				Handle(listChannelReviews),
 		).
 		AddRoute(

@@ -811,6 +811,7 @@
             "tabReview": "审核队列",
             "title": "渠道准入审核",
             "subtitle": "通过审核后才能发布给用户",
+            "subtitleReadonly": "仅可查看审核状态，审核操作由管理员执行",
             "filterAll": "全部状态",
             "loading": "加载中…",
             "error": "加载失败",
