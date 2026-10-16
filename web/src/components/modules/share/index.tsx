@@ -447,14 +447,15 @@ function ShareCard({ channel }: { channel: ChannelStatsFormatted }) {
         publishChannel.mutate(
             { id: channel.channel_id, shared: checked },
             {
-                onSuccess: (result) => toast.success(checked ? t('toast.published', { code: result.share_code }) : t('toast.unpublished')),
+                onSuccess: (result) => toast.success(checked ? t('toast.published', { code: '#' + result.share_code }) : t('toast.unpublished')),
                 onError: (error) => toast.error(error.message),
             }
         );
     };
 
     const handleCopy = () => {
-        void navigator.clipboard?.writeText(channel.share_code);
+        // 复制展示形态(#1001); 要拼链接请用"复制链接", 链接里是裸编码。
+        void navigator.clipboard?.writeText('#' + channel.share_code);
         toast.success(t('toast.copied'));
     };
 
@@ -486,7 +487,7 @@ function ShareCard({ channel }: { channel: ChannelStatsFormatted }) {
                 {channel.shared && channel.share_code ? (
                     <>
                         <div className="mt-1 flex items-center gap-2">
-                            <code className="min-w-0 flex-1 truncate font-mono text-sm font-semibold">{channel.share_code}</code>
+                            <code className="min-w-0 flex-1 truncate font-mono text-sm font-semibold">{'#' + channel.share_code}</code>
                             <Button variant="ghost" size="icon" onClick={handleCopy} aria-label={t('copyCode')}>
                                 <Copy className="size-4" />
                             </Button>

@@ -194,8 +194,9 @@ footer { margin-top: 34px; color: var(--muted); font-size: 12px; display: flex; 
     render();
   }
 
-  document.getElementById('code').textContent = code || '-';
-  document.getElementById('codeFoot').textContent = code || '-';
+  // 界面展示带 # 前缀(#1001 形式); 查询仍用裸编码, 后端兼容带 # 粘贴。
+  document.getElementById('code').textContent = code ? '#' + code : '-';
+  document.getElementById('codeFoot').textContent = code ? '#' + code : '-';
   document.getElementById('generated').textContent = '页面生成于 ' + new Date().toLocaleString();
   document.getElementById('search').addEventListener('input', render);
   document.getElementById('viewCards').addEventListener('click', function () { setView('cards'); });

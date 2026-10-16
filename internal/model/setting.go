@@ -28,6 +28,7 @@ const (
 	SettingKeyRegisterResellerEnabled SettingKey = "register_reseller_enabled"  // 渠道商注册开关, 默认关
 	SettingKeyRegisterApproval        SettingKey = "register_approval_required" // 注册后是否需要管理员审批
 	SettingKeyChannelReviewAdminBypass SettingKey = "channel_review_admin_bypass" // 管理员自有渠道免审: 提交即通过, 避免管理员自己被审核流程卡住
+	SettingKeyShareCodeSeq            SettingKey = "share_code_seq"             // 发布编码取号计数器(4 位数字, 1001 起), 号码只发不收
 	SettingKeyBalanceReserveCap       SettingKey = "balance_reserve_output_cap" // 余额预扣估算的默认输出 token 上限。
 	SettingKeyBalanceReserveImages    SettingKey = "balance_reserve_images"     // 生图预扣保守张数(无 N 时使用), 默认 4。
 	SettingKeyMinBalance              SettingKey = "min_balance"                // 允许的最低余额, 0 表示不足即拒
@@ -166,6 +167,7 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyRegisterResellerEnabled, Value: "false"}, // 渠道商注册默认关闭
 		{Key: SettingKeyRegisterApproval, Value: "true"},         // 注册默认需要审批
 		{Key: SettingKeyChannelReviewAdminBypass, Value: "true"}, // 管理员自有渠道默认免审
+		{Key: SettingKeyShareCodeSeq, Value: "1000"},            // 发布编码从 1001 起, 记录已发到的最大号
 		{Key: SettingKeyBalanceReserveCap, Value: "4096"},        // 预扣估算默认输出上限
 		{Key: SettingKeyBalanceReserveImages, Value: "4"},        // 生图预扣保守张数, 4 张覆盖 dall-e-3 / gpt-image-1 n=4 上限
 		{Key: SettingKeyMinBalance, Value: "0"},                  // 不允许透支

@@ -78,6 +78,15 @@ var startCmd = &cobra.Command{
 			log.Infof("channel review backfill: %d legacy shared channels approved", backfilled)
 		}
 
+		// 发布编码规则切换(v0.32.0): 存量 10 位随机码一次性换成 4 位顺序号(1001 起, 展示 #1001)。
+		// 幂等: 已是数字编码一律不重排, 重复启动零改动; 切换写一条汇总审计。
+		if recoded, err := op.ShareCodeBackfill(context.Background()); err != nil {
+			log.Errorf("share code backfill error: %v", err)
+			return
+		} else if recoded > 0 {
+			log.Infof("share code backfill: %d channels recoded to 4-digit codes", recoded)
+		}
+
 		// 限流策略缓存与路由状态恢复: 必须在服务就绪前完成, 保证重启后限流口径与选路状态连续。
 		if err := op.RatePolicyInit(); err != nil {
 			log.Errorf("rate policy init error: %v", err)

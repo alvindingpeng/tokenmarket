@@ -248,7 +248,7 @@ function LogDetail({ log, now, errorRounds }: { log: RelayLogOverview; now: numb
                         className="text-xs px-1.5 py-0"
                         style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
                     >
-                        {log.target_channel_code || log.target_channel_key || '-'}
+                        {log.target_channel_code ? '#' + log.target_channel_code : (log.target_channel_key || '-')}
                     </Badge>
                     <span className="text-muted-foreground">{actualModel}</span>
                 </span>
@@ -288,7 +288,7 @@ function LogDetail({ log, now, errorRounds }: { log: RelayLogOverview; now: numb
                                         let decision: {mode?: string; reason?: string; candidates?: {item_id:number;channel_code:string;model:string;reason:string}[]} = {};
                                         try { decision = JSON.parse(attempt.decision || '{}'); } catch { /* Historical rows have no decision. */ }
                                         return <div key={attempt.id} className="rounded-xl border border-border p-3">
-                                            <div className="flex justify-between gap-2"><b>#{attempt.round} · {attempt.channel_code || '-'} · {attempt.target_model}</b><span>{t('attemptStatus.' + attempt.status)}</span></div>
+                                            <div className="flex justify-between gap-2"><b>#{attempt.round} · {attempt.channel_code ? '#' + attempt.channel_code : '-'} · {attempt.target_model}</b><span>{t('attemptStatus.' + attempt.status)}</span></div>
                                             <div className="mt-1 text-muted-foreground">{formatTime(attempt.started_at)} · {attempt.duration_ms} ms · {decision.mode} · {decision.reason ? t('routeReason.' + decision.reason) : '-'}</div>
                                             {attempt.error && <p className="mt-1 whitespace-pre-wrap text-destructive">{attempt.error}</p>}
                                             {decision.candidates?.map(candidate => <div key={candidate.item_id} className="mt-1 text-muted-foreground">{candidate.channel_code || '-'} / {candidate.model}: {t('routeReason.' + candidate.reason)}</div>)}
@@ -590,7 +590,7 @@ function LogCardBody({ log }: { log: RelayLogOverview }) {
                                     className="shrink-0 text-xs px-1.5 py-0"
                                     style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
                                 >
-                                    {log.target_channel_code || log.target_channel_key || '-'}
+                                    {log.target_channel_code ? '#' + log.target_channel_code : (log.target_channel_key || '-')}
                                 </Badge>
                                 <span className="text-muted-foreground truncate">
                                     {actualModel}

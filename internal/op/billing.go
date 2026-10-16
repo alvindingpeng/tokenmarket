@@ -312,7 +312,9 @@ func BillingSearch(ctx context.Context, filter BillingQuery) ([]model.BillingRec
 			query = query.Where("group_model LIKE ? OR model_name LIKE ?", like, like)
 		}
 		if filter.Channel != "" {
-			query = query.Where("share_code LIKE ?", "%"+strings.TrimSpace(filter.Channel)+"%")
+			// 编码展示带 # 前缀(#1001), 检索时剥掉前缀按裸编码匹配。
+			code := strings.TrimPrefix(strings.TrimSpace(filter.Channel), "#")
+			query = query.Where("share_code LIKE ?", "%"+code+"%")
 		}
 		if filter.APIKeyID != 0 {
 			query = query.Where("api_key_id = ?", filter.APIKeyID)

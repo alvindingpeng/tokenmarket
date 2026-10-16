@@ -2,11 +2,10 @@ package op
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
-	"math/big"
 	mathrand "math/rand"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -418,7 +417,8 @@ func ChannelGrantCandidates(scope model.Scope) []model.ChannelGrantCandidate {
 		// 展示名定稿: 已发布渠道一律以发布唯一编码示人(含归属者与管理员), 上游名称不出分组管理;
 		// 未发布渠道只有归属者与管理员可见, 显示真名。凭据名仍按归属脱敏。
 		if channel.Shared && channel.ShareCode != "" {
-			candidate.ChannelName = channel.ShareCode
+			// 展示统一带 # 前缀(#1001 形式); 库内仍存纯数字, 链接/查询用裸编码。
+			candidate.ChannelName = "#" + channel.ShareCode
 		}
 		if !owner {
 			candidate.KeyName = ""
@@ -438,7 +438,7 @@ func ChannelGrantCandidates(scope model.Scope) []model.ChannelGrantCandidate {
 	return candidates
 }
 
-// ChannelPublish 发布或取消发布渠道: 发布时生成大小写字母+数字的唯一编码, 用户侧以该编码展示渠道。
+// ChannelPublish 发布或取消发布渠道: 发布时生成 4 位数字编码(1001 起, 界面展示 #1001 形式), 用户侧以该编码展示渠道。
 // 已发布渠道再次发布保留原编码; 取消发布清空共享标记但保留编码历史无意义, 故一并清空。
 func ChannelPublish(id int, shared bool, scope model.Scope, ctx context.Context) (model.Channel, error) {
 	channel, ok := channelCache.Get(id)
@@ -457,7 +457,7 @@ func ChannelPublish(id int, shared bool, scope model.Scope, ctx context.Context)
 	updates := map[string]any{"shared": shared}
 	if shared {
 		if channel.ShareCode == "" {
-			code, err := uniqueShareCode(ctx)
+			code, err := nextShareCode(ctx)
 			if err != nil {
 				return model.Channel{}, err
 			}
@@ -477,40 +477,112 @@ func ChannelPublish(id int, shared bool, scope model.Scope, ctx context.Context)
 	return channel, nil
 }
 
-// generateShareCode 生成大小写字母+数字的 10 位随机编码。
-func generateShareCode() (string, error) {
-	const chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	b := make([]byte, 10)
-	max := big.NewInt(int64(len(chars)))
-	for i := range b {
-		n, err := rand.Int(rand.Reader, max)
-		if err != nil {
-			return "", err
-		}
-		b[i] = chars[n.Int64()]
-	}
-	return string(b), nil
-}
+// 发布编码规则(v0.32.0): 4 位纯数字, 从 1001 起递增, 界面统一展示为 "#1001" 形式。
+// 号码只发不收: 取消发布清编码、再次发布拿新号, 已删除渠道的号码不回收 ——
+// 每个号码历史上只属于一个渠道, 计费明细/日志按编码回查不会张冠李戴。
+const (
+	shareCodeStart = 1001 // 起始号码, 用户要求从 1001 开始。
+	shareCodeMax   = 9999 // 4 位数字上限, 用尽后明确报错而不是发出 5 位号。
+)
 
-// uniqueShareCode 生成不与既有编码冲突的发布编码; 编码空间大, 冲突重试几次即可。
-func uniqueShareCode(ctx context.Context) (string, error) {
-	for range 8 {
-		code, err := generateShareCode()
-		if err != nil {
-			return "", err
-		}
-		if code == "" {
-			return "", fmt.Errorf("failed to generate share code")
-		}
+// shareCodeMu 串行化取号: 发布是低频管理动作, 进程内互斥 + 库内冲突复查足够。
+var shareCodeMu sync.Mutex
+
+// nextShareCode 取下一个可用发布编码: 计数器单调递增, 并跳过库内已占号码。
+func nextShareCode(ctx context.Context) (string, error) {
+	shareCodeMu.Lock()
+	defer shareCodeMu.Unlock()
+	next := SettingGetIntDefault(model.SettingKeyShareCodeSeq, shareCodeStart-1) + 1
+	if next < shareCodeStart {
+		next = shareCodeStart
+	}
+	for next <= shareCodeMax {
+		code := fmt.Sprintf("%04d", next)
 		var count int64
 		if err := db.GetDB().WithContext(ctx).Model(&model.Channel{}).Where("share_code = ?", code).Count(&count).Error; err != nil {
 			return "", err
 		}
 		if count == 0 {
+			if err := SettingUpsert(model.SettingKeyShareCodeSeq, strconv.Itoa(next)); err != nil {
+				return "", err
+			}
 			return code, nil
 		}
+		next++
 	}
-	return "", fmt.Errorf("failed to allocate unique share code")
+	return "", fmt.Errorf("share code space exhausted")
+}
+
+// parseShareCode 判定编码是否符合新规则(4 位数字且 >= 1001), 返回其数值。
+func parseShareCode(code string) (int, bool) {
+	if len(code) != 4 {
+		return 0, false
+	}
+	n := 0
+	for _, ch := range code {
+		if ch < '0' || ch > '9' {
+			return 0, false
+		}
+		n = n*10 + int(ch-'0')
+	}
+	if n < shareCodeStart {
+		return 0, false
+	}
+	return n, true
+}
+
+// ShareCodeBackfill 把不符合新规则的存量编码换成顺序号(按渠道 ID 定序), 启动时一次性执行。
+// 幂等: 数字编码一律原样保留不重排(渠道删除/重排都不会动已发号码), 第二次运行零改动。
+func ShareCodeBackfill(ctx context.Context) (int, error) {
+	shareCodeMu.Lock()
+	defer shareCodeMu.Unlock()
+	var channels []model.Channel
+	if err := db.GetDB().WithContext(ctx).Where("share_code <> ?", "").Order("id").Find(&channels).Error; err != nil {
+		return 0, err
+	}
+	taken := make(map[string]bool, len(channels))
+	maxUsed := SettingGetIntDefault(model.SettingKeyShareCodeSeq, shareCodeStart-1)
+	for _, channel := range channels {
+		if n, ok := parseShareCode(channel.ShareCode); ok {
+			taken[channel.ShareCode] = true
+			if n > maxUsed {
+				maxUsed = n
+			}
+		}
+	}
+	next := shareCodeStart
+	updated := 0
+	for _, channel := range channels {
+		if _, ok := parseShareCode(channel.ShareCode); ok {
+			continue // 已是新规则编码, 保持稳定不重排。
+		}
+		for taken[fmt.Sprintf("%04d", next)] {
+			next++
+		}
+		code := fmt.Sprintf("%04d", next)
+		if err := db.GetDB().WithContext(ctx).Model(&model.Channel{}).Where("id = ?", channel.ID).Update("share_code", code).Error; err != nil {
+			return updated, err
+		}
+		if cached, ok := channelCache.Get(channel.ID); ok {
+			cached.ShareCode = code
+			channelCache.Set(channel.ID, cached)
+		}
+		taken[code] = true
+		next++
+		updated++
+	}
+	// 计数器推到实际用掉的最大号, 后续取号不与回填结果撞车。
+	if maxUsed > SettingGetIntDefault(model.SettingKeyShareCodeSeq, shareCodeStart-1) {
+		if err := SettingUpsert(model.SettingKeyShareCodeSeq, strconv.Itoa(maxUsed)); err != nil {
+			return updated, err
+		}
+	}
+	if updated > 0 {
+		if err := AuditLogAdd(ctx, 0, "channel.share_code_backfill", "channels", fmt.Sprintf("backfilled=%d", updated)); err != nil {
+			log.Warnf("share code backfill: audit failed: %v", err)
+		}
+	}
+	return updated, nil
 }
 
 // maxSupplyPricePerMillion 单类供货价上限(每百万 token): 正常模型远低于此, 越界基本是少打小数点。
@@ -1081,7 +1153,7 @@ func ChannelModelBriefs(scope model.Scope) []ChannelModelBrief {
 		}
 		name := channel.Name
 		if channel.Shared && channel.ShareCode != "" {
-			name = channel.ShareCode
+			name = "#" + channel.ShareCode
 		}
 		briefs = append(briefs, ChannelModelBrief{ID: channelModel.ID, Name: channelModel.Name, ChannelName: name})
 	}
