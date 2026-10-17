@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { apiRequest } from './client';
+import { POLL_STREAM } from '@/lib/polling';
 
 // RequestState 表示 Relay 请求的实时状态。
 export type RequestState = 'running' | 'committed' | 'success' | 'failed' | 'canceled';
@@ -50,7 +51,7 @@ export interface RelayAttempt {
  started_at: string; duration_ms: number; status: string; error: string; decision: string;
 }
 export function useLogAttempts(id: number, enabled: boolean, active: boolean) {
- return useQuery({queryKey:['logs','attempts',id],queryFn:()=>apiRequest<{items:RelayAttempt[]}>(`/api/v1/log/attempts/${id}`),enabled,refetchInterval:active?1000:false});
+ return useQuery({queryKey:['logs','attempts',id],queryFn:()=>apiRequest<{items:RelayAttempt[]}>(`/api/v1/log/attempts/${id}`),enabled,refetchInterval:active?POLL_STREAM:false});
 }
 
 // useClearLogs 清空已完成的内存日志。
@@ -67,6 +68,12 @@ export function useStopRequest() {
             apiRequest<null>(`/api/v1/log/stop/${requestId}${round === undefined ? '' : `/${round}`}`, { method: 'POST' }),
     });
 }
+
+// LIVE_LOG_LIMIT 是实时日志列表在浏览器端保留的上限。
+// 服务端会持续推送每条请求的每一次状态变化; 前端若只增不删, 内存没有上限,
+// 而且每次插入都要复制整个数组(一整天下来是 O(n²) 的拷贝量), 虚拟列表也会越来越慢。
+// 更早的记录由历史日志页负责, 这里只需要一段可滚动的近期窗口。
+const LIVE_LOG_LIMIT = 300;
 
 // useLogs 订阅进程内日志概览，并按 RequestID 更新同一条记录。
 export function useLogs() {
@@ -101,8 +108,11 @@ export function useLogs() {
                     return updated;
                 }
                 const position = current.findIndex((item) => item.id < next.id);
-                if (position < 0) return [...current, next];
-                return [...current.slice(0, position), next, ...current.slice(position)];
+                // 数组按 ID 倒序, 末尾即最旧: 超过上限时直接截断尾部。
+                const merged = position < 0
+                    ? [...current, next]
+                    : [...current.slice(0, position), next, ...current.slice(position)];
+                return merged.length > LIVE_LOG_LIMIT ? merged.slice(0, LIVE_LOG_LIMIT) : merged;
             });
         });
         source.onerror = () => {
@@ -155,10 +165,11 @@ export function useLogList(params: LogListParams) {
     // 新增筛选条件时很容易只改一边, 表现为「页面筛得出来、导出筛不出来」)。
     const filter = logFilterQuery(params);
     const query = `limit=${params.limit}&offset=${params.offset}${filter ? `&${filter}` : ''}`;
+    // 历史日志不再轮询: 这一页是「翻页回看」而不是实时视图, 实时数据由 SSE 的概览流负责。
+    // 此前固定 15 秒重拉一次分页查询(每次都是 20 条日志的完整序列化), 而页面本身有刷新按钮。
     return useQuery({
         queryKey: ['logs', 'list', query],
         queryFn: () => apiRequest<{ items: RelayLogOverview[]; total: number }>(`/api/v1/log/list?${query}`),
-        refetchInterval: 15000,
         placeholderData: (previous) => previous,
     });
 }

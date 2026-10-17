@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, apiRequest } from './client';
+import { POLL_SLOW } from '@/lib/polling';
 
 /**
  * Setting 数据
@@ -89,7 +90,7 @@ export function useSettingList() {
     return useQuery({
         queryKey: ['settings', 'list'],
         queryFn: () => apiRequest<Setting[]>('/api/v1/setting/list'),
-        refetchInterval: 30000,
+        refetchInterval: POLL_SLOW,
         refetchOnMount: 'always',
     });
 }

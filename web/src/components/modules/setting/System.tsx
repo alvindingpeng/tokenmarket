@@ -37,7 +37,12 @@ export function SettingSystem() {
     const initialUpdateCheckEnabled = useRef('');
     const initialUpdateCheckMinutes = useRef('');
 
+    // 初始值只在设置列表首次就绪时对齐一次: 该列表每 30 秒轮询刷新, 若每次都回写 state,
+    // 正在编辑的输入框会被服务端旧值覆盖。Platform/SystemInfo 已是同一约定。
+    const initialized = useRef(false);
     useEffect(() => {
+        if (!settings || initialized.current) return;
+        initialized.current = true;
         if (settings) {
             const proxy = settings.find(s => s.key === SettingKey.ProxyURL);
             const interval = settings.find(s => s.key === SettingKey.StatsSaveInterval);

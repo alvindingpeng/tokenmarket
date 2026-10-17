@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from './client';
+import { POLL_HOUR } from '@/lib/polling';
 
 export interface UpdateStatus {
     current_version: string;
@@ -36,7 +37,7 @@ export function useUpdateStatus(enabled = true) {
     return useQuery({
         queryKey: ['update', 'status'],
         queryFn: () => apiRequest<UpdateStatus>('/api/v1/update'),
-        refetchInterval: 3600000,
+        refetchInterval: POLL_HOUR,
         refetchOnMount: 'always',
         enabled,
     });
@@ -54,7 +55,7 @@ export function useNowVersion() {
     return useQuery({
         queryKey: ['update', 'now-version'],
         queryFn: () => apiRequest<string>('/api/v1/update/now-version'),
-        refetchInterval: 3600000,
+        refetchInterval: POLL_HOUR,
         refetchOnMount: 'always',
     });
 }

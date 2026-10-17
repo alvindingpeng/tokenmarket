@@ -21,7 +21,11 @@ export function SettingLLMPrice() {
     const [rebuildCountdown, setRebuildCountdown] = useState(0);
     const initialUpdateInterval = useRef('');
 
+    // 同上: 设置列表会轮询刷新, 只在首次就绪时对齐一次, 否则会覆盖正在编辑的输入。
+    const initialized = useRef(false);
     useEffect(() => {
+        if (!settings || initialized.current) return;
+        initialized.current = true;
         if (settings) {
             const interval = settings.find(s => s.key === SettingKey.ModelInfoUpdateInterval);
             if (interval) {

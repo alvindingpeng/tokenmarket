@@ -13,6 +13,7 @@ import { cacheHitRatePercent, detailTokens, formatCacheHitRate, freshInputTokens
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
+import { useClock } from '@/hooks/useClock';
 import { CopyIconButton } from '@/components/common/CopyButton';
 import { toast } from 'sonner';
 import { MemberStatus } from '@/components/modules/group/MemberStatus';
@@ -512,7 +513,6 @@ function LogDetail({ log, now, errorRounds }: { log: RelayLogOverview; now: numb
 function LogCardBody({ log }: { log: RelayLogOverview }) {
     const t = useTranslations('log.card');
     const { isOpen } = useMorphingDialog();
-    const [now, setNow] = useState(() => Date.now());
     const [displayError, setDisplayError] = useState(log.error ?? ''); // 保留重试期间最近一次错误, 直到响应真正开始。
     const [errorRounds, setErrorRounds] = useState<ObservedRound[]>(() => log.error ? [{
         round: log.round,
@@ -529,12 +529,8 @@ function LogCardBody({ log }: { log: RelayLogOverview }) {
     const settled = log.status === 'committed' || log.status === 'success';
     const visibleError = settled ? '' : displayError;
 
-    // 仅在请求进行中或弹窗打开时按 500ms 刷新, 避免已完成日志持续触发重渲染。
-    useEffect(() => {
-        if (!requestRunning && !isOpen) return;
-        const timer = window.setInterval(() => setNow(Date.now()), 500);
-        return () => window.clearInterval(timer);
-    }, [isOpen, requestRunning]);
+    // 走秒只在请求进行中或弹窗打开时需要; 用共享时钟代替每卡一个定时器(见 hooks/useClock)。
+    const now = useClock(500, requestRunning || isOpen);
 
     // 服务端在下一轮开始时会清空 error, 但用户需要继续看到上一轮失败原因, 直到本轮真正开始响应。
     // 这里在渲染期比对并调整 state(与 LogDetail 累积轮次同一手法): 比 effect 少一轮渲染, 也不会级联。

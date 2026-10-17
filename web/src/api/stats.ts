@@ -2,6 +2,7 @@ import { queryOptions, useQuery } from '@tanstack/react-query';
 import { apiRequest } from './client';
 import { statsDailyQueryOptions, statsHourlyQueryOptions, statsTotalQueryOptions } from './queries';
 import { formatCount, formatMoney, formatTime } from '@/lib/utils';
+import { POLL_HOUR, POLL_REALTIME, POLL_SLOW } from '@/lib/polling';
 
 /**
  * 统计数据
@@ -96,7 +97,7 @@ const statsDailyFormattedQueryOptions = queryOptions({
             date: item.date,
         })),
     }),
-    refetchInterval: 3600000, // 1 小时
+    refetchInterval: POLL_HOUR, // 1 小时
     refetchOnMount: 'always',
 });
 
@@ -120,7 +121,7 @@ const statsHourlyFormattedQueryOptions = queryOptions({
         hour: item.hour,
         date: item.date,
     })),
-    refetchInterval: 10000,// 10 秒
+    refetchInterval: POLL_REALTIME,// 10 秒
     refetchOnMount: 'always',
 });
 
@@ -135,7 +136,7 @@ export function useStatsHourly() {
 const statsTotalFormattedQueryOptions = queryOptions({
     ...statsTotalQueryOptions,
     select: (data): StatsTotalFormatted => formatStatsMetrics(data),
-    refetchInterval: 10000,// 10 秒
+    refetchInterval: POLL_REALTIME,// 10 秒
     refetchOnMount: 'always',
 });
 
@@ -159,7 +160,7 @@ export function useStatsAPIKey() {
             ...formatStatsMetrics(item),
             api_key_id: item.api_key_id,
         })),
-        refetchInterval: 30000,
+        refetchInterval: POLL_SLOW,
         refetchOnMount: 'always',
     });
 }

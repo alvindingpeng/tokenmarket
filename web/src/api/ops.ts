@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from './client';
+import { POLL_SLOW } from '@/lib/polling';
 
 export type ReconcileRow = {
     id: number; day: string; records: number; user_cost: number; owner_revenue: number;
@@ -55,7 +56,7 @@ export function useOpsOverview() {
     return useQuery({
         queryKey: ['ops', 'overview'],
         queryFn: () => apiRequest<OpsOverview>('/api/v1/ops/overview'),
-        refetchInterval: 30000,
+        refetchInterval: POLL_SLOW,
     });
 }
 
