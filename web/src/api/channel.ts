@@ -291,8 +291,8 @@ export function useCreateChannel() {
         mutationFn: (data: ChannelDetail) =>
             apiRequest<ChannelDetail>('/api/v1/channel/create', { method: 'POST', body: data }),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['channels'] });
-            queryClient.invalidateQueries({ queryKey: modelListQueryOptions.queryKey });
+            void queryClient.invalidateQueries({ queryKey: ['channels'] });
+            void queryClient.invalidateQueries({ queryKey: modelListQueryOptions.queryKey });
         },
     });
 }
@@ -314,9 +314,9 @@ export function useUpdateChannel() {
         mutationFn: (data: ChannelDetail) =>
             apiRequest<ChannelDetail>('/api/v1/channel/update', { method: 'POST', body: data }),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['channels'] });
-            queryClient.invalidateQueries({ queryKey: modelListQueryOptions.queryKey });
-            queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
+            void queryClient.invalidateQueries({ queryKey: ['channels'] });
+            void queryClient.invalidateQueries({ queryKey: modelListQueryOptions.queryKey });
+            void queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
         },
     });
 }
@@ -336,9 +336,9 @@ export function useDeleteChannel() {
         mutationFn: (id: number) =>
             apiRequest<null>(`/api/v1/channel/delete/${id}`, { method: 'DELETE' }),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['channels'] });
-            queryClient.invalidateQueries({ queryKey: modelListQueryOptions.queryKey });
-            queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
+            void queryClient.invalidateQueries({ queryKey: ['channels'] });
+            void queryClient.invalidateQueries({ queryKey: modelListQueryOptions.queryKey });
+            void queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
         },
     });
 }
@@ -354,8 +354,8 @@ export function useResetChannelBreaker() {
             apiRequest<{ reset: number }>('/api/v1/channel/breaker/reset', { method: 'POST', body: data }),
         onSuccess: () => {
             // 熔断状态随统计下发, 解锁后立刻重取, 否则界面还会显示"熔断中"。
-            queryClient.invalidateQueries({ queryKey: ['channels'] });
-            queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
+            void queryClient.invalidateQueries({ queryKey: ['channels'] });
+            void queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
         },
     });
 }
@@ -376,9 +376,9 @@ export function useEnableChannel() {
         mutationFn: (data: { id: number; enabled: boolean }) =>
             apiRequest<null>('/api/v1/channel/enable', { method: 'POST', body: data }),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['channels'] });
+            void queryClient.invalidateQueries({ queryKey: ['channels'] });
             // 渠道启停会改变其授权在分组内的可用性，成员列表要跟着刷新。
-            queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
+            void queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
         },
     });
 }
@@ -407,8 +407,8 @@ export function useFetchModel() {
 
 // channelReviewInvalidate 审核动作成功后统一失效渠道与审核队列: 两者共享 review_status, 必须同步刷新。
 const channelReviewInvalidate = (queryClient: ReturnType<typeof useQueryClient>) => {
-    queryClient.invalidateQueries({ queryKey: ['channels'] });
-    queryClient.invalidateQueries({ queryKey: ['channels', 'review'] });
+    void queryClient.invalidateQueries({ queryKey: ['channels'] });
+    void queryClient.invalidateQueries({ queryKey: ['channels', 'review'] });
 };
 
 // useChannelReviewList 拉取审核队列: 管理员全量, 渠道商只看自有提交; status 空为全部状态。

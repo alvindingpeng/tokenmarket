@@ -213,8 +213,8 @@ function useGroupEventStream(enabled: boolean) {
             // 拉取放在 onopen 而非 onerror: EventSource 自行重连，onerror 在每次失败时都会触发，
             // 写在那里会让断网期间反复全量重拉。
             source.onopen = () => {
-                queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
-                queryClient.invalidateQueries({ queryKey: ['groups', 'detail'] });
+                void queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
+                void queryClient.invalidateQueries({ queryKey: ['groups', 'detail'] });
             };
         }
 

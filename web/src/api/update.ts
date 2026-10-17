@@ -65,8 +65,8 @@ export function useUpdateCore(force = false) {
     return useMutation({
         mutationFn: () => apiRequest<UpdateResult>('/api/v1/update' + (force ? '?force=1' : ''), { method: 'POST' }),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['update', 'status'] });
-            queryClient.invalidateQueries({ queryKey: ['update', 'now-version'] });
+            void queryClient.invalidateQueries({ queryKey: ['update', 'status'] });
+            void queryClient.invalidateQueries({ queryKey: ['update', 'now-version'] });
         },
     });
 }
