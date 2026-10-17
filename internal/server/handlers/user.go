@@ -29,6 +29,14 @@ func init() {
 		AddRoute(
 			router.NewRoute("/register-reseller", http.MethodPost).
 				Handle(registerReseller),
+		).
+		AddRoute(
+			router.NewRoute("/email-code", http.MethodPost).
+				Handle(sendEmailCode),
+		).
+		AddRoute(
+			router.NewRoute("/forgot-password", http.MethodPost).
+				Handle(forgotPassword),
 		)
 	router.NewGroupRouter("/api/v1/user").
 		AddRoute(
@@ -181,16 +189,73 @@ func register(c *gin.Context, role model.Role, switchKey model.SettingKey) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
+	// 注册硬性要求: 密码输入两遍且不短于 8 位, 邮箱必填且验证码校验通过。
+	if len(req.Password) < model.PasswordMinLen {
+		resp.Error(c, http.StatusBadRequest, fmt.Sprintf("password must be at least %d characters", model.PasswordMinLen))
+		return
+	}
+	if req.Password != req.PasswordConfirm {
+		resp.Error(c, http.StatusBadRequest, "passwords do not match")
+		return
+	}
+	if !model.ValidEmail(req.Email) {
+		resp.Error(c, http.StatusBadRequest, "invalid email")
+		return
+	}
+	if err := op.EmailCodeVerify(c.Request.Context(), req.Email, model.EmailCodePurposeRegister, req.EmailCode); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
 	status := model.StatusActive
 	if approvalRequired, _ := op.SettingGetBool(model.SettingKeyRegisterApproval); approvalRequired {
 		status = model.StatusPending
 	}
-	account, err := op.UserCreate(req.Username, req.Password, role, status)
+	account, err := op.UserCreate(req.Username, req.Email, req.Password, role, status)
 	if err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	resp.Success(c, gin.H{"id": account.ID, "username": account.Username, "status": account.Status})
+}
+
+// sendEmailCode 发送邮箱验证码(注册/找回密码共用); 按邮箱+IP 双维度限流防轰炸。
+func sendEmailCode(c *gin.Context) {
+	var req model.UserEmailCode
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	if err := op.EmailCodeSend(c.Request.Context(), req.Email, req.Purpose, c.ClientIP()); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	resp.Success(c, "code sent")
+}
+
+// forgotPassword 找回密码: 邮箱验证码通过后重设密码, 旧会话全部吊销。
+func forgotPassword(c *gin.Context) {
+	var req model.UserForgotPassword
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	if len(req.Password) < model.PasswordMinLen {
+		resp.Error(c, http.StatusBadRequest, fmt.Sprintf("password must be at least %d characters", model.PasswordMinLen))
+		return
+	}
+	if req.Password != req.PasswordConfirm {
+		resp.Error(c, http.StatusBadRequest, "passwords do not match")
+		return
+	}
+	if err := op.EmailCodeVerify(c.Request.Context(), req.Email, model.EmailCodePurposeReset, req.EmailCode); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := op.UserForgotPassword(req.Email, req.Password); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	resp.Success(c, "password reset successfully")
 }
 
 func changePassword(c *gin.Context) {
@@ -247,7 +312,7 @@ func createUser(c *gin.Context) {
 	if status == "" {
 		status = model.StatusActive
 	}
-	account, err := op.UserCreate(req.Username, req.Password, req.Role, status)
+	account, err := op.UserCreate(req.Username, req.Email, req.Password, req.Role, status)
 	if err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
@@ -256,7 +321,7 @@ func createUser(c *gin.Context) {
 	resp.Success(c, account.View())
 }
 
-// updateUser 管理员修改账号: 用户名、角色、状态、余额、密码按需更新, 留空即不改。
+// updateUser 管理员修改账号: 用户名、邮箱、角色、状态、余额、密码按需更新, 留空即不改。
 func updateUser(c *gin.Context) {
 	var req model.UserManageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -276,6 +341,14 @@ func updateUser(c *gin.Context) {
 			return
 		}
 		audit(c, "user.update", target, fmt.Sprintf("username: %s -> %s", old, req.Username))
+	}
+	if req.Email != "" && req.Email != account.Email {
+		old := account.Email
+		if err := op.UserUpdateEmail(req.ID, req.Email); err != nil {
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		audit(c, "user.update", target, fmt.Sprintf("email: %s -> %s", old, req.Email))
 	}
 	if req.Role != "" && req.Role != account.Role {
 		old := account.Role

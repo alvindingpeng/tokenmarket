@@ -98,18 +98,28 @@ func UserList() []model.UserView {
 }
 
 // UserCreate 创建账号; 角色与状态由调用方按端点语义决定, 注册端点不允许自提权。
-func UserCreate(username, password string, role model.Role, status model.UserStatus) (model.User, error) {
+// email 允许为空(管理员代建的老式账号), 非空须格式合法且全库唯一。
+func UserCreate(username, email, password string, role model.Role, status model.UserStatus) (model.User, error) {
 	username = strings.TrimSpace(username)
 	if username == "" || len(username) > 64 {
 		return model.User{}, fmt.Errorf("invalid username")
 	}
-	if len(password) < 6 {
-		return model.User{}, fmt.Errorf("password must be at least 6 characters")
+	if len(password) < model.PasswordMinLen {
+		return model.User{}, fmt.Errorf("password must be at least %d characters", model.PasswordMinLen)
 	}
 	if _, ok := userNameIndex.Get(username); ok {
 		return model.User{}, fmt.Errorf("username already exists")
 	}
-	user := model.User{Username: username, Password: password, Role: role, Status: status}
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email != "" {
+		if !model.ValidEmail(email) {
+			return model.User{}, fmt.Errorf("invalid email")
+		}
+		if _, err := userGetByEmail(email); err == nil {
+			return model.User{}, fmt.Errorf("email already registered")
+		}
+	}
+	user := model.User{Username: username, Email: email, Password: password, Role: role, Status: status}
 	if err := user.HashPassword(); err != nil {
 		return model.User{}, err
 	}
@@ -119,6 +129,63 @@ func UserCreate(username, password string, role model.Role, status model.UserSta
 	userCache.Set(int(user.ID), user)
 	userNameIndex.Set(user.Username, int(user.ID))
 	return user, nil
+}
+
+// userGetByEmail 按邮箱查账号; 邮箱唯一性由应用层保证(空串不参与查重)。
+func userGetByEmail(email string) (model.User, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return model.User{}, fmt.Errorf("user not found")
+	}
+	for _, user := range userCache.GetAll() {
+		if strings.EqualFold(user.Email, email) {
+			return user, nil
+		}
+	}
+	return model.User{}, fmt.Errorf("user not found")
+}
+
+// UserUpdateEmail 修改账号邮箱; 非空须格式合法且全库唯一。
+func UserUpdateEmail(id uint, email string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if !model.ValidEmail(email) {
+		return fmt.Errorf("invalid email")
+	}
+	user, err := UserGetByID(id)
+	if err != nil {
+		return err
+	}
+	if other, err := userGetByEmail(email); err == nil && other.ID != id {
+		return fmt.Errorf("email already registered")
+	}
+	if err := db.GetDB().Model(&model.User{}).Where("id = ?", id).Update("email", email).Error; err != nil {
+		return fmt.Errorf("failed to update email: %w", err)
+	}
+	user.Email = email
+	userCache.Set(int(id), user)
+	return nil
+}
+
+// UserForgotPassword 邮箱验证码通过后重设密码(不需旧密码), 吊销其全部既有会话。
+func UserForgotPassword(email, password string) error {
+	user, err := userGetByEmail(email)
+	if err != nil {
+		return fmt.Errorf("no account bound to this email")
+	}
+	if len(password) < model.PasswordMinLen {
+		return fmt.Errorf("password must be at least %d characters", model.PasswordMinLen)
+	}
+	user.Password = password
+	if err := user.HashPassword(); err != nil {
+		return err
+	}
+	if err := db.GetDB().Model(&model.User{}).Where("id = ?", user.ID).
+		Updates(map[string]any{"password": user.Password, "token_version": user.TokenVersion + 1}).Error; err != nil {
+		return fmt.Errorf("failed to update password: %w", err)
+	}
+	user.TokenVersion++
+	userCache.Set(int(user.ID), user)
+	return nil
 }
 
 // UserUpdateRole 修改账号角色。
@@ -164,8 +231,8 @@ func UserUpdateStatus(id uint, status model.UserStatus) error {
 
 // UserResetPassword 管理员重置任意账号密码, 吊销其全部既有会话。
 func UserResetPassword(id uint, password string) error {
-	if len(password) < 6 {
-		return fmt.Errorf("password must be at least 6 characters")
+	if len(password) < model.PasswordMinLen {
+		return fmt.Errorf("password must be at least %d characters", model.PasswordMinLen)
 	}
 	user, err := UserGetByID(id)
 	if err != nil {
@@ -229,8 +296,8 @@ func UserChangePassword(id uint, oldPassword, newPassword string) error {
 	if err := user.ComparePassword(oldPassword); err != nil {
 		return fmt.Errorf("incorrect old password: %w", err)
 	}
-	if len(newPassword) < 6 {
-		return fmt.Errorf("password must be at least 6 characters")
+	if len(newPassword) < model.PasswordMinLen {
+		return fmt.Errorf("password must be at least %d characters", model.PasswordMinLen)
 	}
 	user.Password = newPassword
 	if err := user.HashPassword(); err != nil {

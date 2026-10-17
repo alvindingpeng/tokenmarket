@@ -68,6 +68,7 @@ function CreateDialogContent() {
     const { setIsOpen } = useMorphingDialog();
     const createUser = useCreateUser();
     const [username, setUsername] = useState('');
+    const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [role, setRole] = useState<Role>('user');
     const [status, setStatus] = useState<UserManageRequest['status']>('active');
@@ -80,7 +81,7 @@ function CreateDialogContent() {
         if (!canSubmit || createUser.isPending) return;
 
         createUser.mutate(
-            { username: username.trim(), password, role, status },
+            { username: username.trim(), email: email.trim(), password, role, status },
             {
                 onSuccess: () => {
                     toast.success(t('toast.created'));
@@ -103,6 +104,18 @@ function CreateDialogContent() {
                             onChange={(e) => setUsername(e.target.value)}
                             className="rounded-xl"
                             autoComplete="off"
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="user-create-email">{t('form.email')}</Label>
+                        <Input
+                            id="user-create-email"
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="rounded-xl"
+                            autoComplete="off"
+                            placeholder={t('form.emailPlaceholder')}
                         />
                     </div>
                     <div className="space-y-2">
@@ -200,6 +213,8 @@ function EditUserDialogContent({ user }: { user: UserView }) {
     const [password, setPassword] = useState('');
     const [role, setRole] = useState<Role>(user.role);
     const [status, setStatus] = useState<UserManageRequest['status']>(user.status);
+    // 邮箱留空即不改; 老账号未绑定邮箱时由管理员在此补录, 找回密码才能用。
+    const [email, setEmail] = useState('');
     // 余额按绝对值调整; 与原值一致时不下发, 避免产生无意义的审计记录。
     const [balance, setBalance] = useState(String(user.balance));
 
@@ -215,8 +230,9 @@ function EditUserDialogContent({ user }: { user: UserView }) {
             role,
             status,
         };
-        // 空密码不下发, 后端据此保留原密码。
+        // 空密码/空邮箱不下发, 后端据此保留原值。
         if (password !== '') request.password = password;
+        if (email.trim() !== '') request.email = email.trim();
         const parsedBalance = Number(balance);
         if (balance.trim() !== '' && Number.isFinite(parsedBalance) && parsedBalance >= 0 && parsedBalance !== user.balance) {
             request.balance = parsedBalance;
@@ -241,6 +257,17 @@ function EditUserDialogContent({ user }: { user: UserView }) {
                             id={'user-edit-username-' + user.id}
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
+                            className="rounded-xl"
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor={'user-edit-email-' + user.id}>{t('form.emailOptional')}</Label>
+                        <Input
+                            id={'user-edit-email-' + user.id}
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder={user.email || t('form.emailUnbound')}
                             className="rounded-xl"
                         />
                     </div>

@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"regexp"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -25,11 +26,24 @@ const (
 	StatusDisabled UserStatus = "disabled"
 )
 
+// PasswordMinLen 密码最短长度: 注册/改密/找回密码统一收紧到 8 位。
+const PasswordMinLen = 8
+
+// emailPattern 邮箱基本格式; 不追求 RFC 全集, 只挡明显非法输入。
+var emailPattern = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
+
+// ValidEmail 判断邮箱基本格式。
+func ValidEmail(email string) bool {
+	return emailPattern.MatchString(email)
+}
+
 // User 平台账号; 余额三字段承担计费: Balance 可用余额, Frozen 预扣冻结, 其余为累计口径。
 type User struct {
 	ID       uint       `json:"id" gorm:"primaryKey"`
 	Username string     `json:"username" gorm:"unique;not null"`
 	Password string     `json:"-" gorm:"not null"`
+	// Email 注册邮箱(注册必填, 找回密码凭据); 空串表示老账号未绑定, 唯一性由应用层保证。
+	Email    string     `json:"email" gorm:"size:254;not null;default:'';index"`
 	Role     Role       `json:"role" gorm:"not null;default:user;index"`
 	Status   UserStatus `json:"status" gorm:"not null;default:active;index"`
 	// TokenVersion 随改密/禁用递增, 使既有 JWT 全部失效。
@@ -56,10 +70,28 @@ type UserLogin struct {
 }
 
 // UserRegister 注册请求; 不收 role, 角色由注册端点决定, 防止自提权。
+// 密码输入两遍(Password/PasswordConfirm), 邮箱验证码(EmailCode)校验通过才允许注册。
 type UserRegister struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-	Reason   string `json:"reason"` // 渠道商注册的申请说明。
+	Username        string `json:"username"`
+	Password        string `json:"password"`
+	PasswordConfirm string `json:"password_confirm"`
+	Email           string `json:"email"`
+	EmailCode       string `json:"email_code"`
+	Reason          string `json:"reason"` // 渠道商注册的申请说明。
+}
+
+// UserEmailCode 发送邮箱验证码请求; purpose: register(注册) | reset(找回密码)。
+type UserEmailCode struct {
+	Email   string `json:"email"`
+	Purpose string `json:"purpose"`
+}
+
+// UserForgotPassword 找回密码请求: 邮箱验证码通过后重设密码, 同样输入两遍。
+type UserForgotPassword struct {
+	Email           string `json:"email"`
+	EmailCode       string `json:"email_code"`
+	Password        string `json:"password"`
+	PasswordConfirm string `json:"password_confirm"`
 }
 
 type UserChangePassword struct {
@@ -76,6 +108,7 @@ type UserChangeUsername struct {
 type UserManageRequest struct {
 	ID       uint       `json:"id"`
 	Username string     `json:"username"`
+	Email    string     `json:"email"`
 	Role     Role       `json:"role"`
 	Status   UserStatus `json:"status"`
 	Password string     `json:"password"`
@@ -86,6 +119,7 @@ type UserManageRequest struct {
 type UserView struct {
 	ID           uint       `json:"id"`
 	Username     string     `json:"username"`
+	Email        string     `json:"email"`
 	Role         Role       `json:"role"`
 	Status       UserStatus `json:"status"`
 	Balance      float64    `json:"balance"`
@@ -102,6 +136,7 @@ func (u *User) View() UserView {
 	return UserView{
 		ID:           u.ID,
 		Username:     u.Username,
+		Email:        u.Email,
 		Role:         u.Role,
 		Status:       u.Status,
 		Balance:      u.Balance,

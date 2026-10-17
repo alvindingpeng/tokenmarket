@@ -9,6 +9,7 @@ import type { Role, UserView } from './user';
 export interface UserManageRequest {
     id?: number;
     username: string;
+    email?: string;
     password?: string;
     role: Role;
     status: 'active' | 'pending' | 'disabled';

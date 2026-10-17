@@ -54,6 +54,7 @@ func InitDB(dbType, dsn string, debug bool) error {
 	}
 	if err := db.AutoMigrate(
 		&model.User{},
+		&model.EmailCode{},
 		&model.Channel{},
 		&model.ChannelKey{},
 		&model.ChannelModel{},

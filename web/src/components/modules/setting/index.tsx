@@ -15,6 +15,7 @@ import { SettingLog } from './Log';
 import { SettingOps } from './Ops';
 import { SettingBackup } from './Backup';
 import { SettingPayment } from './Payment';
+import { SettingMail } from './Mail';
 import { sectionsFor, type SettingCardID, type SettingViewID } from './sections';
 
 // SETTING_CARDS 配置卡片 id 到组件的映射; 分组定义在 sections.ts, 这里只负责渲染。
@@ -26,6 +27,7 @@ const SETTING_CARDS: Record<SettingCardID, () => ReactNode> = {
     system: () => <SettingSystem />,
     platform: () => <SettingPlatform />,
     payment: () => <SettingPayment />,
+    mail: () => <SettingMail />,
     llmPrice: () => <SettingLLMPrice />,
     log: () => <SettingLog />,
     ops: () => <SettingOps />,

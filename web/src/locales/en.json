@@ -14,13 +14,29 @@
             "registerReseller": "Reseller"
         },
         "error": {
-            "generic": "Login failed, please check your credentials"
+            "generic": "Login failed, please check your credentials",
+            "emailInvalid": "Please enter a valid email address",
+            "passwordTooShort": "Password must be at least 8 characters",
+            "passwordMismatch": "Passwords do not match"
         },
         "button": {
             "loading": "Logging in...",
             "submit": "Login",
-            "register": "Register"
+            "register": "Register",
+            "reset": "Reset Password"
         },
+        "email": "Email",
+        "emailPlaceholder": "Enter your email address",
+        "emailCode": "Email Code",
+        "emailCodePlaceholder": "Enter the 6-digit code",
+        "sendCode": "Send Code",
+        "resendCode": "Resend in {seconds}s",
+        "passwordConfirm": "Confirm Password",
+        "passwordConfirmPlaceholder": "Re-enter your password",
+        "newPassword": "New Password",
+        "forgotPassword": "Forgot password?",
+        "backToLogin": "Back to login",
+        "resetSuccess": "Password reset successfully, please sign in with your new password.",
         "reason": "Reason",
         "reasonPlaceholder": "Why do you want to become a reseller? (optional)",
         "registerSuccess": "Registered successfully, please sign in.",
@@ -308,7 +324,7 @@
                 "oldEmpty": "Please enter current password",
                 "newEmpty": "Please enter new password",
                 "mismatch": "Passwords do not match",
-                "tooShort": "Password must be at least 6 characters",
+                "tooShort": "Password must be at least 8 characters",
                 "change": "Change Password",
                 "success": "Password changed successfully",
                 "failed": "Failed to change password"
@@ -418,6 +434,23 @@
             "label": "Update check interval (minutes)",
             "placeholder": "Default 60",
             "hint": "Between 1 and 1440. Saving reschedules the task immediately - no restart needed. Anonymous GitHub calls are limited to 60 per hour, so keep this large unless an access token is set."
+        },
+        "mail": {
+            "title": "Email Service (SMTP)",
+            "desc": "Delivery channel for registration codes and password resets. Leave empty to disable code sending. Password is stored masked and never echoed.",
+            "host": "SMTP Host",
+            "port": "Port",
+            "username": "Username",
+            "password": "Password",
+            "passwordPlaceholder": "Configured - leave empty to keep",
+            "from": "From Address",
+            "save": "Save",
+            "saved": "Mail settings saved",
+            "saveFailed": "Save failed",
+            "testTo": "Test Recipient",
+            "testSend": "Send Test Email",
+            "testSent": "Test email sent",
+            "testFailed": "Test email failed"
         },
         "payment": {
             "title": "Recharge & payment",
@@ -1145,7 +1178,11 @@
         "form": {
             "username": "Username",
             "password": "Password",
-            "passwordOptional": "Password (optional)",
+            "email": "Email",
+        "emailPlaceholder": "Optional; enables password recovery",
+        "emailOptional": "Email (optional)",
+        "emailUnbound": "No email bound",
+        "passwordOptional": "Password (optional)",
             "passwordUnchanged": "Leave empty to keep the current password",
             "role": "Role",
             "status": "Status",
