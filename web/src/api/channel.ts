@@ -399,7 +399,8 @@ export function useEnableChannel() {
 export function useFetchModel() {
     return useMutation({
         mutationFn: (data: FetchModelRequest) =>
-            apiRequest<FetchModel[]>('/api/v1/channel/fetch-model', { method: 'POST', body: data }),
+            // 服务端要去上游拉模型列表, 慢渠道可能远超默认 20 秒。
+            apiRequest<FetchModel[]>('/api/v1/channel/fetch-model', { method: 'POST', body: data, timeoutMs: 90000 }),
     });
 }
 

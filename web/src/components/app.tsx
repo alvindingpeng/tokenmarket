@@ -14,6 +14,7 @@ import {
 } from '@/api/queries';
 import { userManageListQueryOptions } from '@/api/usermanage';
 import { AppShell } from '@/components/app-shell';
+import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { LoginForm } from '@/components/modules/login';
 import { LandingPage } from '@/components/modules/landing';
 import { APIKeyDashboard } from '@/components/modules/apikey-dashboard';
@@ -53,6 +54,16 @@ function InitialLoadingGate({ children }: { children: ReactNode }) {
     return children;
 }
 
+// GuestEntry 未登录访客入口: 默认落地页, 点 CTA 进登录表单。
+// 抽成独立组件是为了让视图状态随登录态自然重置: 退出登录时本分支重新挂载, 直接回到落地页,
+// 无需再用 effect 把状态写回 landing(那会多触发一轮渲染)。
+function GuestEntry() {
+    const [view, setView] = useState<'landing' | 'login'>('landing');
+    return view === 'landing'
+        ? <LandingPage onEnter={() => setView('login')} />
+        : <LoginForm onBack={() => setView('landing')} />;
+}
+
 // AppContainer 根据认证状态渲染登录页、API Key 页面或普通用户应用。
 export function AppContainer() {
     const { isAuthenticated, isAPIKeyAuth, isLoading: authLoading, role } = useAuth();
@@ -61,8 +72,6 @@ export function AppContainer() {
     useApplySiteTitle();
     const authMode = isAPIKeyAuth ? 'apikey' : 'user'; // authMode 区分两种认证模式各自需要的初始 API。
     const [readyMode, setReadyMode] = useState<string | null>(null); // readyMode 记录已完成初始请求的认证模式。
-    // guestView 控制未登录访客看到落地页还是登录表单; 退出登录也回到落地页入口。
-    const [guestView, setGuestView] = useState<'landing' | 'login'>('landing');
     const currentPage = useAppStore((state) => state.currentPage);
     const setCurrentPage = useAppStore((state) => state.setCurrentPage);
     // allowedPages 是当前角色可见的一级页面。持久化的页面可能已经失效
@@ -112,21 +121,15 @@ export function AppContainer() {
         };
     }, [authMode, authLoading, isAPIKeyAuth, isAuthenticated, queryClient, role]);
 
-    useEffect(() => {
-        if (!authLoading && !isAuthenticated) setGuestView('landing');
-    }, [authLoading, isAuthenticated]);
-
     if (authLoading) return null;
 
     // 未登录访客: 默认展示落地页, 从 CTA 进入登录表单; 退出登录同样先回到落地页。
     if (!isAuthenticated) {
         return (
             <InitialLoadingGate>
-                {guestView === 'landing' ? (
-                    <LandingPage onEnter={() => setGuestView('login')} />
-                ) : (
-                    <LoginForm onBack={() => setGuestView('landing')} />
-                )}
+                <ErrorBoundary resetKey="guest" full>
+                    <GuestEntry />
+                </ErrorBoundary>
             </InitialLoadingGate>
         );
     }
@@ -137,7 +140,9 @@ export function AppContainer() {
     if (isAPIKeyAuth) {
         return (
             <InitialLoadingGate>
-                <APIKeyDashboard />
+                <ErrorBoundary resetKey="apikey" full>
+                    <APIKeyDashboard />
+                </ErrorBoundary>
             </InitialLoadingGate>
         );
     }
@@ -176,18 +181,21 @@ export function AppContainer() {
                             }}
                             className="absolute inset-0 min-h-0 overflow-hidden"
                         >
-                            {visibleItem === 'home' && <Home />}
-                            {visibleItem === 'ops' && <Ops />}
-                            {visibleItem === 'share' && <Share />}
-                            {visibleItem === 'wallet' && <Wallet />}
-                            {visibleItem === 'withdrawals' && <Withdrawals />}
-                            {visibleItem === 'billing' && <Billing />}
-                            {visibleItem === 'apikey' && <Apikey />}
-                            {visibleItem === 'channel' && <Channel />}
-                            {visibleItem === 'group' && <Group />}
-                            {visibleItem === 'model' && <Model />}
-                            {visibleItem === 'log' && <Log />}
-                            {visibleItem === 'setting' && <Setting />}
+                            {/* 页面级错误边界: 单页渲染异常只废掉内容区, 导航与外壳仍然可用。 */}
+                            <ErrorBoundary resetKey={visibleItem}>
+                                {visibleItem === 'home' && <Home />}
+                                {visibleItem === 'ops' && <Ops />}
+                                {visibleItem === 'share' && <Share />}
+                                {visibleItem === 'wallet' && <Wallet />}
+                                {visibleItem === 'withdrawals' && <Withdrawals />}
+                                {visibleItem === 'billing' && <Billing />}
+                                {visibleItem === 'apikey' && <Apikey />}
+                                {visibleItem === 'channel' && <Channel />}
+                                {visibleItem === 'group' && <Group />}
+                                {visibleItem === 'model' && <Model />}
+                                {visibleItem === 'log' && <Log />}
+                                {visibleItem === 'setting' && <Setting />}
+                            </ErrorBoundary>
                         </motion.div>
                     </AnimatePresence>
                 </InitialLoadingGate>

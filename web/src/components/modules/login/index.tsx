@@ -7,6 +7,7 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { useLogin, useRegister, useSendEmailCode, useForgotPassword, registerConfigQueryOptions } from "@/api/user"
 import { useAPIKeyLogin } from "@/api/apikey"
+import { useCountdown } from '@/hooks/useCountdown'
 import { useSiteConfig, DEFAULT_SITE_NAME } from "@/api/site"
 import { SiteBanners } from "@/components/site-banners"
 import Logo from "@/components/modules/logo"
@@ -36,7 +37,8 @@ export function LoginForm({ onBack }: { onBack?: () => void }) {
   const [passwordConfirm, setPasswordConfirm] = useState("") // passwordConfirm 注册/找回密码的二次确认。
   const [email, setEmail] = useState("")
   const [emailCode, setEmailCode] = useState("")
-  const [codeCooldown, setCodeCooldown] = useState(0) // codeCooldown 发码按钮倒计时秒数。
+  // codeCooldown 发码按钮倒计时: 交给 useCountdown 统一管理定时器生命周期(卸载即停表)。
+  const { remaining: codeCooldown, start: startCooldown } = useCountdown()
   const [reason, setReason] = useState("") // reason 为渠道商注册的申请理由。
   const [trustDevice, setTrustDevice] = useState(false) // trustDevice 表示是否请求后端签发 30 天登录凭证。
   const [apiKey, setApiKey] = useState("")
@@ -67,16 +69,7 @@ export function LoginForm({ onBack }: { onBack?: () => void }) {
         email,
         purpose: mode === 'forgot' ? 'reset' : 'register',
       })
-      setCodeCooldown(60)
-      const timer = setInterval(() => {
-        setCodeCooldown((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer)
-            return 0
-          }
-          return prev - 1
-        })
-      }, 1000)
+      startCooldown(60)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t('error.generic'))
     }

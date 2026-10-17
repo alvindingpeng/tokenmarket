@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Loader2, RotateCcw, Send } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { toast } from 'sonner';
@@ -16,15 +16,12 @@ export function ReplayPanel({ requestId, initialBody, supported }: {
     supported: boolean;
 }) {
     const t = useTranslations('log.card');
-    const [body, setBody] = useState(initialBody);
-    const [dirty, setDirty] = useState(false); // dirty 后不再跟随请求体查询的异步到达, 避免覆盖手改内容。
+    // edited 为 null 时直接跟随外部请求体: 请求体是按需查询的, 打开面板时可能晚于首次渲染到达。
+    // 一旦手动编辑就固定在草稿上, 异步到达的请求体不会再覆盖用户输入(用派生值代替 effect 回写)。
+    const [edited, setEdited] = useState<string | null>(null);
+    const body = edited ?? initialBody;
     const [result, setResult] = useState<ReplayResult | null>(null);
     const replay = useReplayRequest();
-
-    // 请求体是按需查询的, 打开面板时可能晚于首次渲染到达; 未手改前保持同步。
-    useEffect(() => {
-        if (!dirty) setBody(initialBody);
-    }, [initialBody, dirty]);
 
     if (!supported) {
         return (
@@ -43,10 +40,7 @@ export function ReplayPanel({ requestId, initialBody, supported }: {
                     size="sm"
                     className="h-6 px-2 text-xs"
                     disabled={replay.isPending}
-                    onClick={() => {
-                        setDirty(false);
-                        setBody(initialBody);
-                    }}
+                    onClick={() => setEdited(null)}
                 >
                     <RotateCcw aria-hidden="true" className="size-3" />
                     {t('replayReset')}
@@ -70,10 +64,7 @@ export function ReplayPanel({ requestId, initialBody, supported }: {
             </div>
             <Textarea
                 value={body}
-                onChange={(event) => {
-                    setDirty(true);
-                    setBody(event.target.value);
-                }}
+                onChange={(event) => setEdited(event.target.value)}
                 spellCheck={false}
                 className="h-44 resize-none font-mono text-[11px] leading-relaxed"
             />

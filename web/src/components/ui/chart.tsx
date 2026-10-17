@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- shadcn 图表原语: 同时导出组件与 recharts 别名(ChartTooltip/ChartLegend), 属于同源再导出而非混放工具函数 */
 import * as React from "react"
 import * as RechartsPrimitive from "recharts"
 import type { TooltipValueType } from "recharts"

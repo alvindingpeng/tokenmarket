@@ -116,7 +116,8 @@ export function useUpdateModelPrice() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: () => apiRequest<null>('/api/v1/model/update-price', { method: 'POST', body: {} }),
+        // 价格同步要访问 models.dev, 网络慢时可能超过默认超时。
+        mutationFn: () => apiRequest<null>('/api/v1/model/update-price', { method: 'POST', body: {}, timeoutMs: 90000 }),
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['models', 'last-update-time'] }),
     });
 }
