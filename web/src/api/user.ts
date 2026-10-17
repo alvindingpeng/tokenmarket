@@ -24,6 +24,7 @@ export type Role = 'admin' | 'reseller' | 'user';
 export type UserView = {
     id: number;
     username: string;
+    email: string;
     role: Role;
     status: 'active' | 'pending' | 'disabled';
     balance: number;
@@ -45,11 +46,33 @@ export type RegisterConfig = {
 
 /**
  * 注册请求；渠道商注册可附申请理由，用户注册无理由字段。
+ * 密码输入两遍（password/password_confirm），邮箱验证码（email_code）校验通过才能注册。
  */
 export interface UserRegisterRequest {
     username: string;
     password: string;
+    password_confirm: string;
+    email: string;
+    email_code: string;
     reason?: string;
+}
+
+/**
+ * 邮箱验证码请求；purpose: register(注册) | reset(找回密码)。
+ */
+export interface EmailCodeRequest {
+    email: string;
+    purpose: 'register' | 'reset';
+}
+
+/**
+ * 找回密码请求：邮箱验证码通过后重设密码，同样输入两遍。
+ */
+export interface ForgotPasswordRequest {
+    email: string;
+    email_code: string;
+    password: string;
+    password_confirm: string;
 }
 
 /**
@@ -217,6 +240,34 @@ export function useRegister(kind: 'user' | 'reseller') {
     return useMutation({
         mutationFn: (data: UserRegisterRequest) =>
             apiRequest<UserView>(kind === 'user' ? '/api/v1/user/register' : '/api/v1/user/register-reseller', {
+                method: 'POST',
+                body: data,
+                dispatchUnauthorized: false,
+            }),
+    });
+}
+
+/**
+ * 发送邮箱验证码 Hook：注册与找回密码共用，60 秒冷却由后端限流。
+ */
+export function useSendEmailCode() {
+    return useMutation({
+        mutationFn: (data: EmailCodeRequest) =>
+            apiRequest<string>('/api/v1/user/email-code', {
+                method: 'POST',
+                body: data,
+                dispatchUnauthorized: false,
+            }),
+    });
+}
+
+/**
+ * 找回密码 Hook：邮箱验证码通过后重设密码，旧会话全部吊销。
+ */
+export function useForgotPassword() {
+    return useMutation({
+        mutationFn: (data: ForgotPasswordRequest) =>
+            apiRequest<string>('/api/v1/user/forgot-password', {
                 method: 'POST',
                 body: data,
                 dispatchUnauthorized: false,

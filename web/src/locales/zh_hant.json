@@ -14,13 +14,29 @@
             "registerReseller": "註冊渠道商"
         },
         "error": {
-            "generic": "登入失敗，請檢查登入憑證"
+            "generic": "登入失敗，請檢查登入憑證",
+            "emailInvalid": "請輸入有效的電子郵件地址",
+            "passwordTooShort": "密碼長度至少為8位",
+            "passwordMismatch": "兩次輸入的密碼不一致"
         },
         "button": {
             "loading": "登入中...",
             "submit": "登入",
-            "register": "註冊"
+            "register": "註冊",
+            "reset": "重設密碼"
         },
+        "email": "電子郵件",
+        "emailPlaceholder": "請輸入電子郵件地址",
+        "emailCode": "電子郵件驗證碼",
+        "emailCodePlaceholder": "請輸入 6 位驗證碼",
+        "sendCode": "發送驗證碼",
+        "resendCode": "{seconds} 秒後重發",
+        "passwordConfirm": "確認密碼",
+        "passwordConfirmPlaceholder": "請再次輸入密碼",
+        "newPassword": "新密碼",
+        "forgotPassword": "忘記密碼？",
+        "backToLogin": "返回登入",
+        "resetSuccess": "密碼重設成功，請使用新密碼登入。",
         "reason": "申請理由",
         "reasonPlaceholder": "申請成為渠道商的理由（選填）",
         "registerSuccess": "註冊成功，請登入。",
@@ -308,7 +324,7 @@
                 "oldEmpty": "請輸入當前密碼",
                 "newEmpty": "請輸入新密碼",
                 "mismatch": "兩次輸入的密碼不一致",
-                "tooShort": "密碼長度至少為6位",
+                "tooShort": "密碼長度至少為8位",
                 "change": "修改密碼",
                 "success": "密碼修改成功",
                 "failed": "密碼修改失敗"
@@ -418,6 +434,23 @@
             "label": "更新檢查間隔(分鐘)",
             "placeholder": "預設 60",
             "hint": "取值 1-1440。儲存後立即依新周期重排任務, 不需要重啟進程。GitHub 對匿名呼叫限流 60 次/小時, 未填權杖時不宜把間隔壓得太小。"
+        },
+        "mail": {
+            "title": "郵件服務 (SMTP)",
+            "desc": "註冊驗證碼與找回密碼的發信通道; 留空表示未配置, 發碼入口不可用。密碼掩碼儲存, 不回顯明文。",
+            "host": "SMTP 伺服器",
+            "port": "連接埠",
+            "username": "登入帳號",
+            "password": "登入密碼",
+            "passwordPlaceholder": "已配置, 留空保持不變",
+            "from": "發件人地址",
+            "save": "儲存",
+            "saved": "郵件服務配置已儲存",
+            "saveFailed": "儲存失敗",
+            "testTo": "測試收件人",
+            "testSend": "發送測試郵件",
+            "testSent": "測試郵件已發送",
+            "testFailed": "測試郵件發送失敗"
         },
         "payment": {
             "title": "儲值與支付",
@@ -1145,7 +1178,11 @@
         "form": {
             "username": "用戶名",
             "password": "密碼",
-            "passwordOptional": "密碼（選填）",
+            "email": "電子郵件",
+        "emailPlaceholder": "選填; 綁定後可用於找回密碼",
+        "emailOptional": "電子郵件（選填）",
+        "emailUnbound": "未綁定電子郵件",
+        "passwordOptional": "密碼（選填）",
             "passwordUnchanged": "留空則保留原密碼",
             "role": "角色",
             "status": "狀態",

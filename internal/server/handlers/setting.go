@@ -35,6 +35,12 @@ func init() {
 				Handle(setSetting),
 		).
 		AddRoute(
+			router.NewRoute("/smtp-test", http.MethodPost).
+				Use(middleware.RequireJSON()).
+				Allow(model.RoleAdmin).
+				Handle(smtpTest),
+		).
+		AddRoute(
 			router.NewRoute("/export", http.MethodGet).
 				Allow(model.RoleAdmin).
 				Handle(exportDB),
@@ -115,6 +121,27 @@ func auditSettingValue(setting model.Setting) string {
 		return model.TokenConfiguredMask
 	}
 	return setting.Value
+}
+
+// smtpTest 向指定邮箱发一封测试邮件, 供管理员验证 SMTP 配置是否可用。
+func smtpTest(c *gin.Context) {
+	var req struct {
+		To string `json:"to"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	if !model.ValidEmail(req.To) {
+		resp.Error(c, http.StatusBadRequest, "invalid email")
+		return
+	}
+	if err := op.MailSend(req.To, "[Switchyard] SMTP Test", "This is a test email from Switchyard. SMTP is configured correctly."); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	audit(c, "setting.smtp_test", req.To, "")
+	resp.Success(c, "test email sent")
 }
 
 func exportDB(c *gin.Context) {

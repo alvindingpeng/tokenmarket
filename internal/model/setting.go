@@ -104,6 +104,12 @@ const (
 	SettingKeyAlertEmailPassword    SettingKey = "alert_email_password"     // SMTP 登录密码。
 	SettingKeyAlertEmailFrom        SettingKey = "alert_email_from"         // 发件人地址。
 	SettingKeyAlertEmailTo          SettingKey = "alert_email_to"           // 收件人地址(逗号分隔)。
+	// 邮件服务(SMTP): 注册验证码与找回密码的发信通道, 与告警邮件各配各的, 互不牵连。
+	SettingKeySMTPHost     SettingKey = "smtp_host"     // SMTP 服务器地址, 留空表示邮件服务未配置
+	SettingKeySMTPPort     SettingKey = "smtp_port"     // SMTP 端口, 默认 587; 465 自动走隐式 TLS
+	SettingKeySMTPUsername SettingKey = "smtp_username" // SMTP 登录账号
+	SettingKeySMTPPassword SettingKey = "smtp_password" // SMTP 登录密码(加密存储/掩码回显)
+	SettingKeySMTPFrom     SettingKey = "smtp_from"     // 发件人地址
 	// 探针鉴权: /metrics 默认开放(与 /healthz 一致, 便于本地抓取), 需要收敛时切成 bearer 并要求令牌。
 	SettingKeyMetricsAuth  SettingKey = "metrics_auth"  // off | bearer; /healthz 恒不鉴权(存活探针)。
 	SettingKeyMetricsToken SettingKey = "metrics_token" // bearer 模式下的抓取令牌, 内部键不外露。
@@ -139,6 +145,7 @@ func IsSecretSetting(key SettingKey) bool {
 	return key == SettingKeyGithubToken ||
 		key == SettingKeyAlertTelegramBotToken ||
 		key == SettingKeyAlertEmailPassword ||
+		key == SettingKeySMTPPassword ||
 		key == SettingKeyEpayKey ||
 		key == SettingKeyAlipayPrivateKey ||
 		key == SettingKeyStripeSecretKey ||
@@ -224,6 +231,11 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyHealthCheckEnabled, Value: "false"},      // 健康探测默认关闭(可能产生上游费用)
 		{Key: SettingKeyHealthCheckMinutes, Value: "30"},         // 探测间隔 30 分钟
 		{Key: SettingKeyHealthLatencyMS, Value: "1000"},          // 延迟告警阈值 1 秒, 0 关闭
+		{Key: SettingKeySMTPHost, Value: ""},                    // 邮件服务默认未配置, 管理后台补上即启用
+		{Key: SettingKeySMTPPort, Value: "587"},               // 587 STARTTLS; 465 隐式 TLS
+		{Key: SettingKeySMTPUsername, Value: ""},              // 登录账号后配
+		{Key: SettingKeySMTPPassword, Value: ""},              // 登录密码后配(密钥类设置)
+		{Key: SettingKeySMTPFrom, Value: ""},                  // 发件人后配
 		{Key: SettingKeyAlertWebhookURL, Value: ""},              // 默认仅站内通知
 		{Key: SettingKeyAlertDedupMinutes, Value: "10"},          // 去重窗口 10 分钟
 		{Key: SettingKeyAlertFailStreak, Value: "3"},             // 连续 3 次失败判宕机

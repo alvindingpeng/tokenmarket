@@ -131,7 +131,7 @@ function PasswordForm({ onClose }: { onClose: () => void }) {
             toast.error(t('account.password.mismatch'));
             return;
         }
-        if (newPassword.length < 6) {
+        if (newPassword.length < 8) {
             toast.error(t('account.password.tooShort'));
             return;
         }

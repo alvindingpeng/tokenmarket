@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { useLogin, useRegister, registerConfigQueryOptions } from "@/api/user"
+import { useLogin, useRegister, useSendEmailCode, useForgotPassword, registerConfigQueryOptions } from "@/api/user"
 import { useAPIKeyLogin } from "@/api/apikey"
 import { useSiteConfig, DEFAULT_SITE_NAME } from "@/api/site"
 import { SiteBanners } from "@/components/site-banners"
@@ -18,7 +18,7 @@ import {
   TabsContent,
 } from "@/components/ui/tabs"
 
-type LoginMode = 'user' | 'apikey' | 'register-user' | 'register-reseller';
+type LoginMode = 'user' | 'apikey' | 'register-user' | 'register-reseller' | 'forgot';
 
 // contactHref 把联系方式认成可用的链接: 管理员既可能填邮箱也可能填群链接, 也可能只是纯文本。
 function contactHref(value: string): string | undefined {
@@ -33,6 +33,10 @@ export function LoginForm({ onBack }: { onBack?: () => void }) {
   const [mode, setMode] = useState<LoginMode>('user')
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
+  const [passwordConfirm, setPasswordConfirm] = useState("") // passwordConfirm 注册/找回密码的二次确认。
+  const [email, setEmail] = useState("")
+  const [emailCode, setEmailCode] = useState("")
+  const [codeCooldown, setCodeCooldown] = useState(0) // codeCooldown 发码按钮倒计时秒数。
   const [reason, setReason] = useState("") // reason 为渠道商注册的申请理由。
   const [trustDevice, setTrustDevice] = useState(false) // trustDevice 表示是否请求后端签发 30 天登录凭证。
   const [apiKey, setApiKey] = useState("")
@@ -48,8 +52,38 @@ export function LoginForm({ onBack }: { onBack?: () => void }) {
   const apiKeyLoginMutation = useAPIKeyLogin()
   const registerUserMutation = useRegister('user')
   const registerResellerMutation = useRegister('reseller')
+  const sendEmailCodeMutation = useSendEmailCode()
+  const forgotPasswordMutation = useForgotPassword()
+
+  // handleSendCode 发送邮箱验证码并启动 60 秒倒计时; 注册与找回密码共用。
+  const handleSendCode = async () => {
+    setError(null)
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      setError(t('error.emailInvalid'))
+      return
+    }
+    try {
+      await sendEmailCodeMutation.mutateAsync({
+        email,
+        purpose: mode === 'forgot' ? 'reset' : 'register',
+      })
+      setCodeCooldown(60)
+      const timer = setInterval(() => {
+        setCodeCooldown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer)
+            return 0
+          }
+          return prev - 1
+        })
+      }, 1000)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : t('error.generic'))
+    }
+  }
 
   const isRegister = mode === 'register-user' || mode === 'register-reseller'
+  const isForgot = mode === 'forgot'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -64,10 +98,30 @@ export function LoginForm({ onBack }: { onBack?: () => void }) {
         })
       } else if (mode === 'apikey') {
         await apiKeyLoginMutation.mutateAsync(apiKey)
+      } else if (mode === 'forgot') {
+        // 找回密码: 邮箱验证码通过后重设密码(两遍输入), 成功后回登录页。
+        await forgotPasswordMutation.mutateAsync({ email, email_code: emailCode, password, password_confirm: passwordConfirm })
+        setRegisterNotice(t('resetSuccess'))
+        setMode('user')
       } else {
-        // 注册成功后回登录页; 开启审批时账号需管理员放行才能登录。
+        // 注册: 密码两遍 + 8 位最短 + 邮箱验证码, 服务端逐一复核。
+        if (password.length < 8) {
+          setError(t('error.passwordTooShort'))
+          return
+        }
+        if (password !== passwordConfirm) {
+          setError(t('error.passwordMismatch'))
+          return
+        }
         const mutation = mode === 'register-user' ? registerUserMutation : registerResellerMutation
-        await mutation.mutateAsync({ username, password, reason: mode === 'register-reseller' ? reason : undefined })
+        await mutation.mutateAsync({
+          username,
+          password,
+          password_confirm: passwordConfirm,
+          email,
+          email_code: emailCode,
+          reason: mode === 'register-reseller' ? reason : undefined,
+        })
         setRegisterNotice(registerConfig?.approval_required ? t('registerPending') : t('registerSuccess'))
         setMode('user')
       }
@@ -79,6 +133,7 @@ export function LoginForm({ onBack }: { onBack?: () => void }) {
 
   const isPending = loginMutation.isPending || apiKeyLoginMutation.isPending
     || registerUserMutation.isPending || registerResellerMutation.isPending
+    || forgotPasswordMutation.isPending
 
   const handleModeChange = (value: string) => {
     setMode(value as LoginMode)
@@ -225,6 +280,41 @@ export function LoginForm({ onBack }: { onBack?: () => void }) {
                     />
                   </Field>
                   <Field>
+                    <FieldLabel htmlFor="register-email">{t('email')}</FieldLabel>
+                    <Input
+                      id="register-email"
+                      type="email"
+                      placeholder={t('emailPlaceholder')}
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      disabled={isPending}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="register-email-code">{t('emailCode')}</FieldLabel>
+                    <div className="flex gap-2">
+                      <Input
+                        id="register-email-code"
+                        type="text"
+                        placeholder={t('emailCodePlaceholder')}
+                        value={emailCode}
+                        onChange={(e) => setEmailCode(e.target.value)}
+                        required
+                        disabled={isPending}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="shrink-0"
+                        disabled={isPending || codeCooldown > 0 || sendEmailCodeMutation.isPending}
+                        onClick={handleSendCode}
+                      >
+                        {codeCooldown > 0 ? t('resendCode', { seconds: codeCooldown }) : t('sendCode')}
+                      </Button>
+                    </div>
+                  </Field>
+                  <Field>
                     <FieldLabel htmlFor="register-password">{t('password')}</FieldLabel>
                     <Input
                       id="register-password"
@@ -232,6 +322,18 @@ export function LoginForm({ onBack }: { onBack?: () => void }) {
                       placeholder={t('passwordPlaceholder')}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
+                      required
+                      disabled={isPending}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="register-password-confirm">{t('passwordConfirm')}</FieldLabel>
+                    <Input
+                      id="register-password-confirm"
+                      type="password"
+                      placeholder={t('passwordConfirmPlaceholder')}
+                      value={passwordConfirm}
+                      onChange={(e) => setPasswordConfirm(e.target.value)}
                       required
                       disabled={isPending}
                     />
@@ -251,14 +353,94 @@ export function LoginForm({ onBack }: { onBack?: () => void }) {
                   )}
                 </TabsContent>
               )}
+              {isForgot && (
+                <TabsContent value="forgot" className="space-y-6" style={{ overflow: 'visible' }}>
+                  <Field>
+                    <FieldLabel htmlFor="forgot-email">{t('email')}</FieldLabel>
+                    <Input
+                      id="forgot-email"
+                      type="email"
+                      placeholder={t('emailPlaceholder')}
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      disabled={isPending}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="forgot-email-code">{t('emailCode')}</FieldLabel>
+                    <div className="flex gap-2">
+                      <Input
+                        id="forgot-email-code"
+                        type="text"
+                        placeholder={t('emailCodePlaceholder')}
+                        value={emailCode}
+                        onChange={(e) => setEmailCode(e.target.value)}
+                        required
+                        disabled={isPending}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="shrink-0"
+                        disabled={isPending || codeCooldown > 0 || sendEmailCodeMutation.isPending}
+                        onClick={handleSendCode}
+                      >
+                        {codeCooldown > 0 ? t('resendCode', { seconds: codeCooldown }) : t('sendCode')}
+                      </Button>
+                    </div>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="forgot-password">{t('newPassword')}</FieldLabel>
+                    <Input
+                      id="forgot-password"
+                      type="password"
+                      placeholder={t('passwordPlaceholder')}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      disabled={isPending}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="forgot-password-confirm">{t('passwordConfirm')}</FieldLabel>
+                    <Input
+                      id="forgot-password-confirm"
+                      type="password"
+                      placeholder={t('passwordConfirmPlaceholder')}
+                      value={passwordConfirm}
+                      onChange={(e) => setPasswordConfirm(e.target.value)}
+                      required
+                      disabled={isPending}
+                    />
+                  </Field>
+                  <button
+                    type="button"
+                    onClick={() => handleModeChange('user')}
+                    className="text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                  >
+                    {t('backToLogin')}
+                  </button>
+                </TabsContent>
+              )}
             </div>
 
             {registerNotice && <FieldDescription className="text-muted-foreground">{registerNotice}</FieldDescription>}
             {error && <FieldDescription className="text-destructive">{error}</FieldDescription>}
 
             <Button type="submit" disabled={isPending} className="w-full">
-              {isPending ? t('button.loading') : (isRegister ? t('button.register') : t('button.submit'))}
+              {isPending ? t('button.loading') : (isRegister ? t('button.register') : isForgot ? t('button.reset') : t('button.submit'))}
             </Button>
+            {/* 忘记密码入口只在密码登录态露出; API Key 与注册态不适用。 */}
+            {mode === 'user' && (
+              <button
+                type="button"
+                onClick={() => handleModeChange('forgot')}
+                className="mx-auto block text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              >
+                {t('forgotPassword')}
+              </button>
+            )}
           </form>
         </Tabs>
       </div>
