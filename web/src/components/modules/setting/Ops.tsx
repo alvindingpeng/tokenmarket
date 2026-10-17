@@ -511,7 +511,7 @@ export function SettingOps() {
                         <Input readOnly className='h-9 w-full rounded-xl font-mono text-xs' value={effectiveToken} />
                         <Button type='button' variant='outline' size='sm' className='shrink-0 rounded-xl'
                             disabled={!effectiveToken}
-                            onClick={() => { navigator.clipboard.writeText(effectiveToken); toast.success(t('metricsTokenCopied')); }}>
+                            onClick={() => { void navigator.clipboard.writeText(effectiveToken); toast.success(t('metricsTokenCopied')); }}>
                             <Copy className='size-4' />
                         </Button>
                         <Button type='button' variant='outline' size='sm' className='shrink-0 rounded-xl'
