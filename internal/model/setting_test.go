@@ -83,6 +83,7 @@ func TestSecretSettingsAreMaskedNotHidden(t *testing.T) {
 		SettingKeyGithubToken,
 		SettingKeyAlertTelegramBotToken,
 		SettingKeyAlertEmailPassword,
+		SettingKeySMTPPassword,
 	}
 	for _, key := range secretKeys {
 		if !seeded[key] {
