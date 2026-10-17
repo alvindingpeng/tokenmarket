@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react';
-import { Slot } from 'radix-ui';
+import { Slot } from '@radix-ui/react-slot';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
@@ -11,7 +11,7 @@ export function IconButton({ tip, asChild, className, ...props }: ComponentProps
     tip?: string; // 为空则不套 Tooltip。
     asChild?: boolean; // 由子元素出标签, 用于承载 motion 元素或自带按钮的组件。
 }) {
-    const Comp = asChild ? Slot.Root : 'button';
+    const Comp = asChild ? Slot : 'button';
     const button = (
         <Comp
             type={asChild ? undefined : 'button'}

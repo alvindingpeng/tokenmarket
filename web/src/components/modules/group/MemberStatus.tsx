@@ -3,6 +3,7 @@ import { CircleCheck } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { formatLatency } from '@/lib/format';
 import { useGroupMetrics, type Group, type GroupMemberMetric, type GroupScoreBasis } from '@/api/group';
 
 // MemberStatusProps 描述成员的冷却和亲和状态。
@@ -50,9 +51,6 @@ export function useRuntimeClock(source?: Group | Group[]) {
 
     return now;
 }
-
-// formatLatency 把毫秒形式的滑动平均耗时缩写为展示文本。
-const formatLatency = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`);
 
 // scoreTooltip 组装综合评分的悬浮说明: 各维度得分 + 本次评分实际采用的权重与可靠性下限。
 // 权重由后端按「分组自定义 > 系统设置 > 内置兜底」解析后给出, 与选路取值一致, 前端不做二次推断。

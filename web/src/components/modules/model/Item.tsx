@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ModelDeleteOverlay, ModelEditOverlay } from './ItemOverlays';
 import { cn } from '@/lib/utils';
+import { formatLatency } from '@/lib/format';
 import { createPortal } from 'react-dom';
 
 interface ModelItemProps {
@@ -19,15 +20,12 @@ interface ModelItemProps {
 // 缓存编辑弹层实测高度，首次打开即可正确判断是否需要向上弹出
 let cachedEditOverlayHeight = 0;
 
-// formatScoreLatency 把毫秒滑动平均缩写为展示文本, 与分组页成员徽章口径一致。
-const formatScoreLatency = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`);
-
 // scoreTooltip 组装评分悬浮说明: 汇总口径 + 各渠道来源(渠道模型按上游模型逐个评分, 同名模型跨渠道归并)。
 function scoreTooltip(score: ModelScore | undefined, t: ReturnType<typeof useTranslations>) {
     const head = t('card.scoreTitle');
     if (!score || score.samples <= 0) return head;
     const sources = score.channels
-        .map((ch) => `${ch.channel}: ${formatScoreLatency(ch.wait_ms)} / ${Math.round(ch.success * 100)}% (${ch.samples})`)
+        .map((ch) => `${ch.channel}: ${formatLatency(ch.wait_ms)} / ${Math.round(ch.success * 100)}% (${ch.samples})`)
         .join(', ');
     return sources ? `${head}\n${sources}` : head;
 }
@@ -196,7 +194,7 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
                             <Gauge className={cn('size-3.5 shrink-0', score && score.samples > 0 && score.success < 0.7 && 'text-destructive')} />
                             {score && score.samples > 0 ? (
                                 <span title={scoreTooltip(score, t)} className={cn('tabular-nums', score.success >= 0.7 ? 'text-primary' : 'text-destructive')}>
-                                    {t('card.scoreLine', { latency: formatScoreLatency(score.wait_ms), success: Math.round(score.success * 100), samples: score.samples })}
+                                    {t('card.scoreLine', { latency: formatLatency(score.wait_ms), success: Math.round(score.success * 100), samples: score.samples })}
                                 </span>
                             ) : (
                                 <span title={scoreTooltip(score, t)} className="text-muted-foreground/70">{t('card.scoreCold')}</span>
@@ -227,7 +225,7 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
                                 score.success >= 0.7 ? 'text-primary' : 'text-destructive'
                             )}
                         >
-                            {t('card.scoreLine', { latency: formatScoreLatency(score.wait_ms), success: Math.round(score.success * 100), samples: score.samples })}
+                            {t('card.scoreLine', { latency: formatLatency(score.wait_ms), success: Math.round(score.success * 100), samples: score.samples })}
                         </span>
                     ) : (
                         <span title={scoreTooltip(score, t)} className="text-muted-foreground/70">{t('card.scoreCold')}</span>
