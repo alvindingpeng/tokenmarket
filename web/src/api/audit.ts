@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './client';
+import { POLL_SLOW } from '@/lib/polling';
 
 /**
  * AuditLog 一条管理员操作审计记录。
@@ -50,7 +51,7 @@ export function useAuditLogs(params: AuditLogListParams) {
     return useQuery({
         queryKey: ['audit', 'list', qs],
         queryFn: () => apiRequest<{ items: AuditLog[]; total: number }>('/api/v1/audit/list?' + qs),
-        refetchInterval: 30000,
+        refetchInterval: POLL_SLOW,
         placeholderData: (previous) => previous,
     });
 }

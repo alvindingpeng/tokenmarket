@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from './client';
 import { modelListQueryOptions } from './queries';
+import { POLL_SLOW } from '@/lib/polling';
 
 /**
  * LLM 价格信息
@@ -33,7 +34,7 @@ export interface LLMInfo extends LLMPrice {
 export function useModelList() {
     return useQuery({
         ...modelListQueryOptions,
-        refetchInterval: 30000,
+        refetchInterval: POLL_SLOW,
         refetchOnMount: 'always',
     });
 }
@@ -148,7 +149,7 @@ export function useLastUpdateTime() {
     return useQuery({
         queryKey: ['models', 'last-update-time'],
         queryFn: () => apiRequest<string>('/api/v1/model/last-update-time'),
-        refetchInterval: 30000,
+        refetchInterval: POLL_SLOW,
     });
 }
 
@@ -175,7 +176,7 @@ export function useModelScores() {
     return useQuery({
         queryKey: ['model', 'scores'],
         queryFn: () => apiRequest<ModelScore[]>('/api/v1/model/scores'),
-        refetchInterval: 30000,
+        refetchInterval: POLL_SLOW,
         refetchOnMount: 'always',
     });
 }

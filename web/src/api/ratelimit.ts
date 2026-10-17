@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from './client';
+import { POLL_FAST, POLL_SLOW } from '@/lib/polling';
 
 /**
  * RateScopeType 限流范围类型; 越具体越优先。
@@ -113,7 +114,7 @@ export function useRateInspect(scopeType: string, scopeId: number, modelName: st
     return useQuery({
         queryKey: ['ratelimit', 'inspect', scopeType, scopeId, modelName],
         queryFn: () => apiRequest<RateLimitInspect>('/api/v1/ratelimit/inspect?' + query.toString()),
-        refetchInterval: 5000,
+        refetchInterval: POLL_FAST,
         enabled: scopeType !== '',
     });
 }
@@ -126,6 +127,6 @@ export function useRateUsage(hours = 24, scopeType = '', scopeId = 0) {
     return useQuery({
         queryKey: ['ratelimit', 'usage', hours, scopeType, scopeId],
         queryFn: () => apiRequest<{ items: RateLimitUsageHour[] }>('/api/v1/ratelimit/usage?' + query.toString()),
-        refetchInterval: 30000,
+        refetchInterval: POLL_SLOW,
     });
 }

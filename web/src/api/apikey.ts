@@ -4,6 +4,7 @@ import { apiKeyDashboardStatsQueryOptions, apiKeyListQueryOptions } from './quer
 import { useAuthStore } from './user';
 import { StatsAPIKey, StatsAPIKeyFormatted } from './stats';
 import { formatCount, formatMoney, formatTime } from '@/lib/utils';
+import { POLL_SLOW } from '@/lib/polling';
 
 /**
  * API Key 数据
@@ -74,7 +75,7 @@ export function useAPIKeyDashboardStats() {
             info: data.info,
         }),
         enabled: isAPIKeyAuth && isAuthenticated,
-        refetchInterval: 30000,
+        refetchInterval: POLL_SLOW,
     });
 }
 
@@ -102,7 +103,7 @@ type UpdateAPIKeyRequest = Pick<APIKey, 'id'> & CreateAPIKeyRequest;
 export function useAPIKeyList() {
     return useQuery({
         ...apiKeyListQueryOptions,
-        refetchInterval: 30000,
+        refetchInterval: POLL_SLOW,
     });
 }
 

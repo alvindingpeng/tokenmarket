@@ -68,7 +68,7 @@ export function useGroupMetrics(groupId?: number) {
         queryKey: ['group', 'metrics', groupId],
         queryFn: () => apiRequest<GroupMetrics>(`/api/v1/group/metrics/${groupId}`),
         enabled: !!groupId,
-        refetchInterval: 20000,
+        refetchInterval: POLL_NORMAL,
         refetchOnMount: 'always',
     });
 }
@@ -76,6 +76,7 @@ export function useGroupMetrics(groupId?: number) {
 // GroupItem 是分组内一条可路由的成员，对应一条渠道授权。
 // 名称、所属渠道与可用性由后端补齐：授权是 (模型, 凭据) 的组合，界面只需展示与排序，无需再按主键回查。
 import type { LLMPrice } from './share';
+import { POLL_NORMAL } from '@/lib/polling';
 
 export interface GroupItem {
     id: number;

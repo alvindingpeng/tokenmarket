@@ -3,6 +3,7 @@ import { apiRequest } from './client';
 import type { LLMPrice } from './share';
 import { channelStatsQueryOptions, groupListQueryOptions, modelListQueryOptions } from './queries';
 import { formatStatsMetrics, type StatsMetrics, type StatsMetricsFormatted } from './stats';
+import { POLL_MINUTE, POLL_SLOW } from '@/lib/polling';
 
 // Protocol 是渠道支持的上游线协议位掩码，位值与后端 model.Protocol 一致，不可变更。
 // 一条授权可同时支持多个协议，按位或组合；1 << 0 由后端保留待用。
@@ -214,7 +215,7 @@ const channelStatsFormattedQueryOptions = queryOptions({
         })),
         formatted: formatStatsMetrics(item),
     })),
-    refetchInterval: 30000,
+    refetchInterval: POLL_SLOW,
     refetchOnMount: 'always',
 });
 
@@ -245,7 +246,7 @@ export function useChannelDailyStats(channelId: number, enabled = true) {
         queryKey: ['channels', 'stats', 'daily', channelId],
         queryFn: () => apiRequest<ChannelDailyStats>(`/api/v1/channel/stats/daily/${channelId}?days=14`),
         enabled: enabled && channelId > 0,
-        refetchInterval: 60000,
+        refetchInterval: POLL_MINUTE,
         refetchOnMount: 'always',
     });
 }
