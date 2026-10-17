@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useTranslations } from 'use-intl';
 import { AlertCircle, ArrowDownToLine, ChevronLeft, ChevronRight, ClipboardList, Loader2, RefreshCw, Search, X } from 'lucide-react';
 import { auditExportUrl, useAuditActions, useAuditLogs } from '@/api/audit';
+import { formatDateTime } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -15,11 +16,6 @@ const KNOWN_ACTIONS = [
     'recharge.create', 'recharge.complete',
     'withdrawal.apply', 'withdrawal.cancel', 'withdrawal.review', 'withdrawal.paid', 'withdrawal.rollback',
 ];
-
-function formatTime(value: string): string {
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-}
 
 function toBoundary(value: string, end: boolean): string | undefined {
     if (!value) return undefined;
@@ -132,7 +128,7 @@ export default function Audit() {
                             <th className="px-4 py-3 font-medium">{t('table.time')}</th><th className="px-4 py-3 font-medium">{t('table.operator')}</th><th className="px-4 py-3 font-medium">{t('table.action')}</th><th className="px-4 py-3 font-medium">{t('table.target')}</th><th className="px-4 py-3 font-medium">{t('table.detail')}</th>
                         </tr></thead>
                         <tbody>{items.map((item) => <tr key={item.id} className="border-t border-border/60 hover:bg-muted/40">
-                            <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-muted-foreground">{formatTime(item.created_at)}</td>
+                            <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-muted-foreground">{formatDateTime(item.created_at, item.created_at)}</td>
                             <td className="whitespace-nowrap px-4 py-2.5">{item.username || '-'}</td>
                             <td className="whitespace-nowrap px-4 py-2.5 font-medium">{actionLabel(item.action)}</td>
                             <td className="max-w-40 truncate px-4 py-2.5" title={item.target}>{item.target || '-'}</td>

@@ -21,21 +21,9 @@ import {
     useRedemptionCodes,
     type RedemptionCode,
 } from '@/api/redemption';
+import { formatAmount, formatDateTime } from '@/lib/format';
 
 const PAGE_SIZE = 20;
-
-// money 金额千分位展示; 面额是 6 位小数口径, 展示截到 4 位可读精度。
-function money(value: number): string {
-    return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 4 });
-}
-
-// formatTime 将后端 RFC3339 时间格式化为本地时间; 非法值或零值显示占位符。
-function formatTime(value: string | null, fallback: string): string {
-    if (!value) return fallback;
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime()) || date.getUTCFullYear() === 1) return fallback;
-    return date.toLocaleString();
-}
 
 // GenerateDialogContent 生成兑换码表单; 成功后留在弹窗内给出新码, 复制或导出后再关闭。
 function GenerateDialogContent() {
@@ -231,14 +219,14 @@ export default function Redemption() {
                         ) : (batches.data?.items ?? []).map((batch) => (
                             <tr key={batch.id} className="border-t border-border">
                                 <td className="px-4 py-3 font-medium">{batch.name}{batch.prefix ? <span className="ml-1 text-xs text-muted-foreground">({batch.prefix}-)</span> : null}</td>
-                                <td className="px-4 py-3 tabular-nums">{money(batch.credits)}</td>
+                                <td className="px-4 py-3 tabular-nums">{formatAmount(batch.credits)}</td>
                                 <td className="px-4 py-3 tabular-nums">{batch.count}</td>
                                 <td className="px-4 py-3 tabular-nums text-muted-foreground">
                                     {t('batch.usedOf', { used: batch.used, enabled: batch.enabled, disabled: batch.disabled })}
                                 </td>
                                 <td className="px-4 py-3">{batch.per_user_limit > 0 ? batch.per_user_limit : t('batch.unlimited')}</td>
-                                <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatTime(batch.expires_at, t('batch.never'))}</td>
-                                <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatTime(batch.created_at, '-')}</td>
+                                <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatDateTime(batch.expires_at, t('batch.never'))}</td>
+                                <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatDateTime(batch.created_at, '-')}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -289,10 +277,10 @@ export default function Redemption() {
                                 {items.map((item) => (
                                     <tr key={item.id} className="border-t border-border">
                                         <td className="px-4 py-3 font-mono text-xs">{item.code}</td>
-                                        <td className="px-4 py-3 tabular-nums">{money(item.credits)}</td>
+                                        <td className="px-4 py-3 tabular-nums">{formatAmount(item.credits)}</td>
                                         <td className="px-4 py-3">{t('status.' + item.status)}</td>
                                         <td className="px-4 py-3 tabular-nums text-muted-foreground">{item.used_by ?? '-'}</td>
-                                        <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatTime(item.used_at, '-')}</td>
+                                        <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatDateTime(item.used_at, '-')}</td>
                                         <td className="px-4 py-3">
                                             {item.status === 'enabled' ? (
                                                 <Button variant="outline" size="sm" className="h-8 rounded-xl" onClick={() => handleDisable(item.id)}>

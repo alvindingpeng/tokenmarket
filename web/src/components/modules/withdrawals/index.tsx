@@ -12,19 +12,7 @@ import {
     useWithdrawals,
     type Withdrawal,
 } from '@/api/withdrawal';
-
-// money 金额千分位展示, 余额口径截到 4 位。
-function money(value: number): string {
-    return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 4 });
-}
-
-// formatTime 后端 RFC3339 转本地时间。
-function formatTime(value: string | null, fallback: string): string {
-    if (!value) return fallback;
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime()) || date.getUTCFullYear() === 1) return fallback;
-    return date.toLocaleString();
-}
+import { formatAmount, formatDateTime } from '@/lib/format';
 
 // STATUSES 状态筛选项; 空串表示全部。
 const STATUSES = ['', 'pending', 'approved', 'paid', 'rejected', 'cancelled'];
@@ -123,12 +111,12 @@ export default function Withdrawals() {
                                             <div className="font-medium">{order.username || ('#' + order.user_id)}</div>
                                             <div className="text-xs text-muted-foreground">{order.account_name} · {t('method.' + order.method)}</div>
                                         </td>
-                                        <td className="px-4 py-3 tabular-nums">{money(order.amount)}</td>
-                                        <td className="px-4 py-3 tabular-nums">{money(order.fee)}</td>
-                                        <td className="px-4 py-3 tabular-nums font-medium">¥{money(order.actual_cents / 100)}</td>
+                                        <td className="px-4 py-3 tabular-nums">{formatAmount(order.amount)}</td>
+                                        <td className="px-4 py-3 tabular-nums">{formatAmount(order.fee)}</td>
+                                        <td className="px-4 py-3 tabular-nums font-medium">¥{formatAmount(order.actual_cents / 100)}</td>
                                         <td className="px-4 py-3 font-mono text-xs">{order.account_no}</td>
                                         <td className="px-4 py-3">{t('status.' + order.status)}</td>
-                                        <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatTime(order.applied_at, '-')}</td>
+                                        <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatDateTime(order.applied_at, '-')}</td>
                                         <td className="px-4 py-3">
                                             {order.status === 'pending' ? (
                                                 <div className="flex flex-col gap-1.5">

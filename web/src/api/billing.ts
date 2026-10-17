@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './client';
 import type { UserView } from './user';
+import { balanceLedgerQueryOptions, type LedgerRow } from './wallet';
 
 /**
  * 计费明细（与后端 model.BillingRecord 对齐）：
@@ -109,35 +110,12 @@ export function billingExportUrl(filter: BillingFilter = {}): string {
     return './api/v1/stats/billing/records/export?' + billingQuery(filter, 5000, 0);
 }
 
-/** 余额流水一行: Amount 为可用余额净变动, Frozen 为冻结额变动, Cost 为本次实际费用。 */
-export type BalanceLedger = {
-    id: number;
-    user_id: number;
-    kind: 'reserve' | 'settle' | 'release' | 'adjust';
-    amount: number;
-    frozen: number;
-    cost: number;
-    balance_after: number;
-    request_id: string;
-    model_name: string;
-    actor_id: number;
-    actor_name: string;
-    note: string;
-    created_at: string;
-};
-
 /**
- * useBalanceLedger 余额流水分页查询：普通用户恒返回自己的，管理员可按 user_id 指定。
+ * useBalanceLedger 计费页的余额流水分页查询: 普通用户恒返回自己的, 管理员可按 userID 指定。
+ * 类型与查询配置都来自 api/wallet(balanceLedgerQueryOptions), 两页共享同一份缓存。
  */
 export function useBalanceLedger(kind = '', limit = 20, offset = 0, userID = 0) {
-    const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
-    if (kind) query.set('kind', kind);
-    if (userID) query.set('user_id', String(userID));
-    return useQuery({
-        queryKey: ['billing', 'ledger', kind, limit, offset, userID],
-        queryFn: () => apiRequest<{ items: BalanceLedger[]; total: number }>('/api/v1/stats/balance/ledger?' + query.toString()),
-        placeholderData: (previous) => previous,
-    });
+    return useQuery(balanceLedgerQueryOptions({ kind, limit, offset, userId: userID }));
 }
 
 /**
@@ -191,7 +169,7 @@ export type RelayRequestView = {
 export type TradeDetail = {
     record: BillingRecord;
     request?: RelayRequestView;
-    ledgers: BalanceLedger[];
+    ledgers: LedgerRow[];
     disputes: Dispute[];
 };
 

@@ -151,17 +151,13 @@ export function logExportUrl(params: Omit<LogListParams, 'limit' | 'offset'>): s
 
 // useLogList 分页拉取历史调用日志(倒序), 筛选条件变化时由调用方更新 key。
 export function useLogList(params: LogListParams) {
-    const query = new URLSearchParams({ limit: String(params.limit), offset: String(params.offset) });
-    if (params.keyword) query.set('keyword', params.keyword);
-    if (params.status) query.set('status', params.status);
-    if (params.from) query.set('from', params.from);
-    if (params.to) query.set('to', params.to);
-    if (params.clientIp) query.set('client_ip', params.clientIp);
-    if (params.model) query.set('model', params.model);
-    if (params.channel) query.set('channel', params.channel);
+    // 筛选串复用 logFilterQuery, 与 CSV 导出保持同一口径(此前这里手抄了一份同样的 if 列表,
+    // 新增筛选条件时很容易只改一边, 表现为「页面筛得出来、导出筛不出来」)。
+    const filter = logFilterQuery(params);
+    const query = `limit=${params.limit}&offset=${params.offset}${filter ? `&${filter}` : ''}`;
     return useQuery({
-        queryKey: ['logs', 'list', query.toString()],
-        queryFn: () => apiRequest<{ items: RelayLogOverview[]; total: number }>(`/api/v1/log/list?${query.toString()}`),
+        queryKey: ['logs', 'list', query],
+        queryFn: () => apiRequest<{ items: RelayLogOverview[]; total: number }>(`/api/v1/log/list?${query}`),
         refetchInterval: 15000,
         placeholderData: (previous) => previous,
     });

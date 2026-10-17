@@ -4,6 +4,7 @@ import { AlertCircle, KeyRound, Loader2, Pencil, Plus, Trash2, UserRound } from 
 import { toast } from 'sonner';
 import { useCreateUser, useDeleteUser, useResetPassword, useUpdateUser, useUserList, type UserManageRequest } from '@/api/usermanage';
 import type { Role, UserView } from '@/api/user';
+import { formatDateOnly, formatUsd } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/common/IconButton';
@@ -48,18 +49,6 @@ function StatusBadge({ status }: { status: UserView['status'] }) {
             {t('status.' + status)}
         </Badge>
     );
-}
-
-// formatMoney 将金额格式化为两位小数的美元金额。
-function formatMoney(value: number) {
-    return '$' + value.toFixed(2);
-}
-
-// formatCreatedAt 将后端 RFC3339 时间格式化为本地日期; 零值时间显示占位符。
-function formatCreatedAt(value: string, fallback: string) {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime()) || date.getUTCFullYear() === 1) return fallback;
-    return date.toLocaleDateString();
 }
 
 // CreateDialogContent 提供创建用户表单; 密码必填, 状态默认启用。
@@ -495,12 +484,12 @@ function UsersTable({ users }: { users: UserView[] }) {
                             <td className="px-4 py-3 font-medium text-card-foreground">{user.username}</td>
                             <td className="px-4 py-3"><RoleBadge role={user.role} /></td>
                             <td className="px-4 py-3"><StatusBadge status={user.status} /></td>
-                            <td className="px-4 py-3 text-right tabular-nums">{formatMoney(user.balance)}</td>
-                            <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{formatMoney(user.frozen)}</td>
-                            <td className="px-4 py-3 text-right tabular-nums">{formatMoney(user.total_spent)}</td>
-                            <td className="px-4 py-3 text-right tabular-nums">{formatMoney(user.total_revenue)}</td>
+                            <td className="px-4 py-3 text-right tabular-nums">{formatUsd(user.balance)}</td>
+                            <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{formatUsd(user.frozen)}</td>
+                            <td className="px-4 py-3 text-right tabular-nums">{formatUsd(user.total_spent)}</td>
+                            <td className="px-4 py-3 text-right tabular-nums">{formatUsd(user.total_revenue)}</td>
                             <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
-                                {formatCreatedAt(user.created_at, t('table.unknownDate'))}
+                                {formatDateOnly(user.created_at, t('table.unknownDate'))}
                             </td>
                             <td className="px-4 py-3">
                                 <div className="flex items-center justify-end gap-1">

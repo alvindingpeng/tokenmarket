@@ -26,19 +26,7 @@ import {
     useWithdrawSummary,
 } from '@/api/withdrawal';
 import { useAuthStore } from '@/api/user';
-
-// money 金额千分位展示; 余额是 6 位小数口径, 展示截到 4 位可读精度。
-function money(value: number): string {
-    return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 4 });
-}
-
-// formatTime 将后端 RFC3339 时间格式化为本地时间; 非法值或零值显示占位符。
-function formatTime(value: string | null, fallback: string): string {
-    if (!value) return fallback;
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime()) || date.getUTCFullYear() === 1) return fallback;
-    return date.toLocaleString();
-}
+import { formatAmount, formatDateTime } from '@/lib/format';
 
 // KINDS 流水筛选项; 空串表示全部。
 const KINDS = ['', 'topup', 'bonus', 'redemption', 'reserve', 'settle', 'release', 'adjust'];
@@ -168,12 +156,12 @@ function RechargeDialogContent() {
                     <div className="rounded-2xl border border-border bg-muted/40 px-3 py-2 text-sm">
                         <div className="flex items-center justify-between">
                             <span className="text-muted-foreground">{t('recharge.credits')}</span>
-                            <span className="tabular-nums font-medium">{money(quote.data?.credits ?? 0)}</span>
+                            <span className="tabular-nums font-medium">{formatAmount(quote.data?.credits ?? 0)}</span>
                         </div>
                         {quote.data?.bonus ? (
                             <div className="flex items-center justify-between">
                                 <span className="text-muted-foreground">{t('recharge.bonus')}</span>
-                                <span className="tabular-nums font-medium text-emerald-500">+{money(quote.data.bonus)}</span>
+                                <span className="tabular-nums font-medium text-emerald-500">+{formatAmount(quote.data.bonus)}</span>
                             </div>
                         ) : null}
                         <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -264,7 +252,7 @@ function WithdrawDialogContent({ onApplied }: { onApplied: () => void }) {
                     )}
                     <div className="flex items-center justify-between rounded-2xl border border-border bg-muted/40 px-3 py-2 text-sm">
                         <span className="text-muted-foreground">{t('withdraw.available')}</span>
-                        <span className="tabular-nums font-medium">{money(rules?.available ?? 0)}</span>
+                        <span className="tabular-nums font-medium">{formatAmount(rules?.available ?? 0)}</span>
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="withdraw-amount">{t('withdraw.amount')}</Label>
@@ -305,11 +293,11 @@ function WithdrawDialogContent({ onApplied }: { onApplied: () => void }) {
                     <div className="rounded-2xl border border-border bg-muted/40 px-3 py-2 text-sm">
                         <div className="flex items-center justify-between">
                             <span className="text-muted-foreground">{t('withdraw.fee')}</span>
-                            <span className="tabular-nums">{money(fee)}</span>
+                            <span className="tabular-nums">{formatAmount(fee)}</span>
                         </div>
                         <div className="flex items-center justify-between">
                             <span className="text-muted-foreground">{t('withdraw.actual')}</span>
-                            <span className="tabular-nums font-medium">{money(actual)} (≈¥{money(actualCNY)})</span>
+                            <span className="tabular-nums font-medium">{formatAmount(actual)} (≈¥{formatAmount(actualCNY)})</span>
                         </div>
                     </div>
                     <div className="flex justify-end gap-2">
@@ -400,7 +388,7 @@ export default function Wallet() {
         if (value === '' || redeem.isPending) return;
         redeem.mutate(value, {
             onSuccess: (data) => {
-                toast.success(t('redeem.ok', { credits: money(data.credits), balance: money(data.balance) }));
+                toast.success(t('redeem.ok', { credits: formatAmount(data.credits), balance: formatAmount(data.balance) }));
                 setCode('');
             },
             onError: (error) => toast.error(t('redeem.failed'), { description: error.message }),
@@ -428,8 +416,8 @@ export default function Wallet() {
                 {cards.map((card) => (
                     <div key={card.key} className="rounded-3xl border border-border bg-card px-4 py-3">
                         <div className="text-xs text-muted-foreground">{t('card.' + card.key)}</div>
-                        <div className="mt-1 truncate text-xl font-semibold tabular-nums" title={money(card.value ?? 0)}>
-                            {money(card.value ?? 0)}
+                        <div className="mt-1 truncate text-xl font-semibold tabular-nums" title={formatAmount(card.value ?? 0)}>
+                            {formatAmount(card.value ?? 0)}
                         </div>
                     </div>
                 ))}
@@ -496,10 +484,10 @@ export default function Wallet() {
                                 <tbody>
                                     {items.map((item) => (
                                         <tr key={item.id} className="border-t border-border">
-                                            <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatTime(item.created_at, '-')}</td>
+                                            <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatDateTime(item.created_at, '-')}</td>
                                             <td className="px-4 py-3">{t('kind.' + item.kind)}</td>
-                                            <td className={'px-4 py-3 tabular-nums font-medium ' + (item.amount >= 0 ? 'text-emerald-500' : 'text-destructive')}>{money(item.amount)}</td>
-                                            <td className="px-4 py-3 tabular-nums">{money(item.balance_after)}</td>
+                                            <td className={'px-4 py-3 tabular-nums font-medium ' + (item.amount >= 0 ? 'text-emerald-500' : 'text-destructive')}>{formatAmount(item.amount)}</td>
+                                            <td className="px-4 py-3 tabular-nums">{formatAmount(item.balance_after)}</td>
                                             <td className="px-4 py-3 text-muted-foreground">{item.note || (item.model_name ? item.model_name : '-')}</td>
                                         </tr>
                                     ))}
@@ -530,10 +518,10 @@ export default function Wallet() {
                                     {orderItems.map((order) => (
                                         <tr key={order.id} className="border-t border-border">
                                             <td className="px-4 py-3 font-mono text-xs">{order.order_no}</td>
-                                            <td className="px-4 py-3 tabular-nums">{money(order.amount_cents / 100)} {order.currency}</td>
-                                            <td className="px-4 py-3 tabular-nums">{money(order.credits + order.bonus)}</td>
+                                            <td className="px-4 py-3 tabular-nums">{formatAmount(order.amount_cents / 100)} {order.currency}</td>
+                                            <td className="px-4 py-3 tabular-nums">{formatAmount(order.credits + order.bonus)}</td>
                                             <td className="px-4 py-3">{t('status.' + order.status)}</td>
-                                            <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatTime(order.paid_at ?? order.created_at, '-')}</td>
+                                            <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatDateTime(order.paid_at ?? order.created_at, '-')}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -565,11 +553,11 @@ export default function Wallet() {
                                     {withdrawItems.map((order) => (
                                         <tr key={order.id} className="border-t border-border">
                                             <td className="px-4 py-3 font-mono text-xs">#{order.id}</td>
-                                            <td className="px-4 py-3 tabular-nums">{money(order.amount)}</td>
-                                            <td className="px-4 py-3 tabular-nums">{money(order.fee)}</td>
-                                            <td className="px-4 py-3 tabular-nums font-medium">¥{money(order.actual_cents / 100)}</td>
+                                            <td className="px-4 py-3 tabular-nums">{formatAmount(order.amount)}</td>
+                                            <td className="px-4 py-3 tabular-nums">{formatAmount(order.fee)}</td>
+                                            <td className="px-4 py-3 tabular-nums font-medium">¥{formatAmount(order.actual_cents / 100)}</td>
                                             <td className="px-4 py-3">{t('wstatus.' + order.status)}</td>
-                                            <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatTime(order.applied_at, '-')}</td>
+                                            <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatDateTime(order.applied_at, '-')}</td>
                                             <td className="px-4 py-3">
                                                 {order.status === 'pending' ? (
                                                     <Button
