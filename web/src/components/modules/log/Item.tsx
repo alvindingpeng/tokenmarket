@@ -526,7 +526,8 @@ function LogCardBody({ log }: { log: RelayLogOverview }) {
     const { Icon, className: iconClassName, color: brandColor } = getModelIcon(actualModel);
     const requestRunning = log.status === 'running' || log.status === 'committed';
     const errorText = log.error ?? '';
-    const visibleError = log.status === 'committed' || log.status === 'success' ? '' : displayError;
+    const settled = log.status === 'committed' || log.status === 'success';
+    const visibleError = settled ? '' : displayError;
 
     // 仅在请求进行中或弹窗打开时按 500ms 刷新, 避免已完成日志持续触发重渲染。
     useEffect(() => {
@@ -535,17 +536,17 @@ function LogCardBody({ log }: { log: RelayLogOverview }) {
         return () => window.clearInterval(timer);
     }, [isOpen, requestRunning]);
 
-    // 新错误覆盖旧错误; 响应已开始或请求成功后清除错误提示。
-    useEffect(() => {
-        if (log.status === 'committed' || log.status === 'success') {
-            setDisplayError('');
-        } else if (errorText) {
-            setDisplayError(errorText);
-        }
-    }, [errorText, log.status]);
+    // 服务端在下一轮开始时会清空 error, 但用户需要继续看到上一轮失败原因, 直到本轮真正开始响应。
+    // 这里在渲染期比对并调整 state(与 LogDetail 累积轮次同一手法): 比 effect 少一轮渲染, 也不会级联。
+    if (settled ? displayError !== '' : errorText !== '' && errorText !== displayError) {
+        setDisplayError(settled ? '' : errorText);
+    }
 
-    useEffect(() => {
-        if (!errorText) return;
+    // 概览卡片存留期间收集最近五次错误, 供详情打开时直接展示(无需等详情接口)。
+    const observedError = errorRounds.find((round) => round.round === log.round);
+    if (errorText !== '' && (observedError?.error !== errorText
+        || observedError.channelCode !== log.target_channel_code
+        || observedError.sending !== log.sending)) {
         setErrorRounds((current) => [
             {
                 round: log.round,
@@ -557,7 +558,7 @@ function LogCardBody({ log }: { log: RelayLogOverview }) {
             },
             ...current.filter((round) => round.round !== log.round),
         ].slice(0, 5));
-    }, [errorText, log.round, log.target_channel_key, log.sending, log.round_started_at]);
+    }
 
     return (
         <>

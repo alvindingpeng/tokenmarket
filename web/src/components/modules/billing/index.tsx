@@ -293,11 +293,14 @@ function SpendingTable({ owner, onView }: { owner: boolean; onView: (id: number)
     );
 }
 
+// EMPTY_ROWS 作为稳定的空数组占位: 直接写 `data ?? []` 会在每次渲染生成新引用, 让依赖它的 useMemo 全部失效。
+const EMPTY_ROWS: never[] = [];
+
 // SpendingTrend 渲染近 30 天消费趋势表: 日期, 请求数, tokens, 消费。
 function SpendingTrend() {
     const t = useTranslations('billing');
     const { data: daily, isLoading, isError } = useBillingDaily();
-    const rows = daily ?? [];
+    const rows = daily ?? EMPTY_ROWS;
     // 合计行与各列同口径累加, 便于一眼核对 30 天总量。
     const totals = useMemo(() => rows.reduce((sum, row) => ({
         requests: sum.requests + row.request_count,
@@ -356,7 +359,7 @@ function SpendingTrend() {
 function RevenueTrend() {
     const t = useTranslations('billing');
     const { data: revenue, isLoading, isError } = useRevenueDaily();
-    const rows = revenue ?? [];
+    const rows = revenue ?? EMPTY_ROWS;
     const totals = useMemo(() => rows.reduce((sum, row) => ({
         requests: sum.requests + row.request_count,
         tokens: sum.tokens + row.input_token + row.output_token + row.cache_read_token + row.cache_write_token,

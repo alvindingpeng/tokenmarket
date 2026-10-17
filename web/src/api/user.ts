@@ -84,9 +84,6 @@ interface AuthState {
     isAPIKeyAuth: boolean;
     token: string | null;
     role: Role | null; // 当前登录用户角色，用于按角色裁剪导航与页面。
-    balance: number; // 当前可用余额，计费页展示用。
-    frozen: number; // 当前冻结额（预扣中），计费页展示用。
-    username: string; // 当前用户名，顶栏与账户页展示用。
     userId: number; // 当前用户 id，钱包页查本人流水与管理层引用用。
 
     // Actions
@@ -107,9 +104,6 @@ export const useAuthStore = create<AuthState>()(
             isAPIKeyAuth: false,
             token: null,
             role: null,
-            balance: 0,
-            frozen: 0,
-            username: '',
             userId: 0,
 
             setAuth: (user: UserView) => {
@@ -119,9 +113,6 @@ export const useAuthStore = create<AuthState>()(
                     isAPIKeyAuth: false,
                     token: null,
                     role: user.role,
-                    balance: user.balance,
-                    frozen: user.frozen,
-                    username: user.username,
                     userId: user.id,
                     isLoading: false
                 });
@@ -155,9 +146,7 @@ export const useAuthStore = create<AuthState>()(
                         isLoading: false,
                         token: isAPIKeyAuth ? token : null,
                         role: profile?.role ?? null,
-                        balance: profile?.balance ?? 0,
-                        frozen: profile?.frozen ?? 0,
-                        username: profile?.username ?? ''
+                        userId: profile?.id ?? 0
                     });
                 } catch {
                     get().logout();
@@ -171,9 +160,7 @@ export const useAuthStore = create<AuthState>()(
                     isAPIKeyAuth: false,
                     token: null,
                     role: null,
-                    balance: 0,
-                    frozen: 0,
-                    username: '',
+                    userId: 0,
                     isLoading: false
                 });
                 if (typeof document !== 'undefined') {
@@ -344,9 +331,6 @@ export function useAuth() {
         isAPIKeyAuth: store.isAPIKeyAuth,
         isLoading: store.isLoading,
         role: store.role,
-        balance: store.balance,
-        frozen: store.frozen,
-        username: store.username,
         logout: store.logout,
     };
 }

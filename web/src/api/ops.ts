@@ -70,7 +70,7 @@ export function useRunReconcile() {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: (days: number = 1) =>
-            apiRequest<{ items: ReconcileRow[] }>('/api/v1/ops/reconcile/run?days=' + days, { method: 'POST' }).then(r => r.items),
+            apiRequest<{ items: ReconcileRow[] }>('/api/v1/ops/reconcile/run?days=' + days, { method: 'POST', timeoutMs: 90000 }).then(r => r.items),
         onSuccess: () => qc.invalidateQueries({ queryKey: ['ops', 'reconcile'] }),
     });
 }
@@ -111,7 +111,8 @@ export function useBackups() {
 export function useRunBackup() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: () => apiRequest<BackupResult>('/api/v1/ops/backup/run', { method: 'POST' }),
+        // 备份要落盘并校验, 库大时可能超过默认超时。
+        mutationFn: () => apiRequest<BackupResult>('/api/v1/ops/backup/run', { method: 'POST', timeoutMs: 90000 }),
         onSuccess: () => qc.invalidateQueries({ queryKey: ['ops', 'backups'] }),
     });
 }
@@ -151,7 +152,8 @@ export function useTestAlertChannel() {
 export function useRunHealthCheck() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: () => apiRequest<{ ok: boolean }>('/api/v1/ops/health/run', { method: 'POST' }),
+        // 健康检查会逐个探测渠道上游, 渠道多时可能超过默认超时。
+        mutationFn: () => apiRequest<{ ok: boolean }>('/api/v1/ops/health/run', { method: 'POST', timeoutMs: 90000 }),
         onSuccess: () => qc.invalidateQueries({ queryKey: ['ops', 'health'] }),
     });
 }

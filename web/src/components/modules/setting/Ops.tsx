@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslations } from 'use-intl';
 import { HeartPulse } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -71,39 +71,36 @@ export function SettingOps() {
             onError: (error) => toast.error(error instanceof Error ? error.message : t('alertTestFail')),
         });
     };
-    const [metricsAuth, setMetricsAuth] = useState(false);
     const [revealed, setRevealed] = useState('');
+
+    // 服务端设置是唯一权威: 已保存值直接派生, 本地只存草稿。
+    // 早期版本用 effect 把服务端值搬进 state, 每次加载都会多一轮渲染, 还可能覆盖用户正在输入的内容。
+    const savedValues = useMemo(() => {
+        const next: Record<string, string> = {};
+        for (const key of OPS_KEYS) {
+            const found = settings?.find((item) => item.key === key);
+            next[key] = found ? found.value : '';
+        }
+        return next;
+    }, [settings]);
+    const [draft, setDraft] = useState<Record<string, string>>({});
+    const values = useMemo(() => ({ ...savedValues, ...draft }), [savedValues, draft]);
+    // 鉴权开关同样派生自设置值, 不再单独存一份状态。
+    const metricsAuth = values[SettingKey.MetricsAuth] === 'bearer';
+
     // 仅在开启鉴权后才索取令牌, 关闭时不请求, 避免无谓地把凭据取到前端。
     const metricsToken = useMetricsToken(metricsAuth);
     const rotateToken = useRotateMetricsToken();
 
-    const [values, setValues] = useState<Record<string, string>>({});
-    const initial = useRef<Record<string, string>>({});
-
-    useEffect(() => {
-        if (!settings) return;
-        const next: Record<string, string> = {};
-        for (const key of OPS_KEYS) {
-            const found = settings.find((item) => item.key === key);
-            next[key] = found ? found.value : '';
-        }
-        setValues(next);
-        initial.current = next;
-        // 开关按已保存的模式初始化: 后端是唯一权威, 前端不另存一份状态。
-        setMetricsAuth(next[SettingKey.MetricsAuth] === 'bearer');
-    }, [settings]);
-
-    // save 持久化单个设置键; 与初始值相同则跳过, 失败回滚输入。
+    // save 持久化单个设置键; 与已保存值相同则跳过, 失败把草稿回退到服务端值。
     const save = (key: string, value: string) => {
-        if ((initial.current[key] ?? '') === value) return;
-        const before = initial.current[key] ?? '';
+        if (savedValues[key] === value) return;
         setSetting.mutate({ key, value }, {
             onSuccess: () => {
-                initial.current = { ...initial.current, [key]: value };
                 toast.success(tRoot('saved'));
             },
             onError: (error) => {
-                setValues((prev) => ({ ...prev, [key]: before }));
+                setDraft((prev) => ({ ...prev, [key]: savedValues[key] ?? '' }));
                 toast.error(error instanceof Error ? error.message : tRoot('saveFailed'));
             },
         });
@@ -115,7 +112,7 @@ export function SettingOps() {
     const saveNumber = (key: string, raw: string, min: number, max: number, fallback: string) => {
         const parsed = Number.parseInt(raw, 10);
         const normalized = Number.isFinite(parsed) ? String(Math.min(Math.max(parsed, min), max)) : fallback;
-        setValues((prev) => ({ ...prev, [key]: normalized }));
+        setDraft((prev) => ({ ...prev, [key]: normalized }));
         save(key, normalized);
     };
 
@@ -132,7 +129,7 @@ export function SettingOps() {
         const next = on ? [...new Set([...alertChannels, name])] : alertChannels.filter((item) => item !== name);
         if (next.length === 0) return;
         const value = next.join(',');
-        setValues((prev) => ({ ...prev, [SettingKey.AlertChannels]: value }));
+        setDraft((prev) => ({ ...prev, [SettingKey.AlertChannels]: value }));
         save(SettingKey.AlertChannels, value);
     };
 
@@ -156,7 +153,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={1} max={3650} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.LogRetentionDays] ?? ''}
-                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.LogRetentionDays]: event.target.value }))}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.LogRetentionDays]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.LogRetentionDays, event.target.value.trim(), 1, 3650, '7')} />
             </div>
 
@@ -166,7 +163,7 @@ export function SettingOps() {
                     <p className='text-xs text-muted-foreground'>{t('logStoreBodyHint')}</p>
                 </div>
                 <Switch checked={boolValue(SettingKey.LogStoreBody)}
-                    onCheckedChange={(checked) => { setValues((prev) => ({ ...prev, [SettingKey.LogStoreBody]: String(checked) })); save(SettingKey.LogStoreBody, String(checked)); }} />
+                    onCheckedChange={(checked) => { setDraft((prev) => ({ ...prev, [SettingKey.LogStoreBody]: String(checked) })); save(SettingKey.LogStoreBody, String(checked)); }} />
             </div>
 
             <div className={rowClass + ' ' + dividerClass}>
@@ -175,7 +172,7 @@ export function SettingOps() {
                     <p className='text-xs text-muted-foreground'>{t('logArchiveHint')}</p>
                 </div>
                 <Switch checked={boolValue(SettingKey.LogArchiveEnabled)}
-                    onCheckedChange={(checked) => { setValues((prev) => ({ ...prev, [SettingKey.LogArchiveEnabled]: String(checked) })); save(SettingKey.LogArchiveEnabled, String(checked)); }} />
+                    onCheckedChange={(checked) => { setDraft((prev) => ({ ...prev, [SettingKey.LogArchiveEnabled]: String(checked) })); save(SettingKey.LogArchiveEnabled, String(checked)); }} />
             </div>
 
             <div className={rowClass + ' ' + dividerClass}>
@@ -185,7 +182,7 @@ export function SettingOps() {
                 </div>
                 <Input className='h-9 w-full max-w-72 rounded-xl' placeholder={t('logMaskFieldsHint')}
                     value={values[SettingKey.LogMaskFields] ?? ''}
-                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.LogMaskFields]: event.target.value }))}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.LogMaskFields]: event.target.value }))}
                     onBlur={(event) => save(SettingKey.LogMaskFields, event.target.value.trim())} />
             </div>
 
@@ -195,7 +192,7 @@ export function SettingOps() {
                     <p className='text-xs text-muted-foreground'>{t('autoBackupHint')}</p>
                 </div>
                 <Switch checked={boolValue(SettingKey.AutoBackupEnabled)}
-                    onCheckedChange={(checked) => { setValues((prev) => ({ ...prev, [SettingKey.AutoBackupEnabled]: String(checked) })); save(SettingKey.AutoBackupEnabled, String(checked)); }} />
+                    onCheckedChange={(checked) => { setDraft((prev) => ({ ...prev, [SettingKey.AutoBackupEnabled]: String(checked) })); save(SettingKey.AutoBackupEnabled, String(checked)); }} />
             </div>
 
             <div className={rowClass + ' ' + dividerClass}>
@@ -204,7 +201,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={1} max={365} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.AutoBackupKeep] ?? ''}
-                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AutoBackupKeep]: event.target.value }))}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.AutoBackupKeep]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.AutoBackupKeep, event.target.value.trim(), 1, 365, '7')} />
             </div>
 
@@ -214,7 +211,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={1} max={720} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.AutoBackupInterval] ?? ''}
-                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AutoBackupInterval]: event.target.value }))}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.AutoBackupInterval]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.AutoBackupInterval, event.target.value.trim(), 1, 720, '24')} />
             </div>
 
@@ -224,7 +221,7 @@ export function SettingOps() {
                     <p className='text-xs text-muted-foreground'>{t('backupEncryptHint')}</p>
                 </div>
                 <Switch checked={boolValue(SettingKey.BackupEncrypt)}
-                    onCheckedChange={(checked) => { setValues((prev) => ({ ...prev, [SettingKey.BackupEncrypt]: String(checked) })); save(SettingKey.BackupEncrypt, String(checked)); }} />
+                    onCheckedChange={(checked) => { setDraft((prev) => ({ ...prev, [SettingKey.BackupEncrypt]: String(checked) })); save(SettingKey.BackupEncrypt, String(checked)); }} />
             </div>
 
             <div className={rowClass}>
@@ -233,7 +230,7 @@ export function SettingOps() {
                     <p className='text-xs text-muted-foreground'>{t('backupRemoteHint')}</p>
                 </div>
                 <Switch checked={boolValue(SettingKey.BackupRemote)}
-                    onCheckedChange={(checked) => { setValues((prev) => ({ ...prev, [SettingKey.BackupRemote]: String(checked) })); save(SettingKey.BackupRemote, String(checked)); }} />
+                    onCheckedChange={(checked) => { setDraft((prev) => ({ ...prev, [SettingKey.BackupRemote]: String(checked) })); save(SettingKey.BackupRemote, String(checked)); }} />
             </div>
 
             <div className={rowClass + ' ' + dividerClass}>
@@ -242,7 +239,7 @@ export function SettingOps() {
                     <p className='text-xs text-muted-foreground'>{t('healthCheckHint')}</p>
                 </div>
                 <Switch checked={boolValue(SettingKey.HealthCheckEnabled)}
-                    onCheckedChange={(checked) => { setValues((prev) => ({ ...prev, [SettingKey.HealthCheckEnabled]: String(checked) })); save(SettingKey.HealthCheckEnabled, String(checked)); }} />
+                    onCheckedChange={(checked) => { setDraft((prev) => ({ ...prev, [SettingKey.HealthCheckEnabled]: String(checked) })); save(SettingKey.HealthCheckEnabled, String(checked)); }} />
             </div>
 
             <div className={rowClass}>
@@ -251,7 +248,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={1} max={1440} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.HealthCheckInterval] ?? ''}
-                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.HealthCheckInterval]: event.target.value }))}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.HealthCheckInterval]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.HealthCheckInterval, event.target.value.trim(), 1, 1440, '30')} />
             </div>
 
@@ -262,7 +259,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={0} max={600000} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.HealthLatencyMS] ?? ''}
-                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.HealthLatencyMS]: event.target.value }))}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.HealthLatencyMS]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.HealthLatencyMS, event.target.value.trim(), 0, 600000, '1000')} />
             </div>
 
@@ -273,7 +270,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={0} max={100} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.BreakerKeyThreshold] ?? ''}
-                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.BreakerKeyThreshold]: event.target.value }))}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.BreakerKeyThreshold]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.BreakerKeyThreshold, event.target.value.trim(), 0, 100, '5')} />
             </div>
 
@@ -284,7 +281,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={1} max={1440} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.BreakerKeyMinutes] ?? ''}
-                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.BreakerKeyMinutes]: event.target.value }))}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.BreakerKeyMinutes]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.BreakerKeyMinutes, event.target.value.trim(), 1, 1440, '5')} />
             </div>
 
@@ -295,7 +292,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={1} max={1440} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.BreakerKeyHardMinutes] ?? ''}
-                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.BreakerKeyHardMinutes]: event.target.value }))}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.BreakerKeyHardMinutes]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.BreakerKeyHardMinutes, event.target.value.trim(), 1, 1440, '30')} />
             </div>
 
@@ -306,7 +303,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={0} max={100} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.BreakerModelThreshold] ?? ''}
-                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.BreakerModelThreshold]: event.target.value }))}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.BreakerModelThreshold]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.BreakerModelThreshold, event.target.value.trim(), 0, 100, '5')} />
             </div>
 
@@ -317,7 +314,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={1} max={1440} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.BreakerModelMinutes] ?? ''}
-                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.BreakerModelMinutes]: event.target.value }))}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.BreakerModelMinutes]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.BreakerModelMinutes, event.target.value.trim(), 1, 1440, '5')} />
             </div>
 
@@ -328,7 +325,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={0} max={600} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.BreakerCoolAuthSeconds] ?? ''}
-                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.BreakerCoolAuthSeconds]: event.target.value }))}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.BreakerCoolAuthSeconds]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.BreakerCoolAuthSeconds, event.target.value.trim(), 0, 600, '60')} />
             </div>
 
@@ -339,7 +336,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={0} max={600} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.BreakerCoolSoftSeconds] ?? ''}
-                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.BreakerCoolSoftSeconds]: event.target.value }))}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.BreakerCoolSoftSeconds]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.BreakerCoolSoftSeconds, event.target.value.trim(), 0, 600, '30')} />
             </div>
 
@@ -351,7 +348,7 @@ export function SettingOps() {
                 <div className='flex w-full max-w-md items-center gap-2'>
                     <Input className='h-9 w-full rounded-xl' placeholder='https://...'
                         value={values[SettingKey.AlertWebhookURL] ?? ''}
-                        onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertWebhookURL]: event.target.value }))}
+                        onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.AlertWebhookURL]: event.target.value }))}
                         onBlur={(event) => save(SettingKey.AlertWebhookURL, event.target.value.trim())} />
                     <Button type='button' variant='outline' size='sm' className='shrink-0 rounded-xl'
                         disabled={testWebhook.isPending || !(values[SettingKey.AlertWebhookURL] ?? '')}
@@ -391,7 +388,7 @@ export function SettingOps() {
                 </div>
                 <Input className='h-9 w-full max-w-md rounded-xl' placeholder='123456789:ABCdef...' autoComplete='off'
                     value={values[SettingKey.AlertTelegramBotToken] ?? ''}
-                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertTelegramBotToken]: event.target.value }))}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.AlertTelegramBotToken]: event.target.value }))}
                     onBlur={(event) => save(SettingKey.AlertTelegramBotToken, event.target.value.trim())} />
             </div>
 
@@ -403,7 +400,7 @@ export function SettingOps() {
                 <div className='flex w-full max-w-md items-center gap-2'>
                     <Input className='h-9 w-full rounded-xl' placeholder='-1001234567890' autoComplete='off'
                         value={values[SettingKey.AlertTelegramChatID] ?? ''}
-                        onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertTelegramChatID]: event.target.value }))}
+                        onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.AlertTelegramChatID]: event.target.value }))}
                         onBlur={(event) => save(SettingKey.AlertTelegramChatID, event.target.value.trim())} />
                     <Button type='button' variant='outline' size='sm' className='shrink-0 rounded-xl'
                         disabled={testChannel.isPending}
@@ -421,11 +418,11 @@ export function SettingOps() {
                 <div className='flex w-full max-w-md items-center gap-2'>
                     <Input className='h-9 w-full rounded-xl' placeholder='smtp.example.com'
                         value={values[SettingKey.AlertEmailSMTPHost] ?? ''}
-                        onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertEmailSMTPHost]: event.target.value }))}
+                        onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.AlertEmailSMTPHost]: event.target.value }))}
                         onBlur={(event) => save(SettingKey.AlertEmailSMTPHost, event.target.value.trim())} />
                     <Input type='number' min={1} max={65535} className='h-9 w-24 shrink-0 rounded-xl' placeholder='465'
                         value={values[SettingKey.AlertEmailSMTPPort] ?? ''}
-                        onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertEmailSMTPPort]: event.target.value }))}
+                        onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.AlertEmailSMTPPort]: event.target.value }))}
                         onBlur={(event) => saveNumber(SettingKey.AlertEmailSMTPPort, event.target.value.trim(), 1, 65535, '465')} />
                 </div>
             </div>
@@ -438,11 +435,11 @@ export function SettingOps() {
                 <div className='flex w-full max-w-md items-center gap-2'>
                     <Input className='h-9 w-full rounded-xl' placeholder={t('emailUsernamePlaceholder')} autoComplete='off'
                         value={values[SettingKey.AlertEmailUsername] ?? ''}
-                        onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertEmailUsername]: event.target.value }))}
+                        onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.AlertEmailUsername]: event.target.value }))}
                         onBlur={(event) => save(SettingKey.AlertEmailUsername, event.target.value.trim())} />
                     <Input type='password' className='h-9 w-full rounded-xl' placeholder={t('emailPasswordPlaceholder')} autoComplete='off'
                         value={values[SettingKey.AlertEmailPassword] ?? ''}
-                        onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertEmailPassword]: event.target.value }))}
+                        onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.AlertEmailPassword]: event.target.value }))}
                         onBlur={(event) => save(SettingKey.AlertEmailPassword, event.target.value)} />
                 </div>
             </div>
@@ -455,11 +452,11 @@ export function SettingOps() {
                 <div className='flex w-full max-w-md items-center gap-2'>
                     <Input className='h-9 w-full rounded-xl' placeholder='alerts@example.com'
                         value={values[SettingKey.AlertEmailFrom] ?? ''}
-                        onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertEmailFrom]: event.target.value }))}
+                        onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.AlertEmailFrom]: event.target.value }))}
                         onBlur={(event) => save(SettingKey.AlertEmailFrom, event.target.value.trim())} />
                     <Input className='h-9 w-full rounded-xl' placeholder={t('emailToPlaceholder')}
                         value={values[SettingKey.AlertEmailTo] ?? ''}
-                        onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertEmailTo]: event.target.value }))}
+                        onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.AlertEmailTo]: event.target.value }))}
                         onBlur={(event) => save(SettingKey.AlertEmailTo, event.target.value.trim())} />
                     <Button type='button' variant='outline' size='sm' className='shrink-0 rounded-xl'
                         disabled={testChannel.isPending}
@@ -476,7 +473,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={0} max={1440} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.AlertDedupMinutes] ?? ''}
-                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertDedupMinutes]: event.target.value }))}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.AlertDedupMinutes]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.AlertDedupMinutes, event.target.value.trim(), 0, 1440, '10')} />
             </div>
 
@@ -487,7 +484,7 @@ export function SettingOps() {
                 </div>
                 <Input type='number' min={1} max={100} className='h-9 w-28 rounded-xl'
                     value={values[SettingKey.AlertFailStreak] ?? ''}
-                    onChange={(event) => setValues((prev) => ({ ...prev, [SettingKey.AlertFailStreak]: event.target.value }))}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.AlertFailStreak]: event.target.value }))}
                     onBlur={(event) => saveNumber(SettingKey.AlertFailStreak, event.target.value.trim(), 1, 100, '5')} />
             </div>
 
@@ -498,9 +495,8 @@ export function SettingOps() {
                 </div>
                 <Switch checked={boolValue(SettingKey.MetricsAuth)}
                     onCheckedChange={(checked) => {
-                        setMetricsAuth(checked);
                         setRevealed('');
-                        setValues((prev) => ({ ...prev, [SettingKey.MetricsAuth]: checked ? 'bearer' : 'off' }));
+                        setDraft((prev) => ({ ...prev, [SettingKey.MetricsAuth]: checked ? 'bearer' : 'off' }));
                         save(SettingKey.MetricsAuth, checked ? 'bearer' : 'off');
                     }} />
             </div>

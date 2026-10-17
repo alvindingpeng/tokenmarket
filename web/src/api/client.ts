@@ -15,6 +15,8 @@ type RequestOptions = {
     body?: unknown;
     dispatchUnauthorized?: boolean;
     signal?: AbortSignal;
+    // timeoutMs 覆盖默认超时; 少数服务端会去探测上游的接口(拉模型列表/健康检查/备份)需要放宽。
+    timeoutMs?: number;
 };
 
 export class ApiError extends Error {
@@ -29,6 +31,10 @@ export class ApiError extends Error {
 
 export const apiUnauthorizedEvent = 'api:unauthorized';
 
+// apiTimeoutMs 单次请求的兜底超时。上游卡住时让调用方拿到明确失败,
+// 而不是一个永远转圈、按钮永久 pending 的加载态。
+const apiTimeoutMs = 20000;
+
 let apiKey: string | null = null;
 
 export function setAPIKey(value: string | null) {
@@ -40,13 +46,34 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     const headers = new Headers(options.body === undefined ? undefined : { 'Content-Type': 'application/json' });
     if (apiKey) headers.set('Authorization', `Bearer ${apiKey}`);
 
-    const response = await fetch(new URL(`.${path}`, document.baseURI), {
-        method: options.method ?? 'GET',
-        headers,
-        body: options.body === undefined ? undefined : JSON.stringify(options.body),
-        credentials: 'include',
-        signal: options.signal,
-    });
+    // 超时与调用方取消合并到一个 controller: 谁先触发谁生效。
+    // 不用 AbortSignal.any: 兼容性更稳, 也便于区分「超时」与「调用方主动取消」。
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = globalThis.setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+    }, options.timeoutMs ?? apiTimeoutMs);
+    const forwardAbort = () => controller.abort();
+    options.signal?.addEventListener('abort', forwardAbort, { once: true });
+    if (options.signal?.aborted) controller.abort();
+
+    let response: Response;
+    try {
+        response = await fetch(new URL(`.${path}`, document.baseURI), {
+            method: options.method ?? 'GET',
+            headers,
+            body: options.body === undefined ? undefined : JSON.stringify(options.body),
+            credentials: 'include',
+            signal: controller.signal,
+        });
+    } catch (error) {
+        if (timedOut) throw new ApiError(408, 'Request timed out');
+        throw error; // 调用方取消(如组件卸载)保持原样抛出, 由上层忽略
+    } finally {
+        globalThis.clearTimeout(timer);
+        options.signal?.removeEventListener('abort', forwardAbort);
+    }
     const data = await response.json().catch(() => null) as { message?: string; data?: T } | null;
     if (!response.ok) {
         if (response.status === 401 && options.dispatchUnauthorized !== false && typeof window !== 'undefined') {

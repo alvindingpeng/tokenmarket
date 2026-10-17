@@ -20,7 +20,8 @@ export function FormKeys({ state, setState }: {
 }) {
     const t = useTranslations('channel.form');
     const { probe, pendingKey } = useModelProbe();
-    const [editing, setEditing] = useState<number | null>(null);
+    // editing 用凭据名而不是下标定位: 名字是渠道内唯一标识, 删除其他行时不会错位到别的凭据上。
+    const [editing, setEditing] = useState<string | null>(null);
     const [draft, setDraft] = useState({ name: '', key: '' });
 
     const renameGrants = (from: string, to: string) => {
@@ -35,23 +36,23 @@ export function FormKeys({ state, setState }: {
         return grants;
     };
 
-    const commit = (index: number) => {
+    const commit = (current: string) => {
         const name = draft.name.trim();
-        if (!name || state.keys.some((k, i) => i !== index && k.name === name)) return;
-        const previous = state.keys[index].name;
+        if (!name || state.keys.some((k) => k.name === name && k.name !== current)) return;
         setState({
             ...state,
-            keys: state.keys.map((k, i) => (i === index ? { ...k, name, key: draft.key.trim() } : k)),
-            grants: name === previous ? state.grants : renameGrants(previous, name),
+            keys: state.keys.map((k) => (k.name === current ? { ...k, name, key: draft.key.trim() } : k)),
+            grants: name === current ? state.grants : renameGrants(current, name),
         });
         setEditing(null);
     };
 
-    const remove = (index: number) => {
-        const removed = state.keys[index].name;
+    const remove = (name: string) => {
         const grants = new Map(state.grants);
-        for (const modelName of state.models) grants.delete(grantKey(modelName, removed));
-        setState({ ...state, keys: state.keys.filter((_, i) => i !== index), grants });
+        for (const modelName of state.models) grants.delete(grantKey(modelName, name));
+        setState({ ...state, keys: state.keys.filter((k) => k.name !== name), grants });
+        // 删掉的正好是正在编辑的那一行时退出编辑态, 否则保留原编辑目标。
+        setEditing((current) => (current === name ? null : current));
     };
 
     const grantCount = (keyName: string) =>
@@ -63,7 +64,7 @@ export function FormKeys({ state, setState }: {
         while (state.keys.some((k) => k.name === `key-${n}`)) n += 1;
         setState({ ...state, keys: [...state.keys, { name: `key-${n}`, key: '', enabled: true }] });
         setDraft({ name: `key-${n}`, key: '' });
-        setEditing(state.keys.length);
+        setEditing(`key-${n}`);
     };
 
     return (
@@ -77,8 +78,8 @@ export function FormKeys({ state, setState }: {
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-2">
-                {state.keys.map((channelKey, index) => editing === index ? (
-                    <div key={index} className="flex items-center gap-2 rounded-xl border border-border p-2">
+                {state.keys.map((channelKey) => editing === channelKey.name ? (
+                    <div key={channelKey.name} className="flex items-center gap-2 rounded-xl border border-border p-2">
                         <Input
                             value={draft.name}
                             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
@@ -92,7 +93,7 @@ export function FormKeys({ state, setState }: {
                             className="rounded-lg h-9 flex-1"
                         />
                         <IconButton
-                            onClick={() => commit(index)}
+                            onClick={() => commit(channelKey.name)}
                             disabled={!draft.name.trim()}
                             className="size-9"
                             tip={t('save')}
@@ -101,7 +102,7 @@ export function FormKeys({ state, setState }: {
                         </IconButton>
                     </div>
                 ) : (
-                    <div key={index} className="flex items-center gap-3 rounded-xl border border-border px-3 py-2">
+                    <div key={channelKey.name} className="flex items-center gap-3 rounded-xl border border-border px-3 py-2">
                         <span className="text-sm font-medium truncate w-32">{channelKey.name}</span>
                         <span className="text-xs font-mono text-muted-foreground flex-1 truncate">
                             {channelKey.key ? maskKey(channelKey.key) : t('keyEmpty')}
@@ -114,7 +115,7 @@ export function FormKeys({ state, setState }: {
                             checked={channelKey.enabled}
                             onCheckedChange={(checked) => setState({
                                 ...state,
-                                keys: state.keys.map((k, i) => (i === index ? { ...k, enabled: checked } : k)),
+                                keys: state.keys.map((k) => (k.name === channelKey.name ? { ...k, enabled: checked } : k)),
                             })}
                         />
                         {/* 逐条凭据探测: 各凭据在上游被授权的模型不同, 需按凭据分别取回。 */}
@@ -127,14 +128,14 @@ export function FormKeys({ state, setState }: {
                             <RefreshCw className={`size-4 ${pendingKey === channelKey.name ? 'animate-spin' : ''}`} />
                         </IconButton>
                         <IconButton
-                            onClick={() => { setDraft({ name: channelKey.name, key: channelKey.key }); setEditing(index); }}
+                            onClick={() => { setDraft({ name: channelKey.name, key: channelKey.key }); setEditing(channelKey.name); }}
                             className="size-8"
                             tip={t('edit')}
                         >
                             <Pencil className="size-4" />
                         </IconButton>
                         <IconButton
-                            onClick={() => remove(index)}
+                            onClick={() => remove(channelKey.name)}
                             className="size-8 hover:text-destructive"
                             tip={t('delete')}
                         >

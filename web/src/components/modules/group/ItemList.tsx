@@ -77,6 +77,8 @@ function MemberItem({
     const { Icon, className: iconClassName } = getModelIcon(member.name);
     const [confirmDelete, setConfirmDelete] = useState(false);
     const isDisabled = member.enabled === false;
+    // dragging 提前取出: 只在 JSX 里读一次, 避免多处重复访问 DnD 句柄。
+    const dragging = dnd.isDragging;
 
     return (
         <div
@@ -91,8 +93,8 @@ function MemberItem({
             style={{
                 /* eslint-disable-next-line react-hooks/refs */
                 ...(dnd.draggableProps?.style ?? {}),
-                /* eslint-disable-next-line react-hooks/refs */
-                ...(dnd.isDragging ? { zIndex: 50, boxShadow: '0 8px 32px rgba(0,0,0,0.15)' } : null),
+                // eslint-disable-next-line react-hooks/refs -- 拖拽浮起的样式必须跟随 DnD 句柄状态
+                ...(dragging ? { zIndex: 50, boxShadow: '0 8px 32px rgba(0,0,0,0.15)' } : null),
             }}
         >
             <div className={cn(
@@ -160,7 +162,8 @@ function MemberItem({
                 {!group && (
                     <>
                         <IconButton
-                            disabled={index === 0 || isRemoving || dnd.isDragging}
+                            // eslint-disable-next-line react-hooks/refs -- 拖拽期间禁用排序按钮, 状态来自 DnD 句柄
+                            disabled={index === 0 || isRemoving || dragging}
                             onClick={(event) => {
                                 event.stopPropagation();
                                 onReorder(reorderList(members, index, 0));
@@ -170,7 +173,8 @@ function MemberItem({
                             <ArrowUp className="size-3" />
                         </IconButton>
                         <IconButton
-                            disabled={index === members.length - 1 || isRemoving || dnd.isDragging}
+                            // eslint-disable-next-line react-hooks/refs -- 拖拽期间禁用排序按钮, 状态来自 DnD 句柄
+                            disabled={index === members.length - 1 || isRemoving || dragging}
                             onClick={(event) => {
                                 event.stopPropagation();
                                 onReorder(reorderList(members, index, members.length - 1));

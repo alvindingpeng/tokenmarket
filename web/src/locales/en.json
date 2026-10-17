@@ -1,4 +1,10 @@
 {
+    "errorBoundary": {
+        "title": "This view hit an error",
+        "description": "Something went wrong while rendering. Your data is intact - retry, or reload the page.",
+        "retry": "Retry",
+        "reload": "Reload"
+    },
     "login": {
         "username": "Username",
         "usernamePlaceholder": "Enter your username",

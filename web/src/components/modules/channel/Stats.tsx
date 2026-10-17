@@ -21,7 +21,7 @@ import { snapdom } from '@zumer/snapdom';
 import { toast } from 'sonner';
 import { useTranslations } from 'use-intl';
 import { type ChannelStatsFormatted, useChannelDailyStats, useDeleteChannel, useResetChannelBreaker } from '@/api/channel';
-import { formatStatsMetrics, type StatsMetricsFormatted } from '@/api/stats';
+import { type StatsMetricsFormatted } from '@/api/stats';
 import { formatTime } from '@/lib/utils';
 import { useMorphingDialog } from '@/components/ui/morphing-dialog';
 

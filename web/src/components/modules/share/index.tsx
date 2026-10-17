@@ -32,6 +32,22 @@ import {
 // 金额展示: 计费金额可能极小(不足 0.001), 截断尾零并最多保留 6 位小数(实现见 lib/money)。
 const formatMoney = formatPlainMoney;
 
+// EMPTY_LISTINGS 作为稳定的空数组占位: 直接写 `data ?? []` 会在每次渲染生成新引用,
+// 让依赖 rows 的 useMemo 全部失效(等于每次渲染都重算整张价表)。
+const EMPTY_LISTINGS: ChannelModelListing[] = [];
+
+// unpriced 判定沿用后端口径: 四价全 0 且无媒体价(每张/每条/每秒/分档)即未定价。
+// 媒体模型(生图按每张价, 生视频按每条价 + 每秒价)以媒体价为准, 四类 token 价可以保持 0。
+// 放模块作用域: 纯函数, 提到组件外才能安全地进 useMemo 依赖表。
+function hasMediaPrice(row: ChannelModelListing): boolean {
+    const media = row.media_supply ?? {};
+    return !!(media.per_image || media.per_video || media.per_second || (media.resolution && Object.values(media.resolution).some((v) => v > 0)));
+}
+
+function isUnpriced(row: ChannelModelListing): boolean {
+    return !row.supply_price.input && !row.supply_price.output && !row.supply_price.cache_read && !row.supply_price.cache_write && !hasMediaPrice(row);
+}
+
 // ListingRows 渠道模型改价工作台: 搜索与筛选定位模型, 勾选上架并按四类单价设置供货价。
 // 除供货价外同时展示"用户价"(供货价 × (1 + 上浮比例)), 让改价的人当场看到用户实际付多少,
 // 而不必只盯着自己的收入口径估算。已上架但四价全 0 的行由后端拒绝, 这里提前标红并拦住保存。
@@ -45,7 +61,7 @@ function ListingRows({ channelID }: { channelID: number }) {
     const [draft, setDraft] = useState<ChannelModelListing[] | null>(null);
     const [keyword, setKeyword] = useState('');
     const [filter, setFilter] = useState<'all' | 'listed' | 'unlisted' | 'unpriced'>('all');
-    const rows = draft ?? data ?? [];
+    const rows = draft ?? data ?? EMPTY_LISTINGS;
     // 参考价来自全局价格表(models.dev 自动同步 + 管理员维护), 用于上架定价快速预填。
     const { data: refModels } = useModelList();
     const refPrices = useMemo(() => {
@@ -58,15 +74,6 @@ function ListingRows({ channelID }: { channelID: number }) {
         }));
         return map;
     }, [refModels]);
-
-    // unpriced 判定沿用后端口径: 四价全 0 且无媒体价(每张/每条/每秒/分档)即未定价。
-    // 媒体模型(生图按每张价, 生视频按每条价 + 每秒价)以媒体价为准, 四类 token 价可以保持 0。
-    const hasMediaPrice = (row: ChannelModelListing) => {
-        const media = row.media_supply ?? {};
-        return !!(media.per_image || media.per_video || media.per_second || (media.resolution && Object.values(media.resolution).some((v) => v > 0)));
-    };
-    const isUnpriced = (row: ChannelModelListing) =>
-        !row.supply_price.input && !row.supply_price.output && !row.supply_price.cache_read && !row.supply_price.cache_write && !hasMediaPrice(row);
 
     // visible 是筛选后的展示集, 但保存仍提交全量 rows —— 筛选只是视图, 不能成为漏改价格的原因。
     const visible = useMemo(() => {

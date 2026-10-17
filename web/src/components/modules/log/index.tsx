@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useTranslations } from 'use-intl';
-import { ChevronLeft, ChevronRight, Download, Loader2, Logs, RefreshCw, Search, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Loader2, Logs, Search, X } from 'lucide-react';
 import { logExportUrl, useLogList, useLogs } from '@/api/log';
 import { VirtualizedGrid } from '@/components/common/VirtualizedGrid';
 import { LogCard } from './Item';
@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { cn } from '@/lib/utils';
 
 // PAGE_SIZE 历史日志每页条数。
 const PAGE_SIZE = 20;

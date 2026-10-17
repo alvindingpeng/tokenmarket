@@ -1,4 +1,10 @@
 {
+    "errorBoundary": {
+        "title": "這個介面出了點問題",
+        "description": "渲染時發生異常, 資料沒有遺失。可以重試, 或重新載入頁面。",
+        "retry": "重試",
+        "reload": "重新載入"
+    },
     "login": {
         "username": "使用者名稱",
         "usernamePlaceholder": "請輸入使用者名稱",
