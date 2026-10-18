@@ -136,7 +136,9 @@ func login(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, resp.ErrInternalServer)
 		return
 	}
-	c.SetCookie("auth", token, maxAge, "/", "", false, true)
+	// Secure 跟随实际协议: 上了 TLS 就只允许 HTTPS 回传, 隧道/内网 http 访问则保持可用。
+	// 恒为 false 会让会话 cookie 在明文链路上也能被读走, 恒为 true 又会让 http 访问直接登不上。
+	c.SetCookie("auth", token, maxAge, "/", "", requestIsHTTPS(c), true)
 	resp.Success(c, account.View())
 }
 
