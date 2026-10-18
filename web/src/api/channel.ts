@@ -89,6 +89,8 @@ export type ChannelModelStats = StatsMetrics & {
     model_id: number;
     model_name: string;
     error_count?: number;
+    // breaker_trips 是自上次成功以来累计熔断的次数, 熔断时长按它翻倍, 成功即清零。
+    breaker_trips?: number;
     last_error_at?: string | null;
     disabled_until?: string | null;
 };
@@ -138,6 +140,7 @@ export type ChannelModelStatsFormatted = {
     model_id: number;
     model_name: string;
     error_count: number;
+    breakerTrips: number;
     disabledUntil: string | null;
     lastErrorAt: string | null;
     formatted: StatsMetricsFormatted;
@@ -209,6 +212,7 @@ const channelStatsFormattedQueryOptions = queryOptions({
             model_id: channelModel.model_id,
             model_name: channelModel.model_name,
             error_count: channelModel.error_count ?? 0,
+            breakerTrips: channelModel.breaker_trips ?? 0,
             disabledUntil: channelModel.disabled_until ?? null,
             lastErrorAt: channelModel.last_error_at ?? null,
             formatted: formatStatsMetrics(channelModel),

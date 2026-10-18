@@ -401,9 +401,6 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					// 超时与响应返回同时发生时舍弃尚未提交的流结果, 避免把超时误记为成功。
 					if result != nil && result.events != nil {
 						result.events.Close()
-						if result.closeIdle != nil {
-							result.closeIdle()
-						}
 					}
 				}
 			}
@@ -518,9 +515,6 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				settleUpstream(upstreamReservation, upstreamScopes, result.usage)
 				if result.events != nil {
 					result.events.Close()
-				}
-				if result.closeIdle != nil {
-					result.closeIdle()
 				}
 				cancelRound()
 				request.finishRound(ctx.Err().Error(), attemptStatusOf(ctx.Err()))
@@ -638,10 +632,6 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			}
 			request.finishStream()
 			result.events.Close()
-			// 事件流已读完, 渠道专用代理的独占连接池到此归还。
-			if result.closeIdle != nil {
-				result.closeIdle()
-			}
 			cancelRound()
 			// 使用客户端协议转换器聚合已转发事件, 统一取得最终响应正文和用量。
 			responseBody, meta, aggregateErr := inbound.AggregateStreamChunks(context.WithoutCancel(ctx), chunks)

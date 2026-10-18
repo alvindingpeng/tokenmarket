@@ -35,13 +35,10 @@ func ForwardVideoTask(deleteTask bool) gin.HandlerFunc {
 			rejectVideoTask(c, http.StatusServiceUnavailable, err.Error())
 			return
 		}
-		httpClient, closeIdle, err := resolveUpstreamClient(channel)
+		httpClient, err := resolveUpstreamClient(channel)
 		if err != nil {
 			rejectVideoTask(c, http.StatusBadGateway, err.Error())
 			return
-		}
-		if closeIdle != nil {
-			defer closeIdle()
 		}
 		response, err := httpclient.NewHttpClientWithClient(httpClient).Do(c.Request.Context(), request)
 		if err != nil {
