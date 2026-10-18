@@ -65,8 +65,10 @@ func rechargeCallbackBase(c *gin.Context) string {
 	if configured, _ := op.SettingGetString(model.SettingKeyRechargeNotifyBase); strings.TrimSpace(configured) != "" {
 		return strings.TrimRight(strings.TrimSpace(configured), "/")
 	}
+	// 与登录 cookie 共用同一套协议判定: 转发头只在可信代理下采信,
+	// 否则调用方自己填一个 X-Forwarded-Proto 就能把支付回调地址指到任意地方。
 	scheme := "http"
-	if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+	if requestIsHTTPS(c) {
 		scheme = "https"
 	}
 	return scheme + "://" + c.Request.Host

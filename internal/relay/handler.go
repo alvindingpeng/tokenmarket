@@ -162,12 +162,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		if parsed, parseErr := inbound.TransformRequest(c.Request.Context(), raw); parseErr == nil {
 			reasoningEffort = parsed.ReasoningEffort
 		}
+		// 调用方 IP 一律走 c.ClientIP(): 它按 server.trusted_proxies 从右往左跳过可信代理,
+		// 取第一个不可信地址。自己解析 X-Forwarded-For 第一段是不安全的 —— 调用方可以随便填一个,
+		// 于是审计里的 client_ip 想写什么就是什么, 按 IP 的限流也能被绕过。
 		clientIP := c.ClientIP()
-		if forwarded := c.GetHeader("X-Forwarded-For"); forwarded != "" {
-			if first := strings.SplitN(forwarded, ",", 2)[0]; strings.TrimSpace(first) != "" {
-				clientIP = strings.TrimSpace(first)
-			}
-		}
 		// 国家码只采信可信反代注入的头: 无边缘接入时这些头可被任意伪造, 采信等于把统计口径交给调用方。
 		clientCountry := geo.HeaderCountry(c.GetHeader, len(conf.AppConfig.Server.TrustedProxies) > 0)
 		request := newRequestState(c.Request.Context(), metadata.Model, reasoningEffort, group.ID, requestProtocol, bodyForLog, c.GetInt("api_key_id"), keyUserID, clientIP, clientCountry, group.RelayConfig.RequestTimeoutSeconds)
@@ -606,6 +604,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			if c.Writer.Header().Get("Content-Type") == "" {
 				c.Header("Content-Type", "text/event-stream")
 			}
+			// 告诉反向代理不要攒缓冲: nginx 默认 proxy_buffering on, 会把流式响应整段攒住,
+			// 客户端表现为"卡很久然后一次性吐完", 流式等于失效。日志流接口已设过同样的头。
+			c.Header("X-Accel-Buffering", "no")
+			c.Header("Cache-Control", "no-cache")
 			var encoded bytes.Buffer
 			var chunks []*httpclient.StreamEvent
 			event := result.first
