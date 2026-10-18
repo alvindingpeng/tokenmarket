@@ -1409,8 +1409,22 @@
             "backup": "備份",
             "archive": "日誌歸檔",
             "health": "渠道健康",
-            "alerts": "告警記錄"
+            "alerts": "告警記錄",
+            "latency": "延遲歸因"
         },
+        "latency": {
+            "desc": "首字節 = 建連(DNS/建連/TLS) + 上游等待。上游等待偏高說明該換上游渠道; 建連與 TLS 偏高說明該加出口或走邊緣接入。只統計拿到首字節的請求, 復用連接的請求建連列顯示 0。",
+            "channel": "渠道",
+            "country": "地區",
+            "countryUnknown": "未標註",
+            "requests": "請求數",
+            "reused": "復用率",
+            "ttfb": "首字節",
+            "connect": "建連",
+            "tls": "TLS",
+            "upstreamWait": "上游等待"
+        },
+
         "reconcile": {
             "desc": "每日自動核對計費明細與預扣結算; 對帳差異與備份/歸檔失敗會自動產生告警並推送 Webhook。",
             "day": "日期",

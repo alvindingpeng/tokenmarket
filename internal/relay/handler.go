@@ -13,9 +13,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alvindingpeng/switchyard/internal/conf"
+	"github.com/alvindingpeng/switchyard/internal/geo"
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/ratelimit"
+	"github.com/alvindingpeng/switchyard/internal/rhttp"
 	"github.com/gin-contrib/sse"
 	"github.com/gin-gonic/gin"
 	"github.com/looplj/axonhub/llm"
@@ -165,7 +168,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				clientIP = strings.TrimSpace(first)
 			}
 		}
-		request := newRequestState(c.Request.Context(), metadata.Model, reasoningEffort, group.ID, requestProtocol, bodyForLog, c.GetInt("api_key_id"), keyUserID, clientIP, group.RelayConfig.RequestTimeoutSeconds)
+		// 国家码只采信可信反代注入的头: 无边缘接入时这些头可被任意伪造, 采信等于把统计口径交给调用方。
+		clientCountry := geo.HeaderCountry(c.GetHeader, len(conf.AppConfig.Server.TrustedProxies) > 0)
+		request := newRequestState(c.Request.Context(), metadata.Model, reasoningEffort, group.ID, requestProtocol, bodyForLog, c.GetInt("api_key_id"), keyUserID, clientIP, clientCountry, group.RelayConfig.RequestTimeoutSeconds)
 		request.setRateScopes(userScopes, userDecision.Reservation)
 		// 生视频的计费用量来自请求本身(seconds 与分辨率档位), 预扣与结算回落都用它;
 		// 其余协议的请求没有媒体用量, 保持零值。
@@ -326,6 +331,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 
 			// 为本轮上游调用建立独立取消入口并登记当前目标; 取消原因用于区分人工中止与响应超时。
 			roundCtx, cancelRoundCause := context.WithCancelCause(ctx)
+			// 采集本轮上游连接的阶段耗时。挂在 ctx 上后, 同协议透传与跨协议转换两条路径都会回填:
+			// 前者走 client.Do, 后者走 pipeline, 都使用这个 ctx 发起请求。
+			roundTiming := &rhttp.ConnTiming{}
+			roundCtx = rhttp.WithTiming(roundCtx, roundTiming)
 			// 人工中止和本轮完成都使用普通 canceled 原因, 超时回调则写入具体的超时错误。
 			cancelRound := func() {
 				cancelRoundCause(context.Canceled)
@@ -398,6 +407,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					}
 				}
 			}
+
+			// 上游调用一结束就取快照并登记: 失败轮次同样要留下建连耗时,
+			// 否则统计里只剩成功轮次的数据, 会把"连不上"的慢完全隐藏掉。
+			request.setRoundTiming(roundTiming.Snapshot())
 
 			if err != nil {
 				// 按错误分类决定重试/换渠道/透传: 语义(code/type/文本)优先、状态码兜底, 规则见 upstream_error.go。

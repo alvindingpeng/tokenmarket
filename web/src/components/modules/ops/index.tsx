@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useTranslations } from 'use-intl';
-import { Archive, DatabaseBackup, HeartPulse, RefreshCw, Scale, ShieldAlert, Wallet } from 'lucide-react';
+import { Archive, DatabaseBackup, Gauge, HeartPulse, RefreshCw, Scale, ShieldAlert, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,8 +9,8 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import {
     useArchives, useBackups, useBalanceFlow, useChannelAlerts, useChannelHealth,
-    useOpsOverview, useReconcileList, useRunBackup, useRunHealthCheck, useRunLogLifecycle, useRunReconcile,
-    type BalanceFlow, type ChannelAlert, type ChannelHealth, type ReconcileRow,
+    useLatencyBreakdown, useOpsOverview, useReconcileList, useRunBackup, useRunHealthCheck, useRunLogLifecycle, useRunReconcile,
+    type BalanceFlow, type ChannelAlert, type ChannelHealth, type LatencyRow, type ReconcileRow,
 } from '@/api/ops';
 
 // formatTime 把 RFC3339 时间转成本地展示, 无效值原样返回。
@@ -111,6 +111,7 @@ const TABS = [
     { id: 'archive', icon: Archive },
     { id: 'health', icon: HeartPulse },
     { id: 'alerts', icon: ShieldAlert },
+    { id: 'latency', icon: Gauge },
 ] as const;
 
 // Ops 运维中心: 对账/流水/备份/归档/健康/告警六个页签, 全部管理员可见。
@@ -144,6 +145,7 @@ export default function Ops() {
                 {tab === 'archive' && <ArchiveSection />}
                 {tab === 'health' && <HealthSection />}
                 {tab === 'alerts' && <AlertsSection />}
+                {tab === 'latency' && <LatencySection />}
             </div>
         </div>
     );
@@ -355,6 +357,57 @@ function HealthSection() {
                 <div className='rounded-3xl border border-border bg-card p-10 text-center text-sm text-muted-foreground'>{t('loadFailed')}</div>
             ) : (
                 <OpsTable columns={columns} rows={data ?? []} empty={isLoading ? t('loading') : t('empty')} rowKey={(row) => String(row.id)} />
+            )}
+        </div>
+    );
+}
+
+// pair 把一对分位值渲染成 "p50 / p95"; 单位在表头标注, 单元格只放数字便于横向比较。
+function pair(value: { p50_ms: number; p95_ms: number }): string {
+    return value.p50_ms + ' / ' + value.p95_ms;
+}
+
+// LatencySection 延迟归因: 把首字节耗时拆成建连各段与上游等待, 用于判断瓶颈在自家出口还是上游渠道。
+// 复用率单列是必要的: 复用连接的请求建连列必然为 0, 不标出复用率, 这些 0 会被读成"建连极快"。
+function LatencySection() {
+    const t = useTranslations('ops');
+    const [days, setDays] = useState('7');
+    const { data, isLoading, isError, refetch, isRefetching } = useLatencyBreakdown(Number(days));
+    const columns: Col<LatencyRow>[] = [
+        { key: 'channel', label: t('latency.channel'), render: (row) => (
+            <span className='block max-w-56 truncate' title={row.channel_key || row.channel_code}>
+                {row.channel_key || (row.channel_code ? '#' + row.channel_code : '-')}
+            </span>
+        ) },
+        { key: 'country', label: t('latency.country'), render: (row) => row.country || t('latency.countryUnknown') },
+        { key: 'requests', label: t('latency.requests') },
+        { key: 'reused', label: t('latency.reused'), render: (row) => (row.reused_rate * 100).toFixed(0) + '%' },
+        { key: 'ttfb', label: t('latency.ttfb') + ' p50/p95', render: (row) => pair(row.ttfb) + ' ms' },
+        { key: 'connect', label: t('latency.connect') + ' p50/p95', render: (row) => pair(row.connect) + ' ms' },
+        { key: 'tls', label: t('latency.tls') + ' p50/p95', render: (row) => pair(row.tls) + ' ms' },
+        { key: 'upstreamWait', label: t('latency.upstreamWait') + ' p50/p95', render: (row) => pair(row.upstream_wait) + ' ms' },
+    ];
+    return (
+        <div className='space-y-3'>
+            <div className='flex flex-wrap items-center justify-between gap-3'>
+                <p className='max-w-3xl text-sm text-muted-foreground'>{t('latency.desc')}</p>
+                <div className='flex items-center gap-2'>
+                    <Select value={days} onValueChange={setDays}>
+                        <SelectTrigger className='h-9 w-32 rounded-xl'><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value='1'>{t('reconcile.days1')}</SelectItem>
+                            <SelectItem value='3'>{t('reconcile.days3')}</SelectItem>
+                            <SelectItem value='7'>{t('reconcile.days7')}</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <RefreshButton onClick={() => void refetch()} busy={isRefetching} label={t('refresh')} />
+                </div>
+            </div>
+            {isError ? (
+                <div className='rounded-3xl border border-border bg-card p-10 text-center text-sm text-muted-foreground'>{t('loadFailed')}</div>
+            ) : (
+                <OpsTable columns={columns} rows={data ?? []} empty={isLoading ? t('loading') : t('empty')}
+                    rowKey={(row) => row.channel_code + '|' + row.country} />
             )}
         </div>
     );

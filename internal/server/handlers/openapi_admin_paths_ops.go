@@ -145,6 +145,12 @@ func openAPIAdminPathsOps() gin.H {
 				"近 24 小时的请求、成功、失败、token 与成本, 加上当前在途请求数、渠道总数与启用数、24 小时内告警数。控制台首页轮询这一条。", "",
 				adminItem("概览", "OpsOverview"), false),
 		},
+		"/api/v1/ops/latency": gin.H{
+			"get": adminPath("ops", "延迟归因",
+				"按渠道与调用方国家给出首字节、DNS、建连、TLS 与上游等待的分位(毫秒)。upstream_wait 是首字节减去建连各段后的剩余, 用于判断瓶颈在自家出口还是上游。", "",
+				itemsArray("延迟归因", "LatencyBreakdownRow"), false,
+				intQuery("days", "回溯天数", 7)),
+		},
 		"/api/v1/ops/balance-flow": gin.H{
 			"get": adminPath("ops", "余额变动时间线",
 				"对账用的余额流水视图; 管理员可用 user_id 查他人, 其余固定查自己。", "",

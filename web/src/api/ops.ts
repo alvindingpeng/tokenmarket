@@ -45,6 +45,19 @@ export type LifecycleResult = {
 
 export type BackupResult = { file: string; size: number; verified: boolean; pruned: number };
 
+// LatencyPercentiles 一对分位值, 单位毫秒。
+export type LatencyPercentiles = { p50_ms: number; p95_ms: number };
+
+// LatencyRow 是按「渠道 × 调用方国家」聚合的延迟分解。
+// upstream_wait 是首字节减去 DNS/建连/TLS 后的剩余, 即上游自己排队的时间:
+// 它偏高说明该换上游渠道, connect/tls 偏高说明该加出口或走边缘接入。
+export type LatencyRow = {
+    channel_code: string; channel_key: string; country: string;
+    requests: number; reused_rate: number;
+    ttfb: LatencyPercentiles; dns: LatencyPercentiles; connect: LatencyPercentiles;
+    tls: LatencyPercentiles; upstream_wait: LatencyPercentiles;
+};
+
 export type OpsOverview = {
     requests_24h: number; success_24h: number; failed_24h: number;
     input_tokens_24h: number; output_tokens_24h: number; cost_24h: number;
@@ -84,6 +97,15 @@ export function useBalanceFlow(userId?: number, limit = 100) {
             if (userId) url += '&user_id=' + userId;
             return apiRequest<{ items: BalanceFlow[] }>(url).then(r => r.items);
         },
+    });
+}
+
+// useLatencyBreakdown 拉取延迟归因, 窗口按天; 归因是排查动作, 不必高频刷新。
+export function useLatencyBreakdown(days = 7) {
+    return useQuery({
+        queryKey: ['ops', 'latency', days],
+        queryFn: () => apiRequest<{ days: number; rows: LatencyRow[] }>('/api/v1/ops/latency?days=' + days).then(r => r.rows),
+        refetchInterval: POLL_SLOW,
     });
 }
 
