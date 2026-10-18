@@ -35,7 +35,13 @@ func ForwardVideoTask(deleteTask bool) gin.HandlerFunc {
 			rejectVideoTask(c, http.StatusServiceUnavailable, err.Error())
 			return
 		}
-		httpClient, err := resolveUpstreamClient(channel)
+		// 视频任务同样走出口池: 它是一次普通的上游调用, 没有理由绕过出口择优。
+		egress, _, egressErr := pickEgress(channel, "")
+		if egressErr != nil {
+			rejectVideoTask(c, http.StatusBadGateway, egressErr.Error())
+			return
+		}
+		httpClient, err := resolveUpstreamClient(channel, egress)
 		if err != nil {
 			rejectVideoTask(c, http.StatusBadGateway, err.Error())
 			return

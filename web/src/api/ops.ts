@@ -53,6 +53,7 @@ export type LatencyPercentiles = { p50_ms: number; p95_ms: number };
 // 它偏高说明该换上游渠道, connect/tls 偏高说明该加出口或走边缘接入。
 export type LatencyRow = {
     channel_code: string; channel_key: string; country: string;
+    egress_id: number; egress_name: string; // 出口池里的出口; 0 表示未走出口池。
     requests: number; reused_rate: number;
     ttfb: LatencyPercentiles; dns: LatencyPercentiles; connect: LatencyPercentiles;
     tls: LatencyPercentiles; upstream_wait: LatencyPercentiles;

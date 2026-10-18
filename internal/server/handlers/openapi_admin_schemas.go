@@ -77,6 +77,16 @@ func openAPIAdminSchemas() gin.H {
 			"disabled_until": gin.H{"type": "string", "format": "date-time", "nullable": true, "description": "故障熔断的自动禁用截止时间; 未熔断为 null"},
 		}),
 
+		"ChannelEgress": object(gin.H{
+			"id":      fieldNumber("integer", "出口主键; 提交时忽略, 后端按名称匹配已有出口"),
+			"name":    fieldString("出口名称, 在渠道内唯一, 也是整体替换时的匹配依据"),
+			"kind":    gin.H{"type": "string", "enum": []string{"direct", "http", "socks5"}, "description": "接入方式; direct 时 url 恒为空"},
+			"url":     fieldString("代理地址; kind=http 时 http/https, kind=socks5 时 socks5/socks5h, kind=direct 时留空"),
+			"region":  fieldString("出口所在地区码(如 HK), 用于区域亲和; 留空表示不参与匹配"),
+			"weight":  fieldNumber("integer", "同分时的优先权重, 数值越大越先被选中; 也是冷出口的采样顺序"),
+			"enabled": fieldBool("停用后不参与选路但保留配置"),
+		}, "name", "kind"),
+
 		"ChannelGrantConfig": object(gin.H{
 			"model_name": fieldString("渠道模型名称, 按名称引用"),
 			"key_name":   fieldString("渠道凭据名称, 按名称引用"),
@@ -86,10 +96,11 @@ func openAPIAdminSchemas() gin.H {
 		// ChannelDetail 匿名嵌入 ChannelConfig, JSON 里是展平的: name、base_url 等字段直接落在这一层,
 		// 不是嵌在一个 config 对象下, 与 ChannelDetail 的读写同构语义一致。
 		"ChannelDetail": object(withChannelConfig(gin.H{
-			"id":     fieldNumber("integer", "渠道主键; 创建时提交 0 由数据库分配"),
-			"keys":   gin.H{"type": "array", "items": ref("ChannelKeyConfig"), "description": "渠道下的上游凭据, 恒为数组"},
-			"models": gin.H{"type": "array", "items": gin.H{"type": "string"}, "description": "渠道提供的上游模型名称"},
-			"grants": gin.H{"type": "array", "items": ref("ChannelGrantConfig"), "description": "渠道下的授权"},
+			"id":       fieldNumber("integer", "渠道主键; 创建时提交 0 由数据库分配"),
+			"keys":     gin.H{"type": "array", "items": ref("ChannelKeyConfig"), "description": "渠道下的上游凭据, 恒为数组"},
+			"egresses": gin.H{"type": "array", "items": ref("ChannelEgress"), "description": "渠道的出口池, 恒为数组; 留空则沿用渠道自身的代理配置"},
+			"models":   gin.H{"type": "array", "items": gin.H{"type": "string"}, "description": "渠道提供的上游模型名称"},
+			"grants":   gin.H{"type": "array", "items": ref("ChannelGrantConfig"), "description": "渠道下的授权"},
 		})),
 
 		"ChannelFetchModelRequest": object(gin.H{

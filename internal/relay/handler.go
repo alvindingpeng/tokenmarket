@@ -348,6 +348,24 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				request.setMediaTarget(channelModel.Kind, channelModel.MediaSupply, grant.ID)
 			}
 
+			// 出口池: 渠道配了出口就按实测耗时择优, 没配则 egress 为零值, 沿用渠道自身的代理配置。
+			// 选择在每轮独立进行, 因此某轮失败后下一轮可能换到另一个出口, 与成员换路是同一套节奏。
+			egress, _, egressErr := pickEgress(channel, request.ClientCountry)
+			if egressErr != nil {
+				// 配了出口却一个都没启用属于配置错误: 换成员也不会好, 直接结束并说明原因,
+				// 而不是悄悄直连 —— 那会让流量从管理员明确停用的线路出去。
+				request.markFailed(egressErr, "", nil)
+				cancelRound()
+				releaseRouteProbe(group, item.ID)
+				stop(egressErr, http.StatusBadGateway)
+				return
+			}
+			request.setRoundEgress(egress)
+			if egress.ID != 0 {
+				// 出口选择登记为一条路由事件: 排查"这轮为什么慢"时要能看出走的是哪条线路。
+				request.addRouteEvent("dispatch", "egress:"+egress.Name)
+			}
+
 			// 上游侧限流: 每次实际尝试独立预留 RPM/TPM 额度, 触顶即记为限流尝试并跳过该成员:
 			// 不计失败率、不冷却, 由选路侧自动跳过受限成员。
 			upstreamScopes := upstreamRateScopes(channel.ID, channelKey.ID, channelModel.ID, channelModel.Name)
@@ -388,9 +406,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				})
 				// 客户端与渠道协议一致时直接透传, 其余组合通过 pipeline 转换。
 				if passthrough {
-					result, err = sendPassthrough(roundCtx, format, raw, channel, outbound, metadata.Streaming, channelModel.Name)
+					result, err = sendPassthrough(roundCtx, format, raw, channel, egress, outbound, metadata.Streaming, channelModel.Name)
 				} else {
-					result, err = sendConverted(roundCtx, format, raw, channel, outbound, metadata.Streaming)
+					result, err = sendConverted(roundCtx, format, raw, channel, egress, outbound, metadata.Streaming)
 				}
 				// 上游调用返回即结束首响应等待; Stop 失败说明已到期, 主动取消可避免等待异步回调完成。
 				if !timeoutTimer.Stop() {
@@ -459,6 +477,8 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					op.ChannelDailyStatsUpdate(channel.ID, metrics)
 					op.ChannelModelDailyStatsUpdate(channelModel.ID, metrics)
 					recordMemberMetric(group.ID, item.ID, channelModel.ID, group.RelayConfig.MetricWindowSize, time.Since(roundStartedAt).Milliseconds(), false)
+					// 出口同样记一次失败: 出口成绩是"这条线路本身行不行", 与成员成绩互不替代。
+					recordEgressSample(egress.ID, group.RelayConfig.MetricWindowSize, time.Since(roundStartedAt).Milliseconds(), false)
 					// 记录 Key / 渠道模型错误用于故障熔断
 					// 凭据失效/余额不足在 Key 级熔断(影响该 Key 所有模型); 过载/临时故障在渠道模型级熔断(隔离故障面)。
 					if channelKey != nil && (class == ErrorClassAuth || class == ErrorClassQuota) {
@@ -471,6 +491,8 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				// 没有其他可用成员时等待同样无益, 立即透传最后错误(模型缺失包一层友好提示)。
 				if class == ErrorClassAuth || class == ErrorClassQuota || class == ErrorClassOverload || class == ErrorClassModel {
 					coolItem(group, item.ID, classCooldownSeconds(class))
+					// 出口一并冷却: 下一轮即便还选同一个成员, 也不会再走这条刚失败的线路。
+					coolEgress(egress.ID, classCooldownSeconds(class))
 					if group.Mode != model.GroupModeManual && hasOtherEligible(group, item.ID) {
 						continue
 					}
@@ -530,6 +552,8 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			recordRouteSuccess(group, item.ID)
 			// 记录成员运行指标(首响应耗时与成功), 供延迟/成功率/综合评分策略排名。
 			recordMemberMetric(group.ID, item.ID, channelModel.ID, group.RelayConfig.MetricWindowSize, roundWaitTime, true)
+			// 出口成绩同源记录: 下一轮选出口就按这份实测耗时排序。
+			recordEgressSample(egress.ID, group.RelayConfig.MetricWindowSize, roundWaitTime, true)
 			// 成功请求重置 Key 错误计数
 			if channelKey != nil {
 				op.ResetChannelKeyErrors(channelKey.ID)

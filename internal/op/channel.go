@@ -110,9 +110,14 @@ func ChannelCreate(detail *model.ChannelDetail, scope model.Scope, ctx context.C
 	}
 
 	channelCache.Set(channel.ID, channel)
-	// 凭据, 模型与授权的主键都在事务内分配, 此刻只在库里; 重载子表缓存以让授权候选与转发都能查到。
+	// 凭据, 模型, 出口与授权的主键都在事务内分配, 此刻只在库里; 重载子表缓存以让授权候选与转发都能查到。
 	if err := reloadChannelChildren(ctx, channel.ID); err != nil {
 		return nil, err
+	}
+	// 回读缓存再拼返回值: 出口是在事务里按行插入的, 手里这份 channel 没有它们,
+	// 直接返回会让"刚建的渠道出口列表是空的", 而转发其实已经在用。
+	if cached, ok := channelCache.Get(channel.ID); ok {
+		channel = cached
 	}
 	created := channelDetail(channel)
 	return &created, nil
@@ -185,6 +190,10 @@ func ChannelUpdate(detail *model.ChannelDetail, scope model.Scope, ctx context.C
 		} else if err := channelReviewMarkStale(ctx, scope.ID, channel.ID); err != nil {
 			return nil, err
 		}
+	}
+	// 同创建: 出口由 reloadChannelChildren 刷进缓存, 回读才能拿到带主键的最新一份。
+	if cached, ok := channelCache.Get(channel.ID); ok {
+		channel = cached
 	}
 	updated := channelDetail(channel)
 	return &updated, nil
@@ -265,6 +274,19 @@ func normalizeChannelDetail(detail *model.ChannelDetail) error {
 		detail.Grants[i].ModelName = strings.TrimSpace(detail.Grants[i].ModelName)
 		detail.Grants[i].KeyName = strings.TrimSpace(detail.Grants[i].KeyName)
 	}
+	// 出口按名称去重: 名称是增删改的定位键, 重名会让"改哪个"变得不确定。
+	seenEgress := make(map[string]struct{}, len(detail.Egresses))
+	for i := range detail.Egresses {
+		normalized, err := detail.Egresses[i].Normalize()
+		if err != nil {
+			return err
+		}
+		if _, duplicated := seenEgress[normalized.Name]; duplicated {
+			return fmt.Errorf("duplicated egress name: %s", normalized.Name)
+		}
+		seenEgress[normalized.Name] = struct{}{}
+		detail.Egresses[i] = normalized
+	}
 	return nil
 }
 
@@ -277,7 +299,64 @@ func syncChannelChildren(tx *gorm.DB, channelID int, detail *model.ChannelDetail
 	if err := syncChannelModels(tx, channelID, detail.Models); err != nil {
 		return err
 	}
+	if err := syncChannelEgresses(tx, channelID, detail.Egresses); err != nil {
+		return err
+	}
 	return syncChannelGrants(tx, channelID, detail.Grants)
+}
+
+// syncChannelEgresses 按名称增量同步渠道的出口池: 同名更新, 新名插入, 未提交的删除。
+// 按名称而非整表重建: 出口 ID 是选路指标与日志的键, 每次保存都换 ID 会让历史成绩对不上。
+func syncChannelEgresses(tx *gorm.DB, channelID int, requested []model.ChannelEgress) error {
+	var existing []model.ChannelEgress
+	if err := tx.Where("channel_id = ?", channelID).Find(&existing).Error; err != nil {
+		return fmt.Errorf("failed to load channel egresses: %w", err)
+	}
+	existingByName := make(map[string]model.ChannelEgress, len(existing))
+	for _, egress := range existing {
+		existingByName[egress.Name] = egress
+	}
+	for _, requestedEgress := range requested {
+		if current, ok := existingByName[requestedEgress.Name]; ok {
+			if current.Kind != requestedEgress.Kind || current.URL != requestedEgress.URL ||
+				current.Region != requestedEgress.Region || current.Weight != requestedEgress.Weight ||
+				current.Enabled != requestedEgress.Enabled {
+				if err := tx.Model(&model.ChannelEgress{}).Where("id = ?", current.ID).
+					Updates(map[string]any{
+						"kind":    requestedEgress.Kind,
+						"url":     requestedEgress.URL,
+						"region":  requestedEgress.Region,
+						"weight":  requestedEgress.Weight,
+						"enabled": requestedEgress.Enabled,
+					}).Error; err != nil {
+					return fmt.Errorf("failed to update channel egress: %w", err)
+				}
+			}
+			delete(existingByName, requestedEgress.Name)
+			continue
+		}
+		newEgress := model.ChannelEgress{ChannelID: channelID}
+		newEgress.Name = requestedEgress.Name
+		newEgress.Kind = requestedEgress.Kind
+		newEgress.URL = requestedEgress.URL
+		newEgress.Region = requestedEgress.Region
+		newEgress.Weight = requestedEgress.Weight
+		newEgress.Enabled = requestedEgress.Enabled
+		if err := tx.Create(&newEgress).Error; err != nil {
+			return fmt.Errorf("failed to create channel egress: %w", err)
+		}
+	}
+	deletedIDs := make([]int, 0, len(existingByName))
+	for _, egress := range existingByName {
+		deletedIDs = append(deletedIDs, egress.ID)
+	}
+	if len(deletedIDs) == 0 {
+		return nil
+	}
+	if err := tx.Delete(&model.ChannelEgress{}, deletedIDs).Error; err != nil {
+		return fmt.Errorf("failed to delete channel egresses: %w", err)
+	}
+	return nil
 }
 
 // ChannelEnabled 更新渠道启用状态。
@@ -732,11 +811,22 @@ func channelRefreshCache(ctx context.Context) error {
 		return err
 	}
 
+	// 出口随渠道一起进缓存: 转发路径每轮要按出口择优, 不能每次请求都查库。
+	channelEgresses := []model.ChannelEgress{}
+	if err := conn.Order("channel_id, id").Find(&channelEgresses).Error; err != nil {
+		return err
+	}
+	egressesByChannel := make(map[int][]model.ChannelEgress, len(channels))
+	for _, egress := range channelEgresses {
+		egressesByChannel[egress.ChannelID] = append(egressesByChannel[egress.ChannelID], egress)
+	}
+
 	channelCache.Clear()
 	channelKeyCache.Clear()
 	channelModelCache.Clear()
 	channelGrantCache.Clear()
 	for _, channel := range channels {
+		channel.Egresses = egressesByChannel[channel.ID]
 		channelCache.Set(channel.ID, channel)
 	}
 	for _, channelKey := range channelKeys {
@@ -808,6 +898,18 @@ func reloadChannelChildren(ctx context.Context, channelID int) error {
 	}
 	channelModelStatsNeedUpdateLock.Unlock()
 
+	// 出口没有运行时统计, 直接按库内行替换缓存里的那份, 编辑后下一轮选路立即生效。
+	channelEgresses := []model.ChannelEgress{}
+	if err := conn.Where("channel_id = ?", channelID).Order("id").Find(&channelEgresses).Error; err != nil {
+		return fmt.Errorf("failed to load channel egresses: %w", err)
+	}
+	channelStatsNeedUpdateLock.Lock()
+	if cached, ok := channelCache.Get(channelID); ok {
+		cached.Egresses = channelEgresses
+		channelCache.Set(channelID, cached)
+	}
+	channelStatsNeedUpdateLock.Unlock()
+
 	// 授权不带统计, 直接按库内行整体替换。
 	for _, grantID := range channelGrantIDs(channelID) {
 		channelGrantCache.Del(grantID)
@@ -865,6 +967,9 @@ func channelDetail(channel model.Channel) model.ChannelDetail {
 		return grants[i].KeyName < grants[j].KeyName
 	})
 	detail.Grants = grants
+	// 出口直接取缓存里那份: 它就是转发路径实际在用的配置, 编辑页看到与生效的必然是同一份。
+	detail.Egresses = make([]model.ChannelEgress, 0, len(channel.Egresses))
+	detail.Egresses = append(detail.Egresses, channel.Egresses...)
 	return detail
 }
 
@@ -1318,6 +1423,12 @@ func breakerModelMinutes() int {
 
 func breakerMaxMinutes() int {
 	return breakerSetting(model.SettingKeyBreakerMaxMinutes, defaultBreakerMaxMinutes, 1440)
+}
+
+// EgressRegionBonusMs 出口区域亲和加成(毫秒): 调用方地区与出口地区一致时, 该出口的排序分数
+// 减免这么多毫秒。默认 0 即关闭 —— 地区码来自反代头, 未配可信代理时恒为空, 开着也没有效果。
+func EgressRegionBonusMs() int {
+	return breakerSetting(model.SettingKeyEgressRegionBonusMs, 0, 60000)
 }
 
 // escalatedBreakerDuration 计算第 trips 次熔断的时长: 基准时长按 2 的幂递增, 上限为 maxMinutes。

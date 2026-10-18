@@ -35,7 +35,18 @@ type upstreamResponse struct {
 // 三种配置各自对应一个共享连接池: 直连、应用级代理、渠道专用代理。
 // 连接池按代理地址缓存(见 rhttp.Shared), 因此这里不再有"用完归还空闲连接"的返回值:
 // 归还连接池等于每个请求都要重新建连握手。
-func resolveUpstreamClient(channel model.Channel) (*http.Client, error) {
+//
+// egress 非空时由出口池决定本轮走哪条线路, 渠道自身的代理配置不再参与 ——
+// 出口是"更具体的配置", 两者同时生效会让人分不清流量到底从哪出去。
+func resolveUpstreamClient(channel model.Channel, egress model.ChannelEgress) (*http.Client, error) {
+	if egress.ID != 0 {
+		switch egress.Kind {
+		case model.EgressKindDirect:
+			return rhttp.Direct()
+		default:
+			return rhttp.Shared(egress.URL)
+		}
+	}
 	switch {
 	case !channel.Proxy:
 		return rhttp.Direct()
@@ -47,12 +58,12 @@ func resolveUpstreamClient(channel model.Channel) (*http.Client, error) {
 }
 
 // sendPassthrough 以同协议透传方式请求上游, 取得的响应无需转换即可回给客户端。
-func sendPassthrough(ctx context.Context, format llm.APIFormat, raw *httpclient.Request, channel model.Channel, outbound transformer.Outbound, streaming bool, modelName string) (*upstreamResponse, error) {
+func sendPassthrough(ctx context.Context, format llm.APIFormat, raw *httpclient.Request, channel model.Channel, egress model.ChannelEgress, outbound transformer.Outbound, streaming bool, modelName string) (*upstreamResponse, error) {
 	request, err := buildPassthroughRequest(format, raw, channel, outbound, modelName)
 	if err != nil {
 		return nil, err
 	}
-	httpClient, err := resolveUpstreamClient(channel)
+	httpClient, err := resolveUpstreamClient(channel, egress)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +172,7 @@ func (m *conversionMiddleware) OnOutboundLlmResponse(_ context.Context, response
 }
 
 // sendConverted 经 axonhub pipeline 把客户端请求转换成渠道协议后请求上游, 响应再转换回客户端协议。
-func sendConverted(ctx context.Context, format llm.APIFormat, raw *httpclient.Request, channel model.Channel, outbound transformer.Outbound, streaming bool) (*upstreamResponse, error) {
+func sendConverted(ctx context.Context, format llm.APIFormat, raw *httpclient.Request, channel model.Channel, egress model.ChannelEgress, outbound transformer.Outbound, streaming bool) (*upstreamResponse, error) {
 	var inbound transformer.Inbound
 	switch format {
 	case llm.APIFormatOpenAIResponse:
@@ -176,7 +187,7 @@ func sendConverted(ctx context.Context, format llm.APIFormat, raw *httpclient.Re
 		inbound = openai.NewInboundTransformer()
 	}
 
-	httpClient, err := resolveUpstreamClient(channel)
+	httpClient, err := resolveUpstreamClient(channel, egress)
 	if err != nil {
 		return nil, err
 	}

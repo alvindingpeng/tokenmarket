@@ -82,13 +82,14 @@ type Channel struct {
 	ReviewedAt        *time.Time `json:"reviewed_at,omitempty"`                                     // 最近一次审核时间。
 	ConfigFingerprint string     `json:"config_fingerprint" gorm:"size:64"`                         // 审核通过时的关键配置指纹; 更新后比对失配触发 stale。
 	// 信任分级(P2 列, P1 一并迁移): 观察期升降级写这几列, 与资金口径完全正交。
-	TrustLevel       string         `json:"trust_level" gorm:"size:16;not null;default:observing;index"` // observing|trusted|probation|revoked。
-	ObservationStart *time.Time     `json:"observation_start,omitempty"`                                 // 观察期起算时间。
-	ObservationUntil *time.Time     `json:"observation_until,omitempty"`                                 // 观察期截止时间。
-	ChannelConfig                   // 可编辑配置, 平铺为 channels 的各列。
-	Keys             []ChannelKey   `json:"-" gorm:"foreignKey:ChannelID;constraint:OnDelete:CASCADE"` // 渠道下的上游凭据; 不出 JSON, 读取走 ChannelDetail。
-	Models           []ChannelModel `json:"-" gorm:"foreignKey:ChannelID;constraint:OnDelete:CASCADE"` // 渠道提供的模型; 不出 JSON, 读取走 ChannelDetail。
-	StatsMetrics                    // 渠道自身的累计统计。
+	TrustLevel       string          `json:"trust_level" gorm:"size:16;not null;default:observing;index"` // observing|trusted|probation|revoked。
+	ObservationStart *time.Time      `json:"observation_start,omitempty"`                                 // 观察期起算时间。
+	ObservationUntil *time.Time      `json:"observation_until,omitempty"`                                 // 观察期截止时间。
+	ChannelConfig                    // 可编辑配置, 平铺为 channels 的各列。
+	Keys             []ChannelKey    `json:"-" gorm:"foreignKey:ChannelID;constraint:OnDelete:CASCADE"` // 渠道下的上游凭据; 不出 JSON, 读取走 ChannelDetail。
+	Egresses         []ChannelEgress `json:"-" gorm:"foreignKey:ChannelID;constraint:OnDelete:CASCADE"` // 渠道的出口池; 随渠道一起进缓存, 转发路径每轮按实测择优。
+	Models           []ChannelModel  `json:"-" gorm:"foreignKey:ChannelID;constraint:OnDelete:CASCADE"` // 渠道提供的模型; 不出 JSON, 读取走 ChannelDetail。
+	StatsMetrics                     // 渠道自身的累计统计。
 }
 
 // 渠道凭据的可编辑配置; 名称在渠道内唯一, 整体替换时以它为匹配依据。
@@ -156,9 +157,10 @@ type ChannelGrant struct {
 type ChannelDetail struct {
 	ID            int                  `json:"id"` // 渠道主键; 创建时提交 0, 由数据库分配。
 	ChannelConfig                      // 渠道自身的可编辑配置。
-	Keys          []ChannelKeyConfig   `json:"keys"`   // 渠道下的上游凭据。
-	Models        []string             `json:"models"` // 渠道提供的上游模型名称。
-	Grants        []ChannelGrantConfig `json:"grants"` // 渠道下的授权。
+	Keys          []ChannelKeyConfig   `json:"keys"`     // 渠道下的上游凭据。
+	Egresses      []ChannelEgress      `json:"egresses"` // 渠道的出口池; 空表示沿用渠道自身的代理配置(向后兼容)。
+	Models        []string             `json:"models"`   // 渠道提供的上游模型名称。
+	Grants        []ChannelGrantConfig `json:"grants"`   // 渠道下的授权。
 }
 
 // 渠道授权的可编辑形状, 两侧按名称引用。
