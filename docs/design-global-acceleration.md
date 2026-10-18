@@ -114,7 +114,46 @@
 **G1.4 选路参数校准(1-2 天)**
 用 G0 数据复核各分组的 mode 与权重(延迟/成功率/价格)。若分组是 `failover`/`manual`, 则"慢渠道承接大量请求"是设计使然而非缺陷 —— 需要和数据一起判断。
 
-### G2 入口边缘接入(1 周, 零后端代码改动)
+### G2 入口边缘接入(1 周, 零后端代码改动) — **已实施 v0.38.0(源站侧), 边缘待启用**
+
+已交付(源站侧全部完成, 与边缘无关的部分):
+
+- 拓扑: 客户端 --TLS--> Cloudflare 边缘(`prod.example.com`, 橙云) --HTTP--> 本机 nginx --HTTP--> switchyard(`127.0.0.1:8088`)
+- 源站 vhost: `/etc/nginx/sites-available/switchyard-tt` —— 80 端口只做 ACME 校验与 301, 443 做反代
+- 证书: Let's Encrypt, 续期改用 **webroot**(`/var/www/html`), `certbot renew --dry-run` 通过。原 `--nginx` 插件在自定义 vhost 上会挂起, 且每次续期都重写 vhost —— 会把手调的缓冲与 realip 配置冲掉, 故弃用
+- 真实 IP: `set_real_ip_from` 取自 `cloudflare.com/ips-v4|v6`(当前 22 条) + `real_ip_header CF-Connecting-IP`, 不硬编码网段
+- `CF-IPCountry` 只在来源属于 CF 网段时透传(`geo $realip_remote_addr` + `map`): 绕过 CF 直连源站拿不到可信国家码
+- `server.trusted_proxies = ["127.0.0.1"]` —— 只信本机 nginx
+- `X-Forwarded-For` 用 `$remote_addr` **覆盖**而非追加
+
+必配项逐条落地: `proxy_buffering off`(全局, 不挑路径) / `proxy_request_buffering off` / `client_max_body_size 512m` / `proxy_read_timeout 600s` / `http2 on` / 到源站 HTTP/1.1 keepalive / HSTS
+
+与原计划的差异:
+
+- **"零后端代码改动"不成立**。四处必改(见 v0.38.0 CHANGELOG): 流式响应补 `X-Accel-Buffering: no`、调用方 IP 不再采信伪造的 XFF、登录 Cookie 的 `Secure` 跟随协议、支付回调基址与登录共用同一套协议判定。其中第一处不改会直接让流式失效 —— nginx 默认攒缓冲, 客户端表现为"卡很久然后一次性吐完"。
+- **`trusted_proxies` 填 `127.0.0.1` 而不是边缘网段**。计划里写的是"填边缘出口网段", 但边缘网段会变且清单很长, 放进 Gin 意味着每次 CF 调整都要改应用配置并重启。改为本机 nginx 归一化后只信本机, 应用侧只有一个静态值。
+
+源站侧实测结论:
+
+- 真实 IP 落库正确, 伪造的 `X-Forwarded-For` 被忽略(记为真实来源而非伪造值)
+- 非 CF 来源的 `CF-IPCountry` 被丢弃, 真实来源的国家码正常透传 —— 区域亲和(G3)可以真正上线
+- 流式首字节 0.88s / 总时长 2.33s / 203 个事件块, 未被缓冲
+- 自动续期演练通过, 且续期不再重写 vhost
+
+边缘侧的三个硬限制(Cloudflare 免费版):
+
+- 请求体上限 **100MB**, 超过在边缘就被拒; 源站的 512m 只对绕过边缘的直连生效
+- 非流式请求 **100 秒**无字节即 524。当前 237 条请求里最大首字节 4.5s, 无风险; 但长生成与视频任务要盯着
+- 边缘证书**按主机名逐个签发**, 新增子域要等签发完成才通 TLS(本次 `prod.example.com` 即卡在这一步)
+
+待办(边缘启用):
+
+- Cloudflare 后台把 `prod.example.com` 的边缘证书签出来(SSL/TLS → Edge Certificates → Universal SSL), SSL 模式设为 **Full (strict)** —— 源站已有有效 LE 证书; 设成 Flexible 会因源站 80→443 的 301 出现重定向循环
+- 边缘证书就绪并验证后, 把 switchyard 监听从 `0.0.0.0:8088` 收到 `127.0.0.1:8088`, 关闭公网明文入口
+- 可选加固: 443 只放行 CF 网段与内网(`allow ...; deny all;`), 彻底禁止绕过边缘直连源站。**不建议现在做** —— CF 调整网段时会导致整站不可达, 而当前收益有限
+
+原始计划(保留供对照):
+
 
 这是 P1 的**扩集**: P1 只把静态资源放边缘(明确说明"接口调用仍回源站"), G2 让 `/api` 与 `/v1` **也过边缘**——这才是"全球用户调 API 提速"。
 
