@@ -320,6 +320,17 @@ export function SettingOps() {
 
             <div className={rowClass + ' ' + dividerClass}>
                 <div className='min-w-0'>
+                    <Label className='text-sm font-medium'>{t('breakerMaxMinutes')}</Label>
+                    <p className='text-xs text-muted-foreground'>{t('breakerMaxMinutesHint')}</p>
+                </div>
+                <Input type='number' min={1} max={1440} className='h-9 w-28 rounded-xl'
+                    value={values[SettingKey.BreakerMaxMinutes] ?? ''}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.BreakerMaxMinutes]: event.target.value }))}
+                    onBlur={(event) => saveNumber(SettingKey.BreakerMaxMinutes, event.target.value.trim(), 1, 1440, '60')} />
+            </div>
+
+            <div className={rowClass + ' ' + dividerClass}>
+                <div className='min-w-0'>
                     <Label className='text-sm font-medium'>{t('breakerCoolAuthSeconds')}</Label>
                     <p className='text-xs text-muted-foreground'>{t('breakerCoolAuthSecondsHint')}</p>
                 </div>

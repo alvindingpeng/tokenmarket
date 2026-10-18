@@ -13,6 +13,22 @@ import (
 	"golang.org/x/net/proxy"
 )
 
+// 连接池参数。
+// Go 默认 MaxIdleConnsPerHost 只有 2: 同一上游并发超过 2 时, 多出来的连接用完即被关闭,
+// 下一个请求又要重新建连握手 —— 高并发下等于持续付 RTT。中转场景上游就那么几个域名,
+// 每个域名留足空闲连接, 比省那点内存重要得多。
+const (
+	maxIdleConns        = 256
+	maxIdleConnsPerHost = 64
+	idleConnTimeout     = 90 * time.Second
+)
+
+// 共享客户端的回收参数: 渠道代理地址被改掉后旧条目不会再用, 留着只会把连接池钉在内存里。
+const (
+	sharedClientTTL     = 15 * time.Minute
+	sharedJanitorPeriod = 5 * time.Minute
+)
+
 var (
 	directClient   *http.Client // directClient 不经代理的共享客户端。
 	proxyClient    *http.Client // proxyClient 按应用设置代理地址构建的共享客户端。
@@ -20,14 +36,62 @@ var (
 	clientLock     sync.RWMutex
 )
 
-// New 返回按指定代理地址新建的客户端, 不缓存连接池。
-// 调用方用完必须 CloseIdleConnections: 否则本次请求留下的空闲连接会随被丢弃的 Transport 残留到 IdleConnTimeout 到期。
+// sharedClient 是共享客户端缓存条目; lastUsed 供后台回收判断是否还在使用。
+type sharedClient struct {
+	client   *http.Client
+	lastUsed time.Time
+}
+
+var (
+	sharedMu      sync.Mutex
+	sharedClients = map[string]*sharedClient{}
+	sharedOnce    sync.Once
+)
+
+// Shared 返回按代理地址共享的客户端: 相同地址复用同一个连接池。
 // 地址支持 http, https, socks5, socks5h。
-func New(proxyURL string) (*http.Client, error) {
+//
+// 此前这里是 New: 每个请求新建 client, 用完还要 CloseIdleConnections,
+// 等于每个请求都重新 TCP 建连 + TLS 握手到代理和上游, 多付 1-3 个 RTT。
+// 平时没感觉是因为几乎没有渠道配专用代理; 一旦为了加速给渠道加出口, 这笔开销会随流量线性放大 ——
+// 越"加速"越慢。
+func Shared(proxyURL string) (*http.Client, error) {
 	if proxyURL == "" {
 		return nil, fmt.Errorf("proxy url is empty")
 	}
-	return newCustomProxyClient(proxyURL)
+
+	sharedMu.Lock()
+	defer sharedMu.Unlock()
+
+	if entry, ok := sharedClients[proxyURL]; ok {
+		entry.lastUsed = time.Now()
+		return entry.client, nil
+	}
+	client, err := newCustomProxyClient(proxyURL)
+	if err != nil {
+		return nil, err
+	}
+	sharedClients[proxyURL] = &sharedClient{client: client, lastUsed: time.Now()}
+	sharedOnce.Do(func() { go sweepSharedClients() })
+	return client, nil
+}
+
+// sweepSharedClients 定期回收长时间未使用的共享客户端并关闭其空闲连接。
+// 不回收的话, 管理员每次改代理地址都会留下一个永不释放的连接池。
+func sweepSharedClients() {
+	ticker := time.NewTicker(sharedJanitorPeriod)
+	defer ticker.Stop()
+	for range ticker.C {
+		sharedMu.Lock()
+		for key, entry := range sharedClients {
+			if time.Since(entry.lastUsed) < sharedClientTTL {
+				continue
+			}
+			delete(sharedClients, key)
+			entry.client.CloseIdleConnections()
+		}
+		sharedMu.Unlock()
+	}
 }
 
 // Proxy 返回按应用设置(setting key: proxy_url)代理地址构建的共享客户端。
@@ -94,12 +158,20 @@ func Direct() (*http.Client, error) {
 	return directClient, nil
 }
 
+// clonedDefaultTransport 克隆默认 Transport 并调好连接池参数。
+// 所有客户端都从这里出发, 参数只需在这一处维护。
 func clonedDefaultTransport() (*http.Transport, error) {
 	transport, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
 		return nil, fmt.Errorf("default transport is not *http.Transport")
 	}
-	return transport.Clone(), nil
+	cloned := transport.Clone()
+	cloned.MaxIdleConns = maxIdleConns
+	cloned.MaxIdleConnsPerHost = maxIdleConnsPerHost
+	cloned.IdleConnTimeout = idleConnTimeout
+	// 上游多为 HTTPS, 显式开启让 HTTP/2 的多路复用不被旧版行为挡住。
+	cloned.ForceAttemptHTTP2 = true
+	return cloned, nil
 }
 
 func newCustomProxyClient(proxyURLStr string) (*http.Client, error) {

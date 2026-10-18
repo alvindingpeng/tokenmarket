@@ -241,6 +241,8 @@ export function ChannelStats({ channel, onEdit }: {
                 // 否则只会看到成功率变 0 却找不到原因。
                 disabledUntil: channelModel.disabledUntil,
                 errorCount: channelModel.error_count,
+                // 熔断时长按累计次数递增, 只报"连续错误 N 次"会让管理员以为每次都是同一个时长。
+                breakerTrips: channelModel.breakerTrips,
                 weight: modelSort === 'cost'
                     ? formatted.total_cost.raw
                     : modelSort === 'tokens' ? formatted.total_token.raw : formatted.request_count.raw,
@@ -451,7 +453,7 @@ export function ChannelStats({ channel, onEdit }: {
                                                     type="button"
                                                     data-share-exclude
                                                     disabled={resetBreaker.isPending}
-                                                    title={t('breakerTitle', { count: model.errorCount })}
+                                                    title={t('breakerTitle', { count: model.errorCount, trips: model.breakerTrips })}
                                                     onClick={() => resetBreaker.mutate(
                                                         { id: channel.channel_id, model_names: [model.name] },
                                                         {

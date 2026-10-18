@@ -495,20 +495,15 @@ func fetchModel(c *gin.Context) {
 }
 
 // probeHTTPClient 按渠道配置构建探测用的 HTTP 客户端: 直连 / 应用代理 / 渠道专用代理。
-// 渠道专用代理的客户端不共享, 用完即关空闲连接; 编辑表单的手动刷新与保存后的自动添加共用。
+// 三者都走共享连接池: 探测是低频动作, 但同样没必要为它单独建一次连接。
+// 编辑表单的手动刷新与保存后的自动添加共用这里。
 func probeHTTPClient(target model.ChannelConfig) (*http.Client, error) {
-	var httpClient *http.Client
-	var err error
 	switch {
 	case !target.Proxy:
-		httpClient, err = rhttp.Direct()
+		return rhttp.Direct()
 	case strings.TrimSpace(target.ChannelProxy) == "":
-		httpClient, err = rhttp.Proxy()
+		return rhttp.Proxy()
 	default:
-		httpClient, err = rhttp.New(strings.TrimSpace(target.ChannelProxy))
-		if httpClient != nil {
-			defer httpClient.CloseIdleConnections()
-		}
+		return rhttp.Shared(strings.TrimSpace(target.ChannelProxy))
 	}
-	return httpClient, err
 }

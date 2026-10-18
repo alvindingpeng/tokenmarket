@@ -1222,30 +1222,34 @@ func RecordChannelKeyError(channelKeyID int, errorType string) {
 	threshold := breakerKeyThreshold()
 	duration := time.Minute * time.Duration(breakerKeyMinutes())
 	hardDuration := time.Minute * time.Duration(breakerKeyHardMinutes())
+	maxMinutes := breakerMaxMinutes()
+	// trips 是自上次成功以来的第几次熔断, 决定本次停多久。
+	trips := key.BreakerTrips + 1
 
 	updates := map[string]interface{}{
 		"error_count":   errorCount,
 		"last_error_at": &now,
+		"breaker_trips": trips,
 	}
 
 	// 凭据失效与额度耗尽在可见的将来都不会自愈: 跳过计数阈值按硬熔断时长立即熔断,
 	// 避免后续请求继续拿废 Key 反复打上游; 其余错误走计数阈值。
 	if errorType == "auth" || errorType == "quota" {
-		disabledUntil := now.Add(hardDuration)
+		disabledUntil := now.Add(escalatedBreakerDuration(hardDuration, trips, maxMinutes))
 		updates["disabled_until"] = &disabledUntil
 		updates["error_count"] = 0
 		db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", channelKeyID).Updates(updates)
 		key.DisabledUntil = &disabledUntil
-		// 熔断是一次自动降级决策, 必须让管理员知道: 哪家渠道、哪个凭据、停到几点。
-		raiseKeyBreakerAlert(key, errorType, disabledUntil, 0)
+		// 熔断是一次自动降级决策, 必须让管理员知道: 哪家渠道、哪个凭据、停到几点、第几次。
+		raiseKeyBreakerAlert(key, errorType, disabledUntil, 0, trips)
 		return
 	}
 
 	// 达到阈值时启动熔断; 阈值为 0 表示关闭计数熔断, 只保留鉴权/额度的立即熔断。
 	if threshold > 0 && errorCount >= threshold {
-		disabledUntil := now.Add(duration)
+		disabledUntil := now.Add(escalatedBreakerDuration(duration, trips, maxMinutes))
 		updates["disabled_until"] = &disabledUntil
-		updates["error_count"] = 0 // 重置计数器
+		updates["error_count"] = 0 // 重置计数器; breaker_trips 保留, 它才是"停多久"的依据
 		key.DisabledUntil = &disabledUntil
 		breakerAt = &disabledUntil
 	}
@@ -1253,14 +1257,17 @@ func RecordChannelKeyError(channelKeyID int, errorType string) {
 	db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", channelKeyID).Updates(updates)
 	// 告警放在写库之后: 库里没落上就发通知, 管理员会看到一条查无实据的熔断。
 	if breakerAt != nil {
-		raiseKeyBreakerAlert(key, errorType, *breakerAt, threshold)
+		raiseKeyBreakerAlert(key, errorType, *breakerAt, threshold, trips)
 	}
 }
 
 // ResetChannelKeyErrors 重置某个 key 的错误计数（成功请求时调用）。
+// breaker_trips 一并清零: 成功就是"它又能用了"的唯一证据, 不清零则恢复的成员会被
+// 之前攒下的熔断次数继续压着, 下次偶发失败直接跳到很长的熔断时长。
 func ResetChannelKeyErrors(channelKeyID int) {
 	db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", channelKeyID).Updates(map[string]interface{}{
-		"error_count": 0,
+		"error_count":   0,
+		"breaker_trips": 0,
 	})
 }
 
@@ -1275,6 +1282,7 @@ const (
 	defaultBreakerKeyHardMinutes = 30
 	defaultBreakerModelThreshold = 5
 	defaultBreakerModelMinutes   = 5
+	defaultBreakerMaxMinutes     = 60
 
 	defaultBreakerCoolAuthSeconds = 60
 	defaultBreakerCoolSoftSeconds = 30
@@ -1308,6 +1316,32 @@ func breakerModelMinutes() int {
 	return breakerSetting(model.SettingKeyBreakerModelMinutes, defaultBreakerModelMinutes, 1440)
 }
 
+func breakerMaxMinutes() int {
+	return breakerSetting(model.SettingKeyBreakerMaxMinutes, defaultBreakerMaxMinutes, 1440)
+}
+
+// escalatedBreakerDuration 计算第 trips 次熔断的时长: 基准时长按 2 的幂递增, 上限为 maxMinutes。
+//
+// 为什么必须递增: 阈值 + 固定时长只能把故障成员"停一会儿"。一个 0% 成功率的成员会永远在
+// "停 5 分钟 → 探一次 → 再失败"的循环里打转 —— 线上实测有成员累计 38 次失败、成功率 0.00,
+// 每次都是同样的 5 分钟。递增让长期不健康的成员逐步退到边缘, 而真正自愈的成员
+// 只要成功一次就会清零计数(见 ResetChannelKeyErrors), 不会被长期压着。
+func escalatedBreakerDuration(base time.Duration, trips, maxMinutes int) time.Duration {
+	if trips < 1 {
+		trips = 1
+	}
+	maxDuration := time.Duration(maxMinutes) * time.Minute
+	duration := base
+	// 逐次翻倍, 一旦达到上限就停: 直接位移会在大 trips 时溢出。
+	for i := 1; i < trips && duration < maxDuration; i++ {
+		duration *= 2
+	}
+	if duration > maxDuration {
+		duration = maxDuration
+	}
+	return duration
+}
+
 // BreakerCoolAuthSeconds 换路冷却: 鉴权/额度错误后该成员被跳过的秒数(转发路径读取)。
 func BreakerCoolAuthSeconds() int {
 	return breakerSetting(model.SettingKeyBreakerCoolAuthSeconds, defaultBreakerCoolAuthSeconds, 600)
@@ -1335,21 +1369,24 @@ func RecordChannelModelError(channelModelID int, errorType string) {
 	now := time.Now()
 	errorCount := channelModel.ErrorCount + 1
 
-	// 与 Key 同一套机制, 阈值与时长各自独立可配。
+	// 与 Key 同一套机制, 阈值与时长各自独立可配; 熔断时长同样按累计次数递增。
 	threshold := breakerModelThreshold()
 	duration := time.Minute * time.Duration(breakerModelMinutes())
+	maxMinutes := breakerMaxMinutes()
+	trips := channelModel.BreakerTrips + 1
 
 	updates := map[string]interface{}{
 		"error_count":   errorCount,
 		"last_error_at": &now,
+		"breaker_trips": trips,
 	}
 
 	// 达到阈值时启动熔断; 阈值为 0 表示关闭该级的计数熔断。
 	var breakerAt *time.Time
 	if threshold > 0 && errorCount >= threshold {
-		disabledUntil := now.Add(duration)
+		disabledUntil := now.Add(escalatedBreakerDuration(duration, trips, maxMinutes))
 		updates["disabled_until"] = &disabledUntil
-		updates["error_count"] = 0 // 重置计数器
+		updates["error_count"] = 0 // 重置计数器; breaker_trips 保留, 它才是"停多久"的依据
 		channelModel.DisabledUntil = &disabledUntil
 		breakerAt = &disabledUntil
 	}
@@ -1357,13 +1394,14 @@ func RecordChannelModelError(channelModelID int, errorType string) {
 	db.GetDB().Model(&model.ChannelModel{}).Where("id = ?", channelModelID).Updates(updates)
 	// 与 Key 级熔断同理: 熔断落地后再告警, 并给出渠道名与模型名。
 	if breakerAt != nil {
-		raiseModelBreakerAlert(channelModel, errorType, *breakerAt, threshold)
+		raiseModelBreakerAlert(channelModel, errorType, *breakerAt, threshold, trips)
 	}
 }
 
-// ResetChannelModelErrors 重置某个渠道模型的错误计数(成功请求时调用)。
+// ResetChannelModelErrors 重置某个渠道模型的错误计数(成功请求时调用); 熔断次数同理清零。
 func ResetChannelModelErrors(channelModelID int) {
 	db.GetDB().Model(&model.ChannelModel{}).Where("id = ?", channelModelID).Updates(map[string]interface{}{
-		"error_count": 0,
+		"error_count":   0,
+		"breaker_trips": 0,
 	})
 }

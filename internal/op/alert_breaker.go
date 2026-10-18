@@ -18,7 +18,7 @@ import (
 //
 // reason 里带凭据名与错误类型而不带时间: 去重按 (渠道, kind, reason) 精确匹配,
 // 掺入熔断时刻会让每一轮失败都变成一条新告警, 十秒内推爆管理员的手机。
-func raiseKeyBreakerAlert(key model.ChannelKey, errorType string, until time.Time, threshold int) {
+func raiseKeyBreakerAlert(key model.ChannelKey, errorType string, until time.Time, threshold int, trips int) {
 	subject := channelName(key.ChannelID)
 	minutes := int(time.Until(until).Round(time.Minute) / time.Minute)
 	if minutes < 1 {
@@ -36,12 +36,13 @@ func raiseKeyBreakerAlert(key model.ChannelKey, errorType string, until time.Tim
 			{Label: "熔断时长", Value: fmt.Sprintf("%d 分钟", minutes)},
 			{Label: "自动恢复", Value: until.Format("2006-01-02 15:04:05")},
 			{Label: "触发计数", Value: formatBreakerTrigger(threshold)},
+			{Label: "累计熔断", Value: fmt.Sprintf("第 %d 次(成功后清零)", trips)},
 		},
 	})
 }
 
 // raiseModelBreakerAlert 在渠道模型被熔断时告警。
-func raiseModelBreakerAlert(channelModel model.ChannelModel, errorType string, until time.Time, threshold int) {
+func raiseModelBreakerAlert(channelModel model.ChannelModel, errorType string, until time.Time, threshold int, trips int) {
 	subject := channelName(channelModel.ChannelID)
 	minutes := int(time.Until(until).Round(time.Minute) / time.Minute)
 	if minutes < 1 {

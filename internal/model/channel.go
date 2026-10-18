@@ -70,25 +70,25 @@ const (
 
 // 单个上游渠道的共享配置; 路径按协议分别配置, 凭据由 ChannelKey 提供。
 type Channel struct {
-	ID            int            `json:"id" gorm:"primaryKey"`                                                 // 渠道主键。
-	UserID        uint           `json:"user_id" gorm:"uniqueIndex:idx_channel_owner_name;not null;default:0"` // 归属用户; 渠道名在归属内唯一, 跨用户可重名。
-	Shared        bool           `json:"shared" gorm:"default:false"`                                          // 是否已发布到用户侧(共享)。
-	ShareCode     string         `json:"share_code" gorm:"index"`                                              // 发布编码: 4 位纯数字(1001 起), 界面展示为 "#1001"; 用户侧显示为渠道名称, 唯一性由发布流程保证(空串不参与)。
+	ID        int    `json:"id" gorm:"primaryKey"`                                                 // 渠道主键。
+	UserID    uint   `json:"user_id" gorm:"uniqueIndex:idx_channel_owner_name;not null;default:0"` // 归属用户; 渠道名在归属内唯一, 跨用户可重名。
+	Shared    bool   `json:"shared" gorm:"default:false"`                                          // 是否已发布到用户侧(共享)。
+	ShareCode string `json:"share_code" gorm:"index"`                                              // 发布编码: 4 位纯数字(1001 起), 界面展示为 "#1001"; 用户侧显示为渠道名称, 唯一性由发布流程保证(空串不参与)。
 	// 准入审核(P1): 发布与对外候选都要过审; 关键配置指纹失配自动转 stale 待复审。
-	ReviewStatus      string     `json:"review_status" gorm:"size:16;not null;default:draft;index"`    // 审核状态 draft|pending|approved|rejected|stale。
-	ReviewNote        string     `json:"review_note" gorm:"size:512;not null;default:''"`             // 提交说明 / 审核意见 / 驳回原因。
-	SubmittedAt       *time.Time `json:"submitted_at,omitempty"`                                       // 最近一次提交审核时间。
-	ReviewedBy        uint       `json:"reviewed_by" gorm:"not null;default:0"`                       // 审核人用户 ID, 从未审核为 0。
-	ReviewedAt        *time.Time `json:"reviewed_at,omitempty"`                                        // 最近一次审核时间。
-	ConfigFingerprint string     `json:"config_fingerprint" gorm:"size:64"`                            // 审核通过时的关键配置指纹; 更新后比对失配触发 stale。
+	ReviewStatus      string     `json:"review_status" gorm:"size:16;not null;default:draft;index"` // 审核状态 draft|pending|approved|rejected|stale。
+	ReviewNote        string     `json:"review_note" gorm:"size:512;not null;default:''"`           // 提交说明 / 审核意见 / 驳回原因。
+	SubmittedAt       *time.Time `json:"submitted_at,omitempty"`                                    // 最近一次提交审核时间。
+	ReviewedBy        uint       `json:"reviewed_by" gorm:"not null;default:0"`                     // 审核人用户 ID, 从未审核为 0。
+	ReviewedAt        *time.Time `json:"reviewed_at,omitempty"`                                     // 最近一次审核时间。
+	ConfigFingerprint string     `json:"config_fingerprint" gorm:"size:64"`                         // 审核通过时的关键配置指纹; 更新后比对失配触发 stale。
 	// 信任分级(P2 列, P1 一并迁移): 观察期升降级写这几列, 与资金口径完全正交。
-	TrustLevel       string     `json:"trust_level" gorm:"size:16;not null;default:observing;index"` // observing|trusted|probation|revoked。
-	ObservationStart *time.Time `json:"observation_start,omitempty"`                                  // 观察期起算时间。
-	ObservationUntil *time.Time `json:"observation_until,omitempty"`                                  // 观察期截止时间。
-	ChannelConfig                // 可编辑配置, 平铺为 channels 的各列。
-	Keys          []ChannelKey   `json:"-" gorm:"foreignKey:ChannelID;constraint:OnDelete:CASCADE"` // 渠道下的上游凭据; 不出 JSON, 读取走 ChannelDetail。
-	Models        []ChannelModel `json:"-" gorm:"foreignKey:ChannelID;constraint:OnDelete:CASCADE"` // 渠道提供的模型; 不出 JSON, 读取走 ChannelDetail。
-	StatsMetrics                 // 渠道自身的累计统计。
+	TrustLevel       string         `json:"trust_level" gorm:"size:16;not null;default:observing;index"` // observing|trusted|probation|revoked。
+	ObservationStart *time.Time     `json:"observation_start,omitempty"`                                 // 观察期起算时间。
+	ObservationUntil *time.Time     `json:"observation_until,omitempty"`                                 // 观察期截止时间。
+	ChannelConfig                   // 可编辑配置, 平铺为 channels 的各列。
+	Keys             []ChannelKey   `json:"-" gorm:"foreignKey:ChannelID;constraint:OnDelete:CASCADE"` // 渠道下的上游凭据; 不出 JSON, 读取走 ChannelDetail。
+	Models           []ChannelModel `json:"-" gorm:"foreignKey:ChannelID;constraint:OnDelete:CASCADE"` // 渠道提供的模型; 不出 JSON, 读取走 ChannelDetail。
+	StatsMetrics                    // 渠道自身的累计统计。
 }
 
 // 渠道凭据的可编辑配置; 名称在渠道内唯一, 整体替换时以它为匹配依据。
@@ -98,10 +98,11 @@ type ChannelKeyConfig struct {
 	Key     string `json:"key" gorm:"not null"`                               // 上游访问凭据。
 	Enabled bool   `json:"enabled" gorm:"default:true"`                       // 是否可用, 禁用后不参与选路但保留统计。
 	// Key 轮换与故障追踪。
-	Priority      int        `json:"priority" gorm:"default:0"`    // 优先级(failover 模式), 数值越小越优先。
-	ErrorCount    int        `json:"error_count" gorm:"default:0"` // 累计错误次数。
-	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`      // 最后错误时间。
-	DisabledUntil *time.Time `json:"disabled_until,omitempty"`     // 自动禁用截止时间(故障熔断)。
+	Priority      int        `json:"priority" gorm:"default:0"`      // 优先级(failover 模式), 数值越小越优先。
+	ErrorCount    int        `json:"error_count" gorm:"default:0"`   // 累计错误次数。
+	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`        // 最后错误时间。
+	DisabledUntil *time.Time `json:"disabled_until,omitempty"`       // 自动禁用截止时间(故障熔断)。
+	BreakerTrips  int        `json:"breaker_trips" gorm:"default:0"` // 自上次成功以来累计熔断次数; 熔断时长按它翻倍, 成功即清零。
 }
 
 // 渠道下的一份上游凭据; 不同凭据通常对应不同的额度与计费。
@@ -123,9 +124,10 @@ type ChannelModel struct {
 	Kind         MediaKind  `json:"kind,omitempty" gorm:"column:kind;default:''"`              // 模型媒体形态; 文本留空, image=P1 生图, video=P2 视频。
 	StatsMetrics            // 该模型自身的累计统计。
 	// 渠道模型级故障熔断: 区分于 Key 级熔断, 隔离同渠道其它模型与该模型的其它 Key。
-	ErrorCount    int        `json:"error_count" gorm:"default:0"` // 累计错误次数。
-	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`      // 最后错误时间。
-	DisabledUntil *time.Time `json:"disabled_until,omitempty"`     // 自动禁用截止时间(故障熔断)。
+	ErrorCount    int        `json:"error_count" gorm:"default:0"`   // 累计错误次数。
+	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`        // 最后错误时间。
+	DisabledUntil *time.Time `json:"disabled_until,omitempty"`       // 自动禁用截止时间(故障熔断)。
+	BreakerTrips  int        `json:"breaker_trips" gorm:"default:0"` // 自上次成功以来累计熔断次数; 熔断时长按它翻倍, 成功即清零。
 }
 
 // UserPrice 按比例放大 LLMPrice 形式供货价得到用户单价。
@@ -173,18 +175,18 @@ type ChannelGrantConfig struct {
 // 故不再另给渠道概览接口 —— 列表页与首页榜单共用这一条响应, 整份配置在点开编辑时由 /channel/detail 单独取。
 // 名称与渠道配置重复给出是有意的: 消费方由此无需再按主键回查渠道。
 type ChannelStats struct {
-	ChannelID    int                 `json:"channel_id"`   // 渠道主键。
-	UserID       uint                `json:"user_id"`      // 归属用户。
-	ChannelName  string              `json:"channel_name"` // 渠道名称。
-	Shared       bool                `json:"shared"`       // 是否已发布到用户侧。
-	ShareCode    string              `json:"share_code"`   // 发布唯一编码; 未发布为空。
-	Enabled      bool                `json:"enabled"`      // 渠道是否可用, 供列表页的开关与过滤使用。
+	ChannelID   int    `json:"channel_id"`   // 渠道主键。
+	UserID      uint   `json:"user_id"`      // 归属用户。
+	ChannelName string `json:"channel_name"` // 渠道名称。
+	Shared      bool   `json:"shared"`       // 是否已发布到用户侧。
+	ShareCode   string `json:"share_code"`   // 发布唯一编码; 未发布为空。
+	Enabled     bool   `json:"enabled"`      // 渠道是否可用, 供列表页的开关与过滤使用。
 	// 准入审核状态随列表一并外露: 卡片徽章与发布闸口提示只消费这一条查询, 无需另开接口。
-	ReviewStatus string     `json:"review_status"`             // 审核状态 draft|pending|approved|rejected|stale。
-	ReviewNote   string     `json:"review_note"`               // 提交说明 / 审核意见 / 驳回原因。
-	SubmittedAt  *time.Time `json:"submitted_at,omitempty"`    // 最近提交审核时间。
-	ReviewedAt   *time.Time `json:"reviewed_at,omitempty"`     // 最近审核时间。
-	Models       []ChannelModelStats `json:"models"`       // 该渠道各模型的独立统计, 恒为数组; 长度即渠道的模型个数。
+	ReviewStatus string              `json:"review_status"`          // 审核状态 draft|pending|approved|rejected|stale。
+	ReviewNote   string              `json:"review_note"`            // 提交说明 / 审核意见 / 驳回原因。
+	SubmittedAt  *time.Time          `json:"submitted_at,omitempty"` // 最近提交审核时间。
+	ReviewedAt   *time.Time          `json:"reviewed_at,omitempty"`  // 最近审核时间。
+	Models       []ChannelModelStats `json:"models"`                 // 该渠道各模型的独立统计, 恒为数组; 长度即渠道的模型个数。
 	StatsMetrics                     // 渠道自身的累计统计。
 }
 

@@ -23,27 +23,27 @@ const (
 	// 环境变量 OCTOPUS_GITHUB_PAT 仍优先, 设置项作为界面可改的后备, 免得改令牌还得进机器改 systemd。
 	SettingKeyGithubToken SettingKey = "github_token"
 	// 多用户与计费。
-	SettingKeyMarkupRatio             SettingKey = "markup_ratio"               // 上浮比例: 用户价 = 供货价 × (1 + 上浮比例)
-	SettingKeyRegisterUserEnabled     SettingKey = "register_user_enabled"      // 用户注册开关, 默认关
-	SettingKeyRegisterResellerEnabled SettingKey = "register_reseller_enabled"  // 渠道商注册开关, 默认关
-	SettingKeyRegisterApproval        SettingKey = "register_approval_required" // 注册后是否需要管理员审批
+	SettingKeyMarkupRatio              SettingKey = "markup_ratio"                // 上浮比例: 用户价 = 供货价 × (1 + 上浮比例)
+	SettingKeyRegisterUserEnabled      SettingKey = "register_user_enabled"       // 用户注册开关, 默认关
+	SettingKeyRegisterResellerEnabled  SettingKey = "register_reseller_enabled"   // 渠道商注册开关, 默认关
+	SettingKeyRegisterApproval         SettingKey = "register_approval_required"  // 注册后是否需要管理员审批
 	SettingKeyChannelReviewAdminBypass SettingKey = "channel_review_admin_bypass" // 管理员自有渠道免审: 提交即通过, 避免管理员自己被审核流程卡住
-	SettingKeyShareCodeSeq            SettingKey = "share_code_seq"             // 发布编码取号计数器(4 位数字, 1001 起), 号码只发不收
-	SettingKeyBalanceReserveCap       SettingKey = "balance_reserve_output_cap" // 余额预扣估算的默认输出 token 上限。
-	SettingKeyBalanceReserveImages    SettingKey = "balance_reserve_images"     // 生图预扣保守张数(无 N 时使用), 默认 4。
-	SettingKeyMinBalance              SettingKey = "min_balance"                // 允许的最低余额, 0 表示不足即拒
+	SettingKeyShareCodeSeq             SettingKey = "share_code_seq"              // 发布编码取号计数器(4 位数字, 1001 起), 号码只发不收
+	SettingKeyBalanceReserveCap        SettingKey = "balance_reserve_output_cap"  // 余额预扣估算的默认输出 token 上限。
+	SettingKeyBalanceReserveImages     SettingKey = "balance_reserve_images"      // 生图预扣保守张数(无 N 时使用), 默认 4。
+	SettingKeyMinBalance               SettingKey = "min_balance"                 // 允许的最低余额, 0 表示不足即拒
 
 	// 充值与支付(D1 易支付首发, 网关参数全部后台可配, 商户信息后配即可用)。
-	SettingKeyEpayGatewayURL       SettingKey = "epay_gateway_url"        // 易支付网关地址, 如 https://pay.example.com; 留空表示支付未配置
-	SettingKeyEpayPID              SettingKey = "epay_pid"                // 商户 ID
-	SettingKeyEpayKey              SettingKey = "epay_key"                // 商户密钥(加密存储/掩码回显)
-	SettingKeyEpayPayTypes         SettingKey = "epay_pay_types"          // 限定支付方式(逗号分隔: alipay,wechat,qq), 留空用网关默认
-	SettingKeyRechargeNotifyBase   SettingKey = "recharge_notify_base"    // 对外回调基址(如 https://api.example.com), 留空按请求 Host 推断
-	SettingKeyRechargeRate         SettingKey = "recharge_rate"           // 汇率: 1 余额币种(USD) 折多少 CNY, 默认 7.0
-	SettingKeyRechargeMinCNY       SettingKey = "recharge_min_cny"        // 单笔最低充值金额(元), 默认 1
-	SettingKeyRechargeAmountTiers  SettingKey = "recharge_amount_tiers"   // 充值弹窗快捷金额(元, 逗号分隔), 留空不出快捷按钮
-	SettingKeyRechargeBonusEnabled SettingKey = "recharge_bonus_enabled"   // 满赠开关(D6), 默认关
-	SettingKeyRechargeBonusRules   SettingKey = "recharge_bonus_rules"     // 满赠规则 "满X元送Y%" 紧凑格式: 100:5,500:10
+	SettingKeyEpayGatewayURL       SettingKey = "epay_gateway_url"       // 易支付网关地址, 如 https://pay.example.com; 留空表示支付未配置
+	SettingKeyEpayPID              SettingKey = "epay_pid"               // 商户 ID
+	SettingKeyEpayKey              SettingKey = "epay_key"               // 商户密钥(加密存储/掩码回显)
+	SettingKeyEpayPayTypes         SettingKey = "epay_pay_types"         // 限定支付方式(逗号分隔: alipay,wechat,qq), 留空用网关默认
+	SettingKeyRechargeNotifyBase   SettingKey = "recharge_notify_base"   // 对外回调基址(如 https://api.example.com), 留空按请求 Host 推断
+	SettingKeyRechargeRate         SettingKey = "recharge_rate"          // 汇率: 1 余额币种(USD) 折多少 CNY, 默认 7.0
+	SettingKeyRechargeMinCNY       SettingKey = "recharge_min_cny"       // 单笔最低充值金额(元), 默认 1
+	SettingKeyRechargeAmountTiers  SettingKey = "recharge_amount_tiers"  // 充值弹窗快捷金额(元, 逗号分隔), 留空不出快捷按钮
+	SettingKeyRechargeBonusEnabled SettingKey = "recharge_bonus_enabled" // 满赠开关(D6), 默认关
+	SettingKeyRechargeBonusRules   SettingKey = "recharge_bonus_rules"   // 满赠规则 "满X元送Y%" 紧凑格式: 100:5,500:10
 	// 提现规则(P3): 全部可配; 金额为收益池口径(USD), 打款按申请时汇率快照折人民币分。
 	SettingKeyWithdrawalMinAmount        SettingKey = "withdrawal_min_amount"         // 单笔最低提现额, 默认 50
 	SettingKeyWithdrawalFeeRate          SettingKey = "withdrawal_fee_rate"           // 手续费率(0.01 = 1%), 默认 1%
@@ -53,18 +53,18 @@ const (
 	SettingKeyWithdrawalDailyAmountLimit SettingKey = "withdrawal_daily_amount_limit" // 单日总额上限(池口径), 0 不限
 	SettingKeyWithdrawalAccountLockDays  SettingKey = "withdrawal_account_lock_days"  // 提现账户锁定天数(防盗号改卡), 0 不锁
 	// 充值渠道(P4 多渠道, 对齐 New API): 每渠道一套参数, 商户信息后配即可用。
-	SettingKeyAlipayGatewayURL  SettingKey = "alipay_gateway_url"  // 支付宝网关, 默认官方 openapi.alipay.com
-	SettingKeyAlipayAppID       SettingKey = "alipay_app_id"       // 支付宝应用 ID
-	SettingKeyAlipayPrivateKey  SettingKey = "alipay_private_key"  // 应用私钥(RSA, 密钥类设置)
-	SettingKeyAlipayPublicKey   SettingKey = "alipay_public_key"   // 支付宝公钥(验签)
-	SettingKeyStripeSecretKey   SettingKey = "stripe_secret_key"   // Stripe 密钥(密钥类设置)
-	SettingKeyStripeWebhook     SettingKey = "stripe_webhook_secret" // Stripe Webhook 签名密钥(密钥类设置)
-	SettingKeyStripeAPIBase     SettingKey = "stripe_api_base"     // Stripe API 根地址, 留空官方
-	SettingKeyStripeCurrency    SettingKey = "stripe_currency"     // Stripe 收款币种, 默认 usd
-	SettingKeyCreemAPIKey       SettingKey = "creem_api_key"       // Creem API Key(密钥类设置)
-	SettingKeyCreemWebhook      SettingKey = "creem_webhook_secret" // Creem Webhook 签名密钥(密钥类设置)
-	SettingKeyCreemAPIBase      SettingKey = "creem_api_base"      // Creem API 根地址, 留空官方
-	SettingKeyCreemProducts     SettingKey = "creem_products"      // Creem 充值档位 JSON 数组
+	SettingKeyAlipayGatewayURL SettingKey = "alipay_gateway_url"    // 支付宝网关, 默认官方 openapi.alipay.com
+	SettingKeyAlipayAppID      SettingKey = "alipay_app_id"         // 支付宝应用 ID
+	SettingKeyAlipayPrivateKey SettingKey = "alipay_private_key"    // 应用私钥(RSA, 密钥类设置)
+	SettingKeyAlipayPublicKey  SettingKey = "alipay_public_key"     // 支付宝公钥(验签)
+	SettingKeyStripeSecretKey  SettingKey = "stripe_secret_key"     // Stripe 密钥(密钥类设置)
+	SettingKeyStripeWebhook    SettingKey = "stripe_webhook_secret" // Stripe Webhook 签名密钥(密钥类设置)
+	SettingKeyStripeAPIBase    SettingKey = "stripe_api_base"       // Stripe API 根地址, 留空官方
+	SettingKeyStripeCurrency   SettingKey = "stripe_currency"       // Stripe 收款币种, 默认 usd
+	SettingKeyCreemAPIKey      SettingKey = "creem_api_key"         // Creem API Key(密钥类设置)
+	SettingKeyCreemWebhook     SettingKey = "creem_webhook_secret"  // Creem Webhook 签名密钥(密钥类设置)
+	SettingKeyCreemAPIBase     SettingKey = "creem_api_base"        // Creem API 根地址, 留空官方
+	SettingKeyCreemProducts    SettingKey = "creem_products"        // Creem 充值档位 JSON 数组
 	// 路由策略系统默认: 分组内未自定义(权重为 0)时按这里的配比执行。
 	SettingKeyScorePriceWeight   SettingKey = "score_price_weight"   // 综合评分默认价格权重(0-100)
 	SettingKeyScoreLatencyWeight SettingKey = "score_latency_weight" // 综合评分默认延迟权重(0-100)
@@ -122,6 +122,7 @@ const (
 	SettingKeyBreakerKeyHardMinutes  SettingKey = "breaker_key_hard_minutes"  // 鉴权/额度错误的立即熔断时长(分钟), 默认 30。
 	SettingKeyBreakerModelThreshold  SettingKey = "breaker_model_threshold"   // 渠道模型级熔断的错误次数阈值, 默认 5。
 	SettingKeyBreakerModelMinutes    SettingKey = "breaker_model_minutes"     // 渠道模型级熔断时长(分钟), 默认 5。
+	SettingKeyBreakerMaxMinutes      SettingKey = "breaker_max_minutes"       // 熔断时长递增上限(分钟), 默认 60。
 	SettingKeyBreakerCoolAuthSeconds SettingKey = "breaker_cool_auth_seconds" // 换路冷却: 鉴权/额度错误后该成员冷却秒数, 默认 60。
 	SettingKeyBreakerCoolSoftSeconds SettingKey = "breaker_cool_soft_seconds" // 换路冷却: 过载/模型缺失等软错误后该成员冷却秒数, 默认 30。
 
@@ -174,71 +175,71 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyRegisterResellerEnabled, Value: "false"}, // 渠道商注册默认关闭
 		{Key: SettingKeyRegisterApproval, Value: "true"},         // 注册默认需要审批
 		{Key: SettingKeyChannelReviewAdminBypass, Value: "true"}, // 管理员自有渠道默认免审
-		{Key: SettingKeyShareCodeSeq, Value: "1000"},            // 发布编码从 1001 起, 记录已发到的最大号
+		{Key: SettingKeyShareCodeSeq, Value: "1000"},             // 发布编码从 1001 起, 记录已发到的最大号
 		{Key: SettingKeyBalanceReserveCap, Value: "4096"},        // 预扣估算默认输出上限
 		{Key: SettingKeyBalanceReserveImages, Value: "4"},        // 生图预扣保守张数, 4 张覆盖 dall-e-3 / gpt-image-1 n=4 上限
 		{Key: SettingKeyMinBalance, Value: "0"},                  // 不允许透支
 		// 充值与支付: 全部留空/默认, 商户信息在管理端补上即启用。
-		{Key: SettingKeyEpayGatewayURL, Value: ""},              // 留空表示支付未配置, 充值入口优雅降级
-		{Key: SettingKeyEpayPID, Value: ""},                     // 商户 ID 后配
-		{Key: SettingKeyEpayKey, Value: ""},                     // 商户密钥后配(密钥类设置)
-		{Key: SettingKeyEpayPayTypes, Value: ""},                // 不限定支付方式
-		{Key: SettingKeyRechargeNotifyBase, Value: ""},          // 留空按请求 Host 推断回调地址
-		{Key: SettingKeyRechargeRate, Value: "7.0"},             // 1 USD = 7 CNY(D2)
-		{Key: SettingKeyRechargeMinCNY, Value: "1"},             // 单笔最低 1 元
-		{Key: SettingKeyRechargeAmountTiers, Value: "10,50,100,500"}, // 弹窗快捷金额(元)
-		{Key: SettingKeyRechargeBonusEnabled, Value: "false"},   // 满赠默认关(D6)
-		{Key: SettingKeyRechargeBonusRules, Value: ""},          // 满赠规则, 如 100:5,500:10
-		{Key: SettingKeyWithdrawalMinAmount, Value: "50"},       // 单笔最低提现额(收益池口径)
-		{Key: SettingKeyWithdrawalFeeRate, Value: "0.01"},       // 手续费 1%
-		{Key: SettingKeyWithdrawalFeeMin, Value: "1"},           // 最低手续费 1
-		{Key: SettingKeyWithdrawalCooldownDays, Value: "0"},     // 默认不冷却
-		{Key: SettingKeyWithdrawalDailyCountLimit, Value: "0"},  // 默认不限笔数
-		{Key: SettingKeyWithdrawalDailyAmountLimit, Value: "0"}, // 默认不限总额
-		{Key: SettingKeyWithdrawalAccountLockDays, Value: "0"},  // 默认不锁账户
+		{Key: SettingKeyEpayGatewayURL, Value: ""},                                        // 留空表示支付未配置, 充值入口优雅降级
+		{Key: SettingKeyEpayPID, Value: ""},                                               // 商户 ID 后配
+		{Key: SettingKeyEpayKey, Value: ""},                                               // 商户密钥后配(密钥类设置)
+		{Key: SettingKeyEpayPayTypes, Value: ""},                                          // 不限定支付方式
+		{Key: SettingKeyRechargeNotifyBase, Value: ""},                                    // 留空按请求 Host 推断回调地址
+		{Key: SettingKeyRechargeRate, Value: "7.0"},                                       // 1 USD = 7 CNY(D2)
+		{Key: SettingKeyRechargeMinCNY, Value: "1"},                                       // 单笔最低 1 元
+		{Key: SettingKeyRechargeAmountTiers, Value: "10,50,100,500"},                      // 弹窗快捷金额(元)
+		{Key: SettingKeyRechargeBonusEnabled, Value: "false"},                             // 满赠默认关(D6)
+		{Key: SettingKeyRechargeBonusRules, Value: ""},                                    // 满赠规则, 如 100:5,500:10
+		{Key: SettingKeyWithdrawalMinAmount, Value: "50"},                                 // 单笔最低提现额(收益池口径)
+		{Key: SettingKeyWithdrawalFeeRate, Value: "0.01"},                                 // 手续费 1%
+		{Key: SettingKeyWithdrawalFeeMin, Value: "1"},                                     // 最低手续费 1
+		{Key: SettingKeyWithdrawalCooldownDays, Value: "0"},                               // 默认不冷却
+		{Key: SettingKeyWithdrawalDailyCountLimit, Value: "0"},                            // 默认不限笔数
+		{Key: SettingKeyWithdrawalDailyAmountLimit, Value: "0"},                           // 默认不限总额
+		{Key: SettingKeyWithdrawalAccountLockDays, Value: "0"},                            // 默认不锁账户
 		{Key: SettingKeyAlipayGatewayURL, Value: "https://openapi.alipay.com/gateway.do"}, // 支付宝官方网关
-		{Key: SettingKeyAlipayAppID, Value: ""},              // 应用 ID 后配
-		{Key: SettingKeyAlipayPrivateKey, Value: ""},         // 私钥后配(密钥类设置)
-		{Key: SettingKeyAlipayPublicKey, Value: ""},          // 公钥后配
-		{Key: SettingKeyStripeSecretKey, Value: ""},          // Stripe 密钥后配(密钥类设置)
-		{Key: SettingKeyStripeWebhook, Value: ""},            // Webhook 密钥后配(密钥类设置)
-		{Key: SettingKeyStripeAPIBase, Value: ""},            // 留空走官方
-		{Key: SettingKeyStripeCurrency, Value: "usd"},        // 默认美元收款
-		{Key: SettingKeyCreemAPIKey, Value: ""},              // Creem Key 后配(密钥类设置)
-		{Key: SettingKeyCreemWebhook, Value: ""},             // Webhook 密钥后配(密钥类设置)
-		{Key: SettingKeyCreemAPIBase, Value: ""},             // 留空走官方
-		{Key: SettingKeyCreemProducts, Value: ""},            // 档位后配, 空表示未配置
-		{Key: SettingKeyScorePriceWeight, Value: "40"},           // 综合评分默认配比: 价格 40
-		{Key: SettingKeyScoreLatencyWeight, Value: "30"},         // 综合评分默认配比: 延迟 30
-		{Key: SettingKeyScoreSuccessWeight, Value: "30"},         // 综合评分默认配比: 成功率 30
-		{Key: SettingKeyScoreReliabilityFloor, Value: "70"},      // 成功率低于 70% 视为不健康, 评分排后
-		{Key: SettingKeySiteName, Value: ""},                     // 站点名称默认空, 前端回退默认标题
-		{Key: SettingKeySiteDescription, Value: ""},              // 站点描述默认空
-		{Key: SettingKeySiteContact, Value: ""},                  // 联系方式默认空
-		{Key: SettingKeySiteAnnouncement, Value: ""},             // 公告默认空
-		{Key: SettingKeySiteAnnouncementEnabled, Value: "false"}, // 公告默认关闭
-		{Key: SettingKeyMaintenanceMode, Value: "false"},         // 维护模式默认关闭
-		{Key: SettingKeyMaintenanceNotice, Value: ""},            // 维护提示默认空
-		{Key: SettingKeyLogRetentionDays, Value: "7"},            // 日志留存 7 天
-		{Key: SettingKeyLogArchiveEnabled, Value: "true"},        // 清理前先归档
-		{Key: SettingKeyLogStoreBody, Value: "true"},             // 默认保存正文
-		{Key: SettingKeyLogMaskFields, Value: ""},                // 默认不额外脱敏
-		{Key: SettingKeyAutoBackupEnabled, Value: "true"},        // 默认开启自动备份
-		{Key: SettingKeyAutoBackupKeep, Value: "7"},              // 保留 7 份
-		{Key: SettingKeyAutoBackupInterval, Value: "24"},         // 每 24 小时一次
-		{Key: SettingKeyBackupEncrypt, Value: "false"},           // 备份默认不加密
-		{Key: SettingKeyBackupRemote, Value: "false"},            // 备份默认不推异地
-		{Key: SettingKeyHealthCheckEnabled, Value: "false"},      // 健康探测默认关闭(可能产生上游费用)
-		{Key: SettingKeyHealthCheckMinutes, Value: "30"},         // 探测间隔 30 分钟
-		{Key: SettingKeyHealthLatencyMS, Value: "1000"},          // 延迟告警阈值 1 秒, 0 关闭
-		{Key: SettingKeySMTPHost, Value: ""},                    // 邮件服务默认未配置, 管理后台补上即启用
-		{Key: SettingKeySMTPPort, Value: "587"},               // 587 STARTTLS; 465 隐式 TLS
-		{Key: SettingKeySMTPUsername, Value: ""},              // 登录账号后配
-		{Key: SettingKeySMTPPassword, Value: ""},              // 登录密码后配(密钥类设置)
-		{Key: SettingKeySMTPFrom, Value: ""},                  // 发件人后配
-		{Key: SettingKeyAlertWebhookURL, Value: ""},              // 默认仅站内通知
-		{Key: SettingKeyAlertDedupMinutes, Value: "10"},          // 去重窗口 10 分钟
-		{Key: SettingKeyAlertFailStreak, Value: "3"},             // 连续 3 次失败判宕机
+		{Key: SettingKeyAlipayAppID, Value: ""},                                           // 应用 ID 后配
+		{Key: SettingKeyAlipayPrivateKey, Value: ""},                                      // 私钥后配(密钥类设置)
+		{Key: SettingKeyAlipayPublicKey, Value: ""},                                       // 公钥后配
+		{Key: SettingKeyStripeSecretKey, Value: ""},                                       // Stripe 密钥后配(密钥类设置)
+		{Key: SettingKeyStripeWebhook, Value: ""},                                         // Webhook 密钥后配(密钥类设置)
+		{Key: SettingKeyStripeAPIBase, Value: ""},                                         // 留空走官方
+		{Key: SettingKeyStripeCurrency, Value: "usd"},                                     // 默认美元收款
+		{Key: SettingKeyCreemAPIKey, Value: ""},                                           // Creem Key 后配(密钥类设置)
+		{Key: SettingKeyCreemWebhook, Value: ""},                                          // Webhook 密钥后配(密钥类设置)
+		{Key: SettingKeyCreemAPIBase, Value: ""},                                          // 留空走官方
+		{Key: SettingKeyCreemProducts, Value: ""},                                         // 档位后配, 空表示未配置
+		{Key: SettingKeyScorePriceWeight, Value: "40"},                                    // 综合评分默认配比: 价格 40
+		{Key: SettingKeyScoreLatencyWeight, Value: "30"},                                  // 综合评分默认配比: 延迟 30
+		{Key: SettingKeyScoreSuccessWeight, Value: "30"},                                  // 综合评分默认配比: 成功率 30
+		{Key: SettingKeyScoreReliabilityFloor, Value: "70"},                               // 成功率低于 70% 视为不健康, 评分排后
+		{Key: SettingKeySiteName, Value: ""},                                              // 站点名称默认空, 前端回退默认标题
+		{Key: SettingKeySiteDescription, Value: ""},                                       // 站点描述默认空
+		{Key: SettingKeySiteContact, Value: ""},                                           // 联系方式默认空
+		{Key: SettingKeySiteAnnouncement, Value: ""},                                      // 公告默认空
+		{Key: SettingKeySiteAnnouncementEnabled, Value: "false"},                          // 公告默认关闭
+		{Key: SettingKeyMaintenanceMode, Value: "false"},                                  // 维护模式默认关闭
+		{Key: SettingKeyMaintenanceNotice, Value: ""},                                     // 维护提示默认空
+		{Key: SettingKeyLogRetentionDays, Value: "7"},                                     // 日志留存 7 天
+		{Key: SettingKeyLogArchiveEnabled, Value: "true"},                                 // 清理前先归档
+		{Key: SettingKeyLogStoreBody, Value: "true"},                                      // 默认保存正文
+		{Key: SettingKeyLogMaskFields, Value: ""},                                         // 默认不额外脱敏
+		{Key: SettingKeyAutoBackupEnabled, Value: "true"},                                 // 默认开启自动备份
+		{Key: SettingKeyAutoBackupKeep, Value: "7"},                                       // 保留 7 份
+		{Key: SettingKeyAutoBackupInterval, Value: "24"},                                  // 每 24 小时一次
+		{Key: SettingKeyBackupEncrypt, Value: "false"},                                    // 备份默认不加密
+		{Key: SettingKeyBackupRemote, Value: "false"},                                     // 备份默认不推异地
+		{Key: SettingKeyHealthCheckEnabled, Value: "false"},                               // 健康探测默认关闭(可能产生上游费用)
+		{Key: SettingKeyHealthCheckMinutes, Value: "30"},                                  // 探测间隔 30 分钟
+		{Key: SettingKeyHealthLatencyMS, Value: "1000"},                                   // 延迟告警阈值 1 秒, 0 关闭
+		{Key: SettingKeySMTPHost, Value: ""},                                              // 邮件服务默认未配置, 管理后台补上即启用
+		{Key: SettingKeySMTPPort, Value: "587"},                                           // 587 STARTTLS; 465 隐式 TLS
+		{Key: SettingKeySMTPUsername, Value: ""},                                          // 登录账号后配
+		{Key: SettingKeySMTPPassword, Value: ""},                                          // 登录密码后配(密钥类设置)
+		{Key: SettingKeySMTPFrom, Value: ""},                                              // 发件人后配
+		{Key: SettingKeyAlertWebhookURL, Value: ""},                                       // 默认仅站内通知
+		{Key: SettingKeyAlertDedupMinutes, Value: "10"},                                   // 去重窗口 10 分钟
+		{Key: SettingKeyAlertFailStreak, Value: "3"},                                      // 连续 3 次失败判宕机
 		// 告警渠道与投递凭据: 必须在默认值里播种, 否则设置键不会落库, 读取与写入都会以 "setting not found" 失败。
 		{Key: SettingKeyAlertChannels, Value: ""},            // 留空等同仅 webhook, 与后端回落一致
 		{Key: SettingKeyAlertTelegramBotToken, Value: ""},    // Telegram Bot Token, 留空表示未配置
@@ -258,6 +259,7 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyBreakerKeyHardMinutes, Value: "30"},  // 鉴权/额度错误立即熔断 30 分钟
 		{Key: SettingKeyBreakerModelThreshold, Value: "5"},   // 连续 5 次错误熔断该渠道模型
 		{Key: SettingKeyBreakerModelMinutes, Value: "5"},     // 渠道模型熔断 5 分钟
+		{Key: SettingKeyBreakerMaxMinutes, Value: "60"},      // 连续熔断的时长上限 60 分钟
 		{Key: SettingKeyBreakerCoolAuthSeconds, Value: "60"}, // 鉴权/额度成员冷却 60 秒
 		{Key: SettingKeyBreakerCoolSoftSeconds, Value: "30"}, // 过载/模型缺失成员冷却 30 秒
 
@@ -420,6 +422,12 @@ func (s *Setting) Validate() error {
 		// 至少 1 分钟, 上限一天; 熔断时长为 0 等于不熔断, 应改用阈值 0。
 		if n, err := strconv.Atoi(s.Value); err != nil || n < 1 || n > 1440 {
 			return fmt.Errorf("breaker duration must be an integer between 1 and 1440 minutes")
+		}
+		return nil
+	case SettingKeyBreakerMaxMinutes:
+		// 递增上限至少 1 分钟, 上限一天; 低于基准时长时以基准为准(见 escalatedBreakerDuration)。
+		if n, err := strconv.Atoi(s.Value); err != nil || n < 1 || n > 1440 {
+			return fmt.Errorf("breaker max duration must be an integer between 1 and 1440 minutes")
 		}
 		return nil
 	case SettingKeyBreakerKeyHardMinutes:
