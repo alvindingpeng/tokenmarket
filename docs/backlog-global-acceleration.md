@@ -21,12 +21,25 @@ Cloudflare 记录为**灰云(DNS only)**, 仅做 DNS; 公网明文入口 8088 �
 
 ## A. 安全清理(与加速无关, 建议优先处理)
 
-### A1. 单用户实例仍在公网明文暴露
+### A1. 单用户实例仍在公网明文暴露 — **已处理 2026-10-18**
 
-- **现状**: `switchyard.service`(`/opt/switchyard/bin/switchyard`, pid 817, 自 2026-10-17 起运行)监听 `*:9100`, 公网可达(`http://202.6.204.216:9100/` 返回 200), 无 TLS。
-- **为什么没动**: 它是独立于 `switchyard` 的另一套部署, 用途未确认; 贸然停止可能中断未知业务。
-- **该怎么做**: 先确认它是否还有人用(`/opt/switchyard/data` 里的请求记录), 再二选一 —— 停用服务, 或把监听改到 `127.0.0.1` 并前置 nginx。
-- **验收**: 公网 `9100` 不可达。
+原状况: `switchyard.service`(`/opt/switchyard/bin/switchyard`)监听 `*:9100`, 公网明文可达, 无 TLS。
+
+处理前核实(只读):
+
+- `relay_requests` **0 行** —— 从未服务过任何请求
+- `audit_logs` 为空, 无人登录过; 无活跃连接; 无 cron/timer 依赖
+- 仅有配置残留: 2 个渠道(`foxrouter`、`muxllm`)、2 个分组、1 个从未使用的 `test` key
+
+处理动作:
+
+- `systemctl stop switchyard && systemctl disable switchyard` —— 服务已停并取消开机自启
+- 配置文件 `server.host` 由 `0.0.0.0` 改为 `127.0.0.1`(纵深防御: 万一将来被重新启用也不会公网暴露), 备份 `config.json.pre-a1`
+- **未删除任何数据**: `/opt/switchyard/data/data.db` 与全部配置原样保留
+
+验收: 公网 `9100` 返回 000(不可达), 本机无 9100 监听; 主系统 `https://prod.example.com/healthz` 正常。
+
+如需恢复: `systemctl enable --now switchyard`, 但它已绑 `127.0.0.1`, 要对外提供服务需前置 nginx(照 `switchyard-tt` 的 vhost 改端口即可)。
 
 ---
 
