@@ -60,9 +60,22 @@
 
 ## 3. 方案
 
-### G0 归因埋点(3 天, 所有后续工作的验收前提)
+### G0 归因埋点(3 天, 所有后续工作的验收前提) — **已实施 v0.35.0**
 
-- `relay_requests` 增列: `client_country`、`client_asn`、`dns_ns`、`connect_ns`、`tls_ns`、`ttfb_ns`、`egress_id`
+已交付:
+
+- `relay_requests` 与 `relay_request_attempts` 增列: `client_country`、`egress_id`、`dns_ns`、`connect_ns`、`tls_ns`、`ttfb_ns`、`conn_reused`(由 AutoMigrate 补齐, 存量行默认 0/空, 无需手写迁移)
+- 采集器 `internal/rhttp/timing.go`: `httptrace.ClientTrace` 打点, 挂在每轮 `roundCtx` 上, 同协议透传与跨协议转换两条路径都覆盖
+- 地区 `internal/geo`: 只认可信反代头(需 `server.trusted_proxies` 非空), 过滤 `XX`/`T1` 等占位值
+- 聚合接口 `GET /api/v1/ops/latency?days=N` + 运维中心「延迟归因」页签: 按渠道 × 地区的 p50/p95
+- 新增 `upstream_wait` 口径 = 首字节 − DNS − 建连 − TLS, 即上游自身排队时间
+
+与原计划的差异(有意为之):
+
+- `client_asn` 与 mmdb 解析**未做**(G0b): mmdb 需额外数据文件与许可证, 且边缘接入后头部信息更准, 现在做等于先造一个很快要被替代的组件
+- 线上实测发现: 存在渠道直连 `http://<IP>:<port>`(明文 HTTP + IP), 其 DNS/TLS 段**必然为 0**, 首字节 2.3s 全在上游排队。看板文案与字段注释已明确这三种为 0 的情况, 避免被读成"我们连得很快"
+
+原始计划条目:
 - 采集: `internal/rhttp` 用 `httptrace.ClientTrace` 打点(DNSStart/DNSDone、ConnectStart/Done、TLSHandshakeStart/Done、GotFirstResponseByte)
 - 国家: 优先取边缘注入头(`CF-IPCountry` / `X-Geo-Country`), 无边缘时用本地 mmdb 查 `client_ip`(零外部依赖)
 - 看板: 「国家 × 渠道 × 出口」的 TTFT / 建连 P50/P95

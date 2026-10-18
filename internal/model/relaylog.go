@@ -3,16 +3,22 @@ package model
 import "time"
 
 // UpstreamTiming 是一次上游请求的连接与首字节耗时分解, 单位纳秒。
-// 连接被复用时 DNS/建连/TLS 三段恒为 0 且 ConnReused=true —— 必须用标记区分:
-// 否则"平均建连 0ms"会被读成"建连极快", 而事实是根本没有建连。
-// 各段是包含关系: TTFBNs 覆盖 DNS+建连+TLS, 故上游净等待 ≈ TTFBNs - DNSNs - ConnectNs - TLSNs(仅新建连接时有意义)。
+// 各段是包含关系: TTFBNs 覆盖 DNS+建连+TLS, 故上游净等待 ≈ TTFBNs - DNSNs - ConnectNs - TLSNs。
+//
+// 某一段为 0 有三种可能, 看统计时不能一律读成"很快":
+//  1. 复用了已有连接(DNS/建连/TLS 都不会触发), 由 ConnReused 标出;
+//  2. 上游用 http 明文(没有 TLS 段), 见渠道 base_url 的 scheme;
+//  3. 上游地址本身就是 IP(没有 DNS 段), 见渠道 base_url 的 host。
+//
+// 线上实测就有渠道直连 http://<IP>:<port>, 三段全为 0 而首字节 2.3s —— 时间全在上游排队。
+// 这也是本模块存在的意义: 只看首字节, 会误判成"我们连得很快"。
 type UpstreamTiming struct {
 	EgressID   int   `json:"egress_id" gorm:"index;default:0"` // 出口标识, 出口池使用; 0 表示直连或全局代理。
-	DNSNs      int64 `json:"dns_ns" gorm:"default:0"`          // 域名解析耗时。
+	DNSNs      int64 `json:"dns_ns" gorm:"default:0"`          // 域名解析耗时; 上游地址为 IP 时为 0。
 	ConnectNs  int64 `json:"connect_ns" gorm:"default:0"`      // TCP 建连耗时。
-	TLSNs      int64 `json:"tls_ns" gorm:"default:0"`          // TLS 握手耗时。
+	TLSNs      int64 `json:"tls_ns" gorm:"default:0"`          // TLS 握手耗时; 上游用 http 明文时为 0。
 	TTFBNs     int64 `json:"ttfb_ns" gorm:"default:0"`         // 请求发出到收到首字节的耗时, 含上面三段。
-	ConnReused bool  `json:"conn_reused" gorm:"default:false"` // 本次是否复用了已有连接。
+	ConnReused bool  `json:"conn_reused" gorm:"default:false"` // 本次是否复用了已有连接; 为 true 时上面三段必为 0。
 }
 
 // RelayRequest 持久化的调用请求记录: 与进程内 RequestState 同一 ID 空间, 服务重启后仍可分页查询。
