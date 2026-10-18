@@ -29,7 +29,7 @@ func (r *RequestState) rowLocked() model.RelayRequest {
 		ID:                   r.ID,
 		ClientIP:             r.ClientIP,
 		ClientCountry:        r.ClientCountry,
-		UpstreamTiming:       r.roundTiming,
+		UpstreamTiming:       r.roundTiming, // 含 EgressID, 由 setRoundEgress 写入
 		UserID:               r.UserID,
 		APIKeyID:             r.apiKeyID,
 		APIKeyName:           r.APIKeyName,

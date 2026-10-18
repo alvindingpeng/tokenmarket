@@ -127,7 +127,26 @@
 - 收益与边界(诚实): 省掉跨洋 TLS 握手(1-2 RTT)与每请求建连, 但**源站 RTT 是地板**; 彻底消除它需要 G4
 - 验收: 全球 5 个探针点 TLS 建连 p95 < 300ms; 首字节相对基线改善 ≥ 15%
 
-### G3 出口池 + 按出口打分(2-3 周, 复用现有评分机制)
+### G3 出口池 + 按出口打分(2-3 周, 复用现有评分机制) — **已实施 v0.37.0**
+
+已交付:
+
+- 数据模型 `channel_egresses`: id / channel_id / name / kind(direct|http|socks5) / url / region / weight / enabled, 随 `model.Channel` 一起进进程内缓存, 编辑后下一轮选路立即生效
+- 选路 `internal/relay/egress.go`: 复用成员指标的 EMA 结构与样本窗口(`memberMetric` + `applySample`), 额外一份失败冷却; 每轮独立选择, 因此某轮失败后下一轮可能换到另一条线路
+- 冷出口按"已观测出口的平均值"参与, 不是 0 也不是无穷: 既不无条件抢占全部流量, 也不会永远轮不到
+- 失败切路: 与成员冷却同源(`classCooldownSeconds`), 成功后解除; 全部冷却时探最早恢复的那条 —— 拒绝请求必然失败, 试一次仍有成功机会
+- 区域亲和: `egress_region_bonus_ms` 设置项, 默认 **0 即关闭**(地区码来自反代头, 未配可信代理时恒为空, 开着也没效果)
+- 归因: `egress_id` 落进 `upstream_timing`(G0 已预留该列), 运维中心「延迟归因」新增出口维度与出口列
+- 前端: 渠道编辑页新增「出口」步骤(名称/类型/地址/地区/权重/启停), 按名称增量同步, 同名出口保留原主键
+- 验收: 两个真实 HTTP 代理 + 一次真实转发, 摘掉最优出口后请求自动走另一条且不失败(`internal/relay/egress_proxy_test.go`)
+
+与原计划的差异:
+
+- **指标不落库**(只存进程内): 出口成绩几秒钟就能重新学到 —— 每条出口各被选中一次就有样本, 而一个不通的出口最多让一次请求失败。为它做持久化要动 `route_metrics` 的格式, 收益不成比例。
+- **weight 不是流量配比**, 而是"同分优先 + 冷出口采样顺序"。按权重随机分流需要比当前系统更强的采样纪律(否则小权重出口永远拿不到足以判断的样本), 语义写清楚比假装支持更实在。
+- **routeExplanation 未加出口字段**: 该决策在渠道加载之前就已算出, 那时还不知道本轮走哪条出口。改为登记一条路由事件 `egress:<名称>`, 在请求详情的路由事件里可见 —— 排查时同样能看到, 且不会让决策结构里出现"未知"字段。
+
+原始计划(保留供对照):
 
 - 数据模型 `channel_egresses`: `id, channel_id, name, kind(direct|http|socks5), url, region, weight, enabled`
 - 指标维度: `memberMetricKey{groupID,itemID}` 增加 `egressID`(或独立 `egressMetrics`), **复用现有 EMA、样本窗口、可靠性下限**(`internal/relay/metric.go`)

@@ -123,6 +123,7 @@ const (
 	SettingKeyBreakerModelThreshold  SettingKey = "breaker_model_threshold"   // 渠道模型级熔断的错误次数阈值, 默认 5。
 	SettingKeyBreakerModelMinutes    SettingKey = "breaker_model_minutes"     // 渠道模型级熔断时长(分钟), 默认 5。
 	SettingKeyBreakerMaxMinutes      SettingKey = "breaker_max_minutes"       // 熔断时长递增上限(分钟), 默认 60。
+	SettingKeyEgressRegionBonusMs    SettingKey = "egress_region_bonus_ms"    // 出口区域亲和加成(毫秒), 默认 0 即关闭。
 	SettingKeyBreakerCoolAuthSeconds SettingKey = "breaker_cool_auth_seconds" // 换路冷却: 鉴权/额度错误后该成员冷却秒数, 默认 60。
 	SettingKeyBreakerCoolSoftSeconds SettingKey = "breaker_cool_soft_seconds" // 换路冷却: 过载/模型缺失等软错误后该成员冷却秒数, 默认 30。
 
@@ -260,6 +261,7 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyBreakerModelThreshold, Value: "5"},   // 连续 5 次错误熔断该渠道模型
 		{Key: SettingKeyBreakerModelMinutes, Value: "5"},     // 渠道模型熔断 5 分钟
 		{Key: SettingKeyBreakerMaxMinutes, Value: "60"},      // 连续熔断的时长上限 60 分钟
+		{Key: SettingKeyEgressRegionBonusMs, Value: "0"},     // 区域亲和默认关闭
 		{Key: SettingKeyBreakerCoolAuthSeconds, Value: "60"}, // 鉴权/额度成员冷却 60 秒
 		{Key: SettingKeyBreakerCoolSoftSeconds, Value: "30"}, // 过载/模型缺失成员冷却 30 秒
 
@@ -422,6 +424,12 @@ func (s *Setting) Validate() error {
 		// 至少 1 分钟, 上限一天; 熔断时长为 0 等于不熔断, 应改用阈值 0。
 		if n, err := strconv.Atoi(s.Value); err != nil || n < 1 || n > 1440 {
 			return fmt.Errorf("breaker duration must be an integer between 1 and 1440 minutes")
+		}
+		return nil
+	case SettingKeyEgressRegionBonusMs:
+		// 加成是"毫秒当量", 上限 60 秒: 再大就等于强行绑定地区, 会盖过实测差异。
+		if n, err := strconv.Atoi(s.Value); err != nil || n < 0 || n > 60000 {
+			return fmt.Errorf("egress region bonus must be an integer between 0 and 60000")
 		}
 		return nil
 	case SettingKeyBreakerMaxMinutes:

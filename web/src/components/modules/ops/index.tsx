@@ -380,6 +380,7 @@ function LatencySection() {
             </span>
         ) },
         { key: 'country', label: t('latency.country'), render: (row) => row.country || t('latency.countryUnknown') },
+        { key: 'egress', label: t('latency.egress'), render: (row) => row.egress_name || t('latency.egressDefault') },
         { key: 'requests', label: t('latency.requests') },
         { key: 'reused', label: t('latency.reused'), render: (row) => (row.reused_rate * 100).toFixed(0) + '%' },
         { key: 'ttfb', label: t('latency.ttfb') + ' p50/p95', render: (row) => pair(row.ttfb) + ' ms' },
@@ -407,7 +408,7 @@ function LatencySection() {
                 <div className='rounded-3xl border border-border bg-card p-10 text-center text-sm text-muted-foreground'>{t('loadFailed')}</div>
             ) : (
                 <OpsTable columns={columns} rows={data ?? []} empty={isLoading ? t('loading') : t('empty')}
-                    rowKey={(row) => row.channel_code + '|' + row.country} />
+                    rowKey={(row) => row.channel_code + '|' + row.country + '|' + row.egress_id} />
             )}
         </div>
     );

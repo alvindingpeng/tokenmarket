@@ -74,6 +74,10 @@ type RequestState struct {
 	routeDecision model.RelayRouteDecision
 	roundItemID   int                  // 最新一轮的分组成员 ID, 供尝试记录落库。
 	roundTiming   model.UpstreamTiming // 最新一轮上游请求的连接耗时分解, 由 setRoundTiming 在每轮结束时写入。
+	// 本轮使用的出口: ID 落进 UpstreamTiming 供归因与聚合, 名称随轮次推给界面。
+	// 没有配出口池的渠道两者恒为零值, 与"直连"在统计上区分开。
+	roundEgressID   int
+	roundEgressName string
 
 	// 用户侧限流上下文: 请求开始时预留, 结束时按真实用量结算。
 	rateScopes      []ratelimit.Scope
@@ -169,6 +173,8 @@ func (r *RequestState) startRound(cancel context.CancelFunc, channelKeyName, mod
 	r.roundCancel = cancel
 	r.roundItemID = itemID
 	r.roundTiming = model.UpstreamTiming{} // 新一轮重新采集, 不继承上一轮的连接耗时。
+	r.roundEgressID = 0
+	r.roundEgressName = ""
 	publishRequestLocked(r)
 	// 本轮上游尝试先登记在途, 结束时按结果覆盖。
 	persistAttempt(attemptRow(r, itemID, channelID, shareCode, modelName, protocol, r.RoundStartedAt, "running", ""))
@@ -270,6 +276,16 @@ func (r *RequestState) setRoundTiming(timing model.UpstreamTiming) {
 	mu.Lock()
 	defer mu.Unlock()
 	r.roundTiming = timing
+}
+
+// setRoundEgress 登记本轮选中的出口; 必须在 finishRound 之前调用, 尝试行与请求行都从这里取出口。
+func (r *RequestState) setRoundEgress(egress model.ChannelEgress) {
+	mu.Lock()
+	defer mu.Unlock()
+	r.roundEgressID = egress.ID
+	r.roundEgressName = egress.Name
+	// 出口 ID 归入耗时分解: 它本就是"这一轮从哪条线路出去"的一部分, 与 DNS/建连同源。
+	r.roundTiming.EgressID = egress.ID
 }
 
 // finishRound 记录本轮上游结果并落库本轮尝试; errText 为空表示已取得可提交响应。

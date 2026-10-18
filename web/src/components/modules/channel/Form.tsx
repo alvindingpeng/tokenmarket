@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { FormEgresses } from './FormEgresses';
 import { FormGrants } from './FormGrants';
 import { FormKeys } from './FormKeys';
 import { IconButton } from '@/components/common/IconButton';
@@ -26,7 +27,7 @@ import {
     type ChannelFormState,
 } from './state';
 
-type StepID = 'preset' | 'connection' | 'keys' | 'grants' | 'advanced';
+type StepID = 'preset' | 'connection' | 'keys' | 'egresses' | 'grants' | 'advanced';
 
 // ChannelForm 新建与编辑共用; 编辑时按 id 取回整份配置, 到齐后再进表单。
 // 配置不随渠道列表下发, 故编辑必然要等这一趟请求; 占位与表单同高, 弹窗不会因此跳动。
@@ -81,6 +82,7 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
         ...(channel ? [] : [{ id: 'preset' as StepID, label: t('stepPreset') }]),
         { id: 'connection', label: t('stepConnection') },
         { id: 'keys', label: t('stepKeys') },
+        { id: 'egresses', label: t('stepEgresses') },
         { id: 'grants', label: t('stepGrants') },
         { id: 'advanced', label: t('stepAdvanced') },
     ];
@@ -221,6 +223,7 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
                     )}
 
                     {step === 'keys' && <FormKeys state={state} setState={setState} />}
+                    {step === 'egresses' && <FormEgresses state={state} setState={setState} />}
                     {step === 'grants' && <FormGrants state={state} setState={setState} />}
 
                     {step === 'advanced' && (

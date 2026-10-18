@@ -3,6 +3,7 @@ package op
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/db"
@@ -27,6 +28,8 @@ type LatencyPercentiles struct {
 type LatencyBreakdownRow struct {
 	ChannelCode  string             `json:"channel_code"`
 	ChannelKey   string             `json:"channel_key"`
+	EgressID     int                `json:"egress_id"`   // 出口池里的出口 ID; 0 表示未走出口池(直连或渠道代理)。
+	EgressName   string             `json:"egress_name"` // 出口名称, 便于直接读; 出口已删除时为空。
 	Country      string             `json:"country"`
 	Requests     int                `json:"requests"`
 	ReusedRate   float64            `json:"reused_rate"` // 连接复用占比; 复用率高说明建连开销已被摊薄。
@@ -41,6 +44,7 @@ type LatencyBreakdownRow struct {
 type latencyScanRow struct {
 	ChannelKey  string `gorm:"column:channel_key"`
 	ChannelCode string `gorm:"column:channel_code"`
+	EgressID    int    `gorm:"column:egress_id"`
 	Country     string `gorm:"column:country"`
 	TTFBNs      int64  `gorm:"column:ttfb_ns"`
 	DNSNs       int64  `gorm:"column:dns_ns"`
@@ -54,7 +58,7 @@ type latencyScanRow struct {
 func LatencyBreakdown(since time.Time) ([]LatencyBreakdownRow, error) {
 	query := db.GetDB().Model(&model.RelayRequest{}).
 		Select("target_channel_key as channel_key, target_channel_code as channel_code, " +
-			"client_country as country, ttfb_ns, dns_ns, connect_ns, tls_ns, conn_reused").
+			"egress_id, client_country as country, ttfb_ns, dns_ns, connect_ns, tls_ns, conn_reused").
 		Where("ttfb_ns > 0")
 	if !since.IsZero() {
 		query = query.Where("started_at >= ?", since)
@@ -74,10 +78,11 @@ func LatencyBreakdown(since time.Time) ([]LatencyBreakdownRow, error) {
 	buckets := make(map[string]*bucket)
 	meta := make(map[string]latencyScanRow)
 	for _, sample := range samples {
-		key := sample.ChannelCode + "|" + sample.Country
-		if key == "|" {
+		// 出口也是分组维度: 同一渠道同一国家走不同出口的耗时差异, 正是出口池要回答的问题。
+		key := sample.ChannelCode + "|" + sample.Country + "|" + strconv.Itoa(sample.EgressID)
+		if key == "||0" {
 			// 早期请求可能没有渠道编码(未发布渠道或失败轮次), 归入同一桶而不是丢弃。
-			key = "|"
+			key = "||0"
 		}
 		current, ok := buckets[key]
 		if !ok {
@@ -95,6 +100,7 @@ func LatencyBreakdown(since time.Time) ([]LatencyBreakdownRow, error) {
 		}
 	}
 
+	egressNames := egressNameByID()
 	rows := make([]LatencyBreakdownRow, 0, len(buckets))
 	for key, current := range buckets {
 		info := meta[key]
@@ -102,6 +108,8 @@ func LatencyBreakdown(since time.Time) ([]LatencyBreakdownRow, error) {
 		rows = append(rows, LatencyBreakdownRow{
 			ChannelCode:  info.ChannelCode,
 			ChannelKey:   info.ChannelKey,
+			EgressID:     info.EgressID,
+			EgressName:   egressNames[info.EgressID],
 			Country:      info.Country,
 			Requests:     total,
 			ReusedRate:   float64(current.reused) / float64(total),
@@ -119,6 +127,19 @@ func LatencyBreakdown(since time.Time) ([]LatencyBreakdownRow, error) {
 		return rows[i].ChannelCode < rows[j].ChannelCode
 	})
 	return rows, nil
+}
+
+// egressNameByID 返回出口 ID 到名称的映射; 查库失败时返回空表, 让聚合结果仍然可用。
+func egressNameByID() map[int]string {
+	names := make(map[int]string)
+	var egresses []model.ChannelEgress
+	if err := db.GetDB().Select("id", "name").Find(&egresses).Error; err != nil {
+		return names
+	}
+	for _, egress := range egresses {
+		names[egress.ID] = egress.Name
+	}
+	return names
 }
 
 // upstreamWait 估算上游自身排队耗时: 首字节耗时减去建连各段, 下限为 0。

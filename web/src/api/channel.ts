@@ -62,6 +62,18 @@ export type ChannelGrantCandidate = {
  * 提交即全量，未列出的凭据与模型会被删除并级联删除其授权；创建时 id 取 0，由后端分配。
  * keys、models、grants 和 custom_header 恒为数组，后端读取侧承诺不为 null。
  */
+// ChannelEgress 是渠道的一条出口线路。
+// kind=direct 时 url 恒为空；http/socks5 时 url 必填且协议要与 kind 一致（后端会校验）。
+export type ChannelEgress = {
+    id: number;
+    name: string;
+    kind: 'direct' | 'http' | 'socks5';
+    url: string;
+    region: string; // 出口所在地区码（如 HK），留空表示不参与区域亲和。
+    weight: number; // 同分时的优先权重，数值越大越先被选中。
+    enabled: boolean;
+};
+
 export type ChannelDetail = {
     id: number;
     name: string;
@@ -72,6 +84,9 @@ export type ChannelDetail = {
     openai_response_path: string;
     anthropic_message_path: string;
     keys: ChannelKey[];
+    // egresses 是渠道的出口池：每条出口描述"从哪条线路出去"，转发时按实测耗时择优。
+    // 留空表示沿用渠道自身的代理配置（proxy / channel_proxy），保持旧行为。
+    egresses: ChannelEgress[];
     models: string[]; // 上游模型名称；模型除名称外没有界面用得上的字段。
     grants: ChannelGrant[];
     proxy: boolean;
@@ -170,7 +185,7 @@ export type ChannelStatsFormatted = {
 // 名称可为空：探测常发生在渠道尚未命名时，后端只要求地址非空。
 // 不带协议：后端一次同时探 OpenAI 与 Anthropic 两侧，协议支持由各侧响应决定。
 type FetchModelRequest = {
-    channel: Omit<ChannelDetail, 'id' | 'keys' | 'models' | 'grants'>;
+    channel: Omit<ChannelDetail, 'id' | 'keys' | 'models' | 'grants' | 'egresses'>;
     key: string;
 };
 

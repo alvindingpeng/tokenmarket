@@ -12,6 +12,8 @@ export type ChannelFormState = {
     openai_response_path: string;
     anthropic_message_path: string;
     keys: { name: string; key: string; enabled: boolean }[];
+    // 出口池按名称组织, 与凭据一致: 后端同样按名称增删改, 新建渠道时主键尚不存在。
+    egresses: { name: string; kind: ChannelDetail['egresses'][number]['kind']; url: string; region: string; weight: number; enabled: boolean }[];
     models: string[];
     grants: Map<string, number>; // 键为 grantKey(模型名, 凭据名), 值为 Protocol 位掩码。
     custom_header: ChannelDetail['custom_header'];
@@ -36,6 +38,7 @@ export const emptyFormState: ChannelFormState = {
     openai_response_path: '/v1/responses',
     anthropic_message_path: '/v1/messages',
     keys: [],
+    egresses: [],
     models: [],
     grants: new Map(),
     custom_header: [],
@@ -57,6 +60,8 @@ export function fromChannel(channel: ChannelDetail): ChannelFormState {
         openai_response_path: channel.openai_response_path,
         anthropic_message_path: channel.anthropic_message_path,
         keys: channel.keys.map(({ name, key, enabled }) => ({ name, key, enabled })),
+        // 后端承诺 egresses 恒为数组; 老库没有出口时就是空数组。
+        egresses: (channel.egresses ?? []).map(({ name, kind, url, region, weight, enabled }) => ({ name, kind, url, region, weight, enabled })),
         models: [...channel.models],
         grants: new Map(channel.grants.map((g) => [grantKey(g.model_name, g.key_name), g.protocols])),
         custom_header: channel.custom_header,
@@ -95,6 +100,16 @@ export function toChannelDetail(state: ChannelFormState, id: number): ChannelDet
         ...toChannelConfig(state),
         id,
         keys: state.keys.map(({ name, key, enabled }) => ({ name: name.trim(), key: key.trim(), enabled })),
+        // 出口不带主键提交: 后端按名称匹配, 主键由它自己维护, 换 ID 会让历史成绩对不上。
+        egresses: state.egresses.map(({ name, kind, url, region, weight, enabled }) => ({
+            id: 0, // 提交不带主键: 后端按名称匹配已有出口, 主键由它维护。
+            name: name.trim(),
+            kind,
+            url: kind === 'direct' ? '' : url.trim(),
+            region: region.trim(),
+            weight,
+            enabled,
+        })),
         models: [...state.models],
         grants: [...state.grants]
             .filter(([, protocols]) => protocols !== 0)
