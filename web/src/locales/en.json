@@ -1413,7 +1413,7 @@
             "latency": "Latency"
         },
         "latency": {
-            "desc": "Time to first byte = connect (DNS/TCP/TLS) + upstream wait. High upstream wait means the channel itself is slow; high connect or TLS means your own egress or the edge hop is the problem. Only requests that produced a first byte are counted, and reused connections show 0 under connect.",
+            "desc": "Time to first byte = connect (DNS/TCP/TLS) + upstream wait. High upstream wait means the channel itself is slow; high connect or TLS means your own egress or the edge hop is the problem. A zero under connect has three causes: the connection was reused, the upstream is plain http, or the upstream address is a bare IP; check the reused rate and the channel URL instead of reading it as fast. Only requests that produced a first byte are counted.",
             "channel": "Channel",
             "country": "Region",
             "countryUnknown": "Unlabeled",
