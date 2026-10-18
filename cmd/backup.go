@@ -4,8 +4,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/bestruirui/octopus/internal/conf"
-	"github.com/bestruirui/octopus/internal/op"
+	"github.com/alvindingpeng/switchyard/internal/conf"
+	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
 )
@@ -21,7 +21,7 @@ var backupCmd = &cobra.Command{
 	Short: "Backup utilities (decrypt / verify)",
 }
 
-// backupDecryptCmd 解密加密备份, 口令取自 config.json backup.passphrase 或 OCTOPUS_BACKUP_PASSPHRASE。
+// backupDecryptCmd 解密加密备份, 口令取自 config.json backup.passphrase 或 SWITCHYARD_BACKUP_PASSPHRASE。
 var backupDecryptCmd = &cobra.Command{
 	Use:   "decrypt",
 	Short: "Decrypt an encrypted backup (.db.enc) into a plain SQLite file",
@@ -35,7 +35,7 @@ var backupDecryptCmd = &cobra.Command{
 		}
 		passphrase := conf.AppConfig.Backup.Passphrase
 		if strings.TrimSpace(passphrase) == "" {
-			log.Error("backup passphrase is not configured (config.json backup.passphrase or OCTOPUS_BACKUP_PASSPHRASE)")
+			log.Error("backup passphrase is not configured (config.json backup.passphrase or SWITCHYARD_BACKUP_PASSPHRASE)")
 			os.Exit(1)
 		}
 		if err := op.DecryptBackupFile(backupIn, backupOut, passphrase); err != nil {

@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/auth"
 	"github.com/looplj/axonhub/llm/httpclient"

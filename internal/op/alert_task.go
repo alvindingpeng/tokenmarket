@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/bestruirui/octopus/internal/alert"
+	"github.com/alvindingpeng/switchyard/internal/alert"
 )
 
 // 后台任务故障告警。

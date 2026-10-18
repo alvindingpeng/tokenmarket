@@ -2,7 +2,7 @@ FROM alpine
 
 ARG TARGETPLATFORM
 ENV TZ=Asia/Shanghai \
-    APP_NAME=octopus
+    APP_NAME=switchyard
 
 RUN apk add --no-cache alpine-conf ca-certificates su-exec && \
     /usr/sbin/setup-timezone -z Asia/Shanghai && \

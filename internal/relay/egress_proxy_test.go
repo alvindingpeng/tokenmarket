@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // newRecordingProxy 起一个最小可用的正向代理, 记录被使用的次数。

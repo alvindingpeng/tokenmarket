@@ -10,10 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/alert"
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/op"
-	"github.com/bestruirui/octopus/internal/ratelimit"
+	"github.com/alvindingpeng/switchyard/internal/alert"
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/op"
+	"github.com/alvindingpeng/switchyard/internal/ratelimit"
 	"github.com/charmbracelet/log"
 	"github.com/looplj/axonhub/llm"
 )

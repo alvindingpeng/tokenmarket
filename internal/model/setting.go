@@ -20,7 +20,7 @@ const (
 	SettingKeyUpdateCheckEnabled      SettingKey = "update_check_enabled"       // 是否自动检查本分支 Release 更新
 	SettingKeyUpdateCheckMinutes      SettingKey = "update_check_interval"      // 自动检查间隔(分钟)
 	// GitHub 访问令牌: 只用来抬高 GitHub API 的匿名限流(60 次/小时), 可选。
-	// 环境变量 OCTOPUS_GITHUB_PAT 仍优先, 设置项作为界面可改的后备, 免得改令牌还得进机器改 systemd。
+	// 环境变量 SWITCHYARD_GITHUB_PAT 仍优先, 设置项作为界面可改的后备, 免得改令牌还得进机器改 systemd。
 	SettingKeyGithubToken SettingKey = "github_token"
 	// 多用户与计费。
 	SettingKeyMarkupRatio              SettingKey = "markup_ratio"                // 上浮比例: 用户价 = 供货价 × (1 + 上浮比例)

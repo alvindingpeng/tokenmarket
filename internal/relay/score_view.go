@@ -1,7 +1,7 @@
 package relay
 
 import (
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // MemberScoreView 是分组成员在当前有效评分配比下的综合评分快照, 供模型配置页的成员信息展示。

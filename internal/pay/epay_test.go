@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // TestEpaySignRoundtrip 签名与验签闭环: 正确参数通过。

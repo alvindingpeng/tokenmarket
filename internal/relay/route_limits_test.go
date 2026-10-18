@@ -1,8 +1,8 @@
 package relay
 
 import (
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/ratelimit"
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/ratelimit"
 	"testing"
 	"time"
 )

@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // defaultVideoReserveSeconds 是客户端未声明 seconds 时用于冻结额度的保守时长。

@@ -3,7 +3,7 @@ package op
 import (
 	"testing"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // TestChannelEgressRoundTrip 覆盖出口池的完整读写链路:

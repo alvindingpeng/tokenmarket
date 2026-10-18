@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/ratelimit"
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/ratelimit"
 )
 
 // setupRecoveryTest 换上限流宽松的限流器并清空指定分组的路由状态, 返回还原函数。

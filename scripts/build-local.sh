@@ -6,11 +6,11 @@
 # 否则 设置 > 信息 会把 "前端版本 != 后端版本" 判成浏览器缓存问题而弹红色告警。
 # CI 用的是 scripts/build.sh(交叉编译 + 归档), 那是发布产物流水线, 与此处部署二进制互不影响。
 #
-# 用法: bash scripts/build-local.sh [-o 输出路径]   默认输出 build/octopus-local
+# 用法: bash scripts/build-local.sh [-o 输出路径]   默认输出 build/switchyard-local
 set -euo pipefail
 
 readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUTPUT="${REPO_ROOT}/build/octopus-local"
+OUTPUT="${REPO_ROOT}/build/switchyard-local"
 
 if [ "${1:-}" = "-o" ]; then
     [ -n "${2:-}" ] || { echo "用法: scripts/build-local.sh [-o 输出路径]" >&2; exit 2; }
@@ -20,7 +20,7 @@ fi
 readonly VERSION="$(bash "${REPO_ROOT}/scripts/version.sh")"
 readonly COMMIT="$(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 readonly BUILD_TIME="$(TZ='Asia/Shanghai' date +'%F %T %z')"
-readonly MODULE='github.com/bestruirui/octopus'
+readonly MODULE='github.com/alvindingpeng/switchyard'
 readonly LDFLAGS="-X '${MODULE}/internal/conf.Version=${VERSION}' \
                   -X '${MODULE}/internal/conf.BuildTime=${BUILD_TIME}' \
                   -X '${MODULE}/internal/conf.Commit=${COMMIT}' \

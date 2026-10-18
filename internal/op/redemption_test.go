@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // redemptionTestSetup 初始化隔离测试库并建一个待兑换用户。

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // withdrawalTestSetup 初始化隔离库: 建一个带收益池的渠道商与一个普通用户。

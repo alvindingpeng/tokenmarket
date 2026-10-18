@@ -1,36 +1,54 @@
 <div align="center">
 
-<img src="web/public/logo.svg" alt="Octopus Logo" width="120" height="120">
+<img src="web/public/logo.svg" alt="Switchyard" width="112" height="112">
 
-### Octopus
+# Switchyard
 
-**自托管的 LLM API 网关：聚合、路由、计费与运维，全部装进一个二进制**
+**自托管的 LLM 编组网关 —— 多条上游汇入，一种协议发出，每一次调用都被计量。**
 
-`v0.21.0` · [English](README.md) | 简体中文
+[![version](https://img.shields.io/badge/version-v0.38.0-4c6ef5?style=flat-square)](#版本号与发布)
+[![go](https://img.shields.io/badge/go-1.26-00ADD8?style=flat-square&logo=go&logoColor=white)](go.mod)
+[![license](https://img.shields.io/badge/license-AGPL--3.0--only-blue?style=flat-square)](LICENSE)
+[![deploy](https://img.shields.io/badge/deploy-single%20binary-2b8a3e?style=flat-square)](#快速开始)
+
+[English](README.md) | 简体中文
 
 </div>
 
-> **本仓库** —— [alvindingpeng/tokenmarket](https://github.com/alvindingpeng/tokenmarket) —— 基于上游
-> [bestruirui/octopus](https://github.com/bestruirui/octopus)（基线：上游 `v0.13.9`）。下面写的是
-> **本分支当前真实运行的能力**；与上游的差异逐条记在 [CHANGELOG.md](CHANGELOG.md) 里。
+> **名字与来历。** 这份代码最初是 [bestruirui/octopus](https://github.com/bestruirui/octopus) 的生产分支
+> （基线 `v0.13.9`），后来长得远超它 —— 选路、计费、媒体处理与运维基本重写过。现在它以**Switchyard**
+> 这个名字独立发布，而这个名字说的正是它做的事：LLM 流量的编组场。与原项目的差异逐条记在
+> [CHANGELOG.md](CHANGELOG.md) 里。
 
 ---
 
 ## 目录
 
+**从这里开始**
+
 - [它做什么](#它做什么)
+- [编组模型](#编组模型)
 - [快速开始](#快速开始)
+- [客户端接入示例](#客户端接入示例)
+
+**工作原理**
+
 - [协议兼容性](#协议兼容性)
 - [转发：选路、故障转移与错误处理](#转发选路故障转移与错误处理)
 - [定价与计费](#定价与计费)
 - [渠道、分组与发布](#渠道分组与发布)
-- [运维：健康探测、告警、指标、备份](#运维健康探测告警指标备份)
 - [限额与访问控制](#限额与访问控制)
 - [角色与管理界面](#角色与管理界面)
 - [站点身份与维护模式](#站点身份与维护模式)
+
+**运维**
+
+- [运维：健康探测、告警、指标、备份](#运维健康探测告警指标备份)
 - [配置](#配置)
 - [接口总览](#接口总览)
-- [客户端接入示例](#客户端接入示例)
+
+**参考**
+
 - [界面截图](#界面截图)
 - [文档](#文档)
 - [从源码构建](#从源码构建)
@@ -39,11 +57,9 @@
 - [路线图](#路线图)
 - [致谢](#致谢)
 
----
-
 ## 它做什么
 
-Octopus 在多家上游供应商前面摆一个 OpenAI 形态的入口。客户端照旧调 `/v1/chat/completions`，Octopus 负责
+Switchyard 在多家上游供应商前面摆一个 OpenAI 形态的入口。客户端照旧调 `/v1/chat/completions`，Switchyard 负责
 挑渠道、必要时转换协议、预扣余额、按实际用量结算，并在上游出问题时切走。
 
 | 领域 | 能力 |
@@ -63,23 +79,50 @@ Octopus 在多家上游供应商前面摆一个 OpenAI 形态的入口。客户�
 
 ---
 
+## 编组模型
+
+编组场把从多条股道进来的车流按去向拆开、重新编组成新的车次，再发到真正能送到的股道上。Switchyard 对
+LLM 调用做的是同一件事 —— 而且和铁路一样，按里程计费。
+
+```
+            汇入                   编组                   发车                    计量
+              │                      │                      │                      │
+  OpenAI ─────┤                      │                      │                      │
+  Anthropic ──┼──▶ 一个模型名 ───────┼──▶ 按打分选路 ───────┼──▶ 上游 ────────────▶│
+  生图 ───────┤    （= 一个分组）    │    价格 / 延迟        │    （出口池）        │
+  生视频 ─────┘                      │    / 成功率           │                      │
+                                     │                      │   预扣 ▶ 结算 ▶ 账本
+```
+
+| 环节 | 发生什么 | 在控制台哪里 |
+|------|----------|--------------|
+| **汇入** | 每个上游渠道各自持有凭据、限额与协议位 | 渠道 |
+| **编组** | 一个模型名就是一个分组，背后可挂多个渠道，按顺序、价格、延迟或综合评分编排 | 分组 / 模型配置 |
+| **发车** | 请求按当前打分选路发出；失败、超时、限流时自动换道，出口可按渠道池化 | 转发、出口池 |
+| **计量** | 调用前预扣余额、调用后结算；文本按 token、图像按张、视频按条计费，配账本与每日对账 | 计费 |
+
+这个比喻的重点是中间两步：普通代理把一个请求转给一个地方；Switchyard 决定**哪一个**上游该接这次调用，
+请求在途时还在持续决定，并且把花了多少记下来。
+
+---
+
 ## 快速开始
 
 ### 取得二进制文件
 
 **本分支会发布标准平台压缩包。** 标签触发的发布 workflow 会在 Release 说明创建后上传
-`octopus-<os>-<arch>.zip`（包含当前运行平台）。需要本地构建或离线部署时，也可以自行构建：
+`switchyard-<os>-<arch>.zip`（包含当前运行平台）。需要本地构建或离线部署时，也可以自行构建：
 
 ```bash
-bash scripts/build-local.sh -o ./octopus    # 只构建当前机器这一份
+bash scripts/build-local.sh -o ./switchyard    # 只构建当前机器这一份
 # 或者要全平台矩阵（linux amd64/arm64/armv7/386、windows amd64、darwin amd64/arm64、android）：
-# bash scripts/build.sh  ->  build/archives/octopus-<os>-<arch>.zip
+# bash scripts/build.sh  ->  build/archives/switchyard-<os>-<arch>.zip
 ```
 
 然后：
 
 ```bash
-./octopus start
+./switchyard start
 ```
 
 数据都在二进制旁边的 `./data/`：首次启动写出 `data/config.json`，默认 SQLite 库是 `data/data.db`。
@@ -90,8 +133,8 @@ bash scripts/build-local.sh -o ./octopus    # 只构建当前机器这一份
 
 ```bash
 bash scripts/build.sh                       # 交叉编译到 build/
-docker build -f scripts/dockerfile/Dockerfile -t octopus .
-docker run -d --name octopus -v /path/to/data:/app/data -p 8080:8080 octopus
+docker build -f scripts/dockerfile/Dockerfile -t switchyard .
+docker run -d --name switchyard -v /path/to/data:/app/data -p 8080:8080 switchyard
 ```
 
 仓库里带的 `docker-compose.yml` 中，`image:` 仍指向上游镜像名（`bestruirui/octopus`）。用之前先把它换成
@@ -122,7 +165,7 @@ POST /v1/images/edits         # OpenAI 生图（multipart，支持多张输入�
 GET  /v1/models               # 该密钥可见的模型列表
 ```
 
-鉴权用界面「API 密钥」里创建的密钥，放在 `Authorization: Bearer sk-octopus-…` 或 `x-api-key: sk-octopus-…`。
+鉴权用界面「API 密钥」里创建的密钥，放在 `Authorization: Bearer sk-switchyard-…` 或 `x-api-key: sk-switchyard-…`。
 `/v1` 这一层**只认密钥**：界面的会话 Cookie 不是 API 凭据，在这里会被拒绝。已停用、已过期、或已用尽
 `max_cost` 配额的密钥，都在入口处直接拒绝。
 
@@ -266,9 +309,9 @@ GET /metrics    # Prometheus 文本格式；可选 bearer 鉴权
 
 数据库不响应时 `/healthz` 返回 `503 degraded`。它刻意永不加鉴权：给存活探针加鉴权只会让编排系统没法探活。
 
-`/metrics` 暴露 `octopus_up`、`octopus_build_info`、`octopus_relay_requests`、`octopus_relay_tokens_total`、
-`octopus_billing_cost_total`、`octopus_active_requests`、`octopus_channels`、`octopus_users`、
-`octopus_user_balance_total`、`octopus_alerts_raised_24h`，以及 Go 运行时计数。把 `metrics_auth` 设为 `bearer`
+`/metrics` 暴露 `switchyard_up`、`switchyard_build_info`、`switchyard_relay_requests`、`switchyard_relay_tokens_total`、
+`switchyard_billing_cost_total`、`switchyard_active_requests`、`switchyard_channels`、`switchyard_users`、
+`switchyard_user_balance_total`、`switchyard_alerts_raised_24h`，以及 Go 运行时计数。把 `metrics_auth` 设为 `bearer`
 即要求抓取方带令牌（`Authorization: Bearer …` 或 `?token=`）；令牌按需生成，并可在界面里轮换。
 
 ### 渠道健康探测
@@ -293,9 +336,9 @@ GET /metrics    # Prometheus 文本格式；可选 bearer 鉴权
 - 恢复与校验走命令行：
 
 ```bash
-./octopus backup verify  --file data/backup/db-20261009.db.sha256
-./octopus backup decrypt --in backup.db.enc --out backup.db
-./octopus version
+./switchyard backup verify  --file data/backup/db-20261009.db.sha256
+./switchyard backup decrypt --in backup.db.enc --out backup.db
+./switchyard version
 ```
 
 ### 日志生命周期
@@ -320,7 +363,7 @@ JSON key）做脱敏 —— 公网机器上保存正文之前请先配好掩码�
 | 过载 | 有界等待队列、整请求截止时间、单成员尝试上限、冷却 |
 | 来源 | `cors_allow_origins`（空 = 不允许跨域；`*` = 全允许） |
 | 管理后台 | 会话 Cookie 鉴权、逐路由角色校验；除 `/api/v1/site/config` 与登录 / 注册接口外 `/api/v1/*` 不公开 |
-| 机密 | API 密钥形如 `sk-octopus-…`；`auth_secret` 与 `metrics_token` 是内部键，不会出现在设置接口里；日志正文可脱敏；备份凭据不入库 |
+| 机密 | API 密钥形如 `sk-switchyard-…`；`auth_secret` 与 `metrics_token` 是内部键，不会出现在设置接口里；日志正文可脱敏；备份凭据不入库 |
 | 模型面 | `model_filter` 在渠道列模型时应用全局过滤表达式 |
 
 ---
@@ -339,7 +382,7 @@ JSON key）做脱敏 —— 公网机器上保存正文之前请先配好掩码�
 分组编辑支持置顶 / 置底。
 
 **子路径部署**：前端以 `base: './'` 构建，service worker 从注册作用域推导自己的路径，因此挂在反向代理的
-`https://example.com/octopus/` 下面也能跑，不需要为路径重新构建。
+`https://example.com/switchyard/` 下面也能跑，不需要为路径重新构建。
 
 ### 注册
 
@@ -356,7 +399,7 @@ JSON key）做脱敏 —— 公网机器上保存正文之前请先配好掩码�
 
 | 字段 | 出现位置 |
 |------|----------|
-| `site_name` | 浏览器标签页标题、登录页抬头、API 密钥视图抬头、分享图抬头。留空回退 `Octopus`，不会把标题清成空串。 |
+| `site_name` | 浏览器标签页标题、登录页抬头、API 密钥视图抬头、分享图抬头。留空回退 `Switchyard`，不会把标题清成空串。 |
 | `site_description` | 登录页标题下方一句话 |
 | `site_contact` | 登录页；是 URL 或邮箱时自动渲染成可点链接，否则原样显示纯文本 |
 | `announcement` + `site_announcement_enabled` | 登录用户可见、可关闭的横幅；开关在**服务端**生效，关闭时公告正文根本不会出现在响应里 |
@@ -396,9 +439,9 @@ JSON key）做脱敏 —— 公网机器上保存正文之前请先配好掩码�
 | `backup.remote_url` | WebDAV 目录，空为不推送异地 | `""` |
 | `backup.remote_user` / `backup.remote_password` | WebDAV 凭据 | `""` |
 
-每一项都可用环境变量覆写，格式是 `OCTOPUS_` + 配置路径（以 `_` 连接）：`OCTOPUS_SERVER_PORT`、
-`OCTOPUS_DATABASE_TYPE`、`OCTOPUS_DATABASE_PATH`、`OCTOPUS_LOG_LEVEL`、`OCTOPUS_BACKUP_PASSPHRASE`……
-`OCTOPUS_GITHUB_PAT` 用于提高版本检查的 GitHub 速率限制。
+每一项都可用环境变量覆写，格式是 `SWITCHYARD_` + 配置路径（以 `_` 连接）：`SWITCHYARD_SERVER_PORT`、
+`SWITCHYARD_DATABASE_TYPE`、`SWITCHYARD_DATABASE_PATH`、`SWITCHYARD_LOG_LEVEL`、`SWITCHYARD_BACKUP_PASSPHRASE`……
+`SWITCHYARD_GITHUB_PAT` 用于提高版本检查的 GitHub 速率限制。
 
 ### 数据库
 
@@ -406,7 +449,7 @@ JSON key）做脱敏 —— 公网机器上保存正文之前请先配好掩码�
 |------|----------------------|
 | SQLite | `data/data.db` |
 | MySQL | `user:password@tcp(host:port)/dbname` |
-| PostgreSQL | `host=localhost user=postgres password=xxx dbname=octopus port=5432 sslmode=disable` |
+| PostgreSQL | `host=localhost user=postgres password=xxx dbname=switchyard port=5432 sslmode=disable` |
 
 > 💡 MySQL / PostgreSQL 的库需要你自己建，表结构会自动迁移。迁移脚本是 `internal/db/migrate/` 下按序追加的
 > 文件 —— 只追加、不改写历史，这正是「改价不会篡改旧账单」这条约束在升级后仍然成立的原因。
@@ -450,7 +493,7 @@ JSON key）做脱敏 —— 公网机器上保存正文之前请先配好掩码�
 
 ## 客户端接入示例
 
-**分组名称**就是客户端传的模型名。密钥形如 `sk-octopus-<48 位>`，在界面「API 密钥」里创建；
+**分组名称**就是客户端传的模型名。密钥形如 `sk-switchyard-<48 位>`，在界面「API 密钥」里创建；
 不要把管理员的会话 Cookie 当密钥发出去 —— `/v1` 只认密钥。
 
 ### OpenAI SDK
@@ -460,10 +503,10 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="http://127.0.0.1:8080/v1",
-    api_key="sk-octopus-REPLACE_ME",   # 在管理界面 > API 密钥 里创建
+    api_key="sk-switchyard-REPLACE_ME",   # 在管理界面 > API 密钥 里创建
 )
 completion = client.chat.completions.create(
-    model="octopus-openai",           # 填分组名称
+    model="switchyard-openai",           # 填分组名称
     messages=[{"role": "user", "content": "你好"}],
 )
 print(completion.choices[0].message.content)
@@ -479,14 +522,14 @@ print(completion.choices[0].message.content)
 {
   "env": {
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:8080",
-    "ANTHROPIC_AUTH_TOKEN": "sk-octopus-REPLACE_ME",
+    "ANTHROPIC_AUTH_TOKEN": "sk-switchyard-REPLACE_ME",
     "API_TIMEOUT_MS": "3000000",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
-    "ANTHROPIC_MODEL": "octopus-sonnet-4-5",
-    "ANTHROPIC_SMALL_FAST_MODEL": "octopus-haiku-4-5",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "octopus-sonnet-4-5",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "octopus-sonnet-4-5",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "octopus-haiku-4-5"
+    "ANTHROPIC_MODEL": "switchyard-sonnet-4-5",
+    "ANTHROPIC_SMALL_FAST_MODEL": "switchyard-haiku-4-5",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "switchyard-sonnet-4-5",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "switchyard-sonnet-4-5",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "switchyard-haiku-4-5"
   }
 }
 ```
@@ -498,22 +541,22 @@ print(completion.choices[0].message.content)
 ```toml
 model = "gpt-5"
 model_reasoning_effort = "xhigh"
-model_provider = "octopus"
+model_provider = "switchyard"
 preferred_auth_method = "apikey"
 
-[model_providers.octopus]
+[model_providers.switchyard]
 base_url = "http://127.0.0.1:8080/v1"
-name = "octopus"
+name = "switchyard"
 supports_websockets = false
 requires_openai_auth = true
 wire_api = "responses"
-experimental_bearer_token = "sk-octopus-REPLACE_ME"
+experimental_bearer_token = "sk-switchyard-REPLACE_ME"
 ```
 
 并把 `~/.codex/auth.json` 里的 `OPENAI_API_KEY` 留空，让它使用上面那个 bearer token。
 
 > 💡 上面的 `model` 值是**你自己创建的分组名**，不是供应商的真实模型名。一个叫
-> `octopus-sonnet-4-5` 的分组，背后可以挂任何说 Anthropic 或 OpenAI 协议的渠道。
+> `switchyard-sonnet-4-5` 的分组，背后可以挂任何说 Anthropic 或 OpenAI 协议的渠道。
 
 ---
 
@@ -635,7 +678,7 @@ go run main.go start       # 另一个终端
 
 ```bash
 cd web && pnpm exec tsc --noEmit        # 类型检查（也包含在 pnpm run build 里）
-cd web && pnpm exec vitest run          # 前端单测 24 条 / 4 个文件
+cd web && pnpm run test                 # 前端单测 53 条 / 10 个文件
 go vet ./internal/...                   # 后端静态检查
 go test ./internal/...                  # 后端单元测试
 gofmt -l internal/server/handlers/      # 必须不输出任何内容（只对 handlers 门禁，internal/ 仍有上游遗留格式）
@@ -662,7 +705,7 @@ gofmt -l internal/server/handlers/      # 必须不输出任何内容（只对 h
 | 更新说明 | [CHANGELOG.md](CHANGELOG.md) 里对应的 `## vX.Y.Z` 章节 | `scripts/publish-release.sh` → GitHub Release 正文 |
 
 本项目的语义化版本约定：新增用户可见能力 +**次版本号**；仅修复、样式、文案与文档 +**修订号**。
-运行时版本号出现在 `octopus version`、`/healthz`、`octopus_build_info` 与界面「设置 > 信息」。
+运行时版本号出现在 `switchyard version`、`/healthz`、`switchyard_build_info` 与界面「设置 > 信息」。
 
 `post-commit` 钩子负责实时同步：先把 `HEAD` 推到 GitHub 的 `main`，随后若版本标记变了就打标签、推标签，
 并用 CHANGELOG 对应章节创建 Release（幂等：已存在则 PATCH，不产生重复）。日志在 `.git/auto-push.log` 与
@@ -686,7 +729,7 @@ gofmt -l internal/server/handlers/      # 必须不输出任何内容（只对 h
 | 模型能力探测（替代名称关键词归类） | 已完成（v0.19.0）：改走能力登记，名称关键词仅作兜底 |
 | 定时同步渠道模型（而非保存时触发） | 暂不采纳：上游费用与变更量不可控 |
 | 自动添加时顺带自动定价 / 自动上架 | 刻意排除：两者都是动钱的动作 |
-| 界面内自更新 | 已对管理员启用：检查本分支 Release，并用匹配的 `octopus-<os>-<arch>.zip` 原子替换服务程序 |
+| 界面内自更新 | 已对管理员启用：检查本分支 Release，并用匹配的 `switchyard-<os>-<arch>.zip` 原子替换服务程序 |
 | 本分支的容器镜像与二进制产物 | Release 发布标准平台二进制压缩包；不发布容器镜像 |
 
 完整待办见 [docs/roadmap.md](docs/roadmap.md)。

@@ -1,7 +1,7 @@
 // 缓存策略或预缓存结构变化时递增版本，以便激活阶段清理旧缓存。
 const CACHE_VERSION = 'v4';
 const BASE_PATH = new URL(self.registration.scope).pathname; // 当前应用所在目录，保留末尾斜杠。
-const CACHE_PREFIX = `octopus-${encodeURIComponent(BASE_PATH)}-`; // 按应用目录隔离缓存及其清理范围。
+const CACHE_PREFIX = `switchyard-${encodeURIComponent(BASE_PATH)}-`; // 按应用目录隔离缓存及其清理范围。
 const CACHE_NAMES = {
     shell: `${CACHE_PREFIX}shell-${CACHE_VERSION}`,
     static: `${CACHE_PREFIX}static-${CACHE_VERSION}`,

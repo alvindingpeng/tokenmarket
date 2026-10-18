@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/conf"
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/op"
-	"github.com/bestruirui/octopus/internal/relay"
-	"github.com/bestruirui/octopus/internal/server/middleware"
-	"github.com/bestruirui/octopus/internal/server/resp"
-	"github.com/bestruirui/octopus/internal/server/router"
+	"github.com/alvindingpeng/switchyard/internal/conf"
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/op"
+	"github.com/alvindingpeng/switchyard/internal/relay"
+	"github.com/alvindingpeng/switchyard/internal/server/middleware"
+	"github.com/alvindingpeng/switchyard/internal/server/resp"
+	"github.com/alvindingpeng/switchyard/internal/server/router"
 	"github.com/gin-contrib/sse"
 	"github.com/gin-gonic/gin"
 )
@@ -140,7 +140,7 @@ func exportLogs(c *gin.Context) {
 	items, total := relay.RequestList(model.Scope{ID: userID, Role: role}, filter, limit, 0)
 
 	c.Header("Content-Type", "text/csv; charset=utf-8")
-	c.Header("Content-Disposition", "attachment; filename=octopus-logs-"+time.Now().Format("20060102-150405")+".csv")
+	c.Header("Content-Disposition", "attachment; filename=switchyard-logs-"+time.Now().Format("20060102-150405")+".csv")
 	writer := csv.NewWriter(c.Writer)
 	_ = writer.Write([]string{
 		"id", "started_at", "status", "duration_ms", "user_id", "api_key_name", "client_ip",

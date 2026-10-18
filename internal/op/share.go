@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // ShareModel 分享页公开的模型条目: 名称、媒体形态与对客单价(供货价上浮后, 与计费同口径)。

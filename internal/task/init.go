@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/op"
-	"github.com/bestruirui/octopus/internal/price"
-	"github.com/bestruirui/octopus/internal/update"
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/op"
+	"github.com/alvindingpeng/switchyard/internal/price"
+	"github.com/alvindingpeng/switchyard/internal/update"
 	"github.com/charmbracelet/log"
 )
 

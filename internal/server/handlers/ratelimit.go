@@ -5,13 +5,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/op"
-	"github.com/bestruirui/octopus/internal/ratelimit"
-	"github.com/bestruirui/octopus/internal/relay"
-	"github.com/bestruirui/octopus/internal/server/middleware"
-	"github.com/bestruirui/octopus/internal/server/resp"
-	"github.com/bestruirui/octopus/internal/server/router"
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/op"
+	"github.com/alvindingpeng/switchyard/internal/ratelimit"
+	"github.com/alvindingpeng/switchyard/internal/relay"
+	"github.com/alvindingpeng/switchyard/internal/server/middleware"
+	"github.com/alvindingpeng/switchyard/internal/server/resp"
+	"github.com/alvindingpeng/switchyard/internal/server/router"
 	"github.com/gin-gonic/gin"
 )
 

@@ -12,7 +12,7 @@
         "passwordPlaceholder": "请输入密码",
         "trustDevice": "信任此设备",
         "apikey": "API 密钥",
-        "apikeyPlaceholder": "请输入 API 密钥 (sk-octopus-...)",
+        "apikeyPlaceholder": "请输入 API 密钥 (sk-switchyard-...)",
         "mode": {
             "user": "账户登录",
             "apikey": "密钥登录",
@@ -409,7 +409,7 @@
             "title": "系统信息配置",
             "siteName": "站点名称",
             "siteNameHint": "展示在浏览器标签页标题、登录页与各界面抬头, 留空则使用默认名称。",
-            "siteNamePlaceholder": "例如: Octopus 中转站",
+            "siteNamePlaceholder": "例如: Switchyard 中转站",
             "siteContact": "联系方式",
             "siteContactHint": "供用户寻求支持的入口, 可填邮箱或群链接。",
             "siteContactPlaceholder": "例如: support@example.com",
@@ -430,7 +430,7 @@
         "githubToken": {
             "label": "GitHub 访问令牌",
             "placeholder": "留空即匿名访问",
-            "hint": "可选。GitHub 对匿名调用限流 60 次/小时，填一个只读的 Personal Access Token 可提到 5000 次/小时，更新检查就不会取不到仓库版本。令牌只存在本机数据库，不会回显到页面。环境变量 OCTOPUS_GITHUB_PAT 仍然可用且优先级更低。"
+            "hint": "可选。GitHub 对匿名调用限流 60 次/小时，填一个只读的 Personal Access Token 可提到 5000 次/小时，更新检查就不会取不到仓库版本。令牌只存在本机数据库，不会回显到页面。环境变量 SWITCHYARD_GITHUB_PAT 仍然可用且优先级更低。"
         },
         "updateCheckEnabled": {
             "label": "自动检查更新",
@@ -1197,10 +1197,10 @@
             "username": "用户名",
             "password": "密码",
             "email": "邮箱",
-        "emailPlaceholder": "选填; 绑定后可用于找回密码",
-        "emailOptional": "邮箱（可选）",
-        "emailUnbound": "未绑定邮箱",
-        "passwordOptional": "密码（可选）",
+            "emailPlaceholder": "选填; 绑定后可用于找回密码",
+            "emailOptional": "邮箱（可选）",
+            "emailUnbound": "未绑定邮箱",
+            "passwordOptional": "密码（可选）",
             "passwordUnchanged": "留空则保持原密码不变",
             "role": "角色",
             "status": "状态",
@@ -1438,7 +1438,6 @@
             "tls": "TLS",
             "upstreamWait": "上游等待"
         },
-
         "reconcile": {
             "desc": "每日自动核对计费明细与预扣结算; 对账差异与备份/归档失败会自动生成告警并推送 Webhook。",
             "day": "日期",
@@ -1557,7 +1556,7 @@
             "webhookTestOk": "Webhook 连通性正常",
             "webhookTestFail": "Webhook 测试失败",
             "backupEncrypt": "备份加密",
-            "backupEncryptHint": "AES-256 加密落地备份; 口令在 config.json backup.passphrase 或环境变量 OCTOPUS_BACKUP_PASSPHRASE",
+            "backupEncryptHint": "AES-256 加密落地备份; 口令在 config.json backup.passphrase 或环境变量 SWITCHYARD_BACKUP_PASSPHRASE",
             "backupRemote": "备份异地推送",
             "alertDedup": "告警去重窗口(分钟)",
             "alertDedupHint": "同渠道同类型同原因在该窗口内只告警一次, 0 表示不限制(每次都记)",
@@ -1615,17 +1614,30 @@
         "nav": {
             "features": "核心能力",
             "media": "接入与计费",
-            "roles": "适用角色"
+            "roles": "适用角色",
+            "flow": "编组流程"
         },
         "hero": {
-            "badge": "自托管 LLM API 网关",
-            "title": "把多家模型的调用，收进一个网关",
-            "subtitle": "Octopus 在供应商与客户端之间只隔一层：聚合渠道、智能选路、按次计费、可观测运维 —— 全部装进一个自托管二进制。",
+            "badge": "自托管 LLM 编组网关",
+            "title": "把多条上游线路，编组成一组稳定可用的模型",
+            "subtitle": "Switchyard 站在供应商与客户端之间：汇入多条渠道，按价格、延迟与成功率自动编组选路，统一协议分发，并按用量精确计量 —— 全部装进一个自托管二进制。",
             "ctaPrimary": "进入控制台",
             "ctaSecondary": "了解全站功能",
             "chip1": "OpenAI · Anthropic 多协议",
             "chip2": "文本 / 图像 / 视频",
             "chip3": "三语 · 深浅色 · 多端自适应"
+        },
+        "flow": {
+            "title": "四步，从线路到账单",
+            "subtitle": "每一条调用都走同一条路径：汇入、编组、发车、计量。",
+            "step1Title": "汇入",
+            "step1Desc": "OpenAI、Anthropic、生图、生视频等上游各自持有密钥与限额，独立接入。",
+            "step2Title": "编组",
+            "step2Desc": "一个模型名就是一个分组，背后可挂多个渠道，按顺序、价格、延迟或综合评分编排。",
+            "step3Title": "发车",
+            "step3Desc": "按当前打分选路发出；上游失败、超时或限流时自动换道重试，出口可独立池化。",
+            "step4Title": "计量",
+            "step4Desc": "调用前预扣、调用后结算；文本按 token、图像按张、视频按条计费，账本与对账全程可追溯。"
         },
         "features": {
             "title": "全站功能一览",
@@ -1674,7 +1686,7 @@
         },
         "cta": {
             "title": "准备好开始了吗？",
-            "subtitle": "进入控制台，配置你的第一个模型网关。",
+            "subtitle": "进入控制台，接入你的第一条线路。",
             "button": "进入控制台"
         },
         "footer": {

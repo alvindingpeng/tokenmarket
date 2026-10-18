@@ -3,7 +3,7 @@ package relay
 import (
 	"context"
 	"errors"
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 	"testing"
 	"time"
 )

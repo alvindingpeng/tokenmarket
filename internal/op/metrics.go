@@ -3,8 +3,8 @@ package op
 import (
 	"time"
 
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // OpsStats 运维统计口径: 请求量按终态分列, 用量与费用求和。

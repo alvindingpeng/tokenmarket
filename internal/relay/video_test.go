@@ -3,7 +3,7 @@ package relay
 import (
 	"testing"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // TestParseVideoRequestUnits 固定从请求体读取计费用量的规则: seconds 是字符串或数字都认,

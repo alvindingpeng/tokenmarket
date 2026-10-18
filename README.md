@@ -1,37 +1,55 @@
 <div align="center">
 
-<img src="web/public/logo.svg" alt="Octopus Logo" width="120" height="120">
+<img src="web/public/logo.svg" alt="Switchyard" width="112" height="112">
 
-### Octopus
+# Switchyard
 
-**A self-hosted LLM API gateway: aggregate, route, meter, and operate — as a single binary**
+**A self-hosted LLM marshalling gateway — many upstreams in, one protocol out, every call metered.**
 
-`v0.21.0` · English | [简体中文](README_zh.md)
+[![version](https://img.shields.io/badge/version-v0.38.0-4c6ef5?style=flat-square)](#versioning-and-releases)
+[![go](https://img.shields.io/badge/go-1.26-00ADD8?style=flat-square&logo=go&logoColor=white)](go.mod)
+[![license](https://img.shields.io/badge/license-AGPL--3.0--only-blue?style=flat-square)](LICENSE)
+[![deploy](https://img.shields.io/badge/deploy-single%20binary-2b8a3e?style=flat-square)](#quick-start)
+
+English | [简体中文](README_zh.md)
 
 </div>
 
-> **This repository** — [alvindingpeng/tokenmarket](https://github.com/alvindingpeng/tokenmarket) —
-> is a production fork of the upstream [bestruirui/octopus](https://github.com/bestruirui/octopus)
-> project (baseline: upstream `v0.13.9`). Everything below describes **what this fork actually runs
-> today**; the delta against upstream is itemised in [CHANGELOG.md](CHANGELOG.md).
+> **Name and lineage.** This codebase began as a production fork of
+> [bestruirui/octopus](https://github.com/bestruirui/octopus) (baseline `v0.13.9`) and has since grown
+> well past it — routing, billing, media handling, and operations were largely rewritten. It now ships
+> under its own name, **Switchyard**, which describes what it actually does: a marshalling yard for LLM
+> traffic. The delta against the original is itemised in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-## Table of Contents
+## Contents
+
+**Start here**
 
 - [What it does](#what-it-does)
+- [The marshalling model](#the-marshalling-model)
 - [Quick start](#quick-start)
+- [Client integration](#client-integration)
+
+**How it works**
+
 - [Compatibility](#compatibility)
 - [Relay: routing, failover, error handling](#relay-routing-failover-error-handling)
 - [Pricing and billing](#pricing-and-billing)
 - [Channels, groups, and publishing](#channels-groups-and-publishing)
-- [Operations: health, alerts, metrics, backups](#operations-health-alerts-metrics-backups)
 - [Limits and access control](#limits-and-access-control)
 - [Roles and the web console](#roles-and-the-web-console)
 - [Site identity and maintenance mode](#site-identity-and-maintenance-mode)
+
+**Operating it**
+
+- [Operations: health, alerts, metrics, backups](#operations-health-alerts-metrics-backups)
 - [Configuration](#configuration)
 - [API surface](#api-surface)
-- [Client integration](#client-integration)
+
+**Reference**
+
 - [Screenshots](#screenshots)
 - [Documentation](#documentation)
 - [Build from source](#build-from-source)
@@ -40,12 +58,13 @@
 - [Roadmap](#roadmap)
 - [Acknowledgments](#acknowledgments)
 
+
 ---
 
 ## What it does
 
-Octopus puts a single OpenAI-shaped endpoint in front of many upstream providers. Your clients keep
-calling `/v1/chat/completions`; Octopus picks the channel, converts the protocol if needed, reserves
+Switchyard puts a single OpenAI-shaped endpoint in front of many upstream providers. Your clients keep
+calling `/v1/chat/completions`; Switchyard picks the channel, converts the protocol if needed, reserves
 balance, meters the usage, and fails over when an upstream misbehaves.
 
 | Area | What you get |
@@ -66,24 +85,53 @@ built-in billing currency conversion — prices are stored per model and charged
 
 ---
 
+## The marshalling model
+
+A switchyard takes traffic arriving on many tracks, sorts it by destination, couples it into new trains,
+and sends each one out on the track that will actually get it there. Switchyard does the same thing with
+LLM calls — and, like a railway, it charges by distance travelled.
+
+```
+            arrive                 marshal                dispatch                 meter
+              │                      │                       │                      │
+  OpenAI ─────┤                      │                       │                      │
+  Anthropic ──┼──▶ one model name ───┼──▶ pick by score ─────┼──▶ upstream ────────▶│
+  image ──────┤    (= one group)     │    price / latency    │    (egress pool)     │
+  video ──────┘                      │    / success rate     │                      │
+                                     │                       │   reserve ▶ settle ▶ ledger
+```
+
+| Step | What happens | Where it lives in the console |
+|------|--------------|-------------------------------|
+| **Arrive** | Upstream channels each keep their own credentials, limits, and protocol bits | Channels |
+| **Marshal** | One model name is one group; several channels can back it, ordered by sequence, price, latency, or composite score | Groups / model config |
+| **Dispatch** | The request leaves along the best-scoring route; failures, timeouts, and rate limits switch tracks automatically, and egress can be pooled per channel | Relay, egress pool |
+| **Meter** | Balance is reserved before the call and settled after; text bills per token, images per count, video per clip, with a ledger and daily reconciliation | Billing |
+
+The point of the metaphor is the middle two steps: a plain proxy forwards one request to one place.
+Switchyard decides *which* of several upstreams should take this particular request, keeps deciding while
+the request is in flight, and keeps a record of what it cost.
+
+---
+
 ## Quick start
 
 ### Get a binary
 
 **This fork publishes standard release archives.** The tag-triggered release workflow uploads
-`octopus-<os>-<arch>.zip` assets (including the running platform) after the release notes are created.
+`switchyard-<os>-<arch>.zip` assets (including the running platform) after the release notes are created.
 For a local build or an offline deployment, build the binary yourself:
 
 ```bash
-bash scripts/build-local.sh -o ./octopus    # one binary for the machine you are on
+bash scripts/build-local.sh -o ./switchyard    # one binary for the machine you are on
 # or, for the whole platform matrix (linux amd64/arm64/armv7/386, windows amd64,
-# darwin amd64/arm64, android): bash scripts/build.sh  -> build/archives/octopus-<os>-<arch>.zip
+# darwin amd64/arm64, android): bash scripts/build.sh  -> build/archives/switchyard-<os>-<arch>.zip
 ```
 
 Then:
 
 ```bash
-./octopus start
+./switchyard start
 ```
 
 Data lives in `./data/` next to the binary: `data/config.json` is written on first start, `data/data.db`
@@ -97,8 +145,8 @@ Build the image locally instead:
 
 ```bash
 ./scripts/build.sh            # cross-compiles into build/
-docker build -f scripts/dockerfile/Dockerfile -t octopus .
-docker run -d --name octopus -v /path/to/data:/app/data -p 8080:8080 octopus
+docker build -f scripts/dockerfile/Dockerfile -t switchyard .
+docker run -d --name switchyard -v /path/to/data:/app/data -p 8080:8080 switchyard
 ```
 
 The repo ships a `docker-compose.yml`, but note its `image:` line still points at the **upstream** image
@@ -130,8 +178,8 @@ POST /v1/images/edits         # OpenAI Images (multipart, multiple input images)
 GET  /v1/models               # model list visible to the calling key
 ```
 
-Authenticate with an API key created in the console, sent as `Authorization: Bearer sk-octopus-…` or
-`x-api-key: sk-octopus-…`. The `/v1` surface accepts **keys only** — a console session cookie is not an API
+Authenticate with an API key created in the console, sent as `Authorization: Bearer sk-switchyard-…` or
+`x-api-key: sk-switchyard-…`. The `/v1` surface accepts **keys only** — a console session cookie is not an API
 credential and is rejected there. Disabled, expired, or quota-exhausted (`max_cost`) keys are refused at
 the door.
 
@@ -300,9 +348,9 @@ GET /metrics    # Prometheus text format; optional bearer auth
 `/healthz` answers `503 degraded` when the database stops responding. It is deliberately never
 authenticated: adding auth to a liveness probe just breaks orchestrators.
 
-`/metrics` exposes `octopus_up`, `octopus_build_info`, `octopus_relay_requests`,
-`octopus_relay_tokens_total`, `octopus_billing_cost_total`, `octopus_active_requests`, `octopus_channels`,
-`octopus_users`, `octopus_user_balance_total`, `octopus_alerts_raised_24h`, plus Go runtime counters.
+`/metrics` exposes `switchyard_up`, `switchyard_build_info`, `switchyard_relay_requests`,
+`switchyard_relay_tokens_total`, `switchyard_billing_cost_total`, `switchyard_active_requests`, `switchyard_channels`,
+`switchyard_users`, `switchyard_user_balance_total`, `switchyard_alerts_raised_24h`, plus Go runtime counters.
 Set `metrics_auth` to `bearer` to require a token (`Authorization: Bearer …` or `?token=`); the token is
 generated on demand and rotatable from the console.
 
@@ -335,9 +383,9 @@ emits a `recovered` event.
 - Restore and verification are CLI:
 
 ```bash
-./octopus backup verify  --file data/backup/db-20261009.db.sha256
-./octopus backup decrypt --in backup.db.enc --out backup.db
-./octopus version
+./switchyard backup verify  --file data/backup/db-20261009.db.sha256
+./switchyard backup decrypt --in backup.db.enc --out backup.db
+./switchyard version
 ```
 
 ### Log lifecycle
@@ -364,7 +412,7 @@ alert history, each with a manual "run now".
 | Overload | Bounded wait queue, whole-request deadline, per-member attempt caps, cooldowns |
 | Origins | `cors_allow_origins` (empty = allow no cross-origin; `*` = allow all) |
 | Abuse of the console | Session cookie auth, role checks per route, `/api/v1/*` never public except `/api/v1/site/config` and the register/login endpoints |
-| Secrets | API keys are `sk-octopus-…`; `auth_secret` and `metrics_token` are internal keys never exposed by the settings API; log bodies can be masked; backup credentials stay out of the database |
+| Secrets | API keys are `sk-switchyard-…`; `auth_secret` and `metrics_token` are internal keys never exposed by the settings API; log bodies can be masked; backup credentials stay out of the database |
 | Model surface | `model_filter` applies a global pattern when a channel lists models |
 
 ---
@@ -384,7 +432,7 @@ Request-trace pages stream over SSE. Group members reorder by drag, and group ed
 move-to-bottom.
 
 **Subpath deployment**: the frontend builds with `base: './'` and the service worker derives its paths from
-the registration scope, so the app runs behind `https://example.com/octopus/` under a reverse proxy without
+the registration scope, so the app runs behind `https://example.com/switchyard/` under a reverse proxy without
 rebuilding.
 
 ### Registration
@@ -405,7 +453,7 @@ looking at:
 
 | Field | Where it shows up |
 |-------|-------------------|
-| `site_name` | Browser tab title, login page heading, API-key dashboard heading, share-image header. Empty falls back to `Octopus` rather than a blank title. |
+| `site_name` | Browser tab title, login page heading, API-key dashboard heading, share-image header. Empty falls back to `Switchyard` rather than a blank title. |
 | `site_description` | One line under the login heading |
 | `site_contact` | Login page; auto-linked when it is a URL or an email, plain text otherwise |
 | `announcement` + `site_announcement_enabled` | Dismissible banner for signed-in users; the switch is applied **server-side**, so a disabled announcement leaves no text in the payload |
@@ -453,9 +501,9 @@ a denial-of-service vector: over the limit the server answers `413` before the h
 database it recovers, and capping it would block the one action that brings an instance back.
 Both caps are read once at startup, so changing them takes a restart.
 
-Every key is overridable through the environment as `OCTOPUS_` + the path joined with `_`
-(`OCTOPUS_SERVER_PORT`, `OCTOPUS_DATABASE_TYPE`, `OCTOPUS_DATABASE_PATH`, `OCTOPUS_LOG_LEVEL`,
-`OCTOPUS_BACKUP_PASSPHRASE`, …). `OCTOPUS_GITHUB_PAT` raises the GitHub rate limit for version checks.
+Every key is overridable through the environment as `SWITCHYARD_` + the path joined with `_`
+(`SWITCHYARD_SERVER_PORT`, `SWITCHYARD_DATABASE_TYPE`, `SWITCHYARD_DATABASE_PATH`, `SWITCHYARD_LOG_LEVEL`,
+`SWITCHYARD_BACKUP_PASSPHRASE`, …). `SWITCHYARD_GITHUB_PAT` raises the GitHub rate limit for version checks.
 
 ### Database
 
@@ -463,7 +511,7 @@ Every key is overridable through the environment as `OCTOPUS_` + the path joined
 |------|----------------------|
 | SQLite | `data/data.db` |
 | MySQL | `user:password@tcp(host:port)/dbname` |
-| PostgreSQL | `host=localhost user=postgres password=xxx dbname=octopus port=5432 sslmode=disable` |
+| PostgreSQL | `host=localhost user=postgres password=xxx dbname=switchyard port=5432 sslmode=disable` |
 
 > 💡 Create the MySQL/PostgreSQL database yourself; the schema is migrated automatically.
 > Schema migrations are ordered, additive files under `internal/db/migrate/` — they never rewrite history,
@@ -516,7 +564,7 @@ and `/api/v1/group/list` are `GET` with no body. The internal setting keys `auth
 
 ## Client integration
 
-A **group name** is the model name clients pass. Keys look like `sk-octopus-<48 chars>` — create them under
+A **group name** is the model name clients pass. Keys look like `sk-switchyard-<48 chars>` — create them under
 **API keys**, and never hand out an admin session cookie as a substitute.
 
 ### OpenAI SDK
@@ -526,10 +574,10 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="http://127.0.0.1:8080/v1",
-    api_key="sk-octopus-REPLACE_ME",   # created in the console under API keys
+    api_key="sk-switchyard-REPLACE_ME",   # created in the console under API keys
 )
 completion = client.chat.completions.create(
-    model="octopus-openai",           # the group name
+    model="switchyard-openai",           # the group name
     messages=[{"role": "user", "content": "Hello"}],
 )
 print(completion.choices[0].message.content)
@@ -545,14 +593,14 @@ The same key works against `/v1/responses` for clients that speak the Responses 
 {
   "env": {
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:8080",
-    "ANTHROPIC_AUTH_TOKEN": "sk-octopus-REPLACE_ME",
+    "ANTHROPIC_AUTH_TOKEN": "sk-switchyard-REPLACE_ME",
     "API_TIMEOUT_MS": "3000000",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
-    "ANTHROPIC_MODEL": "octopus-sonnet-4-5",
-    "ANTHROPIC_SMALL_FAST_MODEL": "octopus-haiku-4-5",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "octopus-sonnet-4-5",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "octopus-sonnet-4-5",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "octopus-haiku-4-5"
+    "ANTHROPIC_MODEL": "switchyard-sonnet-4-5",
+    "ANTHROPIC_SMALL_FAST_MODEL": "switchyard-haiku-4-5",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "switchyard-sonnet-4-5",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "switchyard-sonnet-4-5",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "switchyard-haiku-4-5"
   }
 }
 ```
@@ -564,22 +612,22 @@ The same key works against `/v1/responses` for clients that speak the Responses 
 ```toml
 model = "gpt-5"
 model_reasoning_effort = "xhigh"
-model_provider = "octopus"
+model_provider = "switchyard"
 preferred_auth_method = "apikey"
 
-[model_providers.octopus]
+[model_providers.switchyard]
 base_url = "http://127.0.0.1:8080/v1"
-name = "octopus"
+name = "switchyard"
 supports_websockets = false
 requires_openai_auth = true
 wire_api = "responses"
-experimental_bearer_token = "sk-octopus-REPLACE_ME"
+experimental_bearer_token = "sk-switchyard-REPLACE_ME"
 ```
 
 Leave `OPENAI_API_KEY` empty in `~/.codex/auth.json` so the bearer token above is used.
 
 > 💡 The `model` values above are **group names you create**, not real provider models. A group called
-> `octopus-sonnet-4-5` may sit in front of any channel that speaks Anthropic or OpenAI protocol.
+> `switchyard-sonnet-4-5` may sit in front of any channel that speaks Anthropic or OpenAI protocol.
 
 ---
 
@@ -701,7 +749,7 @@ go run main.go start       # in another terminal
 
 ```bash
 cd web && pnpm exec tsc --noEmit        # types (also part of pnpm run build)
-cd web && pnpm exec vitest run          # 24 frontend unit tests, 4 files
+cd web && pnpm run test                 # 53 frontend unit tests, 10 files
 go vet ./internal/...                   # backend static checks
 go test ./internal/...                  # backend unit tests
 gofmt -l internal/server/handlers/      # must print nothing
@@ -732,8 +780,8 @@ Every update carries a version number, and release notes land in this repository
 | Release notes | the `## vX.Y.Z` section of [CHANGELOG.md](CHANGELOG.md) | `scripts/publish-release.sh` → GitHub Release body |
 
 Semver here: a new user-visible capability bumps the **minor** version; fixes, styling, docs, and copy bump
-the **patch** version. At runtime the version appears in `octopus version`, `/healthz`,
-`octopus_build_info`, and the console's Settings → Info page.
+the **patch** version. At runtime the version appears in `switchyard version`, `/healthz`,
+`switchyard_build_info`, and the console's Settings → Info page.
 
 A `post-commit` hook keeps the fork in sync in real time: it pushes `HEAD` to `main` on GitHub, then — if
 the marker changed — tags, pushes the tag, and creates the Release from the matching CHANGELOG section
@@ -758,7 +806,7 @@ Known gaps in this fork, with the reasoning kept where the code is:
 | Model capability detection by probe instead of name keywords | Done (v0.19.0): driven by the capability registry, name keywords kept only as fallback |
 | Scheduled channel model sync (cron rather than on-save) | Rejected for now: unbounded upstream cost and churn risk |
 | Automatic pricing / automatic listing on auto-add | Deliberately excluded: both are money-moving actions |
-| In-app self-update | Enabled for admins; checks this fork's Releases and atomically replaces the service binary from the matching `octopus-<os>-<arch>.zip` asset |
+| In-app self-update | Enabled for admins; checks this fork's Releases and atomically replaces the service binary from the matching `switchyard-<os>-<arch>.zip` asset |
 | Container images for this fork | Not published |
 
 Full backlog: [docs/roadmap.md](docs/roadmap.md).

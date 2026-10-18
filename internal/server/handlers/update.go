@@ -4,12 +4,12 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/bestruirui/octopus/internal/conf"
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/server/middleware"
-	"github.com/bestruirui/octopus/internal/server/resp"
-	"github.com/bestruirui/octopus/internal/server/router"
-	"github.com/bestruirui/octopus/internal/update"
+	"github.com/alvindingpeng/switchyard/internal/conf"
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/server/middleware"
+	"github.com/alvindingpeng/switchyard/internal/server/resp"
+	"github.com/alvindingpeng/switchyard/internal/server/router"
+	"github.com/alvindingpeng/switchyard/internal/update"
 	"github.com/gin-gonic/gin"
 )
 

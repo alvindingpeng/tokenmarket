@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/bestruirui/octopus/internal/server/resp"
+	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/charmbracelet/log"
 	"github.com/gin-gonic/gin"
 )

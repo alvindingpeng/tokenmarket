@@ -21,7 +21,7 @@ body:
     id: upstream-interface
     attributes:
       label: 上游接口类型
-      description: 上游是以什么接口接入 Octopus 的？(添加渠道时选的什么渠道类型)
+      description: 上游是以什么接口接入 Switchyard 的？(添加渠道时选的什么渠道类型)
       options:
         - OpenAI Chat Completions
         - OpenAI Responses
@@ -33,7 +33,7 @@ body:
     id: client-interface
     attributes:
       label: 客户端接口类型
-      description: 客户端是以什么格式请求的Octopus?
+      description: 客户端是以什么格式请求的Switchyard?
       options:
         - OpenAI Chat Completions
         - OpenAI Responses

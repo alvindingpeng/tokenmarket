@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/bestruirui/octopus/internal/conf"
-	_ "github.com/bestruirui/octopus/internal/server/handlers"
-	"github.com/bestruirui/octopus/internal/server/middleware"
-	"github.com/bestruirui/octopus/internal/server/resp"
-	"github.com/bestruirui/octopus/internal/server/router"
-	"github.com/bestruirui/octopus/static"
+	"github.com/alvindingpeng/switchyard/internal/conf"
+	_ "github.com/alvindingpeng/switchyard/internal/server/handlers"
+	"github.com/alvindingpeng/switchyard/internal/server/middleware"
+	"github.com/alvindingpeng/switchyard/internal/server/resp"
+	"github.com/alvindingpeng/switchyard/internal/server/router"
+	"github.com/alvindingpeng/switchyard/static"
 	"github.com/charmbracelet/log"
 	"github.com/gin-gonic/gin"
 )

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // 支付渠道(对齐 New API 的 payment_provider 口径): 每个渠道一个网关实现, 订单与入账层不感知差异。

@@ -40,4 +40,4 @@ curl "http://host:8088/metrics?token=<token>"
 
 ## 三、验证
 
-`octopus-e2e-billing.py` 94/94, 其中本项新增 20 条: 规则回显与默认值、非管理员 403、改设置后生效值跟随、越界 400、`/metrics` 默认开放 → 切 `bearer` 后无令牌/错令牌 401 → 查询串与 Header 两种携带方式均 200、`/healthz` 全程 200、令牌不出现在 `/setting/list`、轮换后旧令牌 401 新令牌 200、恢复 `off` 后重新开放。
+`switchyard-e2e-billing.py` 94/94, 其中本项新增 20 条: 规则回显与默认值、非管理员 403、改设置后生效值跟随、越界 400、`/metrics` 默认开放 → 切 `bearer` 后无令牌/错令牌 401 → 查询串与 Header 两种携带方式均 200、`/healthz` 全程 200、令牌不出现在 `/setting/list`、轮换后旧令牌 401 新令牌 200、恢复 `off` 后重新开放。

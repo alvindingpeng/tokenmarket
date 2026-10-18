@@ -4,8 +4,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // videoJobTTL 是任务归属的保留时长。上游的任务本身也会过期, 超过这个时间的记录不再有查询价值,

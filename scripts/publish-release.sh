@@ -71,7 +71,7 @@ def req(method, url, payload=None):
     r = urllib.request.Request(url, data=data, method=method, headers={
         'Authorization': 'Bearer ' + token,
         'Accept': 'application/vnd.github+json',
-        'User-Agent': 'octopus-publish-release',
+        'User-Agent': 'switchyard-publish-release',
         'X-GitHub-Api-Version': '2022-11-28',
     })
     try:

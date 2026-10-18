@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // CreemConfig Creem(MoR 全球收单)参数; 商品档位在 Creem 后台建好后配置映射。

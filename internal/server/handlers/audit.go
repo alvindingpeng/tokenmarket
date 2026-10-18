@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/op"
-	"github.com/bestruirui/octopus/internal/server/middleware"
-	"github.com/bestruirui/octopus/internal/server/resp"
-	"github.com/bestruirui/octopus/internal/server/router"
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/op"
+	"github.com/alvindingpeng/switchyard/internal/server/middleware"
+	"github.com/alvindingpeng/switchyard/internal/server/resp"
+	"github.com/alvindingpeng/switchyard/internal/server/router"
 	"github.com/charmbracelet/log"
 	"github.com/gin-gonic/gin"
 )
@@ -105,7 +105,7 @@ func exportAuditLogs(c *gin.Context) {
 		return
 	}
 	c.Header("Content-Type", "text/csv; charset=utf-8")
-	c.Header("Content-Disposition", "attachment; filename=octopus-audit-"+time.Now().Format("20060102-150405")+".csv")
+	c.Header("Content-Disposition", "attachment; filename=switchyard-audit-"+time.Now().Format("20060102-150405")+".csv")
 	writer := csv.NewWriter(c.Writer)
 	_ = writer.Write([]string{"id", "created_at", "username", "action", "target", "detail"})
 	for _, item := range logs {

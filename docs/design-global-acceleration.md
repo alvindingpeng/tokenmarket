@@ -120,8 +120,8 @@
 
 已交付:
 
-- 拓扑(当前): 客户端 --TLS--> 本机 nginx(`tt.xjj.se`) --HTTP--> octopus(`127.0.0.1:8088`)。Cloudflare 记录暂为**灰云(DNS only)**, 仅做 DNS; 边缘加速待其签发 `tt.xjj.se` 的边缘证书后再开橙云, nginx 侧无需改动(real_ip 网段与 `CF-IPCountry` 来源校验已就位)
-- 源站 vhost: `/etc/nginx/sites-available/octopus-tt` —— 80 端口只做 ACME 校验与 301, 443 做反代
+- 拓扑(当前): 客户端 --TLS--> 本机 nginx(`tt.xjj.se`) --HTTP--> switchyard(`127.0.0.1:8088`)。Cloudflare 记录暂为**灰云(DNS only)**, 仅做 DNS; 边缘加速待其签发 `tt.xjj.se` 的边缘证书后再开橙云, nginx 侧无需改动(real_ip 网段与 `CF-IPCountry` 来源校验已就位)
+- 源站 vhost: `/etc/nginx/sites-available/switchyard-tt` —— 80 端口只做 ACME 校验与 301, 443 做反代
 - 证书: Let's Encrypt, 续期改用 **webroot**(`/var/www/html`), `certbot renew --dry-run` 通过。原 `--nginx` 插件在自定义 vhost 上会挂起, 且每次续期都重写 vhost —— 会把手调的缓冲与 realip 配置冲掉, 故弃用
 - 真实 IP: `set_real_ip_from` 取自 `cloudflare.com/ips-v4|v6`(当前 22 条) + `real_ip_header CF-Connecting-IP`, 不硬编码网段
 - `CF-IPCountry` 只在来源属于 CF 网段时透传(`geo $realip_remote_addr` + `map`): 绕过 CF 直连源站拿不到可信国家码
@@ -150,7 +150,7 @@
 
 已完成收口:
 
-- octopus 监听从 `0.0.0.0:8088` 收到 `127.0.0.1:8088`, **公网明文入口已关闭**(公网 8088 已不可达)
+- switchyard 监听从 `0.0.0.0:8088` 收到 `127.0.0.1:8088`, **公网明文入口已关闭**(公网 8088 已不可达)
 - 80 端口只做 ACME 与 301, 全部业务走 443
 - 验证: 经公网 https 的非流式(ttfb 1.0s)与流式(ttfb 1.18s / 总 1.61s / 62 个事件块)均正常, `client_ip` 落库正确, 登录 cookie 带 `Secure; HttpOnly`(明文访问时不带, 保留隧道可用性)
 

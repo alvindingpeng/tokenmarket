@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/op"
-	"github.com/bestruirui/octopus/internal/server/middleware"
-	"github.com/bestruirui/octopus/internal/server/resp"
-	"github.com/bestruirui/octopus/internal/server/router"
-	"github.com/bestruirui/octopus/internal/task"
-	"github.com/bestruirui/octopus/internal/update"
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/op"
+	"github.com/alvindingpeng/switchyard/internal/server/middleware"
+	"github.com/alvindingpeng/switchyard/internal/server/resp"
+	"github.com/alvindingpeng/switchyard/internal/server/router"
+	"github.com/alvindingpeng/switchyard/internal/task"
+	"github.com/alvindingpeng/switchyard/internal/update"
 	"github.com/gin-gonic/gin"
 )
 
@@ -136,7 +136,7 @@ func smtpTest(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, "invalid email")
 		return
 	}
-	if err := op.MailSend(req.To, "[Octopus] SMTP Test", "This is a test email from Octopus. SMTP is configured correctly."); err != nil {
+	if err := op.MailSend(req.To, "[Switchyard] SMTP Test", "This is a test email from Switchyard. SMTP is configured correctly."); err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -153,7 +153,7 @@ func exportDB(c *gin.Context) {
 
 	audit(c, "backup.export", "", "")
 	c.Header("Content-Type", "application/json")
-	c.Header("Content-Disposition", "attachment; filename=\"octopus-export-"+time.Now().Format("20060102150405")+".json\"")
+	c.Header("Content-Disposition", "attachment; filename=\"switchyard-export-"+time.Now().Format("20060102150405")+".json\"")
 	c.JSON(http.StatusOK, dump)
 }
 

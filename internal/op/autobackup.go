@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/alert"
-	"github.com/bestruirui/octopus/internal/conf"
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/alert"
+	"github.com/alvindingpeng/switchyard/internal/conf"
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )

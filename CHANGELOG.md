@@ -1,5 +1,38 @@
 # 更新说明
 
+## v0.39.0 — 2026-10-18
+
+品牌重构：系统由 octopus 更名为 **Switchyard**。
+
+名字取自铁路编组场 —— 多条股道接入、按去向拆解重组、发到真正能送到的股道上，并且按里程计费。这套系统做的正是同一件事：多渠道汇入、按质量与成本编组选路、统一协议发出、逐次计量结算。
+
+**代码标识**
+
+- 模块路径改为 `github.com/alvindingpeng/switchyard`（原 `bestruirui/octopus`），全部 import 随之更新
+- `APP_NAME` 改为 `switchyard`，环境变量前缀因此变为 `SWITCHYARD_*`（原 `OCTOPUS_*`，如 `SWITCHYARD_DEBUG`、`SWITCHYARD_GITHUB_PAT`、`SWITCHYARD_BACKUP_PASSPHRASE`）
+- 新签发的 API 密钥前缀变为 `sk-switchyard-`；**已签发的密钥不受影响**，校验不解析前缀
+- `owned_by`、OpenAPI 示例、Prometheus 指标名（`switchyard_up`、`switchyard_relay_requests` 等）、导出文件名、自更新资产名（`switchyard-<os>-<arch>.zip`）全部改名
+- 启动 banner 换成 SWITCHYARD 字模，副标题改为 `many upstreams in, one protocol out`
+
+**未改动的契约**
+
+- 数据库文件名、表结构与字段一律未动
+- API 路径 `/api/v1`、`/v1` 未动，客户端无需任何调整
+- JWT 签发方随 `APP_NAME` 改变，但校验只验签名与有效期、不校验 `iss`，已登录会话不受影响
+
+**前端**
+
+- 站点默认名、导出与下载文件名、本地存储键（`switchyard-settings` 等）、缓存前缀跟随改名。**副作用**：本地存储键变更会让已保存的界面偏好（主题、语言等）重置一次
+- 落地页重构：新增「编组流程」段（汇入 → 编组 → 发车 → 计量），首屏文案改为品牌叙事，导航增加对应锚点
+- 三语语言包同步更新（1731 键，三语差异 0）
+
+**文档**
+
+- README 中英双版重构：品牌头图与徽章、分组目录、新增「编组模型」章节（含数据流示意与四环节对照表）
+- 修正过时信息：版本号 `v0.21.0` → `v0.39.0`，前端测试数 24 条/4 文件 → 53 条/10 文件
+- 全部文档跟随改名；指向原上游 `bestruirui/octopus` 的链接作为历史事实保留
+
+---
 ## v0.38.0 — 2026-10-18
 
 入口边缘接入(G2)的前置改动: 让系统可以安全地待在反向代理/边缘节点之后。
@@ -389,7 +422,7 @@ Stripe(国际卡) + Creem(全球收单)。渠道各自一套后台参数, 后配
 
 - 此前控制台切语言必须进「设置 > 外观」找下拉框; 现在任意页面顶栏右上角直接切换,
   与落地页页头是同一个胶囊分段开关(`web/src/components/language-switch.tsx`, 抽出共用一份实现, 两处外观与行为一致)。
-- 语言偏好仍存浏览器本地(`octopus-settings`), 切换立即全局生效, 不刷新页面;
+- 语言偏好仍存浏览器本地(`switchyard-settings`), 切换立即全局生效, 不刷新页面;
   完整语言名(简体中文/繁体中文/English)作为悬停提示与分组无障碍标签, 文案继续复用 `setting.language.*`。
 
 ### 2. 「设置 > 外观」语言下拉随之移除(移动而非新增入口)
@@ -514,7 +547,7 @@ Stripe(国际卡) + Creem(全球收单)。渠道各自一套后台参数, 后配
 
 ### 3. GitHub Token 可在管理后台配置
 
-- 原先只能靠环境变量 `OCTOPUS_GITHUB_PAT`，改令牌得进机器改 systemd 单元。
+- 原先只能靠环境变量 `SWITCHYARD_GITHUB_PAT`，改令牌得进机器改 systemd 单元。
 - 现在「系统设置」新增 GitHub 访问令牌一项（取值优先于环境变量，改完立即重新检查）。
 - GitHub 对匿名调用限流 60 次/小时，填一个只读 Token 可提到 5000 次/小时，这是「检查更新」取不到版本的最常见原因。
 - 令牌属密钥类设置：接口只回显「已配置」占位符，真值不出库、不进备份、不写日志；
@@ -538,7 +571,7 @@ Stripe(国际卡) + Creem(全球收单)。渠道各自一套后台参数, 后配
 - **完整基础设施**：告警表、去重逻辑（kind+code+24h 窗口）、后台工作线程
 - **内置场景**：余额不足、API Key 配额超限、渠道连续失败、成功率下降
 - **管理 API**：`GET /api/v1/alert` 查询记录，`POST /api/v1/alert/:id/resolve` 手动解决
-- **指标暴露**：Prometheus `octopus_alerts_raised_24h` 统计最近 24 小时告警数
+- **指标暴露**：Prometheus `switchyard_alerts_raised_24h` 统计最近 24 小时告警数
 - **数据库迁移**：`014_alerts.sql` 告警表 + `015_alert_settings.sql` 配置表
 
 ### 3. 多上游 Key 轮换
@@ -607,9 +640,9 @@ Stripe(国际卡) + Creem(全球收单)。渠道各自一套后台参数, 后配
 - **以本分支为准**：开篇写明仓库身份（`alvindingpeng/tokenmarket`，基线 `v0.13.9`）与「本文件描述
   本分支当前真实运行的能力」，并给出指向 CHANGELOG 的差异入口。
 - **不夸大产物**：明确本分支不发布二进制、不发布容器镜像 —— 上游的 `release.yaml` 只在上游 `master`
-  分支触发，故这里的 Release 只有更新说明没有 `octopus-*.zip`；`docker-compose.yml` 的 `image:` 仍指向上游
+  分支触发，故这里的 Release 只有更新说明没有 `switchyard-*.zip`；`docker-compose.yml` 的 `image:` 仍指向上游
   镜像名（两者在 Docker Hub 均查无此库），已在文档中提示先替换再用。
-- **凭据不再泄漏**：旧文档的三处客户端示例内嵌了真实 `sk-octopus-…` 密钥，统一改为 `sk-octopus-REPLACE_ME`；
+- **凭据不再泄漏**：旧文档的三处客户端示例内嵌了真实 `sk-switchyard-…` 密钥，统一改为 `sk-switchyard-REPLACE_ME`；
   同时把密钥长度改为实测的 48 位（`GenerateAPIKey` 生成 48 位随机串）。
 - **校正事实**：`/v1` 只认 API 密钥（`Authorization: Bearer` 或 `x-api-key`，会话 Cookie 不适用，且停用 /
   过期 / 用尽 `max_cost` 在入口拒绝）；Node.js 要求改为 Vite 8 的 `^20.19 || >=22.12`；测试一节补上
@@ -632,7 +665,7 @@ Stripe(国际卡) + Creem(全球收单)。渠道各自一套后台参数, 后配
   未登录的登录页因此也能显示站点身份。公告按 `site_announcement_enabled` 开关在后端过滤，
   前端只判断正文是否为空；维护提示为空时回退 `service under maintenance`。
 - **浏览器标签页标题跟随站点名称**（`web/src/lib/site-title.ts`）：挂在 `AppContainer` 最外层，
-  登录页与已登录界面都生效；名称留空回退默认品牌 Octopus，不会把标题清成空串。
+  登录页与已登录界面都生效；名称留空回退默认品牌 Switchyard，不会把标题清成空串。
 - **全局横幅 `SiteBanners`**：维护模式提示（红色、常驻不可关闭 —— 管理员必须看得见自己开着
   开关）与公告（可关闭，按正文记忆在 `sessionStorage`，改写公告后自动重新出现），
   同时接入应用外壳、密钥视图与登录页三处。

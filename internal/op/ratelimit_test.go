@@ -1,7 +1,7 @@
 package op
 
 import (
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 	"testing"
 )
 

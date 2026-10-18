@@ -26,17 +26,17 @@ CSV 导出: 「导出 CSV」按钮走 `GET /api/v1/log/export`, 与列表同一�
 
 | 指标 | 含义 |
 |---|---|
-| `octopus_up` | 恒为 1, 进程存活 |
-| `octopus_uptime_seconds` | 运行时长 |
-| `octopus_build_info{version,commit}` | 构建信息 |
-| `octopus_relay_requests{status}` | 各终态累计调用 |
-| `octopus_relay_tokens_total{direction}` | 输入/输出 token 累计 |
-| `octopus_billing_cost_total` | 累计计费 |
-| `octopus_users` / `octopus_user_balance_total` | 用户数与余额合计 |
-| `octopus_channels{state}` | 渠道总数/启用数 |
-| `octopus_alerts_raised_24h` | 近 24 小时告警数 |
-| `octopus_active_requests` | 进行中请求 |
-| `octopus_goroutines` / `octopus_memory_bytes{kind}` | 运行时资源 |
+| `switchyard_up` | 恒为 1, 进程存活 |
+| `switchyard_uptime_seconds` | 运行时长 |
+| `switchyard_build_info{version,commit}` | 构建信息 |
+| `switchyard_relay_requests{status}` | 各终态累计调用 |
+| `switchyard_relay_tokens_total{direction}` | 输入/输出 token 累计 |
+| `switchyard_billing_cost_total` | 累计计费 |
+| `switchyard_users` / `switchyard_user_balance_total` | 用户数与余额合计 |
+| `switchyard_channels{state}` | 渠道总数/启用数 |
+| `switchyard_alerts_raised_24h` | 近 24 小时告警数 |
+| `switchyard_active_requests` | 进行中请求 |
+| `switchyard_goroutines` / `switchyard_memory_bytes{kind}` | 运行时资源 |
 
 注意: `/metrics` 与 `/healthz` 无鉴权, 便于探针直采; 需要收敛时在反代层(Nginx/Caddy)对 `/metrics` 加来源限制或 Basic Auth。
 

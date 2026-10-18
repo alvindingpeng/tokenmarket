@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // 渠道准入审核(P1): 提交 → 审批 → 发布闸口 + 关键配置指纹复审。

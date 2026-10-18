@@ -14,7 +14,7 @@
 | G3 出口池 + 按出口打分 | 已交付, **线上零配置** | v0.37.0 |
 | G4 多区域数据面 | 未开始 | — |
 
-当前拓扑: 客户端 --TLS--> 本机 nginx(`tt.xjj.se`, Let's Encrypt) --HTTP--> octopus(`127.0.0.1:8088`)
+当前拓扑: 客户端 --TLS--> 本机 nginx(`tt.xjj.se`, Let's Encrypt) --HTTP--> switchyard(`127.0.0.1:8088`)
 Cloudflare 记录为**灰云(DNS only)**, 仅做 DNS; 公网明文入口 8088 已关闭。
 
 ---
@@ -23,7 +23,7 @@ Cloudflare 记录为**灰云(DNS only)**, 仅做 DNS; 公网明文入口 8088 �
 
 ### A1. 单用户实例仍在公网明文暴露 — **已处理 2026-10-18**
 
-原状况: `octopus.service`(`/opt/octopus/bin/octopus`)监听 `*:9100`, 公网明文可达, 无 TLS。
+原状况: `switchyard.service`(`/opt/switchyard/bin/switchyard`)监听 `*:9100`, 公网明文可达, 无 TLS。
 
 处理前核实(只读):
 
@@ -33,13 +33,13 @@ Cloudflare 记录为**灰云(DNS only)**, 仅做 DNS; 公网明文入口 8088 �
 
 处理动作:
 
-- `systemctl stop octopus && systemctl disable octopus` —— 服务已停并取消开机自启
+- `systemctl stop switchyard && systemctl disable switchyard` —— 服务已停并取消开机自启
 - 配置文件 `server.host` 由 `0.0.0.0` 改为 `127.0.0.1`(纵深防御: 万一将来被重新启用也不会公网暴露), 备份 `config.json.pre-a1`
-- **未删除任何数据**: `/opt/octopus/data/data.db` 与全部配置原样保留
+- **未删除任何数据**: `/opt/switchyard/data/data.db` 与全部配置原样保留
 
 验收: 公网 `9100` 返回 000(不可达), 本机无 9100 监听; 主系统 `https://tt.xjj.se/healthz` 正常。
 
-如需恢复: `systemctl enable --now octopus`, 但它已绑 `127.0.0.1`, 要对外提供服务需前置 nginx(照 `octopus-tt` 的 vhost 改端口即可)。
+如需恢复: `systemctl enable --now switchyard`, 但它已绑 `127.0.0.1`, 要对外提供服务需前置 nginx(照 `switchyard-tt` 的 vhost 改端口即可)。
 
 ---
 
@@ -66,7 +66,7 @@ Cloudflare 记录为**灰云(DNS only)**, 仅做 DNS; 公网明文入口 8088 �
 
 ### B4. CF 网段是静态快照
 
-- `/etc/nginx/conf.d/octopus-cf-geo.conf` 里的 22 条网段取自 `cloudflare.com/ips-v4|v6`, 写死在配置里。
+- `/etc/nginx/conf.d/switchyard-cf-geo.conf` 里的 22 条网段取自 `cloudflare.com/ips-v4|v6`, 写死在配置里。
 - **需要时**: 重新拉取两个列表并重生成该文件, 然后 `nginx -t && systemctl reload nginx`。
 
 ### B5. G2 的验收指标还没测
@@ -137,6 +137,6 @@ Cloudflare 记录为**灰云(DNS only)**, 仅做 DNS; 公网明文入口 8088 �
 
 ### 回退手册
 
-- **恢复公网 8088**(万一有客户端还在用旧地址): 把 `/opt/octopus-multiuser/data/config.json` 的 `server.host` 改回 `0.0.0.0`, `systemctl restart octopus-multiuser`。备份在 `config.json.pre-g2-close`。
-- **撤销 nginx 站点**: 删掉 `/etc/nginx/sites-enabled/octopus-tt` 软链后 `nginx -t && systemctl reload nginx`(注意: 删了就没有 HTTPS 入口了)。
-- **撤销 CF 相关配置**: `/etc/nginx/conf.d/octopus-cf-geo.conf` 可整文件删除, 但要同时把 vhost 里的 `$trusted_cf_country` 改回 `$http_cf_ipcountry`。
+- **恢复公网 8088**(万一有客户端还在用旧地址): 把 `/opt/switchyard-multiuser/data/config.json` 的 `server.host` 改回 `0.0.0.0`, `systemctl restart switchyard-multiuser`。备份在 `config.json.pre-g2-close`。
+- **撤销 nginx 站点**: 删掉 `/etc/nginx/sites-enabled/switchyard-tt` 软链后 `nginx -t && systemctl reload nginx`(注意: 删了就没有 HTTPS 入口了)。
+- **撤销 CF 相关配置**: `/etc/nginx/conf.d/switchyard-cf-geo.conf` 可整文件删除, 但要同时把 vhost 里的 `$trusted_cf_country` 改回 `$http_cf_ipcountry`。

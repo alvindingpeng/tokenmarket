@@ -2,9 +2,9 @@ package relay
 
 import (
 	"encoding/json"
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/op"
-	"github.com/bestruirui/octopus/internal/ratelimit"
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/op"
+	"github.com/alvindingpeng/switchyard/internal/ratelimit"
 )
 
 // limiter 进程内 RPM/TPM 限流器; 策略解析走系统设置与限流策略表, 越具体越优先。

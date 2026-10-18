@@ -4,7 +4,7 @@ import { Megaphone, Wrench, X } from 'lucide-react';
 import { useSiteConfig } from '@/api/site';
 
 // DISMISS_KEY 记住已被用户关闭的那条公告: 按正文比对, 管理员改写公告后会自动重新出现。
-const DISMISS_KEY = 'octopus-announcement-dismissed';
+const DISMISS_KEY = 'switchyard-announcement-dismissed';
 
 // AnnouncementBanner 全局公告条: 仅当后端下发非空正文时渲染(开关过滤已在后端做完)。
 function AnnouncementBanner({ text }: { text: string }) {

@@ -12,13 +12,13 @@ tail   = HMAC-SHA256(macKey, header + 密文)   // 32 字节, 加密后认证
 ```
 
 - 密钥派生: PBKDF2-HMAC-SHA256, 20 万轮, 派生 64 字节拆为 encKey/macKey。
-- 口令来源仅两处: `config.json` 的 `backup.passphrase`, 或环境变量 `OCTOPUS_BACKUP_PASSPHRASE`(env 优先)。
+- 口令来源仅两处: `config.json` 的 `backup.passphrase`, 或环境变量 `SWITCHYARD_BACKUP_PASSPHRASE`(env 优先)。
 - **口令绝不入库**: 备份文件包含整个数据库, 口令入库等于把钥匙锁进要送走的保险箱。
 - 解密先验 MAC 再落明文; 错口令/篡改一律失败且不产出文件。
 
 ## 校验和
 
-每份备份旁路写 `<产物>.sha256`(`sha256sum` 标准格式)。 保留策略删除备份时同删校验和。 恢复前先 `octopus backup verify`。
+每份备份旁路写 `<产物>.sha256`(`sha256sum` 标准格式)。 保留策略删除备份时同删校验和。 恢复前先 `switchyard backup verify`。
 
 ## 异地推送(WebDAV)
 
@@ -36,8 +36,8 @@ tail   = HMAC-SHA256(macKey, header + 密文)   // 32 字节, 加密后认证
   "database": { "type": "sqlite", "path": "data/data.db" },
   "backup": {
     "passphrase": "换成长口令",
-    "remote_url": "https://dav.example.com/octopus/",
-    "remote_user": "octopus",
+    "remote_url": "https://dav.example.com/switchyard/",
+    "remote_user": "switchyard",
     "remote_password": "换成长口令"
   }
 }
@@ -54,19 +54,19 @@ tail   = HMAC-SHA256(macKey, header + 密文)   // 32 字节, 加密后认证
 
 ```bash
 # 1) 先验校验和(异地取回的备份尤其必做)
-octopus backup verify --file backup-20261008-181556.db.enc
+switchyard backup verify --file backup-20261008-181556.db.enc
 
 # 2) 加密备份先解密(口令来自 config/env)
-octopus backup decrypt --in backup-20261008-181556.db.enc --out restored.db
+switchyard backup decrypt --in backup-20261008-181556.db.enc --out restored.db
 
 # 3) 校验解出的库
-octopus backup verify --file restored.db
+switchyard backup verify --file restored.db
 
 # 4) 停服换库
-systemctl stop octopus-multiuser
-mv /opt/octopus-multiuser/data/data.db /opt/octopus-multiuser/data/data.db.bak
-mv restored.db /opt/octopus-multiuser/data/data.db
-systemctl start octopus-multiuser
+systemctl stop switchyard-multiuser
+mv /opt/switchyard-multiuser/data/data.db /opt/switchyard-multiuser/data/data.db.bak
+mv restored.db /opt/switchyard-multiuser/data/data.db
+systemctl start switchyard-multiuser
 ```
 
 ## 非 SQLite(MySQL/PostgreSQL)
@@ -74,4 +74,4 @@ systemctl start octopus-multiuser
 进程内一致性快照仅支持 SQLite(VACUUM INTO)。 MySQL/PG 请由 DBA 做离线备份(如 mysqldump / pg_dump + WAL 归档), 本模块不导出全量数据; 备份目录仍会生成空记录提示, 不影响本地文件备份开关。
 
 ## 验证(E2E 28/28)
-`octopus-e2e-backup.py`: 加密产物生成、明文产物删除、SHA-256 一致、WebDAV 收到 2 个 PUT(含 Basic 认证)、CLI 解密成功、`backup verify` 通过、错口令失败且无输出、远端失联时本地备份成功 + `remote=failed` + `backup_failed` 告警。
+`switchyard-e2e-backup.py`: 加密产物生成、明文产物删除、SHA-256 一致、WebDAV 收到 2 个 PUT(含 Basic 认证)、CLI 解密成功、`backup verify` 通过、错口令失败且无输出、远端失联时本地备份成功 + `remote=failed` + `backup_failed` 告警。

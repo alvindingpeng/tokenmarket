@@ -3,12 +3,12 @@ package op
 import (
 	"context"
 	"fmt"
-	"github.com/bestruirui/octopus/internal/alert"
+	"github.com/alvindingpeng/switchyard/internal/alert"
 	"net/http"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // channelHealthClient 专用探测 HTTP 客户端, 超时较短避免长阻塞。

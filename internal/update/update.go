@@ -19,10 +19,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/conf"
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/op"
-	"github.com/bestruirui/octopus/internal/rhttp"
+	"github.com/alvindingpeng/switchyard/internal/conf"
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/op"
+	"github.com/alvindingpeng/switchyard/internal/rhttp"
 	"github.com/charmbracelet/log"
 )
 
@@ -118,7 +118,7 @@ var cache cachedCheck
 
 // githubPAT 读取 GitHub 访问令牌, 用于抬高 API 限流并访问私有仓库, 完全可选。
 //
-// 取值顺序: 管理后台设置项 github_token > 环境变量 OCTOPUS_GITHUB_PAT。
+// 取值顺序: 管理后台设置项 github_token > 环境变量 SWITCHYARD_GITHUB_PAT。
 // 设置项优先, 因为它是管理员在界面上能改的那个; 环境变量保留给容器/编排部署
 // (凭据只从 secret 注入, 不想落库)。每次读都现取, 改完令牌不必重启进程。
 // 只读取, 绝不写日志或回显。
@@ -173,21 +173,21 @@ func archiveName(goos, goarch string) (string, error) {
 	switch goos {
 	case "windows":
 		if goarch == "amd64" {
-			return "octopus-windows-amd64.zip", nil
+			return "switchyard-windows-amd64.zip", nil
 		}
 	case "darwin":
 		if goarch == "amd64" || goarch == "arm64" {
-			return "octopus-darwin-" + goarch + ".zip", nil
+			return "switchyard-darwin-" + goarch + ".zip", nil
 		}
 	case "linux":
 		switch goarch {
 		case "386", "amd64", "arm", "arm64":
-			return "octopus-linux-" + goarch + ".zip", nil
+			return "switchyard-linux-" + goarch + ".zip", nil
 		}
 	case "android":
 		switch goarch {
 		case "386", "amd64", "arm", "arm64":
-			return "octopus-android-" + goarch + ".zip", nil
+			return "switchyard-android-" + goarch + ".zip", nil
 		}
 	}
 	return "", fmt.Errorf("unsupported platform: %s/%s", goos, goarch)

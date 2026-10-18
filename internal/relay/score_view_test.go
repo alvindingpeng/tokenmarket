@@ -3,7 +3,7 @@ package relay
 import (
 	"testing"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // setModelMetricsForTest 直接写入全局模型指标供测试构造观测, 返回还原函数。

@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/conf"
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/op"
-	"github.com/bestruirui/octopus/internal/relay"
-	"github.com/bestruirui/octopus/internal/server/router"
+	"github.com/alvindingpeng/switchyard/internal/conf"
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/op"
+	"github.com/alvindingpeng/switchyard/internal/relay"
+	"github.com/alvindingpeng/switchyard/internal/server/router"
 	"github.com/gin-gonic/gin"
 )
 
@@ -80,53 +80,53 @@ func prometheusMetrics(c *gin.Context) {
 		_ = typ
 	}
 	lines = append(lines,
-		"# HELP octopus_up 1 when the process is alive.",
-		"# TYPE octopus_up gauge",
-		"octopus_up 1",
-		"# HELP octopus_uptime_seconds Process uptime in seconds.",
-		"# TYPE octopus_uptime_seconds gauge",
-		"octopus_uptime_seconds "+strconv.Itoa(int(time.Since(processStartedAt).Seconds())),
-		"# HELP octopus_build_info Build information.",
-		"# TYPE octopus_build_info gauge",
-		"octopus_build_info{version=\""+conf.Version+"\",commit=\""+conf.Commit+"\"} 1",
+		"# HELP switchyard_up 1 when the process is alive.",
+		"# TYPE switchyard_up gauge",
+		"switchyard_up 1",
+		"# HELP switchyard_uptime_seconds Process uptime in seconds.",
+		"# TYPE switchyard_uptime_seconds gauge",
+		"switchyard_uptime_seconds "+strconv.Itoa(int(time.Since(processStartedAt).Seconds())),
+		"# HELP switchyard_build_info Build information.",
+		"# TYPE switchyard_build_info gauge",
+		"switchyard_build_info{version=\""+conf.Version+"\",commit=\""+conf.Commit+"\"} 1",
 	)
 	_ = metric
 	lines = append(lines,
-		"# HELP octopus_relay_requests Relay requests by terminal status.",
-		"# TYPE octopus_relay_requests counter",
+		"# HELP switchyard_relay_requests Relay requests by terminal status.",
+		"# TYPE switchyard_relay_requests counter",
 	)
 	for status, count := range totals.RequestsByStatus {
-		lines = append(lines, "octopus_relay_requests{status=\""+status+"\"} "+strconv.FormatInt(count, 10))
+		lines = append(lines, "switchyard_relay_requests{status=\""+status+"\"} "+strconv.FormatInt(count, 10))
 	}
 	lines = append(lines,
-		"# HELP octopus_relay_tokens_total Relay token totals.",
-		"# TYPE octopus_relay_tokens_total counter",
-		"octopus_relay_tokens_total{direction=\"input\"} "+strconv.FormatInt(totals.InputTokens, 10),
-		"octopus_relay_tokens_total{direction=\"output\"} "+strconv.FormatInt(totals.OutputTokens, 10),
-		"# HELP octopus_billing_cost_total Accumulated billed cost.",
-		"# TYPE octopus_billing_cost_total counter",
-		"octopus_billing_cost_total "+strconv.FormatFloat(totals.Cost, 'f', 6, 64),
-		"# HELP octopus_users Registered users and total balance.",
-		"# TYPE octopus_users gauge",
-		"octopus_users "+strconv.FormatInt(totals.Users, 10),
-		"octopus_user_balance_total "+strconv.FormatFloat(totals.Balance, 'f', 6, 64),
-		"# HELP octopus_channels Channel counts.",
-		"# TYPE octopus_channels gauge",
-		"octopus_channels{state=\"total\"} "+strconv.FormatInt(totals.Channels, 10),
-		"octopus_channels{state=\"enabled\"} "+strconv.FormatInt(totals.ChannelsEnabled, 10),
-		"# HELP octopus_alerts_raised_24h Alerts raised in the last 24 hours.",
-		"# TYPE octopus_alerts_raised_24h gauge",
-		"octopus_alerts_raised_24h "+strconv.FormatInt(totals.Alerts24h, 10),
-		"# HELP octopus_active_requests In-flight relay requests.",
-		"# TYPE octopus_active_requests gauge",
-		"octopus_active_requests "+strconv.Itoa(relay.ActiveCount()),
-		"# HELP octopus_goroutines Goroutine count.",
-		"# TYPE octopus_goroutines gauge",
-		"octopus_goroutines "+strconv.Itoa(runtime.NumGoroutine()),
-		"# HELP octopus_memory_bytes Process heap and system memory.",
-		"# TYPE octopus_memory_bytes gauge",
-		"octopus_memory_bytes{kind=\"heap\"} "+strconv.FormatUint(memory.HeapAlloc, 10),
-		"octopus_memory_bytes{kind=\"sys\"} "+strconv.FormatUint(memory.Sys, 10),
+		"# HELP switchyard_relay_tokens_total Relay token totals.",
+		"# TYPE switchyard_relay_tokens_total counter",
+		"switchyard_relay_tokens_total{direction=\"input\"} "+strconv.FormatInt(totals.InputTokens, 10),
+		"switchyard_relay_tokens_total{direction=\"output\"} "+strconv.FormatInt(totals.OutputTokens, 10),
+		"# HELP switchyard_billing_cost_total Accumulated billed cost.",
+		"# TYPE switchyard_billing_cost_total counter",
+		"switchyard_billing_cost_total "+strconv.FormatFloat(totals.Cost, 'f', 6, 64),
+		"# HELP switchyard_users Registered users and total balance.",
+		"# TYPE switchyard_users gauge",
+		"switchyard_users "+strconv.FormatInt(totals.Users, 10),
+		"switchyard_user_balance_total "+strconv.FormatFloat(totals.Balance, 'f', 6, 64),
+		"# HELP switchyard_channels Channel counts.",
+		"# TYPE switchyard_channels gauge",
+		"switchyard_channels{state=\"total\"} "+strconv.FormatInt(totals.Channels, 10),
+		"switchyard_channels{state=\"enabled\"} "+strconv.FormatInt(totals.ChannelsEnabled, 10),
+		"# HELP switchyard_alerts_raised_24h Alerts raised in the last 24 hours.",
+		"# TYPE switchyard_alerts_raised_24h gauge",
+		"switchyard_alerts_raised_24h "+strconv.FormatInt(totals.Alerts24h, 10),
+		"# HELP switchyard_active_requests In-flight relay requests.",
+		"# TYPE switchyard_active_requests gauge",
+		"switchyard_active_requests "+strconv.Itoa(relay.ActiveCount()),
+		"# HELP switchyard_goroutines Goroutine count.",
+		"# TYPE switchyard_goroutines gauge",
+		"switchyard_goroutines "+strconv.Itoa(runtime.NumGoroutine()),
+		"# HELP switchyard_memory_bytes Process heap and system memory.",
+		"# TYPE switchyard_memory_bytes gauge",
+		"switchyard_memory_bytes{kind=\"heap\"} "+strconv.FormatUint(memory.HeapAlloc, 10),
+		"switchyard_memory_bytes{kind=\"sys\"} "+strconv.FormatUint(memory.Sys, 10),
 	)
 	c.Header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	_, _ = c.Writer.WriteString(strings.Join(lines, "\n") + "\n")

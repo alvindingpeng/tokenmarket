@@ -16,14 +16,14 @@
 ## 1. 现状架构盘点(代码事实)
 
 ### 1.1 部署形态
-- 单体 Go 二进制: Gin API + GORM + 嵌入前端, systemd 服务 `octopus-multiuser`, 目录 `/opt/octopus-multiuser/{octopus, data/data.db}`。
+- 单体 Go 二进制: Gin API + GORM + 嵌入前端, systemd 服务 `switchyard-multiuser`, 目录 `/opt/switchyard-multiuser/{switchyard, data/data.db}`。
 - 前端 React SPA 构建到 `static/out`(`web/vite.config.ts` outDir), 经 `go:embed`(`static/static.go`)打进二进制。
 - 静态缓存策略(`internal/server/middleware/static.go`): 带 hash 的资源 `public, max-age=31536000, immutable`, `index.html` `no-cache` —— **已经是标准 CDN 就绪形态**。
 - 无用户上传文件(multipart 仅用于 relay 请求改写, 不落盘); 磁盘上只有 `data.db` + `backups/`(自动备份, 可推 WebDAV 异地)。
 
 ### 1.2 数据库层(这是本方案的好消息)
 - `internal/db/db.go` 的 `InitDB(dbType, dsn)` **已支持 sqlite | mysql | postgres** 三种方言(`gorm.io/driver/postgres`、`mysql` 都是直接依赖)。
-- 配置即用: `config.json` 的 `database.type` / `database.path`(实为 DSN), 或环境变量 `OCTOPUS_DATABASE_TYPE` / `OCTOPUS_DATABASE_PATH`(`internal/conf/config.go` + viper)。
+- 配置即用: `config.json` 的 `database.type` / `database.path`(实为 DSN), 或环境变量 `SWITCHYARD_DATABASE_TYPE` / `SWITCHYARD_DATABASE_PATH`(`internal/conf/config.go` + viper)。
 - 迁移框架(`internal/db/migrate/`)按 `db.Dialector.Name()` 分支处理方言差异; postgres 还专门处理了迁移后的 prepared plan 失效(`DEALLOCATE ALL`)。说明 **postgres 是一等公民, 不是摆设**。
 - SQLite 现参数: WAL、synchronous=NORMAL、busy_timeout=5s、foreign_keys=ON; 连接池 MaxIdle=10 / MaxOpen=100。
 - **现成的异构迁移通道**: `op.DBExportAll`(整库导出 JSON `DBDump`) + `op.DBImportIncremental`(按主键 upsert 导入) —— SQLite → PostgreSQL 的数据搬迁可以直接用它, 不必写新工具(或辅以 pgloader 做大批量)。
@@ -50,7 +50,7 @@
 
 ```
   区域用户A ──> 边缘节点A(nginx: static/out + 反代) ──┐
-  区域用户B ──> 边缘节点B(nginx: static/out + 反代) ──┼──> 应用源站(单活 octopus)
+  区域用户B ──> 边缘节点B(nginx: static/out + 反代) ──┼──> 应用源站(单活 switchyard)
   (可选 CDN) ──> 静态资源命中边缘/CDN 缓存, /api、/v1 回源┘
 ```
 

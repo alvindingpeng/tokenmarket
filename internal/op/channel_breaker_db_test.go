@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // breakerTestSetup 初始化隔离测试库, 并把熔断参数调成"每次错误都熔断"以便观察时长递增。

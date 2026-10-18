@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/alert"
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/alert"
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // QuotaExceeded 配额超限错误。

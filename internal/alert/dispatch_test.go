@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // TestSendDispatchesToConfiguredChannels 校验按 alert_channels 选中的渠道真的收到了告警,

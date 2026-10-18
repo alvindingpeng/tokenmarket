@@ -58,7 +58,7 @@ P2 预留: `ProtocolOpenAIVideo = 1<<5` 位已占用, 路由未注册。
 
 ## 测试
 
-`octopus-e2e-billing.py` 第 18 节(24 项断言):
+`switchyard-e2e-billing.py` 第 18 节(24 项断言):
 
 - 预扣参数: 默认 4 / 非法值 0、100 被拒 / 改为 2 后按新值预扣。
 - generations 转发 200, 按张计费(media_units、user_cost、owner_revenue、price_source)。

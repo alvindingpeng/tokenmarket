@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/conf"
+	"github.com/alvindingpeng/switchyard/internal/conf"
 	"github.com/charmbracelet/log"
 )
 
@@ -23,7 +23,7 @@ type updateMarker struct {
 	Timestamp  int64  `json:"timestamp_unix_ms"`
 }
 
-const markerName = ".octopus-update-marker.json"
+const markerName = ".switchyard-update-marker.json"
 
 func markerPath() string {
 	execPath, err := os.Executable()

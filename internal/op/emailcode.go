@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // 邮箱验证码: 注册与找回密码共用一套发放/校验, purpose 区分用途防跨用挪用。
@@ -163,9 +163,9 @@ func hashCode(code string) string {
 
 func emailCodeSubject(purpose string) string {
 	if purpose == model.EmailCodePurposeReset {
-		return "[Octopus] Password Reset Code"
+		return "[Switchyard] Password Reset Code"
 	}
-	return "[Octopus] Registration Verification Code"
+	return "[Switchyard] Registration Verification Code"
 }
 
 func emailCodeBody(purpose, code string) string {

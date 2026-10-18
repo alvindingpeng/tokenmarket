@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/bestruirui/octopus/internal/conf"
+	"github.com/alvindingpeng/switchyard/internal/conf"
 )
 
 func TestPushBackupRemoteRetriesThenSucceeds(t *testing.T) {
@@ -71,7 +71,7 @@ func TestBackupRemoteConfiguredValidation(t *testing.T) {
 	if BackupRemoteConfigured() {
 		t.Fatal("ftp must be rejected")
 	}
-	conf.AppConfig.Backup.RemoteURL = "https://dav.example.com/octopus/"
+	conf.AppConfig.Backup.RemoteURL = "https://dav.example.com/switchyard/"
 	if !BackupRemoteConfigured() {
 		t.Fatal("https url should be configured")
 	}

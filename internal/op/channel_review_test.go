@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // reviewTestEnv 建独立库并预热缓存, 返回渠道商与管理员作用域; 每个测试用独立 TempDir, 缓存由 InitCache 清空重建。

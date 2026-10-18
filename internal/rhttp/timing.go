@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // ConnTiming 采集一次上游请求的连接各阶段耗时。

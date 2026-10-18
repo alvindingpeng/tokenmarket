@@ -21,7 +21,7 @@ import (
 //	header = "OCTOBK1\n"(8) + salt(16) + iv(16); 之后为 AES-256-CTR 密文; 结尾 32 字节 HMAC-SHA256。
 //	MAC 覆盖 header+密文(加密后认证), 口令经 PBKDF2-HMAC-SHA256(20 万轮)派生 encKey/macKey 各 32 字节。
 //
-// 口令只来自 config.json backup.passphrase 或环境变量 OCTOPUS_BACKUP_PASSPHRASE, 绝不入库:
+// 口令只来自 config.json backup.passphrase 或环境变量 SWITCHYARD_BACKUP_PASSPHRASE, 绝不入库:
 // 备份文件本身包含整个数据库, 口令若存进数据库等于把钥匙锁进要送走的保险箱。
 const (
 	backupMagic         = "OCTOBK1\n"
@@ -166,7 +166,7 @@ func DecryptBackupFile(src, dst, passphrase string) error {
 		return fmt.Errorf("read header: %w", err)
 	}
 	if string(header[:len(backupMagic)]) != backupMagic {
-		return fmt.Errorf("not an octopus encrypted backup")
+		return fmt.Errorf("not an switchyard encrypted backup")
 	}
 	salt := header[len(backupMagic) : len(backupMagic)+backupSaltLen]
 	iv := header[len(backupMagic)+backupSaltLen:]

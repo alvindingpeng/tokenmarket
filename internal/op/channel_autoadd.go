@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/charmbracelet/log"
 	"gorm.io/gorm"
 )

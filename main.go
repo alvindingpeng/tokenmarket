@@ -1,8 +1,8 @@
 package main
 
-import "github.com/bestruirui/octopus/cmd"
+import "github.com/alvindingpeng/switchyard/cmd"
 
-// Version v0.38.0
+// Version v0.39.0
 
 func main() {
 	cmd.Execute()

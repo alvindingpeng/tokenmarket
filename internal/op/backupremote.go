@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/conf"
+	"github.com/alvindingpeng/switchyard/internal/conf"
 )
 
 var backupRemoteClient = &http.Client{Timeout: 60 * time.Second}

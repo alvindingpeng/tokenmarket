@@ -3,7 +3,7 @@ package handlers
 import (
 	"testing"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // TestAuditSettingValueMasksSecrets 守护审计脱敏: 密钥类设置值绝不写原文进审计日志。

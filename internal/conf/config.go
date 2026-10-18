@@ -54,7 +54,7 @@ type Database struct {
 	Path string `mapstructure:"path"`
 }
 
-// Backup 备份机密配置: 只走 config.json 或环境变量(OCTOPUS_BACKUP_*), 不入库。
+// Backup 备份机密配置: 只走 config.json 或环境变量(SWITCHYARD_BACKUP_*), 不入库。
 // 备份文件包含整个数据库, 口令与异地凭据若入库会被一并备份出去。
 type Backup struct {
 	Passphrase     string `mapstructure:"passphrase"`      // 备份加密口令, 空表示不加密。

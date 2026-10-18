@@ -7,7 +7,7 @@ import (
 	"net/smtp"
 	"strconv"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // 邮件发送(SMTP): 服务注册验证码与找回密码; 与告警邮件(alert 包)各用各的设置, 互不牵连。

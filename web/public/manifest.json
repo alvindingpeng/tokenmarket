@@ -1,6 +1,6 @@
 {
-  "name": "Octopus",
-  "short_name": "Octopus",
+  "name": "Switchyard",
+  "short_name": "Switchyard",
   "description": "为个人打造的简单、美观、优雅的 LLM API 聚合与负载均衡服务",
   "id": "./",
   "start_url": "./",

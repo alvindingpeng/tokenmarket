@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-// DBDump is a full-database JSON export format for Octopus.
+// DBDump is a full-database JSON export format for Switchyard.
 // Import uses incremental semantics (insert new rows, and upsert on tables with natural keys).
 type DBDump struct {
 	Version    int       `json:"version"`

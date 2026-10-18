@@ -26,7 +26,7 @@
 2. 把 `main.go` 的 `// Version` 改成同一个 `vX.Y.Z`。
 3. `bash scripts/build-local.sh` —— 前端与后端**必须同时重建**：`static/static.go` 用 embed
    把 `static/out` 打进二进制，顺序反了或只重建一边，二进制里就是旧前端。
-4. 部署 + 回归（本仓库部署见 `octopus-mobile-deploy.py`，回归 `octopus-e2e-billing.py`）。
+4. 部署 + 回归（本仓库部署见 `switchyard-mobile-deploy.py`，回归 `switchyard-e2e-billing.py`）。
 5. `git commit`。提交后 `post-commit` 钩子自动完成：
    - `git push github HEAD:refs/heads/main`（实时推送，日志 `.git/auto-push.log`）
    - `scripts/publish-release.sh`：本地无 `vX.Y.Z` 标签则 `git tag -a` 并推送标签，
@@ -34,8 +34,8 @@
 
 ## 版本号的运行时呈现
 
-- 后端：`-ldflags -X internal/conf.Version` 注入，`octopus version`、`/healthz` 的
-  `version` 字段、`/metrics` 的 `octopus_build_info` 都取它；`/api/v1/update/now-version`
+- 后端：`-ldflags -X internal/conf.Version` 注入，`switchyard version`、`/healthz` 的
+  `version` 字段、`/metrics` 的 `switchyard_build_info` 都取它；`/api/v1/update/now-version`
   把它返回给前端。
 - 前端：构建期 `VITE_APP_VERSION` 注入，显示在「设置 > 信息」。
 - 两者必须同源：不一致时「设置 > 信息」会判定为浏览器缓存问题并弹红色告警 + 强制刷新按钮，

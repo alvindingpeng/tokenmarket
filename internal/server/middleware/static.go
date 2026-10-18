@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/server/resp"
+	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/gin-gonic/gin"
 )
 

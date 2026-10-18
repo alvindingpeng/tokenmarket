@@ -7,7 +7,7 @@ The admin Settings → Info page checks the public GitHub Releases for `alvindin
 - `GET /api/v1/update` returns cached release metadata; administrators can force a fresh check with `?force=1`.
 - `POST /api/v1/update/check` always performs a fresh metadata check.
 - The background task warms the cache at the configured `update_check_interval` (default 60 minutes) while `update_check_enabled` is true.
-- A release is usable only when it contains the platform archive named `octopus-<os>-<arch>.zip`.
+- A release is usable only when it contains the platform archive named `switchyard-<os>-<arch>.zip`.
 
 ## Applying an update
 

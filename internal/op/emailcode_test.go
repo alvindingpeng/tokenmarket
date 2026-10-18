@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // emailCodeTestSetup 初始化隔离库并播种邮件配置(不真正发信: 发送失败不影响码的落库语义测试,

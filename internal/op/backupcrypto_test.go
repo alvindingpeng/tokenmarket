@@ -12,7 +12,7 @@ func TestBackupEncryptRoundtrip(t *testing.T) {
 	src := filepath.Join(dir, "backup.db")
 	enc := filepath.Join(dir, "backup.db.enc")
 	dec := filepath.Join(dir, "restored.db")
-	payload := bytes.Repeat([]byte("octopus backup payload\x00\xff"), 5000)
+	payload := bytes.Repeat([]byte("switchyard backup payload\x00\xff"), 5000)
 	if err := os.WriteFile(src, payload, 0o600); err != nil {
 		t.Fatal(err)
 	}

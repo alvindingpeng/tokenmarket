@@ -89,7 +89,7 @@ export function HomeActions() {
         if (!preview) return;
         const link = document.createElement('a');
         link.href = preview.url;
-        link.download = `octopus-${dayjs().format('YYYYMMDD')}.png`;
+        link.download = `switchyard-${dayjs().format('YYYYMMDD')}.png`;
         link.click();
     };
 

@@ -3,8 +3,8 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/bestruirui/octopus/internal/conf"
-	"github.com/bestruirui/octopus/internal/server/router"
+	"github.com/alvindingpeng/switchyard/internal/conf"
+	"github.com/alvindingpeng/switchyard/internal/server/router"
 	"github.com/gin-gonic/gin"
 )
 
@@ -27,7 +27,7 @@ func openAPISpec() gin.H {
 	return gin.H{
 		"openapi": "3.0.3",
 		"info": gin.H{
-			"title":       "Octopus LLM Gateway API",
+			"title":       "Switchyard LLM Gateway API",
 			"description": "OpenAI / Anthropic 兼容的统一 LLM 网关转发接口。用分组名(客户端模型名)作为 model 参数, 由网关按路由策略选择上游渠道; 计费按实际用量结算。",
 			"version":     conf.Version,
 		},
@@ -56,7 +56,7 @@ func openAPISpec() gin.H {
 													"properties": gin.H{
 														"id":       gin.H{"type": "string", "example": "deepseek-v4-flash"},
 														"object":   gin.H{"type": "string", "example": "model"},
-														"owned_by": gin.H{"type": "string", "example": "octopus"},
+														"owned_by": gin.H{"type": "string", "example": "switchyard"},
 													},
 												},
 											},

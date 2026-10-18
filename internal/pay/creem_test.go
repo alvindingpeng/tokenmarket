@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // TestCreemProductParsing 档位配置解析; 坏格式给出可读错误。

@@ -33,7 +33,7 @@ approval_required —— 前端 login/index.tsx 一直在读它, 后端没发, �
 | announcement | SiteBanners 公告横幅(应用外壳 + 密钥视图; 登录页不展示 —— 管理员说明写的是「向全部登录用户展示」) |
 | maintenance_mode + maintenance_notice | SiteBanners 红色常驻横幅(含登录页: 被维护模式挡住的人需要知道原因), 与后端 login() 的 503 同源 |
 
-留空的 site_name 在前端回退常量 DEFAULT_SITE_NAME = "Octopus", 不把标题清成空串。
+留空的 site_name 在前端回退常量 DEFAULT_SITE_NAME = "Switchyard", 不把标题清成空串。
 
 ## 4. 生效时机: 谁负责失效缓存
 

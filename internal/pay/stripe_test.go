@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // stripeTestSign 生成 Stripe-Signature 头(与官方口径一致: v1 = HMAC(whsec, "t.body"))。

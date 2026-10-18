@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/server/middleware"
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/server/middleware"
 	"github.com/gin-gonic/gin"
 )
 

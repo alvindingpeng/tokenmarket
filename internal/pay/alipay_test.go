@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // alipayTestKeys 生成测试密钥, 返回私钥与公钥的裸 base64(不带 PEM 头尾)。

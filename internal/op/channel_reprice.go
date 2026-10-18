@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // maxRepriceMultiplier 统一倍率上限: 官方价本身已是每百万 token 的价格口径, 超过这个倍数几乎必然是误输入。

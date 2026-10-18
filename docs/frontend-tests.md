@@ -7,7 +7,7 @@
 - `web/vitest.config.ts`: 与 `vite.config.ts` **分开配置**, vitest 会优先读它;
   `@` 别名必须在两个文件里各写一遍, 只改 vite.config 不影响测试解析。
 - `environment: "node"`: 被测对象全是纯函数与 URL 构造, 不需要 jsdom。
-- 运行: `pnpm --filter octopus test`(或在 web 目录 `pnpm test`); `test:watch` 供本地循环。
+- 运行: `pnpm --filter switchyard test`(或在 web 目录 `pnpm test`); `test:watch` 供本地循环。
 
 ## 覆盖面(4 个文件 / 24 条)
 

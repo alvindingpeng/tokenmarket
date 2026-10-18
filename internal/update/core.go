@@ -16,8 +16,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/conf"
-	"github.com/bestruirui/octopus/internal/utils/shutdown"
+	"github.com/alvindingpeng/switchyard/internal/conf"
+	"github.com/alvindingpeng/switchyard/internal/utils/shutdown"
 	"github.com/charmbracelet/log"
 )
 
@@ -27,9 +27,9 @@ const restartDelay = 1500 * time.Millisecond
 func updateMarkerPath() string {
 	execPath, err := os.Executable()
 	if err != nil {
-		return filepath.Join(".", ".octopus-update-marker.json")
+		return filepath.Join(".", ".switchyard-update-marker.json")
 	}
-	return filepath.Join(filepath.Dir(execPath), ".octopus-update-marker.json")
+	return filepath.Join(filepath.Dir(execPath), ".switchyard-update-marker.json")
 }
 
 type Result struct {
@@ -95,9 +95,9 @@ func Apply(forceSameVersion bool) (*Result, error) {
 		return nil, fmt.Errorf("current executable is unavailable: %v", statErr)
 	}
 
-	tmpDir, err := os.MkdirTemp(filepath.Dir(execPath), ".octopus-update-*")
+	tmpDir, err := os.MkdirTemp(filepath.Dir(execPath), ".switchyard-update-*")
 	if err != nil {
-		tmpDir, err = os.MkdirTemp("", "octopus-update-*")
+		tmpDir, err = os.MkdirTemp("", "switchyard-update-*")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("create update temp directory failed: %w", err)

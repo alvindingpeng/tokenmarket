@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // StripeConfig Stripe 参数; 全部来自后台设置, 多币种按 ChargeCurrency 声明。

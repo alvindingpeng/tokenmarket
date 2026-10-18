@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 var errQueueDisabled = errors.New("no available upstream; waiting disabled")

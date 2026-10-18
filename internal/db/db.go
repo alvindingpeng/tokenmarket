@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/db/migrate"
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/db/migrate"
+	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/glebarez/sqlite"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
@@ -132,7 +132,7 @@ func initMySQL(dsn string, config *gorm.Config) (*gorm.DB, error) {
 }
 
 func initPostgres(dsn string, config *gorm.Config) (*gorm.DB, error) {
-	// DSN 格式: host=localhost user=postgres password=xxx dbname=octopus port=5432 sslmode=disable
+	// DSN 格式: host=localhost user=postgres password=xxx dbname=switchyard port=5432 sslmode=disable
 	return gorm.Open(postgres.Open(dsn), config)
 }
 

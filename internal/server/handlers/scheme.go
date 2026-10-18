@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/bestruirui/octopus/internal/conf"
+	"github.com/alvindingpeng/switchyard/internal/conf"
 )
 
 // requestIsHTTPS 判断调用方是否经 HTTPS 访问本站。

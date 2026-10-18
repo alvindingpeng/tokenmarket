@@ -1,4 +1,4 @@
-module github.com/bestruirui/octopus
+module github.com/alvindingpeng/switchyard
 
 go 1.26.4
 

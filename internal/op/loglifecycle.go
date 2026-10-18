@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/alert"
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/alert"
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // 默认脱敏字段: 这些键的值在保存正文前替换为固定掩码。

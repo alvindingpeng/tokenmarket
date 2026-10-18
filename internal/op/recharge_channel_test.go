@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/pay"
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/pay"
 )
 
 // channelTestSetup 初始化隔离库 + 一套渠道配置; 返回用户与测试 RSA 私钥(签支付宝回调用)。

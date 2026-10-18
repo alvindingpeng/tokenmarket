@@ -7,14 +7,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/alert"
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/op"
-	"github.com/bestruirui/octopus/internal/relay"
-	"github.com/bestruirui/octopus/internal/server/auth"
-	"github.com/bestruirui/octopus/internal/server/middleware"
-	"github.com/bestruirui/octopus/internal/server/resp"
-	"github.com/bestruirui/octopus/internal/server/router"
+	"github.com/alvindingpeng/switchyard/internal/alert"
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/op"
+	"github.com/alvindingpeng/switchyard/internal/relay"
+	"github.com/alvindingpeng/switchyard/internal/server/auth"
+	"github.com/alvindingpeng/switchyard/internal/server/middleware"
+	"github.com/alvindingpeng/switchyard/internal/server/resp"
+	"github.com/alvindingpeng/switchyard/internal/server/router"
 	"github.com/gin-gonic/gin"
 )
 
@@ -361,7 +361,7 @@ func testAlertChannel(c *gin.Context) {
 	}
 	err := alert.SendOnce(c.Request.Context(), channel, alert.Alert{
 		Event:     alert.Event("test"),
-		Title:     "Octopus test alert",
+		Title:     "Switchyard test alert",
 		Message:   "test alert from admin panel; this confirms the alert channel is reachable",
 		Timestamp: time.Now(),
 	})

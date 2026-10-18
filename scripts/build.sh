@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-readonly APP_NAME="octopus" # 发布产物和容器内的可执行文件名。
+readonly APP_NAME="switchyard" # 发布产物和容器内的可执行文件名。
 readonly OUTPUT_DIR="build" # 所有构建、归档和容器输入的根目录。
 readonly VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo 'dev')" # 当前发布版本。
 readonly COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')" # 当前提交短哈希。

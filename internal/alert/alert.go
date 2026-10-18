@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/charmbracelet/log"
 )
 
@@ -289,7 +289,7 @@ func sendEmail(ctx context.Context, alert Alert) error {
 		recipients[i] = strings.TrimSpace(recipients[i])
 	}
 
-	subject := fmt.Sprintf("Subject: [Octopus Alert] %s\r\n", alert.Title)
+	subject := fmt.Sprintf("Subject: [Switchyard Alert] %s\r\n", alert.Title)
 	body := fmt.Sprintf("Content-Type: text/plain; charset=UTF-8\r\n\r\n%s", emailBody(alert))
 	msg := []byte("From: " + from + "\r\n" +
 		"To: " + strings.Join(recipients, ",") + "\r\n" +

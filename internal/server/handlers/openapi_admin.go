@@ -3,8 +3,8 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/bestruirui/octopus/internal/conf"
-	"github.com/bestruirui/octopus/internal/server/router"
+	"github.com/alvindingpeng/switchyard/internal/conf"
+	"github.com/alvindingpeng/switchyard/internal/server/router"
 	"github.com/gin-gonic/gin"
 )
 
@@ -27,7 +27,7 @@ func openAPIAdminSpec() gin.H {
 	return gin.H{
 		"openapi": "3.0.3",
 		"info": gin.H{
-			"title":   "Octopus 管理面 API (内置控制台)",
+			"title":   "Switchyard 管理面 API (内置控制台)",
 			"version": conf.Version,
 			"description": "内置控制台使用的管理接口: 账号、渠道、分组、模型价格库、API Key、设置、日志、统计、运维、限流与审计。\n\n" +
 				"鉴权: 除登录/注册/站点配置等公开端点外, 全部依赖会话 Cookie `auth`(HttpOnly, JWT), 由 /api/v1/user/login 下发。" +

@@ -1,10 +1,10 @@
 services:
-  octopus:
-    image: bestrui/octopus
+  switchyard:
+    image: bestrui/switchyard
     ports:
        - '8080:8080'
     volumes:      
        - '/path/to/data:/app/data'
-    container_name: octopus
+    container_name: switchyard
     restart: unless-stopped
     network_mode: bridge

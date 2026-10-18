@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"sort"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // AlertRule 一条生效中的告警规则: 可配置项都同时给出当前值与默认值, 使"界面上看到的数字"

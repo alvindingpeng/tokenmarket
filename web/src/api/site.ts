@@ -13,7 +13,7 @@ export type SiteConfig = {
     maintenance_notice: string; // 维护提示文案。
 };
 
-export const DEFAULT_SITE_NAME = 'Octopus'; // 站点名称留空时的回退, 与原硬编码品牌一致。
+export const DEFAULT_SITE_NAME = 'Switchyard'; // 站点名称留空时的回退, 与原硬编码品牌一致。
 
 export const siteConfigQueryOptions = queryOptions({
     queryKey: ['site', 'config'],

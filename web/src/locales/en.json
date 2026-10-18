@@ -12,7 +12,7 @@
         "passwordPlaceholder": "Enter your password",
         "trustDevice": "Trust this device",
         "apikey": "API Key",
-        "apikeyPlaceholder": "Enter your API Key (sk-octopus-...)",
+        "apikeyPlaceholder": "Enter your API Key (sk-switchyard-...)",
         "mode": {
             "user": "Account",
             "apikey": "API Key",
@@ -409,7 +409,7 @@
             "title": "System Information",
             "siteName": "Site name",
             "siteNameHint": "Shown in the browser tab title, on the login page and in every header; leave empty to use the default name.",
-            "siteNamePlaceholder": "e.g. Octopus Gateway",
+            "siteNamePlaceholder": "e.g. Switchyard Gateway",
             "siteContact": "Contact",
             "siteContactHint": "How users can reach support; an email address or group link.",
             "siteContactPlaceholder": "e.g. support@example.com",
@@ -430,7 +430,7 @@
         "githubToken": {
             "label": "GitHub access token",
             "placeholder": "Leave empty for anonymous",
-            "hint": "Optional. GitHub rate-limits anonymous calls to 60 per hour; a read-only personal access token raises that to 5000 so the update check never fails to read the repository version. The token is stored in this database only and is never sent back to the page. The OCTOPUS_GITHUB_PAT environment variable still works and has lower priority."
+            "hint": "Optional. GitHub rate-limits anonymous calls to 60 per hour; a read-only personal access token raises that to 5000 so the update check never fails to read the repository version. The token is stored in this database only and is never sent back to the page. The SWITCHYARD_GITHUB_PAT environment variable still works and has lower priority."
         },
         "updateCheckEnabled": {
             "label": "Automatic update check",
@@ -1197,10 +1197,10 @@
             "username": "Username",
             "password": "Password",
             "email": "Email",
-        "emailPlaceholder": "Optional; enables password recovery",
-        "emailOptional": "Email (optional)",
-        "emailUnbound": "No email bound",
-        "passwordOptional": "Password (optional)",
+            "emailPlaceholder": "Optional; enables password recovery",
+            "emailOptional": "Email (optional)",
+            "emailUnbound": "No email bound",
+            "passwordOptional": "Password (optional)",
             "passwordUnchanged": "Leave empty to keep the current password",
             "role": "Role",
             "status": "Status",
@@ -1438,7 +1438,6 @@
             "tls": "TLS",
             "upstreamWait": "Upstream wait"
         },
-
         "reconcile": {
             "desc": "Daily reconciliation of billing and settlements; mismatches plus backup/archive failures raise alerts and push to the webhook.",
             "day": "Date",
@@ -1557,7 +1556,7 @@
             "webhookTestOk": "Webhook is reachable",
             "webhookTestFail": "Webhook test failed",
             "backupEncrypt": "Backup encryption",
-            "backupEncryptHint": "Encrypt backups with AES-256; passphrase comes from config.json backup.passphrase or OCTOPUS_BACKUP_PASSPHRASE",
+            "backupEncryptHint": "Encrypt backups with AES-256; passphrase comes from config.json backup.passphrase or SWITCHYARD_BACKUP_PASSPHRASE",
             "backupRemote": "Offsite backup push",
             "alertDedup": "Alert dedup window (minutes)",
             "alertDedupHint": "Same channel, kind and reason alerts only once per window; 0 disables dedup",
@@ -1615,17 +1614,30 @@
         "nav": {
             "features": "Features",
             "media": "Protocols & Billing",
-            "roles": "Roles"
+            "roles": "Roles",
+            "flow": "How it works"
         },
         "hero": {
-            "badge": "Self-hosted LLM API Gateway",
-            "title": "Every model provider, one aggregate gateway",
-            "subtitle": "Octopus sits between providers and your clients: aggregated channels, smart routing, usage-based billing, and full observability — all packed into a single self-hosted binary.",
+            "badge": "Self-hosted LLM marshalling gateway",
+            "title": "Marshall many upstreams into one dependable set of models",
+            "subtitle": "Switchyard sits between providers and your clients: aggregate channels, marshal and route them by price, latency, and success rate, serve one protocol, and meter every call — all in a single self-hosted binary.",
             "ctaPrimary": "Enter Console",
             "ctaSecondary": "Explore Features",
             "chip1": "OpenAI · Anthropic protocols",
             "chip2": "Text / Image / Video",
             "chip3": "3 languages · themes · responsive"
+        },
+        "flow": {
+            "title": "Four steps, from track to invoice",
+            "subtitle": "Every call takes the same path: arrive, marshal, dispatch, meter.",
+            "step1Title": "Arrive",
+            "step1Desc": "OpenAI, Anthropic, image, and video upstreams each keep their own keys and limits.",
+            "step2Title": "Marshal",
+            "step2Desc": "One model name is one group; several channels can back it, ordered by sequence, price, latency, or composite score.",
+            "step3Title": "Dispatch",
+            "step3Desc": "Requests leave along the best-scoring route; failures, timeouts, and rate limits switch tracks automatically, and egress can be pooled.",
+            "step4Title": "Meter",
+            "step4Desc": "Reserve before, settle after; text by token, images by count, video by clip. Ledger and reconciliation stay auditable."
         },
         "features": {
             "title": "Everything in one console",
@@ -1674,7 +1686,7 @@
         },
         "cta": {
             "title": "Ready to get started?",
-            "subtitle": "Enter the console and configure your first model gateway.",
+            "subtitle": "Open the console and hook up your first upstream.",
             "button": "Enter Console"
         },
         "footer": {

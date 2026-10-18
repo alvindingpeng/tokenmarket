@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // AlipayConfig 支付宝官方直连参数(电脑网站支付); 全部来自后台设置, 后配即可用。

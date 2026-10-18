@@ -33,7 +33,7 @@ export function SettingInfo() {
         const scope = new URL('./', document.baseURI); // 当前应用的 Service Worker 作用域及缓存所属目录。
         if ('caches' in window) {
             const names = await caches.keys();
-            await Promise.all(names.filter((name) => name.startsWith(`octopus-${encodeURIComponent(scope.pathname)}-`)).map((name) => caches.delete(name)));
+            await Promise.all(names.filter((name) => name.startsWith(`switchyard-${encodeURIComponent(scope.pathname)}-`)).map((name) => caches.delete(name)));
         }
 
         if ('serviceWorker' in navigator) {
