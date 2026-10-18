@@ -55,11 +55,11 @@
       #initial-loader .logo-group {
         animation: logoFade 2s ease-in-out infinite;
       }
-      /* 股道用描边绘制: 三条上游股道先后汇入, 最后统一发出。 */
+      /* 股道用描边绘制: 两条上游股道先后并入主干, 再统一发出。 */
       #initial-loader .logo-link {
         fill: none;
         stroke: currentColor;
-        stroke-width: 12;
+        stroke-width: 13;
         stroke-linecap: round;
         stroke-linejoin: round;
         stroke-dasharray: 1 2;
@@ -68,13 +68,7 @@
         animation: logoDraw 2s ease-in-out infinite both;
       }
       #initial-loader .logo-link-b {
-        animation-delay: 90ms;
-      }
-      #initial-loader .logo-link-c {
-        animation-delay: 180ms;
-      }
-      #initial-loader .logo-link-d {
-        animation-delay: 380ms;
+        animation-delay: 160ms;
       }
 
       @keyframes logoDraw {
@@ -104,10 +98,8 @@
     <div id="initial-loader" role="status" aria-label="Loading">
       <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
         <g class="logo-group">
-          <path class="logo-link" pathLength="1" d="M12 16 L54 50" />
-          <path class="logo-link logo-link-b" pathLength="1" d="M12 50 H54" />
-          <path class="logo-link logo-link-c" pathLength="1" d="M12 84 L54 50" />
-          <path class="logo-link logo-link-d" pathLength="1" d="M54 50 H88" />
+          <path class="logo-link" pathLength="1" d="M30 12 V40 L50 58 V88" />
+          <path class="logo-link logo-link-b" pathLength="1" d="M70 12 V40 L50 58" />
         </g>
       </svg>
     </div>
