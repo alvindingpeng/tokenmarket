@@ -1,6 +1,6 @@
 # 第二批运营可靠性升级
 
-已实施并部署到生产服务 switchyard-multiuser (202.6.204.216:8088)。
+已实施并部署到生产服务 switchyard (202.6.204.216:8088)。
 
 ## A+B: 计费价格快照与对账
 
@@ -78,7 +78,7 @@
 
 ## 部署记录
 - 二进制 SHA-256: b534600b3bcbf101ca4230c55c5b0d763789472e56ee332f3d34dd1143a0ea25
-- 备份: /opt/switchyard-multiuser/backups/second-batch-20261008-111538
+- 备份: /opt/switchyard/backups/second-batch-20261008-111538
 
 ## 注意事项
 - 日志留存是自然日计算, 每小时清理一次。

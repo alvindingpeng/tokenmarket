@@ -63,10 +63,10 @@ switchyard backup decrypt --in backup-20261008-181556.db.enc --out restored.db
 switchyard backup verify --file restored.db
 
 # 4) 停服换库
-systemctl stop switchyard-multiuser
-mv /opt/switchyard-multiuser/data/data.db /opt/switchyard-multiuser/data/data.db.bak
-mv restored.db /opt/switchyard-multiuser/data/data.db
-systemctl start switchyard-multiuser
+systemctl stop switchyard
+mv /opt/switchyard/data/data.db /opt/switchyard/data/data.db.bak
+mv restored.db /opt/switchyard/data/data.db
+systemctl start switchyard
 ```
 
 ## 非 SQLite(MySQL/PostgreSQL)
