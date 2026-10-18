@@ -48,6 +48,7 @@ type RequestState struct {
 	StreamDuration     time.Duration  `json:"stream_duration"`      // 流式响应从首字节提交到响应结束的耗时, 非流式响应为零。
 	ResponseDuration   time.Duration  `json:"response_duration"`    // 非流式正确响应轮次开始到完整响应提交的耗时, 流式响应为零。
 	ClientIP           string         `json:"client_ip"`
+	ClientCountry      string         `json:"client_country"`   // 调用方国家码, 取自可信反代注入的头; 无边缘接入时为空。
 	UserID             uint           `json:"user_id"`          // 发起请求的用户 ID(API Key 归属者), 日志与计费的归属依据。
 	Model              string         `json:"model"`            // 客户端请求的模型名称, 即分组名称。
 	ReasoningEffort    string         `json:"reasoning_effort"` // 客户端请求的思考等级, 未指定时为空。
@@ -71,7 +72,8 @@ type RequestState struct {
 	responseBody  string // 聚合后的完整最终响应体, 同样按需拉取。
 	apiKeyID      int    // 发起请求的 API Key ID, 用于请求完成后的归属统计。
 	routeDecision model.RelayRouteDecision
-	roundItemID   int // 最新一轮的分组成员 ID, 供尝试记录落库。
+	roundItemID   int                  // 最新一轮的分组成员 ID, 供尝试记录落库。
+	roundTiming   model.UpstreamTiming // 最新一轮上游请求的连接耗时分解, 由 setRoundTiming 在每轮结束时写入。
 
 	// 用户侧限流上下文: 请求开始时预留, 结束时按真实用量结算。
 	rateScopes      []ratelimit.Scope
@@ -108,7 +110,7 @@ var (
 )
 
 // newRequestState 分配请求 ID 并登记初始运行状态; 返回的记录是本请求后续全部状态写入的入口。
-func newRequestState(ctx context.Context, modelName, reasoningEffort string, groupID int, protocol model.Protocol, body string, apiKeyID int, userID uint, clientIP string, timeoutSeconds int) *RequestState {
+func newRequestState(ctx context.Context, modelName, reasoningEffort string, groupID int, protocol model.Protocol, body string, apiKeyID int, userID uint, clientIP, clientCountry string, timeoutSeconds int) *RequestState {
 	if timeoutSeconds < 1 {
 		timeoutSeconds = 600
 	}
@@ -129,6 +131,7 @@ func newRequestState(ctx context.Context, modelName, reasoningEffort string, gro
 		requestBody:     body,
 		apiKeyID:        apiKeyID,
 		ClientIP:        clientIP,
+		ClientCountry:   clientCountry,
 		requestCtx:      requestCtx,
 		requestCancel:   requestCancel,
 	}
@@ -165,6 +168,7 @@ func (r *RequestState) startRound(cancel context.CancelFunc, channelKeyName, mod
 	r.Error = ""
 	r.roundCancel = cancel
 	r.roundItemID = itemID
+	r.roundTiming = model.UpstreamTiming{} // 新一轮重新采集, 不继承上一轮的连接耗时。
 	publishRequestLocked(r)
 	// 本轮上游尝试先登记在途, 结束时按结果覆盖。
 	persistAttempt(attemptRow(r, itemID, channelID, shareCode, modelName, protocol, r.RoundStartedAt, "running", ""))
@@ -258,6 +262,14 @@ func (r *RequestState) SetReservation(reservationID uint64) {
 	mu.Lock()
 	defer mu.Unlock()
 	r.reservationID = reservationID
+}
+
+// setRoundTiming 登记本轮上游请求的连接耗时分解。
+// 必须在 finishRound 之前调用: 尝试行的终态覆盖写与请求行快照都从这里取数据。
+func (r *RequestState) setRoundTiming(timing model.UpstreamTiming) {
+	mu.Lock()
+	defer mu.Unlock()
+	r.roundTiming = timing
 }
 
 // finishRound 记录本轮上游结果并落库本轮尝试; errText 为空表示已取得可提交响应。

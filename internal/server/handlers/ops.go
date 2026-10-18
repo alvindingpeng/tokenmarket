@@ -36,6 +36,11 @@ func init() {
 				Handle(opsOverview),
 		).
 		AddRoute(
+			router.NewRoute("/latency", http.MethodGet).
+				Allow(model.RoleAdmin).
+				Handle(listLatency),
+		).
+		AddRoute(
 			router.NewRoute("/balance-flow", http.MethodGet).
 				Handle(listBalanceFlow),
 		).
@@ -366,6 +371,24 @@ func testAlertChannel(c *gin.Context) {
 	}
 	audit(c, "alert.test_"+channel, "", "")
 	resp.Success(c, gin.H{"ok": true})
+}
+
+// listLatency 延迟归因: 按渠道与调用方国家给出首字节、DNS、建连、TLS 与上游等待的分位。
+// 单列 UpstreamWait 是刻意的 —— 首字节耗时是"我们连得慢"与"上游排队久"的合计,
+// 拆开后才知道该换上游还是该加出口。
+func listLatency(c *gin.Context) {
+	days := 7
+	if raw := strings.TrimSpace(c.Query("days")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 90 {
+			days = parsed
+		}
+	}
+	rows, err := op.LatencyBreakdown(time.Now().AddDate(0, 0, -days))
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, gin.H{"days": days, "rows": rows})
 }
 
 // opsOverview 运维概览: 24 小时调用汇总、 进行中请求、 渠道与告警计数, 供运维仪表盘顶部卡片。
