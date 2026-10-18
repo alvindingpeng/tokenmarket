@@ -32,6 +32,12 @@
 - 修正过时信息：版本号 `v0.21.0` → `v0.39.0`，前端测试数 24 条/4 文件 → 53 条/10 文件
 - 全部文档跟随改名；指向原上游 `bestruirui/octopus` 的链接作为历史事实保留
 
+**部署迁移**
+
+- 生产服务由 `octopus-multiuser` 迁移为 `switchyard`：目录 `/opt/octopus-multiuser` → `/opt/switchyard`（`bin/switchyard` + `data/`），单元名随之变更
+- 旧单元停用但文件与数据完整保留，回滚只需 `systemctl enable --now octopus-multiuser`
+- nginx 站点与 CF 相关配置文件改名，监听端口与反向代理关系不变，客户端无感
+
 ---
 ## v0.38.0 — 2026-10-18
 

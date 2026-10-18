@@ -23,7 +23,9 @@ Cloudflare 记录为**灰云(DNS only)**, 仅做 DNS; 公网明文入口 8088 �
 
 ### A1. 单用户实例仍在公网明文暴露 — **已处理 2026-10-18**
 
-原状况: `switchyard.service`(`/opt/switchyard/bin/switchyard`)监听 `*:9100`, 公网明文可达, 无 TLS。
+原状况: 一套独立的单用户部署 —— systemd 单元 `octopus.service`、目录 `/opt/octopus`、端口 `9100`, 公网明文可达, 无 TLS。
+
+> 注意与生产区分: 生产是 `switchyard.service`(`/opt/switchyard`, 端口 `8088`, 仅回环)。A1 说的是另一套早就废弃的旧实例。
 
 处理前核实(只读):
 
@@ -33,15 +35,13 @@ Cloudflare 记录为**灰云(DNS only)**, 仅做 DNS; 公网明文入口 8088 �
 
 处理动作:
 
-- `systemctl stop switchyard && systemctl disable switchyard` —— 服务已停并取消开机自启
-- 配置文件 `server.host` 由 `0.0.0.0` 改为 `127.0.0.1`(纵深防御: 万一将来被重新启用也不会公网暴露), 备份 `config.json.pre-a1`
-- **未删除任何数据**: `/opt/switchyard/data/data.db` 与全部配置原样保留
+- `systemctl stop octopus && systemctl disable octopus` —— 服务已停并取消开机自启
+- 配置文件 `server.host` 由 `0.0.0.0` 改为 `127.0.0.1`(纵深防御: 万一将来被重新启用也不会公网暴露), 备份 `/opt/octopus/data/config.json.pre-a1`
+- **未删除任何数据**: `/opt/octopus/data/data.db` 与全部配置原样保留
 
 验收: 公网 `9100` 返回 000(不可达), 本机无 9100 监听; 主系统 `https://tt.xjj.se/healthz` 正常。
 
-如需恢复: `systemctl enable --now switchyard`, 但它已绑 `127.0.0.1`, 要对外提供服务需前置 nginx(照 `switchyard-tt` 的 vhost 改端口即可)。
-
----
+如需恢复: `systemctl enable --now octopus`, 但它已绑 `127.0.0.1`, 要对外提供服务需前置 nginx(照 `switchyard-tt` 的 vhost 改端口即可)。
 
 ## B. G2 边缘启用(卡在外部依赖)
 
@@ -137,6 +137,6 @@ Cloudflare 记录为**灰云(DNS only)**, 仅做 DNS; 公网明文入口 8088 �
 
 ### 回退手册
 
-- **恢复公网 8088**(万一有客户端还在用旧地址): 把 `/opt/switchyard-multiuser/data/config.json` 的 `server.host` 改回 `0.0.0.0`, `systemctl restart switchyard-multiuser`。备份在 `config.json.pre-g2-close`。
+- **恢复公网 8088**(万一有客户端还在用旧地址): 把 `/opt/switchyard/data/config.json` 的 `server.host` 改回 `0.0.0.0`, `systemctl restart switchyard`。备份在 `config.json.pre-g2-close`。
 - **撤销 nginx 站点**: 删掉 `/etc/nginx/sites-enabled/switchyard-tt` 软链后 `nginx -t && systemctl reload nginx`(注意: 删了就没有 HTTPS 入口了)。
 - **撤销 CF 相关配置**: `/etc/nginx/conf.d/switchyard-cf-geo.conf` 可整文件删除, 但要同时把 vhost 里的 `$trusted_cf_country` 改回 `$http_cf_ipcountry`。
