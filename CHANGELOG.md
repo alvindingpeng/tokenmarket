@@ -1,5 +1,38 @@
 # 更新说明
 
+## v0.39.0 — 2026-10-18
+
+品牌重构：系统由 switchyard 更名为 **Switchyard**。
+
+名字取自铁路编组场 —— 多条股道接入、按去向拆解重组、发到真正能送到的股道上，并且按里程计费。这套系统做的正是同一件事：多渠道汇入、按质量与成本编组选路、统一协议发出、逐次计量结算。
+
+**代码标识**
+
+- 模块路径改为 `github.com/alvindingpeng/switchyard`（原 `alvindingpeng/switchyard`），全部 import 随之更新
+- `APP_NAME` 改为 `switchyard`，环境变量前缀因此变为 `SWITCHYARD_*`（原 `SWITCHYARD_*`，如 `SWITCHYARD_DEBUG`、`SWITCHYARD_GITHUB_PAT`、`SWITCHYARD_BACKUP_PASSPHRASE`）
+- 新签发的 API 密钥前缀变为 `sk-switchyard-`；**已签发的密钥不受影响**，校验不解析前缀
+- `owned_by`、OpenAPI 示例、Prometheus 指标名（`switchyard_up`、`switchyard_relay_requests` 等）、导出文件名、自更新资产名（`switchyard-<os>-<arch>.zip`）全部改名
+- 启动 banner 换成 SWITCHYARD 字模，副标题改为 `many upstreams in, one protocol out`
+
+**未改动的契约**
+
+- 数据库文件名、表结构与字段一律未动
+- API 路径 `/api/v1`、`/v1` 未动，客户端无需任何调整
+- JWT 签发方随 `APP_NAME` 改变，但校验只验签名与有效期、不校验 `iss`，已登录会话不受影响
+
+**前端**
+
+- 站点默认名、导出与下载文件名、本地存储键（`switchyard-settings` 等）、缓存前缀跟随改名。**副作用**：本地存储键变更会让已保存的界面偏好（主题、语言等）重置一次
+- 落地页重构：新增「编组流程」段（汇入 → 编组 → 发车 → 计量），首屏文案改为品牌叙事，导航增加对应锚点
+- 三语语言包同步更新（1731 键，三语差异 0）
+
+**文档**
+
+- README 中英双版重构：品牌头图与徽章、分组目录、新增「编组模型」章节（含数据流示意与四环节对照表）
+- 修正过时信息：版本号 `v0.21.0` → `v0.39.0`，前端测试数 24 条/4 文件 → 53 条/10 文件
+- 全部文档跟随改名；指向原上游 `alvindingpeng/switchyard` 的链接作为历史事实保留
+
+---
 ## v0.38.0 — 2026-10-18
 
 入口边缘接入(G2)的前置改动: 让系统可以安全地待在反向代理/边缘节点之后。

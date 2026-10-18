@@ -137,6 +137,6 @@ Cloudflare 记录为**灰云(DNS only)**, 仅做 DNS; 公网明文入口 8088 �
 
 ### 回退手册
 
-- **恢复公网 8088**(万一有客户端还在用旧地址): 把 `/opt/switchyard/data/config.json` 的 `server.host` 改回 `0.0.0.0`, `systemctl restart switchyard`。备份在 `config.json.pre-g2-close`。
+- **恢复公网 8088**(万一有客户端还在用旧地址): 把 `/opt/switchyard-multiuser/data/config.json` 的 `server.host` 改回 `0.0.0.0`, `systemctl restart switchyard-multiuser`。备份在 `config.json.pre-g2-close`。
 - **撤销 nginx 站点**: 删掉 `/etc/nginx/sites-enabled/switchyard-tt` 软链后 `nginx -t && systemctl reload nginx`(注意: 删了就没有 HTTPS 入口了)。
 - **撤销 CF 相关配置**: `/etc/nginx/conf.d/switchyard-cf-geo.conf` 可整文件删除, 但要同时把 vhost 里的 `$trusted_cf_country` 改回 `$http_cf_ipcountry`。

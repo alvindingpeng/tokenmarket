@@ -2,13 +2,17 @@ import { useTranslations } from 'use-intl';
 import type { LucideIcon } from 'lucide-react';
 import {
     ArrowRight,
+    Cable,
     FolderTree,
+    GitMerge,
     HeartPulse,
     Image as ImageIcon,
     KeyRound,
     Languages,
     MessageSquareText,
     Radio,
+    Receipt,
+    Send,
     ShieldCheck,
     Sparkles,
     Store,
@@ -26,6 +30,7 @@ import { DEFAULT_SITE_NAME, useSiteConfig, type SiteConfig } from '@/api/site';
 function LandingHeader({ siteName, onEnter }: { siteName: string; onEnter: () => void }) {
     const t = useTranslations('landing');
     const links = [
+        { href: '#flow', label: t('nav.flow') },
         { href: '#features', label: t('nav.features') },
         { href: '#media', label: t('nav.media') },
         { href: '#roles', label: t('nav.roles') },
@@ -110,6 +115,43 @@ function HeroSection({ onEnter }: { onEnter: () => void }) {
                 </div>
                 {/* 维护模式对访客同样可见: 被维护挡住的人需要知道登不上的原因。 */}
                 <SiteBanners className="mt-6" includeAnnouncement={false} />
+            </div>
+        </section>
+    );
+}
+
+// FlowSection 编组流程: 汇入 → 编组 → 发车 → 计量, 把品牌隐喻和实际数据流对上, 让访客一眼看懂钱和请求各自经过哪一段。
+function FlowSection() {
+    const t = useTranslations('landing');
+    const steps: { icon: LucideIcon; title: string; desc: string }[] = [
+        { icon: Cable, title: t('flow.step1Title'), desc: t('flow.step1Desc') },
+        { icon: GitMerge, title: t('flow.step2Title'), desc: t('flow.step2Desc') },
+        { icon: Send, title: t('flow.step3Title'), desc: t('flow.step3Desc') },
+        { icon: Receipt, title: t('flow.step4Title'), desc: t('flow.step4Desc') },
+    ];
+    return (
+        <section id="flow" className="scroll-mt-16 border-t border-border/60 bg-accent/30">
+            <div className="mx-auto max-w-6xl px-4 py-16 md:px-6 md:py-24">
+                <div className="mx-auto max-w-2xl text-center">
+                    <h2 className="text-2xl font-bold tracking-tight md:text-3xl">{t('flow.title')}</h2>
+                    <p className="mt-3 text-muted-foreground">{t('flow.subtitle')}</p>
+                </div>
+                <ol className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    {steps.map((step, index) => (
+                        <li key={step.title} className="rounded-3xl border border-border bg-card p-6">
+                            <div className="flex items-center justify-between">
+                                <div className="flex size-10 items-center justify-center rounded-2xl bg-primary/10 text-primary [&>svg]:size-5">
+                                    <step.icon />
+                                </div>
+                                <span className="font-mono text-xs font-semibold text-muted-foreground/60">
+                                    {String(index + 1).padStart(2, '0')}
+                                </span>
+                            </div>
+                            <h3 className="mt-4 font-semibold">{step.title}</h3>
+                            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{step.desc}</p>
+                        </li>
+                    ))}
+                </ol>
             </div>
         </section>
     );
@@ -290,6 +332,7 @@ export function LandingPage({ onEnter }: { onEnter: () => void }) {
             <LandingHeader siteName={siteName} onEnter={onEnter} />
             <main>
                 <HeroSection onEnter={onEnter} />
+                <FlowSection />
                 <FeaturesSection />
                 <MediaSection />
                 <RolesSection />

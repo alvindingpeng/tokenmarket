@@ -16,7 +16,7 @@
 ## 1. 现状架构盘点(代码事实)
 
 ### 1.1 部署形态
-- 单体 Go 二进制: Gin API + GORM + 嵌入前端, systemd 服务 `switchyard`, 目录 `/opt/switchyard/{switchyard, data/data.db}`。
+- 单体 Go 二进制: Gin API + GORM + 嵌入前端, systemd 服务 `switchyard-multiuser`, 目录 `/opt/switchyard-multiuser/{switchyard, data/data.db}`。
 - 前端 React SPA 构建到 `static/out`(`web/vite.config.ts` outDir), 经 `go:embed`(`static/static.go`)打进二进制。
 - 静态缓存策略(`internal/server/middleware/static.go`): 带 hash 的资源 `public, max-age=31536000, immutable`, `index.html` `no-cache` —— **已经是标准 CDN 就绪形态**。
 - 无用户上传文件(multipart 仅用于 relay 请求改写, 不落盘); 磁盘上只有 `data.db` + `backups/`(自动备份, 可推 WebDAV 异地)。

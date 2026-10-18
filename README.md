@@ -1,37 +1,55 @@
 <div align="center">
 
-<img src="web/public/logo.svg" alt="Switchyard Logo" width="120" height="120">
+<img src="web/public/logo.svg" alt="Switchyard" width="112" height="112">
 
-### Switchyard
+# Switchyard
 
-**A self-hosted LLM API gateway: aggregate, route, meter, and operate — as a single binary**
+**A self-hosted LLM marshalling gateway — many upstreams in, one protocol out, every call metered.**
 
-`v0.21.0` · English | [简体中文](README_zh.md)
+[![version](https://img.shields.io/badge/version-v0.38.0-4c6ef5?style=flat-square)](#versioning-and-releases)
+[![go](https://img.shields.io/badge/go-1.26-00ADD8?style=flat-square&logo=go&logoColor=white)](go.mod)
+[![license](https://img.shields.io/badge/license-AGPL--3.0--only-blue?style=flat-square)](LICENSE)
+[![deploy](https://img.shields.io/badge/deploy-single%20binary-2b8a3e?style=flat-square)](#quick-start)
+
+English | [简体中文](README_zh.md)
 
 </div>
 
-> **This repository** — [alvindingpeng/tokenmarket](https://github.com/alvindingpeng/tokenmarket) —
-> is a production fork of the upstream [alvindingpeng/switchyard](https://github.com/alvindingpeng/switchyard)
-> project (baseline: upstream `v0.13.9`). Everything below describes **what this fork actually runs
-> today**; the delta against upstream is itemised in [CHANGELOG.md](CHANGELOG.md).
+> **Name and lineage.** This codebase began as a production fork of
+> [alvindingpeng/switchyard](https://github.com/alvindingpeng/switchyard) (baseline `v0.13.9`) and has since grown
+> well past it — routing, billing, media handling, and operations were largely rewritten. It now ships
+> under its own name, **Switchyard**, which describes what it actually does: a marshalling yard for LLM
+> traffic. The delta against the original is itemised in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-## Table of Contents
+## Contents
+
+**Start here**
 
 - [What it does](#what-it-does)
+- [The marshalling model](#the-marshalling-model)
 - [Quick start](#quick-start)
+- [Client integration](#client-integration)
+
+**How it works**
+
 - [Compatibility](#compatibility)
 - [Relay: routing, failover, error handling](#relay-routing-failover-error-handling)
 - [Pricing and billing](#pricing-and-billing)
 - [Channels, groups, and publishing](#channels-groups-and-publishing)
-- [Operations: health, alerts, metrics, backups](#operations-health-alerts-metrics-backups)
 - [Limits and access control](#limits-and-access-control)
 - [Roles and the web console](#roles-and-the-web-console)
 - [Site identity and maintenance mode](#site-identity-and-maintenance-mode)
+
+**Operating it**
+
+- [Operations: health, alerts, metrics, backups](#operations-health-alerts-metrics-backups)
 - [Configuration](#configuration)
 - [API surface](#api-surface)
-- [Client integration](#client-integration)
+
+**Reference**
+
 - [Screenshots](#screenshots)
 - [Documentation](#documentation)
 - [Build from source](#build-from-source)
@@ -39,6 +57,7 @@
 - [Versioning and releases](#versioning-and-releases)
 - [Roadmap](#roadmap)
 - [Acknowledgments](#acknowledgments)
+
 
 ---
 
@@ -63,6 +82,35 @@ balance, meters the usage, and fails over when an upstream misbehaves.
 
 **Deliberately absent:** no built-in payment gateway (balances are topped up by admins), and no
 built-in billing currency conversion — prices are stored per model and charged against a numeric balance.
+
+---
+
+## The marshalling model
+
+A switchyard takes traffic arriving on many tracks, sorts it by destination, couples it into new trains,
+and sends each one out on the track that will actually get it there. Switchyard does the same thing with
+LLM calls — and, like a railway, it charges by distance travelled.
+
+```
+            arrive                 marshal                dispatch                 meter
+              │                      │                       │                      │
+  OpenAI ─────┤                      │                       │                      │
+  Anthropic ──┼──▶ one model name ───┼──▶ pick by score ─────┼──▶ upstream ────────▶│
+  image ──────┤    (= one group)     │    price / latency    │    (egress pool)     │
+  video ──────┘                      │    / success rate     │                      │
+                                     │                       │   reserve ▶ settle ▶ ledger
+```
+
+| Step | What happens | Where it lives in the console |
+|------|--------------|-------------------------------|
+| **Arrive** | Upstream channels each keep their own credentials, limits, and protocol bits | Channels |
+| **Marshal** | One model name is one group; several channels can back it, ordered by sequence, price, latency, or composite score | Groups / model config |
+| **Dispatch** | The request leaves along the best-scoring route; failures, timeouts, and rate limits switch tracks automatically, and egress can be pooled per channel | Relay, egress pool |
+| **Meter** | Balance is reserved before the call and settled after; text bills per token, images per count, video per clip, with a ledger and daily reconciliation | Billing |
+
+The point of the metaphor is the middle two steps: a plain proxy forwards one request to one place.
+Switchyard decides *which* of several upstreams should take this particular request, keeps deciding while
+the request is in flight, and keeps a record of what it cost.
 
 ---
 
@@ -701,7 +749,7 @@ go run main.go start       # in another terminal
 
 ```bash
 cd web && pnpm exec tsc --noEmit        # types (also part of pnpm run build)
-cd web && pnpm exec vitest run          # 24 frontend unit tests, 4 files
+cd web && pnpm run test                 # 53 frontend unit tests, 10 files
 go vet ./internal/...                   # backend static checks
 go test ./internal/...                  # backend unit tests
 gofmt -l internal/server/handlers/      # must print nothing

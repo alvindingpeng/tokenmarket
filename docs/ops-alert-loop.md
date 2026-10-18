@@ -59,7 +59,7 @@
 
 - 构建: `pnpm exec tsc --noEmit && pnpm run build` + `go build` + `go test ./...` 全绿。
 - 二进制 SHA256: `ef8452df84bc497d1db5acb5040a42dee8e062402733f5e7d86b330969f70d22`
-- 生产: `/opt/switchyard/switchyard`, 备份 `backups/alert-loop-20261008-162658`, 服务 active, 启动日志干净(自动备份 verified=true)。
+- 生产: `/opt/switchyard-multiuser/switchyard`, 备份 `backups/alert-loop-20261008-162658`, 服务 active, 启动日志干净(自动备份 verified=true)。
 - 新键 `health_latency_ms` 启动时自动补齐默认值。
 
 ## 注意事项

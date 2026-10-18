@@ -1,6 +1,6 @@
 # 第一批运行可靠性升级
 
-已实施并部署到生产服务 switchyard（202.6.204.216:8088）。
+已实施并部署到生产服务 switchyard-multiuser（202.6.204.216:8088）。
 
 ## 配置入口与默认值
 
@@ -40,6 +40,6 @@
 ## 部署记录
 
 生产二进制 SHA-256：a450a934a7cc3d9e7cc4a04afa50f086ea06aaea84f2b3e0d7f29dadce1ec4d3。
-旧二进制、一致性 SQLite 数据库和配置备份：/opt/switchyard/backups/reliability-20261008-092316。
+旧二进制、一致性 SQLite 数据库和配置备份：/opt/switchyard-multiuser/backups/reliability-20261008-092316。
 
 限流和排队仍是单进程内存状态，进程重启会重置实时额度/租约。PostgreSQL/Redis、多实例协调不属于本批。

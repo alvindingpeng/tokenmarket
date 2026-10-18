@@ -1197,10 +1197,10 @@
             "username": "Username",
             "password": "Password",
             "email": "Email",
-        "emailPlaceholder": "Optional; enables password recovery",
-        "emailOptional": "Email (optional)",
-        "emailUnbound": "No email bound",
-        "passwordOptional": "Password (optional)",
+            "emailPlaceholder": "Optional; enables password recovery",
+            "emailOptional": "Email (optional)",
+            "emailUnbound": "No email bound",
+            "passwordOptional": "Password (optional)",
             "passwordUnchanged": "Leave empty to keep the current password",
             "role": "Role",
             "status": "Status",
@@ -1438,7 +1438,6 @@
             "tls": "TLS",
             "upstreamWait": "Upstream wait"
         },
-
         "reconcile": {
             "desc": "Daily reconciliation of billing and settlements; mismatches plus backup/archive failures raise alerts and push to the webhook.",
             "day": "Date",
@@ -1615,17 +1614,30 @@
         "nav": {
             "features": "Features",
             "media": "Protocols & Billing",
-            "roles": "Roles"
+            "roles": "Roles",
+            "flow": "How it works"
         },
         "hero": {
-            "badge": "Self-hosted LLM API Gateway",
-            "title": "Every model provider, one aggregate gateway",
-            "subtitle": "Switchyard sits between providers and your clients: aggregated channels, smart routing, usage-based billing, and full observability — all packed into a single self-hosted binary.",
+            "badge": "Self-hosted LLM marshalling gateway",
+            "title": "Marshall many upstreams into one dependable set of models",
+            "subtitle": "Switchyard sits between providers and your clients: aggregate channels, marshal and route them by price, latency, and success rate, serve one protocol, and meter every call — all in a single self-hosted binary.",
             "ctaPrimary": "Enter Console",
             "ctaSecondary": "Explore Features",
             "chip1": "OpenAI · Anthropic protocols",
             "chip2": "Text / Image / Video",
             "chip3": "3 languages · themes · responsive"
+        },
+        "flow": {
+            "title": "Four steps, from track to invoice",
+            "subtitle": "Every call takes the same path: arrive, marshal, dispatch, meter.",
+            "step1Title": "Arrive",
+            "step1Desc": "OpenAI, Anthropic, image, and video upstreams each keep their own keys and limits.",
+            "step2Title": "Marshal",
+            "step2Desc": "One model name is one group; several channels can back it, ordered by sequence, price, latency, or composite score.",
+            "step3Title": "Dispatch",
+            "step3Desc": "Requests leave along the best-scoring route; failures, timeouts, and rate limits switch tracks automatically, and egress can be pooled.",
+            "step4Title": "Meter",
+            "step4Desc": "Reserve before, settle after; text by token, images by count, video by clip. Ledger and reconciliation stay auditable."
         },
         "features": {
             "title": "Everything in one console",
@@ -1674,7 +1686,7 @@
         },
         "cta": {
             "title": "Ready to get started?",
-            "subtitle": "Enter the console and configure your first model gateway.",
+            "subtitle": "Open the console and hook up your first upstream.",
             "button": "Enter Console"
         },
         "footer": {

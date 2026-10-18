@@ -1,36 +1,54 @@
 <div align="center">
 
-<img src="web/public/logo.svg" alt="Switchyard Logo" width="120" height="120">
+<img src="web/public/logo.svg" alt="Switchyard" width="112" height="112">
 
-### Switchyard
+# Switchyard
 
-**自托管的 LLM API 网关：聚合、路由、计费与运维，全部装进一个二进制**
+**自托管的 LLM 编组网关 —— 多条上游汇入，一种协议发出，每一次调用都被计量。**
 
-`v0.21.0` · [English](README.md) | 简体中文
+[![version](https://img.shields.io/badge/version-v0.38.0-4c6ef5?style=flat-square)](#版本号与发布)
+[![go](https://img.shields.io/badge/go-1.26-00ADD8?style=flat-square&logo=go&logoColor=white)](go.mod)
+[![license](https://img.shields.io/badge/license-AGPL--3.0--only-blue?style=flat-square)](LICENSE)
+[![deploy](https://img.shields.io/badge/deploy-single%20binary-2b8a3e?style=flat-square)](#快速开始)
+
+[English](README.md) | 简体中文
 
 </div>
 
-> **本仓库** —— [alvindingpeng/tokenmarket](https://github.com/alvindingpeng/tokenmarket) —— 基于上游
-> [alvindingpeng/switchyard](https://github.com/alvindingpeng/switchyard)（基线：上游 `v0.13.9`）。下面写的是
-> **本分支当前真实运行的能力**；与上游的差异逐条记在 [CHANGELOG.md](CHANGELOG.md) 里。
+> **名字与来历。** 这份代码最初是 [alvindingpeng/switchyard](https://github.com/alvindingpeng/switchyard) 的生产分支
+> （基线 `v0.13.9`），后来长得远超它 —— 选路、计费、媒体处理与运维基本重写过。现在它以**Switchyard**
+> 这个名字独立发布，而这个名字说的正是它做的事：LLM 流量的编组场。与原项目的差异逐条记在
+> [CHANGELOG.md](CHANGELOG.md) 里。
 
 ---
 
 ## 目录
 
+**从这里开始**
+
 - [它做什么](#它做什么)
+- [编组模型](#编组模型)
 - [快速开始](#快速开始)
+- [客户端接入示例](#客户端接入示例)
+
+**工作原理**
+
 - [协议兼容性](#协议兼容性)
 - [转发：选路、故障转移与错误处理](#转发选路故障转移与错误处理)
 - [定价与计费](#定价与计费)
 - [渠道、分组与发布](#渠道分组与发布)
-- [运维：健康探测、告警、指标、备份](#运维健康探测告警指标备份)
 - [限额与访问控制](#限额与访问控制)
 - [角色与管理界面](#角色与管理界面)
 - [站点身份与维护模式](#站点身份与维护模式)
+
+**运维**
+
+- [运维：健康探测、告警、指标、备份](#运维健康探测告警指标备份)
 - [配置](#配置)
 - [接口总览](#接口总览)
-- [客户端接入示例](#客户端接入示例)
+
+**参考**
+
 - [界面截图](#界面截图)
 - [文档](#文档)
 - [从源码构建](#从源码构建)
@@ -38,8 +56,6 @@
 - [版本号与发布](#版本号与发布)
 - [路线图](#路线图)
 - [致谢](#致谢)
-
----
 
 ## 它做什么
 
@@ -60,6 +76,33 @@ Switchyard 在多家上游供应商前面摆一个 OpenAI 形态的入口。客�
 | 📦 **部署** | 单个静态二进制，前端内嵌，支持 SQLite / MySQL / PostgreSQL |
 
 **明确没有的：** 内置支付网关（余额由管理员充值），以及内置币种换算（价格按模型存储，扣减一个数值余额）。
+
+---
+
+## 编组模型
+
+编组场把从多条股道进来的车流按去向拆开、重新编组成新的车次，再发到真正能送到的股道上。Switchyard 对
+LLM 调用做的是同一件事 —— 而且和铁路一样，按里程计费。
+
+```
+            汇入                   编组                   发车                    计量
+              │                      │                      │                      │
+  OpenAI ─────┤                      │                      │                      │
+  Anthropic ──┼──▶ 一个模型名 ───────┼──▶ 按打分选路 ───────┼──▶ 上游 ────────────▶│
+  生图 ───────┤    （= 一个分组）    │    价格 / 延迟        │    （出口池）        │
+  生视频 ─────┘                      │    / 成功率           │                      │
+                                     │                      │   预扣 ▶ 结算 ▶ 账本
+```
+
+| 环节 | 发生什么 | 在控制台哪里 |
+|------|----------|--------------|
+| **汇入** | 每个上游渠道各自持有凭据、限额与协议位 | 渠道 |
+| **编组** | 一个模型名就是一个分组，背后可挂多个渠道，按顺序、价格、延迟或综合评分编排 | 分组 / 模型配置 |
+| **发车** | 请求按当前打分选路发出；失败、超时、限流时自动换道，出口可按渠道池化 | 转发、出口池 |
+| **计量** | 调用前预扣余额、调用后结算；文本按 token、图像按张、视频按条计费，配账本与每日对账 | 计费 |
+
+这个比喻的重点是中间两步：普通代理把一个请求转给一个地方；Switchyard 决定**哪一个**上游该接这次调用，
+请求在途时还在持续决定，并且把花了多少记下来。
 
 ---
 
@@ -635,7 +678,7 @@ go run main.go start       # 另一个终端
 
 ```bash
 cd web && pnpm exec tsc --noEmit        # 类型检查（也包含在 pnpm run build 里）
-cd web && pnpm exec vitest run          # 前端单测 24 条 / 4 个文件
+cd web && pnpm run test                 # 前端单测 53 条 / 10 个文件
 go vet ./internal/...                   # 后端静态检查
 go test ./internal/...                  # 后端单元测试
 gofmt -l internal/server/handlers/      # 必须不输出任何内容（只对 handlers 门禁，internal/ 仍有上游遗留格式）

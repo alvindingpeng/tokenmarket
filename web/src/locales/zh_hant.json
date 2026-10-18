@@ -1197,10 +1197,10 @@
             "username": "用戶名",
             "password": "密碼",
             "email": "電子郵件",
-        "emailPlaceholder": "選填; 綁定後可用於找回密碼",
-        "emailOptional": "電子郵件（選填）",
-        "emailUnbound": "未綁定電子郵件",
-        "passwordOptional": "密碼（選填）",
+            "emailPlaceholder": "選填; 綁定後可用於找回密碼",
+            "emailOptional": "電子郵件（選填）",
+            "emailUnbound": "未綁定電子郵件",
+            "passwordOptional": "密碼（選填）",
             "passwordUnchanged": "留空則保留原密碼",
             "role": "角色",
             "status": "狀態",
@@ -1438,7 +1438,6 @@
             "tls": "TLS",
             "upstreamWait": "上游等待"
         },
-
         "reconcile": {
             "desc": "每日自動核對計費明細與預扣結算; 對帳差異與備份/歸檔失敗會自動產生告警並推送 Webhook。",
             "day": "日期",
@@ -1615,17 +1614,30 @@
         "nav": {
             "features": "核心能力",
             "media": "接入與計費",
-            "roles": "適用角色"
+            "roles": "適用角色",
+            "flow": "編組流程"
         },
         "hero": {
-            "badge": "自託管 LLM API 閘道",
-            "title": "把多家模型的呼叫，收進一個閘道",
-            "subtitle": "Switchyard 在供應商與用戶端之間只隔一層：聚合供應源、智慧選路、按次計費、可觀測維運 —— 全部裝進一個自託管二進位檔。",
+            "badge": "自託管 LLM 編組閘道",
+            "title": "把多條上游線路，編組成一組穩定可用的模型",
+            "subtitle": "Switchyard 站在供應商與客戶端之間：匯入多條渠道，按價格、延遲與成功率自動編組選路，統一協議分發，並按用量精確計量 —— 全部裝進一個自託管二進位。",
             "ctaPrimary": "進入控制台",
             "ctaSecondary": "了解全站功能",
             "chip1": "OpenAI · Anthropic 多協定",
             "chip2": "文字 / 圖像 / 影片",
             "chip3": "三語 · 深淺色 · 多端自適應"
+        },
+        "flow": {
+            "title": "四步，從線路到帳單",
+            "subtitle": "每一條呼叫都走同一條路徑：匯入、編組、發車、計量。",
+            "step1Title": "匯入",
+            "step1Desc": "OpenAI、Anthropic、生圖、生影片等上游各自持有金鑰與限額，獨立接入。",
+            "step2Title": "編組",
+            "step2Desc": "一個模型名就是一個分組，背後可掛多條渠道，按順序、價格、延遲或綜合評分編排。",
+            "step3Title": "發車",
+            "step3Desc": "按當前打分選路發出；上游失敗、逾時或限流時自動換道重試，出口可獨立池化。",
+            "step4Title": "計量",
+            "step4Desc": "呼叫前預扣、呼叫後結算；文字按 token、圖像按張、影片按條計費，帳本與對帳全程可追溯。"
         },
         "features": {
             "title": "全站功能一覽",
@@ -1674,7 +1686,7 @@
         },
         "cta": {
             "title": "準備好開始了嗎？",
-            "subtitle": "進入控制台，設定你的第一個模型閘道。",
+            "subtitle": "進入控制台，接入你的第一條線路。",
             "button": "進入控制台"
         },
         "footer": {
