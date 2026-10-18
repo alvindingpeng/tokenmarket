@@ -114,11 +114,11 @@
 **G1.4 选路参数校准(1-2 天)**
 用 G0 数据复核各分组的 mode 与权重(延迟/成功率/价格)。若分组是 `failover`/`manual`, 则"慢渠道承接大量请求"是设计使然而非缺陷 —— 需要和数据一起判断。
 
-### G2 入口边缘接入(1 周, 零后端代码改动) — **已实施 v0.38.0(源站侧), 边缘待启用**
+### G2 入口边缘接入(1 周, 零后端代码改动) — **已实施 v0.38.0**
 
-已交付(源站侧全部完成, 与边缘无关的部分):
+已交付:
 
-- 拓扑: 客户端 --TLS--> Cloudflare 边缘(`tt.xjj.se`, 橙云) --HTTP--> 本机 nginx --HTTP--> octopus(`127.0.0.1:8088`)
+- 拓扑(当前): 客户端 --TLS--> 本机 nginx(`tt.xjj.se`) --HTTP--> octopus(`127.0.0.1:8088`)。Cloudflare 记录暂为**灰云(DNS only)**, 仅做 DNS; 边缘加速待其签发 `tt.xjj.se` 的边缘证书后再开橙云, nginx 侧无需改动(real_ip 网段与 `CF-IPCountry` 来源校验已就位)
 - 源站 vhost: `/etc/nginx/sites-available/octopus-tt` —— 80 端口只做 ACME 校验与 301, 443 做反代
 - 证书: Let's Encrypt, 续期改用 **webroot**(`/var/www/html`), `certbot renew --dry-run` 通过。原 `--nginx` 插件在自定义 vhost 上会挂起, 且每次续期都重写 vhost —— 会把手调的缓冲与 realip 配置冲掉, 故弃用
 - 真实 IP: `set_real_ip_from` 取自 `cloudflare.com/ips-v4|v6`(当前 22 条) + `real_ip_header CF-Connecting-IP`, 不硬编码网段
@@ -146,11 +146,16 @@
 - 非流式请求 **100 秒**无字节即 524。当前 237 条请求里最大首字节 4.5s, 无风险; 但长生成与视频任务要盯着
 - 边缘证书**按主机名逐个签发**, 新增子域要等签发完成才通 TLS(本次 `tt.xjj.se` 即卡在这一步)
 
-待办(边缘启用):
+已完成收口:
 
-- Cloudflare 后台把 `tt.xjj.se` 的边缘证书签出来(SSL/TLS → Edge Certificates → Universal SSL), SSL 模式设为 **Full (strict)** —— 源站已有有效 LE 证书; 设成 Flexible 会因源站 80→443 的 301 出现重定向循环
-- 边缘证书就绪并验证后, 把 octopus 监听从 `0.0.0.0:8088` 收到 `127.0.0.1:8088`, 关闭公网明文入口
-- 可选加固: 443 只放行 CF 网段与内网(`allow ...; deny all;`), 彻底禁止绕过边缘直连源站。**不建议现在做** —— CF 调整网段时会导致整站不可达, 而当前收益有限
+- octopus 监听从 `0.0.0.0:8088` 收到 `127.0.0.1:8088`, **公网明文入口已关闭**(公网 8088 已不可达)
+- 80 端口只做 ACME 与 301, 全部业务走 443
+- 验证: 经公网 https 的非流式(ttfb 1.0s)与流式(ttfb 1.18s / 总 1.61s / 62 个事件块)均正常, `client_ip` 落库正确, 登录 cookie 带 `Secure; HttpOnly`(明文访问时不带, 保留隧道可用性)
+
+后续(可选):
+
+- Cloudflare 后台把 `tt.xjj.se` 的边缘证书签出来(SSL/TLS → Edge Certificates), SSL 模式设为 **Full (strict)** —— 源站已有有效 LE 证书; 设成 Flexible 会因源站 80→443 的 301 出现重定向循环。签好后把云朵点回橙色即启用边缘, nginx 不用改
+- 可选加固: 443 只放行 CF 网段与内网(`allow ...; deny all;`), 禁止绕过边缘直连源站。**不建议现在做** —— CF 调整网段时会导致整站不可达, 而当前收益有限
 
 原始计划(保留供对照):
 
