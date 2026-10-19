@@ -1612,6 +1612,7 @@
     },
     "landing": {
         "nav": {
+            "status": "即時狀態",
             "features": "核心能力",
             "media": "接入與計費",
             "roles": "適用角色",

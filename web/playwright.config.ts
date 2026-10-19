@@ -10,13 +10,14 @@ import { defineConfig } from '@playwright/test';
 // vite dev 把 /api 反代到后端, cookie 与源同域(127.0.0.1), 认证链路与生产一致。
 //
 // 会话由一个登录后的 JWT 驱动: 设 SWITCHYARD_E2E_JWT 即可。取法见 web/e2e/README.md。
-// 没设就整组跳过 —— 不静默通过, 而是显式提示缺什么。
+// 控制台布局用例缺 JWT 时直接失败；scripts/check.sh 可明确跳过该组。
 const PORT = Number(process.env.SWITCHYARD_E2E_PORT || 5199);
 // 后端地址: 认证与数据都来自它。
 const API = process.env.SWITCHYARD_E2E_API || 'http://127.0.0.1:8088';
 
 export default defineConfig({
     testDir: './e2e',
+    testIgnore: ['public-status.spec.ts', 'public-live.spec.ts'], // standalone template tests: pnpm run test:public
     fullyParallel: false,
     forbidOnly: !!process.env.CI,
     retries: 0,

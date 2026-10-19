@@ -1,0 +1,927 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<title>公开渠道状态</title>
+<style>
+:root {
+  --bg: #f5f7f9; --card: #ffffff; --border: #e3e7ec; --text: #1b222b; --muted: #66707d;
+  --accent: #2f6f4e; --accent-soft: rgba(47, 111, 78, .1);
+  --ok: #2e7d5b; --ok-soft: rgba(46, 125, 91, .13);
+  --warn: #a86a12; --warn-soft: rgba(168, 106, 18, .15);
+  --bad: #bf3b3b; --bad-soft: rgba(191, 59, 59, .13);
+  --none: #8a94a1; --none-soft: rgba(138, 148, 161, .16);
+  --shadow: 0 1px 2px rgba(16, 24, 40, .05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10141a; --card: #171d25; --border: #273039; --text: #e7ecf2; --muted: #97a3b1;
+    --accent: #7fc79b; --accent-soft: rgba(127, 199, 155, .14);
+    --ok: #6fcf97; --ok-soft: rgba(111, 207, 151, .16);
+    --warn: #e0b25c; --warn-soft: rgba(224, 178, 92, .16);
+    --bad: #f08585; --bad-soft: rgba(240, 133, 133, .16);
+    --none: #7c8896; --none-soft: rgba(124, 136, 150, .18);
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10141a; --card: #171d25; --border: #273039; --text: #e7ecf2; --muted: #97a3b1;
+  --accent: #7fc79b; --accent-soft: rgba(127, 199, 155, .14);
+  --ok: #6fcf97; --ok-soft: rgba(111, 207, 151, .16);
+  --warn: #e0b25c; --warn-soft: rgba(224, 178, 92, .16);
+  --bad: #f08585; --bad-soft: rgba(240, 133, 133, .16);
+  --none: #7c8896; --none-soft: rgba(124, 136, 150, .18);
+  --shadow: none;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.6 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+h1 { font-size: clamp(21px, 4vw, 30px); line-height: 1.3; margin: 0; }
+h2 { font-size: 15px; margin: 0 0 8px; }
+code { font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: .03em; }
+
+.topbar { background: var(--card); border-bottom: 1px solid var(--border); }
+.topbar-inner { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 16px; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13.5px; min-width: 0; }
+.brand-mark { width: 24px; height: 24px; border-radius: 7px; background: var(--accent-soft); color: var(--accent);
+  display: inline-flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+#siteName { overflow-wrap: anywhere; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-left: auto; }
+.btn { border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 9px;
+  padding: 7px 13px; font-size: 12.5px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn:focus-visible, .toggle button:focus-visible, select:focus-visible, input:focus-visible, .bucket:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.btn-primary:hover { color: #fff; opacity: .92; }
+.toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; background: var(--card); }
+.toggle button { border: 0; background: transparent; color: var(--muted); padding: 7px 12px; font-size: 12.5px; cursor: pointer; }
+.toggle button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+.hero { padding: 26px 0 18px; }
+.subtitle { margin: 8px 0 0; color: var(--muted); font-size: 14.5px; }
+.meta { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 6px; background: var(--card); border: 1px solid var(--border);
+  color: var(--muted); padding: 4px 11px; border-radius: 999px; font-size: 12px; }
+
+.banner { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 4px 0 14px;
+  padding: 11px 14px; border-radius: 11px; border: 1px solid var(--warn); background: var(--warn-soft);
+  color: var(--text); font-size: 13px; }
+.summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.stat { display: inline-flex; align-items: baseline; gap: 6px; background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 6px 12px; font-size: 12.5px; color: var(--muted); }
+.stat b { font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.d-ok { background: var(--ok); } .d-warn { background: var(--warn); }
+.d-bad { background: var(--bad); } .d-none { background: var(--none); }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+.search { flex: 1 1 220px; min-width: 0; }
+.search input { width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--card); color: var(--text); font-size: 13.5px; }
+select { padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--card);
+  color: var(--text); font-size: 12.5px; max-width: 100%; }
+.count { color: var(--muted); font-size: 12.5px; margin-left: auto; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(258px, 1fr)); gap: 12px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 13px; padding: 14px 15px;
+  box-shadow: var(--shadow); min-width: 0; }
+.card-head { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.code { background: var(--accent-soft); color: var(--accent); border-radius: 7px; padding: 2px 8px; font-size: 12px; }
+.model-name { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; min-width: 0; }
+.kind { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 600; }
+.p-ok { background: var(--ok-soft); color: var(--ok); }
+.p-warn { background: var(--warn-soft); color: var(--warn); }
+.p-bad { background: var(--bad-soft); color: var(--bad); }
+.p-none { background: var(--none-soft); color: var(--none); }
+.metrics { margin-top: 11px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+.row { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; min-width: 0; }
+.row .k { color: var(--muted); }
+.row .v { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+.block-title { margin: 12px 0 5px; font-size: 11.5px; color: var(--muted); letter-spacing: .02em; }
+.muted-line { margin-top: 10px; font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+
+.bar-wrap { margin-top: 12px; }
+.bar-title { font-size: 11.5px; color: var(--muted); margin-bottom: 5px; }
+.bar { display: flex; gap: 2px; position: relative; }
+.bucket { flex: 1 1 0; min-width: 0; height: 18px; border: 0; border-radius: 4px; padding: 0; cursor: default; }
+.b-ok { background: var(--ok); } .b-warn { background: var(--warn); }
+.b-bad { background: var(--bad); } .b-none { background: var(--none-soft); border: 1px dashed var(--none); }
+.tip { display: none; position: absolute; left: 0; right: 0; bottom: calc(100% + 5px); z-index: 5;
+  background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+  padding: 5px 9px; font-size: 11.5px; text-align: center; pointer-events: none;
+  box-shadow: var(--shadow); white-space: normal; font-weight: 500; }
+.bucket:hover .tip, .bucket:focus .tip { display: block; }
+.legend { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+
+.table-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--border); border-radius: 13px; }
+table.list { width: 100%; border-collapse: collapse; min-width: 720px; }
+table.list th, table.list td { padding: 9px 12px; text-align: left; font-size: 12.5px;
+  border-top: 1px solid var(--border); white-space: nowrap; }
+table.list thead th { border-top: 0; color: var(--muted); font-weight: 500; }
+table.list td.num { font-variant-numeric: tabular-nums; }
+table.list td.name { font-weight: 600; max-width: 220px; white-space: normal; overflow-wrap: anywhere; }
+table.list .bar-wrap { margin-top: 0; min-width: 130px; }
+
+.empty { text-align: center; color: var(--muted); padding: 46px 18px; background: var(--card);
+  border: 1px dashed var(--border); border-radius: 13px; }
+.note { margin: 26px 0 0; padding: 15px 17px; border: 1px solid var(--border); border-left: 3px solid var(--accent);
+  border-radius: 11px; background: var(--card); font-size: 12.5px; color: var(--muted); }
+.note ol { margin: 0; padding-left: 18px; }
+.note li { margin: 4px 0; }
+.note b { color: var(--text); }
+footer { margin: 22px 0 40px; color: var(--muted); font-size: 11.5px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+@media (max-width: 560px) {
+  .hero { padding: 20px 0 14px; }
+  .count { margin-left: 0; }
+  .controls { margin-left: 0; }
+}
+button:not(.bucket), select, input { min-height:44px; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">◈</span><span id="siteName">渠道状态</span></div>
+    <div class="controls">
+      <button id="theme" data-testid="theme" type="button" class="btn" data-i18n="themeAuto"
+              data-i18n-aria="themeAria" aria-label="切换主题">主题：跟随系统</button>
+      <div class="toggle" role="group" data-i18n-aria="langAria" aria-label="界面语言">
+        <button id="langZh" type="button">简体中文</button>
+        <button id="langHant" type="button">繁體中文</button>
+        <button id="langEn" type="button">English</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap">
+    <h1 data-i18n="title">公开渠道状态</h1>
+    <p class="subtitle" data-i18n="subtitle">让用户买得明白，让渠道凭实力竞争</p>
+    <div class="meta">
+      <span class="chip" id="metaWindow">统计窗口 15 分钟</span>
+      <span class="chip" id="metaRefresh">自动刷新 15 秒</span>
+      <span class="chip" id="metaGenerated">数据生成于 —</span>
+      <button id="refresh" data-testid="refresh" type="button" class="btn btn-primary" data-i18n="refresh">刷新</button>
+    </div>
+  </div>
+</section>
+
+<main class="wrap">
+  <div id="banner" class="banner" role="alert" hidden>
+    <span id="bannerText"></span>
+    <button id="retry" type="button" class="btn" data-i18n="retry">重试</button>
+  </div>
+
+  <div id="summary" class="summary" role="status"></div>
+
+  <div class="toolbar">
+    <div class="search">
+      <input id="search" data-testid="search" type="search" autocomplete="off"
+             data-i18n-placeholder="searchPlaceholder" data-i18n-aria="searchAria"
+             placeholder="搜索模型或 #渠道编码" aria-label="搜索模型或渠道编码">
+    </div>
+    <select id="status-filter" data-testid="status-filter" data-i18n-aria="filterAria" aria-label="状态筛选">
+      <option value="all" data-i18n="filterAll">全部状态</option>
+      <option value="ok" data-i18n="filterOk">正常</option>
+      <option value="warn" data-i18n="filterWarn">降级</option>
+      <option value="bad" data-i18n="filterBad">异常</option>
+      <option value="none" data-i18n="filterNone">无样本</option>
+    </select>
+    <select id="sort" data-testid="sort" data-i18n-aria="sortAria" aria-label="排序">
+      <option value="default" data-i18n="sortDefault">默认排序</option>
+      <option value="success" data-i18n="sortSuccess">成功率优先</option>
+      <option value="latency" data-i18n="sortLatency">延迟优先</option>
+      <option value="price" data-i18n="sortPrice">输入价优先</option>
+    </select>
+    <div class="toggle" role="group" data-i18n-aria="viewAria" aria-label="视图切换">
+      <button id="viewCards" type="button" class="on" data-i18n="viewCards">卡片</button>
+      <button id="viewTable" type="button" data-i18n="viewTable">表格</button>
+    </div>
+    <span class="count" id="shown"></span>
+  </div>
+
+  <div id="models" data-testid="models-list" role="region" data-i18n-aria="modelsAria" aria-label="模型列表"></div>
+
+  <section class="note">
+    <h2 data-i18n="methodTitle">统计口径说明</h2>
+    <ol id="methodList"></ol>
+  </section>
+
+  <footer>
+    <span data-i18n="footerNote">本页数据仅供对比参考；实际计费以账单为准。</span>
+    <span id="footGenerated"></span>
+  </footer>
+</main>
+
+<noscript><div class="wrap"><div class="empty">JavaScript is required to load live status data. / 需要启用 JavaScript 才能加载实时状态数据。</div></div></noscript>
+
+<script>
+(function () {
+  'use strict';
+  var EMDASH = '\u2014';
+  var apiURL = new URL('../api/v1/public/channel/stats', location.href).href;
+  var siteURL = new URL('../api/v1/site/config', location.href).href;
+
+  /* ---------- i18n: 简体默认, 繁体 / 英文可切换 ---------- */
+  var I18N = {
+    zh: {
+      title: '公开渠道状态', subtitle: '让用户买得明白，让渠道凭实力竞争',
+      metaWindow: '统计窗口 {n} 分钟', metaRefresh: '自动刷新 {n} 秒', generated: '数据生成于 {t}',
+      refresh: '刷新', retry: '重试', searchPlaceholder: '搜索模型或 #渠道编码',
+      filterAll: '全部状态', filterOk: '正常', filterWarn: '降级', filterBad: '异常', filterNone: '无样本',
+      sortDefault: '默认排序', sortSuccess: '成功率优先', sortLatency: '延迟优先', sortPrice: '输入价优先',
+      viewCards: '卡片', viewTable: '表格',
+      themeAuto: '主题：跟随系统', themeLight: '主题：浅色', themeDark: '主题：深色',
+      themeAria: '切换主题', langAria: '界面语言', searchAria: '搜索模型或渠道编码',
+      filterAria: '状态筛选', sortAria: '排序', viewAria: '视图切换', modelsAria: '模型列表',
+      total: '模型总数', shown: '显示 {a} / {b} 个模型',
+      statusOk: '正常', statusWarn: '降级', statusBad: '异常', statusNone: '无样本',
+      kindText: '文本', kindImage: '生图', kindVideo: '生视频',
+      attempts: '尝试次数', successRate: '成功率', latency: '上游首字节均值（TTFB）', cacheReadRatio: '缓存读占比',
+      userPrice: '对客单价（USD / 1M tokens）', officialPrice: '官方参考价（USD / 1M tokens）', priceRatio: '对客 / 官方',
+      priceInput: '输入', priceOutput: '输出', priceCacheRead: '缓存读', priceCacheWrite: '缓存写',
+      mediaPrice: '对客媒体价（USD）', mediaPerImage: '每张', mediaPerVideo: '每条起步价', mediaPerSecond: '每秒', mediaResolution: '分档',
+      noOfficial: '官方参考价：{d}（本地未登记参考价，比价 N/A）',
+      historyTitle: '近 {n} 分钟窗口', bucketTip: '{time} · {status} · 尝试 {attempts} · 成功率 {rate}',
+      emptySearch: '没有匹配的模型', emptyData: '暂无公开数据', loading: '加载中…',
+      errWithSnapshot: '数据加载失败，正在显示 {t} 的最近成功快照。', errNoData: '数据加载失败，请稍后重试。',
+      stale: '数据可能已过期（{n} 秒未更新）。', methodTitle: '统计口径说明',
+      method: [
+        '本页展示统计窗口内 <b>真实上游调用</b> 的观测结果，不是主动探测 / 拨测数据；窗口内没有真实流量的渠道按「无样本」灰色展示。',
+        '取消、客户端错误、内容策略拦截、模型不匹配与本地限流不计入渠道故障；只统计已完成的上游样本。少于 5 次为样本不足；≥5 次时成功率 ≥99% 正常、50%–99% 降级、低于 50% 异常，当前熔断和停用优先。',
+        '耗时为真实调用实测值（成功请求的 HTTP 首字节 TTFB，非首个生成 token 的 TTFT、非流式总时长），取窗口内成功尝试的平均耗时，单位毫秒，非合成拨测指标。',
+        '缓存读占比只反映流量的缓存命中情况，<b>不是供应商质量评分</b>。',
+        '官方参考价是本地登记的参考价格，不是实时核验的官方报价；缺少参考价或分母为 0 时比价显示 N/A（{d}）。',
+        '文本模型价格单位为 USD / 1M tokens；媒体模型按每张 / 每条起步价 / 每秒计价（USD），分档价按分辨率覆盖单价，<b>未登记参考价时不做官方比价</b>。',
+        '页面只展示匿名渠道编码（#编码），不展示渠道名称、ID 或归属信息。',
+        '空值一律显示 {d}，不以 0 充数。'
+      ],
+      footerNote: '本页数据仅供对比参考；实际计费以账单为准。',
+      colChannel: '渠道', colModel: '模型', colStatus: '状态', colAttempts: '尝试', colSuccess: '成功率',
+      colLatency: '上游耗时', colCacheRead: '缓存读', colInput: '输入价', colOutput: '输出价'
+    },
+    hant: {
+      title: '公開渠道狀態', subtitle: '讓用戶買得明白，讓渠道憑實力競爭',
+      metaWindow: '統計視窗 {n} 分鐘', metaRefresh: '自動重新整理 {n} 秒', generated: '資料產生於 {t}',
+      refresh: '重新整理', retry: '重試', searchPlaceholder: '搜尋模型或 #渠道編碼',
+      filterAll: '全部狀態', filterOk: '正常', filterWarn: '降級', filterBad: '異常', filterNone: '無樣本',
+      sortDefault: '預設排序', sortSuccess: '成功率優先', sortLatency: '延遲優先', sortPrice: '輸入價優先',
+      viewCards: '卡片', viewTable: '表格',
+      themeAuto: '主題：跟隨系統', themeLight: '主題：淺色', themeDark: '主題：深色',
+      themeAria: '切換主題', langAria: '介面語言', searchAria: '搜尋模型或渠道編碼',
+      filterAria: '狀態篩選', sortAria: '排序', viewAria: '檢視切換', modelsAria: '模型列表',
+      total: '模型總數', shown: '顯示 {a} / {b} 個模型',
+      statusOk: '正常', statusWarn: '降級', statusBad: '異常', statusNone: '無樣本',
+      kindText: '文本', kindImage: '生圖', kindVideo: '生影片',
+      attempts: '嘗試次數', successRate: '成功率', latency: '上游首位元組均值（TTFB）', cacheReadRatio: '快取讀佔比',
+      userPrice: '對客單價（USD / 1M tokens）', officialPrice: '官方參考價（USD / 1M tokens）', priceRatio: '對客 / 官方',
+      priceInput: '輸入', priceOutput: '輸出', priceCacheRead: '快取讀', priceCacheWrite: '快取寫',
+      mediaPrice: '對客媒體價（USD）', mediaPerImage: '每張', mediaPerVideo: '每條起步價', mediaPerSecond: '每秒', mediaResolution: '分檔',
+      noOfficial: '官方參考價：{d}（本地未登記參考價，比價 N/A）',
+      historyTitle: '近 {n} 分鐘視窗', bucketTip: '{time} · {status} · 嘗試 {attempts} · 成功率 {rate}',
+      emptySearch: '沒有符合的模型', emptyData: '暫無公開資料', loading: '載入中…',
+      errWithSnapshot: '資料載入失敗，正在顯示 {t} 的最近成功快照。', errNoData: '資料載入失敗，請稍後重試。',
+      stale: '資料可能已過期（{n} 秒未更新）。', methodTitle: '統計口徑說明',
+      method: [
+        '本頁展示統計視窗內 <b>真實上游呼叫</b> 的觀測結果，不是主動探測 / 撥測資料；視窗內沒有真實流量的渠道以「無樣本」灰色顯示。',
+        '已取消 / 主動中斷的請求不計入嘗試次數與成功率。',
+        '耗時為真實呼叫實測值（成功請求的 HTTP 首位元組 TTFB，非首 token TTFT、非串流總時長），取視窗內成功嘗試的平均耗時，單位毫秒，非合成撥測指標。',
+        '快取讀佔比只反映流量的快取命中情況，<b>不是供應商品質評分</b>。',
+        '官方參考價是本地登記的參考價格，不是即時核驗的官方報價；缺少參考價或分母為 0 時比價顯示 N/A（{d}）。',
+        '文本模型價格單位為 USD / 1M tokens；媒體模型按每張 / 每條起步價 / 每秒計價（USD），分檔價按解析度覆蓋單價，<b>未登記參考價時不做官方比價</b>。',
+        '頁面只顯示匿名渠道編碼（#編碼），不顯示渠道名稱、ID 或歸屬資訊。',
+        '空值一律顯示 {d}，不以 0 充數。'
+      ],
+      footerNote: '本頁資料僅供對比參考；實際計費以帳單為準。',
+      colChannel: '渠道', colModel: '模型', colStatus: '狀態', colAttempts: '嘗試', colSuccess: '成功率',
+      colLatency: '上游耗時', colCacheRead: '快取讀', colInput: '輸入價', colOutput: '輸出價'
+    },
+    en: {
+      title: 'Public Channel Status', subtitle: 'Transparent prices for users, fair competition for channels',
+      metaWindow: 'Window: {n} min', metaRefresh: 'Auto refresh: {n}s', generated: 'Data generated at {t}',
+      refresh: 'Refresh', retry: 'Retry', searchPlaceholder: 'Search model or #channel code',
+      filterAll: 'All statuses', filterOk: 'Operational', filterWarn: 'Degraded', filterBad: 'Down', filterNone: 'No samples',
+      sortDefault: 'Default order', sortSuccess: 'Success rate', sortLatency: 'Latency', sortPrice: 'Input price',
+      viewCards: 'Cards', viewTable: 'Table',
+      themeAuto: 'Theme: system', themeLight: 'Theme: light', themeDark: 'Theme: dark',
+      themeAria: 'Switch theme', langAria: 'Interface language', searchAria: 'Search model or channel code',
+      filterAria: 'Status filter', sortAria: 'Sort', viewAria: 'View switch', modelsAria: 'Models list',
+      total: 'Models', shown: 'Showing {a} of {b} models',
+      statusOk: 'Operational', statusWarn: 'Degraded', statusBad: 'Down', statusNone: 'No samples',
+      kindText: 'Text', kindImage: 'Image', kindVideo: 'Video',
+      attempts: 'Attempts', successRate: 'Success rate', latency: 'Upstream TTFB (mean)', cacheReadRatio: 'Cache read ratio',
+      userPrice: 'User price (USD / 1M tokens)', officialPrice: 'Official reference (USD / 1M tokens)', priceRatio: 'User / official',
+      priceInput: 'Input', priceOutput: 'Output', priceCacheRead: 'Cache read', priceCacheWrite: 'Cache write',
+      mediaPrice: 'User media price (USD)', mediaPerImage: 'Per image', mediaPerVideo: 'Per video (base)', mediaPerSecond: 'Per second', mediaResolution: 'Tier',
+      noOfficial: 'Official reference: {d} (not registered locally, ratio N/A)',
+      historyTitle: 'Last {n} minutes', bucketTip: '{time} · {status} · attempts {attempts} · success {rate}',
+      emptySearch: 'No matching models', emptyData: 'No public data yet', loading: 'Loading…',
+      errWithSnapshot: 'Failed to load; showing the last successful snapshot from {t}.', errNoData: 'Failed to load, please retry later.',
+      stale: 'Data may be stale (no update for {n}s).', methodTitle: 'Methodology',
+      method: [
+        'Figures cover <b>real upstream requests</b> observed inside the window — not active probes; channels without real traffic show gray "no samples".',
+        'Canceled, invalid-client, policy-blocked, model-missing and locally limited attempts are excluded. Below 5 samples status is low sample; at 5+ samples success ≥99% is operational, 50–99% degraded, below50% down. Breaker and disabled states override.',
+        'Time is measured on real calls (HTTP time to first byte (TTFB), not first generated token TTFT or total streaming duration), averaged over successful attempts in the window — never a synthetic probe.',
+        'Cache read ratio reflects traffic cache hits only — <b>it is not a provider quality score</b>.',
+        'Official prices are locally registered references, not freshly certified quotes; when a reference is missing or the denominator is zero the ratio shows N/A ({d}).',
+        'Text models are priced in USD / 1M tokens; media models are priced per image / per video base / per second (USD), with tier prices overriding the unit price by resolution, and <b>no official comparison is claimed without a registered reference</b>.',
+        'Only anonymous channel codes (#code) are shown — no channel names, IDs, or ownership.',
+        'Missing values always render as {d}, never a fabricated zero.'
+      ],
+      footerNote: 'Figures are for comparison only; billing follows your invoices.',
+      colChannel: 'Channel', colModel: 'Model', colStatus: 'Status', colAttempts: 'Attempts', colSuccess: 'Success',
+      colLatency: 'Upstream time', colCacheRead: 'Cache read', colInput: 'Input', colOutput: 'Output'
+    }
+  };
+
+  var lang = 'zh';
+  var view = 'cards';
+
+  function store(key, value) {
+    try {
+      if (value === undefined) return window.localStorage.getItem(key);
+      window.localStorage.setItem(key, value);
+    } catch (e) { /* 隐私模式等场景禁用 storage 时静默降级 */ }
+    return null;
+  }
+  function t(key) {
+    var dict = I18N[lang] || I18N.zh;
+    var v = dict[key];
+    if (v === undefined) v = I18N.zh[key];
+    return v === undefined ? key : v;
+  }
+  function fill(template, map) {
+    var out = String(template);
+    Object.keys(map).forEach(function (k) {
+      out = out.split('{' + k + '}').join(String(map[k]));
+    });
+    return out;
+  }
+
+  /* ---------- DOM 安全构造: 只用 textContent, 不拼 innerHTML ---------- */
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+  }
+  function clear(node) {
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  /* ---------- 数值格式化: 空值一律 —, 不拿 0 充数 ---------- */
+  function isNum(v) { return typeof v === 'number' && isFinite(v); }
+  function fmtPrice(n) {
+    if (!isNum(n)) return EMDASH;
+    if (n === 0) return '0';
+    var abs = Math.abs(n);
+    var s = abs >= 1000 ? n.toFixed(1) : abs >= 1 ? n.toFixed(3) : n.toFixed(6);
+    if (s.indexOf('e') >= 0 || s.indexOf('E') >= 0) s = n.toFixed(8);
+    s = s.replace(/0+$/, '').replace(/\.$/, '');
+    if (s === '' || s === '0' || s === '-') return String(n.toPrecision(2));
+    return s;
+  }
+  function fmtPercent(n) {
+    if (!isNum(n)) return EMDASH;
+    var p = Math.round(n * 1000) / 10;
+    return p + '%';
+  }
+  function fmtInt(n) {
+    if (!isNum(n)) return EMDASH;
+    return String(Math.round(n));
+  }
+  function fmtMs(n) {
+    if (!isNum(n)) return EMDASH;
+    return Math.round(n) + ' ms';
+  }
+  function parseTime(v) {
+    if (isNum(v)) return new Date(v < 1e11 ? v * 1000 : v);
+    if (typeof v === 'string' && v) {
+      var d = new Date(v);
+      if (!isNaN(d.getTime())) return d;
+    }
+    return null;
+  }
+  function localeTag() {
+    return lang === 'hant' ? 'zh-Hant' : lang === 'en' ? 'en-US' : 'zh-CN';
+  }
+  function fmtTime(d) {
+    if (!d || isNaN(d.getTime())) return EMDASH;
+    return d.toLocaleString(localeTag());
+  }
+  function fmtClock(d) {
+    if (!d || isNaN(d.getTime())) return EMDASH;
+    return d.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit' });
+  }
+
+  /* ---------- 状态: 颜色 + 文字双编码, 灰色 = 无样本 ---------- */
+  var STATUS_EXACT = {
+    disabled: 'bad', low_sample: 'none', operational: 'ok', up: 'ok', ok: 'ok', healthy: 'ok', success: 'ok',
+    degraded: 'warn', partial: 'warn', partial_outage: 'warn', warning: 'warn',
+    down: 'bad', outage: 'bad', major_outage: 'bad', error: 'bad', failed: 'bad',
+    unreachable: 'bad', offline: 'bad',
+    no_data: 'none', none: 'none', unknown: 'none', '': 'none'
+  };
+  function statusInfo(raw) {
+    var key, label;
+    var s = (raw === null || raw === undefined) ? '' : String(raw).toLowerCase().trim();
+    var known = Object.prototype.hasOwnProperty.call(STATUS_EXACT, s);
+    if (known) {
+      key = STATUS_EXACT[s];
+    } else if (s.indexOf('degrad') >= 0 || s.indexOf('partial') >= 0 || s.indexOf('warn') >= 0) {
+      key = 'warn';
+    } else if (s.indexOf('outage') >= 0 || s.indexOf('down') >= 0 || s.indexOf('fail') >= 0 ||
+               s.indexOf('error') >= 0 || s.indexOf('unreach') >= 0) {
+      key = 'bad';
+    } else if (s.indexOf('operational') >= 0 || s.indexOf('healthy') >= 0) {
+      key = 'ok';
+    } else {
+      key = 'none';
+    }
+    // 已知取值一律给中文状态词; 只有后端给了词典外的未知值才退回灰色 + 原文,
+    // 保证「不靠颜色单独表意」也不替未知值编造含义。
+    if (key === 'ok') label = t('statusOk');
+    else if (key === 'warn') label = t('statusWarn');
+    else if (key === 'bad') label = t('statusBad');
+    else if (known) label = t('statusNone');
+    else label = String(raw);
+    if (s === 'disabled') label = lang === 'en' ? 'Disabled' : lang === 'hant' ? '已停用' : '已停用';
+    if (s === 'low_sample') label = lang === 'en' ? 'Low sample' : lang === 'hant' ? '樣本不足' : '样本不足';
+    return { key: key, label: label };
+  }
+  function pill(st) {
+    var node = el('span', 'pill p-' + st.key);
+    node.appendChild(el('span', 'dot d-' + st.key));
+    node.appendChild(el('span', null, st.label));
+    return node;
+  }
+
+  /* ---------- 数据状态 ---------- */
+  var data = null;            // 最近一次成功的统计快照
+  var lastSuccessAt = 0;      // 最近一次成功取数的本地时间戳
+  var fetchError = false;
+  var refreshMs = 15000;
+  var windowSeconds = 900;
+
+  function models() {
+    return data && Array.isArray(data.models) ? data.models : [];
+  }
+
+  /* ---------- 汇总 / 过滤 / 排序 ---------- */
+  function counts() {
+    var c = { n: 0, ok: 0, warn: 0, bad: 0, none: 0 };
+    models().forEach(function (m) {
+      c.n++;
+      c[statusInfo(m.status).key]++;
+    });
+    return c;
+  }
+  function visibleModels() {
+    var keyword = (document.getElementById('search').value || '').trim().toLowerCase();
+    var filter = document.getElementById('status-filter').value;
+    var items = models().map(function (m, i) { return { m: m, i: i }; }).filter(function (it) {
+      var m = it.m;
+      if (filter !== 'all' && statusInfo(m.status).key !== filter) return false;
+      if (!keyword) return true;
+      var name = String(m.model_name === undefined || m.model_name === null ? '' : m.model_name).toLowerCase();
+      var code = String(m.channel_code === undefined || m.channel_code === null ? '' : m.channel_code).toLowerCase();
+      return name.indexOf(keyword) >= 0 || code.indexOf(keyword) >= 0 ||
+        ('#' + code).indexOf(keyword) >= 0;
+    });
+    var sort = document.getElementById('sort').value;
+    var num = function (v) { return isNum(v) ? v : null; };
+    var cmpNum = function (a, b, get, asc) {
+      var va = get(a.m), vb = get(b.m);
+      if (va === null && vb === null) return a.i - b.i;
+      if (va === null) return 1;   // 空值排最后, 不当作 0
+      if (vb === null) return -1;
+      if (va === vb) return a.i - b.i;
+      return (asc ? va < vb : va > vb) ? -1 : 1;
+    };
+    if (sort === 'success') items.sort(function (a, b) { return cmpNum(a, b, function (m) { return m.attempts >= 5 ? num(m.success_rate) : null; }, false); });
+    else if (sort === 'latency') items.sort(function (a, b) { return cmpNum(a, b, function (m) { return num(m.latency_ms); }, true); });
+    else if (sort === 'price') items.sort(function (a, b) {
+      return cmpNum(a, b, function (m) { return num(m.user_price && m.user_price.input); }, true);
+    });
+    return items.map(function (it) { return it.m; });
+  }
+
+  /* ---------- 渲染 ---------- */
+  function renderMeta() {
+    document.getElementById('metaWindow').textContent = fill(t('metaWindow'), { n: Math.round(windowSeconds / 60) });
+    document.getElementById('metaRefresh').textContent = fill(t('metaRefresh'), { n: Math.round(refreshMs / 1000) });
+    var gen = data ? parseTime(data.generated_at) : null;
+    var genText = fill(t('generated'), { t: fmtTime(gen) });
+    document.getElementById('metaGenerated').textContent = genText;
+    document.getElementById('footGenerated').textContent = genText;
+    document.getElementById('shown').textContent = data ?
+      fill(t('shown'), { a: visibleModels().length, b: models().length }) : '';
+  }
+  function renderBanner() {
+    var banner = document.getElementById('banner');
+    var text = document.getElementById('bannerText');
+    if (fetchError) {
+      text.textContent = lastSuccessAt ?
+        fill(t('errWithSnapshot'), { t: fmtTime(new Date(lastSuccessAt)) }) : t('errNoData');
+      banner.hidden = false;
+      return;
+    }
+    if (lastSuccessAt && Date.now() - lastSuccessAt > Math.max(refreshMs * 2, 30000)) {
+      text.textContent = fill(t('stale'), { n: Math.round((Date.now() - lastSuccessAt) / 1000) });
+      banner.hidden = false;
+      return;
+    }
+    banner.hidden = true;
+    text.textContent = '';
+  }
+  function renderSummary() {
+    var box = document.getElementById('summary');
+    clear(box);
+    var c = counts();
+    var chip = function (key, value) {
+      var node = el('span', 'stat');
+      node.appendChild(el('span', 'dot d-' + key));
+      node.appendChild(el('span', null, key === 'n' ? t('total') : t('status' + key.charAt(0).toUpperCase() + key.slice(1))));
+      node.appendChild(el('b', null, String(value)));
+      return node;
+    };
+    if (!data) {
+      box.appendChild(el('span', 'stat', t('loading')));
+      return;
+    }
+    box.appendChild(chip('n', c.n));
+    box.appendChild(chip('ok', c.ok));
+    box.appendChild(chip('warn', c.warn));
+    box.appendChild(chip('bad', c.bad));
+    box.appendChild(chip('none', c.none));
+  }
+
+  function priceRow(k, v) {
+    var row = el('div', 'row');
+    row.appendChild(el('span', 'k', k));
+    row.appendChild(el('span', 'v', v));
+    return row;
+  }
+  function kindLabel(kind) {
+    var k = String(kind === undefined || kind === null ? '' : kind).toLowerCase();
+    if (k === 'image') return t('kindImage');
+    if (k === 'video') return t('kindVideo');
+    return '';
+  }
+  function buildPrices(card, m) {
+    var kind = String(m.kind === undefined || m.kind === null ? '' : m.kind).toLowerCase();
+    var media = m.user_media && typeof m.user_media === 'object' ? m.user_media : null;
+    var isMedia = kind === 'image' || kind === 'video';
+
+    if (isMedia) {
+      card.appendChild(el('div', 'block-title', t('mediaPrice')));
+      var grid = el('div', 'metrics');
+      if (media) {
+        if (isNum(media.per_image) && media.per_image !== 0) grid.appendChild(priceRow(t('mediaPerImage'), fmtPrice(media.per_image) + ' USD'));
+        if (isNum(media.per_video) && media.per_video !== 0) grid.appendChild(priceRow(t('mediaPerVideo'), fmtPrice(media.per_video) + ' USD'));
+        if (isNum(media.per_second) && media.per_second !== 0) grid.appendChild(priceRow(t('mediaPerSecond'), fmtPrice(media.per_second) + ' USD'));
+        if (media.resolution && typeof media.resolution === 'object') {
+          Object.keys(media.resolution).forEach(function (key) {
+            grid.appendChild(priceRow(t('mediaResolution') + ' ' + key, fmtPrice(media.resolution[key]) + ' USD'));
+          });
+        }
+      }
+      if (!grid.firstChild) grid.appendChild(priceRow(t('mediaPrice'), EMDASH));
+      card.appendChild(grid);
+    } else {
+      card.appendChild(el('div', 'block-title', t('userPrice')));
+      var p = m.user_price && typeof m.user_price === 'object' ? m.user_price : {};
+      var pg = el('div', 'metrics');
+      pg.appendChild(priceRow(t('priceInput'), fmtPrice(p.input)));
+      pg.appendChild(priceRow(t('priceOutput'), fmtPrice(p.output)));
+      pg.appendChild(priceRow(t('priceCacheRead'), fmtPrice(p.cache_read)));
+      pg.appendChild(priceRow(t('priceCacheWrite'), fmtPrice(p.cache_write)));
+      card.appendChild(pg);
+    }
+
+    // 官方参考价 + 比价: 仅在确实登记了参考价或比价时展示, 否则明说 N/A, 绝不无中生有。
+    var official = m.official_price && typeof m.official_price === 'object' ? m.official_price : null;
+    var ratio = m.price_ratio && typeof m.price_ratio === 'object' ? m.price_ratio : null;
+    var keys = ['input', 'output', 'cache_read', 'cache_write'];
+    var hasRatio = false;
+    if (ratio) keys.forEach(function (k) { if (isNum(ratio[k])) hasRatio = true; });
+    if (!official && !hasRatio) {
+      card.appendChild(el('div', 'muted-line', fill(t('noOfficial'), { d: EMDASH })));
+      return;
+    }
+    card.appendChild(el('div', 'block-title', t('officialPrice')));
+    var og = el('div', 'metrics');
+    var ratioTitle = el('div', 'block-title', t('priceRatio'));
+    var rg = el('div', 'metrics');
+    keys.forEach(function (k) {
+      var label = k === 'input' ? t('priceInput') : k === 'output' ? t('priceOutput') :
+        k === 'cache_read' ? t('priceCacheRead') : t('priceCacheWrite');
+      og.appendChild(priceRow(label, official ? fmtPrice(official[k]) : EMDASH));
+      // 分母缺失或为 0 时比价没有意义, 显示 N/A(—), 即使后端给了数也不展示。
+      var denom = official ? official[k] : null;
+      var r = ratio ? ratio[k] : null;
+      var show = (isNum(denom) && denom !== 0 && isNum(r)) ? (Math.round(r * 100) / 100).toFixed(2) + '\u00d7' : EMDASH;
+      rg.appendChild(priceRow(label, show));
+    });
+    card.appendChild(og);
+    card.appendChild(ratioTitle);
+    card.appendChild(rg);
+  }
+
+  function bucketMs(hist) {
+    if (hist.length > 1) {
+      var a = parseTime(hist[0] && hist[0].start), b = parseTime(hist[1] && hist[1].start);
+      if (a && b && b.getTime() > a.getTime()) return b.getTime() - a.getTime();
+    }
+    return (windowSeconds * 1000) / Math.max(hist.length, 1);
+  }
+  function buildBar(m, compact) {
+    var wrap = el('div', 'bar-wrap');
+    if (!compact) wrap.appendChild(el('div', 'bar-title', fill(t('historyTitle'), { n: Math.round(windowSeconds / 60) })));
+    var bar = el('div', 'bar');
+    var hist = Array.isArray(m.history) ? m.history : [];
+    var width = bucketMs(hist);
+    if (!hist.length) {
+      var emptyBucket = el('span', 'bucket b-none');
+      bar.appendChild(emptyBucket);
+      wrap.appendChild(bar);
+      return wrap;
+    }
+    hist.forEach(function (h) {
+      var st = statusInfo(h && h.status);
+      var bucket = el('button', 'bucket b-' + st.key);
+      bucket.type = 'button';
+      var start = parseTime(h && h.start);
+      var range = start ? (fmtClock(start) + ' - ' + fmtClock(new Date(start.getTime() + width))) : EMDASH;
+      var label = fill(t('bucketTip'), {
+        time: range,
+        status: st.label,
+        attempts: fmtInt(h && h.attempts),
+        rate: fmtPercent(h && h.success_rate)
+      });
+      // 每个分桶可聚焦 + 自带文字浮层, 键盘用户不依赖颜色也能读出含义。
+      bucket.setAttribute('aria-label', label);
+      bucket.appendChild(el('span', 'tip', label));
+      bar.appendChild(bucket);
+    });
+    wrap.appendChild(bar);
+    if (!compact) {
+      var legend = el('div', 'legend');
+      ['ok', 'warn', 'bad', 'none'].forEach(function (key) {
+        var item = el('span');
+        item.appendChild(el('span', 'dot d-' + key));
+        item.appendChild(el('span', null, t('status' + key.charAt(0).toUpperCase() + key.slice(1))));
+        legend.appendChild(item);
+      });
+      wrap.appendChild(legend);
+    }
+    return wrap;
+  }
+
+  function buildCard(m) {
+    var card = el('article', 'card');
+    card.setAttribute('data-testid', 'model-card');
+    var head = el('div', 'card-head');
+    var code = m.channel_code === undefined || m.channel_code === null ? '' : String(m.channel_code);
+    head.appendChild(el('code', 'code', code ? '#' + code : EMDASH));
+    head.appendChild(el('span', 'model-name', m.model_name === undefined || m.model_name === null ? EMDASH : String(m.model_name)));
+    var kind = kindLabel(m.kind);
+    if (kind) head.appendChild(el('span', 'kind', kind));
+    head.appendChild(pill(statusInfo(m.status)));
+    card.appendChild(head);
+
+    var metrics = el('div', 'metrics');
+    metrics.appendChild(priceRow(t('attempts'), fmtInt(m.attempts)));
+    metrics.appendChild(priceRow(t('successRate'), fmtPercent(m.success_rate)));
+    metrics.appendChild(priceRow(t('latency'), fmtMs(m.latency_ms)));
+    metrics.appendChild(priceRow(t('cacheReadRatio'), fmtPercent(m.cache_read_ratio)));
+    card.appendChild(metrics);
+
+    buildPrices(card, m);
+    card.appendChild(buildBar(m, false));
+    return card;
+  }
+
+  function buildTable(items) {
+    var wrap = el('div', 'table-wrap');
+    var table = el('table', 'list');
+    var thead = el('thead');
+    var headRow = el('tr');
+    [t('colChannel'), t('colModel'), t('colStatus'), t('colAttempts'), t('colSuccess'),
+     t('colLatency'), t('colCacheRead'), t('colInput'), t('colOutput'),
+     fill(t('historyTitle'), { n: Math.round(windowSeconds / 60) })].forEach(function (label) {
+      headRow.appendChild(el('th', null, label));
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    var tbody = el('tbody');
+    items.forEach(function (m) {
+      var tr = el('tr');
+      tr.setAttribute('data-testid', 'model-row');
+      var code = m.channel_code === undefined || m.channel_code === null ? '' : String(m.channel_code);
+      var tdCode = el('td', null);
+      tdCode.appendChild(el('code', 'code', code ? '#' + code : EMDASH));
+      tr.appendChild(tdCode);
+      tr.appendChild(el('td', 'name', m.model_name === undefined || m.model_name === null ? EMDASH : String(m.model_name)));
+      var st = statusInfo(m.status);
+      var tdStatus = el('td', null);
+      tdStatus.appendChild(pill(st));
+      tr.appendChild(tdStatus);
+      tr.appendChild(el('td', 'num', fmtInt(m.attempts)));
+      tr.appendChild(el('td', 'num', fmtPercent(m.success_rate)));
+      tr.appendChild(el('td', 'num', fmtMs(m.latency_ms)));
+      tr.appendChild(el('td', 'num', fmtPercent(m.cache_read_ratio)));
+      var p = m.user_price && typeof m.user_price === 'object' ? m.user_price : {};
+      tr.appendChild(el('td', 'num', fmtPrice(p.input)));
+      tr.appendChild(el('td', 'num', fmtPrice(p.output)));
+      var tdBar = el('td', null);
+      tdBar.appendChild(buildBar(m, true));
+      tr.appendChild(tdBar);
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    return wrap;
+  }
+
+  function renderContent() {
+    var content = document.getElementById('models');
+    clear(content);
+    if (!data) {
+      content.appendChild(el('div', 'empty', fetchError ? t('errNoData') : t('loading')));
+      return;
+    }
+    var items = visibleModels();
+    if (!items.length) {
+      content.appendChild(el('div', 'empty', models().length ? t('emptySearch') : t('emptyData')));
+      return;
+    }
+    if (view === 'table') {
+      content.appendChild(buildTable(items));
+      return;
+    }
+    var grid = el('div', 'grid');
+    items.forEach(function (m) { grid.appendChild(buildCard(m)); });
+    content.appendChild(grid);
+  }
+
+  function render() {
+    renderMeta();
+    renderBanner();
+    renderSummary();
+    renderContent();
+  }
+
+  /* ---------- 取数: 不重叠轮询 + 页面可见性感知 + 超时中断 ---------- */
+  var inflight = false;
+  var controller = null;
+
+  function load() {
+    if (inflight) return;   // 上一轮未结束就跳过, 永不并发、永不排队堆积
+    inflight = true;
+    controller = typeof AbortController === 'function' ? new AbortController() : null;
+    var timedOut = false;
+    var timer = setTimeout(function () {
+      timedOut = true;
+      if (controller) controller.abort();
+    }, 10000);
+    var options = { cache: 'no-store', headers: { 'Accept': 'application/json' } };
+    if (controller) options.signal = controller.signal;
+    fetch(apiURL, options).then(function (res) {
+      if (!res.ok) throw new Error('http ' + res.status);
+      return res.json();
+    }).then(function (body) {
+      var payload = body && body.data !== undefined ? body.data : body;
+      if (!payload || !Array.isArray(payload.models)) throw new Error('bad payload');
+      data = payload;
+      lastSuccessAt = Date.now();
+      fetchError = false;
+      if (isNum(payload.window_seconds) && payload.window_seconds > 0) windowSeconds = payload.window_seconds;
+      if (isNum(payload.refresh_seconds) && payload.refresh_seconds > 0) {
+        var nextMs = payload.refresh_seconds * 1000;
+        if (nextMs !== refreshMs) { refreshMs = nextMs; scheduleTick(); }
+      }
+    }).catch(function (err) {
+      // 主动取消(页面隐藏等)不算失败; 超时中断要计入失败并提示。
+      if (err && err.name === 'AbortError' && !timedOut) return;
+      fetchError = true;
+    }).then(function () {
+      clearTimeout(timer);
+      inflight = false;
+      controller = null;
+      render();
+    });
+  }
+
+  function tick() {
+    renderBanner();
+    if (!document.hidden) load();
+  }
+
+  // 轮询周期跟随接口下发的 refresh_seconds; 周期变化时重排定时器, 保持单一 tick。
+  var tickTimer = null;
+  function scheduleTick() {
+    if (tickTimer) clearInterval(tickTimer);
+    tickTimer = setInterval(tick, refreshMs);
+  }
+
+  /* ---------- 交互 ---------- */
+  function setView(next) {
+    view = next;
+    store('status-view', next);
+    document.getElementById('viewCards').className = next === 'cards' ? 'on' : '';
+    document.getElementById('viewTable').className = next === 'table' ? 'on' : '';
+    document.getElementById('viewCards').setAttribute('aria-pressed', next === 'cards' ? 'true' : 'false');
+    document.getElementById('viewTable').setAttribute('aria-pressed', next === 'table' ? 'true' : 'false');
+    renderContent();
+    renderMeta();
+  }
+  function applyLang() {
+    document.documentElement.lang = lang === 'hant' ? 'zh-Hant' : lang === 'en' ? 'en' : 'zh-CN';
+    var nodes = document.querySelectorAll('[data-i18n]');
+    for (var i = 0; i < nodes.length; i++) nodes[i].textContent = t(nodes[i].getAttribute('data-i18n'));
+    var ph = document.querySelectorAll('[data-i18n-placeholder]');
+    for (var j = 0; j < ph.length; j++) ph[j].setAttribute('placeholder', t(ph[j].getAttribute('data-i18n-placeholder')));
+    var aria = document.querySelectorAll('[data-i18n-aria]');
+    for (var k = 0; k < aria.length; k++) aria[k].setAttribute('aria-label', t(aria[k].getAttribute('data-i18n-aria')));
+    clear(document.getElementById('methodList'));
+    var list = (I18N[lang] || I18N.zh).method || I18N.zh.method;
+    var ol = document.getElementById('methodList');
+    list.forEach(function (line) {
+      // 方法说明里的 <b> 是本页自带的固定文案, 仍按纯文本渲染, 避免任何 HTML 注入面。
+      var li = el('li', null, line.replace(/<\/?b>/g, ''));
+      ol.appendChild(li);
+    });
+    applyTheme();
+    render();
+  }
+  function applyTheme() {
+    var mode = store('status-theme') || 'auto';
+    document.documentElement.setAttribute('data-theme', mode);
+    document.getElementById('theme').textContent =
+      mode === 'light' ? t('themeLight') : mode === 'dark' ? t('themeDark') : t('themeAuto');
+  }
+
+  document.getElementById('search').addEventListener('input', function () {
+    renderContent(); renderMeta();
+  });
+  document.getElementById('status-filter').addEventListener('change', function () {
+    renderContent(); renderMeta();
+  });
+  document.getElementById('sort').addEventListener('change', function () {
+    renderContent(); renderMeta();
+  });
+  document.getElementById('viewCards').addEventListener('click', function () { setView('cards'); });
+  document.getElementById('viewTable').addEventListener('click', function () { setView('table'); });
+  document.getElementById('refresh').addEventListener('click', function () { load(); });
+  document.getElementById('retry').addEventListener('click', function () { load(); });
+  document.getElementById('theme').addEventListener('click', function () {
+    var mode = store('status-theme') || 'auto';
+    var next = mode === 'auto' ? 'light' : mode === 'light' ? 'dark' : 'auto';
+    store('status-theme', next);
+    applyTheme();
+  });
+  [['langZh', 'zh'], ['langHant', 'hant'], ['langEn', 'en']].forEach(function (pair) {
+    document.getElementById(pair[0]).addEventListener('click', function () {
+      lang = pair[1];
+      store('status-lang', lang);
+      applyLang();
+    });
+  });
+
+  // 页面重新可见时立刻补一次取数; 隐藏时轮询自动跳过, 不打空转请求。
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) { tick(); }
+  });
+
+  /* ---------- 启动 ---------- */
+  lang = store('status-lang') || 'zh';
+  if (!I18N[lang]) lang = 'zh';
+  setView(store('status-view') === 'table' ? 'table' : 'cards');
+  applyLang();
+  tick();
+  scheduleTick();
+
+  // 站点名是平台自己的公开文案(非渠道名), 取不到就保持默认, 不影响状态数据。
+  fetch(siteURL, { cache: 'no-store' }).then(function (res) {
+    return res.ok ? res.json() : null;
+  }).then(function (body) {
+    var cfg = body && body.data !== undefined ? body.data : body;
+    if (cfg && cfg.site_name) {
+      document.getElementById('siteName').textContent = String(cfg.site_name);
+      document.title = String(cfg.site_name) + ' \u00b7 ' + t('title');
+    }
+  }).catch(function () {});
+})();
+</script>
+</body>
+</html>

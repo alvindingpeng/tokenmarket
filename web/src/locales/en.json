@@ -1612,6 +1612,7 @@
     },
     "landing": {
         "nav": {
+            "status": "Live status",
             "features": "Features",
             "media": "Protocols & Billing",
             "roles": "Roles",
