@@ -137,8 +137,10 @@ export function Card({ channel }: { channel: ChannelStatsFormatted }) {
                         重叠期间旧视图 pointer-events-none, 否则正在淡出的那份还能挡住点击。
                         位移方向表达前进与后退: 进编辑时表单自右侧推入, 返回统计时反向。 */}
                     {/* 高度取与表单同一的 SHELL_HEIGHT 阶梯: 常态固定 rem(统计/编辑切换不缩放),
-                        矮屏按 100dvh 夹住 —— 否则固定高度撑破外层 max-h, overflow-hidden 把底部按钮裁出可视区。 */}
-                    <MorphingDialogDescription className={`relative ${SHELL_HEIGHT} min-h-0 flex-1 overflow-hidden`}>
+                        矮屏按 100dvh 夹住 —— 否则固定高度撑破外层 max-h, overflow-hidden 把底部按钮裁出可视区。
+                        这里不能再加 flex-1: flex-basis:0 在纵轴会盖过 height, 容器塌成 0 后被外层 min-h 撑成 320px,
+                        表单按 464px 渲染, 底部按钮被 overflow-hidden 裁掉且无处可滚(弹窗"锁死")。 */}
+                    <MorphingDialogDescription className={`relative ${SHELL_HEIGHT} min-h-0 overflow-hidden`}>
                         <AnimatePresence initial={false}>
                             {openInEditing ? (
                                 <motion.div
