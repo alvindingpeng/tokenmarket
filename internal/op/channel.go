@@ -68,12 +68,18 @@ func ChannelStatsList(scope model.Scope) []model.ChannelStats {
 			models = []model.ChannelModelStats{}
 		}
 		stats = append(stats, model.ChannelStats{
-			ChannelID:    channel.ID,
-			UserID:       channel.UserID,
-			ChannelName:  channel.Name,
-			Shared:       channel.Shared,
-			ShareCode:    channel.ShareCode,
-			Enabled:      channel.Enabled,
+			ChannelID:   channel.ID,
+			UserID:      channel.UserID,
+			ChannelName: channel.Name,
+			Shared:      channel.Shared,
+			ShareCode:   channel.ShareCode,
+			Enabled:     channel.Enabled,
+			// 审核字段必须随列表一并外露: 卡片徽章与发布闸口只消费这一条查询,
+			// 漏拷会让 review_status 恒为空串, 徽章渲染成裸 key, 发布闸口对已过审渠道也恒判为受阻。
+			ReviewStatus: channel.ReviewStatus,
+			ReviewNote:   channel.ReviewNote,
+			SubmittedAt:  channel.SubmittedAt,
+			ReviewedAt:   channel.ReviewedAt,
 			Models:       models,
 			StatsMetrics: channel.StatsMetrics,
 		})
