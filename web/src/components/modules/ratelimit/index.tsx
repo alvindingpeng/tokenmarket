@@ -99,7 +99,7 @@ export default function RateLimit() {
     };
 
     return (
-        <div className="flex h-full min-h-0 flex-col gap-3">
+        <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain pb-24 md:pb-0">
             <div className="flex shrink-0 items-center justify-between gap-4">
                 <h2 className="flex items-center gap-2 text-lg font-bold text-card-foreground">
                     <Gauge className="size-5" />
@@ -216,7 +216,7 @@ export default function RateLimit() {
                 </div>
             )}
 
-            <div className="min-h-0 flex-1 overflow-auto overscroll-contain rounded-3xl border border-border bg-card pb-24 md:pb-0">
+            <div className="min-h-[260px] flex-1 overflow-auto overscroll-contain rounded-3xl border border-border bg-card">
                 {isLoading ? (
                     <div className="flex h-full items-center justify-center gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" />{t('loading')}</div>
                 ) : isError ? (
@@ -289,7 +289,7 @@ export default function RateLimit() {
                 )}
                 {(inspect.data?.budgets?.length ?? 0) > 1 && <div className="mt-2 space-y-1 text-xs text-muted-foreground">{inspect.data?.budgets?.map(budget => <div key={budget.model_name}>{budget.model_name || t('table.allModels')}: RPM {budget.requests}/{budget.rpm || t('table.unlimited')} · TPM {budget.tokens}/{budget.tpm || t('table.unlimited')} · {t('active')} {budget.active}/{budget.concurrent || t('table.unlimited')}</div>)}</div>}
                 {(usage.data?.items ?? []).length > 0 && (
-                    <div className="mt-3 overflow-x-auto">
+                    <div className="mt-3 max-h-[220px] overflow-auto">
                     <table className="w-full min-w-[560px] text-sm">
                         <thead className="text-left text-xs text-muted-foreground"><tr>
                             <th className="py-2 font-medium">{t('usage.hour')}</th><th className="py-2 font-medium">{t('usage.requests')}</th><th className="py-2 font-medium">{t('usage.input')}</th><th className="py-2 font-medium">{t('usage.output')}</th><th className="py-2 font-medium">{t('usage.rejected')}</th>
