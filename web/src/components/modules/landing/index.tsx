@@ -30,6 +30,7 @@ import { DEFAULT_SITE_NAME, useSiteConfig, type SiteConfig } from '@/api/site';
 function LandingHeader({ siteName, onEnter }: { siteName: string; onEnter: () => void }) {
     const t = useTranslations('landing');
     const links = [
+        { href: '/status', label: t('nav.status') },
         { href: '#flow', label: t('nav.flow') },
         { href: '#features', label: t('nav.features') },
         { href: '#media', label: t('nav.media') },
@@ -37,7 +38,7 @@ function LandingHeader({ siteName, onEnter }: { siteName: string; onEnter: () =>
     ];
     return (
         <header className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur">
-            <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 md:px-6">
+            <div className="mx-auto flex min-h-16 max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 md:flex-nowrap md:py-0 md:px-6">
                 <a href="#top" className="flex items-center gap-2.5">
                     <Logo size={34} />
                     <span className="text-lg font-bold tracking-tight">{siteName}</span>
@@ -54,6 +55,7 @@ function LandingHeader({ siteName, onEnter }: { siteName: string; onEnter: () =>
                     ))}
                 </nav>
                 <div className="flex items-center gap-2">
+                    <a href="/status" className="inline-flex min-h-11 items-center px-2 text-sm font-medium md:hidden">{t('nav.status')}</a>
                     <LanguageSwitch />
                     <Button size="sm" className="rounded-full" onClick={onEnter}>
                         {t('hero.ctaPrimary')}

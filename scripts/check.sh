@@ -41,6 +41,14 @@ step "前端: 单测"
 (cd "$ROOT/web" && pnpm test)
 ok "vitest"
 
+step "公开状态页 e2e（无需登录）"
+(cd "$ROOT/web" && pnpm run test:public)
+ok "public status playwright"
+
+step "首页入口 e2e（无需登录）"
+(cd "$ROOT/web" && pnpm exec playwright test landing-status.spec.ts)
+ok "landing status link"
+
 step "布局 e2e"
 if [[ -z "${SWITCHYARD_E2E_JWT:-}" ]]; then
     printf "   \033[33m跳过\033[0m 未设 SWITCHYARD_E2E_JWT(取法见 web/e2e/README.md)\n"
@@ -49,4 +57,4 @@ else
     ok "playwright"
 fi
 
-printf "\n\033[1;32m全部通过\033[0m\n"
+printf "\n\033[1;32m全部已执行检查通过（跳过项不代表通过）\033[0m\n"

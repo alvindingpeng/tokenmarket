@@ -67,11 +67,11 @@ type RelayRequestAttempt struct {
 	RequestID      uint64            `json:"request_id" gorm:"uniqueIndex:idx_attempt_request_round"`
 	Round          int               `json:"round" gorm:"uniqueIndex:idx_attempt_request_round"`
 	GroupItemID    int               `json:"group_item_id"`
-	ChannelID      int               `json:"channel_id"`
+	ChannelID      int               `json:"channel_id" gorm:"index:idx_attempt_channel_started,priority:1"`
 	ChannelCode    string            `json:"channel_code"`
 	TargetModel    string            `json:"target_model"`
 	TargetProtocol int               `json:"target_protocol"`
-	StartedAt      time.Time         `json:"started_at"`
+	StartedAt      time.Time         `json:"started_at" gorm:"index;index:idx_attempt_channel_started,priority:2"`
 	FirstTokenMs   int64             `json:"first_token_ms"`
 	DurationMs     int64             `json:"duration_ms"`
 	UpstreamTiming `gorm:"embedded"` // 本轮上游请求的连接耗时分解。

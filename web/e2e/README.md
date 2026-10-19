@@ -17,7 +17,19 @@
 `getBoundingClientRect()` 在被裁剪、被遮盖、`pointer-events: none` 三种情况下**都显示正常**。
 只有 `document.elementFromPoint(中心点)` 命中按钮自己，才证明用户真的点得到。
 
-## 怎么跑
+## 公开状态页（不需要登录或运行中的服务）
+
+`pnpm run test:public` 从工作区读取后端嵌入的 `status.html`，浏览器拦截 API 返回可控样本。覆盖手机/桌面布局、搜索、匿名编号、恶意模型名安全渲染和失败重试。首次运行先执行 `pnpm exec playwright install chromium`。这组用例在 `scripts/check.sh` 中始终运行。后端匿名路由与指标归因另由 Go 集成测试验证。
+
+部署后可额外运行：
+
+```sh
+PUBLIC_STATUS_BASE_URL=https://your-gateway pnpm exec playwright test --config playwright.public-live.config.ts
+```
+
+此 smoke 会匿名访问真实 API 检查窗口参数和敏感字段缺席，再打开真实页面验证渲染；不会发起付费模型请求。
+
+## 控制台布局用例怎么跑
 
 需要一个已登录的 JWT（服务端只认 `auth` cookie）：
 
@@ -34,9 +46,10 @@ SWITCHYARD_E2E_JWT="$(cat /tmp/jwt.txt)" pnpm run test:e2e
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `SWITCHYARD_E2E_JWT` | 无 | **必填**，登录后的 JWT |
-| `SWITCHYARD_E2E_BASE_URL` | `http://127.0.0.1:8088` | 目标实例 |
+| `SWITCHYARD_E2E_BASE_URL` | `http://127.0.0.1:5199` | 默认由 Playwright 启动的工作区 Vite 实例 |
+| `SWITCHYARD_E2E_API` | `http://127.0.0.1:8088` | Vite 反代的后端地址 |
 
-没设 `SWITCHYARD_E2E_JWT` 时整组跳过并给出明确提示，不会静默通过。
+直接跑控制台用例但缺少 `SWITCHYARD_E2E_JWT` 时会失败；统一闸门 `scripts/check.sh` 则明确提示跳过这组用例。公开状态页测试始终运行。
 
 ## 注意
 
