@@ -12,6 +12,10 @@
 
 # testing
 /coverage
+# playwright 的失败产物(截图/追踪/错误上下文), 每次跑都会重写。
+/test-results
+/playwright-report
+/blob-report
 
 # production
 /build
