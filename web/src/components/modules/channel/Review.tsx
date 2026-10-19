@@ -14,6 +14,7 @@ import {
     type ChannelReviewItem,
     type ChannelReviewStatus,
 } from '@/api/channel';
+import { reviewBadgeKey, reviewBadgeTone } from './reviewBadge';
 
 // formatTime 后端 RFC3339 转本地时间。
 function formatTime(value: string | null | undefined, fallback: string): string {
@@ -26,21 +27,13 @@ function formatTime(value: string | null | undefined, fallback: string): string 
 // STATUSES 状态筛选项; 空串表示全部。
 const STATUSES = ['', 'pending', 'draft', 'rejected', 'stale', 'approved'];
 
-// statusTone 五个审核态的徽章配色: draft 静默, pending 琥珀, approved 绿, rejected 红, stale 橙。
-const statusTone: Record<ChannelReviewStatus, string> = {
-    draft: 'bg-muted text-muted-foreground',
-    pending: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
-    approved: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
-    rejected: 'bg-destructive/15 text-destructive',
-    stale: 'bg-orange-500/15 text-orange-600 dark:text-orange-400',
-};
 
 // ReviewBadge 审核状态徽章: 渠道卡片与队列共用同一配色语义; approved 也照常显示, 全量可见状态。
 export function ReviewBadge({ status }: { status: ChannelReviewStatus }) {
     const t = useTranslations('channel.review');
     return (
-        <span className={`inline-flex shrink-0 items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium ${statusTone[status]}`}>
-            {t('status.' + status)}
+        <span className={`inline-flex shrink-0 items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium ${reviewBadgeTone(status)}`}>
+            {t(reviewBadgeKey(status))}
         </span>
     );
 }
