@@ -1,5 +1,15 @@
 # 更新说明
 
+## v0.39.6 — 2026-10-19
+
+修复渠道列表未携带审核字段：review_status 恒为空串，渠道卡徽章渲染成裸 key channel.review.status.，发布闸口对已过审渠道也恒判为受阻。
+
+- 根因：op.ChannelStatsList 组装 ChannelStats 时漏拷 ReviewStatus / ReviewNote / SubmittedAt / ReviewedAt，四个字段始终为零值；模型注释写明「随列表一并外露」，实现未跟上
+- 影响面：渠道卡审核徽章全部显示裸 key；share 页的 publishBlocked 判断（review_status 不等于 approved）恒为真，已过审渠道也提示无法发布；审核意见 tooltip 恒为空
+- 修复：补齐四个字段的拷贝；线上 19 个渠道（17 approved / 2 draft）状态随之正确外露
+
+---
+
 ## v0.39.5 — 2026-10-19
 
 修复渠道编辑弹窗「锁死」：保存/取消按钮被裁掉且无处可滚，编辑任何渠道都看不到保存按钮。
