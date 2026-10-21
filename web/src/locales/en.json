@@ -624,6 +624,8 @@
         "card": {
             "inputCache": "Input/Cache",
             "outputCache": "Output/Cache",
+            "context": "Context",
+            "maxOutput": "Output",
             "edit": "Edit",
             "delete": "Delete",
             "scoreLine": "≈{latency} · {success}% ({samples} samples)",

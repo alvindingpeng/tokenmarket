@@ -1,8 +1,8 @@
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Pencil, Trash2, ArrowDownToLine, ArrowUpFromLine, Gauge } from 'lucide-react';
+import { Pencil, Trash2, ArrowDownToLine, ArrowUpFromLine, Gauge, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslations } from 'use-intl';
-import { useUpdateModel, useDeleteModel, type LLMInfo, type ModelScore } from '@/api/model';
+import { useUpdateModel, useDeleteModel, type LLMInfo, type ModelScore, type ModelCapability } from '@/api/model';
 import { getModelIcon } from '@/lib/model-icons';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -15,6 +15,7 @@ interface ModelItemProps {
     model: LLMInfo;
     layout?: 'grid' | 'list';
     score?: ModelScore; // 该模型的全局选路评分; 无观测时按冷启动展示。
+    capability?: ModelCapability; // 该模型的能力登记（上下文/输出上限）。
 }
 
 // 缓存编辑弹层实测高度，首次打开即可正确判断是否需要向上弹出
@@ -30,7 +31,7 @@ function scoreTooltip(score: ModelScore | undefined, t: ReturnType<typeof useTra
     return sources ? `${head}\n${sources}` : head;
 }
 
-export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score }: ModelItemProps) {
+export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score, capability }: ModelItemProps) {
     const t = useTranslations('model');
     const isListLayout = layout === 'list';
     const [isEditOpen, setIsEditOpen] = useState(false);
@@ -200,6 +201,27 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
                                 <span title={scoreTooltip(score, t)} className="text-muted-foreground/70">{t('card.scoreCold')}</span>
                             )}
                         </span>
+                        {capability && (capability.context > 0 || capability.max_output > 0) && (
+                            <>
+                                <span className="text-muted-foreground/60">|</span>
+                                <span className="inline-flex items-center gap-1 shrink-0">
+                                    <MessageSquare className="size-3.5 shrink-0" style={{ color: brandColor }} />
+                                    {capability.context > 0 && (
+                                        <span className="tabular-nums">
+                                            {t('card.context')} {(capability.context / 1000).toFixed(0)}K
+                                        </span>
+                                    )}
+                                    {capability.context > 0 && capability.max_output > 0 && (
+                                        <span className="text-muted-foreground/60">/</span>
+                                    )}
+                                    {capability.max_output > 0 && (
+                                        <span className="tabular-nums">
+                                            {t('card.maxOutput')} {(capability.max_output / 1000).toFixed(0)}K
+                                        </span>
+                                    )}
+                                </span>
+                            </>
+                        )}
                     </p>
                 ) : (
                     <>
@@ -214,6 +236,7 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
                             {t('card.outputCache')}
                             <span className="tabular-nums">{model.output.toFixed(2)}/{model.cache_write.toFixed(2)}$</span>
                         </p>
+
 
                 <p className="flex items-center gap-1.5 text-sm">
                     <Gauge className="size-3.5 shrink-0 text-muted-foreground" />
@@ -231,6 +254,25 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
                         <span title={scoreTooltip(score, t)} className="text-muted-foreground/70">{t('card.scoreCold')}</span>
                     )}
                 </p>
+
+                {capability && (capability.context > 0 || capability.max_output > 0) && (
+                    <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                        <MessageSquare className="size-3.5" style={{ color: brandColor }} />
+                        {capability.context > 0 && (
+                            <span className="tabular-nums">
+                                {t('card.context')} {(capability.context / 1000).toFixed(0)}K
+                            </span>
+                        )}
+                        {capability.context > 0 && capability.max_output > 0 && (
+                            <span className="text-muted-foreground/60">/</span>
+                        )}
+                        {capability.max_output > 0 && (
+                            <span className="tabular-nums">
+                                {t('card.maxOutput')} {(capability.max_output / 1000).toFixed(0)}K
+                            </span>
+                        )}
+                    </p>
+                )}
                     </>
                 )}
             </div>

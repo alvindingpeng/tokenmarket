@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { ArrowUpAZ } from 'lucide-react';
 import { useTranslations } from 'use-intl';
-import { useModelList, useModelScores } from '@/api/model';
+import { useModelList, useModelScores, useModelCapabilities } from '@/api/model';
 import { PageActions, usePageActionsStore } from '@/components/common/PageActions';
 import { ModelItem } from './Item';
 import { CreateDialogContent } from './Create';
@@ -52,12 +52,19 @@ export function ModelActions() {
 export function Model() {
     const { data: models } = useModelList();
     const { data: scores } = useModelScores();
+    const { data: capabilities } = useModelCapabilities();
     // 评分按小写模型名归并: llms 表以名称为键且统一小写, 渠道模型名可能与上游大小写不同。
     const scoreByName = useMemo(() => {
         const map = new Map<string, NonNullable<typeof scores>[number]>();
         for (const s of scores ?? []) map.set(s.name.toLowerCase(), s);
         return map;
     }, [scores]);
+    // 能力登记同样按小写名称归并。
+    const capabilityByName = useMemo(() => {
+        const map = new Map<string, NonNullable<typeof capabilities>[number]>();
+        for (const c of capabilities ?? []) map.set(c.name.toLowerCase(), c);
+        return map;
+    }, [capabilities]);
     const searchTerm = usePageActionsStore((state) => state.searchTerms.model || '');
     const layout = usePageActionsStore((state) => state.layouts.model || 'grid');
     const sortOrder = usePageActionsStore((state) => state.sortOrders.model === 'desc' ? 'desc' : 'asc');
@@ -93,7 +100,14 @@ export function Model() {
             columns={{ default: 1, md: 2, lg: 3 }}
             estimateItemHeight={112}
             getItemKey={(model) => `model-${model.name}`}
-            renderItem={(model) => <ModelItem model={model} layout={layout} score={scoreByName.get(model.name.toLowerCase())} />}
+            renderItem={(model) => (
+                <ModelItem
+                    model={model}
+                    layout={layout}
+                    score={scoreByName.get(model.name.toLowerCase())}
+                    capability={capabilityByName.get(model.name.toLowerCase())}
+                />
+            )}
         />
     );
 }

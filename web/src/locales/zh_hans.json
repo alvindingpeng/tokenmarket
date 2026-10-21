@@ -624,6 +624,8 @@
         "card": {
             "inputCache": "输入/缓存",
             "outputCache": "输出/缓存",
+            "context": "上下文",
+            "maxOutput": "输出",
             "edit": "编辑",
             "delete": "删除",
             "scoreLine": "≈{latency} · {success}%（采样 {samples}）",

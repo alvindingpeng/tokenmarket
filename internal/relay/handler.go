@@ -323,6 +323,24 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				}
 			}
 
+			// 检查请求是否超过模型的上下文限制。
+			if exceeded, limit, estimated := checkContextLimit(channelModel.Name, raw.Body); exceeded {
+				err := fmt.Errorf("Request exceeds model context limit: estimated %d tokens, limit %d tokens", estimated, limit)
+				request.markFailed(err, "", nil)
+				// 使用 context_length_exceeded 错误类型，与上游错误保持一致
+				response := inbound.TransformError(ctx, &llm.ResponseError{
+					StatusCode: http.StatusBadRequest,
+					Detail: llm.ErrorDetail{
+						Message: err.Error(),
+						Type:    "invalid_request_error",
+						Code:    "context_length_exceeded",
+					},
+				})
+				c.Data(response.StatusCode, "application/json", response.Body)
+				c.Abort()
+				return
+			}
+
 			// 在渠道授权支持的协议内选出本轮上游协议, 按该协议的路径与授权绑定的凭据构造出站转换器。
 			// 先于登记本轮目标: 选中的协议是本轮目标的一部分, 需与渠道和模型一并推给界面。
 			outbound, targetProtocol, passthrough, err := buildOutbound(channel, grant, *channelKey, requestProtocol, format)
@@ -869,4 +887,24 @@ func rejectRequest(c *gin.Context, inbound transformer.Inbound, err error) {
 	})
 	c.Data(response.StatusCode, "application/json", response.Body)
 	c.Abort()
+}
+
+// checkContextLimit 检查请求的 token 数是否超过模型的上下文限制。
+// 使用 estimateTokens 的粗略估算（字符数/4）来检查，避免明显超限的请求被转发。
+// 返回 true 表示限制已超过，应拒绝请求。
+func checkContextLimit(modelName string, bodyBytes []byte) (exceeded bool, limit int, estimated int64) {
+	capability, ok := op.CapabilityGet(modelName)
+	if !ok || capability.Context == 0 {
+		// 没有能力信息或未设置限制，放行
+		return false, 0, 0
+	}
+
+	// 粗略估算输入 token 数（与 estimateTokens 保持一致的算法）
+	estInput := int64(len(bodyBytes))/4 + 32
+
+	if estInput > int64(capability.Context) {
+		return true, capability.Context, estInput
+	}
+
+	return false, capability.Context, estInput
 }
