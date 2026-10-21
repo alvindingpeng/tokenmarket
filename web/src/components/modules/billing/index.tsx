@@ -260,14 +260,16 @@ function SpendingTable({ owner, onView }: { owner: boolean; onView: (id: number)
                                     )}
                                 </span>
 
-                                <TokenCell values={[
-                                    { label: t('tokens.input'), value: record.input_token },
-                                    { label: t('tokens.output'), value: record.output_token },
-                                    { label: t('tokens.cacheRead'), value: record.cache_read_token },
-                                    { label: t('tokens.cacheWrite'), value: record.cache_write_token },
-                                    ...(record.media_units?.images ? [{ label: t('tokens.images'), value: record.media_units.images }] : []),
-                                    ...(record.media_units?.seconds ? [{ label: t('tokens.seconds'), value: Math.round(record.media_units.seconds) }] : []),
-                                ]} />
+                                <div className="overflow-x-auto">
+                                    <TokenCell values={[
+                                        { label: t('tokens.input'), value: record.input_token },
+                                        { label: t('tokens.output'), value: record.output_token },
+                                        { label: t('tokens.cacheRead'), value: record.cache_read_token },
+                                        { label: t('tokens.cacheWrite'), value: record.cache_write_token },
+                                        ...(record.media_units?.images ? [{ label: t('tokens.images'), value: record.media_units.images }] : []),
+                                        ...(record.media_units?.seconds ? [{ label: t('tokens.seconds'), value: Math.round(record.media_units.seconds) }] : []),
+                                    ]} />
+                                </div>
 
                                 <span className="text-right font-medium tabular-nums text-red-500">{formatMoney(record.user_cost)}</span>
                                 {owner && (
@@ -343,7 +345,9 @@ function SpendingTrend() {
                             <div key={row.date} className="grid grid-cols-[90px_1fr_minmax(340px,1.2fr)_110px] gap-3 py-2 text-sm hover:bg-muted/40">
                                 <span className="tabular-nums text-muted-foreground">{dayLabel(row.date)}</span>
                                 <span className="text-right tabular-nums">{formatCount(row.request_count)}</span>
-                                <DailyTokenCell row={row} />
+                                <div className="overflow-x-auto">
+                                    <DailyTokenCell row={row} />
+                                </div>
                                 <span className="text-right tabular-nums">{formatMoney(row.user_cost)}</span>
                             </div>
                         ))}
@@ -401,10 +405,12 @@ function RevenueTrend() {
                         </div>
 
                         {rows.map((row) => (
-                            <div key={row.date} className="grid grid-cols-[90px_1fr_minmax(150px,1.2fr)_110px_110px] gap-3 py-2 text-sm hover:bg-muted/40">
+                            <div key={row.date} className="grid grid-cols-[90px_1fr_minmax(340px,1.2fr)_110px_110px] gap-3 py-2 text-sm hover:bg-muted/40">
                                 <span className="tabular-nums text-muted-foreground">{dayLabel(row.date)}</span>
                                 <span className="text-right tabular-nums">{formatCount(row.request_count)}</span>
-                                <DailyTokenCell row={row} />
+                                <div className="overflow-x-auto">
+                                    <DailyTokenCell row={row} />
+                                </div>
                                 <span className="text-right tabular-nums text-green-500">{formatMoney(row.owner_revenue)}</span>
                                 <span className="text-right tabular-nums text-muted-foreground">{formatMoney(row.platform_revenue)}</span>
                             </div>
