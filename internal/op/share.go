@@ -19,10 +19,17 @@ type ShareModel struct {
 // ShareChannelModels 返回发布编码对应渠道公开上架的模型清单(对客价口径), 按名称定序。
 // 供给侧隔离同内部口径: 未发布渠道与未上架模型一律不出现; 编码不存在返回错误。
 func ShareChannelModels(code string) ([]ShareModel, error) {
+	models, _, err := ShareChannelDetail(code)
+	return models, err
+}
+
+// ShareChannelDetail 同时返回模型清单与脱敏质量摘要(P3)。
+// 质量摘要只在有近期快照时给出: 没有数据时返回 nil, 分享页据此不渲染质量条, 而不是显示一排破折号。
+func ShareChannelDetail(code string) ([]ShareModel, *ShareQuality, error) {
 	// 兼容 "#1001" 形式: 界面展示带 # 前缀, 用户照抄来查也能中。
 	code = strings.TrimPrefix(strings.TrimSpace(code), "#")
 	if code == "" {
-		return nil, fmt.Errorf("share code required")
+		return nil, nil, fmt.Errorf("share code required")
 	}
 	channelID := 0
 	for _, item := range channelCache.GetAll() {
@@ -32,7 +39,7 @@ func ShareChannelModels(code string) ([]ShareModel, error) {
 		}
 	}
 	if channelID == 0 {
-		return nil, fmt.Errorf("share code not found")
+		return nil, nil, fmt.Errorf("share code not found")
 	}
 	markup := SettingGetFloat(model.SettingKeyMarkupRatio)
 	models := make([]ShareModel, 0)
@@ -48,5 +55,5 @@ func ShareChannelModels(code string) ([]ShareModel, error) {
 		})
 	}
 	sort.Slice(models, func(i, j int) bool { return models[i].Name < models[j].Name })
-	return models, nil
+	return models, ShareQualityOf(channelID), nil
 }

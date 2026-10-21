@@ -80,8 +80,12 @@ func ChannelStatsList(scope model.Scope) []model.ChannelStats {
 			ReviewNote:   channel.ReviewNote,
 			SubmittedAt:  channel.SubmittedAt,
 			ReviewedAt:   channel.ReviewedAt,
-			Models:       models,
-			StatsMetrics: channel.StatsMetrics,
+			// 观察期字段同理: 漏拷会让前端进度条恒显示「已转正」, 掩盖真实的观察状态。
+			TrustLevel:       channel.TrustLevel,
+			ObservationStart: channel.ObservationStart,
+			ObservationUntil: channel.ObservationUntil,
+			Models:           models,
+			StatsMetrics:     channel.StatsMetrics,
 		})
 	}
 	return stats

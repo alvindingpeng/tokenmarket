@@ -74,6 +74,17 @@ export const SettingKey = {
     // 想停掉每小时一次的匿名 GitHub 请求只能去数据库改行。现在与令牌并排管理。
     UpdateCheckEnabled: 'update_check_enabled', // 是否自动检查 Release 更新, 默认 true。
     UpdateCheckMinutes: 'update_check_interval', // 自动检查间隔(分钟), 默认 60, 范围 1-1440。
+    // 渠道观察期(P2): 审核通过后先试运行, 达标自动转正, 不达标逐级降级。
+    ChannelObservationDays: 'channel_observation_days', // 观察期天数, 默认 7。
+    ChannelObservationMinSamples: 'channel_observation_min_samples', // 毕业最低请求数, 默认 100。
+    ChannelObservationSuccessFloor: 'channel_observation_success_floor', // 毕业成功率线(0..1), 默认 0.98。
+    // 渠道模型自动添加条件(B4): 只并入满足条件的上游模型, 并可自动预填供货价。
+    AutoAddPriceMin: 'channel_auto_add_price_min', // 参考价下限(每百万 token), 0 不限。
+    AutoAddPriceMax: 'channel_auto_add_price_max', // 参考价上限, 0 不限。
+    AutoAddMarkupMin: 'channel_auto_add_markup_min', // 倍率下限(模型价 ÷ 渠道价位中位数), 0 不限。
+    AutoAddMarkupMax: 'channel_auto_add_markup_max', // 倍率上限, 0 不限。
+    AutoAddExclude: 'channel_auto_add_exclude', // 排除正则。
+    AutoAddFillPrice: 'channel_auto_add_fill_price', // 并入时按参考价预填供货价, 默认 false。
 } as const;
 
 /**

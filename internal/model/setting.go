@@ -29,10 +29,21 @@ const (
 	SettingKeyRegisterResellerEnabled  SettingKey = "register_reseller_enabled"   // 渠道商注册开关, 默认关
 	SettingKeyRegisterApproval         SettingKey = "register_approval_required"  // 注册后是否需要管理员审批
 	SettingKeyChannelReviewAdminBypass SettingKey = "channel_review_admin_bypass" // 管理员自有渠道免审: 提交即通过, 避免管理员自己被审核流程卡住
-	SettingKeyShareCodeSeq             SettingKey = "share_code_seq"              // 发布编码取号计数器(4 位数字, 1001 起), 号码只发不收
-	SettingKeyBalanceReserveCap        SettingKey = "balance_reserve_output_cap"  // 余额预扣估算的默认输出 token 上限。
-	SettingKeyBalanceReserveImages     SettingKey = "balance_reserve_images"      // 生图预扣保守张数(无 N 时使用), 默认 4。
-	SettingKeyMinBalance               SettingKey = "min_balance"                 // 允许的最低余额, 0 表示不足即拒
+	// 渠道观察期(P2): 审核通过的渠道先试运行, 达标自动转正, 不达标降级。三个键控制毕业门槛。
+	SettingKeyChannelObservationDays       SettingKey = "channel_observation_days"          // 观察期天数, 默认 7
+	SettingKeyChannelObservationMinSamples SettingKey = "channel_observation_min_samples"   // 毕业最低请求数, 默认 100
+	SettingKeyChannelObservationSuccessFlr SettingKey = "channel_observation_success_floor" // 毕业成功率线(0..1), 默认 0.98
+	// 渠道模型自动添加条件(B4): 只有通过条件的上游模型才会被并入, 并可自动预填供货价。
+	SettingKeyAutoAddPriceMin      SettingKey = "channel_auto_add_price_min"  // 参考价最低单价(每百万 token, 0 不限)
+	SettingKeyAutoAddPriceMax      SettingKey = "channel_auto_add_price_max"  // 参考价最高单价(每百万 token, 0 不限)
+	SettingKeyAutoAddMarkupMin     SettingKey = "channel_auto_add_markup_min" // 倍率下限(模型参考价 ÷ 渠道价位中位数, 0 不限)
+	SettingKeyAutoAddMarkupMax     SettingKey = "channel_auto_add_markup_max" // 倍率上限(模型参考价 ÷ 渠道价位中位数, 0 不限)
+	SettingKeyAutoAddExclude       SettingKey = "channel_auto_add_exclude"    // 排除正则(与渠道/全局过滤同取 AND)
+	SettingKeyAutoAddFillPrice     SettingKey = "channel_auto_add_fill_price" // 并入时按参考价自动预填供货价(默认关)
+	SettingKeyShareCodeSeq         SettingKey = "share_code_seq"              // 发布编码取号计数器(4 位数字, 1001 起), 号码只发不收
+	SettingKeyBalanceReserveCap    SettingKey = "balance_reserve_output_cap"  // 余额预扣估算的默认输出 token 上限。
+	SettingKeyBalanceReserveImages SettingKey = "balance_reserve_images"      // 生图预扣保守张数(无 N 时使用), 默认 4。
+	SettingKeyMinBalance           SettingKey = "min_balance"                 // 允许的最低余额, 0 表示不足即拒
 
 	// 充值与支付(D1 易支付首发, 网关参数全部后台可配, 商户信息后配即可用)。
 	SettingKeyEpayGatewayURL       SettingKey = "epay_gateway_url"       // 易支付网关地址, 如 https://pay.example.com; 留空表示支付未配置
@@ -177,10 +188,21 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyRegisterResellerEnabled, Value: "false"}, // 渠道商注册默认关闭
 		{Key: SettingKeyRegisterApproval, Value: "true"},         // 注册默认需要审批
 		{Key: SettingKeyChannelReviewAdminBypass, Value: "true"}, // 管理员自有渠道默认免审
-		{Key: SettingKeyShareCodeSeq, Value: "1000"},             // 发布编码从 1001 起, 记录已发到的最大号
-		{Key: SettingKeyBalanceReserveCap, Value: "4096"},        // 预扣估算默认输出上限
-		{Key: SettingKeyBalanceReserveImages, Value: "4"},        // 生图预扣保守张数, 4 张覆盖 dall-e-3 / gpt-image-1 n=4 上限
-		{Key: SettingKeyMinBalance, Value: "0"},                  // 不允许透支
+		// 渠道观察期: 默认 7 天 / 100 请求 / 98% 成功率, 与设计稿一致。
+		{Key: SettingKeyChannelObservationDays, Value: "7"},
+		{Key: SettingKeyChannelObservationMinSamples, Value: "100"},
+		{Key: SettingKeyChannelObservationSuccessFlr, Value: "0.98"},
+		// 自动添加条件: 默认全 0 = 不限制, 保持第一版"只要探测到就并入"的行为。
+		{Key: SettingKeyAutoAddPriceMin, Value: "0"},
+		{Key: SettingKeyAutoAddPriceMax, Value: "0"},
+		{Key: SettingKeyAutoAddMarkupMin, Value: "0"},
+		{Key: SettingKeyAutoAddMarkupMax, Value: "0"},
+		{Key: SettingKeyAutoAddExclude, Value: ""},
+		{Key: SettingKeyAutoAddFillPrice, Value: "false"}, // 默认不预填价格, 保持既有行为
+		{Key: SettingKeyShareCodeSeq, Value: "1000"},      // 发布编码从 1001 起, 记录已发到的最大号
+		{Key: SettingKeyBalanceReserveCap, Value: "4096"}, // 预扣估算默认输出上限
+		{Key: SettingKeyBalanceReserveImages, Value: "4"}, // 生图预扣保守张数, 4 张覆盖 dall-e-3 / gpt-image-1 n=4 上限
+		{Key: SettingKeyMinBalance, Value: "0"},           // 不允许透支
 		// 充值与支付: 全部留空/默认, 商户信息在管理端补上即启用。
 		{Key: SettingKeyEpayGatewayURL, Value: ""},                                        // 留空表示支付未配置, 充值入口优雅降级
 		{Key: SettingKeyEpayPID, Value: ""},                                               // 商户 ID 后配
@@ -329,6 +351,38 @@ func (s *Setting) Validate() error {
 	case SettingKeyWithdrawalMinAmount:
 		if amount, err := strconv.ParseFloat(s.Value, 64); err != nil || amount < 0 {
 			return fmt.Errorf("withdrawal minimum amount must be a non-negative number")
+		}
+		return nil
+	case SettingKeyChannelObservationDays, SettingKeyChannelObservationMinSamples:
+		// 天数与样本数都必须为正: 0 天观察期等于跳过观察, 0 样本等于无门槛, 都违背设计意图。
+		if n, err := strconv.Atoi(s.Value); err != nil || n < 1 || n > 3650 {
+			return fmt.Errorf("%s must be a positive integer", s.Key)
+		}
+		return nil
+	case SettingKeyChannelObservationSuccessFlr:
+		floor, err := strconv.ParseFloat(s.Value, 64)
+		if err != nil || floor <= 0 || floor > 1 || math.IsNaN(floor) || math.IsInf(floor, 0) {
+			return fmt.Errorf("channel observation success floor must be a number in (0, 1]")
+		}
+		return nil
+	case SettingKeyAutoAddPriceMin, SettingKeyAutoAddPriceMax, SettingKeyAutoAddMarkupMin, SettingKeyAutoAddMarkupMax:
+		// 0 表示不限制; 非 0 必须为正的有限数, 负价/NaN/Inf 会让区间判断失去意义。
+		value, err := strconv.ParseFloat(s.Value, 64)
+		if err != nil || value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+			return fmt.Errorf("%s must be a non-negative finite number", s.Key)
+		}
+		return nil
+	case SettingKeyAutoAddExclude:
+		// 排除正则必须能编译, 否则保存成功但自动添加静默失效。
+		if strings.TrimSpace(s.Value) != "" {
+			if _, err := regexp2.Compile(s.Value, regexp2.ECMAScript); err != nil {
+				return fmt.Errorf("invalid auto-add exclude regex: %v", err)
+			}
+		}
+		return nil
+	case SettingKeyAutoAddFillPrice:
+		if _, err := strconv.ParseBool(s.Value); err != nil {
+			return fmt.Errorf("%s must be a boolean", s.Key)
 		}
 		return nil
 	case SettingKeyWithdrawalFeeRate:

@@ -255,7 +255,13 @@
                 "neverExpire": "Never Expire",
                 "supportedModels": "Supported Models",
                 "routingPreference": "Routing Preference",
-                "routingOptions": { "inherit": "Follow model group", "balanced": "Balanced", "price": "Lowest price", "latency": "Lowest latency", "success": "Highest success rate" },
+                "routingOptions": {
+                    "inherit": "Follow model group",
+                    "balanced": "Balanced",
+                    "price": "Lowest price",
+                    "latency": "Lowest latency",
+                    "success": "Highest success rate"
+                },
                 "routingPreferenceHint": "Ranks only eligible members during automatic routing; a manually pinned member always wins.",
                 "noModels": "No models available",
                 "modelsHint": "Leave empty for unlimited",
@@ -904,6 +910,36 @@
                 "approved": "{name} approved",
                 "rejected": "{name} rejected"
             }
+        },
+        "quality": {
+            "title": "Quality",
+            "trust": {
+                "trusted": "Trusted",
+                "observing": "Observation",
+                "probation": "Extended",
+                "revoked": "Revoked"
+            },
+            "trustHint": {
+                "trusted": "Observation passed; score is not reduced",
+                "observing": "Trial run after approval; promotes automatically once targets are met",
+                "probation": "First round missed targets; one more round granted",
+                "revoked": "Missed targets twice; publishing rights revoked"
+            },
+            "gradeUnknown": "Not enough samples to grade",
+            "gradeHint": "Overall grade {grade}",
+            "sampleProgress": "Observation · {samples}/{min} requests so far",
+            "sampleNone": "Observation · no requests yet",
+            "daysLeft": "{days} days left",
+            "expired": "Expired",
+            "successVsFloor": "Success {rate}% / floor {floor}%",
+            "graduated": "Target met; awaiting next evaluation",
+            "belowFloor": "{gap}% below graduation line",
+            "emptyTrend": "No quality data yet; needs a day of traffic first",
+            "noData": "{date} · no data",
+            "dayTooltip": "{date} · grade {grade} · success {rate}% · {latency}ms · uptime {uptime}%",
+            "successShort": "Success {rate}%",
+            "avgWait": "Avg {ms}ms",
+            "uptimeShort": "Uptime {uptime}%"
         }
     },
     "share": {

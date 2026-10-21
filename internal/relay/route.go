@@ -311,11 +311,50 @@ func selectByScore(group model.Group, candidates []model.GroupItem) model.GroupI
 		// 折减强度按样本置信度缩放: 一条孤例观测不足以把分数乘到 0(否则评分归零后永不被选中,
 		// 也就永远翻不了身), 样本充足的失败模型仍被压到近 0 分垫底。
 		score *= reliabilityPenalty(rates[i], samples[i], floor)
+		// 观察期折减: 未转正渠道在同等条件下排在稳定渠道之后, 但仍可被选中以积累毕业样本。
+		score *= observationPenalty(item)
 		if score > bestScore {
 			best, bestScore = item, score
 		}
 	}
 	return best
+}
+
+// 观察期折减(P2): 尚未转正的渠道在综合评分里按级别打折。
+//
+// 为什么是折减而不是排除: 观察期渠道已经过审、可以正常转发, 直接排除会让渠道商刚上线就零流量,
+// 永远攒不够毕业样本。折减让它在同等条件下排在稳定渠道之后, 但仍能被选中并积累数据。
+//
+// 三档系数与设计稿一致: observing 0.85 / probation 0.70 / revoked 0.50。
+// trusted 与未知(非渠道成员、渠道已删) 均为 1.0, 保持既有行为不变。
+const (
+	observationFactorDefault   = 1.0
+	observationFactorObserving = 0.85
+	observationFactorProbation = 0.70
+	observationFactorRevoked   = 0.50
+)
+
+// observationPenalty 返回成员所属渠道的观察期折减系数(≤1)。
+// 只作用于 score 模式与评分展示: failover/price/latency 等模式是硬排序, 不该被质量标签改写,
+// 否则「按价格排序」的结果会依赖与价格无关的信任级别, 用户无法解释。
+func observationPenalty(item model.GroupItem) float64 {
+	if item.ChannelID == 0 {
+		return observationFactorDefault
+	}
+	level, ok := op.ChannelTrustLevelOf(item.ChannelID)
+	if !ok {
+		return observationFactorDefault
+	}
+	switch level {
+	case model.ChannelTrustObserving:
+		return observationFactorObserving
+	case model.ChannelTrustProbation:
+		return observationFactorProbation
+	case model.ChannelTrustRevoked:
+		return observationFactorRevoked
+	default: // trusted 与历史空值
+		return observationFactorDefault
+	}
 }
 
 // reliabilityFloorDefault 是成员可靠性下限的内置兜底: 成功率(EMA)低于该值视为不健康成员。

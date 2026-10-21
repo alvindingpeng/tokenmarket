@@ -9,6 +9,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { CheckCircle2, DollarSign, Layers, MessageSquare, XCircle } from 'lucide-react';
 import { type ChannelStatsFormatted, useEnableChannel } from '@/api/channel';
 import { ReviewBadge } from './Review';
+import { TrustBadge } from './QualityBadge';
 import { usePageActionsStore } from '@/components/common/PageActions';
 import { ChannelStats } from './Stats';
 import { ChannelForm } from './Form';
@@ -74,9 +75,14 @@ export function Card({ channel }: { channel: ChannelStatsFormatted }) {
                                 {channel.channel_name}
                             </TooltipContent>
                         </Tooltip>
-                        {/* 审核状态徽章(P1): 五态一眼可见。队列与审核操作仅管理员, 渠道商在此查看状态与审核意见(悬停)。 */}
-                        <span className="inline-flex" title={channel.review_note || undefined}>
+                        {/* 审核状态徽章(P1) + 观察期徽章(P2): 两个状态机正交, 必须并列展示 ——
+                            已过审但仍在观察期的渠道既不是"待审"也不是"已转正", 合并成一个徽章会丢失信息。
+                            观察期徽章只在未转正时出现, 转正后不再占位(避免每张卡片都挂一个"已转正"噪音)。 */}
+                        <span className="inline-flex shrink-0 items-center gap-1" title={channel.review_note || undefined}>
                             <ReviewBadge status={channel.review_status} />
+                            {channel.trust_level && channel.trust_level !== 'trusted' && (
+                                <TrustBadge level={channel.trust_level} />
+                            )}
                         </span>
                         <div className="flex shrink-0 items-center gap-1">
                             <Switch

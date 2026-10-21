@@ -24,14 +24,15 @@ func init() {
 }
 
 // shareModels 公开返回发布编码下的模型清单与对客价, 供分享页与下游对接方查询。
+// quality 是脱敏质量摘要(只有区间与等级, 无精确值), 无近期数据时该字段为 null。
 func shareModels(c *gin.Context) {
 	code := strings.TrimSpace(c.Param("code"))
-	models, err := op.ShareChannelModels(code)
+	models, quality, err := op.ShareChannelDetail(code)
 	if err != nil {
 		resp.Error(c, http.StatusNotFound, err.Error())
 		return
 	}
-	resp.Success(c, gin.H{"share_code": code, "models": models})
+	resp.Success(c, gin.H{"share_code": code, "models": models, "quality": quality})
 }
 
 // sharePage 返回公开分享页; 编码无效也返回页面, 由页面展示未找到状态(避免暴露存在性差异的时序)。

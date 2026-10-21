@@ -12,6 +12,7 @@ import (
 
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/charmbracelet/log"
 )
 
 // 渠道准入审核(P1): 提交 → 审批 → 发布闸口 + 关键配置指纹复审。
@@ -136,11 +137,27 @@ func ChannelReviewApprove(id int, note string, reviewerID uint, scope model.Scop
 		Where("id = ?", id).Updates(updates).Error; err != nil {
 		return model.Channel{}, fmt.Errorf("failed to approve channel review: %w", err)
 	}
+	// 通过审核即进入观察期(P2): 允许发布, 但先按观察期标注并在达标前受评分折减。
+	// 已转正的渠道不重置(复审不应让稳定渠道从头跑一轮), ChannelTrustStart 内部按 trust_level 判断。
+	if err := ChannelTrustStart(db.GetDB().WithContext(ctx), id); err != nil {
+		// 观察期启动失败不该回滚已完成的审核: 审核状态是人工决策, 观察期只是后续质量跟踪。
+		// 最坏情况是渠道以旧的 trust_level 继续运行, 下一轮评估任务会把它纠正过来。
+		log.Warnf("failed to start observation for channel %d: %v", id, err)
+	}
 	channel.ReviewStatus = model.ChannelReviewApproved
 	channel.ReviewNote = updates["review_note"].(string)
 	channel.ConfigFingerprint = updates["config_fingerprint"].(string)
 	channel.ReviewedBy = reviewerID
 	channel.ReviewedAt = &now
+	// 从库里回读观察期三列: ChannelTrustStart 直接写库, 缓存里那份还是旧值。
+	// 用缓存回填等于把改动覆盖回旧值 —— 卡片会恒显示「已转正」而数据库里其实是 observing。
+	var fresh model.Channel
+	if err := db.GetDB().WithContext(ctx).Select("trust_level", "observation_start", "observation_until").
+		First(&fresh, id).Error; err == nil {
+		channel.TrustLevel = fresh.TrustLevel
+		channel.ObservationStart = fresh.ObservationStart
+		channel.ObservationUntil = fresh.ObservationUntil
+	}
 	channelCache.Set(id, channel)
 	return channel, nil
 }

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/dlclark/regexp2"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
@@ -165,4 +166,133 @@ func fmtInt(i int) string {
 		i /= 10
 	}
 	return string(digits)
+}
+
+// ---- 自动添加条件过滤(B4) ----
+
+// TestAutoAddFilterAllow 覆盖条件的判定顺序与边界。
+// 关键不变量:
+//   - 空条件(全 0 / 无正则)一律放行 —— 升级到本版不改变既有渠道的并入结果;
+//   - 参考价缺失时放行 —— 私有模型不该被价格条件一刀切掉;
+//   - 渠道无基线(Baseline=0)时倍率条件跳过 —— 新渠道要能添加进第一个模型。
+func TestAutoAddFilterAllow(t *testing.T) {
+	exclude, err := regexp2.Compile("^gpt-3", regexp2.ECMAScript)
+	if err != nil {
+		t.Fatalf("compile regex: %v", err)
+	}
+
+	cases := []struct {
+		name   string
+		filter AutoAddFilter
+		model  string
+		wantOK bool
+	}{
+		{"空条件全部放行", AutoAddFilter{}, "any-model", true},
+		{"排除正则命中", AutoAddFilter{Exclude: exclude}, "gpt-3.5-turbo", false},
+		{"排除正则未命中", AutoAddFilter{Exclude: exclude}, "gpt-4o", true},
+		{"未登记价格的模型放行", AutoAddFilter{PriceMin: 100, PriceMax: 200}, "totally-unknown-model-xyz", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, reason := tc.filter.Allow(tc.model)
+			if ok != tc.wantOK {
+				t.Fatalf("Allow(%q) = %v, want %v (reason: %s)", tc.model, ok, tc.wantOK, reason)
+			}
+			if !ok && reason == "" {
+				t.Fatalf("Allow(%q) rejected without reason", tc.model)
+			}
+		})
+	}
+}
+
+// TestAutoAddFilterMarkupSkippedWithoutBaseline 验证新渠道(无定价模型)不会被倍率条件挡死。
+// 否则倍率条件一开, 空渠道永远添加不进第一个模型, 自动添加形同虚设。
+func TestAutoAddFilterMarkupSkippedWithoutBaseline(t *testing.T) {
+	filter := AutoAddFilter{MarkupMin: 2.0, MarkupMax: 3.0, Baseline: 0}
+	if ok, reason := filter.Allow("totally-unknown-model-xyz"); !ok {
+		t.Fatalf("expected pass when baseline is 0, got rejection: %s", reason)
+	}
+}
+
+// TestAutoAddFilterPriceRange 验证价格区间对已登记模型生效(blended = 输入输出均值)。
+func TestAutoAddFilterPriceRange(t *testing.T) {
+	llmModelCache.Set("test-auto-add-priced", model.LLMPrice{Input: 100, Output: 200})
+	t.Cleanup(func() { llmModelCache.Del("test-auto-add-priced") })
+
+	// blended = (100+200)/2 = 150
+	if ok, reason := (AutoAddFilter{PriceMin: 10, PriceMax: 100}).Allow("test-auto-add-priced"); ok {
+		t.Fatalf("expected rejection: blended 150 above max 100")
+	} else if reason == "" {
+		t.Fatalf("rejection without reason")
+	}
+	if ok, reason := (AutoAddFilter{PriceMin: 10, PriceMax: 200}).Allow("test-auto-add-priced"); !ok {
+		t.Fatalf("expected pass for blended 150 in [10,200], got: %s", reason)
+	}
+	if ok, reason := (AutoAddFilter{PriceMin: 200, PriceMax: 300}).Allow("test-auto-add-priced"); ok {
+		t.Fatalf("expected rejection: blended 150 below min 200")
+	} else if reason == "" {
+		t.Fatalf("rejection without reason")
+	}
+}
+
+// TestAutoAddFilterMarkupWithBaseline 验证倍率区间: 模型参考价 ÷ 渠道基线。
+func TestAutoAddFilterMarkupWithBaseline(t *testing.T) {
+	llmModelCache.Set("test-auto-add-markup", model.LLMPrice{Input: 300, Output: 300}) // blended = 300
+	t.Cleanup(func() { llmModelCache.Del("test-auto-add-markup") })
+
+	// 基线 100, 倍率 3.0x: 落在 [2,4] 内 → 放行
+	if ok, reason := (AutoAddFilter{MarkupMin: 2, MarkupMax: 4, Baseline: 100}).Allow("test-auto-add-markup"); !ok {
+		t.Fatalf("expected pass for 3x in [2,4], got: %s", reason)
+	}
+	// 上限 2.5x → 3x 超限 → 拒绝
+	if ok, reason := (AutoAddFilter{MarkupMax: 2.5, Baseline: 100}).Allow("test-auto-add-markup"); ok {
+		t.Fatalf("expected rejection for 3x above max 2.5x")
+	} else if reason == "" {
+		t.Fatalf("rejection without reason")
+	}
+	// 下限 3.5x → 3x 不足 → 拒绝
+	if ok, reason := (AutoAddFilter{MarkupMin: 3.5, Baseline: 100}).Allow("test-auto-add-markup"); ok {
+		t.Fatalf("expected rejection for 3x below min 3.5x")
+	} else if reason == "" {
+		t.Fatalf("rejection without reason")
+	}
+}
+
+// TestFillSupplyPriceFromReference 验证预填供货价只填四价全 0 的模型, 不覆盖人工定价。
+func TestFillSupplyPriceFromReference(t *testing.T) {
+	conn := autoaddTestDB(t)
+	channelID, _, m0ID, m1ID := autoaddSeed(t, conn)
+	llmModelCache.Set("m0", model.LLMPrice{Input: 2, Output: 4})
+	llmModelCache.Set("m1", model.LLMPrice{Input: 9, Output: 9})
+	t.Cleanup(func() {
+		llmModelCache.Del("m0")
+		llmModelCache.Del("m1")
+	})
+
+	// m1 先手工定价, 预填不该覆盖它。
+	// 必须用 Select + 结构体 Updates 让 gorm 走 serializer:json;
+	// Update("supply_price", LLMPrice{...}) 会跳过序列化并报 unsupported type。
+	manual := model.ChannelModel{SupplyPrice: model.LLMPrice{Input: 7, Output: 8}}
+	if err := conn.Model(&model.ChannelModel{}).Where("id = ?", m1ID).
+		Select("supply_price").Updates(&manual).Error; err != nil {
+		t.Fatalf("set manual price: %v", err)
+	}
+
+	if err := fillSupplyPriceFromReference(conn, channelID, []string{"m0", "m1"}); err != nil {
+		t.Fatalf("fill: %v", err)
+	}
+
+	var m0, m1 model.ChannelModel
+	if err := conn.First(&m0, m0ID).Error; err != nil {
+		t.Fatalf("load m0: %v", err)
+	}
+	if err := conn.First(&m1, m1ID).Error; err != nil {
+		t.Fatalf("load m1: %v", err)
+	}
+	if m0.SupplyPrice.Input != 2 || m0.SupplyPrice.Output != 4 {
+		t.Fatalf("m0 supply price = %+v, want reference {2,4}", m0.SupplyPrice)
+	}
+	if m1.SupplyPrice.Input != 7 || m1.SupplyPrice.Output != 8 {
+		t.Fatalf("m1 supply price = %+v, want manual {7,8} (must not be overwritten)", m1.SupplyPrice)
+	}
 }

@@ -1,6 +1,7 @@
 # 功能路线图(待办)
 
-> 本文档是持久化的待办清单, 防止跨会话丢失。 更新于可观测性交付之后。
+> 本文档记录**已完成**的版本流水与历史决策, 防止跨会话丢失。
+> **还没做的**事项统一记录在 `docs/backlog-unimplemented.md`(2026-10-21 建立), 两文分工: 本文记已做, 那篇记未做。
 
 ## 第二批后续(2026-10-08 审计产出的五件事)
 
@@ -61,7 +62,30 @@
 
 依赖: 探测客户端按渠道代理配置构建(直连/应用代理/渠道专用), 与手动刷新一致; 失败为 best-effort 只记日志, 不影响已成功的保存。生图协议位仍按名称关键词默认勾选(dall-e/flux 等), kind 随授权重算。
 
-已排期外: B4/B5 自动定价/自动上架(P2), A3 定时同步(不建议) 未纳入本版。
+B4(自动定价)与自动添加条件已于 **v0.41.0** 落地, B5(自动上架)仍不做:
+
+| 规则 | 实现 |
+|---|---|
+| B4 条件过滤 | `op.AutoAddFilter`: 排除正则 + 参考价区间(每百万 token) + 倍率区间(模型参考价 ÷ 渠道现有价位中位数)。全部留空/置 0 表示不限制, 与升级前行为一致 |
+| B4 预填供货价 | 开关 `channel_auto_add_fill_price`(默认关); 开启后按 models.dev 参考价填四价, **只填四价全 0 的模型**, 不覆盖人工定价 |
+| B5 自动上架 | ❌ 仍不做: 上架等于对客可见, 必须人工确认 |
+| A3 定时同步 | ❌ 不建议: 上游模型列表变动不频繁, 保存时同步已足够 |
+
+被条件挡下的模型单独记 `channel.model-skipped` 审计(前 20 个 + 计数), 让管理员能看出条件是否过紧。
+
+## 渠道观察期与质量展示(2026-10-21, v0.41.0)
+
+设计见 `docs/design-channel-review-observation-quality.md`, P2/P3 均已上线:
+
+| 能力 | 实现 |
+|---|---|
+| P2 观察期 | 审核通过即进入观察期(`channel_trust_eval` 日任务评估): 达标 → trusted; 首次不达标 → probation(延长一轮); 再不合格 → revoked(收回发布)。门槛由 `channel_observation_days`(7) / `channel_observation_min_samples`(100) / `channel_observation_success_floor`(0.98) 控制 |
+| P2 评分折减 | `relay/observationPenalty`: observing ×0.85 / probation ×0.70 / revoked ×0.50, 只作用于 score 选路与评分展示; failover/price/latency 等硬排序模式不受影响 |
+| P2 前端 | 卡片头部信任徽章 + 详情页观察期双进度条(样本 + 成功率), 与审核徽章并列展示 |
+| P3 质量快照 | `channel_quality_snapshots` 复合主键(channel_id+date); `channel_quality_snapshot` 日任务固化昨日数据, 保留 180 天 |
+| P3 评级 | `model.QualityGradeOf`: 0.40×成功率 + 0.35×延迟 + 0.25×可用率, A≥90 且成功率≥99.5%, B≥75, C≥60; 样本 <30 不评级(显示 --)。探测未开启时权重归一, 不会因没开探测就得 D |
+| P3 API | `GET /api/v1/channel/quality/:id`(概览+趋势) 与 `/snapshot/:id`(纯趋势), 归属者与管理员可读 |
+| P3 对客脱敏 | 分享页只出等级 + 区间(99.9%+ / <2s / 99.5%+), 永不出精确值; 快照超过 7 天不展示(过期承诺) |
 
 ## 告警外发接线(2026-10-12)
 
@@ -87,7 +111,7 @@
 |---|---|---|
 | P2 | 生视频: `/v1/videos` 异步任务, 按次计价 | ✅ 已完成(v0.20.0): 创建/查询/取消三条路由 + 任务归属追踪 + 按条与按秒计费, 见 `docs/video-generation.md` |
 | P2 | 生图流式(`partial_images` 事件流)与上游用量对账 | ✅ 已完成: `stream:true` 透传 `image_generation.*` SSE 事件, 流末按 completed 事件数张计费(partial 不计), 见 `docs/image-generation.md` |
-| P3 | 充值功能 | ⬜ 未开始。界面提示「充值功能后续上线」, 后端无任何实现, 目前只能管理员手工调账 |
+| P3 | 充值功能 | ✅ 已完成: 钱包底座+兑换码(P1) → 易支付+充值订单(P2) → 提现全链路(P3) 全部上线, 见 `docs/design-recharge-redemption-withdrawal.md`(该文设计已全部落地, 仅 P4 自动打款预留)。支付渠道已扩到四条(epay/alipay/stripe/creem), 商户参数后台可配 |
 
 ## 媒体定价(2026-10-12 定稿)
 

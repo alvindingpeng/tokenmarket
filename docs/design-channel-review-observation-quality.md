@@ -1,6 +1,10 @@
 # 渠道准入审核 + 观察期 + 服务质量展示 设计方案(第二批运营能力)
 
-> 状态: 设计稿, 未实施。基于现有渠道/健康探测/路由指标/分享页代码事实设计, 按 P1→P3 给出状态机、数据模型、API 与验收标准。
+> 状态: **P1 审核 / P2 观察期 / P3 质量展示 均已实现并上线 (v0.41.0)**。
+> P2 关键实现: `internal/op/channel_quality.go`(`ChannelTrustStart` / `ChannelTrustEvaluate`) + `internal/task` 的 `channel_trust_eval` 日任务 + `relay/observationPenalty` 评分折减。
+> P3 关键实现: `model.ChannelQualitySnapshot` 快照表 + `channel_quality_snapshot` 日任务 + `GET /api/v1/channel/quality/:id` + 分享页脱敏 `quality` 字段。
+> 自动添加条件(B4)同时落地: `op.AutoAddFilter` 按价格区间 / 倍率区间 / 排除正则过滤, 并支持按参考价预填供货价。
+> 基于现有渠道/健康探测/路由指标/分享页代码事实设计, 按 P1→P3 给出状态机、数据模型、API 与验收标准。
 > 姊妹篇: 《交易与结算运营闭环》已交付 (v0.30.0) —— 交易可追溯、退款可冲正、结算可对账; 本篇解决供给侧「渠道从哪里来、能不能信任、表现怎么样」。
 
 ## 0. 结论先行
