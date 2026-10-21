@@ -29,13 +29,13 @@ function dayLabel(date: string): string {
 // TokenCell 是四类词元的紧凑展示: 横向单行排列不换行, 表格列宽不足时由外层横向滚动条承接。
 function TokenCell({ values }: { values: { label: string; value: number }[] }) {
     return (
-        <span className="flex flex-nowrap gap-x-3 whitespace-nowrap font-mono text-xs tabular-nums">
+        <div className="flex flex-nowrap gap-x-3 whitespace-nowrap font-mono text-xs tabular-nums">
             {values.map(({ label, value }) => (
                 <span key={label} className="text-muted-foreground">
                     {label} <span className="text-foreground">{formatCount(value)}</span>
                 </span>
             ))}
-        </span>
+        </div>
     );
 }
 
@@ -260,7 +260,7 @@ function SpendingTable({ owner, onView }: { owner: boolean; onView: (id: number)
                                     )}
                                 </span>
 
-                                <div className="overflow-x-auto">
+                                <div className="min-w-0 overflow-x-auto">
                                     <TokenCell values={[
                                         { label: t('tokens.input'), value: record.input_token },
                                         { label: t('tokens.output'), value: record.output_token },
@@ -345,7 +345,7 @@ function SpendingTrend() {
                             <div key={row.date} className="grid grid-cols-[90px_1fr_minmax(340px,1.2fr)_110px] gap-3 py-2 text-sm hover:bg-muted/40">
                                 <span className="tabular-nums text-muted-foreground">{dayLabel(row.date)}</span>
                                 <span className="text-right tabular-nums">{formatCount(row.request_count)}</span>
-                                <div className="overflow-x-auto">
+                                <div className="min-w-0 overflow-x-auto">
                                     <DailyTokenCell row={row} />
                                 </div>
                                 <span className="text-right tabular-nums">{formatMoney(row.user_cost)}</span>
@@ -408,7 +408,7 @@ function RevenueTrend() {
                             <div key={row.date} className="grid grid-cols-[90px_1fr_minmax(340px,1.2fr)_110px_110px] gap-3 py-2 text-sm hover:bg-muted/40">
                                 <span className="tabular-nums text-muted-foreground">{dayLabel(row.date)}</span>
                                 <span className="text-right tabular-nums">{formatCount(row.request_count)}</span>
-                                <div className="overflow-x-auto">
+                                <div className="min-w-0 overflow-x-auto">
                                     <DailyTokenCell row={row} />
                                 </div>
                                 <span className="text-right tabular-nums text-green-500">{formatMoney(row.owner_revenue)}</span>
