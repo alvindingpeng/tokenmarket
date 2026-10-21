@@ -1,6 +1,32 @@
 package model
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
+
+func TestMediaPriceValidate(t *testing.T) {
+	cases := []struct {
+		name    string
+		price   MediaPrice
+		wantErr bool
+	}{
+		{"zero is allowed", MediaPrice{}, false},
+		{"cap is inclusive", MediaPrice{PerImage: MaxMediaPricePerUnit}, false},
+		{"negative", MediaPrice{PerVideo: -1}, true},
+		{"over cap", MediaPrice{PerSecond: MaxMediaPricePerUnit + 1}, true},
+		{"infinite tier", MediaPrice{Resolution: map[string]float64{"4k": math.Inf(1)}}, true},
+		{"nan unit", MediaPrice{PerImage: math.NaN()}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.price.Validate()
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("Validate() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
 
 // TestMediaPriceCostVideos 固定生视频的计费口径: 每条固定起步价 + 时长 × 每秒单价,
 // 分辨率分档只覆盖每秒单价, 不动与时长无关的起步价。

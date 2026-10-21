@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -24,8 +25,26 @@ import (
 // errInsufficientBalance 预扣失败的哨兵错误: 供调用方与告警逻辑精确区分"余额不足"与其他数据库错误。
 var errInsufficientBalance = errors.New("insufficient balance")
 
+// 终态竞争与重复结算的哨兵错误: 供调用方精确区分"重复投递"与"账目冲突"。
+var (
+	// errReservationFinalized 预扣已被别的调用终态化(结算或释放)的内部哨兵,
+	// 只在事务内用于短路抢占失败, 不会透传给调用方。
+	errReservationFinalized = errors.New("reservation already finalized")
+
+	// ErrSettlementMismatch 对已结算预扣的再次结算携带了不同用量或费用: 拒绝入账。
+	// 已定稿的账不能被第二次结算静默改写或叠加扣款, 交由告警与人工对账处理。
+	ErrSettlementMismatch = errors.New("reservation already settled with different usage")
+
+	// ErrReservationReleased 预扣已被释放(未计费)后再结算: 拒绝入账。
+	// 冻结额早已退回可用余额, 此时补扣会把冻结额扣成负数、把退款当欠费再收一遍。
+	ErrReservationReleased = errors.New("reservation already released")
+)
+
 // BillingReserve 预扣估算费用: 原子冻结 estimate 并登记预扣记录, 余额不足返回错误。
 func BillingReserve(userID uint, requestID uint64, estimate float64) (uint64, error) {
+	if math.IsNaN(estimate) || math.IsInf(estimate, 0) {
+		return 0, fmt.Errorf("reservation estimate must be finite")
+	}
 	if estimate < 0 {
 		estimate = 0
 	}
@@ -46,7 +65,8 @@ func BillingReserve(userID uint, requestID uint64, estimate float64) (uint64, er
 		if result.RowsAffected == 0 {
 			return errInsufficientBalance
 		}
-		reservation := model.BalanceReservation{UserID: userID, RequestID: requestID, Amount: estimate, CreatedAt: time.Now()}
+		expires := time.Now().Add(BillingLeaseDuration)
+		reservation := model.BalanceReservation{UserID: userID, RequestID: requestID, Amount: estimate, CreatedAt: time.Now(), LeaseExpiresAt: &expires}
 		if err := tx.Create(&reservation).Error; err != nil {
 			return fmt.Errorf("failed to create reservation: %w", err)
 		}
@@ -75,44 +95,70 @@ func BillingReserve(userID uint, requestID uint64, estimate float64) (uint64, er
 
 // BillingSettle 按实际用量结算一笔预扣: 解冻预估、扣实际支出、记发布者收入并写计费明细。
 // record 的价格与用量快照由调用方按本次落地渠道算好; 三方金额在此定稿并落库。
-func BillingSettle(reservationID uint64, record *model.BillingRecord) error {
+//
+// 终态与幂等(一笔预扣至多结算一次): 预扣终态用条件迁移(settled=false → true)抢占,
+// 抢占是事务首个语句(写锁先行), 结算与释放竞争时只有一方改到行、只有一方动钱,
+// 失败事务连同状态与流水一并回滚。抢输的调用拿已落账的结算比对经济内容:
+//   - 同一笔用量/费用的重复投递 → 幂等返回 nil, 不再动钱、不再记账、不再告警;
+//   - 用量或费用不一致 → ErrSettlementMismatch, 拒绝入账, 不静默吞掉不同用量;
+//   - 预扣是被释放的(无计费明细) → ErrReservationReleased, 钱已退回, 不能补扣。
+func billingSettleApply(ctx context.Context, reservationID uint64, record *model.BillingRecord) error {
 	if record == nil {
 		return fmt.Errorf("billing record is required")
 	}
 	// 三方账目对平: 平台收入 = 用户支出 - 发布者收入。
 	record.PlatformRevenue = record.UserCost - record.OwnerRevenue
 	record.Status = model.BillingStatusSettled
-	record.CreatedAt = time.Now()
+	if record.CreatedAt.IsZero() {
+		record.CreatedAt = time.Now()
+	}
 
 	var reserveAmount float64 // 本笔预估, 供结算完成后判断"下一单是否够付"。
-	err := db.GetDB().Transaction(func(tx *gorm.DB) error {
+	err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 终态抢占: 条件迁移 settled=false → true, RowsAffected 先验、后动钱。
+		// 事务首个语句即写, 拿到写锁再读, 避免读-写升级与并发事务相撞。
+		claim := tx.Model(&model.BalanceReservation{}).
+			Where("id = ? AND settled = ?", reservationID, false).
+			Update("settled", true)
+		if claim.Error != nil {
+			return fmt.Errorf("failed to settle reservation: %w", claim.Error)
+		}
+		if claim.RowsAffected != 1 {
+			return errReservationFinalized
+		}
 		var reservation model.BalanceReservation
 		if err := tx.First(&reservation, reservationID).Error; err != nil {
 			return fmt.Errorf("reservation not found: %w", err)
 		}
-		if reservation.Settled {
-			return fmt.Errorf("reservation already settled")
-		}
-		if err := tx.Model(&model.BalanceReservation{}).Where("id = ?", reservationID).
-			Update("settled", true).Error; err != nil {
-			return fmt.Errorf("failed to settle reservation: %w", err)
+		if err := billingRecordMatches(&reservation, record); err != nil {
+			return err
 		}
 		reserveAmount = reservation.Amount
 		// 解冻预估 + 扣实际支出: 同一原子更新, 余额不足时允许扣成 min_balance 之上不再检查 ——
 		// 预扣时已保证 balance - frozen >= estimate, 而实际支出按真实用量结算, 一般不超过预估。
-		if err := tx.Exec(
+		charge := tx.Exec(
 			"UPDATE users SET frozen = frozen - ?, balance = balance - ?, total_spent = total_spent + ? WHERE id = ?",
 			reservation.Amount, record.UserCost, record.UserCost, record.UserID,
-		).Error; err != nil {
-			return fmt.Errorf("failed to charge user: %w", err)
+		)
+		if charge.Error != nil {
+			return fmt.Errorf("failed to charge user: %w", charge.Error)
+		}
+		// RowsAffected 先验再记账: 用户行不存在必须整笔回滚, 不留"账单在、钱没动"的幽灵账。
+		// 只在确有金额变动时校验: MySQL 按"值是否变化"计行数, 全零空更新会报 0 行但用户行还在。
+		if (reservation.Amount != 0 || record.UserCost != 0) && charge.RowsAffected != 1 {
+			return fmt.Errorf("failed to charge user: user %d not found", record.UserID)
 		}
 		// 发布者收入按供货价计入; 渠道归属 admin 时同样计入其累计(平台口径)。
 		if record.OwnerRevenue != 0 {
-			if err := tx.Exec(
+			credit := tx.Exec(
 				"UPDATE users SET total_revenue = total_revenue + ? WHERE id = ?",
 				record.OwnerRevenue, record.OwnerID,
-			).Error; err != nil {
-				return fmt.Errorf("failed to credit owner: %w", err)
+			)
+			if credit.Error != nil {
+				return fmt.Errorf("failed to credit owner: %w", credit.Error)
+			}
+			if credit.RowsAffected != 1 {
+				return fmt.Errorf("failed to credit owner: user %d not found", record.OwnerID)
 			}
 		}
 		if err := tx.Create(record).Error; err != nil {
@@ -130,6 +176,10 @@ func BillingSettle(reservationID uint64, record *model.BillingRecord) error {
 			ModelName:    record.ModelName,
 		})
 	})
+	if errors.Is(err, errReservationFinalized) {
+		// 预扣已终态: 判定是同一笔结算的重复投递, 还是用量冲突/被释放。
+		return billingSettleReplay(reservationID, record)
+	}
 	if err != nil {
 		return err
 	}
@@ -174,22 +224,48 @@ func maybeRaiseLowBalanceAlert(ctx context.Context, userID uint, estimate float6
 }
 
 // BillingRelease 释放预扣不扣费, 用于失败或取消且没有产生用量的请求。
-func BillingRelease(reservationID uint64) error {
+//
+// 终态抢占与 BillingSettle 同一把钥匙(条件迁移 settled=false → true, 抢占是事务首个语句):
+// 结算与释放竞争时只有一方改到行、只有一方动冻结额。已被终态化的预扣重复释放按幂等成功返回 ——
+// 超时清理与请求收尾都会重试释放, 冻结额只能退一次; 释放也绝不会给已结算的预扣退款。
+// 预扣记录不存在仍报错, 防调用方拿着错误的 ID 静默装成功。
+func BillingRelease(reservationID uint64) error { return billingRelease(reservationID, nil) }
+
+func billingRelease(reservationID uint64, staleCutoff *time.Time) error {
 	var reservation model.BalanceReservation
-	if err := db.GetDB().First(&reservation, reservationID).Error; err != nil {
-		return fmt.Errorf("reservation not found: %w", err)
-	}
-	if reservation.Settled {
-		return nil
-	}
+	var released bool
 	err := db.GetDB().Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&model.BalanceReservation{}).Where("id = ?", reservationID).
-			Update("settled", true).Error; err != nil {
+		// Atomically recheck expiry under the same writer lock as intent creation.
+		query := tx.Model(&model.BalanceReservation{}).Where("id = ? AND settled = ?", reservationID, false)
+		if staleCutoff != nil {
+			query = query.Where("(lease_expires_at IS NOT NULL AND lease_expires_at <= ?) OR (lease_expires_at IS NULL AND created_at < ?)", time.Now(), *staleCutoff)
+		}
+		claim := query.Update("settled", true)
+		if claim.Error != nil {
+			return fmt.Errorf("failed to release reservation: %w", claim.Error)
+		}
+		if claim.RowsAffected != 1 {
+			return errReservationFinalized
+		}
+		if err := tx.First(&reservation, reservationID).Error; err != nil {
+			return fmt.Errorf("reservation not found: %w", err)
+		}
+		var intents int64
+		if err := tx.Model(&model.BillingSettlementTask{}).Where("reservation_id = ?", reservationID).Count(&intents).Error; err != nil {
 			return err
 		}
-		if err := tx.Exec("UPDATE users SET frozen = frozen - ? WHERE id = ?", reservation.Amount, reservation.UserID).Error; err != nil {
-			return err
+		if intents > 0 {
+			return ErrSettlementIntentPending
 		}
+		unfreeze := tx.Exec("UPDATE users SET frozen = frozen - ? WHERE id = ?", reservation.Amount, reservation.UserID)
+		if unfreeze.Error != nil {
+			return fmt.Errorf("failed to unfreeze balance: %w", unfreeze.Error)
+		}
+		// RowsAffected 先验再记流水: 用户行不存在整笔回滚。零额解冻是空更新, 不代表行缺失。
+		if reservation.Amount != 0 && unfreeze.RowsAffected != 1 {
+			return fmt.Errorf("failed to unfreeze balance: user %d not found", reservation.UserID)
+		}
+		released = true
 		// 释放流水: 冻结额全额退回可用余额。
 		return ledgerRecord(tx, model.BillingLedger{
 			UserID:       reservation.UserID,
@@ -200,22 +276,104 @@ func BillingRelease(reservationID uint64) error {
 			RequestID:    reservation.RequestID,
 		})
 	})
+	if errors.Is(err, errReservationFinalized) {
+		// 已被结算或释放: 幂等成功, 绝不二次解冻; 记录不存在则照旧报错。
+		var existing model.BalanceReservation
+		if err := db.GetDB().First(&existing, reservationID).Error; err != nil {
+			return fmt.Errorf("reservation not found: %w", err)
+		}
+		return nil
+	}
 	if err != nil {
 		return err
 	}
-	UserTouchBalance(reservation.UserID)
+	if released {
+		UserTouchBalance(reservation.UserID)
+	}
 	return nil
+}
+
+// billingRecordMatches 校验结算明细与预扣记录的归属一致: 冻结额从预扣行的用户解冻,
+// 扣款落在明细行的用户, 两者必须是同一个人、同一笔请求, 否则资金会被拆进两个账户。
+func billingRecordMatches(reservation *model.BalanceReservation, record *model.BillingRecord) error {
+	if reservation.UserID != record.UserID {
+		return fmt.Errorf("billing record user %d does not match reservation user %d", record.UserID, reservation.UserID)
+	}
+	if reservation.RequestID != record.RequestID {
+		return fmt.Errorf("billing record request %d does not match reservation request %d", record.RequestID, reservation.RequestID)
+	}
+	return nil
+}
+
+// billingSettleReplay 终态抢占失败后的收场判定(事务外自动提交读, 只看已提交终态):
+//   - 已落账的结算与本次经济内容一致 → 同一笔结算的重复投递, 幂等成功;
+//   - 已落账但用量/费用不一致 → ErrSettlementMismatch, 不静默接受不同的用量;
+//   - 没有计费明细 → 预扣是被释放的, ErrReservationReleased。
+func billingSettleReplay(reservationID uint64, record *model.BillingRecord) error {
+	var reservation model.BalanceReservation
+	if err := db.GetDB().First(&reservation, reservationID).Error; err != nil {
+		return fmt.Errorf("reservation not found: %w", err)
+	}
+	if err := billingRecordMatches(&reservation, record); err != nil {
+		return err
+	}
+	settled := []model.BillingRecord{}
+	if err := db.GetDB().
+		Where("request_id = ? AND user_id = ?", reservation.RequestID, reservation.UserID).
+		Find(&settled).Error; err != nil {
+		return fmt.Errorf("failed to read settled usage: %w", err)
+	}
+	for i := range settled {
+		if billingSameUsage(record, &settled[i]) {
+			return nil
+		}
+	}
+	if len(settled) == 0 {
+		return fmt.Errorf("%w: reservation %d was released without charge", ErrReservationReleased, reservationID)
+	}
+	return fmt.Errorf("%w: reservation %d was already settled", ErrSettlementMismatch, reservationID)
+}
+
+// billingMoneyEpsilon 金额比较容差: 库内 decimal(18,6) 会把小数舍到 6 位,
+// 重放明细与历史明细的最大差是 5e-7; 两个不同的 6 位小数至少差 1e-6, 不会被误判为相同。
+const billingMoneyEpsilon = 5e-7
+
+// billingSameUsage 判断两份结算的经济内容是否一致: 收付款三方归属与金额、token 用量、媒体用量。
+// 一致才允许按幂等重放处理; 任何一项不同都算另一笔账。模型名/渠道等展示快照不参与比较。
+func billingSameUsage(a, b *model.BillingRecord) bool {
+	return a.UserID == b.UserID &&
+		a.OwnerID == b.OwnerID &&
+		billingMoneyEqual(a.UserCost, b.UserCost) &&
+		billingMoneyEqual(a.OwnerRevenue, b.OwnerRevenue) &&
+		billingMoneyEqual(a.PlatformRevenue, b.PlatformRevenue) &&
+		a.InputToken == b.InputToken &&
+		a.OutputToken == b.OutputToken &&
+		a.CacheReadToken == b.CacheReadToken &&
+		a.CacheWriteToken == b.CacheWriteToken &&
+		a.MediaUnits.Images == b.MediaUnits.Images &&
+		a.MediaUnits.Videos == b.MediaUnits.Videos &&
+		billingMoneyEqual(a.MediaUnits.Seconds, b.MediaUnits.Seconds) &&
+		a.MediaUnits.Resolution == b.MediaUnits.Resolution
+}
+
+// billingMoneyEqual 金额在容差内相等。
+func billingMoneyEqual(a, b float64) bool {
+	diff := a - b
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff <= billingMoneyEpsilon
 }
 
 // BillingReleaseStale 回滚超过 olderThan 仍未结算的预扣, 由定时任务调用。
 func BillingReleaseStale(olderThan time.Duration) error {
 	cutoff := time.Now().Add(-olderThan)
 	stale := []model.BalanceReservation{}
-	if err := db.GetDB().Where("settled = ? AND created_at < ?", false, cutoff).Find(&stale).Error; err != nil {
+	if err := db.GetDB().Where("settled = ? AND ((lease_expires_at IS NOT NULL AND lease_expires_at <= ?) OR (lease_expires_at IS NULL AND created_at < ?))", false, time.Now(), cutoff).Where("NOT EXISTS (SELECT 1 FROM billing_settlement_tasks WHERE billing_settlement_tasks.reservation_id = balance_reservations.id)").Order("id ASC").Limit(200).Find(&stale).Error; err != nil {
 		return err
 	}
 	for _, reservation := range stale {
-		if err := BillingRelease(reservation.ID); err != nil {
+		if err := billingRelease(reservation.ID, &cutoff); err != nil && !errors.Is(err, ErrSettlementIntentPending) {
 			return err
 		}
 	}

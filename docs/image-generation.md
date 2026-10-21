@@ -12,6 +12,18 @@
 
 P2 预留: `ProtocolOpenAIVideo = 1<<5` 位已占用, 路由未注册。
 
+### 生图流式(P2)
+
+`/v1/images/generations` 支持 `stream:true`(gpt-image-1 等上游以 SSE 事件流下发图片):
+
+- 同协议透传: 客户端与上游都是 OpenAI Images 协议, 事件原样逐条回给客户端 —— `image_generation.partial_image`(中间进度) 与 `image_generation.completed`(最终图) 都照常转发, 客户端据此显示进度与最终结果。
+- 计费口径: 流末按 `image_generation.completed` 事件数张, 与同步响应数 `data[]` 张数完全同口径; `partial_image` 是中间态, 绝不进入张数统计。上游在 completed 事件带回 `usage` 时叠加 token 计费, 否则仅按张计费。
+- 终态判定: `data: [DONE]` 或上游干净关闭连接均视为流正常结束; 事件形式的 `error` 形状(带 message/type/code)立即终止本响应。
+- 单发语义: 生图流式与同步一样受媒体单发保护 —— 一旦真正发到上游, 任何失败都不再换目标重发(含超时与 5xx), 避免上游已受理生成后重复创建。
+- 实现: `internal/relay/image_stream.go`(终态判定与流末聚合), `internal/relay/handler.go`(放行 image 流式并在流末接入聚合)。库的 `ImageInboundTransformer.AggregateStreamChunks` 对生图判为不支持流式, 故转发侧自建 `{"data":[...]}` 计费体, 复用同步响应的全部计费与统计路径。
+
+测试: `internal/relay/image_stream_test.go`(终态判定单测、聚合口径单测、端到端透传与按张计费)。
+
 ## 关键设计
 
 ### 形态跟着协议位走

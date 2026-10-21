@@ -103,8 +103,14 @@ func RaiseAlertFacts(ctx context.Context, facts AlertFacts) bool {
 	// 外发要在调用方返回之后继续, 故脱掉请求的取消信号(保留其中的值):
 	// 直接用请求 ctx 的话, HTTP 处理函数一返回 ctx 就被取消, 发送会半路失败。
 	sendCtx := context.WithoutCancel(ctx)
+	// 分发器在 spawn 之前捕获: 派发协程不再并发读 AlertDispatcher 全局(注入方/测试可能改写它),
+	// 在途派发稳定走 spawn 时接好的那条线路。
+	dispatcher := AlertDispatcher
+	// 在途计数在 spawn 之前登记: Wait 与协程内的 Add 并发不构成同步, 必须先 Add 再 go。
+	alertDispatchPending.Add(1)
 	go func() {
-		if sendMultiChannelAlert(sendCtx, outbound) {
+		defer alertDispatchPending.Done()
+		if alertSendWith(dispatcher, sendCtx, outbound) {
 			// 回填「已通知」, 让界面能区分「已外发」与「仅站内」。
 			db.GetDB().Model(&model.ChannelAlert{}).Where("id = ?", record.ID).Update("notified", true)
 		}
@@ -273,9 +279,26 @@ var AlertDispatcher func(ctx context.Context, alert alert.Alert) bool
 // alertDispatchMissingOnce 让「未接线」只提示一次, 避免每条告警都刷日志。
 var alertDispatchMissingOnce sync.Once
 
+// alertDispatchPending 跟踪在途的异步外发协程。
+// 记账规则: Add 必须在 spawn 之前、Done 在协程收尾 —— 协程内 Add 与 Wait 并发不构成同步,
+// 等待方可能在协程起步前就返回, 收尾时改写 AlertDispatcher 会与在途协程互相踩。
+var alertDispatchPending sync.WaitGroup
+
+// alertDispatchWait 等待全部在途外发跑完: 返回后不再有派发协程读写 AlertDispatcher 全局,
+// notified 回填也已落库。测试收尾/优雅退出用。
+func alertDispatchWait() {
+	alertDispatchPending.Wait()
+}
+
 // sendMultiChannelAlert 把告警交给注入的分发器; 分发器内部按 alert_channels 决定实际渠道。
 func sendMultiChannelAlert(ctx context.Context, out alert.Alert) bool {
-	if AlertDispatcher == nil {
+	return alertSendWith(AlertDispatcher, ctx, out)
+}
+
+// alertSendWith 用指定分发器发送一条告警; dispatcher 为 nil 表示未接线。
+// 派发协程传 spawn 前捕获的分发器, 同步调用点传全局, 两边共用同一条发送语义。
+func alertSendWith(dispatcher func(context.Context, alert.Alert) bool, ctx context.Context, out alert.Alert) bool {
+	if dispatcher == nil {
 		// 未接线时告警只会留在站内, 配好的 Telegram/Email 收不到。
 		// 这正是曾经的静默失效点, 故留下一条可见日志而不是直接 return。
 		alertDispatchMissingOnce.Do(func() {
@@ -283,7 +306,7 @@ func sendMultiChannelAlert(ctx context.Context, out alert.Alert) bool {
 		})
 		return false
 	}
-	return AlertDispatcher(ctx, out)
+	return dispatcher(ctx, out)
 }
 
 // alertWebhookConfigured 判断告警 Webhook 是否已配置有效地址, 供设置页与健康页展示。

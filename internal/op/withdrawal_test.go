@@ -17,14 +17,14 @@ func withdrawalTestSetup(t *testing.T, username string, revenue float64) (model.
 		t.Fatalf("init db: %v", err)
 	}
 	for key, value := range map[model.SettingKey]string{
-		model.SettingKeyRechargeRate:                 "7.0",
-		model.SettingKeyWithdrawalMinAmount:          "50",
-		model.SettingKeyWithdrawalFeeRate:            "0.01",
-		model.SettingKeyWithdrawalFeeMin:             "1",
-		model.SettingKeyWithdrawalCooldownDays:       "0",
-		model.SettingKeyWithdrawalDailyCountLimit:    "0",
-		model.SettingKeyWithdrawalDailyAmountLimit:   "0",
-		model.SettingKeyWithdrawalAccountLockDays:    "0",
+		model.SettingKeyRechargeRate:               "7.0",
+		model.SettingKeyWithdrawalMinAmount:        "50",
+		model.SettingKeyWithdrawalFeeRate:          "0.01",
+		model.SettingKeyWithdrawalFeeMin:           "1",
+		model.SettingKeyWithdrawalCooldownDays:     "0",
+		model.SettingKeyWithdrawalDailyCountLimit:  "0",
+		model.SettingKeyWithdrawalDailyAmountLimit: "0",
+		model.SettingKeyWithdrawalAccountLockDays:  "0",
 	} {
 		if err := SettingUpsert(key, value); err != nil {
 			t.Fatalf("seed setting %s: %v", key, err)
@@ -265,6 +265,52 @@ func TestWithdrawCooldownBlocksImmature(t *testing.T) {
 	}
 	if _, err := WithdrawApply(context.Background(), withdrawalSpec(reseller.ID, model.RoleReseller, 60)); err != nil {
 		t.Fatalf("matured revenue must be withdrawable: %v", err)
+	}
+}
+
+// TestWithdrawCooldownExcludesRefundedRevenue 冷却期口径排除已退款账单:
+// 退款批准时 total_revenue 已冲回, 若退款行仍计进 matured, 它会把成熟收益顶到收益池上沿,
+// 冷却中的新收入就跟着被提前放出来(提现先于成熟)。
+func TestWithdrawCooldownExcludesRefundedRevenue(t *testing.T) {
+	reseller, _ := withdrawalTestSetup(t, "cooldown-refund", 0)
+	if err := SettingUpsert(model.SettingKeyWithdrawalCooldownDays, "7"); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().AddDate(0, 0, -10)
+	rows := []model.BillingRecord{
+		// 10 天前的两笔: 一笔仍是 settled(100), 一笔已退款(200, 收入已冲回)。
+		{OwnerID: reseller.ID, OwnerRevenue: 100, UserCost: 120, PlatformRevenue: 20, Status: model.BillingStatusSettled, CreatedAt: old},
+		{OwnerID: reseller.ID, OwnerRevenue: 200, UserCost: 250, PlatformRevenue: 50, Status: model.BillingStatusRefunded, CreatedAt: old},
+		// 今天新产生的 60 还在冷却期。
+		{OwnerID: reseller.ID, OwnerRevenue: 60, UserCost: 75, PlatformRevenue: 15, Status: model.BillingStatusSettled, CreatedAt: time.Now()},
+	}
+	for i := range rows {
+		if err := db.GetDB().Create(&rows[i]).Error; err != nil {
+			t.Fatalf("create billing record: %v", err)
+		}
+	}
+	// 收益池同步退款冲回后的口径: 100(成熟) + 60(冷却中)。
+	if err := db.GetDB().Exec("UPDATE users SET total_revenue = 160 WHERE id = ?", reseller.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := WithdrawSummaryGet(context.Background(), reseller.ID, model.RoleReseller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Revenue != 160 || summary.Available != 100 {
+		t.Fatalf("revenue=%v available=%v, want 160/100 (成熟收益只算未退款的冷却期外账单)", summary.Revenue, summary.Available)
+	}
+	// 110 > 成熟 100: 冷却中的 60 不能被"退款行虚高的 matured"提前放出。
+	if _, err := WithdrawApply(context.Background(), withdrawalSpec(reseller.ID, model.RoleReseller, 110)); err == nil {
+		t.Fatal("withdrawal beyond matured revenue must be rejected")
+	}
+	order, err := WithdrawApply(context.Background(), withdrawalSpec(reseller.ID, model.RoleReseller, 100))
+	if err != nil {
+		t.Fatalf("matured revenue must be withdrawable: %v", err)
+	}
+	if order.Amount != 100 {
+		t.Fatalf("amount=%v, want 100", order.Amount)
 	}
 }
 

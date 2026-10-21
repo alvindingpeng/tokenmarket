@@ -368,7 +368,8 @@ func updateUser(c *gin.Context) {
 		}
 		audit(c, "user.update", target, fmt.Sprintf("status: %s -> %s", old, req.Status))
 	}
-	if req.Balance != nil && *req.Balance != account.Balance {
+	// 即使目标值等于缓存余额也交由资金层核对数据库, 避免缓存过期时跳过调账。
+	if req.Balance != nil {
 		old := account.Balance
 		actorID, _ := middleware.CurrentUser(c)
 		if err := op.UserSetBalance(req.ID, *req.Balance, actorID, "", "管理员调整"); err != nil {

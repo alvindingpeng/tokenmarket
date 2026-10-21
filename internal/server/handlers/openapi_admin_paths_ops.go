@@ -140,6 +140,14 @@ func openAPIAdminPathsOps() gin.H {
 				query("offset", "偏移量", "int", false, nil)),
 		},
 		// ---------------- 运维 ----------------
+		"/api/v1/ops/billing-recovery/list": gin.H{
+			"get": adminPath("ops", "结算补偿任务", "管理员查看最近补偿任务，未解决任务优先；不返回计费快照。", "",
+				adminItems("补偿任务", "BillingSettlementTask", false), true, intQuery("limit", "条数(1-200)", 100)),
+		},
+		"/api/v1/ops/billing-recovery/run": gin.H{
+			"post": adminPath("ops", "执行到期结算补偿", "仅管理员。最多处理50个到期任务；不会强制执行人工核查项，也不改变原快照。错误不表示此前任务未落账，须查列表。", "",
+				adminEnvelope("本轮处理结束", gin.H{"type": "object", "properties": gin.H{"accepted": gin.H{"type": "boolean"}}}), true),
+		},
 		"/api/v1/ops/overview": gin.H{
 			"get": adminPath("ops", "运维概览",
 				"近 24 小时的请求、成功、失败、token 与成本, 加上当前在途请求数、渠道总数与启用数、24 小时内告警数。控制台首页轮询这一条。", "",

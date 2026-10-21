@@ -24,15 +24,24 @@ func raiseTestDB(t *testing.T) {
 
 // captureAlertDispatcher 把外发接到测试通道上并返回接收端。
 // 外发在独立协程里进行(不跟着请求 ctx 一起被取消), 因此用带缓冲通道取, 顺序无关。
+//
+// 收尾顺序是这里的关键: 先 alertDispatchWait 等在途派发全部跑完, 再还原 AlertDispatcher。
+// 旧实现在分发器里 sends.Add(1) 再在收尾 sends.Wait() —— Add 发生在派发协程内部, 与 Wait 并发
+// 不构成"协程已起步"的同步: Wait 可能在任何 Add 之前返回, 还原全局就与在途协程互相踩(数据竞争,
+// 外发还可能被换到别的分发器上)。在途计数现在由 alert.go 在 spawn 之前登记, Wait 才真正等到每一条。
 func captureAlertDispatcher(t *testing.T) chan alert.Alert {
 	t.Helper()
 	original := AlertDispatcher
-	out := make(chan alert.Alert, 8)
+	// 缓冲给足: 测试中途不排空也不该让分发器卡在发送上, 否则收尾的等待会死锁。
+	out := make(chan alert.Alert, 64)
 	AlertDispatcher = func(_ context.Context, a alert.Alert) bool {
 		out <- a
 		return true
 	}
-	t.Cleanup(func() { AlertDispatcher = original })
+	t.Cleanup(func() {
+		alertDispatchWait()
+		AlertDispatcher = original
+	})
 	return out
 }
 

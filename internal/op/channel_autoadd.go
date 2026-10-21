@@ -24,6 +24,7 @@ const autoAddModelLimit = 200
 //   - 授权只并入不覆盖: 探测协议位按位 OR 进该凭据的授权, 管理员手设的协议位不被清掉;
 //   - 单次新增上限 autoAddModelLimit, 超出部分跳过并截断;
 //   - 授权定稿后重算模型媒体形态(生图位 → kind=image), 并刷新渠道子表与分组缓存。
+//
 // 审计: 新增模型以 channel.model-added 落一条记录, 含数量与名称明细(截断时注明)。
 func AutoAddChannelModels(ctx context.Context, channelID int, config model.ChannelConfig, client *http.Client, actorID uint) error {
 	// 只处理启用且已填 Key 的凭据: 空 Key 探测必失败, 停用的凭据不该被自动启用。
@@ -167,4 +168,3 @@ func mergeFetchedForKey(tx *gorm.DB, channelID, keyID int, fetched []model.Chann
 	}
 	return added, truncated, nil
 }
-

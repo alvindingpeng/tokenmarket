@@ -33,6 +33,9 @@ import (
 // settleUpstream 按真实用量结算尝试并归还并发租约; 无用量归还预留。
 // 上游用量同时按渠道/凭据/渠道模型三个维度聚合, 供限流管理「实时用量」展示。
 func settleUpstream(reservation *ratelimit.Reservation, scopes []ratelimit.Scope, usage *llm.Usage) {
+	if reservation == nil {
+		return
+	}
 	if usage == nil {
 		reservation.Settle(0, 0, true)
 		return
@@ -109,17 +112,12 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			return
 		}
 
-		// 生图与生视频都只支持同步响应: 上游以事件流下发部分图片或视频的做法尚未纳入范围。
-		// 生视频的「异步」体现在任务对象上, 由客户端轮询取回, 不是流式响应。
-		if metadata.Streaming {
-			switch requestProtocol {
-			case model.ProtocolOpenAIImage:
-				rejectRequest(c, inbound, errors.New("image generation does not support streaming"))
-				return
-			case model.ProtocolOpenAIVideo:
-				rejectRequest(c, inbound, errors.New("video generation does not support streaming"))
-				return
-			}
+		// 生图支持流式: gpt-image-1 的 stream:true 下上游以 SSE 事件下发部分图与最终图
+		// (image_generation.partial_image / image_generation.completed), 见 image_stream.go。
+		// 生视频只支持同步响应: 它的「异步」体现在任务对象上, 由客户端轮询取回, 不是流式响应。
+		if metadata.Streaming && requestProtocol == model.ProtocolOpenAIVideo {
+			rejectRequest(c, inbound, errors.New("video generation does not support streaming"))
+			return
 		}
 
 		// API Key 限定了模型范围时只放行范围内的模型, 为空表示不限制。
@@ -139,6 +137,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			rejectRequest(c, inbound, errors.New("model not found"))
 			return
 		}
+		group = effectiveGroupForRequest(group, c.GetString("routing_preference"))
 
 		// 用户侧限流: RPM/TPM 按用户与 API Key 双维度一次预留, 触顶直接 429, 不产生日志行。
 		// 预留按估算 token 数, 请求结束时按真实用量结算; 生图正文可能是数 MB 的 base64, 与 token 无关, 按 1 计。
@@ -252,6 +251,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				}
 				continue
 			}
+			group = effectiveGroupForRequest(group, c.GetString("routing_preference"))
 
 			// 手动模式取人工指定的成员, 故障转移模式按优先级选择未禁用且不在冷却中的成员。
 			// 没有目标时等待重新选择, 期间人工切换渠道, 补齐成员或成员冷却到期即可让请求继续。
@@ -337,9 +337,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			cancelRound := func() {
 				cancelRoundCause(context.Canceled)
 			}
-			totalAttempts++
 			request.startRound(cancelRound, channel.Name+" · "+channelKey.Name, channelModel.Name, targetProtocol,
 				channel.ID, channel.UserID, channel.ShareCode, channelModel.SupplyPrice, item.ID)
+			request.setTargetKeyID(channelKey.ID)
 			// 媒体计费上下文: 仅媒体形态模型登记; 文本模型此项保持零值, settlement 走 token 路径不变。
 			// 选择上游时只在本组成员内挑选 kind=image 的成员, 故只要命中即可认定本轮用媒体计费。
 			if channelModel.Kind != model.MediaKindText {
@@ -375,14 +375,28 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			if err == nil {
 				decision := limiter.Reserve(upstreamScopes, upEstIn, upEstOut)
 				if !decision.Allowed {
-					recordScopeUsage(upstreamScopes, 0, 0, 0, 1) // 触顶拒绝计入上游各维度 rejected。
-					request.finishRound("upstream rate limited", "limited")
+					recordScopeUsage(upstreamScopes, 0, 0, 0, 1) // admission rejected; no upstream dispatch took place.
+					request.addRouteEvent("admission", "upstream_rate_limited")
+					// 尝试行照常收尾(startRound 已登记在途行), 但状态记 limited 而不是失败。
+					request.finishRound("admission rejected: upstream rate limited", "limited")
 					cancelRound()
 					releaseRouteProbe(group, item.ID)
+					// 准入拒绝没有真正向上游发出请求, 本就不消耗跨成员尝试预算(预算在真正向上游
+					// 发出请求时才递增): 否则按估算 token 预留被拒时(TPM 余量不足以容纳本请求但窗口
+					// 未满, 选路侧的 Blocked 判不出这种情况), 同一成员会被反复选中、反复拒绝,
+					// 几毫秒内烧光 MaxTotalAttempts, 请求以 503 告终。
+					// 不立刻重选而是走等待路径限速: 排队按 MaxWaitSeconds 预算等待, 等待关闭则按 429
+					// 立即回绝 —— 既不空转, 也不越过等待队列的公平性。
+					if !waitAvailable() {
+						return
+					}
 					continue
 				}
 				upstreamReservation = decision.Reservation
 				waiter.leave()
+				// 跨成员尝试预算只在真正向上游发出请求的轮次消耗: 准入拒绝与等待轮都不计,
+				// 换成员、超时与 5xx 等真实尝试照常计, MaxTotalAttempts 仍是重试上限。
+				totalAttempts++
 				request.addRouteEvent("dispatch", "upstream_admitted")
 			}
 
@@ -390,6 +404,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 
 			// 请求上游并等待首个有效响应: 非流式等待完整响应, 流式等待首个事件。
 			// 同协议渠道原样直通, 跨协议渠道经转换后请求; 此时尚未写给客户端, 失败仍可换目标重试。
+			dispatched := false // 本轮是否真正向上游发出了请求; 生图/生视频发出后一律不再重发(见 mediaOneShot)。
 			var result *upstreamResponse
 			if err == nil {
 				timeoutSeconds := group.RelayConfig.MemberNonStreamResponseTimeoutSeconds // 非流式等待完整响应, 流式分支改为首事件超时。
@@ -402,6 +417,8 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				timeoutTimer := time.AfterFunc(time.Duration(timeoutSeconds)*time.Second, func() {
 					cancelRoundCause(timeoutErr)
 				})
+				// 从这里开始本轮已真正向上游发出请求。
+				dispatched = true
 				// 客户端与渠道协议一致时直接透传, 其余组合通过 pipeline 转换。
 				if passthrough {
 					result, err = sendPassthrough(roundCtx, format, raw, channel, egress, outbound, metadata.Streaming, channelModel.Name)
@@ -426,6 +443,16 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			request.setRoundTiming(roundTiming.Snapshot())
 
 			if err != nil {
+				// 出站构造等未走到准入的失败同样消耗尝试预算: 否则配置性错误会让重试循环按成员
+				// 重试间隔一直空转到整请求超时(手动模式下没有冷却兜底, 尤其明显)。
+				if !dispatched {
+					totalAttempts++
+				}
+				// 媒体创建单发语义: 生图/生视频的请求一旦真正发到上游, 上游可能已落地副作用
+				// (生成图片、创建视频任务)。此后任何失败都不再换目标重发 —— 含 429、响应超时与 5xx:
+				// 重发必然重复创建, 而计费与任务归属只认最终响应, 被放弃那几轮的产物既不计费也无归属。
+				// 未真正发出请求的失败(选路、出站构造)不受影响, 仍按原流程换目标重试。
+				mediaOneShot := dispatched && isMediaProtocol(requestProtocol)
 				// 按错误分类决定重试/换渠道/透传: 语义(code/type/文本)优先、状态码兜底, 规则见 upstream_error.go。
 				class, ruleName := classifyUpstreamError(err)
 				request.addRouteEvent("error_class", ruleName)
@@ -443,6 +470,11 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				if context.Cause(roundCtx) == context.Canceled {
 					releaseRouteProbe(group, item.ID)
 					upstreamReservation.Settle(0, 0, true)
+					if mediaOneShot {
+						// 人工中止的媒体轮次同样只停不换目标: 本轮创建请求可能已被上游受理。
+						stop(err, upstreamStatus(err))
+						return
+					}
 					continue
 				}
 				// 上游限流视为限流而非故障: 标记该上游当前窗口触顶供选路跳过, 不计失败率也不冷却。
@@ -451,6 +483,11 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					upstreamReservation.Settle(0, 0, true)
 					limiter.MarkBlocked(upstreamScopes, upEstIn, upEstOut)
 					cancelRound()
+					if mediaOneShot {
+						// 429 也可能发生在上游受理创建之后, 媒体保守不重发, 直接透传限流错误。
+						stop(err, upstreamStatus(err))
+						return
+					}
 					continue
 				}
 				// 请求本身有问题或内容被安全策略拦截: 换渠道必然同样失败, 直接透传上游错误。
@@ -491,7 +528,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					coolItem(group, item.ID, classCooldownSeconds(class))
 					// 出口一并冷却: 下一轮即便还选同一个成员, 也不会再走这条刚失败的线路。
 					coolEgress(egress.ID, classCooldownSeconds(class))
-					if group.Mode != model.GroupModeManual && hasOtherEligible(group, item.ID) {
+					// 媒体单发: 冷却照做(保护其他请求不再撞同一个故障端点), 但不换目标重发,
+					// 落到下方按类别透传错误(模型缺失包一层友好提示)。
+					if !mediaOneShot && group.Mode != model.GroupModeManual && hasOtherEligible(group, item.ID) {
 						continue
 					}
 					if class == ErrorClassModel {
@@ -499,6 +538,11 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					} else {
 						stop(err, upstreamStatus(err))
 					}
+					return
+				}
+				// 媒体单发兜底: 响应超时、5xx 与网络错误这类"可重试"失败也不再重发, 上游可能已受理创建。
+				if mediaOneShot {
+					stop(err, upstreamStatus(err))
 					return
 				}
 				// 成员改变时重新开始累计该成员在本请求内的连续失败次数。
@@ -527,8 +571,6 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				}
 				continue
 			}
-			// 记录本轮已经取得可提交的上游响应。
-			request.finishRound("", "success")
 			// 请求级取消可能与上游成功同时到达, 此时不应提交响应或继续重试。
 			if ctx.Err() != nil {
 				releaseRouteProbe(group, item.ID)
@@ -537,13 +579,18 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					result.events.Close()
 				}
 				cancelRound()
-				request.finishRound(ctx.Err().Error(), attemptStatusOf(ctx.Err()))
-				request.markCanceled(ctx.Err(), "", result.usage)
+				finalizeCanceledSuccess(request, result, ctx.Err())
 				if ctx.Err() == context.DeadlineExceeded && !c.Writer.Written() {
 					response := inbound.TransformError(context.WithoutCancel(ctx), &llm.ResponseError{StatusCode: http.StatusGatewayTimeout, Detail: llm.ErrorDetail{Message: "request deadline exceeded", Type: "relay_timeout"}})
 					c.Data(response.StatusCode, "application/json", response.Body)
 				}
 				return
+			}
+			// 记录本轮已经取得可提交的上游响应。
+			// 流式响应此刻只拿到首个事件, 响应尚未交付完: 终态由流末分支统一收尾(见下方 finishRound),
+			// 这里提前记成功会让尝试行先写 success 再被覆盖, 也把在途的流伪装成已成功。
+			if !metadata.Streaming {
+				request.finishRound("", "success")
 			}
 			roundWaitTime := time.Since(roundStartedAt).Milliseconds() // 流式响应只统计等待首帧的时间。
 			// 上游成功后解除该成员的冷却与探测占用, 并按路由配置开始亲和。
@@ -582,10 +629,12 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				_ = op.ChannelKeyStatsUpdate(channelKey.ID, metrics)
 				op.ChannelDailyStatsUpdate(channel.ID, metrics)
 				op.ChannelModelDailyStatsUpdate(channelModel.ID, metrics)
-				request.markCommitted(false)
 				n, err := c.Writer.Write(result.body)
 				if err == nil && n != len(result.body) {
 					err = io.ErrShortWrite
+				}
+				if n > 0 {
+					request.markCommitted(false)
 				}
 				if err != nil {
 					if ctx.Err() != nil {
@@ -624,13 +673,13 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 						err = encodeErr
 						break
 					}
-					if !committed {
-						request.markCommitted(true)
-						committed = true
-					}
 					n, writeErr := c.Writer.Write(encoded.Bytes())
 					if writeErr == nil && n != encoded.Len() {
 						writeErr = io.ErrShortWrite
+					}
+					if !committed && n > 0 {
+						request.markCommitted(true)
+						committed = true
 					}
 					if writeErr != nil {
 						err = writeErr
@@ -660,12 +709,29 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			result.events.Close()
 			cancelRound()
 			// 使用客户端协议转换器聚合已转发事件, 统一取得最终响应正文和用量。
-			responseBody, meta, aggregateErr := inbound.AggregateStreamChunks(context.WithoutCancel(ctx), chunks)
-			if aggregateErr == nil {
+			// 生图流式不走转换器聚合: 库的生图入站把流式聚合判为不支持, 而 OpenAIImages 流式
+			// 以 image_generation.completed 事件携带最终图, 按事件自建 {"data":[...]} 计费体,
+			// 张数口径与同步响应一致(数 data 数组长度)。
+			var responseBody []byte
+			var meta llm.ResponseMeta
+			var aggregateErr error
+			if requestProtocol == model.ProtocolOpenAIImage {
+				responseBody, meta = aggregateImageStreamEvents(chunks)
 				result.usage = meta.Usage
+			} else {
+				responseBody, meta, aggregateErr = inbound.AggregateStreamChunks(context.WithoutCancel(ctx), chunks)
+				if aggregateErr == nil {
+					result.usage = meta.Usage
+				}
 			}
+			// 结算口径(显式策略, 不是顺手为之): 部分流已写给客户端、却聚合不出用量(上游没发用量帧
+			// 或聚合失败)时, 按「未产生用量」结算 —— 释放预扣、不扣费。已交付的部分输出要不要计费
+			// 是计费侧的未决口径(估读 token 或按输出字符折算都会自造账目), 定案前转发侧只按上游
+			// 报告的用量结算, 绝不发明计费。
 			settleUpstream(upstreamReservation, upstreamScopes, result.usage)
-			if ctx.Err() != nil {
+			// 客户端取消只在「流没有完整送达」时才覆盖错误: 结束事件已转发且无错误的轮次
+			// 是完整交付, 此刻与断开竞态发生也必须保住成功终态, 否则已计费的成功被记成取消。
+			if ctx.Err() != nil && !(last && err == nil) {
 				err = ctx.Err()
 			}
 			if err != nil {
@@ -721,7 +787,7 @@ func reserveBalance(request *RequestState, group model.Group) error {
 		}
 	}
 	capTokens, err := op.SettingGetInt(model.SettingKeyBalanceReserveCap)
-	if err != nil || capTokens < 0 {
+	if err != nil || capTokens <= 0 {
 		capTokens = 4096
 	}
 	// 读写各按上限估算: 输入侧保守按输出上限同样计, 覆盖常见长上下文请求。
@@ -768,6 +834,16 @@ func attemptStatusOf(err error) string {
 	}
 	class, _ := classifyUpstreamError(err)
 	return attemptStatusOfClass(class)
+}
+
+// finalizeCanceledSuccess 处理「请求级取消与上游成功同时到达」的收尾: 本轮已拿到可提交的上游响应,
+// 不再提交也不再重试, 以取消终态定稿。尝试行只按取消收尾一次(不再先记成功再覆盖),
+// 正文随终态保留: 非流式已完整取得 result.body, 生图/生视频的图片或视频任务可能已在上游落地,
+// 丢掉正文会让 recordVideoJob 与媒体用量双双落空 —— 冻结额按「未产生用量」释放, 上游却已产生成本。
+// 流式响应的正文要到聚合后才有, result.body 恒为空, 行为与原先一致。
+func finalizeCanceledSuccess(request *RequestState, result *upstreamResponse, cause error) {
+	request.finishRound(cause.Error(), attemptStatusOf(cause))
+	request.markCanceled(cause, string(result.body), result.usage)
 }
 
 // rejectRateLimited 以 429 拒绝触顶的请求, 带 Retry-After 与限流错误类型供客户端退避。

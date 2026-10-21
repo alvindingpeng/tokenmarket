@@ -13,10 +13,10 @@ import (
 
 // TradeDetail 聚合单笔调用的交易全貌: 计费明细、请求上下文与余额流水
 type TradeDetail struct {
-	Record    model.BillingRecord   `json:"record"`
-	Request   *model.RelayRequest   `json:"request,omitempty"`
-	Ledgers   []model.BillingLedger `json:"ledgers"`
-	Disputes  []model.Dispute       `json:"disputes"`
+	Record   model.BillingRecord   `json:"record"`
+	Request  *model.RelayRequest   `json:"request,omitempty"`
+	Ledgers  []model.BillingLedger `json:"ledgers"`
+	Disputes []model.Dispute       `json:"disputes"`
 }
 
 // TradeDetailGet 依据 BillingRecord.ID 获取统一交易详情并执行权限校验
@@ -80,17 +80,17 @@ func DisputeCreate(ctx context.Context, userID uint, recordID uint64, reason str
 	}
 
 	dispute := model.Dispute{
-		RecordID:   record.ID,
-		RequestID:  record.RequestID,
-		UserID:     record.UserID,
-		OwnerID:    record.OwnerID,
-		ChannelID:  record.ChannelID,
-		ModelName:  record.ModelName,
-		UserCost:   record.UserCost,
-		Reason:     reason,
-		Status:     model.DisputeStatusPending,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		RecordID:  record.ID,
+		RequestID: record.RequestID,
+		UserID:    record.UserID,
+		OwnerID:   record.OwnerID,
+		ChannelID: record.ChannelID,
+		ModelName: record.ModelName,
+		UserCost:  record.UserCost,
+		Reason:    reason,
+		Status:    model.DisputeStatusPending,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 	if err := db.GetDB().WithContext(ctx).Create(&dispute).Error; err != nil {
 		return nil, fmt.Errorf("failed to create dispute: %w", err)

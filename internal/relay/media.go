@@ -110,9 +110,9 @@ func multipartBodySummary(form *multipart.Form) string {
 		Size     int64  `json:"size"`
 	}
 	summary := struct {
-		Multipart bool          `json:"multipart"`
+		Multipart bool              `json:"multipart"`
 		Fields    map[string]string `json:"fields"`
-		Files     []fileSummary `json:"files"`
+		Files     []fileSummary     `json:"files"`
 	}{Multipart: true, Fields: map[string]string{}}
 	for key, values := range form.Value {
 		if len(values) > 0 {

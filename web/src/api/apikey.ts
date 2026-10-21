@@ -17,6 +17,13 @@ export interface APIKey {
     expire_at?: number; // Unix 时间戳（秒），不传表示永不过期
     max_cost?: number; // 不传表示无限制
     supported_models: string[]; // 允许访问的分组名称，空数组表示不限制
+    // 选路偏好：inherit 跟随模型分组；其余为自动选路策略（只对可用成员排序，手动固定成员优先）。
+    routing_preference?: 'inherit' | 'balanced' | 'price' | 'latency' | 'success';
+    // 配额限制：0 表示不限制，按每日重置。编辑时必须原样回传，否则更新接口会把它们清零。
+    quota_requests?: number;
+    quota_input_tokens?: number;
+    quota_output_tokens?: number;
+    quota_reset_hour?: number;
 }
 
 /**

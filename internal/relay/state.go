@@ -3,6 +3,7 @@ package relay
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -92,6 +93,7 @@ type RequestState struct {
 	targetMediaSupply model.MediaPrice // 最终轮次落地模型的媒体供货价快照(图片/视频), text 模型为零值。
 	targetKind        model.MediaKind  // 最终轮次落地模型的媒体形态, 用于区分计费路径。
 	targetGrantID     int              // 最终轮次落地渠道授权 ID, 生视频任务据此落库归属供后续查询定位上游。
+	targetKeyID       int              // 最终轮次实际用于上游请求的渠道凭据 ID; 轮换选路下与授权绑定的凭据不同, 生视频任务据此落库创建凭据。
 	requestedMedia    model.MediaUnits // 客户端请求声明的媒体用量(生视频的时长与分辨率档位), 上游未回显时按此结算。
 
 	requestCtx    context.Context    // 请求级上下文, 同时约束等待、当前轮次和后续重试。
@@ -191,7 +193,41 @@ func (r *RequestState) setMediaTarget(kind model.MediaKind, media model.MediaPri
 	r.targetGrantID = grantID
 }
 
+// setTargetKeyID 登记本轮真正用于上游请求的渠道凭据 ID。轮换选路下它与授权绑定的凭据不同,
+// 生视频任务归属据此记录"创建时实际使用的凭据"(只记 ID, 不记凭据明文), 查询与取消才能用同一把凭据定位上游。
+// 选完凭据后由转发流程调用; 未调用时 recordVideoJob 按 startRound 登记的凭据名回落解析。
+func (r *RequestState) setTargetKeyID(keyID int) {
+	mu.Lock()
+	defer mu.Unlock()
+	r.targetKeyID = keyID
+}
+
+// creationKeyIDLocked 还原创建任务时实际使用的渠道凭据 ID, 供任务归属落库; 调用方必须持有锁。
+// 优先用 setTargetKeyID 登记的精确 ID; 没有登记时按 startRound 记下的「渠道名 · 凭据名」在渠道内反查 ——
+// 凭据名在渠道内唯一, 这条回落让归属在转发流程尚未登记凭据 ID 时也能记对(拼接格式与 startRound 一致)。
+// 两者都拿不到时记 0, 查询侧回落授权绑定的凭据(旧行为)。凭据明文不进任务记录, 只记主键。
+func (r *RequestState) creationKeyIDLocked() int {
+	if r.targetKeyID > 0 {
+		return r.targetKeyID
+	}
+	if r.targetChannelID <= 0 || r.TargetChannelKey == "" {
+		return 0
+	}
+	channel, err := op.ChannelGet(r.targetChannelID)
+	if err != nil {
+		return 0
+	}
+	for _, key := range op.ChannelKeysByChannel(channel.ID) {
+		if r.TargetChannelKey == channel.Name+" · "+key.Name {
+			return key.ID
+		}
+	}
+	return 0
+}
+
 // recordVideoJob 把生视频任务的归属落库, 供后续 /v1/videos/{id} 查询与取消定位上游。
+// 除授权外一并记下创建时实际使用的渠道凭据 ID: 任务只在创建它的凭据名下可见,
+// 只记授权会在凭据轮换后查不回任务。
 // 只在拿到任务 ID 的成功响应上调用; 落库失败只记日志, 不影响已经完成的转发与计费。
 func (r *RequestState) recordVideoJob() {
 	if r.targetGrantID <= 0 || r.responseBody == "" {
@@ -208,6 +244,8 @@ func (r *RequestState) recordVideoJob() {
 		UserID:         r.UserID,
 		GroupID:        r.GroupID,
 		ChannelGrantID: r.targetGrantID,
+		ChannelID:      r.targetChannelID,
+		ChannelKeyID:   r.creationKeyIDLocked(),
 		ModelName:      r.TargetModel,
 		CreatedAt:      time.Now(),
 	}
@@ -263,11 +301,36 @@ func (r *RequestState) setRouteDecision(decision model.RelayRouteDecision) {
 	r.addRouteEventLocked("selection", decision.Reason)
 }
 
-// SetReservation 登记余额预扣记录, 供请求结束时结算或释放。
+// SetReservation 登记余额预扣记录并启动预扣续租心跳, 供请求结束时结算或释放。
+//
+// 心跳只在"请求仍在途且确有预扣"时启动: 已定稿的请求不会再结算, 留一条续租协程只会变成
+// 无人停止的泄漏; 预扣 ID 为 0(无预扣)同样不启动。重复登记按"换心跳"处理, 任何时刻每个
+// 请求至多一条续租协程。
+//
+// 旧心跳的停止(join)放在全局锁外: 心跳的失效关闭路径要拿这把锁, 持锁等待它就是死锁。
+// 续租协程启动时捕获请求级取消句柄(requestCancel)的函数值, 失效关闭直接调它, 不回查请求表。
 func (r *RequestState) SetReservation(reservationID uint64) {
 	mu.Lock()
-	defer mu.Unlock()
 	r.reservationID = reservationID
+	if reservationID == 0 || r.finalized || r.requestCancel == nil {
+		if r.finalized && reservationID != 0 {
+			// 预扣到得太晚(请求已被定稿): relay 不再结算这笔, 登记保留在请求上; 冻结额怎么退
+			// 只能靠预扣清扫或人工处理, 这里不许诺兜底。绝不启动心跳 —— 续一个永远没人停的
+			// 租约比冻结泄漏更糟。
+			log.Warnf("reservation %d arrived after request %d finalized; relay will not settle it", reservationID, r.ID)
+		}
+		if !r.finalized && r.requestCancel == nil && reservationID != 0 {
+			// 请求上下文已被取消(取消句柄已被取走), 请求正在收尾, 失效关闭也没了取消对象。
+			log.Warnf("reservation %d attached to request %d with canceled context; no lease heartbeat started", reservationID, r.ID)
+		}
+		previous := takeBillingLeaseLocked(r.ID)
+		mu.Unlock()
+		stopBillingLease(previous)
+		return
+	}
+	previous := startBillingLeaseLocked(r.ID, reservationID, r.requestCancel)
+	mu.Unlock()
+	stopBillingLease(previous)
 }
 
 // setRoundTiming 登记本轮上游请求的连接耗时分解。
@@ -388,19 +451,18 @@ func (r *RequestState) finishStream() {
 // markSucceeded 以成功终态定稿请求。
 func (r *RequestState) markSucceeded(responseBody string, usage *llm.Usage) {
 	mu.Lock()
-	defer mu.Unlock()
-
 	r.Status = StatusSuccess
 	r.Error = ""
 	r.responseBody = responseBody
-	r.finishLocked(usage)
+	lease := r.finishLocked(usage)
+	mu.Unlock()
+	// 结算意图已被受理(或零用量显式释放)之后才停心跳; join 一律在全局锁外。
+	stopBillingLease(lease)
 }
 
 // markFailed 以失败终态定稿请求, 最终错误取自本次失败原因。
 func (r *RequestState) markFailed(err error, responseBody string, usage *llm.Usage) {
 	mu.Lock()
-	defer mu.Unlock()
-
 	if r.requestCtx.Err() == context.Canceled {
 		r.Status = StatusCanceled
 		r.Error = r.requestCtx.Err().Error()
@@ -411,14 +473,15 @@ func (r *RequestState) markFailed(err error, responseBody string, usage *llm.Usa
 	if responseBody != "" {
 		r.responseBody = responseBody
 	}
-	r.finishLocked(usage)
+	lease := r.finishLocked(usage)
+	mu.Unlock()
+	// 结算意图已被受理(或零用量显式释放)之后才停心跳; join 一律在全局锁外。
+	stopBillingLease(lease)
 }
 
 // markCanceled 以取消终态定稿请求, 用于客户端提前断开或主动取消。
 func (r *RequestState) markCanceled(err error, responseBody string, usage *llm.Usage) {
 	mu.Lock()
-	defer mu.Unlock()
-
 	r.Status = StatusCanceled
 	if err == context.DeadlineExceeded {
 		r.Status = StatusFailed
@@ -427,13 +490,18 @@ func (r *RequestState) markCanceled(err error, responseBody string, usage *llm.U
 	if responseBody != "" {
 		r.responseBody = responseBody
 	}
-	r.finishLocked(usage)
+	lease := r.finishLocked(usage)
+	mu.Unlock()
+	// 结算意图已被受理(或零用量显式释放)之后才停心跳; join 一律在全局锁外。
+	stopBillingLease(lease)
 }
 
 // finishLocked 写入用量和费用, 发布终态, 更新请求级统计并裁剪历史; 调用方必须持有锁。
-func (r *RequestState) finishLocked(usage *llm.Usage) {
+// 返回本请求摘下的预扣续租心跳(可能为 nil), 由调用方在全局锁外停止: 心跳停止必须晚于
+// 结算意图受理(或零用量显式释放), 早停会让结算还没落库的预扣先失去租约保护。
+func (r *RequestState) finishLocked(usage *llm.Usage) *billingLease {
 	if r.finalized {
-		return
+		return nil
 	}
 	r.finalized = true
 	r.addRouteEventLocked("finished", string(r.Status))
@@ -481,11 +549,14 @@ func (r *RequestState) finishLocked(usage *llm.Usage) {
 		_ = op.StatsAPIKeyUpdate(r.apiKeyID, metrics)
 	}
 	r.settleBillingLocked(usage)
+	// 请求已终态, 停掉心跳; 持久任务独立保护冻结额。入队失败仍须告警/人工对账。
+	lease := takeBillingLeaseLocked(r.ID)
 	r.settleRateLimitLocked(usage)
 	persistRequestLocked(r)
 	publishRequestLocked(r)
 
 	trimLocked()
+	return lease
 }
 
 // trimLocked 裁剪终态历史: 超出 maxFinished 的最旧记录整条丢弃, 超出 maxBodyKeep 的只释放正文。
@@ -544,13 +615,28 @@ func (r *RequestState) settleRateLimitLocked(usage *llm.Usage) {
 
 // settleBillingLocked 结算或释放本请求的余额预扣; 无用量(失败/取消且上游未回用量)即全额释放。
 // 计费口径: 用户按上浮后的用户价支出, 发布者按供货价收入, 平台收入为差额; 全量计费含 admin。
-// 调用方必须持有锁; 计费落库失败不影响请求终态, 由预扣超时回滚兜底, 并记日志与告警而非静默吞错。
+// 调用方必须持有锁; 结算失败不影响请求终态, 记日志与告警而非静默吞错。
+//
+// BillingSettle 返回 nil 表示已结算; ErrSettlementQueued 表示意图已持久化但尚未确认完成。
+// 补偿任务重试持久意图; 其他错误不承诺入队。预扣超时清理绝不是
+// 结算的兜底: 它只把冻结额退回可用余额, 从不补扣这笔费用。
+//
+// 失败处置: 终态操作(结算/释放)被受理才清掉请求上的预扣登记; 失败时登记原样保留 ——
+// 绝不"清了唯一的记录再指望清扫兜底"。数据库整体不可用时还有一段不可消除的持久化窗口:
+// 结算意图无处可写, 请求上的登记是本进程内的唯一痕迹, 进程一崩这笔费用连证据都没了。
+// relay 此时只能保留登记并记日志/告警(告警同样要落库, 也可能发不出去), 不做任何持久化承诺;
+// 事后只能靠对账(billing_reconcile / 财务审计)人工收场。
 func (r *RequestState) settleBillingLocked(usage *llm.Usage) {
 	if r.reservationID == 0 {
 		return
 	}
 	reservationID := r.reservationID
-	r.reservationID = 0
+	// markHandled 只在终态操作被受理后清登记; 失败路径不调用它, 登记留在请求上。
+	markHandled := func() {
+		if r.reservationID == reservationID {
+			r.reservationID = 0
+		}
+	}
 	read, output, cacheRead, cacheWrite := usageBuckets(usage)
 	supply := r.targetSupplyPrice
 	markupRatio := op.SettingGetFloat(model.SettingKeyMarkupRatio)
@@ -590,8 +676,11 @@ func (r *RequestState) settleBillingLocked(usage *llm.Usage) {
 		if mediaUnits == (model.MediaUnits{}) && usage == nil {
 			// 无媒体用量也无 token 用量: 视为未产生计费用量, 全额释放预扣。
 			if err := op.BillingRelease(reservationID); err != nil {
-				log.Warnf("billing release failed for reservation %d: %v", reservationID, err)
+				log.Warnf("billing release failed for reservation %d request %d: %v", reservationID, r.ID, err)
+				// 释放失败: 不动钱也不清登记, 冻结额仍挂在用户账上, 登记留在请求上供重试/人工处理。
+				return
 			}
+			markHandled()
 			return
 		}
 		userMedia := r.targetMediaSupply.Scale(markupRatio)
@@ -605,15 +694,25 @@ func (r *RequestState) settleBillingLocked(usage *llm.Usage) {
 		record.PriceSource = "channel_model_media"
 	} else if usage == nil {
 		if err := op.BillingRelease(reservationID); err != nil {
-			log.Warnf("billing release failed for reservation %d: %v", reservationID, err)
+			log.Warnf("billing release failed for reservation %d request %d: %v", reservationID, r.ID, err)
+			// 释放失败: 不动钱也不清登记, 同上。
+			return
 		}
+		markHandled()
 		return
 	}
 	record.UserCost = userCost
 	record.OwnerRevenue = ownerRevenue
-	if err := op.BillingSettle(reservationID, record); err != nil {
-		log.Warnf("billing settle failed for reservation %d request %d: %v", reservationID, r.ID, err)
-		// 结算失败等于这笔钱没扣出去, 成本由网关方垫付: 管理员要能按请求号回到现场。
+	if settleErr := op.BillingSettle(reservationID, record); settleErr == nil {
+		// 已确认结算完成, 清掉本进程登记。
+		markHandled()
+		return
+	} else {
+		log.Warnf("billing settle failed for reservation %d request %d: %v", reservationID, r.ID, settleErr)
+		// 失败不能证明钱没动; 持久任务由恢复器处理, 其他情况需人工核查。
+		if errors.Is(settleErr, op.ErrSettlementQueued) {
+			markHandled()
+		}
 		op.RaiseAlertFacts(context.Background(), op.AlertFacts{
 			Kind:   "billing_failed",
 			Reason: fmt.Sprintf("billing settle failed: reservation=%d", reservationID),
@@ -622,10 +721,32 @@ func (r *RequestState) settleBillingLocked(usage *llm.Usage) {
 				{Label: "预扣记录", Value: fmt.Sprintf("#%d", reservationID)},
 				{Label: "模型", Value: r.Model},
 				{Label: "应扣费用", Value: fmt.Sprintf("%.6f", record.UserCost)},
-				{Label: "错误", Value: err.Error()},
-				{Label: "建议", Value: "该笔费用未落账, 请在运维页对账后手工处理"},
+				{Label: "错误", Value: settleErr.Error()},
+				{Label: "口径", Value: billingSettleFailureText(settleErr)},
+				{Label: "建议", Value: "该笔费用未确认落账, 请在运维页核对计费恢复任务与对账结果后手工处理; 预扣超时只会退回冻结额, 不会补扣该费用"},
 			},
 		})
+	}
+}
+
+// billingSettleFailureText 把结算失败翻译成给管理员看的处置口径。
+//
+// nil 表示已结算; ErrSettlementQueued 表示意图已持久化但完成状态不确定。
+// 其他错误不承诺持久入队; 不得把失败解释为钱一定没动。
+//
+// 同预扣重复投递的账目冲突有专门哨兵(ErrSettlementMismatch / ErrReservationReleased),
+// 语义明确, 单独说明: 这类账不该被恢复任务反复重试, 人工确认哪份为准。
+// 任何分支都不拿预扣超时释放当兜底: 释放只退回冻结额, 从不补扣费用。
+func billingSettleFailureText(err error) string {
+	switch {
+	case errors.Is(err, op.ErrSettlementQueued):
+		return "结算意图已持久化, 尚未确认是否落账; 请查看补偿队列, 不要重复手动扣款"
+	case errors.Is(err, op.ErrSettlementMismatch):
+		return "同一预扣已按不同用量结算过, 拒绝入账; 不可重试, 需人工对账确认哪份用量为准"
+	case errors.Is(err, op.ErrReservationReleased):
+		return "预扣已按未计费释放, 拒绝补扣; 不可重试, 需人工确认是否漏计费"
+	default:
+		return "未确认是否落账或已持久入队, 请核查请求、冻结额和流水; 不可假设补偿一定会执行"
 	}
 }
 

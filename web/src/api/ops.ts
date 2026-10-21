@@ -2,6 +2,28 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from './client';
 import { POLL_SLOW } from '@/lib/polling';
 
+export type BillingRecoveryRow = {
+    id: number; reservation_id: number; request_id: string; user_id: number;
+    status: string; attempts: number; next_attempt_at: string | null;
+    last_error: string; created_at: string; updated_at: string;
+};
+
+export function useBillingRecovery() {
+    return useQuery({
+        queryKey: ['ops', 'billing-recovery'],
+        queryFn: () => apiRequest<{ items: BillingRecoveryRow[] }>('/api/v1/ops/billing-recovery/list?limit=100').then(r => r.items),
+        refetchInterval: POLL_SLOW,
+    });
+}
+
+export function useRunBillingRecovery() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: () => apiRequest<{ accepted: boolean }>('/api/v1/ops/billing-recovery/run', { method: 'POST', timeoutMs: 35000 }),
+        onSettled: () => qc.invalidateQueries({ queryKey: ['ops', 'billing-recovery'] }),
+    });
+}
+
 export type ReconcileRow = {
     id: number; day: string; records: number; user_cost: number; owner_revenue: number;
     platform_revenue: number; duplicated: number; missing: number; stale_hold: number;

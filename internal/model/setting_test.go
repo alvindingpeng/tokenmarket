@@ -8,6 +8,26 @@ import (
 	"testing"
 )
 
+func TestSettingValidateFinite(t *testing.T) {
+	cases := []struct {
+		key     SettingKey
+		value   string
+		wantErr bool
+	}{
+		{SettingKeyMarkupRatio, "NaN", true},
+		{SettingKeyMarkupRatio, "100", false},
+		{SettingKeyMinBalance, "Inf", true},
+		{SettingKeyMinBalance, "0", false},
+	}
+	for _, tc := range cases {
+		setting := Setting{Key: tc.key, Value: tc.value}
+		err := setting.Validate()
+		if (err != nil) != tc.wantErr {
+			t.Errorf("%s=%s error=%v wantErr=%v", tc.key, tc.value, err, tc.wantErr)
+		}
+	}
+}
+
 // TestDefaultSettingsCoversEveryKey 守护设置键的播种完整性。
 // 只有出现在 DefaultSettings() 里的键才会在启动时落库; 漏播种的键不存在于 settingCache,
 // SettingGetString 与 SettingSetString 会一律返回 "setting not found" ——

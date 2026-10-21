@@ -102,6 +102,7 @@ func APIKeyAuth() gin.HandlerFunc {
 			return
 		}
 		c.Set("supported_models", apiKeyObj.SupportedModels)
+		c.Set("routing_preference", apiKeyObj.RoutingPreference)
 		c.Set("api_key_id", apiKeyObj.ID)
 		c.Set("api_key_user_id", int(apiKeyObj.UserID))
 		c.Next()

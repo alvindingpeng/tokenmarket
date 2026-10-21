@@ -21,7 +21,7 @@ import (
 func ForwardVideoTask(deleteTask bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		jobID := strings.TrimSpace(c.Param("id"))
-		if jobID == "" {
+		if !safeVideoTaskID(jobID) {
 			rejectVideoTask(c, http.StatusBadRequest, "video task id is required")
 			return
 		}
@@ -48,11 +48,12 @@ func ForwardVideoTask(deleteTask bool) gin.HandlerFunc {
 		}
 		response, err := httpclient.NewHttpClientWithClient(httpClient).Do(c.Request.Context(), request)
 		if err != nil {
-			rejectVideoTask(c, http.StatusBadGateway, err.Error())
+			// Do not expose the upstream URL or transport internals to callers.
+			rejectVideoTask(c, http.StatusBadGateway, "video task upstream request failed")
 			return
 		}
 		// 上游已确认删除时同步清掉本地归属, 否则会留下一条再也查不到的任务记录。
-		if deleteTask && response.StatusCode < http.StatusBadRequest {
+		if deleteTask && response.StatusCode >= http.StatusOK && response.StatusCode < http.StatusMultipleChoices {
 			if err := op.VideoJobDelete(jobID); err != nil {
 				log.Warnf("failed to delete video job %s: %v", jobID, err)
 			}
@@ -61,22 +62,45 @@ func ForwardVideoTask(deleteTask bool) gin.HandlerFunc {
 	}
 }
 
-// buildVideoTaskRequest 按任务归属还原创建时的渠道授权, 并据此构造查询或取消请求。
-// 归属里的授权, 凭据或渠道已被删除时无法定位上游, 直接返回错误而不是退到别的成员:
-// 任务 ID 只对创建它的那家上游有效, 换个渠道查必然查不到, 只会把 404 伪装成上游的答复。
+// buildVideoTaskRequest 按任务归属还原创建时的渠道授权与凭据, 并据此构造查询或取消请求。
+// 归属里的授权、渠道或凭据已无法还原时直接返回错误, 而不是退到别的授权或别的凭据:
+// 任务 ID 只对创建它的那家上游有效, 换个渠道或换把凭据查必然查不到, 只会把 404 伪装成上游的答复。
 func buildVideoTaskRequest(ctx context.Context, job model.VideoJob, jobID string, deleteTask bool) (*httpclient.Request, model.Channel, error) {
-	grant, err := op.ChannelGrantGet(job.ChannelGrantID)
+	grant, err := op.ChannelGrantLookup(job.ChannelGrantID)
 	if err != nil {
-		return nil, model.Channel{}, errors.New("video task upstream is no longer available")
-	}
-	if grant.ChannelKey == nil || !grant.ChannelKey.Enabled {
-		return nil, model.Channel{}, errors.New("video task upstream is no longer available")
+		// Grant rows are routinely removed when an admin edits the grant matrix, while the
+		// creation credential can remain valid. Recover the exact channel from that
+		// credential; never substitute another credential or channel. Legacy rows without
+		// ChannelKeyID cannot be recovered and retain the old 503 behavior.
+		if job.ChannelKeyID <= 0 || job.ChannelID <= 0 {
+			return nil, model.Channel{}, errors.New("video task upstream is no longer available")
+		}
+		key, keyErr := op.ChannelKeyLookup(job.ChannelKeyID)
+		if keyErr != nil || key.ChannelID != job.ChannelID {
+			return nil, model.Channel{}, errors.New("video task upstream is no longer available")
+		}
+		channel, channelErr := op.ChannelGet(job.ChannelID)
+		if channelErr != nil {
+			return nil, model.Channel{}, errors.New("video task upstream is no longer available")
+		}
+		grant = model.ChannelGrant{ID: job.ChannelGrantID, ChannelKeyID: job.ChannelKeyID, Protocols: model.ProtocolOpenAIVideo}
+		grant.ChannelModel = &model.ChannelModel{ChannelID: key.ChannelID, Name: job.ModelName}
+		grant.ChannelKey = &key
+		return buildVideoTaskRequestWithGrant(ctx, job, jobID, deleteTask, grant, channel)
 	}
 	channel, err := op.ChannelGet(grant.ChannelModel.ChannelID)
-	if err != nil {
+	if err != nil || (job.ChannelID > 0 && grant.ChannelModel.ChannelID != job.ChannelID) {
 		return nil, model.Channel{}, errors.New("video task upstream is no longer available")
 	}
-	outbound, _, _, err := buildOutbound(channel, grant, *grant.ChannelKey, model.ProtocolOpenAIVideo, llm.APIFormatOpenAIVideo)
+	return buildVideoTaskRequestWithGrant(ctx, job, jobID, deleteTask, grant, channel)
+}
+
+func buildVideoTaskRequestWithGrant(ctx context.Context, job model.VideoJob, jobID string, deleteTask bool, grant model.ChannelGrant, channel model.Channel) (*httpclient.Request, model.Channel, error) {
+	channelKey, err := resolveVideoTaskKey(job, grant)
+	if err != nil {
+		return nil, model.Channel{}, err
+	}
+	outbound, _, _, err := buildOutbound(channel, grant, *channelKey, model.ProtocolOpenAIVideo, llm.APIFormatOpenAIVideo)
 	if err != nil {
 		return nil, model.Channel{}, errors.New("video task upstream is no longer available")
 	}
@@ -90,6 +114,47 @@ func buildVideoTaskRequest(ctx context.Context, job model.VideoJob, jobID string
 	}
 	request, err := taskOutbound.BuildGetVideoTaskRequest(ctx, jobID)
 	return request, channel, err
+}
+
+// resolveVideoTaskKey 找回创建该任务时实际使用的渠道凭据。
+//
+// 任务只在「创建它的那一把凭据」名下可见, 而渠道凭据会轮换: 换绑授权、停用旧凭据、按策略挑选都会让
+// "当前授权绑定的凭据"不再是创建时那把, 拿它去查必然 404。因此优先用任务记录里的创建凭据 ID
+// (落库时只记 ID, 不记凭据明文); 创建凭据即使已被停用也照常用它 —— 停用只影响新请求选路,
+// 任务仍在这把凭据名下。老记录没有凭据 ID 时才回落授权绑定的凭据(旧行为)。
+// 别的凭据一律不顶替: 换一把凭据查不到就是查不到, 硬凑一把只会给出错误答案。
+func resolveVideoTaskKey(job model.VideoJob, grant model.ChannelGrant) (*model.ChannelKey, error) {
+	if job.ChannelKeyID > 0 {
+		if job.ChannelID > 0 && grant.ChannelModel.ChannelID != job.ChannelID {
+			return nil, errors.New("video task upstream is no longer available")
+		}
+		for _, key := range op.ChannelKeysByChannel(grant.ChannelModel.ChannelID) {
+			if key.ID != job.ChannelKeyID {
+				continue
+			}
+			matched := key
+			return &matched, nil
+		}
+		// 记录的创建凭据已不存在(被删除或换了渠道), 没有凭据能代表那家上游, 不能退到别的凭据。
+		return nil, errors.New("video task upstream is no longer available")
+	}
+	if grant.ChannelKey != nil && grant.ChannelKey.Enabled {
+		return grant.ChannelKey, nil
+	}
+	return nil, errors.New("video task upstream is no longer available")
+}
+
+func safeVideoTaskID(id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, ch := range id {
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // rejectVideoTask 以 OpenAI 错误形状回复任务查询与取消的失败, 与转发路径的错误体保持一致。

@@ -365,6 +365,7 @@ func openAPIAdminSchemas() gin.H {
 			"expire_at":           fieldNumber("integer", "过期 Unix 秒; 0 表示永不过期"),
 			"max_cost":            fieldNumber("number", "累计消费上限; 0 表示不限"),
 			"supported_models":    gin.H{"type": "array", "items": gin.H{"type": "string"}, "description": "允许访问的分组名白名单, 空表示不限制"},
+			"routing_preference":  gin.H{"type": "string", "enum": []string{"inherit", "balanced", "price", "latency", "success"}, "description": "API Key 选路偏好; inherit 跟随分组策略"},
 			"quota_requests":      fieldNumber("integer", "每日请求数配额, 0 不限"),
 			"quota_input_tokens":  fieldNumber("integer", "每日输入 token 配额, 0 不限"),
 			"quota_output_tokens": fieldNumber("integer", "每日输出 token 配额, 0 不限"),
@@ -802,6 +803,18 @@ func openAPIAdminSchemas() gin.H {
 			"input_tokens":  fieldNumber("integer", ""),
 			"output_tokens": fieldNumber("integer", ""),
 			"rejected":      fieldNumber("integer", "被限流拒绝的请求数"),
+		}),
+
+		"BillingSettlementTask": object(gin.H{
+			"id":              fieldNumber("integer", "任务ID"),
+			"reservation_id":  fieldNumber("integer", "原预扣ID"),
+			"request_id":      fieldString("调用ID；字符串避免JavaScript精度损失"),
+			"user_id":         fieldNumber("integer", "付费用户"),
+			"status":          fieldString("pending | retry | manual | completed"),
+			"attempts":        fieldNumber("integer", "尝试次数"),
+			"next_attempt_at": datetime("下一次尝试时间"),
+			"last_error":      fieldString("最近错误，不含计费快照"),
+			"created_at":      datetime(""), "updated_at": datetime(""),
 		}),
 
 		// ---------- 审计 ----------

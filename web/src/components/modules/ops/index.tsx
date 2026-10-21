@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import BillingRecovery from './BillingRecovery';
 import { useTranslations } from 'use-intl';
 import { Archive, DatabaseBackup, Gauge, HeartPulse, RefreshCw, Scale, ShieldAlert, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -106,6 +107,7 @@ function OpsOverviewCards() {
 
 const TABS = [
     { id: 'reconcile', icon: Scale },
+    { id: 'recovery', icon: RefreshCw },
     { id: 'flow', icon: Wallet },
     { id: 'backup', icon: DatabaseBackup },
     { id: 'archive', icon: Archive },
@@ -140,6 +142,7 @@ export default function Ops() {
             </Tabs>
             <div className='min-h-0 flex-1 space-y-3 overflow-y-auto pb-4'>
                 {tab === 'reconcile' && <ReconcileSection />}
+                {tab === 'recovery' && <BillingRecovery />}
                 {tab === 'flow' && <FlowSection />}
                 {tab === 'backup' && <BackupSection />}
                 {tab === 'archive' && <ArchiveSection />}

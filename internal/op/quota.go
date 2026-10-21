@@ -35,35 +35,7 @@ func CheckAPIKeyQuota(ctx context.Context, apiKeyID int) error {
 		return nil
 	}
 
-	// 计算当前配额周期的起始时间
-	now := time.Now()
-	resetHour := apikey.QuotaResetHour
-	if resetHour < 0 || resetHour > 23 {
-		resetHour = 0
-	}
-
-	// 今日重置时刻
-	resetTime := time.Date(now.Year(), now.Month(), now.Day(), resetHour, 0, 0, 0, now.Location())
-	if now.Before(resetTime) {
-		// 当前时间早于今日重置时刻, 周期从昨日重置时刻开始
-		resetTime = resetTime.Add(-24 * time.Hour)
-	}
-
-	// 查询当前周期的用量
-	var usage struct {
-		Requests     int64
-		InputTokens  int64
-		OutputTokens int64
-	}
-
-	err := db.GetDB().WithContext(ctx).Raw(`
-		SELECT 
-			COALESCE(SUM(requests), 0) as requests,
-			COALESCE(SUM(input_tokens), 0) as input_tokens,
-			COALESCE(SUM(output_tokens), 0) as output_tokens
-		FROM rate_usages
-		WHERE scope = ? AND scope_id = ? AND hour >= ?
-	`, model.RateScopeAPIKey, apiKeyID, resetTime.Unix()).Scan(&usage).Error
+	usage, err := loadAPIKeyQuotaUsage(ctx, apiKeyID, apiKeyQuotaResetTime(time.Now(), apikey.QuotaResetHour))
 
 	if err != nil {
 		return fmt.Errorf("failed to query quota usage: %w", err)
@@ -90,37 +62,42 @@ func GetAPIKeyQuotaUsage(ctx context.Context, apiKeyID int) (requests, inputToke
 		return 0, 0, 0, fmt.Errorf("apikey not found")
 	}
 
-	now := time.Now()
-	resetHour := apikey.QuotaResetHour
-	if resetHour < 0 || resetHour > 23 {
-		resetHour = 0
-	}
-
-	resetTime := time.Date(now.Year(), now.Month(), now.Day(), resetHour, 0, 0, 0, now.Location())
-	if now.Before(resetTime) {
-		resetTime = resetTime.Add(-24 * time.Hour)
-	}
-
-	var usage struct {
-		Requests     int64
-		InputTokens  int64
-		OutputTokens int64
-	}
-
-	err = db.GetDB().WithContext(ctx).Raw(`
-		SELECT 
-			COALESCE(SUM(requests), 0) as requests,
-			COALESCE(SUM(input_tokens), 0) as input_tokens,
-			COALESCE(SUM(output_tokens), 0) as output_tokens
-		FROM rate_usages
-		WHERE scope = ? AND scope_id = ? AND hour >= ?
-	`, model.RateScopeAPIKey, apiKeyID, resetTime.Unix()).Scan(&usage).Error
+	usage, err := loadAPIKeyQuotaUsage(ctx, apiKeyID, apiKeyQuotaResetTime(time.Now(), apikey.QuotaResetHour))
 
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to query quota usage: %w", err)
 	}
 
 	return usage.Requests, usage.InputTokens, usage.OutputTokens, nil
+}
+
+// apiKeyQuotaResetTime 使用本地自然日边界, 避免夏令时切换时减去 24 小时偏离重置时刻。
+func apiKeyQuotaResetTime(now time.Time, resetHour int) time.Time {
+	if resetHour < 0 || resetHour > 23 {
+		resetHour = 0
+	}
+	reset := time.Date(now.Year(), now.Month(), now.Day(), resetHour, 0, 0, 0, now.Location())
+	if now.Before(reset) {
+		reset = reset.AddDate(0, 0, -1)
+	}
+	return reset
+}
+
+type apiKeyQuotaUsage struct {
+	Requests     int64
+	InputTokens  int64
+	OutputTokens int64
+}
+
+// 与用量写入复用模型映射及 time.Time, 不手写旧表名或 Unix 秒时间参数。
+// 这是已落库的用量检查, 不替代在途请求的原子预算预留。
+func loadAPIKeyQuotaUsage(ctx context.Context, apiKeyID int, reset time.Time) (apiKeyQuotaUsage, error) {
+	var usage apiKeyQuotaUsage
+	err := db.GetDB().WithContext(ctx).Model(&model.RateLimitUsageHourly{}).
+		Select("COALESCE(SUM(requests), 0) AS requests, COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens").
+		Where("scope_type = ? AND scope_id = ? AND hour >= ?", model.RateScopeAPIKey, apiKeyID, reset).
+		Scan(&usage).Error
+	return usage, err
 }
 
 // raiseQuotaAlert 在 API Key 配额超限时触发告警。

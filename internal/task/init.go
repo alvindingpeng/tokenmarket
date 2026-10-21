@@ -11,18 +11,7 @@ import (
 	"github.com/charmbracelet/log"
 )
 
-const (
-	TaskPriceUpdate      = string(model.SettingKeyModelInfoUpdateInterval) // 任务名与设置键同名, 便于按设置热更新。
-	TaskStatsSave        = "stats_save"
-	TaskCleanLLM         = "clean_llm"
-	TaskBillingRollback  = "billing_rollback"  // 回滚超时未结算的余额预扣。
-	TaskBillingReconcile = "billing_reconcile" // 每日核对计费明细与预扣。
-	TaskLogArchive       = "log_archive"       // 归档并清理超期日志。
-	TaskAutoBackup       = "auto_backup"       // 定时一致性备份。
-	TaskChannelHealth    = "channel_health"    // 低频渠道健康探测。
-	TaskUpdateCheck      = "update_check"      // 检查本分支 Release 是否有新版本。
-	TaskVideoJobCleanup  = "video_job_cleanup" // 清理过期的生视频任务归属。
-)
+// 任务名常量见 names.go。
 
 // 后台任务的周期都来自可改的系统设置。改造前只有模型信息更新会跟随设置变化,
 // 其余(统计落库、自动备份、健康探测、更新检查)改了要重启进程才生效 —— 管理员在界面上
@@ -117,6 +106,21 @@ func Init() {
 		Fn: func() error {
 			_, err := op.ReconcileRun(context.Background(), 1)
 			return err
+		},
+	})
+
+	// 计费结算恢复: 结算入口(BillingSettle)是"持久入队 + 尝试", 进程崩溃、落库失败或执行中断
+	// 留下的未完成结算由本任务重试到位 —— 钱必须扣成, 不能靠预扣超时释放(那只是退冻结额)。
+	// 启动即跑(重启后先补历史积压)再周期跑; 每轮限量 50 笔、限时 1 分钟(有界上下文),
+	// 避免积压大时长时间占住任务协程, 剩余的留给下一轮。手动审核冻结(hold)的账不受本任务影响。
+	Define(Spec{
+		Name:       TaskBillingRecovery,
+		Interval:   fixedInterval(5 * time.Minute),
+		RunOnStart: true,
+		Fn: func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			return op.BillingRecoveryRun(ctx, 50)
 		},
 	})
 

@@ -262,8 +262,13 @@ func normalizeChannelDetail(detail *model.ChannelDetail) error {
 	}
 	detail.ChannelConfig = config
 
+	seenKeys := make(map[string]struct{}, len(detail.Keys))
 	for i := range detail.Keys {
 		detail.Keys[i].Name = strings.TrimSpace(detail.Keys[i].Name)
+		if _, duplicated := seenKeys[detail.Keys[i].Name]; duplicated {
+			return fmt.Errorf("duplicated channel key name: %s", detail.Keys[i].Name)
+		}
+		seenKeys[detail.Keys[i].Name] = struct{}{}
 		if detail.Keys[i].Name == "" {
 			return fmt.Errorf("channel key name is required")
 		}
@@ -677,9 +682,6 @@ func ShareCodeBackfill(ctx context.Context) (int, error) {
 // maxSupplyPricePerMillion 单类供货价上限(每百万 token): 正常模型远低于此, 越界基本是少打小数点。
 const maxSupplyPricePerMillion = 1_000_000.0
 
-// maxMediaPricePerUnit 媒体单价上限(每张/每秒): 1000 已远超主流生图/生视频定价, 越界按误输入拒绝。
-const maxMediaPricePerUnit = 1_000.0
-
 // ChannelModelListing 是一个渠道模型的上架配置提交形状。
 type ChannelModelListing struct {
 	Name        string           `json:"name"`                   // 渠道模型名称。
@@ -749,29 +751,8 @@ func ChannelModelListingUpdate(id int, listings []ChannelModelListing, scope mod
 			}
 		}
 		media := listing.MediaSupply
-		// 媒体价与 token 价同一收入口径: 负数拒绝, 越界按单价上限拒绝(每张/每秒远低于此值)。
-		for _, pair := range []struct {
-			field string
-			value float64
-		}{
-			{"per_image", media.PerImage},
-			{"per_video", media.PerVideo},
-			{"per_second", media.PerSecond},
-		} {
-			if pair.value < 0 {
-				return fmt.Errorf("media %s price cannot be negative", pair.field)
-			}
-			if pair.value > maxMediaPricePerUnit {
-				return fmt.Errorf("media %s price %g exceeds the %g per-unit cap", pair.field, pair.value, maxMediaPricePerUnit)
-			}
-		}
-		for key, value := range media.Resolution {
-			if value < 0 {
-				return fmt.Errorf("media resolution %s price cannot be negative", key)
-			}
-			if value > maxMediaPricePerUnit {
-				return fmt.Errorf("media resolution %s price %g exceeds the %g per-unit cap", key, value, maxMediaPricePerUnit)
-			}
+		if err := media.Validate(); err != nil {
+			return fmt.Errorf("model %s: %w", listing.Name, err)
 		}
 		// 上架但不定价 = 该模型对用户可见却按 0 计费, 是实打实的收入泄漏, 故直接拒绝。
 		// 媒体形态模型以媒体价为准: token 四类全零但按张定价同样视为已定价。
@@ -839,6 +820,10 @@ func channelRefreshCache(ctx context.Context) error {
 		channelKeyCache.Set(channelKey.ID, channelKey)
 	}
 	for _, channelModel := range channelModels {
+		if channelModel.MediaSupply.Validate() != nil {
+			log.Warnf("quarantining channel model %d with invalid media prices", channelModel.ID)
+			channelModel.Listed = false
+		}
 		channelModelCache.Set(channelModel.ID, channelModel)
 	}
 	for _, grant := range channelGrants {
@@ -861,6 +846,10 @@ func reloadChannelChildren(ctx context.Context, channelID int) error {
 	}
 	modelIDs := make([]int, 0, len(channelModels))
 	for _, channelModel := range channelModels {
+		if channelModel.MediaSupply.Validate() != nil {
+			log.Warnf("quarantining channel model %d with invalid media prices", channelModel.ID)
+			channelModel.Listed = false
+		}
 		modelIDs = append(modelIDs, channelModel.ID)
 	}
 	grants := []model.ChannelGrant{}
@@ -890,7 +879,12 @@ func reloadChannelChildren(ctx context.Context, channelID int) error {
 
 	channelModelStatsNeedUpdateLock.Lock()
 	liveModels := make(map[int]struct{}, len(channelModels))
-	for _, channelModel := range channelModels {
+	for i := range channelModels {
+		if channelModels[i].MediaSupply.Validate() != nil {
+			log.Warnf("quarantining channel model %d with invalid media prices", channelModels[i].ID)
+			channelModels[i].Listed = false
+		}
+		channelModel := channelModels[i]
 		liveModels[channelModel.ID] = struct{}{}
 		if cached, ok := channelModelCache.Get(channelModel.ID); ok {
 			channelModel.StatsMetrics = cached.StatsMetrics

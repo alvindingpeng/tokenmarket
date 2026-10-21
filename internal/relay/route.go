@@ -70,6 +70,21 @@ func ResetRouteState(groupID int) {
 // 手动模式固定人工成员; 其余模式为动态选路, 共用冷却, 探测与亲和机制:
 // 先在未冷却成员中按模式策略择优, 优先级高于全部候选的冷却到期成员获得一个探测请求。
 // 渠道是否可用不在此判断: 渠道禁用或缺少密钥由调用方发现并作为一轮失败上报, 该成员随即进入冷却而在后续轮次被跳过。
+// effectiveGroupForRequest applies a validated API-key preference to this request only.
+// RouteState remains group-scoped; the preference changes selection mode but never bypasses
+// availability, limits, protocol capability, billing, or retry bounds.
+func effectiveGroupForRequest(group model.Group, preference string) model.Group {
+	// Manual selection is a hard constraint, not a preference.
+	if group.Mode == model.GroupModeManual {
+		return group
+	}
+	if preference != "" && preference != model.RoutingPreferenceInherit && model.IsValidRoutingPreference(preference) {
+		group.RequestRoutingPreference = preference
+		group.Mode = model.GroupModeForRoutingPreference(preference, group.Mode)
+	}
+	return group
+}
+
 func pickGroupItem(group model.Group) model.GroupItem {
 	if group.Mode == model.GroupModeManual {
 		for _, item := range group.Items {
@@ -90,7 +105,7 @@ func pickGroupItem(group model.Group) model.GroupItem {
 	}
 
 	// 亲和期内沿用当前成员, 不提前探测已恢复的高优先级成员。
-	if route.CurrentItemID != 0 && route.AffinityUntil > now {
+	if group.RequestRoutingPreference == "" && route.CurrentItemID != 0 && route.AffinityUntil > now {
 		current := itemOf(group, route.CurrentItemID)
 		if current.Available && !upstreamItemLimited(current) {
 			return current
@@ -153,7 +168,7 @@ func routeExplanation(group model.Group, chosen model.GroupItem) model.RelayRout
 	if state.ProbeItemID == chosen.ID && chosen.ID != 0 {
 		reason = "recovery_probe"
 	}
-	if state.AffinityUntil > now && state.CurrentItemID == chosen.ID && chosen.ID != 0 {
+	if group.RequestRoutingPreference == "" && state.AffinityUntil > now && state.CurrentItemID == chosen.ID && chosen.ID != 0 {
 		reason = "affinity"
 	}
 	result := model.RelayRouteDecision{Mode: string(group.Mode), Phase: "selected", Reason: reason}

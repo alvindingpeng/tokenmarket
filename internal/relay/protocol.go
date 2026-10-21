@@ -130,6 +130,10 @@ func inspectStreamEvent(format llm.APIFormat, event *httpclient.StreamEvent) (bo
 			return false, nil
 		}
 
+	case llm.APIFormatOpenAIImageGeneration, llm.APIFormatOpenAIImageEdit, llm.APIFormatOpenAIImageVariation:
+		// 生图流式以 image_generation.* 事件携带图片, [DONE] 收尾; 见 image_stream.go。
+		return inspectImageStreamEvent(event)
+
 	case llm.APIFormatAnthropicMessage:
 		var parsed anthropic.StreamEvent
 		if err := json.Unmarshal(event.Data, &parsed); err != nil {
