@@ -13,7 +13,7 @@ import (
 )
 
 // WithdrawSummary 提现口径: 可提 = 成熟收益 - 累计已提 - 提现中冻结。
-// 成熟收益 = 冷却期外的累计收益; 冷却关闭时等于 TotalRevenue。
+// 成熟收益 = 冷却期外且未退款的累计收益; 冷却关闭时等于 TotalRevenue(池子已净扣退款)。
 type WithdrawSummary struct {
 	Available float64 `json:"available"` // 可提余额(收益池口径)
 	Frozen    float64 `json:"frozen"`    // 提现中冻结
@@ -70,19 +70,29 @@ func withdrawRulesGet() withdrawRules {
 	return rules
 }
 
-// maturedRevenue 冷却期外的累计收益: SUM(owner_revenue) 只统计 cutoff 之前结算的记录。
-// cooldownDays<=0 时直接用 TotalRevenue(恒等口径, 不查表)。
+// maturedRevenue 冷却期外的累计收益: SUM(owner_revenue) 只统计 cutoff 之前结算且未退款的记录。
+// 已退款账单必须排除: 退款批准时 total_revenue 已冲回, 若退款行仍计进 matured, 冷却中的新收入
+// 会被"退款行的虚高 matured"顶到 total_revenue 上沿而提前放出(提现先于成熟)。
+// cooldownDays<=0 时直接用 TotalRevenue(恒等口径, 不查表; total_revenue 本身已净扣退款)。
+// 展示口径(WithdrawSummaryGet)走这里; 冻结判定必须用事务内的 maturedRevenueIn。
 func maturedRevenue(ctx context.Context, userID uint, cooldownDays int, totalRevenue float64) (float64, error) {
+	return maturedRevenueIn(db.GetDB().WithContext(ctx), userID, cooldownDays, totalRevenue)
+}
+
+// maturedRevenueIn 同 maturedRevenue, 但在给定查询句柄上执行 —— 冻结判定要传事务内的 tx,
+// 让成熟收益与 total_revenue 看到同一时刻的账(锁内重算, 不用事务外的陈旧快照)。
+func maturedRevenueIn(q *gorm.DB, userID uint, cooldownDays int, totalRevenue float64) (float64, error) {
 	if cooldownDays <= 0 {
 		return totalRevenue, nil
 	}
 	cutoff := time.Now().AddDate(0, 0, -cooldownDays)
 	var matured float64
-	if err := db.GetDB().WithContext(ctx).Model(&model.BillingRecord{}).
-		Where("owner_id = ? AND created_at <= ?", userID, cutoff).
+	if err := q.Model(&model.BillingRecord{}).
+		Where("owner_id = ? AND created_at <= ? AND COALESCE(status, '') <> ?", userID, cutoff, model.BillingStatusRefunded).
 		Select("COALESCE(SUM(owner_revenue), 0)").Scan(&matured).Error; err != nil {
 		return 0, fmt.Errorf("failed to calculate matured revenue: %w", err)
 	}
+	// 兜底上界: 成熟收益不该超过收益池总额(历史数据/人工调账偏差时按池子封顶, 不多放钱)。
 	if matured > totalRevenue {
 		matured = totalRevenue
 	}
@@ -125,6 +135,8 @@ func WithdrawSummaryGet(ctx context.Context, userID uint, role model.Role) (*Wit
 
 // WithdrawApply 提现申请: 规则校验 → 收益池条件冻结 → 建单 → 流水。
 // 冻结是 SQL 条件更新(含冷却期的不可提部分), 并发重复申请至多一笔成。
+// 成熟收益在事务内行写锁之后重算: 结算入账/退款冲回与本申请并发时, 冻结判定用的永远是
+// 当前账, 不是事务外读到的陈旧快照(快照会把冷却中的新收入提前放出来, 或误杀成熟收入)。
 func WithdrawApply(ctx context.Context, spec WithdrawSpec) (*model.Withdrawal, error) {
 	if !canWithdraw(spec.Role) {
 		return nil, fmt.Errorf("only reseller revenue is withdrawable")
@@ -183,19 +195,6 @@ func WithdrawApply(ctx context.Context, spec WithdrawSpec) (*model.Withdrawal, e
 			}
 		}
 	}
-	// 成熟收益与不可提部分: 冻结条件里带上冷却期未成熟的部分, 并发下也守得住冷却规则。
-	var user model.User
-	if err := db.GetDB().WithContext(ctx).First(&user, spec.UserID).Error; err != nil {
-		return nil, fmt.Errorf("user not found: %w", err)
-	}
-	matured, err := maturedRevenue(ctx, spec.UserID, rules.cooldownDays, user.TotalRevenue)
-	if err != nil {
-		return nil, err
-	}
-	immature := user.TotalRevenue - matured
-	if immature < 0 {
-		immature = 0
-	}
 	order := &model.Withdrawal{
 		UserID:      spec.UserID,
 		Amount:      spec.Amount,
@@ -210,6 +209,26 @@ func WithdrawApply(ctx context.Context, spec WithdrawSpec) (*model.Withdrawal, e
 		AppliedAt:   time.Now(),
 	}
 	err = db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 行写锁: 把该行写成自身值先占住写锁(空更新, 不看 RowsAffected —— MySQL 按值变化计行数)。
+		// 拿到写锁再读再算: 结算入账/退款冲回的并发事务要么排在本事务之前(重算看得见),
+		// 要么排在之后(冻结判定用不到), 事务外的陈旧成熟收益快照不再可能放行冷却中的收入。
+		if err := tx.Exec("UPDATE users SET total_revenue = total_revenue WHERE id = ?", spec.UserID).Error; err != nil {
+			return fmt.Errorf("failed to lock user revenue: %w", err)
+		}
+		var user model.User
+		if err := tx.First(&user, spec.UserID).Error; err != nil {
+			return fmt.Errorf("user not found: %w", err)
+		}
+		// 成熟收益与不可提部分在锁内重算, 与冻结条件里的 total_revenue 同一时刻:
+		// 不可提额度必须是事务内现算的, 否则并发入账的新收入会被陈旧快照当成可提。
+		matured, err := maturedRevenueIn(tx, spec.UserID, rules.cooldownDays, user.TotalRevenue)
+		if err != nil {
+			return err
+		}
+		immature := user.TotalRevenue - matured
+		if immature < 0 {
+			immature = 0
+		}
 		if err := tx.Create(order).Error; err != nil {
 			return fmt.Errorf("failed to create withdrawal: %w", err)
 		}

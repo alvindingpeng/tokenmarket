@@ -10,6 +10,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/alert"
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -20,7 +21,7 @@ const reconcileTolerance = 1e-6
 // 只登记结论与差异, 不修改任何用户余额; 发现差异时状态为待核查。
 func ReconcileDay(ctx context.Context, day time.Time) (model.BillingReconcile, error) {
 	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.Local)
-	end := start.Add(24 * time.Hour)
+	end := start.AddDate(0, 0, 1)
 	records := []model.BillingRecord{}
 	if err := db.GetDB().WithContext(ctx).
 		Where("created_at >= ? AND created_at < ?", start, end).
@@ -58,10 +59,10 @@ func ReconcileDay(ctx context.Context, day time.Time) (model.BillingReconcile, e
 	}
 	result.Missing = unmapped
 
-	// 预扣状态: 已结算的正常, 未结算且早于回滚阈值的是长期冻结。
+	// 预扣状态: 有有效续租的长请求不是长期冻结; 过期租约及无租约的旧超时记录需要核查。
 	var unsettled []model.BalanceReservation
 	if err := db.GetDB().WithContext(ctx).
-		Where("settled = ? AND created_at < ?", false, time.Now().Add(-30*time.Minute)).
+		Where("settled = ? AND ((lease_expires_at IS NOT NULL AND lease_expires_at <= ?) OR (lease_expires_at IS NULL AND created_at < ?))", false, time.Now(), time.Now().Add(-30*time.Minute)).
 		Find(&unsettled).Error; err != nil {
 		return model.BillingReconcile{}, fmt.Errorf("load unsettled reservations: %w", err)
 	}
@@ -81,6 +82,23 @@ func ReconcileDay(ctx context.Context, day time.Time) (model.BillingReconcile, e
 		"stale":      result.StaleHold,
 	})
 	result.Detail = string(detail)
+
+	// 历史请求日志可能已清理。没有证据不能把已记录的漏结算改成零并静默抹掉异常。
+	var previous model.BillingReconcile
+	previousErr := db.GetDB().WithContext(ctx).Where("day = ?", result.Day).Take(&previous).Error
+	if previousErr != nil && previousErr != gorm.ErrRecordNotFound {
+		return model.BillingReconcile{}, fmt.Errorf("load prior reconcile evidence: %w", previousErr)
+	}
+	if previousErr == nil && previous.Missing > result.Missing {
+		var retained int64
+		if err := db.GetDB().WithContext(ctx).Model(&model.RelayRequest{}).
+			Where("started_at >= ? AND started_at < ?", start, end).Count(&retained).Error; err != nil {
+			return model.BillingReconcile{}, fmt.Errorf("check request evidence coverage: %w", err)
+		}
+		if retained == 0 {
+			return previous, fmt.Errorf("reconcile %s has prior missing-request evidence but no retained request logs; restore archival evidence before replacing the original result", result.Day)
+		}
+	}
 
 	if err := db.GetDB().WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "day"}},

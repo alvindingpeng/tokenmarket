@@ -2,7 +2,9 @@ package op
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -251,25 +253,79 @@ func UserResetPassword(id uint, password string) error {
 	return nil
 }
 
-// UserSetBalance 管理员直接调整可用余额; 冻结额与累计口径不动, 预扣判定始终以余额对冻结额为准。
+// errBalanceConflict 目标余额写入撞上别的余额变动(预扣/结算/入账)的哨兵错误: 整轮重试。
+var errBalanceConflict = errors.New("balance changed concurrently")
+
+// userBalanceWriteAttempts 绝对写连续撞行时的重试上限; 连续撞车按拒绝收场, 不无限自旋。
+const userBalanceWriteAttempts = 5
+
+// UserSetBalance 管理员直接调整可用余额: 语义是"把余额设成目标值"(绝对写), 不是充值。
+// 冻结额与累计口径不动, 预扣判定始终以余额对冻结额为准。
 // actor 记入余额流水, 使"谁在什么时候把余额改成了多少"有据可查; 系统内部调用传零值 actor。
+//
+// 账本口径(不以缓存作账本): 差额 = 目标值 - 事务内数据库当前值, 流水差额恒等于实际资金变动。
+// 并发防护 = 行写锁 + CAS: 事务首个语句把该行余额写成自身值(先占写锁), 再读当前值算差额,
+// 最后按读到的值条件迁移写目标值并校验 RowsAffected; 与预扣/结算/入账撞车即整轮重试,
+// 绝对写下重试收敛到目标值, 连续撞车则拒绝并要求重试。
+// 目标值约束: 有限数(拒绝 NaN/Inf, 它们会污染账本与库值)且不低于在途冻结额 ——
+// 冻结是已承诺的支出, 扣到冻结线之下会让可用余额变负、在途预扣无处着落。
 func UserSetBalance(id uint, balance float64, actorID uint, actorName, note string) error {
+	if math.IsNaN(balance) || math.IsInf(balance, 0) {
+		return fmt.Errorf("balance must be a finite number")
+	}
 	if balance < 0 {
 		return fmt.Errorf("balance cannot be negative")
 	}
-	user, err := UserGetByID(id)
-	if err != nil {
-		return err
-	}
-	delta := balance - user.Balance
-	err = db.GetDB().Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&model.User{}).Where("id = ?", id).Update("balance", balance).Error; err != nil {
-			return fmt.Errorf("failed to update balance: %w", err)
+	for attempt := 0; attempt < userBalanceWriteAttempts; attempt++ {
+		applied, err := userSetBalanceOnce(id, balance, actorID, actorName, note)
+		if err != nil {
+			return err
 		}
-		if delta == 0 {
+		if applied {
+			UserTouchBalance(id)
 			return nil
 		}
-		return ledgerRecord(tx, model.BillingLedger{
+	}
+	return fmt.Errorf("failed to update balance: %w", errBalanceConflict)
+}
+
+// userSetBalanceOnce 一轮"占行锁 → 读当前值 → 算差额 → CAS 写目标值"。
+// applied=false 表示 CAS 撞车且本轮没有任何写入(事务回滚), 由调用方重试。
+func userSetBalanceOnce(id uint, balance float64, actorID uint, actorName, note string) (bool, error) {
+	applied := false
+	err := db.GetDB().Transaction(func(tx *gorm.DB) error {
+		// 占行写锁: 把余额写成自身值。拿到写锁后再读, 读到的当前值在本事务内不会被别人改掉,
+		// 差额与后续资金变动因此严格对账; 也让本事务首个语句即写, 避免读-写升级相撞。
+		// 这是空更新, 不看 RowsAffected(MySQL 按"值变化"计行数, 空更新恒报 0 行)。
+		if err := tx.Exec("UPDATE users SET balance = balance WHERE id = ?", id).Error; err != nil {
+			return fmt.Errorf("failed to lock user balance: %w", err)
+		}
+		var current model.User
+		if err := tx.First(&current, id).Error; err != nil {
+			return fmt.Errorf("user not found")
+		}
+		// 目标余额不得低于在途冻结额(以事务内当前值判定): 等于冻结线允许, 可用余额恰好为 0。
+		if balance < current.Frozen {
+			return fmt.Errorf("balance %.6f cannot be lower than the frozen amount %.6f", balance, current.Frozen)
+		}
+		delta := balance - current.Balance
+		if delta == 0 {
+			// 目标值即当前值: 绝对写在该点已满足, 不动钱不记流水。
+			applied = true
+			return nil
+		}
+		// CAS 写目标值: 只允许把"读到的那个当前值"改成目标值, 撞上别的变动就认输重试,
+		// 否则流水记的差额会与真实资金变动对不上。
+		result := tx.Model(&model.User{}).
+			Where("id = ? AND balance = ?", id, current.Balance).
+			Update("balance", balance)
+		if result.Error != nil {
+			return fmt.Errorf("failed to update balance: %w", result.Error)
+		}
+		if result.RowsAffected != 1 {
+			return errBalanceConflict
+		}
+		if err := ledgerRecord(tx, model.BillingLedger{
 			UserID:       id,
 			Kind:         model.LedgerKindAdjust,
 			Amount:       delta,
@@ -277,14 +333,19 @@ func UserSetBalance(id uint, balance float64, actorID uint, actorName, note stri
 			ActorID:      actorID,
 			ActorName:    actorName,
 			Note:         note,
-		})
+		}); err != nil {
+			return err
+		}
+		applied = true
+		return nil
 	})
-	if err != nil {
-		return err
+	if errors.Is(err, errBalanceConflict) {
+		return false, nil
 	}
-	user.Balance = balance
-	userCache.Set(int(id), user)
-	return nil
+	if err != nil {
+		return false, err
+	}
+	return applied, nil
 }
 
 // UserChangePassword 本人改密(需旧密码), 改后吊销全部既有会话含当前。

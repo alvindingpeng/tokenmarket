@@ -13,6 +13,39 @@ const (
 	GroupModeRandom   GroupMode = "random"   // 随机分发: 在可用成员中随机选择, 请求均匀摊开。
 )
 
+// RoutingPreference 是 API Key 可覆盖的用户侧选路偏好。空值兼容旧数据, 等同 inherit.
+const (
+	RoutingPreferenceInherit  = "inherit"
+	RoutingPreferenceBalanced = "balanced"
+	RoutingPreferencePrice    = "price"
+	RoutingPreferenceLatency  = "latency"
+	RoutingPreferenceSuccess  = "success"
+)
+
+func IsValidRoutingPreference(value string) bool {
+	switch value {
+	case "", RoutingPreferenceInherit, RoutingPreferenceBalanced, RoutingPreferencePrice, RoutingPreferenceLatency, RoutingPreferenceSuccess:
+		return true
+	default:
+		return false
+	}
+}
+
+func GroupModeForRoutingPreference(preference string, inherited GroupMode) GroupMode {
+	switch preference {
+	case RoutingPreferenceBalanced:
+		return GroupModeScore
+	case RoutingPreferencePrice:
+		return GroupModePrice
+	case RoutingPreferenceLatency:
+		return GroupModeLatency
+	case RoutingPreferenceSuccess:
+		return GroupModeSuccess
+	default:
+		return inherited
+	}
+}
+
 // IsValidGroupMode 判断模式标识是否受支持, 供导入校验等非绑定场景使用。
 func IsValidGroupMode(mode GroupMode) bool {
 	switch mode {
@@ -38,24 +71,34 @@ func IsValidPriceMetric(metric string) bool {
 	return false
 }
 
+func clampPositive(value, fallback, maximum int) int {
+	if value < 1 {
+		return fallback
+	}
+	if value > maximum {
+		return maximum
+	}
+	return value
+}
+
 // 分组 Relay 的持久化配置，数据库中以 JSON 存储。
 type GroupRelayConfig struct {
 	MemberStreamIdleTimeoutSeconds        int    `json:"member_stream_idle_timeout_seconds" binding:"omitempty,min=1,max=3600"`
-	RequestTimeoutSeconds                 int    `json:"request_timeout_seconds" binding:"omitempty,min=1,max=3600"`           // 整请求最大耗时, 包含重试与流式传输。
-	MaxWaitSeconds                        int    `json:"max_wait_seconds" binding:"omitempty,min=0,max=300"`                   // 无可用成员时最大等待秒数, 0 立即返回。
-	MaxWaitingRequests                    int    `json:"max_waiting_requests" binding:"omitempty,min=0,max=1000"`              // 同一分组同时排队的请求上限, 0 不排队。
-	MaxTotalAttempts                      int    `json:"max_total_attempts" binding:"omitempty,min=1,max=100"`                 // 单请求跨成员最大尝试轮次。
-	MemberMaxAttempts                     int    `json:"member_max_attempts" binding:"omitempty,min=1"`                        // 单个成员包含首次请求的总尝试次数, 动态选路模式(非手动)生效。
-	MemberRetryIntervalSeconds            int    `json:"member_retry_interval_seconds" binding:"omitempty,min=1"`              // 同一成员相邻两次尝试之间的等待秒数。
-	MemberNonStreamResponseTimeoutSeconds int    `json:"member_non_stream_response_timeout_seconds" binding:"omitempty,min=1"` // 单个成员返回完整非流式响应的超时秒数。
-	MemberStreamFirstEventTimeoutSeconds  int    `json:"member_stream_first_event_timeout_seconds" binding:"omitempty,min=1"`  // 单个成员返回首个有效流事件的超时秒数。
-	MemberCooldownSeconds                 int    `json:"member_cooldown_seconds" binding:"omitempty,min=1"`                    // 单个成员耗尽尝试后被跳过的秒数, 动态选路模式(非手动)生效。
-	MemberAffinitySeconds                 int    `json:"member_affinity_seconds" binding:"omitempty,min=0"`                    // 成员亲和时间:动态选路成功后继续保持当前成员的秒数;当前成员失败会立即结束亲和,0 表示不保持。
-	PriceMetric                           string `json:"price_metric" binding:"omitempty,oneof=blended input output"`          // 低价优先与综合评分的价格口径: blended 读写均值, input 仅输入, output 仅输出。
-	MetricWindowSize                      int    `json:"metric_window_size" binding:"omitempty,min=5,max=200"`                 // 延迟与成功率指标的样本窗口规模, 越大越平滑, 5-200。
-	ScorePriceWeight                      int    `json:"score_price_weight" binding:"omitempty,min=0,max=100"`                 // 综合评分中价格的相对权重, 0-100; 0 表示未自定义, 运行时跟随系统默认设置。
-	ScoreLatencyWeight                    int    `json:"score_latency_weight" binding:"omitempty,min=0,max=100"`               // 综合评分中延迟的相对权重, 0-100; 0 表示未自定义, 运行时跟随系统默认设置。
-	ScoreSuccessWeight                    int    `json:"score_success_weight" binding:"omitempty,min=0,max=100"`               // 综合评分中成功率的相对权重, 0-100; 0 表示未自定义, 运行时跟随系统默认设置。
+	RequestTimeoutSeconds                 int    `json:"request_timeout_seconds" binding:"omitempty,min=1,max=3600"`                    // 整请求最大耗时, 包含重试与流式传输。
+	MaxWaitSeconds                        int    `json:"max_wait_seconds" binding:"omitempty,min=0,max=300"`                            // 无可用成员时最大等待秒数, 0 立即返回。
+	MaxWaitingRequests                    int    `json:"max_waiting_requests" binding:"omitempty,min=0,max=1000"`                       // 同一分组同时排队的请求上限, 0 不排队。
+	MaxTotalAttempts                      int    `json:"max_total_attempts" binding:"omitempty,min=1,max=100"`                          // 单请求跨成员最大尝试轮次。
+	MemberMaxAttempts                     int    `json:"member_max_attempts" binding:"omitempty,min=1,max=100"`                         // 单个成员包含首次请求的总尝试次数, 动态选路模式(非手动)生效。
+	MemberRetryIntervalSeconds            int    `json:"member_retry_interval_seconds" binding:"omitempty,min=1,max=300"`               // 同一成员相邻两次尝试之间的等待秒数。
+	MemberNonStreamResponseTimeoutSeconds int    `json:"member_non_stream_response_timeout_seconds" binding:"omitempty,min=1,max=3600"` // 单个成员返回完整非流式响应的超时秒数。
+	MemberStreamFirstEventTimeoutSeconds  int    `json:"member_stream_first_event_timeout_seconds" binding:"omitempty,min=1,max=3600"`  // 单个成员返回首个有效流事件的超时秒数。
+	MemberCooldownSeconds                 int    `json:"member_cooldown_seconds" binding:"omitempty,min=1,max=86400"`                   // 单个成员耗尽尝试后被跳过的秒数, 动态选路模式(非手动)生效。
+	MemberAffinitySeconds                 int    `json:"member_affinity_seconds" binding:"omitempty,min=0,max=3600"`                    // 成员亲和时间:动态选路成功后继续保持当前成员的秒数;当前成员失败会立即结束亲和,0 表示不保持。
+	PriceMetric                           string `json:"price_metric" binding:"omitempty,oneof=blended input output"`                   // 低价优先与综合评分的价格口径: blended 读写均值, input 仅输入, output 仅输出。
+	MetricWindowSize                      int    `json:"metric_window_size" binding:"omitempty,min=5,max=200"`                          // 延迟与成功率指标的样本窗口规模, 越大越平滑, 5-200。
+	ScorePriceWeight                      int    `json:"score_price_weight" binding:"omitempty,min=0,max=100"`                          // 综合评分中价格的相对权重, 0-100; 0 表示未自定义, 运行时跟随系统默认设置。
+	ScoreLatencyWeight                    int    `json:"score_latency_weight" binding:"omitempty,min=0,max=100"`                        // 综合评分中延迟的相对权重, 0-100; 0 表示未自定义, 运行时跟随系统默认设置。
+	ScoreSuccessWeight                    int    `json:"score_success_weight" binding:"omitempty,min=0,max=100"`                        // 综合评分中成功率的相对权重, 0-100; 0 表示未自定义, 运行时跟随系统默认设置。
 	// ReliabilityFloor 是综合评分的可靠性下限(百分比, 0-100): 成功率低于该值的成员排到全部达标成员之后。
 	// 0 表示未自定义, 运行时跟随系统默认设置; 用于避免最便宜的成员凭静态价格长期霸占首位。
 	ReliabilityFloor int `json:"reliability_floor" binding:"omitempty,min=0,max=100"`
@@ -132,24 +175,16 @@ func NormalizeGroupRelayConfigForMode(config *GroupRelayConfig, mode GroupMode) 
 	config.MaxWaitSeconds = min(config.MaxWaitSeconds, 300)
 	config.MaxWaitingRequests = min(config.MaxWaitingRequests, 1000)
 	config.MaxTotalAttempts = min(config.MaxTotalAttempts, 100)
-	if config.MemberMaxAttempts < 1 {
-		config.MemberMaxAttempts = defaults.MemberMaxAttempts
-	}
-	if config.MemberRetryIntervalSeconds < 1 {
-		config.MemberRetryIntervalSeconds = defaults.MemberRetryIntervalSeconds
-	}
-	if config.MemberNonStreamResponseTimeoutSeconds < 1 {
-		config.MemberNonStreamResponseTimeoutSeconds = defaults.MemberNonStreamResponseTimeoutSeconds
-	}
-	if config.MemberStreamFirstEventTimeoutSeconds < 1 {
-		config.MemberStreamFirstEventTimeoutSeconds = defaults.MemberStreamFirstEventTimeoutSeconds
-	}
-	if config.MemberCooldownSeconds < 1 {
-		config.MemberCooldownSeconds = defaults.MemberCooldownSeconds
-	}
+	config.MemberMaxAttempts = clampPositive(config.MemberMaxAttempts, defaults.MemberMaxAttempts, 100)
+	config.MemberRetryIntervalSeconds = clampPositive(config.MemberRetryIntervalSeconds, defaults.MemberRetryIntervalSeconds, 300)
+	config.MemberNonStreamResponseTimeoutSeconds = clampPositive(config.MemberNonStreamResponseTimeoutSeconds, defaults.MemberNonStreamResponseTimeoutSeconds, 3600)
+	config.MemberStreamFirstEventTimeoutSeconds = clampPositive(config.MemberStreamFirstEventTimeoutSeconds, defaults.MemberStreamFirstEventTimeoutSeconds, 3600)
+	config.MemberCooldownSeconds = clampPositive(config.MemberCooldownSeconds, defaults.MemberCooldownSeconds, 86400)
 	if config.MemberAffinitySeconds < 0 {
 		config.MemberAffinitySeconds = defaults.MemberAffinitySeconds
 	}
+	config.MemberAffinitySeconds = min(config.MemberAffinitySeconds, 3600)
+	config.ReliabilityFloor = min(max(config.ReliabilityFloor, 0), 100)
 	if !IsValidPriceMetric(config.PriceMetric) {
 		config.PriceMetric = defaults.PriceMetric
 	}
@@ -164,13 +199,14 @@ func NormalizeGroupRelayConfigForMode(config *GroupRelayConfig, mode GroupMode) 
 
 // 客户端模型名称及其可手动选择或故障转移的上游分组。
 type Group struct {
-	ID           int              `json:"id" gorm:"primaryKey"`                                                                                             // 分组主键。
-	UserID       uint             `json:"user_id" gorm:"uniqueIndex:idx_group_owner_name;not null;default:0"`                                               // 归属用户; 分组名在归属内唯一, 跨用户可重名。
-	Name         string           `json:"name" gorm:"uniqueIndex:idx_group_owner_name;not null"`                                                            // 客户端请求使用的模型名称。
-	Mode         GroupMode        `json:"mode" gorm:"not null;default:manual" binding:"omitempty,oneof=manual failover price latency success score random"` // 选择成员的模式。
-	ActiveItemID int              `json:"active_item_id" gorm:"not null;default:0"`                                                                         // 手动模式指定的成员, 故障转移模式忽略该值, 0 表示未指定; 写入侧字段, 读取一律用响应中的 runtime.current_item_id, 出 JSON 仅为让备份转储带上它。
-	RelayConfig  GroupRelayConfig `json:"relay_config" gorm:"serializer:json"`                                                                              // 该分组的 Relay 路由配置。
-	Items        []GroupItem      `json:"items" gorm:"foreignKey:GroupID;constraint:OnDelete:CASCADE"`                                                      // 该分组可手动选择或故障转移的分组项; 读取时恒为数组, 空集合也给出以免各消费方各自兜底。
+	RequestRoutingPreference string           `json:"-" gorm:"-"`                                                                                                       // 请求级偏好, 不持久化。
+	ID                       int              `json:"id" gorm:"primaryKey"`                                                                                             // 分组主键。
+	UserID                   uint             `json:"user_id" gorm:"uniqueIndex:idx_group_owner_name;not null;default:0"`                                               // 归属用户; 分组名在归属内唯一, 跨用户可重名。
+	Name                     string           `json:"name" gorm:"uniqueIndex:idx_group_owner_name;not null"`                                                            // 客户端请求使用的模型名称。
+	Mode                     GroupMode        `json:"mode" gorm:"not null;default:manual" binding:"omitempty,oneof=manual failover price latency success score random"` // 选择成员的模式。
+	ActiveItemID             int              `json:"active_item_id" gorm:"not null;default:0"`                                                                         // 手动模式指定的成员, 故障转移模式忽略该值, 0 表示未指定; 写入侧字段, 读取一律用响应中的 runtime.current_item_id, 出 JSON 仅为让备份转储带上它。
+	RelayConfig              GroupRelayConfig `json:"relay_config" gorm:"serializer:json"`                                                                              // 该分组的 Relay 路由配置。
+	Items                    []GroupItem      `json:"items" gorm:"foreignKey:GroupID;constraint:OnDelete:CASCADE"`                                                      // 该分组可手动选择或故障转移的分组项; 读取时恒为数组, 空集合也给出以免各消费方各自兜底。
 }
 
 // 分组内一个可选择的渠道授权分组项。

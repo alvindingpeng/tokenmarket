@@ -3,6 +3,7 @@ package op
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/alvindingpeng/switchyard/internal/db"
@@ -56,7 +57,7 @@ func SettingGetFloat(key model.SettingKey) float64 {
 		return 0
 	}
 	parsed, err := strconv.ParseFloat(value, 64)
-	if err != nil {
+	if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
 		return 0
 	}
 	return parsed

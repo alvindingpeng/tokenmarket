@@ -129,9 +129,14 @@ func TestTradeDisputeAndSettlementLoop(t *testing.T) {
 	if err != nil || total == 0 {
 		t.Fatalf("SettlementList failed: total=%d err=%v", total, err)
 	}
+	// 退款按批准日冲回"原账单的供应商应收份额"(owner_revenue=6), 不是买家支付额(user_cost=10):
+	// 毛额与冲回同口径, 同日发生时净额归零, 渠道商不替平台退上浮部分。
 	stmt := statements[0]
-	if stmt.GrossRevenue != 6.0 || stmt.RefundDeduction != 10.0 {
-		t.Logf("Statement: %+v", stmt)
+	if stmt.GrossRevenue != 6.0 || stmt.RefundDeduction != 6.0 || stmt.NetRevenue != 0.0 {
+		t.Fatalf("unexpected statement: %+v", stmt)
+	}
+	if stmt.Status != settlementStatusSettled {
+		t.Fatalf("unexpected statement status: %s", stmt.Status)
 	}
 
 	// 8. 经营毛利看板汇总

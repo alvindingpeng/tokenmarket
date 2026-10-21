@@ -34,7 +34,9 @@ func init() {
 		).
 		AddRoute(
 			router.NewRoute("/videos", http.MethodPost).
-				Handle(relay.Forward(llm.APIFormatOpenAIVideo)),
+				// 生视频创建先过时长闸门: 声明了非法 seconds 的请求在派发前以 400 拒绝,
+				// 既不冻结余额也不发往上游 —— 计费时长与转发时长始终同一套口径。
+				Handle(relay.VideoCreateDurationGuard(), relay.Forward(llm.APIFormatOpenAIVideo)),
 		).
 		AddRoute(
 			router.NewRoute("/videos/:id", http.MethodGet).

@@ -54,8 +54,11 @@
 这是生视频与生图最根本的差别: 生图一次请求就拿到图片, 而生视频的查询请求(`/v1/videos/{id}`)**不带模型名**,
 无法像创建那样按模型名解析分组与成员。
 
-因此创建成功时把归属落库到 `video_jobs`(`job_id` / `user_id` / `group_id` / `channel_grant_id` / `model_name`),
-查询与取消时按任务 ID 取回, 直接定位创建它的那个渠道授权。任务 ID 只对创建它的那家上游有效,
+因此创建成功时把归属落库到 `video_jobs`(`job_id` / `user_id` / `group_id` / `channel_grant_id` / `channel_key_id` / `model_name`),
+查询与取消时按任务 ID 取回, 直接定位创建它的那个渠道授权与**创建时实际使用的凭据**。
+凭据会轮换(换绑授权、停用旧凭据、按策略挑选), 只记授权会在轮换后用「当前凭据」查不回任务,
+因此凭据以 ID 一并落库(不落明文), 查询侧优先按它还原同一把凭据; 老记录(`channel_key_id` 为 0)回落授权绑定的凭据。
+任务 ID 只对创建它的那家上游有效,
 所以定位失败时回 503 而不是退到别的成员 —— 换渠道查必然查不到, 只会把「查无此任务」伪装成上游的答复。
 
 任务不属于当前 API Key 归属者时与任务不存在返回同一个 404, 否则任务 ID 会变成探测他人任务的工具。
@@ -86,6 +89,10 @@
 
 - 预扣(`reserveBalance`): 分组内 video 成员的 `每条用户价 + 时长 × 每秒用户价`,
   时长取请求声明的 `seconds`, 未声明时按保守默认值 `defaultVideoReserveSeconds`(10 秒)冻结。
+- 时长的有限上界: 解析、预扣、结算只接受 `(0, maxVideoSeconds]`(4 小时)内的秒数, NaN / Inf / 越界值一律不当作时长,
+  任何路径都不进金额计算; 合法时长原样计费, 不做截断 —— 计费时长必须与转发给上游的时长一致。
+  声明了非法 `seconds` 的请求由 `POST /v1/videos` 路由上的时长闸门(`VideoCreateDurationGuard`, 挂在转发之前)以 400 拒绝 ——
+  既不冻结余额也不发往上游, 而不是按别的时长计费再转发原值; 压缩正文按同一套解码解开后校验, 不能绕过闸门。
 - 结算(`settleBillingLocked`): `user_cost = token费用 + 每条用户价 × 条数 + 每秒用户价 × 秒数`;
   `owner_revenue` 同口径按供货价; `price_source = channel_model_media`。
 - `BillingRecord.MediaUnits` 记 `{videos, seconds, resolution}`, token 四列保持 0。

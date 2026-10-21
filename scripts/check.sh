@@ -17,6 +17,14 @@ export PATH="$GO_BIN:$PATH"
 step() { printf "\n\033[1m== %s ==\033[0m\n" "$1"; }
 ok()   { printf "   \033[32mok\033[0m %s\n" "$1"; }
 
+step "历史资金审计工具: 只读与证据保留"
+(cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p test_financial_audit.py -v)
+ok "read-only financial audit"
+
+step "发布安全保护: 排空与补偿兼容性"
+(cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p test_financial_release.py -v)
+ok "financial release safety"
+
 step "后端: 编译"
 (cd "$ROOT" && go build ./...)
 ok "go build"
@@ -28,6 +36,14 @@ ok "go vet"
 step "后端: 单测"
 (cd "$ROOT" && go test -count=1 ./internal/...)
 ok "go test"
+
+step "资金核心: 并发与退款回归（race）"
+(cd "$ROOT" && go test -race -count=1 ./internal/op)
+ok "financial regression + race"
+
+step "预扣续租生命周期: 并发回归（race）"
+(cd "$ROOT" && go test -race -count=1 -run 'TestBillingLease|TestSetReservation' ./internal/relay)
+ok "billing lease lifecycle + race"
 
 step "前端: 类型"
 (cd "$ROOT/web" && pnpm exec tsc -b --noEmit)
@@ -48,6 +64,10 @@ ok "public status playwright"
 step "首页入口 e2e（无需登录）"
 (cd "$ROOT/web" && pnpm exec playwright test landing-status.spec.ts)
 ok "landing status link"
+
+step "结算补偿后台 e2e（隔离模拟，不访问生产数据）"
+(cd "$ROOT/web" && pnpm exec playwright test billing-recovery.spec.ts)
+ok "billing recovery dashboard"
 
 step "布局 e2e"
 if [[ -z "${SWITCHYARD_E2E_JWT:-}" ]]; then

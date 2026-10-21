@@ -7,6 +7,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
     MorphingDialog,
     MorphingDialogContainer,
@@ -77,6 +78,12 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
         expire_at: apiKey?.expire_at,
         max_cost: apiKey?.max_cost,
         supported_models: apiKey?.supported_models ?? [],
+        routing_preference: apiKey?.routing_preference ?? 'inherit',
+        // 配额不在本表单编辑, 但更新接口按整行覆盖: 不回传就会把已有配额清零, 故原样带上。
+        quota_requests: apiKey?.quota_requests ?? 0,
+        quota_input_tokens: apiKey?.quota_input_tokens ?? 0,
+        quota_output_tokens: apiKey?.quota_output_tokens ?? 0,
+        quota_reset_hour: apiKey?.quota_reset_hour ?? 0,
     }));
     const [maxCostInput, setMaxCostInput] = useState(() =>
         apiKey?.max_cost != null ? String(apiKey.max_cost) : ''
@@ -312,6 +319,31 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
                     )}
                 </div>
                 <div className="text-[11px] text-muted-foreground/80">{t('apiKey.form.modelsHint')}</div>
+            </div>
+
+            <div className="grid gap-1">
+                <label htmlFor="apikey-routing-preference" className="text-xs text-muted-foreground">
+                    {t('apiKey.form.routingPreference')}
+                </label>
+                <Select
+                    value={form.routing_preference ?? 'inherit'}
+                    onValueChange={(value) =>
+                        updateForm({ routing_preference: value as APIKeyFormData['routing_preference'] })
+                    }
+                    disabled={isPending}
+                >
+                    <SelectTrigger id="apikey-routing-preference" className="w-full rounded-xl">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="inherit">{t('apiKey.form.routingOptions.inherit')}</SelectItem>
+                        <SelectItem value="balanced">{t('apiKey.form.routingOptions.balanced')}</SelectItem>
+                        <SelectItem value="price">{t('apiKey.form.routingOptions.price')}</SelectItem>
+                        <SelectItem value="latency">{t('apiKey.form.routingOptions.latency')}</SelectItem>
+                        <SelectItem value="success">{t('apiKey.form.routingOptions.success')}</SelectItem>
+                    </SelectContent>
+                </Select>
+                <div className="text-[11px] text-muted-foreground/80">{t('apiKey.form.routingPreferenceHint')}</div>
             </div>
 
             <div className="flex items-center justify-between pt-1">

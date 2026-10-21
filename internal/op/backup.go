@@ -82,7 +82,18 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 		return nil, fmt.Errorf("unsupported dump version: %d", dump.Version)
 	}
 
-	// 导入也是写入边界, 渠道配置须与接口提交走同一套规范化: 手改过的备份文件同样可能带空白,
+	// 导入也是写入边界: 手工修改的备份不得绕过媒体单价和关键数值设置校验。
+	for i := range dump.ChannelModels {
+		if err := dump.ChannelModels[i].MediaSupply.Validate(); err != nil {
+			return nil, fmt.Errorf("import channel model %d: %w", dump.ChannelModels[i].ID, err)
+		}
+	}
+	for i := range dump.Settings {
+		if err := dump.Settings[i].Validate(); err != nil {
+			return nil, fmt.Errorf("import setting %s: %w", dump.Settings[i].Key, err)
+		}
+	}
+	// 渠道配置须与接口提交走同一套规范化: 手改过的备份文件同样可能带空白,
 	// 空串或缺省字段, 不在此收敛则读侧要为每个字段各自兜底。
 	for i := range dump.Channels {
 		config, err := normalizeChannelConfig(dump.Channels[i].ChannelConfig)

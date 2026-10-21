@@ -203,19 +203,19 @@ func ChannelReviewList(status string, scope model.Scope) []model.ChannelReviewIt
 			}
 		}
 		items = append(items, model.ChannelReviewItem{
-			ChannelID:      channel.ID,
-			UserID:         channel.UserID,
-			OwnerName:      ownerName,
-			ChannelName:    channel.Name,
-			ReviewStatus:   channel.ReviewStatus,
-			ReviewNote:     channel.ReviewNote,
-			SubmittedAt:    channel.SubmittedAt,
-			ReviewedBy:     channel.ReviewedBy,
-			ReviewerName:   reviewerName,
-			ReviewedAt:     channel.ReviewedAt,
-			Shared:         channel.Shared,
-			Enabled:        channel.Enabled,
-			ModelCount:     len(channelModelNames(channel.ID)),
+			ChannelID:    channel.ID,
+			UserID:       channel.UserID,
+			OwnerName:    ownerName,
+			ChannelName:  channel.Name,
+			ReviewStatus: channel.ReviewStatus,
+			ReviewNote:   channel.ReviewNote,
+			SubmittedAt:  channel.SubmittedAt,
+			ReviewedBy:   channel.ReviewedBy,
+			ReviewerName: reviewerName,
+			ReviewedAt:   channel.ReviewedAt,
+			Shared:       channel.Shared,
+			Enabled:      channel.Enabled,
+			ModelCount:   len(channelModelNames(channel.ID)),
 		})
 	}
 	// 审核队列按提交时间倒序, 未提交(draft)排最后; 同一时间按主键定序保证稳定。

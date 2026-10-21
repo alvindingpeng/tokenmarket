@@ -1,5 +1,10 @@
 package model
 
+import (
+	"fmt"
+	"math"
+)
+
 type LLMPrice struct {
 	Input      float64 `json:"input"`
 	Output     float64 `json:"output"`
@@ -50,6 +55,31 @@ type MediaPrice struct {
 	PerVideo   float64            `json:"per_video,omitempty"`
 	PerSecond  float64            `json:"per_second,omitempty"`
 	Resolution map[string]float64 `json:"resolution,omitempty"`
+}
+
+const MaxMediaPricePerUnit = 1_000.0
+
+// Validate rejects non-finite or out-of-range media prices before they reach billing.
+func (p MediaPrice) Validate() error {
+	check := func(field string, value float64) error {
+		if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > MaxMediaPricePerUnit {
+			return fmt.Errorf("media %s price must be finite and between 0 and %g", field, MaxMediaPricePerUnit)
+		}
+		return nil
+	}
+	for field, value := range map[string]float64{
+		"per_image": p.PerImage, "per_video": p.PerVideo, "per_second": p.PerSecond,
+	} {
+		if err := check(field, value); err != nil {
+			return err
+		}
+	}
+	for key, value := range p.Resolution {
+		if err := check("resolution "+key, value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // CostImages 按张数与(可选)分档计算输出费用; resolution 为空时使用 PerImage。

@@ -63,8 +63,8 @@ func TestMergeFetchedForKey(t *testing.T) {
 		conn := autoaddTestDB(t)
 		channelID, keyID, m0ID, m1ID := autoaddSeed(t, conn)
 		fetched := []model.ChannelFetchModel{
-			{Name: "m1", Protocols: model.ProtocolOpenAIResponse},            // 已有: OR 并入 Response 位, Anthropic 位保留。
-			{Name: "  m2  ", Protocols: model.ProtocolOpenAIResponse},        // 新增: 名称两侧空白被 trim。
+			{Name: "m1", Protocols: model.ProtocolOpenAIResponse},                                   // 已有: OR 并入 Response 位, Anthropic 位保留。
+			{Name: "  m2  ", Protocols: model.ProtocolOpenAIResponse},                               // 新增: 名称两侧空白被 trim。
 			{Name: "dall-e-3", Protocols: model.ProtocolOpenAIResponse | model.ProtocolOpenAIImage}, // 新增 + 生图位。
 		}
 		newCount := 0

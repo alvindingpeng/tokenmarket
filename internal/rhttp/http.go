@@ -154,7 +154,7 @@ func Direct() (*http.Client, error) {
 	}
 	// 克隆自 http.DefaultTransport 会带上 ProxyFromEnvironment, 直连须显式清掉。
 	cloned.Proxy = nil
-	directClient = &http.Client{Transport: cloned}
+	directClient = &http.Client{Transport: cloned, CheckRedirect: rejectRedirects}
 	return directClient, nil
 }
 
@@ -207,5 +207,9 @@ func newCustomProxyClient(proxyURLStr string) (*http.Client, error) {
 		return nil, fmt.Errorf("unsupported proxy scheme: %s", proxyURL.Scheme)
 	}
 
-	return &http.Client{Transport: cloned}, nil
+	return &http.Client{Transport: cloned, CheckRedirect: rejectRedirects}, nil
+}
+
+func rejectRedirects(_ *http.Request, _ []*http.Request) error {
+	return http.ErrUseLastResponse
 }

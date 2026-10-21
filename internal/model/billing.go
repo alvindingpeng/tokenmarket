@@ -43,12 +43,13 @@ type BillingRecord struct {
 
 // BalanceReservation 余额预扣记录; 请求结束时结算, 超时未结算由定时任务回滚冻结额。
 type BalanceReservation struct {
-	ID        uint64    `json:"id" gorm:"primaryKey"`
-	UserID    uint      `json:"user_id" gorm:"index"`
-	RequestID uint64    `json:"request_id" gorm:"index"`
-	Amount    float64   `json:"amount" gorm:"type:decimal(18,6)"`
-	Settled   bool      `json:"settled" gorm:"index"`
-	CreatedAt time.Time `json:"created_at"`
+	ID             uint64     `json:"id" gorm:"primaryKey"`
+	UserID         uint       `json:"user_id" gorm:"index"`
+	RequestID      uint64     `json:"request_id" gorm:"index"`
+	Amount         float64    `json:"amount" gorm:"type:decimal(18,6)"`
+	Settled        bool       `json:"settled" gorm:"index"`
+	CreatedAt      time.Time  `json:"created_at"`
+	LeaseExpiresAt *time.Time `json:"lease_expires_at" gorm:"index"`
 }
 
 // BillingStatus 计费记录状态。

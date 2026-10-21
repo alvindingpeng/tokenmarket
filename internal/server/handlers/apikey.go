@@ -54,6 +54,13 @@ func createAPIKey(c *gin.Context) {
 		return
 	}
 	// 归属取自登录身份, 不信任请求体。
+	if !model.IsValidRoutingPreference(req.RoutingPreference) {
+		resp.Error(c, http.StatusBadRequest, "invalid routing_preference")
+		return
+	}
+	if req.RoutingPreference == "" {
+		req.RoutingPreference = model.RoutingPreferenceInherit
+	}
 	userID, _ := middleware.CurrentUser(c)
 	req.UserID = userID
 	if strings.TrimSpace(req.APIKey) == "" {
@@ -82,6 +89,11 @@ func updateAPIKey(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
+	if !model.IsValidRoutingPreference(req.RoutingPreference) {
+		resp.Error(c, http.StatusBadRequest, "invalid routing_preference")
+		return
+	}
+	// Older clients omit the preference; preserve it in APIKeyUpdate.
 	userID, role := middleware.CurrentUser(c)
 	if err := op.APIKeyUpdate(&req, model.Scope{ID: userID, Role: role}, c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())

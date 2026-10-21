@@ -41,7 +41,7 @@
 | P1 | 按张计费: ChannelModel.MediaSupply(每张/每秒/分档) + BillingRecord media_units, 旧账单行兼容; 改价工作台按张编辑 | ✅ 已完成 |
 | P1 | 预扣参数 balance_reserve_images(默认 4, 后台可改, 1-64 校验) | ✅ 已完成 |
 | P2 | 生视频: /v1/videos 异步任务, 按次计价, 协议位 1<<5 | ✅ 已完成(v0.20.0): 见 docs/video-generation.md |
-| P2 | 生图流式(partial_images 事件流)与上游用量对账 | ⬜ 未开始 |
+| P2 | 生图流式(partial_images 事件流)与上游用量对账 | ✅ 已完成: stream:true 透传 image_generation.* SSE 事件, 流末按 completed 事件数张计费(partial 不计), 见 docs/image-generation.md |
 | P3 | 模型能力探测: 用 /models 元数据或试算替代名称关键词归类 | ✅ 已完成(v0.19.0): `op.CapabilityGet` 改走能力登记(models.dev 官方收录 + 人工补录), 名称关键词退为兜底, 见 `internal/op/channel_probe.go` |
 
 见 docs/image-generation.md 与 docs/video-generation.md。
@@ -86,7 +86,7 @@
 | 优先级 | 事项 | 状态 |
 |---|---|---|
 | P2 | 生视频: `/v1/videos` 异步任务, 按次计价 | ✅ 已完成(v0.20.0): 创建/查询/取消三条路由 + 任务归属追踪 + 按条与按秒计费, 见 `docs/video-generation.md` |
-| P2 | 生图流式(`partial_images` 事件流)与上游用量对账 | ⬜ 未开始。全代码 0 引用 |
+| P2 | 生图流式(`partial_images` 事件流)与上游用量对账 | ✅ 已完成: `stream:true` 透传 `image_generation.*` SSE 事件, 流末按 completed 事件数张计费(partial 不计), 见 `docs/image-generation.md` |
 | P3 | 充值功能 | ⬜ 未开始。界面提示「充值功能后续上线」, 后端无任何实现, 目前只能管理员手工调账 |
 
 ## 媒体定价(2026-10-12 定稿)

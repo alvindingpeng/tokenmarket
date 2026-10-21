@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -272,7 +273,7 @@ func (s *Setting) Validate() error {
 	switch s.Key {
 	case SettingKeyMarkupRatio:
 		ratio, err := strconv.ParseFloat(s.Value, 64)
-		if err != nil || ratio < 0 || ratio > 100 {
+		if err != nil || ratio < 0 || ratio > 100 || math.IsNaN(ratio) || math.IsInf(ratio, 0) {
 			return fmt.Errorf("markup ratio must be a number between 0 and 100")
 		}
 		return nil
@@ -293,8 +294,9 @@ func (s *Setting) Validate() error {
 		}
 		return nil
 	case SettingKeyMinBalance:
-		if _, err := strconv.ParseFloat(s.Value, 64); err != nil {
-			return fmt.Errorf("min balance must be a number")
+		value, err := strconv.ParseFloat(s.Value, 64)
+		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+			return fmt.Errorf("min balance must be a finite non-negative number")
 		}
 		return nil
 	case SettingKeyRechargeRate:

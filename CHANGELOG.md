@@ -1,5 +1,36 @@
 # 更新说明
 
+## v0.40.0 — 2026-10-21
+
+生图流式、生视频安全加固、API Key 路由偏好上线；同时把此前已在生产运行、但一直未入版本库的财务加固 2A 代码补录进 git（线上行为不变，纯入库对齐）。
+
+### 生图流式
+
+- `/v1/images/generations` 支持 `stream:true`（gpt-image-1 等上游以 SSE 事件流下发图片）：同协议透传，`image_generation.partial_image`（中间进度）与 `image_generation.completed`（最终图）逐条转发给客户端。
+- 流末按 `image_generation.completed` 事件数张计费，与同步响应数 `data[]` 张数完全同口径；`partial_image` 中间态不计入张数。上游在最终图事件带回 `usage` 时叠加 token 计费，否则仅按张计费。
+- 终态判定：`data: [DONE]` 或上游干净关闭均视为正常结束；事件形式的 `error` 形状立即终止本响应。生图流式同样受媒体单发保护，一旦真正发到上游不再换目标重发。
+- 实现 `internal/relay/image_stream.go`，流末自建 `{"data":[...]}` 计费体复用同步计费/统计路径（库对生图流式聚合判为不支持，不依赖转换器聚合）。
+
+### 生视频安全加固与重试安全
+
+- 视频创建路由挂时长闸门：声明了 NaN/Inf/越界 `seconds` 的请求在派发前以 400 拒绝，既不冻结余额也不发往上游，计费时长与转发时长同口径（含压缩正文解码后的校验）。
+- 视频任务凭据安全：创建成功时把 `channel_key_id` 一并落库；凭据轮换后查询/取消按创建时的实际凭据还原，老记录（ID 为 0）回落授权绑定的凭据；任务归属校验保持与任务不存在同返回 404。
+- 媒体单次派发、准入退避（先退避后准入）、取消成功竞态、流式提交回归等重试安全项测试齐备（`internal/relay/*_test.go`）。
+- 停用上游重定向跟随（`internal/rhttp`），避免把渠道凭据泄露给重定向目标。
+
+### API Key 路由偏好
+
+- API Key 新增 `routing_preference` 字段（`inherit|balanced|price|latency|success`，默认 inherit）：按 Key 级覆盖用户侧选路偏好，只影响本次请求的选路模式，不绕过可用性、限额、协议能力、计费与重试边界；手动模式是硬约束不受偏好影响。
+- 偏好下的选路跳过亲和期沿用，避免亲和掩盖偏好选择；设置/管理后台支持维护该字段。
+
+### 财务加固 2A 补录（已上线，本次入 git）
+
+- 结算补偿：`BillingSettle` 持久入队 + 重试任务（启动即跑 + 每 5 分钟，限量 50 笔/限时 1 分钟），进程崩溃或执行中断留下的未完成结算重试到位，不再依赖预扣超时释放。
+- 余额预扣续租心跳：请求在途且确有预扣时按续租周期维持租约，定稿/零用量显式释放即停；`lease_expires_at` 列与补偿表结构已随迁移上线。
+- 发布安全：外部入口暂停新请求并排空（`--traffic-paused` 显式确认 + `active_requests=0` 检查）；停服备份后在隔离副本做 `verify-migration` 演练；脚本 `scripts/verify-financial-migration.py`、`scripts/audit-financial-history.py`（只读审计）、`scripts/test_financial_*.py` 纳入 `scripts/check.sh`。
+- 账户/资金配套：提现、争议、对账、配额、管理员调账（目标值等于缓存余额也交由资金层核对数据库）、渠道自动添加/审核、告警派发竞争修复；前端 APIKey 管理、运营后台与三语文案同步。
+
+---
 ## v0.39.8 — 2026-10-20
 
 上线公开渠道模型状态页 `/status`，无需登录，首页提供入口。

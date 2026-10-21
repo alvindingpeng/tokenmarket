@@ -33,6 +33,12 @@ func APIKeyUpdate(key *model.APIKey, scope model.Scope, ctx context.Context) err
 	if key.APIKey == "" {
 		key.APIKey = existing.APIKey
 	}
+	if key.RoutingPreference == "" {
+		key.RoutingPreference = existing.RoutingPreference
+		if key.RoutingPreference == "" {
+			key.RoutingPreference = model.RoutingPreferenceInherit
+		}
+	}
 	if err := db.GetDB().WithContext(ctx).Save(key).Error; err != nil {
 		return fmt.Errorf("failed to update API key: %w", err)
 	}

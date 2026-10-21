@@ -163,10 +163,10 @@ func TestRechargeStripeUSDSettle(t *testing.T) {
 	}))
 	defer server.Close()
 	for settingKey, value := range map[model.SettingKey]string{
-		model.SettingKeyStripeSecretKey:   "sk_test",
-		model.SettingKeyStripeWebhook:     "whsec_test",
-		model.SettingKeyStripeAPIBase:     server.URL,
-		model.SettingKeyStripeCurrency:    "usd",
+		model.SettingKeyStripeSecretKey: "sk_test",
+		model.SettingKeyStripeWebhook:   "whsec_test",
+		model.SettingKeyStripeAPIBase:   server.URL,
+		model.SettingKeyStripeCurrency:  "usd",
 	} {
 		if err := SettingUpsert(settingKey, value); err != nil {
 			t.Fatal(err)

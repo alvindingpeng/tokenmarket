@@ -27,11 +27,11 @@ const (
 
 // emailCodeSendLog 发送限流的内存计量: key -> 最近发送与小时窗口计数。
 type emailCodeSendLog struct {
-	last     time.Time
-	hour     time.Time
-	count    int
-	ipHour   time.Time
-	ipCount  int
+	last    time.Time
+	hour    time.Time
+	count   int
+	ipHour  time.Time
+	ipCount int
 }
 
 var emailCodeLogs = map[string]*emailCodeSendLog{}
