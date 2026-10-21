@@ -542,12 +542,31 @@ function ShareCard({ channel }: { channel: ChannelStatsFormatted }) {
     );
 }
 
+// shareCodeNumber 提取分享编码的数字部分用于排序; 空编码视为最大值排到最后。
+// 编码形如 "1001" / "abc-1002" / ""(未发布), 只取末尾数字, 无法解析时视为正无穷。
+function shareCodeNumber(code: string): number {
+    if (!code) return Number.POSITIVE_INFINITY;
+    const match = code.match(/\d+$/);
+    return match ? parseInt(match[0], 10) : Number.POSITIVE_INFINITY;
+}
+
 // Share 渲染发布管理正文: 渠道商发布自己的渠道, 管理员可发布任意渠道。
 export default function Share() {
     const t = useTranslations('share');
     const { data: statsData, isLoading, isError } = useChannelStats();
 
-    const channels = useMemo(() => statsData ?? [], [statsData]);
+    // channels 按固定次序稳定排序, 保证每次打开页面卡片顺序一致(此前依赖后端返回序, 结果随机):
+    // 1) 已发布(shared)优先; 2) 启用(enabled)优先; 3) 分享编码数字升序; 4) 渠道名升序兜底。
+    const channels = useMemo(() => {
+        const rows = statsData ?? [];
+        return [...rows].sort((a, b) => {
+            if (a.shared !== b.shared) return a.shared ? -1 : 1;
+            if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+            const codeDiff = shareCodeNumber(a.share_code) - shareCodeNumber(b.share_code);
+            if (codeDiff !== 0) return codeDiff;
+            return a.channel_name.localeCompare(b.channel_name, undefined, { numeric: true, sensitivity: 'base' });
+        });
+    }, [statsData]);
 
     if (isError) {
         return <p className="py-12 text-center text-sm text-muted-foreground">{t('loadFailed')}</p>;

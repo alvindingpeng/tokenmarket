@@ -1,0 +1,46 @@
+#!/usr/bin/expect -f
+# 自动化部署脚本 - 使用 expect 处理密码认证
+
+set timeout 30
+set password "kLaRns0425"
+set server "tt.xjj.se"
+set user "root"
+
+# 参数
+if {$argc < 2} {
+    puts "Usage: deploy.exp <command> <local_file|remote_command>"
+    exit 1
+}
+
+set action [lindex $argv 0]
+
+if {$action == "upload"} {
+    set local_file [lindex $argv 1]
+    set remote_path [lindex $argv 2]
+    
+    spawn scp -o StrictHostKeyChecking=no $local_file $user@$server:$remote_path
+    expect {
+        "password:" {
+            send "$password\r"
+            expect eof
+        }
+        timeout {
+            puts "SCP timeout"
+            exit 1
+        }
+    }
+} elseif {$action == "exec"} {
+    set command [lindex $argv 1]
+    
+    spawn ssh -o StrictHostKeyChecking=no $user@$server $command
+    expect {
+        "password:" {
+            send "$password\r"
+            expect eof
+        }
+        timeout {
+            puts "SSH timeout"
+            exit 1
+        }
+    }
+}

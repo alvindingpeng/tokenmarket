@@ -26,10 +26,10 @@ function dayLabel(date: string): string {
     return date.length === 6 ? `${date.slice(4, 6)}/${date.slice(6, 8)}` : date;
 }
 
-// TokenCell 是四类词元的紧凑展示, 行内自动换行而不是横向溢出。
+// TokenCell 是四类词元的紧凑展示: 横向单行排列不换行, 表格列宽不足时由外层横向滚动条承接。
 function TokenCell({ values }: { values: { label: string; value: number }[] }) {
     return (
-        <span className="flex min-w-0 flex-wrap gap-x-3 gap-y-0.5 font-mono text-xs tabular-nums">
+        <span className="flex flex-nowrap gap-x-3 whitespace-nowrap font-mono text-xs tabular-nums">
             {values.map(({ label, value }) => (
                 <span key={label} className="text-muted-foreground">
                     {label} <span className="text-foreground">{formatCount(value)}</span>
@@ -184,7 +184,7 @@ function SpendingTable({ owner, onView }: { owner: boolean; onView: (id: number)
 
     // 列宽随是否展示"收入"列变化, 用同一份模板字符串拼接。
     const gridTemplate = useMemo(() => {
-        const base = '150px minmax(180px,1.7fr) minmax(100px,1fr) minmax(210px,1.5fr) 110px';
+        const base = '150px minmax(180px,1.7fr) minmax(100px,1fr) minmax(340px,1.5fr) 110px';
         return owner ? `${base} 110px 90px` : base + ' 90px';
     }, [owner]);
 
@@ -228,8 +228,8 @@ function SpendingTable({ owner, onView }: { owner: boolean; onView: (id: number)
             ) : records.length === 0 ? (
                 <p className="py-10 text-center text-sm text-muted-foreground">{t('details.empty')}</p>
             ) : (
-                <div className="overflow-x-auto">
-                    <div className="min-w-[980px]">
+                <div className="overflow-x-auto overscroll-x-contain">
+                    <div className="min-w-[1180px]">
                         <div className="grid items-center gap-3 border-b border-border/60 py-2 text-xs font-medium text-muted-foreground" style={{ gridTemplateColumns: gridTemplate }}>
                             <span>{t('details.column.time')}</span>
                             <span>{t('details.column.model')}</span>
@@ -323,16 +323,16 @@ function SpendingTrend() {
             ) : rows.length === 0 ? (
                 <p className="py-10 text-center text-sm text-muted-foreground">{t('trend.empty')}</p>
             ) : (
-                <div className="overflow-x-auto">
-                    <div className="min-w-[640px]">
-                        <div className="grid grid-cols-[90px_1fr_minmax(150px,1.2fr)_110px] gap-3 border-b border-border/60 py-2 text-xs font-medium text-muted-foreground">
+                <div className="overflow-x-auto overscroll-x-contain">
+                    <div className="min-w-[900px]">
+                        <div className="grid grid-cols-[90px_1fr_minmax(340px,1.2fr)_110px] gap-3 border-b border-border/60 py-2 text-xs font-medium text-muted-foreground">
                             <span>{t('trend.column.date')}</span>
                             <span className="text-right">{t('trend.column.requests')}</span>
                             <span>{t('trend.column.tokens')}</span>
                             <span className="text-right">{t('trend.column.spend')}</span>
                         </div>
 
-                        <div className="grid grid-cols-[90px_1fr_minmax(150px,1.2fr)_110px] gap-3 border-b border-border/60 bg-muted/30 py-2 text-sm font-medium">
+                        <div className="grid grid-cols-[90px_1fr_minmax(340px,1.2fr)_110px] gap-3 border-b border-border/60 bg-muted/30 py-2 text-sm font-medium">
                             <span>{t('trend.summary')}</span>
                             <span className="text-right tabular-nums">{formatCount(totals.requests)}</span>
                             <span className="text-xs text-muted-foreground">{formatCount(totals.tokens)}</span>
@@ -340,7 +340,7 @@ function SpendingTrend() {
                         </div>
 
                         {rows.map((row) => (
-                            <div key={row.date} className="grid grid-cols-[90px_1fr_minmax(150px,1.2fr)_110px] gap-3 py-2 text-sm hover:bg-muted/40">
+                            <div key={row.date} className="grid grid-cols-[90px_1fr_minmax(340px,1.2fr)_110px] gap-3 py-2 text-sm hover:bg-muted/40">
                                 <span className="tabular-nums text-muted-foreground">{dayLabel(row.date)}</span>
                                 <span className="text-right tabular-nums">{formatCount(row.request_count)}</span>
                                 <DailyTokenCell row={row} />
