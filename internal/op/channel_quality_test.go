@@ -225,3 +225,61 @@ func TestChannelTrustEvaluateSkipsNoWindow(t *testing.T) {
 		t.Fatalf("trust_level = %q, want observing (no window must be skipped, not demoted)", got.TrustLevel)
 	}
 }
+
+// TestShareQualityOfSkipsBandsWithoutSamples 验证分享页不会把「当天没流量」显示成「质量很差」。
+//
+// 无请求时 SuccessRate 与 AvgWaitMs 都是 0, 直接折算会得到 "<95% / <2s" ——
+// 一个看起来很差但实际只是当天没有流量的假象。样本不足必须整项不出。
+func TestShareQualityOfSkipsBandsWithoutSamples(t *testing.T) {
+	trustTestEnv(t)
+	channel := model.Channel{ChannelConfig: model.ChannelConfig{Name: "share-empty"}}
+	if err := db.GetDB().Create(&channel).Error; err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// 有探测但无流量的快照: 只该出可用率区间, 不该出成功率/延迟区间。
+	snapshot := model.ChannelQualitySnapshot{
+		ChannelID:    channel.ID,
+		Date:         time.Now().AddDate(0, 0, -1).Format("20060102"),
+		RequestCount: 0,
+		UptimePct:    99.95,
+		HealthChecks: 50,
+		Grade:        "",
+	}
+	if err := db.GetDB().Create(&snapshot).Error; err != nil {
+		t.Fatalf("create snapshot: %v", err)
+	}
+
+	quality := ShareQualityOf(channel.ID)
+	if quality == nil {
+		t.Fatalf("expected quality with uptime band, got nil")
+	}
+	if quality.UptimeBand != "99.9%+" {
+		t.Fatalf("uptime band = %q, want 99.9%%+", quality.UptimeBand)
+	}
+	if quality.SuccessBand != "" {
+		t.Fatalf("success band = %q, want empty (no traffic ⇒ 0%% would read as <95%%)", quality.SuccessBand)
+	}
+	if quality.LatencyBand != "" {
+		t.Fatalf("latency band = %q, want empty (no traffic ⇒ 0ms would read as <2s)", quality.LatencyBand)
+	}
+}
+
+// TestShareQualityOfNilWhenNothingToShow 验证完全没有数据时不返回质量摘要。
+// 返回一个全空结构会让分享页渲染出一排破折号, 比不显示更糟。
+func TestShareQualityOfNilWhenNothingToShow(t *testing.T) {
+	trustTestEnv(t)
+	channel := model.Channel{ChannelConfig: model.ChannelConfig{Name: "share-nothing"}}
+	if err := db.GetDB().Create(&channel).Error; err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	snapshot := model.ChannelQualitySnapshot{
+		ChannelID: channel.ID,
+		Date:      time.Now().AddDate(0, 0, -1).Format("20060102"),
+	}
+	if err := db.GetDB().Create(&snapshot).Error; err != nil {
+		t.Fatalf("create snapshot: %v", err)
+	}
+	if quality := ShareQualityOf(channel.ID); quality != nil {
+		t.Fatalf("expected nil quality for empty snapshot, got %+v", quality)
+	}
+}

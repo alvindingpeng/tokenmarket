@@ -418,12 +418,24 @@ func ShareQualityOf(channelID int) *ShareQuality {
 	if channel, ok := channelCache.Get(channelID); ok {
 		observing = channel.TrustLevel == model.ChannelTrustObserving || channel.TrustLevel == model.ChannelTrustProbation
 	}
-	return &ShareQuality{
-		Grade:       latest.Grade,
-		UptimeBand:  model.QualityBandUptime(latest.UptimePct),
-		LatencyBand: model.QualityBandLatency(latest.AvgWaitMs),
-		SuccessBand: model.QualityBandSuccess(latest.SuccessRate),
-		Observing:   observing,
-		Since:       since,
+	quality := &ShareQuality{
+		Grade:     latest.Grade,
+		Observing: observing,
+		Since:     since,
 	}
+	// 可用率来自健康探测, 与请求量无关, 有探测数据就展示。
+	if latest.HealthChecks > 0 {
+		quality.UptimeBand = model.QualityBandUptime(latest.UptimePct)
+	}
+	// 成功率与延迟来自真实流量: 请求数不足时两者都是 0, 展示出去会变成 "<95% / <2s" 这种
+	// 「看起来很差」的假象 —— 实际是当天没有流量。样本不足就不出这两项。
+	if latest.RequestCount >= model.QualityMinSamples {
+		quality.SuccessBand = model.QualityBandSuccess(latest.SuccessRate)
+		quality.LatencyBand = model.QualityBandLatency(latest.AvgWaitMs)
+	}
+	// 三个区间全空且无等级时没有任何可展示内容, 返回 nil 让分享页干脆不渲染质量条。
+	if quality.Grade == "" && quality.UptimeBand == "" && quality.SuccessBand == "" {
+		return nil
+	}
+	return quality
 }
