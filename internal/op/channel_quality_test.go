@@ -43,6 +43,8 @@ func seedObservationChannel(t *testing.T, success, failed int64, startDaysAgo in
 		TrustLevel:       model.ChannelTrustObserving,
 		ObservationStart: &start,
 		ObservationUntil: &until,
+		// 观察期只针对已过审渠道: 未过审渠道本就不能发布, 对它们做降级没有意义。
+		ReviewStatus: model.ChannelReviewApproved,
 	}
 	if err := db.GetDB().Create(&channel).Error; err != nil {
 		t.Fatalf("create channel: %v", err)
@@ -190,5 +192,36 @@ func TestChannelTrustStartSetsObservation(t *testing.T) {
 	// 截止时间应约为 7 天后(设置里钉死 7 天)。
 	if days := got.ObservationUntil.Sub(*got.ObservationStart).Hours() / 24; days < 6.9 || days > 7.1 {
 		t.Fatalf("observation window = %.2f days, want ~7", days)
+	}
+}
+
+// TestChannelTrustEvaluateSkipsNoWindow 验证没有观察期窗口的渠道不参与判定。
+//
+// 存量渠道在 P1 迁移时就带着 trust_level 默认值 observing, 但从未进入过观察期(无窗口)。
+// 若评估逻辑把它们当作「已到期且无样本」处理, 首次运行就会把全站存量渠道打成 probation,
+// 给它们的评分统一乘 0.70 —— 一次没有任何错误日志的静默线上回归。
+// 存量渠道由迁移 021 一次性转正; 这里守的是运行期不得再动它们。
+func TestChannelTrustEvaluateSkipsNoWindow(t *testing.T) {
+	trustTestEnv(t)
+	// 列默认 observing 但没有窗口的存量渠道。
+	legacy := model.Channel{ChannelConfig: model.ChannelConfig{Name: "legacy-no-window"}}
+	if err := db.GetDB().Create(&legacy).Error; err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// 给它一堆失败流量: 若被纳入判定, 必然降级。
+	daily := model.StatsChannelDaily{
+		ChannelID:    legacy.ID,
+		Date:         time.Now().AddDate(0, 0, -1).Format("20060102"),
+		StatsMetrics: model.StatsMetrics{RequestFailed: 500},
+	}
+	if err := db.GetDB().Create(&daily).Error; err != nil {
+		t.Fatalf("create stats: %v", err)
+	}
+
+	if err := ChannelTrustEvaluate(context.Background()); err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	if got := loadTrust(t, legacy.ID); got.TrustLevel != model.ChannelTrustObserving {
+		t.Fatalf("trust_level = %q, want observing (no window must be skipped, not demoted)", got.TrustLevel)
 	}
 }
