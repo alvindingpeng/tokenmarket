@@ -15,7 +15,8 @@ export type SettingCardID =
     | 'llmPrice'
     | 'log'
     | 'ops'
-    | 'backup';
+    | 'backup'
+    | 'channel';
 
 // SettingViewID 管理后台的整页视图: 自带标题与滚动, 嵌进设置页后占满正文区。
 export type SettingViewID = 'users' | 'audit' | 'ratelimit' | 'redemption';
@@ -34,6 +35,7 @@ export const SETTING_CARD_IDS: SettingCardID[] = [
     'log',
     'ops',
     'backup',
+    'channel',
 ];
 
 // SETTING_VIEW_IDS 全部管理视图清单, 同样必须被某个分组恰好收录一次。
@@ -60,7 +62,7 @@ export const SETTING_SECTIONS: SettingSection[] = [
     { id: 'site', icon: Globe, adminOnly: true, cards: ['systemInfo', 'info', 'mail'], views: [] },
     { id: 'system', icon: Monitor, adminOnly: true, cards: ['system', 'platform'], views: [] },
     { id: 'billing', icon: CreditCard, adminOnly: true, cards: ['payment', 'llmPrice'], views: [] },
-    { id: 'ops', icon: HeartPulse, adminOnly: true, cards: ['log', 'ops', 'backup'], views: [] },
+    { id: 'ops', icon: HeartPulse, adminOnly: true, cards: ['log', 'ops', 'backup', 'channel'], views: [] },
 ];
 
 // sectionsFor 按角色返回可见分组: 普通用户只看到个人设置, 渠道商与管理员看全量。

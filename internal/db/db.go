@@ -89,6 +89,7 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.RateLimitUsageHourly{},
 		&model.BillingReconcile{},
 		&model.ChannelHealthRecord{},
+		&model.ChannelQualitySnapshot{},
 		&model.ChannelEgress{},
 		&model.VideoJob{},
 		&model.ChannelAlert{},

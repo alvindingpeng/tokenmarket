@@ -184,12 +184,17 @@ type ChannelStats struct {
 	ShareCode   string `json:"share_code"`   // 发布唯一编码; 未发布为空。
 	Enabled     bool   `json:"enabled"`      // 渠道是否可用, 供列表页的开关与过滤使用。
 	// 准入审核状态随列表一并外露: 卡片徽章与发布闸口提示只消费这一条查询, 无需另开接口。
-	ReviewStatus string              `json:"review_status"`          // 审核状态 draft|pending|approved|rejected|stale。
-	ReviewNote   string              `json:"review_note"`            // 提交说明 / 审核意见 / 驳回原因。
-	SubmittedAt  *time.Time          `json:"submitted_at,omitempty"` // 最近提交审核时间。
-	ReviewedAt   *time.Time          `json:"reviewed_at,omitempty"`  // 最近审核时间。
-	Models       []ChannelModelStats `json:"models"`                 // 该渠道各模型的独立统计, 恒为数组; 长度即渠道的模型个数。
-	StatsMetrics                     // 渠道自身的累计统计。
+	ReviewStatus string     `json:"review_status"`          // 审核状态 draft|pending|approved|rejected|stale。
+	ReviewNote   string     `json:"review_note"`            // 提交说明 / 审核意见 / 驳回原因。
+	SubmittedAt  *time.Time `json:"submitted_at,omitempty"` // 最近提交审核时间。
+	ReviewedAt   *time.Time `json:"reviewed_at,omitempty"`  // 最近审核时间。
+	// 信任级别与观察期窗口随列表外露(P2): 卡片要显示「观察期剩余 N 天」进度条,
+	// 单独开接口会让列表页多一轮往返, 而这几列本就是渠道行的字段。
+	TrustLevel       string              `json:"trust_level"`                 // 信任级别 trusted|observing|probation|revoked。
+	ObservationStart *time.Time          `json:"observation_start,omitempty"` // 观察期起始时间。
+	ObservationUntil *time.Time          `json:"observation_until,omitempty"` // 观察期截止时间。
+	Models           []ChannelModelStats `json:"models"`                      // 该渠道各模型的独立统计, 恒为数组; 长度即渠道的模型个数。
+	StatsMetrics                         // 渠道自身的累计统计。
 }
 
 // 单个渠道模型的累计统计。

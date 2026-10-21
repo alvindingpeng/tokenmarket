@@ -20,7 +20,15 @@ import {
 import { snapdom } from '@zumer/snapdom';
 import { toast } from 'sonner';
 import { useTranslations } from 'use-intl';
-import { type ChannelStatsFormatted, useChannelDailyStats, useDeleteChannel, useResetChannelBreaker } from '@/api/channel';
+import {
+    type ChannelStatsFormatted,
+    type ChannelTrustLevel,
+    useChannelDailyStats,
+    useChannelQuality,
+    useDeleteChannel,
+    useResetChannelBreaker,
+} from '@/api/channel';
+import { GradeBadge, ObservationProgress, QualityTrend, TrustBadge } from './QualityBadge';
 import { type StatsMetricsFormatted } from '@/api/stats';
 import { formatTime } from '@/lib/utils';
 import { useMorphingDialog } from '@/components/ui/morphing-dialog';
@@ -145,6 +153,52 @@ function TrendPanel({ channelId, models }: { channelId: number; models: TrendMod
 // ChannelStats 展示单个渠道的汇总指标与模型排行, 布局随容器宽度自适应, 并可导出为分享图
 // 统计自带渠道名称与模型清单, 由 /channel/stats 一并给出
 // 渠道的编辑与删除入口也在此: 卡片只负责打开弹窗, 需要看清指标后才动手的操作都收在头部
+// QualityPanel 展示渠道质量等级、观察期进度与近 30 天趋势(P2/P3)。
+// 数据每天才更新一次, 故不轮询; 面板本身随弹窗挂载/卸载, 天然只在查看详情时请求。
+function QualityPanel({ channelId, trustLevel }: { channelId: number; trustLevel?: ChannelTrustLevel }) {
+    const t = useTranslations('channel.quality');
+    const { data, isLoading } = useChannelQuality(channelId, 30);
+    if (isLoading) {
+        return <div className="h-20 animate-pulse rounded-2xl border bg-card" />;
+    }
+    if (!data) {
+        return null;
+    }
+    const yesterday = data.yesterday;
+    return (
+        <section data-share-exclude className="rounded-2xl border bg-card p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('title')}</h4>
+                <div className="flex items-center gap-1.5">
+                    <TrustBadge level={data.trust_level ?? trustLevel} />
+                    <GradeBadge grade={yesterday?.grade} />
+                </div>
+            </div>
+            {/* 观察期进度只在未转正时出现: 转正后展示进度条毫无意义, 只会占地方。 */}
+            {data.observing && (
+                <div className="mb-2">
+                    <ObservationProgress
+                        level={data.trust_level}
+                        until={data.observation_until}
+                        samples={data.window_samples}
+                        minSamples={data.min_samples}
+                        successRate={data.window_success_rate}
+                        floor={data.success_floor}
+                    />
+                </div>
+            )}
+            <QualityTrend trend={data.trend} days={30} />
+            {yesterday && (
+                <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] tabular-nums text-muted-foreground">
+                    <span>{t('successShort', { rate: (yesterday.success_rate * 100).toFixed(1) })}</span>
+                    <span>{t('avgWait', { ms: yesterday.avg_wait_ms })}</span>
+                    <span>{t('uptimeShort', { uptime: yesterday.uptime_pct.toFixed(1) })}</span>
+                </div>
+            )}
+        </section>
+    );
+}
+
 export function ChannelStats({ channel, onEdit }: {
     channel: ChannelStatsFormatted;
     onEdit: () => void; // 切换同一弹窗到编辑表单。
@@ -402,6 +456,9 @@ export function ChannelStats({ channel, onEdit }: {
                             </div>
                         ))}
                     </dl>
+                    {/* 质量与观察期(P2/P3): 只有展开详情才拉取 —— 列表页不需要逐卡请求质量接口。
+                        观察期进度条与质量趋势并列: 前者解释"为什么还没转正", 后者解释"转正后表现如何"。 */}
+                    <QualityPanel channelId={channel.channel_id} trustLevel={channel.trust_level} />
                 </section>
 
                 {/* 右列: 模型统计, 仅列出当前维度下的前五名 */}

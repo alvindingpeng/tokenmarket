@@ -188,6 +188,34 @@ func Init() {
 		},
 	})
 
+	// 渠道观察期评估: 每日一次, 把观察期内的累计成功率与毕业线比较, 决定转正/延长/收回。
+	// 启动即跑: 重启后可能已经跨过了观察期截止日, 不补跑的话渠道会一直停在 observing。
+	// 固定 24 小时周期: 观察期以「天」为粒度, 更频繁的评估只会让判定随日内抖动反复。
+	Define(Spec{
+		Name:       TaskChannelTrustEval,
+		Interval:   fixedInterval(24 * time.Hour),
+		RunOnStart: true,
+		Fn: func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			return op.ChannelTrustEvaluate(ctx)
+		},
+	})
+
+	// 渠道质量日快照: 每日固化昨日质量数据, 供 30 天趋势与公开分享页脱敏展示。
+	// 排在观察期评估之后(RunOnStart 时两者并行, 但周期任务按定义顺序错开同一时刻的 tick),
+	// 且只写昨日: 今日统计仍在内存累加, 固化会得到半天的假数据。
+	Define(Spec{
+		Name:       TaskChannelQuality,
+		Interval:   fixedInterval(24 * time.Hour),
+		RunOnStart: true,
+		Fn: func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			return op.ChannelQualitySnapshotRun(ctx)
+		},
+	})
+
 	// 更新检查只读取 Release 元数据, 不下载、不替换二进制; 真正更新必须由管理员点击按钮。
 	Define(Spec{
 		Name:     TaskUpdateCheck,

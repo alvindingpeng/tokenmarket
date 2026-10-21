@@ -23,6 +23,8 @@ var statsTopLevelExposed = []string{
 	"shared", "share_code", "enabled",
 	// 准入审核: 卡片徽章与发布闸口只消费这一条查询。
 	"review_status", "review_note", "submitted_at", "reviewed_at",
+	// 观察期(P2): 卡片信任徽章与观察期进度条同样只消费这一条查询, 单独开接口会多一轮往返。
+	"trust_level", "observation_start", "observation_until",
 	// 嵌套模型统计; 恒为数组的形状由 TestChannelStatsModelListNeverNull 单独覆盖。
 	"models",
 	// 嵌入的累计统计。
@@ -65,7 +67,11 @@ func TestChannelStatsJSONShape(t *testing.T) {
 		ReviewNote:   "ok",
 		SubmittedAt:  &stamp,
 		ReviewedAt:   &stamp,
-		Models:       []model.ChannelModelStats{},
+		// 观察期字段带 omitempty: 不填非零值会从 JSON 里消失, 那样测不出漏拷。
+		TrustLevel:       model.ChannelTrustObserving,
+		ObservationStart: &stamp,
+		ObservationUntil: &stamp,
+		Models:           []model.ChannelModelStats{},
 		StatsMetrics: model.StatsMetrics{InputToken: 1, OutputToken: 2, InputCost: 0.1, OutputCost: 0.2,
 			WaitTime: 30, RequestSuccess: 3, RequestFailed: 4},
 	}
@@ -132,6 +138,46 @@ func TestChannelStatsListCarriesReviewFields(t *testing.T) {
 	}
 	if target.ReviewedAt == nil {
 		t.Error("reviewed_at 未带出 —— 列表看不到审核时间")
+	}
+}
+
+// TestChannelStatsListCarriesObservationFields 回归同类风险: 观察期字段必须真的带出来。
+// 形状由 TestChannelStatsJSONShape 守, 这里断言值 —— 漏拷会让前端进度条恒显示「已转正」,
+// 掩盖真实的观察状态, 而所有形状测试依然全绿(与 v0.39.6 的 review_status 漏拷同一类问题)。
+func TestChannelStatsListCarriesObservationFields(t *testing.T) {
+	ctx, reseller, admin := reviewTestEnv(t)
+	if err := SettingUpsert(model.SettingKeyChannelReviewAdminBypass, "false"); err != nil {
+		t.Fatal(err)
+	}
+	created, err := ChannelCreate(reviewTestDetail("with-observation"), reseller, ctx)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := ChannelReviewSubmit(created.ID, "please review", reseller, ctx); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	// 审核通过即进入观察期: 三个字段必须一起出现在列表里。
+	if _, err := ChannelReviewApprove(created.ID, "ok", admin.ID, admin, ctx); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+
+	var target *model.ChannelStats
+	for _, item := range ChannelStatsList(admin) {
+		if item.ChannelID == created.ID {
+			found := item
+			target = &found
+			break
+		}
+	}
+	if target == nil {
+		t.Fatalf("channel %d missing from ChannelStatsList", created.ID)
+	}
+	if target.TrustLevel != model.ChannelTrustObserving {
+		t.Errorf("trust_level = %q, want %q —— 漏拷会让卡片恒显示已转正", target.TrustLevel, model.ChannelTrustObserving)
+	}
+	if target.ObservationStart == nil || target.ObservationUntil == nil {
+		t.Errorf("观察期窗口未带出: start=%v until=%v —— 前端进度条无法计算剩余天数",
+			target.ObservationStart, target.ObservationUntil)
 	}
 }
 

@@ -18,6 +18,9 @@ type MemberScoreView struct {
 	Samples      int     `json:"samples"`       // 已累计样本数, 0 表示冷成员。
 	Cold         bool    `json:"cold"`          // 尚无观测, 延迟与成功率按中性值参与评分。
 	Healthy      bool    `json:"healthy"`       // 成功率是否达到可靠性下限; 冷成员视为达标。
+	// ObservationFactor 是观察期折减系数(1.0 = 已转正或非渠道成员, <1 = 观察期/延长观察/已收回)。
+	// 单独回给界面: 用户看到分数变低时要知道是"质量不够"还是"渠道还在观察期"。
+	ObservationFactor float64 `json:"observation_factor"`
 }
 
 // ScoreBasis 是本次评分实际采用的权重与可靠性下限, 让界面能说明分数是按哪套参数算出来的。
@@ -95,6 +98,10 @@ func MemberScoreViews(group model.Group) []MemberScoreView {
 		// 与 selectByScore 同一套算法: 加权求和后按可靠性软惩罚折减, 折减强度随样本置信度缩放。
 		score := memberScore(basis.PriceWeight, basis.LatencyWeight, basis.SuccessWeight, i, prices, waits, rates, known)
 		score *= reliabilityPenalty(rates[i], samples[i], basis.ReliabilityFloor)
+		// 与 selectByScore 同一套折减: 界面上的分数必须与选路实际用的分数一致, 否则用户无法解释结果。
+		factor := observationPenalty(item)
+		score *= factor
+		view.ObservationFactor = factor
 		view.Score = score * 100
 		views[i] = view
 	}

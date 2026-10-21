@@ -124,8 +124,16 @@ export type ChannelStats = StatsMetrics & {
     review_note: string; // 提交说明 / 审核意见 / 驳回原因。
     submitted_at?: string | null;
     reviewed_at?: string | null;
+    trust_level: ChannelTrustLevel; // 信任级别，观察期进度条与质量徽章的数据源。
+    observation_start?: string | null;
+    observation_until?: string | null;
     models: ChannelModelStats[];
 };
+
+// ChannelTrustLevel 是渠道观察期状态机（P2）。
+// observing 审核通过后的默认态，允许转发但评分折减；trusted 已转正；
+// probation 首轮不达标延长观察；revoked 再次不达标，收回发布资格。
+export type ChannelTrustLevel = 'trusted' | 'observing' | 'probation' | 'revoked';
 
 // ChannelReviewStatus 是渠道准入审核状态机的五个态（P1）。
 // draft 新建默认；pending 已提交待审；approved 允许发布与进对外候选；
@@ -175,6 +183,9 @@ export type ChannelStatsFormatted = {
     review_note: string;
     submitted_at: string | null;
     reviewed_at: string | null;
+    trust_level: ChannelTrustLevel;
+    observation_start: string | null;
+    observation_until: string | null;
     models: ChannelModelStatsFormatted[];
     formatted: StatsMetricsFormatted;
 };
@@ -195,6 +206,53 @@ export type FetchModel = {
     name: string;
     protocols: number; // Protocol 位掩码。
 };
+
+// ChannelQualitySnapshot 是渠道某一天的质量快照（P3）。
+// 由后端日任务固化，不可变：前端只读，用于 30 天趋势图与等级徽章。
+export type ChannelQualitySnapshot = {
+    channel_id: number;
+    date: string; // 20060102
+    request_count: number;
+    success_count: number;
+    fail_count: number;
+    success_rate: number; // 0..1
+    avg_wait_ms: number;
+    uptime_pct: number; // 0..100
+    health_checks: number;
+    health_fails: number;
+    grade: '' | 'A' | 'B' | 'C' | 'D'; // 空串表示样本不足不评级
+    created_at: string;
+};
+
+// ChannelQualitySummary 是渠道当前质量概览与观察期进度。
+export type ChannelQualitySummary = {
+    channel_id: number;
+    trust_level: ChannelTrustLevel;
+    review_status: ChannelReviewStatus;
+    observing: boolean;
+    observation_start?: string | null;
+    observation_until?: string | null;
+    observation_days: number;
+    min_samples: number;
+    success_floor: number; // 0..1
+    window_samples: number; // 观察期内累计请求数，进度条分子
+    window_success_rate: number; // 观察期内成功率，0..1
+    yesterday?: ChannelQualitySnapshot;
+    trend: ChannelQualitySnapshot[];
+};
+
+// useChannelQuality 拉取单个渠道的质量概览与趋势。
+// 默认关闭自动轮询：质量数据每天才更新一次，实时轮询纯属浪费；
+// 卡片展开时按需 refetchOnMount 拉一次即可。
+export function useChannelQuality(channelId: number, days = 30, enabled = true) {
+    return useQuery({
+        queryKey: ['channels', 'quality', channelId, days],
+        queryFn: () => apiRequest<ChannelQualitySummary>(`/api/v1/channel/quality/${channelId}?days=${days}`),
+        enabled: enabled && channelId > 0,
+        refetchOnMount: 'always',
+        staleTime: 60_000,
+    });
+}
 
 // channelGrantListQueryOptions 供分组页查询可选授权。
 // 与渠道列表分开: 选取成员只需名称与可用性, 拉整份渠道会连带路径, 代理与凭据明文。
@@ -223,6 +281,9 @@ const channelStatsFormattedQueryOptions = queryOptions({
         review_note: item.review_note,
         submitted_at: item.submitted_at ?? null,
         reviewed_at: item.reviewed_at ?? null,
+        trust_level: item.trust_level,
+        observation_start: item.observation_start ?? null,
+        observation_until: item.observation_until ?? null,
         models: item.models.map((channelModel) => ({
             model_id: channelModel.model_id,
             model_name: channelModel.model_name,

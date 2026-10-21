@@ -255,7 +255,13 @@
                 "neverExpire": "永不过期",
                 "supportedModels": "支持的模型",
                 "routingPreference": "调用策略",
-                "routingOptions": { "inherit": "跟随模型分组", "balanced": "综合均衡", "price": "低价优先", "latency": "低延迟优先", "success": "高成功率优先" },
+                "routingOptions": {
+                    "inherit": "跟随模型分组",
+                    "balanced": "综合均衡",
+                    "price": "低价优先",
+                    "latency": "低延迟优先",
+                    "success": "高成功率优先"
+                },
                 "routingPreferenceHint": "仅在自动选择时对可用成员排序；手动固定成员优先，不受此偏好影响。",
                 "noModels": "暂无可选模型",
                 "modelsHint": "不选择则为无限制",
@@ -904,6 +910,36 @@
                 "approved": "{name} 审核通过",
                 "rejected": "{name} 已驳回"
             }
+        },
+        "quality": {
+            "title": "质量",
+            "trust": {
+                "trusted": "已转正",
+                "observing": "观察期",
+                "probation": "延长观察",
+                "revoked": "已收回"
+            },
+            "trustHint": {
+                "trusted": "观察期达标，评分不折减",
+                "observing": "审核通过后先试运行，达标自动转正",
+                "probation": "首轮未达标，再观察一轮",
+                "revoked": "连续未达标，发布资格已收回"
+            },
+            "gradeUnknown": "样本不足，暂不评级",
+            "gradeHint": "综合等级 {grade}",
+            "sampleProgress": "观察期 · 已积累 {samples}/{min} 请求",
+            "sampleNone": "观察期 · 尚无请求",
+            "daysLeft": "还剩 {days} 天",
+            "expired": "已到期",
+            "successVsFloor": "成功率 {rate}% / 门槛 {floor}%",
+            "graduated": "已达毕业线，等待下次评估",
+            "belowFloor": "距毕业线 {gap}%",
+            "emptyTrend": "暂无质量数据，需积累一天的流量后生成",
+            "noData": "{date} · 无数据",
+            "dayTooltip": "{date} · 等级 {grade} · 成功率 {rate}% · {latency}ms · 可用率 {uptime}%",
+            "successShort": "成功率 {rate}%",
+            "avgWait": "均耗时 {ms}ms",
+            "uptimeShort": "可用率 {uptime}%"
         }
     },
     "share": {

@@ -14,6 +14,7 @@ import { SettingInfo } from './Info';
 import { SettingLog } from './Log';
 import { SettingOps } from './Ops';
 import { SettingBackup } from './Backup';
+import { SettingChannel } from './Channel';
 import { SettingPayment } from './Payment';
 import { SettingMail } from './Mail';
 import { sectionsFor, type SettingCardID, type SettingViewID } from './sections';
@@ -32,6 +33,7 @@ const SETTING_CARDS: Record<SettingCardID, () => ReactNode> = {
     log: () => <SettingLog />,
     ops: () => <SettingOps />,
     backup: () => <SettingBackup />,
+    channel: () => <SettingChannel />,
 };
 
 // SETTING_VIEW_IMPORTS 管理视图的懒加载入口; 既用于渲染, 也用于切分组前预加载。
