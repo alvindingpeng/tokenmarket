@@ -180,3 +180,61 @@ export function useModelScores() {
         refetchOnMount: 'always',
     });
 }
+
+/**
+ * 模型能力登记（输入输出模态与规模上限）
+ */
+export interface ModelCapability {
+    name: string;           // 模型名称
+    input: string;          // 输入模态（逗号分隔）：text,image,audio,video,pdf
+    output: string;         // 输出模态（逗号分隔）：text,image,video,audio,pdf
+    context: number;        // 上下文窗口（token），0 表示未登记
+    max_output: number;     // 单次最大输出（token），0 表示未登记
+    family: string;         // 官方系列名
+    source: string;         // 来源：models.dev 或 manual
+    updated_at: string;     // 最近更新时间
+}
+
+/**
+ * 获取模型能力登记列表
+ * 
+ * @example
+ * const { data: capabilities } = useModelCapabilities();
+ */
+export function useModelCapabilities() {
+    return useQuery({
+        queryKey: ['models', 'capabilities'],
+        queryFn: () => apiRequest<ModelCapability[]>('/api/v1/model/capability'),
+        refetchInterval: POLL_SLOW,
+    });
+}
+
+/**
+ * 保存模型能力登记（人工补录或覆盖）
+ */
+export function useSaveModelCapability() {
+    const queryClient = useQueryClient();
+    
+    return useMutation({
+        mutationFn: (data: ModelCapability) =>
+            apiRequest<ModelCapability>('/api/v1/model/capability/save', { method: 'POST', body: data }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['models', 'capabilities'] });
+        },
+    });
+}
+
+/**
+ * 删除模型能力登记
+ */
+export function useDeleteModelCapability() {
+    const queryClient = useQueryClient();
+    
+    return useMutation({
+        mutationFn: (name: string) =>
+            apiRequest<null>('/api/v1/model/capability/delete', { method: 'POST', body: { name } }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['models', 'capabilities'] });
+        },
+    });
+}
