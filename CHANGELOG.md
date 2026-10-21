@@ -29,9 +29,16 @@
 - 被条件挡下的模型单独记 `channel.model-skipped` 审计（前 20 个 + 总数），让管理员能看出条件是否过紧。
 - 设置页新增「渠道策略」卡片，观察期门槛与自动添加条件集中管理。
 
+### 存量渠道迁移（重要）
+
+- 迁移 021 把「已过审且从未进入观察期」的存量渠道一次性标为 `trusted`。**不做这一步会是静默线上回归**：`trust_level` 列在 P1 就随 AutoMigrate 建出且默认 `observing`，所有老渠道因此都是 observing 却没有观察期窗口；首次评估会把它们全部判成「到期无样本 ⇒ 不达标 ⇒ probation」，给全站存量渠道的评分统一乘 0.70，且没有任何错误日志。
+- 判据是 `observation_start IS NULL AND review_status = 'approved'`：真正走过 `ChannelTrustStart` 的渠道才有窗口；部署时刻还停在 draft/pending 的渠道不放行，否则它们日后审核通过时会因「已是 trusted」而跳过观察期。
+- 未过审且无窗口的渠道若被误判成 probation/revoked，一并恢复为默认 `observing`。
+
 ### 修复
 
 - `supply_price` 带 `serializer:json`，用 `Update("supply_price", LLMPrice{...})` 会让 gorm 跳过序列化并把结构体直接塞给驱动（`unsupported type model.LLMPrice`）；改用 `Select + 结构体 Updates`。
+- 审核通过后从库里回读观察期三列：原先从缓存回填等于把 `ChannelTrustStart` 刚写的值覆盖回旧值，卡片会恒显示「已转正」而数据库里其实是 observing。
 
 ## v0.40.0 — 2026-10-21
 

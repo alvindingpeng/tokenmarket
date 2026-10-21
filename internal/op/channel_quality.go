@@ -79,10 +79,12 @@ func ChannelTrustStart(tx *gorm.DB, channelID int) error {
 func ChannelTrustEvaluate(ctx context.Context) error {
 	dbConn := db.GetDB().WithContext(ctx)
 
+	// 只评估已过审渠道: 观察期是「审核通过之后」的阶段, 未过审渠道本来就不能发布,
+	// 对它们做降级毫无意义, 只会在审核队列里制造一堆看不懂的 revoked。
 	var channels []model.Channel
-	if err := dbConn.Where("trust_level IN ?", []string{
+	if err := dbConn.Where("trust_level IN ? AND review_status = ?", []string{
 		model.ChannelTrustObserving, model.ChannelTrustProbation,
-	}).Find(&channels).Error; err != nil {
+	}, model.ChannelReviewApproved).Find(&channels).Error; err != nil {
 		return fmt.Errorf("failed to load channels for trust evaluation: %w", err)
 	}
 	if len(channels) == 0 {
@@ -94,11 +96,20 @@ func ChannelTrustEvaluate(ctx context.Context) error {
 	now := time.Now()
 
 	for _, channel := range channels {
-		// 统计窗口: 观察期起点(缺失时回落到默认天数)到今天。
+		// 没有观察期窗口的渠道一律跳过, 不参与判定。
+		// 存量渠道(本能力上线前就已存在)由迁移 021 一次性标为 trusted, 不该被追溯性判成观察期:
+		// 若在这里按「无窗口 ⇒ 视为已到期 ⇒ 无观察期样本 ⇒ 不达标」处理, 首次运行会把全站老渠道
+		// 批量打成 probation, 等于给它们的评分统一乘 0.70 —— 一次真实的线上回归。
+		// 这里只做防御性跳过: 窗口为空说明数据异常, 保持现状比误判安全。
+		if channel.ObservationStart == nil {
+			log.Warnf("trust eval: channel %d has no observation window, skipping", channel.ID)
+			continue
+		}
+		// 统计窗口: 观察期起点到今天。
 		// 用累计而非「昨日单日」: 一次抖动不该决定新渠道的生死, 观察期本就是看整体表现。
-		start := now.AddDate(0, 0, -observationDays())
-		if channel.ObservationStart != nil && channel.ObservationStart.Before(now) {
-			start = *channel.ObservationStart
+		start := *channel.ObservationStart
+		if !channel.ObservationStart.Before(now) {
+			start = now.AddDate(0, 0, -observationDays())
 		}
 		var daily []model.StatsChannelDaily
 		if err := dbConn.Where("channel_id = ? AND date >= ?", channel.ID, start.Format("20060102")).
