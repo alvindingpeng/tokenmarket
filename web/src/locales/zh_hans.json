@@ -973,7 +973,11 @@
                 "interval": "复查周期(小时)",
                 "backgroundEnabled": "启用后台复查",
                 "backgroundEnabledHint": "打开后, 后台任务会定期探测已开启自动添加的渠道, 把上游新增的模型并入",
-                "intervalHint": "默认 24 小时, 范围 1-168"
+                "intervalHint": "默认 24 小时, 范围 1-168",
+                "scope": "复查范围",
+                "scopeHint": "后台任务每轮探测哪些渠道",
+                "scopeFlagged": "仅已开启自动添加的渠道",
+                "scopeApproved": "全部已过审渠道"
             }
         }
     },

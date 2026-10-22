@@ -436,13 +436,19 @@ func AutoAddChannelsRun(ctx context.Context) error {
 		return nil
 	}
 
-	// 只取后台复查的目标: 已过审 + 未收回 + 渠道级自动添加开关打开。
-	// model_auto_add 是 channels 表的平铺列(ChannelConfig 内嵌), 故可直接作为 SQL 条件。
+	// 扫描范围由 channel_auto_add_scope 决定:
+	//   flagged  —— 只扫渠道级开关打开的(默认, 与升级前语义一致);
+	//   approved —— 扫全部已过审渠道, 逐渠道用同一套条件过滤。
+	// 无论哪种都排除已收回的渠道: 它此时在选路里已被踢出, 探测它没有意义。
+	query := db.GetDB().WithContext(ctx).
+		Where("review_status = ? AND trust_level <> ?",
+			model.ChannelReviewApproved, model.ChannelTrustRevoked)
+	if !AutoAddScopeAllApproved() {
+		// model_auto_add 是 channels 表的平铺列(ChannelConfig 内嵌), 可直接作为 SQL 条件。
+		query = query.Where("model_auto_add = ?", true)
+	}
 	var channels []model.Channel
-	if err := db.GetDB().WithContext(ctx).
-		Where("review_status = ? AND trust_level <> ? AND model_auto_add = ?",
-			model.ChannelReviewApproved, model.ChannelTrustRevoked, true).
-		Find(&channels).Error; err != nil {
+	if err := query.Find(&channels).Error; err != nil {
 		return fmt.Errorf("failed to list channels for background auto-add: %w", err)
 	}
 	if len(channels) == 0 {
@@ -486,6 +492,17 @@ func autoAddChannelOnce(ctx context.Context, channelID int, config model.Channel
 		return after - before, nil
 	}
 	return 0, nil
+}
+
+// AutoAddScopeAllApproved 判断后台复查是否应覆盖全部已过审渠道。
+// 缺键或值非法一律按 false(只扫已开启的): 范围放大到全部渠道属于"会向上游多发请求"的动作,
+// 读不到明确配置时保守处理, 不让一次配置读取失败变成对所有渠道的探测。
+func AutoAddScopeAllApproved() bool {
+	scope, err := SettingGetString(model.SettingKeyAutoAddScope)
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(scope) == "approved"
 }
 
 // countChannelModels 数某渠道当前的模型数; 后台任务据此算出本轮新增了多少。

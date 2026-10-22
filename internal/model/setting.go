@@ -43,12 +43,15 @@ const (
 	SettingKeyAutoAddFillPrice SettingKey = "channel_auto_add_fill_price" // 并入时按参考价自动预填供货价(默认关)
 	// 后台自动添加: 保存时探测只覆盖"那一刻"的上游清单, 上游后来上新的模型永远不会被发现。
 	// 开关打开后由定时任务按周期复查「已开启 model_auto_add 的渠道」, 让自动添加从一次性动作变成持续同步。
-	SettingKeyAutoAddBackground    SettingKey = "channel_auto_add_background" // 后台周期复查开关, 默认关
-	SettingKeyAutoAddInterval      SettingKey = "channel_auto_add_interval"   // 后台复查周期(小时), 默认 24
-	SettingKeyShareCodeSeq         SettingKey = "share_code_seq"              // 发布编码取号计数器(4 位数字, 1001 起), 号码只发不收
-	SettingKeyBalanceReserveCap    SettingKey = "balance_reserve_output_cap"  // 余额预扣估算的默认输出 token 上限。
-	SettingKeyBalanceReserveImages SettingKey = "balance_reserve_images"      // 生图预扣保守张数(无 N 时使用), 默认 4。
-	SettingKeyMinBalance           SettingKey = "min_balance"                 // 允许的最低余额, 0 表示不足即拒
+	SettingKeyAutoAddBackground SettingKey = "channel_auto_add_background" // 后台周期复查开关, 默认关
+	SettingKeyAutoAddInterval   SettingKey = "channel_auto_add_interval"   // 后台复查周期(小时), 默认 24
+	// 复查范围: 让管理员二选一 —— 只扫显式开了自动添加的渠道, 或全部已过审渠道。
+	// 没有它的话, 打开总开关却因为渠道级开关全关而一个渠道都不扫, 会被当成功能没生效。
+	SettingKeyAutoAddScope         SettingKey = "channel_auto_add_scope"     // flagged(仅已开启自动添加) | approved(全部已过审渠道)
+	SettingKeyShareCodeSeq         SettingKey = "share_code_seq"             // 发布编码取号计数器(4 位数字, 1001 起), 号码只发不收
+	SettingKeyBalanceReserveCap    SettingKey = "balance_reserve_output_cap" // 余额预扣估算的默认输出 token 上限。
+	SettingKeyBalanceReserveImages SettingKey = "balance_reserve_images"     // 生图预扣保守张数(无 N 时使用), 默认 4。
+	SettingKeyMinBalance           SettingKey = "min_balance"                // 允许的最低余额, 0 表示不足即拒
 
 	// 充值与支付(D1 易支付首发, 网关参数全部后台可配, 商户信息后配即可用)。
 	SettingKeyEpayGatewayURL       SettingKey = "epay_gateway_url"       // 易支付网关地址, 如 https://pay.example.com; 留空表示支付未配置
@@ -207,7 +210,9 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyAutoAddFillPrice, Value: "false"}, // 默认不预填价格, 保持既有行为
 		// 后台复查默认关: 打开会周期性向每个开启了自动添加的渠道发探测请求, 属于要管理员明确点头的动作。
 		{Key: SettingKeyAutoAddBackground, Value: "false"},
-		{Key: SettingKeyAutoAddInterval, Value: "24"},     // 每天复查一次: 上游新模型上线速度不会快到需要更频繁。
+		{Key: SettingKeyAutoAddInterval, Value: "24"}, // 每天复查一次: 上游新模型上线速度不会快到需要更频繁。
+		// 默认沿用渠道级开关: 升级前只有显式开启 model_auto_add 的渠道会自动添加, 保持该语义不变。
+		{Key: SettingKeyAutoAddScope, Value: "flagged"},
 		{Key: SettingKeyShareCodeSeq, Value: "1000"},      // 发布编码从 1001 起, 记录已发到的最大号
 		{Key: SettingKeyBalanceReserveCap, Value: "4096"}, // 预扣估算默认输出上限
 		{Key: SettingKeyBalanceReserveImages, Value: "4"}, // 生图预扣保守张数, 4 张覆盖 dall-e-3 / gpt-image-1 n=4 上限
@@ -400,6 +405,12 @@ func (s *Setting) Validate() error {
 	case SettingKeyAutoAddFillPrice, SettingKeyAutoAddBackground:
 		if _, err := strconv.ParseBool(s.Value); err != nil {
 			return fmt.Errorf("%s must be a boolean", s.Key)
+		}
+		return nil
+	case SettingKeyAutoAddScope:
+		// 拼错的 scope 会让扫描范围静默退回空集, 不如保存时就拒掉, 免得管理员以为功能挂了。
+		if s.Value != "flagged" && s.Value != "approved" {
+			return fmt.Errorf("%s must be flagged or approved", s.Key)
 		}
 		return nil
 	case SettingKeyAutoAddInterval:
