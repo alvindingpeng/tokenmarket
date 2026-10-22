@@ -416,3 +416,32 @@ func TestAutoAddScopeSettingValidated(t *testing.T) {
 		}
 	}
 }
+
+// TestAutoAddScopeName 验证 scope 归一: 只有字面 "approved" 才算 approved,
+// 其余(未配置/读取失败/拼错/大小写不符)一律归一成 flagged。
+// 这条归一同时被判定与日志使用 —— 日志说 scope=flagged 就必须真的只扫 flagged,
+// 否则排查时看到的信息是错的。
+func TestAutoAddScopeName(t *testing.T) {
+	t.Cleanup(func() { settingCache.Del(model.SettingKeyAutoAddScope) })
+
+	caseList := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{"未配置归一为 flagged", "", "flagged"},
+		{"flagged 原样返回", "flagged", "flagged"},
+		{"approved 原样返回", "approved", "approved"},
+		{"前后空白被裁掉", "  approved  ", "approved"},
+		{"大小写不符归一为 flagged", "Approved", "flagged"},
+		{"拼错归一为 flagged", "aproved", "flagged"},
+	}
+	for _, c := range caseList {
+		t.Run(c.name, func(t *testing.T) {
+			settingCache.Set(model.SettingKeyAutoAddScope, c.value)
+			if got := AutoAddScopeName(); got != c.want {
+				t.Fatalf("AutoAddScopeName(%q) = %q, want %q", c.value, got, c.want)
+			}
+		})
+	}
+}
