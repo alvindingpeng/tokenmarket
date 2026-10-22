@@ -71,9 +71,11 @@ jobs:
       - name: Refresh model prices
         run: python3 scripts/updatePrice.py
 
-      - name: Build standard release archives
+      # workflow_dispatch 补齐产物时必须走 android 分支; 纯推 tag 时由 build.yaml 负责
+      # (它已包含 android), 这里跳过 android, 避免两个工作流同时上传同一批产物。
+      - name: Build release archives
         env:
-          SKIP_ANDROID: '1'
+          SKIP_ANDROID: ${{ inputs.tag == '' && '1' || '' }}
         run: bash scripts/build.sh
 
       - name: Upload release assets without replacing release notes
