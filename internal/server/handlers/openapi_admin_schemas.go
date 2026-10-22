@@ -173,6 +173,18 @@ func openAPIAdminSchemas() gin.H {
 			"model_names": gin.H{"type": "array", "items": gin.H{"type": "string"}, "description": "要解除熔断的渠道模型名称; 与 key_names 至少给一个"},
 		}, "id"),
 
+		"ModelAutoAddRule": object(gin.H{
+			"name":       fieldString("模型名, 统一小写; 与价格表 llm_infos 同域"),
+			"mode":       gin.H{"type": "string", "enum": []string{"", "on", "off"}, "description": "并入开关: on 强制并入(跳过其余条件), off 永不并入, 空表示跟随全局与渠道开关"},
+			"price_min":  fieldString("参考价下限(每百万 token, blended 价); 空串表示回落全局"),
+			"price_max":  fieldString("参考价上限; 空串表示回落全局"),
+			"markup_min": fieldString("倍率下限(模型参考价 ÷ 渠道现有价位中位数); 空串表示回落全局"),
+			"markup_max": fieldString("倍率上限; 空串表示回落全局"),
+			"exclude":    fieldString("排除正则, 命中的模型不并入; 空串表示沿用全局正则"),
+			"include":    fieldString("名称白名单正则, 非空时只有命中的模型才并入; 空串表示沿用全局正则"),
+			"fill_price": gin.H{"type": "string", "enum": []string{"", "on", "off"}, "description": "并入时是否按参考价预填供货价; 空表示回落全局"},
+		}),
+
 		"ModelCapability": object(gin.H{
 			"name":       fieldString("模型名, 统一小写; 可能带厂商前缀(如 openai/gpt-image-1)"),
 			"input":      fieldString("逗号分隔的输入模态: text,image,audio,video,pdf"),

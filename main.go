@@ -2,7 +2,7 @@ package main
 
 import "github.com/alvindingpeng/switchyard/cmd"
 
-// Version v0.43.0
+// Version v0.43.1
 
 func main() {
 	cmd.Execute()
