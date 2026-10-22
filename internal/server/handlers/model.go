@@ -39,6 +39,23 @@ func init() {
 				Allow(model.RoleAdmin).
 				Handle(deleteLLM),
 		).
+		// 模型级自动添加条件: 按登录用户各存一份, 故与渠道路由同一档权限 ——
+		// 谁管渠道谁就该能按模型调条件, 管理员与渠道商都要能进。
+		AddRoute(
+			router.NewRoute("/auto-add-rule/list", http.MethodGet).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(listAutoAddRules),
+		).
+		AddRoute(
+			router.NewRoute("/auto-add-rule/save", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(saveAutoAddRule),
+		).
+		AddRoute(
+			router.NewRoute("/auto-add-rule/delete", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(deleteAutoAddRule),
+		).
 		AddRoute(
 			router.NewRoute("/update-price", http.MethodPost).
 				Allow(model.RoleAdmin).
@@ -130,6 +147,50 @@ func getModelList(c *gin.Context) {
 
 func listLLM(c *gin.Context) {
 	resp.Success(c, op.LLMList())
+}
+
+// listAutoAddRules 返回当前用户为各模型设置的自动添加条件, 供模型页逐条展示与编辑。
+// 条件属于「自动添加」这一功能, 与模型一一对应, 故挂在模型路由下而不是设置路由下。
+func listAutoAddRules(c *gin.Context) {
+	userID, _ := middleware.CurrentUser(c)
+	resp.Success(c, op.AutoAddRuleList(userID))
+}
+
+// saveAutoAddRule 保存当前用户为某个模型设的自动添加条件; 全空条件等价于删除, 由 op 层归一。
+// 条件只写自己的: 请求体里的 user_id 一律忽略, 免得用户 A 覆盖用户 B 的条件。
+func saveAutoAddRule(c *gin.Context) {
+	var rule model.ModelAutoAddRule
+	if err := c.ShouldBindJSON(&rule); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	rule.UserID, _ = middleware.CurrentUser(c)
+	saved, err := op.AutoAddRuleSave(rule, c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	audit(c, "model.autoadd-rule", saved.Name, fmt.Sprintf("mode=%s price=[%s,%s] markup=[%s,%s] fill=%s",
+		saved.Mode, saved.PriceMin, saved.PriceMax, saved.MarkupMin, saved.MarkupMax, saved.FillPrice))
+	resp.Success(c, saved)
+}
+
+// deleteAutoAddRule 删除当前用户为某个模型设的自动添加条件, 让它回到全局默认。
+func deleteAutoAddRule(c *gin.Context) {
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	userID, _ := middleware.CurrentUser(c)
+	if err := op.AutoAddRuleDelete(userID, body.Name, c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	audit(c, "model.autoadd-rule-delete", body.Name, "")
+	resp.Success(c, nil)
 }
 
 // createLLM 校验并创建自定义模型价格。

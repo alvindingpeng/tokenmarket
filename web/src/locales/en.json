@@ -647,6 +647,32 @@
             "cacheRead": "Cache Read",
             "cacheWrite": "Cache Write",
             "save": "Save"
+        },
+        "rule": {
+            "open": "Auto-add conditions",
+            "title": "Auto-add conditions",
+            "mode": "Include switch",
+            "modeFollow": "Follow global",
+            "modeOn": "Always include",
+            "modeOff": "Never include",
+            "priceMin": "Reference price min",
+            "priceMax": "Reference price max",
+            "markupMin": "Markup min",
+            "markupMax": "Markup max",
+            "include": "Include regex",
+            "exclude": "Exclude regex",
+            "fillPrice": "Fill supply price",
+            "switchOn": "On",
+            "switchOff": "Off",
+            "followHint": "Follow global",
+            "regexHint": "Empty = follow global",
+            "hint": "Blank fields follow the global defaults in System settings; only filled fields override this model. Conditions are evaluated per model when auto-adding probed upstream models.",
+            "empty": "All follow global",
+            "customized": "Customized",
+            "badge": "Custom conditions",
+            "save": "Save",
+            "saved": "Auto-add conditions saved for this model",
+            "saveFailed": "Save failed"
         }
     },
     "log": {
@@ -956,7 +982,7 @@
             },
             "autoAdd": {
                 "title": "Model auto-add conditions",
-                "hint": "When a channel enables auto-add, only upstream models matching the conditions below are merged. Empty conditions mean no restriction.",
+                "hint": "These are global defaults. If a model has its own conditions set on the Models page, that model uses its own; every other model uses the values here.When a channel enables auto-add, only upstream models matching the conditions below are merged. Empty conditions mean no restriction.",
                 "priceMin": "Reference price floor",
                 "priceMax": "Reference price ceiling",
                 "markupMin": "Markup floor",

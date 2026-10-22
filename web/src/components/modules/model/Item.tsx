@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Pencil, Trash2, ArrowDownToLine, ArrowUpFromLine, Gauge, MessageSquare } from 'lucide-react';
+import { Pencil, Trash2, ArrowDownToLine, ArrowUpFromLine, Gauge, MessageSquare, Filter } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslations } from 'use-intl';
 import { useUpdateModel, useDeleteModel, type LLMInfo, type ModelScore, type ModelCapability } from '@/api/model';
@@ -7,6 +7,8 @@ import { getModelIcon } from '@/lib/model-icons';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ModelDeleteOverlay, ModelEditOverlay } from './ItemOverlays';
+import { ModelRuleEditor } from './RuleEditor';
+import { ruleIsEmpty, type ModelAutoAddRule } from '@/api/model-rule';
 import { cn } from '@/lib/utils';
 import { formatLatency } from '@/lib/format';
 import { createPortal } from 'react-dom';
@@ -16,6 +18,7 @@ interface ModelItemProps {
     layout?: 'grid' | 'list';
     score?: ModelScore; // 该模型的全局选路评分; 无观测时按冷启动展示。
     capability?: ModelCapability; // 该模型的能力登记（上下文/输出上限）。
+    autoAddRule?: ModelAutoAddRule; // 当前用户为该模型单独设的自动添加条件; 空表示全部跟随系统设置。
 }
 
 // 缓存编辑弹层实测高度，首次打开即可正确判断是否需要向上弹出
@@ -31,7 +34,7 @@ function scoreTooltip(score: ModelScore | undefined, t: ReturnType<typeof useTra
     return sources ? `${head}\n${sources}` : head;
 }
 
-export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score, capability }: ModelItemProps) {
+export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score, capability, autoAddRule }: ModelItemProps) {
     const t = useTranslations('model');
     const isListLayout = layout === 'list';
     const [isEditOpen, setIsEditOpen] = useState(false);
@@ -154,6 +157,7 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
     }, [isEditOpen, updateOverlayRect, closeEdit]);
 
     const shouldRenderEditPortal = isEditOpen || overlayRect !== null;
+    const customized = !ruleIsEmpty(autoAddRule);
 
     return (
         <article
@@ -285,6 +289,26 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
                     (isEditOpen || confirmDelete) && 'invisible pointer-events-none'
                 )}
             >
+                {/* 自动添加条件按模型逐条设: 按钮紧挨价格编辑, 才有「这个模型的规则」的语感。
+                    已单独设过条件的模型按钮高亮, 扫一眼列表就知道哪些模型被区别对待过。 */}
+                <ModelRuleEditor
+                    modelName={model.name}
+                    rule={autoAddRule}
+                    trigger={
+                        <button
+                            type="button"
+                            title={customized ? t('rule.customized') : t('rule.open')}
+                            className={cn(
+                                'h-9 w-9 flex items-center justify-center rounded-lg transition-colors',
+                                customized
+                                    ? 'bg-primary/15 text-primary hover:bg-primary/25'
+                                    : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+                            )}
+                        >
+                            <Filter className="size-4" />
+                        </button>
+                    }
+                />
                 <motion.button
                     layoutId={editLayoutId}
                     type="button"

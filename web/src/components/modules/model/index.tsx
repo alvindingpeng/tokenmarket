@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { ArrowUpAZ } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { useModelList, useModelScores, useModelCapabilities } from '@/api/model';
+import { useModelAutoAddRules } from '@/api/model-rule';
 import { PageActions, usePageActionsStore } from '@/components/common/PageActions';
 import { ModelItem } from './Item';
 import { CreateDialogContent } from './Create';
@@ -53,6 +54,8 @@ export function Model() {
     const { data: models } = useModelList();
     const { data: scores } = useModelScores();
     const { data: capabilities } = useModelCapabilities();
+    // 自动添加条件按模型名索引: 与评分/能力同一套归并口径, 卡片点开即能编辑该模型自己的条件。
+    const { data: autoAddRules } = useModelAutoAddRules();
     // 评分按小写模型名归并: llms 表以名称为键且统一小写, 渠道模型名可能与上游大小写不同。
     const scoreByName = useMemo(() => {
         const map = new Map<string, NonNullable<typeof scores>[number]>();
@@ -106,6 +109,7 @@ export function Model() {
                     layout={layout}
                     score={scoreByName.get(model.name.toLowerCase())}
                     capability={capabilityByName.get(model.name.toLowerCase())}
+                    autoAddRule={autoAddRules?.get(model.name.toLowerCase())}
                 />
             )}
         />
