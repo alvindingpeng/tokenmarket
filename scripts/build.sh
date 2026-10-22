@@ -5,10 +5,19 @@ readonly APP_NAME="switchyard" # 发布产物和容器内的可执行文件名�
 readonly OUTPUT_DIR="build" # 所有构建、归档和容器输入的根目录。
 readonly VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo 'dev')" # 当前发布版本。
 readonly COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')" # 当前提交短哈希。
-readonly LDFLAGS="-X 'github.com/alvindingpeng/${APP_NAME}/internal/conf.Version=${VERSION}' \
-                  -X 'github.com/alvindingpeng/${APP_NAME}/internal/conf.BuildTime=$(TZ='Asia/Shanghai' date +'%F %T %z')' \
-                  -X 'github.com/alvindingpeng/${APP_NAME}/internal/conf.Author=bestrui' \
-                  -X 'github.com/alvindingpeng/${APP_NAME}/internal/conf.Commit=${COMMIT}' \
+# 模块路径必须从 go.mod 读, 不能写死: -X 的目标包路径对不上时 go 不报错, 静默忽略,
+# 打出来的二进制就带着 conf 里的默认值(Version=dev / Commit=unknown / BuildTime=unknown)。
+# 上游仓库 fork 到 alvindingpeng 之后, 这里长期写死 alvindingpeng, 导致每个 Release 产物
+# 都自称 dev —— 应用内「检查更新」把 rel.TagName 与 "dev" 比较, 判定永远有更新。
+readonly MODULE="$(sed -n 's/^module[[:space:]]\+\(.*\)$/\1/p' go.mod | head -1)" # 模块路径。
+if [ -z "${MODULE}" ]; then
+    echo "scripts/build.sh: 无法从 go.mod 解析 module 路径" >&2
+    exit 1
+fi
+readonly LDFLAGS="-X '${MODULE}/internal/conf.Version=${VERSION}' \
+                  -X '${MODULE}/internal/conf.BuildTime=$(TZ='Asia/Shanghai' date +'%F %T %z')' \
+                  -X '${MODULE}/internal/conf.Author=bestrui' \
+                  -X '${MODULE}/internal/conf.Commit=${COMMIT}' \
                   -s -w" # 注入版本信息并缩小发布二进制。
 
 build_standard() {
@@ -83,7 +92,7 @@ cp "${OUTPUT_DIR}/bin/${APP_NAME}-linux-arm64" "${OUTPUT_DIR}/docker/linux/arm64
 
 # 每个平台只替换可执行文件名，许可证报告和发布文档保持一致。
 GOFLAGS="-tags=jsoniter" go run github.com/google/go-licenses/v2@v2.0.1 report . \
-    --ignore "github.com/alvindingpeng/${APP_NAME}" >"${OUTPUT_DIR}/THIRD_PARTY_LICENSES.csv"
+    --ignore "${MODULE}" >"${OUTPUT_DIR}/THIRD_PARTY_LICENSES.csv"
 cp README.md LICENSE "${OUTPUT_DIR}/THIRD_PARTY_LICENSES.csv" "${OUTPUT_DIR}/archives/"
 for file in "${OUTPUT_DIR}"/bin/"${APP_NAME}"-*; do
     archive_name="$(basename "${file}").zip"
