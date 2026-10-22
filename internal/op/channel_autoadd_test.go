@@ -1,6 +1,7 @@
 package op
 
 import (
+	"context"
 	"testing"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
@@ -294,5 +295,80 @@ func TestFillSupplyPriceFromReference(t *testing.T) {
 	}
 	if m1.SupplyPrice.Input != 7 || m1.SupplyPrice.Output != 8 {
 		t.Fatalf("m1 supply price = %+v, want manual {7,8} (must not be overwritten)", m1.SupplyPrice)
+	}
+}
+
+// TestAutoAddFilterInclude 验证名称白名单: 设了就只放行命中的模型, 且与排除/价格/倍率同取 AND。
+// 不变量: 白名单为空(nil)时行为与升级前完全一致 —— 这是「升级不改变既有渠道并入结果」的前提。
+func TestAutoAddFilterInclude(t *testing.T) {
+	include, err := regexp2.Compile("^gpt-4", regexp2.ECMAScript)
+	if err != nil {
+		t.Fatalf("compile include: %v", err)
+	}
+	exclude, err := regexp2.Compile("mini", regexp2.ECMAScript)
+	if err != nil {
+		t.Fatalf("compile exclude: %v", err)
+	}
+
+	t.Run("白名单命中放行", func(t *testing.T) {
+		if ok, reason := (AutoAddFilter{Include: include}).Allow("gpt-4o"); !ok {
+			t.Fatalf("expected pass, got rejection: %s", reason)
+		}
+	})
+	t.Run("白名单未命中拒绝", func(t *testing.T) {
+		ok, reason := (AutoAddFilter{Include: include}).Allow("claude-3-opus")
+		if ok {
+			t.Fatalf("expected rejection")
+		}
+		if reason == "" {
+			t.Fatalf("rejection without reason")
+		}
+	})
+	t.Run("白名单与排除取交集", func(t *testing.T) {
+		filter := AutoAddFilter{Include: include, Exclude: exclude}
+		if ok, reason := filter.Allow("gpt-4o-mini"); ok {
+			t.Fatalf("expected rejection by exclude, got pass")
+		} else if reason == "" {
+			t.Fatalf("rejection without reason")
+		}
+		if ok, reason := filter.Allow("gpt-4o"); !ok {
+			t.Fatalf("expected pass, got: %s", reason)
+		}
+	})
+	t.Run("空条件全部放行", func(t *testing.T) {
+		// 升级前的既有行为: 无条件时探测到什么就并入什么。
+		if ok, reason := (AutoAddFilter{}).Allow("any-model"); !ok {
+			t.Fatalf("expected pass, got: %s", reason)
+		}
+	})
+}
+
+// TestAutoAddRunSkipsWhenDisabled 验证后台复查开关关闭时任务直接返回, 不触碰数据库。
+// 默认关是这次升级的安全阀: 打开后每轮都会向每个渠道发上游探测请求, 会消耗上游配额。
+func TestAutoAddRunSkipsWhenDisabled(t *testing.T) {
+	settingCache.Set(model.SettingKeyAutoAddBackground, "false")
+	t.Cleanup(func() { settingCache.Del(model.SettingKeyAutoAddBackground) })
+
+	// 不注入工厂也不建库: 开关关闭必须在此之前就返回, 否则会因 nil DB 直接 panic。
+	if err := AutoAddChannelsRun(context.Background()); err != nil {
+		t.Fatalf("expected nil error when disabled, got %v", err)
+	}
+}
+
+// TestAutoAddIncludeSettingValidated 验证白名单正则的保存校验: 编不过的正则必须被拒,
+// 否则保存成功但自动添加静默变成「永不并入」, 界面上看不出任何异常。
+func TestAutoAddIncludeSettingValidated(t *testing.T) {
+	bad := model.Setting{Key: model.SettingKeyAutoAddInclude, Value: "([unclosed"}
+	if err := bad.Validate(); err == nil {
+		t.Fatalf("expected validation error for unclosed regex")
+	}
+	good := model.Setting{Key: model.SettingKeyAutoAddInclude, Value: "^gpt-4"}
+	if err := good.Validate(); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	// 周期 0 小时等于每秒一轮探测, 必须被拒。
+	zero := model.Setting{Key: model.SettingKeyAutoAddInterval, Value: "0"}
+	if err := zero.Validate(); err == nil {
+		t.Fatalf("expected validation error for 0-hour interval")
 	}
 }

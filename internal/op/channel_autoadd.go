@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
@@ -17,6 +18,16 @@ import (
 // autoAddModelLimit 单次自动添加最多并入的新模型数, 防上游返回超长列表拖慢保存并撑爆渠道模型表。
 const autoAddModelLimit = 200
 
+// ProbeClientFactory 按渠道配置构建探测用的 HTTP 客户端(直连 / 应用代理 / 渠道专用代理)。
+// 由启动装配注入(rhttp 构建客户端要读设置, 而 rhttp 已依赖 op —— op 直接 import 会成环):
+// 保存时自动添加走 handler 注入的客户端, 后台任务走这里注入的工厂, 两处构建逻辑同源。
+// 未注入(nil)时后台任务自行降级跳过, 不影响保存触发的自动添加。
+var ProbeClientFactory func(target model.ChannelConfig) (*http.Client, error)
+
+// AutoAddProbeTimeout 单个渠道探测的总时长上限: 上游 /models 挂在半开连接上时,
+// 不让它拖住整轮后台复查 —— 该渠道跳过记日志, 其余渠道照常。
+const AutoAddProbeTimeout = 90 * time.Second
+
 // AutoAddFilter 是自动添加的条件集(B4), 全部来自设置页, 每次保存时重新读取 —— 管理员改完条件即生效, 无需重启。
 //
 // 空条件(全 0 / 空正则 / 开关关)表示不限制, 保持第一版「只要探测到就并入」的行为:
@@ -27,6 +38,9 @@ type AutoAddFilter struct {
 	MarkupMin float64         // 倍率下限(模型价 ÷ 渠道现有价位中位数), 0 不限。
 	MarkupMax float64         // 倍率上限, 0 不限。
 	Exclude   *regexp2.Regexp // 排除正则, nil 表示不排除。
+	// Include 是名称白名单正则: 非 nil 时只有命中的模型名才允许并入。
+	// 与 Exclude 的语义相反 —— 空条件(全 0 / 双 nil)仍是"探测到什么就并入什么", 升级到本版不改变既有渠道的并入结果。
+	Include *regexp2.Regexp
 	// FillPrice 为真时按参考价自动预填供货价, 让新并入的模型立刻可定价可上架(上架仍需人工确认)。
 	FillPrice bool
 	// Baseline 是渠道现有模型参考价的中位数, 作为倍率条件的基准; 0 表示渠道尚无定价模型, 倍率条件不生效。
@@ -50,6 +64,15 @@ func loadAutoAddFilter(baseline float64) AutoAddFilter {
 			filter.Exclude = compiled
 		} else {
 			log.Warnf("auto-add: invalid exclude regex %q, ignoring: %v", pattern, err)
+		}
+	}
+	if pattern := strings.TrimSpace(mustSettingString(model.SettingKeyAutoAddInclude)); pattern != "" {
+		if compiled, err := regexp2.Compile(pattern, regexp2.ECMAScript); err == nil {
+			filter.Include = compiled
+		} else {
+			// 与排除项不同, 白名单编译失败时降级为"全放行"是危险的: 管理员设白名单的目的就是收紧,
+			// 编译失败再放行等于条件形同虚设。但保存时已校验过, 这里失败只可能是历史脏数据, 照旧降级并记日志。
+			log.Warnf("auto-add: invalid include regex %q, ignoring: %v", pattern, err)
 		}
 	}
 	return filter
@@ -104,6 +127,17 @@ func channelPriceBaseline(channelID int) float64 {
 // 否则条件一开就再也添加不进新厂商的模型。倍率同理 —— 没有参考价就无从计算倍率。
 // 渠道尚无定价模型(Baseline=0)时倍率条件整体跳过: 新渠道没有"平时价位"可言。
 func (f AutoAddFilter) Allow(name string) (bool, string) {
+	// 白名单在最前: 设了 Include 就只放行命中的模型, 后面的条件只对通过白名单的名字生效。
+	if f.Include != nil {
+		matched, err := f.Include.MatchString(name)
+		if err != nil {
+			// 白名单运行期出错(通常是回溯超限)时若放行, 等于白名单被绕过 —— 保守方向是拒绝。
+			return false, "include regex error"
+		}
+		if !matched {
+			return false, "not in include regex"
+		}
+	}
 	if f.Exclude != nil {
 		matched, err := f.Exclude.MatchString(name)
 		if err != nil {
@@ -379,4 +413,87 @@ func mergeFetchedForKey(tx *gorm.DB, channelID, keyID int, fetched []model.Chann
 		protocolByModel[modelID] = merged
 	}
 	return added, truncated, nil
+}
+
+// AutoAddChannelsRun 按后台设置复查「已开启 model_auto_add 的渠道」, 探测并并入新上游模型。
+// 触发: 由 task.channel_model_autoadd 周期调用; 开关默认关, 管理员在设置页「后台自动添加」打开。
+//
+// 为什么需要它: 保存触发的自动添加只覆盖「保存那一刻」的上游清单。上游后来上新的模型
+// 永远不会被发现, 除非有人再去点一次保存 —— 自动添加因此只是一次性动作, 不是持续同步。
+//
+// 设计约束:
+//   - 只扫已过审且未被收回的渠道: 探测等于向上游发请求, 拿未过审渠道去消耗上游配额没有意义;
+//   - 每渠道独立判错: 一个上游超时不该让整轮复查判成任务失败, 一路飙到告警阈值;
+//   - 工厂未注入时直接跳过: 只影响后台任务, 保存触发的自动添加由 handler 直接构造客户端;
+//   - 逐渠道并入仍走 AutoAddChannelModels, 审计口径(channel.model-added / model-skipped)与手动触发完全一致,
+//     操作者记为 0(系统), 轮次汇总只记日志, 不额外刷审计表。
+func AutoAddChannelsRun(ctx context.Context) error {
+	if !settingBoolDefault(model.SettingKeyAutoAddBackground, false) {
+		return nil
+	}
+	if ProbeClientFactory == nil {
+		log.Warn("auto-add-background: ProbeClientFactory not injected, skipping")
+		return nil
+	}
+
+	// 只取后台复查的目标: 已过审 + 未收回 + 渠道级自动添加开关打开。
+	// model_auto_add 是 channels 表的平铺列(ChannelConfig 内嵌), 故可直接作为 SQL 条件。
+	var channels []model.Channel
+	if err := db.GetDB().WithContext(ctx).
+		Where("review_status = ? AND trust_level <> ? AND model_auto_add = ?",
+			model.ChannelReviewApproved, model.ChannelTrustRevoked, true).
+		Find(&channels).Error; err != nil {
+		return fmt.Errorf("failed to list channels for background auto-add: %w", err)
+	}
+	if len(channels) == 0 {
+		return nil
+	}
+
+	totalAdded := 0
+	failed := 0
+	for i := range channels {
+		channel := channels[i]
+		added, err := autoAddChannelOnce(ctx, channel.ID, channel.ChannelConfig)
+		if err != nil {
+			// 单渠道失败只记日志并计数, 不向上返回: 一个上游不可达不该让整轮任务判失败。
+			failed++
+			log.Warnf("auto-add-background: channel %d failed: %v", channel.ID, err)
+			continue
+		}
+		totalAdded += added
+	}
+	log.Infof("auto-add-background: channels=%d added=%d failed=%d", len(channels), totalAdded, failed)
+	return nil
+}
+
+// autoAddChannelOnce 处理单个渠道, 返回新增模型数。
+// 探测超时由 context 控制: 上游 /models 挂在半开连接上时不该拖住整轮复查。
+func autoAddChannelOnce(ctx context.Context, channelID int, config model.ChannelConfig) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, AutoAddProbeTimeout)
+	defer cancel()
+
+	client, err := ProbeClientFactory(config)
+	if err != nil {
+		return 0, fmt.Errorf("build probe client: %w", err)
+	}
+	// actorID=0 表示系统发起: 审计记录能区分「管理员点保存」与「后台定时发现」。
+	before := countChannelModels(channelID)
+	if err := AutoAddChannelModels(ctx, channelID, config, client, 0); err != nil {
+		return 0, err
+	}
+	after := countChannelModels(channelID)
+	if after > before {
+		return after - before, nil
+	}
+	return 0, nil
+}
+
+// countChannelModels 数某渠道当前的模型数; 后台任务据此算出本轮新增了多少。
+// 直接查库而不读 channelModelCache: 缓存刷新由 AutoAddChannelModels 内部完成, 这里要的是落库结果。
+func countChannelModels(channelID int) int {
+	var count int64
+	if err := db.GetDB().Model(&model.ChannelModel{}).Where("channel_id = ?", channelID).Count(&count).Error; err != nil {
+		return 0
+	}
+	return int(count)
 }

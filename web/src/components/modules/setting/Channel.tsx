@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'use-intl';
-import { Dices, ShieldCheck } from 'lucide-react';
+import { Dices, RefreshCw, ShieldCheck } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -18,7 +18,10 @@ const CHANNEL_KEYS = [
     SettingKey.AutoAddMarkupMin,
     SettingKey.AutoAddMarkupMax,
     SettingKey.AutoAddExclude,
+    SettingKey.AutoAddInclude,
     SettingKey.AutoAddFillPrice,
+    SettingKey.AutoAddBackground,
+    SettingKey.AutoAddInterval,
 ] as const;
 
 // rowClass 是「说明在左、控件在右」的统一行布局, 与运维设置卡片保持一致。
@@ -159,6 +162,23 @@ export function SettingChannel() {
                 />
             </div>
 
+            <div className={rowClass + ' ' + dividerClass}>
+                <div className="min-w-0">
+                    <Label htmlFor="aa-include" className="text-sm font-medium">
+                        {t('autoAdd.include')}
+                    </Label>
+                    <p className="text-xs text-muted-foreground">{t('autoAdd.includeHint')}</p>
+                </div>
+                <Input
+                    id="aa-include"
+                    placeholder="^gpt-4o"
+                    className="h-9 w-full max-w-md rounded-xl"
+                    value={values[SettingKey.AutoAddInclude] ?? ''}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.AutoAddInclude]: event.target.value }))}
+                    onBlur={(event) => save(SettingKey.AutoAddInclude, event.target.value)}
+                />
+            </div>
+
             <div className={cn(rowClass, dividerClass)}>
                 <div className="min-w-0">
                     <Label className="text-sm font-medium">{t('autoAdd.fillPrice')}</Label>
@@ -172,6 +192,29 @@ export function SettingChannel() {
                     }}
                 />
             </div>
+
+            {/* 后台自动添加: 把「保存时触发」的一次性行为升级为周期复查。 */}
+            <h2 className="flex items-center gap-2 pb-2 pt-6 text-lg font-bold text-card-foreground">
+                <RefreshCw className="size-5" />
+                {t('autoAdd.background')}
+            </h2>
+            <p className="pb-1 text-xs text-muted-foreground">{t('autoAdd.backgroundHint')}</p>
+            <div className={cn(rowClass, dividerClass)}>
+                <div className="min-w-0">
+                    <Label className="text-sm font-medium">{t('autoAdd.backgroundEnabled')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('autoAdd.backgroundEnabledHint')}</p>
+                </div>
+                <Switch
+                    checked={boolValue(SettingKey.AutoAddBackground)}
+                    onCheckedChange={(checked) => {
+                        setDraft((prev) => ({ ...prev, [SettingKey.AutoAddBackground]: String(checked) }));
+                        save(SettingKey.AutoAddBackground, String(checked));
+                    }}
+                />
+            </div>
+            {/* 周期只在开关打开时出现: 关着的时候它不生效, 摆在界面上只会让人以为改它有用。 */}
+            {boolValue(SettingKey.AutoAddBackground) &&
+                numberRow(SettingKey.AutoAddInterval, 'aa-interval', t('autoAdd.interval'), t('autoAdd.intervalHint'), 1, 168, 1, '24')}
         </div>
     );
 }

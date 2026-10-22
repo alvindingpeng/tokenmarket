@@ -940,6 +940,41 @@
             "successShort": "Success {rate}%",
             "avgWait": "Avg {ms}ms",
             "uptimeShort": "Uptime {uptime}%"
+        },
+        "settings": {
+            "saved": "Saved",
+            "saveFailed": "Save failed",
+            "observation": {
+                "title": "Channel observation",
+                "hint": "Approved channels run on probation first: they graduate automatically when targets are met and are downgraded step by step otherwise. All three targets apply to every channel.",
+                "days": "Observation days",
+                "daysHint": "Default 7 days, counted from the moment of approval",
+                "minSamples": "Minimum requests to graduate",
+                "minSamplesHint": "Default 100; with fewer samples neither pass nor fail is judged",
+                "successFloor": "Graduation success rate",
+                "successFloorHint": "Default 0.98; below this, the first round is extended and the second revokes"
+            },
+            "autoAdd": {
+                "title": "Model auto-add conditions",
+                "hint": "When a channel enables auto-add, only upstream models matching the conditions below are merged. Empty conditions mean no restriction.",
+                "priceMin": "Reference price floor",
+                "priceMax": "Reference price ceiling",
+                "markupMin": "Markup floor",
+                "markupMax": "Markup ceiling",
+                "markupHint": "Model reference price ÷ median of the channel's current prices; skipped while the channel has no priced model",
+                "exclude": "Exclude model names",
+                "excludeHint": "Regex; matching models are not merged. Leave empty to exclude nothing",
+                "include": "Only add model names",
+                "includeHint": "Regex; when non-empty only matching models are merged. Leave empty for no restriction",
+                "fillPrice": "Prefill supply price from reference",
+                "fillPriceHint": "Only fills models whose four prices are all zero and never overwrites manual pricing; listing still needs confirmation",
+                "background": "Scheduled background auto-add",
+                "backgroundHint": "Saving a channel only probes the upstream list at that moment. When enabled, a background task re-checks channels with auto-add on every interval and merges models added upstream since.",
+                "interval": "Re-check interval (hours)",
+                "backgroundEnabled": "Enable scheduled re-check",
+                "backgroundEnabledHint": "When on, the background task periodically probes channels with auto-add enabled and merges models added upstream since",
+                "intervalHint": "Default 24h, range 1-168h"
+            }
         }
     },
     "share": {

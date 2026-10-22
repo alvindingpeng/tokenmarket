@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -156,6 +157,22 @@ func Direct() (*http.Client, error) {
 	cloned.Proxy = nil
 	directClient = &http.Client{Transport: cloned, CheckRedirect: rejectRedirects}
 	return directClient, nil
+}
+
+// ForChannel 按渠道配置返回探测用的客户端: 直连 / 应用代理 / 渠道专用代理。
+//
+// 探测(拉 /models)与转发走同一套出口选择, 否则「渠道配了专用代理但探测直连」会让
+// 只能经代理访问的上游在探测时表现为不可达, 自动添加永远发现不了模型。
+// 三档都走共享连接池: 探测是低频动作, 但同样没必要为它单独建连接。
+func ForChannel(target model.ChannelConfig) (*http.Client, error) {
+	switch {
+	case !target.Proxy:
+		return Direct()
+	case strings.TrimSpace(target.ChannelProxy) == "":
+		return Proxy()
+	default:
+		return Shared(strings.TrimSpace(target.ChannelProxy))
+	}
 }
 
 // clonedDefaultTransport 克隆默认 Transport 并调好连接池参数。
