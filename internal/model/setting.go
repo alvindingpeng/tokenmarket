@@ -124,12 +124,6 @@ const (
 	SettingKeyAlertEmailPassword    SettingKey = "alert_email_password"     // SMTP 登录密码。
 	SettingKeyAlertEmailFrom        SettingKey = "alert_email_from"         // 发件人地址。
 	SettingKeyAlertEmailTo          SettingKey = "alert_email_to"           // 收件人地址(逗号分隔)。
-	// 邮件服务(SMTP): 注册验证码与找回密码的发信通道, 与告警邮件各配各的, 互不牵连。
-	SettingKeySMTPHost     SettingKey = "smtp_host"     // SMTP 服务器地址, 留空表示邮件服务未配置
-	SettingKeySMTPPort     SettingKey = "smtp_port"     // SMTP 端口, 默认 587; 465 自动走隐式 TLS
-	SettingKeySMTPUsername SettingKey = "smtp_username" // SMTP 登录账号
-	SettingKeySMTPPassword SettingKey = "smtp_password" // SMTP 登录密码(加密存储/掩码回显)
-	SettingKeySMTPFrom     SettingKey = "smtp_from"     // 发件人地址
 	// 探针鉴权: /metrics 默认开放(与 /healthz 一致, 便于本地抓取), 需要收敛时切成 bearer 并要求令牌。
 	SettingKeyMetricsAuth  SettingKey = "metrics_auth"  // off | bearer; /healthz 恒不鉴权(存活探针)。
 	SettingKeyMetricsToken SettingKey = "metrics_token" // bearer 模式下的抓取令牌, 内部键不外露。
@@ -167,7 +161,6 @@ func IsSecretSetting(key SettingKey) bool {
 	return key == SettingKeyGithubToken ||
 		key == SettingKeyAlertTelegramBotToken ||
 		key == SettingKeyAlertEmailPassword ||
-		key == SettingKeySMTPPassword ||
 		key == SettingKeyEpayKey ||
 		key == SettingKeyAlipayPrivateKey ||
 		key == SettingKeyStripeSecretKey ||
@@ -270,14 +263,11 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyHealthCheckEnabled, Value: "false"},                               // 健康探测默认关闭(可能产生上游费用)
 		{Key: SettingKeyHealthCheckMinutes, Value: "30"},                                  // 探测间隔 30 分钟
 		{Key: SettingKeyHealthLatencyMS, Value: "1000"},                                   // 延迟告警阈值 1 秒, 0 关闭
-		{Key: SettingKeySMTPHost, Value: ""},                                              // 邮件服务默认未配置, 管理后台补上即启用
-		{Key: SettingKeySMTPPort, Value: "587"},                                           // 587 STARTTLS; 465 隐式 TLS
-		{Key: SettingKeySMTPUsername, Value: ""},                                          // 登录账号后配
-		{Key: SettingKeySMTPPassword, Value: ""},                                          // 登录密码后配(密钥类设置)
-		{Key: SettingKeySMTPFrom, Value: ""},                                              // 发件人后配
-		{Key: SettingKeyAlertWebhookURL, Value: ""},                                       // 默认仅站内通知
-		{Key: SettingKeyAlertDedupMinutes, Value: "10"},                                   // 去重窗口 10 分钟
-		{Key: SettingKeyAlertFailStreak, Value: "3"},                                      // 连续 3 次失败判宕机
+		// 发信只保留「告警邮件」一套配置(alert_email_*), 见下方播种。此前另有一套 smtp_* 是
+		// 注册验证码/找回密码的通道, 与管理后台那套读的是不同键却都叫「SMTP 配置」, 谁生效说不清。
+		{Key: SettingKeyAlertWebhookURL, Value: ""},     // 默认仅站内通知
+		{Key: SettingKeyAlertDedupMinutes, Value: "10"}, // 去重窗口 10 分钟
+		{Key: SettingKeyAlertFailStreak, Value: "3"},    // 连续 3 次失败判宕机
 		// 告警渠道与投递凭据: 必须在默认值里播种, 否则设置键不会落库, 读取与写入都会以 "setting not found" 失败。
 		{Key: SettingKeyAlertChannels, Value: ""},            // 留空等同仅 webhook, 与后端回落一致
 		{Key: SettingKeyAlertTelegramBotToken, Value: ""},    // Telegram Bot Token, 留空表示未配置
@@ -493,16 +483,18 @@ func (s *Setting) Validate() error {
 	case SettingKeyAlertChannels:
 		// 逗号分隔的渠道列表, 允许为空
 		return nil
-	case SettingKeyAlertTelegramBotToken, SettingKeyAlertTelegramChatID,
-		SettingKeyAlertEmailSMTPHost, SettingKeyAlertEmailUsername,
-		SettingKeyAlertEmailPassword, SettingKeyAlertEmailFrom, SettingKeyAlertEmailTo:
-		// 字符串配置, 允许为空
-		return nil
 	case SettingKeyAlertEmailSMTPPort:
+		// 告警邮件是站内唯一的发信通道, 端口必须可用; 越界值直接拦在写入前,
+		// 否则要等到某次告警真的触发才发现发不出去。
 		port, err := strconv.Atoi(s.Value)
 		if err != nil || port < 1 || port > 65535 {
 			return fmt.Errorf("invalid SMTP port: must be 1-65535")
 		}
+		return nil
+	case SettingKeyAlertTelegramBotToken, SettingKeyAlertTelegramChatID,
+		SettingKeyAlertEmailSMTPHost, SettingKeyAlertEmailUsername,
+		SettingKeyAlertEmailPassword, SettingKeyAlertEmailFrom, SettingKeyAlertEmailTo:
+		// 字符串配置, 允许为空
 		return nil
 	case SettingKeyBreakerKeyThreshold, SettingKeyBreakerModelThreshold:
 		// 0 关闭计数熔断(只剩立即熔断与冷却), 上限 100 次以免阈值形同虚设。
