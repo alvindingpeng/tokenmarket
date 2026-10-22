@@ -170,16 +170,27 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
             <Icon aria-hidden="true" className={iconClassName} width={52} height={52} />
 
             <div className="flex-1 min-w-0 flex flex-col justify-center gap-2">
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <span className="w-fit max-w-full text-base font-semibold text-card-foreground leading-tight truncate">
+                <span className="flex items-center gap-1.5 min-w-0">
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <span className="w-fit max-w-full text-base font-semibold text-card-foreground leading-tight truncate">
+                                {model.name}
+                            </span>
+                        </TooltipTrigger>
+                        <TooltipContent key={model.name} side="top" sideOffset={10} align="center">
                             {model.name}
+                        </TooltipContent>
+                    </Tooltip>
+                    {/* 已单独设过自动添加条件的模型挂一个角标: 一屏几十个模型, 光靠按钮高亮不够显眼,
+                        而「哪些模型被区别对待过」正是排查「为什么这个模型没被收进来」的第一眼线索。 */}
+                    {customized && (
+                        <span className="shrink-0 rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                            {autoAddRule?.mode === 'on' ? t('rule.modeOn')
+                                : autoAddRule?.mode === 'off' ? t('rule.modeOff')
+                                : t('rule.badge')}
                         </span>
-                    </TooltipTrigger>
-                    <TooltipContent key={model.name} side="top" sideOffset={10} align="center">
-                        {model.name}
-                    </TooltipContent>
-                </Tooltip>
+                    )}
+                </span>
 
                 {isListLayout ? (
                     <p className="flex items-center gap-2 overflow-hidden text-sm text-muted-foreground whitespace-nowrap">

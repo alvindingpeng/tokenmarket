@@ -285,6 +285,26 @@ func openAPIAdminPathsAuth() gin.H {
 					"渠道上手工设置过的价格会被覆盖, 慎用。", "",
 				adminEnvelope("重建条数", gin.H{"type": "object", "properties": gin.H{"count": gin.H{"type": "integer"}}}), true),
 		},
+		"/api/v1/model/auto-add-rule/list": gin.H{
+			"get": adminPath("model", "模型级自动添加条件",
+				"返回当前登录用户为各模型单独设置的自动添加条件。"+adminNewLine+adminNewLine+
+					"条件按 (用户, 模型) 存放: 每个人设的各人生效, 互不覆盖 —— 同一个模型在不同人眼里值得不值得收,"+adminNewLine+
+					"可以各按各的账算。字段全为空串表示该项未单独设置, 回落系统设置里的全局默认。",
+				"", adminArray("自动添加条件", "ModelAutoAddRule"), false),
+		},
+		"/api/v1/model/auto-add-rule/save": gin.H{
+			"post": adminPath("model", "保存模型级自动添加条件",
+				"逐字段覆盖: 留空的项继续跟随全局, 填了的项才覆盖该模型。"+adminNewLine+adminNewLine+
+					"mode 为 on 表示该模型强制并入(跳过其余全部条件), off 表示永不并入。"+adminNewLine+
+					"非法数字, 非法正则或非法开关值一律拒绝, 不静默回落 —— 条件填错了等于没设, 必须让调用方知道。"+adminNewLine+
+					"全部字段留空等价于删除这条条件; 请求体里的 user_id 会被忽略, 只写登录者自己那一份。",
+				"ModelAutoAddRule", adminItem("保存后的条件", "ModelAutoAddRule"), true),
+		},
+		"/api/v1/model/auto-add-rule/delete": gin.H{
+			"post": adminPath("model", "删除模型级自动添加条件",
+				"请求体只需 name; 删除后该模型回到全局默认。幂等: 条件本就不存在时同样返回成功。",
+				"ModelNameRequest", adminOk(), true),
+		},
 		"/api/v1/model/capability": gin.H{
 			"get": adminPath("model", "模型能力登记",
 				"官方登记的模型输入输出模态与规模上限(models.dev 自动同步 + 人工补录)。"+adminNewLine+adminNewLine+
