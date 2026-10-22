@@ -115,7 +115,8 @@
                     "free": "未配置价格"
                 }
             }
-        }
+        },
+        "autoAddRule": "自动添加条件"
     },
     "site": {
         "announcement": "公告",
@@ -608,7 +609,12 @@
             "member_stream_idle_timeout_secondsHint": "连续无流事件时中止，默认 60 秒。"
         },
         "memberPrice": "读 {input} / 写 {output}（m）",
-        "modelPrice": "读 {input} / 写 {output} / 缓存读 {cacheRead} / 缓存写 {cacheWrite}（m）"
+        "modelPrice": "读 {input} / 写 {output} / 缓存读 {cacheRead} / 缓存写 {cacheWrite}（m）",
+        "ruleHint": "给单个模型单独设「自动添加条件」：可强制并入、永不并入，或只覆盖价格/倍率/黑白名单中的某几项；没填的项目跟随系统设置里的全局默认。渠道开启自动添加后按模型逐条判定。",
+        "rule": {
+            "open": "自动添加条件",
+            "customized": "已单独设置"
+        }
     },
     "model": {
         "create": {
@@ -672,7 +678,10 @@
             "badge": "已单独设置条件",
             "save": "保存",
             "saved": "该模型的自动添加条件已保存",
-            "saveFailed": "保存失败"
+            "saveFailed": "保存失败",
+            "name": "模型名",
+            "namePlaceholder": "例如 claude-opus-4-6",
+            "nameHint": "上游探测到的模型名可能与这里的写法不同，以上游返回的名称为准。"
         }
     },
     "log": {

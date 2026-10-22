@@ -1,10 +1,12 @@
 import { useMemo } from 'react';
-import { ArrowUpAZ } from 'lucide-react';
+import { ArrowUpAZ, Filter } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { GroupCard } from './Card';
+import { ModelRuleEditor } from '@/components/modules/model/RuleEditor';
 import { CreateDialogContent } from './Create';
 import { useRuntimeClock } from './MemberStatus';
 import { useGroupList } from '@/api/group';
+import { useModelAutoAddRules } from '@/api/model-rule';
 import { PageActions, usePageActionsStore } from '@/components/common/PageActions';
 import { VirtualizedGrid } from '@/components/common/VirtualizedGrid';
 
@@ -40,6 +42,20 @@ export function GroupActions() {
                 if (value === 'all' || value === 'with-members' || value === 'empty') setFilter(value);
             }}
         >
+            <ModelRuleEditor
+                nameEntry
+                rule={undefined}
+                trigger={
+                    <button
+                        type="button"
+                        title={t('autoAddRule')}
+                        className="h-9 px-3 flex items-center gap-1.5 rounded-lg text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                        <Filter className="size-4" />
+                        <span className="hidden md:inline">{t('autoAddRule')}</span>
+                    </button>
+                }
+            />
             <CreateDialogContent />
         </PageActions>
     );
@@ -47,7 +63,10 @@ export function GroupActions() {
 
 // Group 渲染分组列表正文。
 export function Group() {
+    const t = useTranslations('group');
     const { data: groups } = useGroupList(true, true);
+    // 规则表在页面层取一次下发给每张卡片: 卡片数量多, 各自 useQuery 会白白多出几十个订阅。
+    const { data: autoAddRules } = useModelAutoAddRules();
     const runtimeNow = useRuntimeClock(groups);
     const searchTerm = usePageActionsStore((state) => state.searchTerms.group || '');
     const sortOrder = usePageActionsStore((state) => state.sortOrders.group === 'desc' ? 'desc' : 'asc');
@@ -71,7 +90,13 @@ export function Group() {
     }, [sortedGroups, searchTerm, filter]);
 
     return (
-        <VirtualizedGrid
+        <div className="flex flex-col gap-3">
+            {/* 系统设置里那组条件只是全局默认; 想给单个模型另设一份, 入口在这里和顶栏漏斗。 */}
+            <p className="shrink-0 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                {t('ruleHint')}
+            </p>
+
+            <VirtualizedGrid
             items={visibleGroups}
             // 一行 2 卡: 分组卡片里带成员矩阵与运行态, 三列会把每张卡压到 400px 上下,
             // 成员行被迫折行到看不清归属。两列给足宽度后信息才排得开。
@@ -83,8 +108,15 @@ export function Group() {
                 for (const cooldownUntil of Object.values(group.runtime.cooldowns)) {
                     deadline = Math.max(deadline, cooldownUntil);
                 }
-                return <GroupCard group={group} now={deadline > runtimeNow ? runtimeNow : deadline} />;
+                return (
+                    <GroupCard
+                        group={group}
+                        now={deadline > runtimeNow ? runtimeNow : deadline}
+                        rules={autoAddRules}
+                    />
+                );
             }}
-        />
+            />
+        </div>
     );
 }
