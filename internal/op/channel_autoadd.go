@@ -436,19 +436,8 @@ func AutoAddChannelsRun(ctx context.Context) error {
 		return nil
 	}
 
-	// 扫描范围由 channel_auto_add_scope 决定:
-	//   flagged  —— 只扫渠道级开关打开的(默认, 与升级前语义一致);
-	//   approved —— 扫全部已过审渠道, 逐渠道用同一套条件过滤。
-	// 无论哪种都排除已收回的渠道: 它此时在选路里已被踢出, 探测它没有意义。
-	query := db.GetDB().WithContext(ctx).
-		Where("review_status = ? AND trust_level <> ?",
-			model.ChannelReviewApproved, model.ChannelTrustRevoked)
-	if !AutoAddScopeAllApproved() {
-		// model_auto_add 是 channels 表的平铺列(ChannelConfig 内嵌), 可直接作为 SQL 条件。
-		query = query.Where("model_auto_add = ?", true)
-	}
 	var channels []model.Channel
-	if err := query.Find(&channels).Error; err != nil {
+	if err := autoAddScopeQuery(ctx).Find(&channels).Error; err != nil {
 		return fmt.Errorf("failed to list channels for background auto-add: %w", err)
 	}
 	if len(channels) == 0 {
@@ -498,6 +487,25 @@ func autoAddChannelOnce(ctx context.Context, channelID int, config model.Channel
 		return after - before, nil
 	}
 	return 0, nil
+}
+
+// autoAddScopeQuery 构造后台复查的渠道筛选条件, 抽出来是为了让范围语义可被测试直接断言 ——
+// 这段条件决定「哪些渠道会被真实探测」, 写错了不会有任何报错, 只会静默扫错范围。
+//
+// 扫描范围由 channel_auto_add_scope 决定:
+//   - flagged  —— 只扫渠道级开关打开的(默认, 与升级前语义一致);
+//   - approved —— 扫全部已过审渠道, 逐渠道用同一套条件过滤。
+//
+// 无论哪种都排除已收回的渠道: 它此时在选路里已被踢出, 探测它没有意义。
+func autoAddScopeQuery(ctx context.Context) *gorm.DB {
+	query := db.GetDB().WithContext(ctx).
+		Where("review_status = ? AND trust_level <> ?",
+			model.ChannelReviewApproved, model.ChannelTrustRevoked)
+	if !AutoAddScopeAllApproved() {
+		// model_auto_add 是 channels 表的平铺列(ChannelConfig 内嵌), 可直接作为 SQL 条件。
+		query = query.Where("model_auto_add = ?", true)
+	}
+	return query
 }
 
 // AutoAddScopeAllApproved 判断后台复查是否应覆盖全部已过审渠道。

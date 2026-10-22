@@ -2,8 +2,13 @@ package op
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"path/filepath"
+	"sort"
 	"testing"
 
+	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/dlclark/regexp2"
 	"github.com/glebarez/sqlite"
@@ -441,6 +446,142 @@ func TestAutoAddScopeName(t *testing.T) {
 			settingCache.Set(model.SettingKeyAutoAddScope, c.value)
 			if got := AutoAddScopeName(); got != c.want {
 				t.Fatalf("AutoAddScopeName(%q) = %q, want %q", c.value, got, c.want)
+			}
+		})
+	}
+}
+
+// TestAutoAddScopeQuerySelection 验证后台复查的范围选择真的落到 SQL 上。
+// 这是 v0.42.0 踩过的坑: 总开关打开、任务按时调度, 但因为渠道级开关全关,
+// 每轮扫到的是空集, 日志里一个字都没有 —— 看起来就是功能没生效。
+// 所以必须断言 flagged 只取渠道级开关打开的, approved 才覆盖全部已过审,
+// 且两种范围都排除已收回渠道。
+func TestAutoAddScopeQuerySelection(t *testing.T) {
+	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "scope.db"), false); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	if err := db.GetDB().AutoMigrate(&model.Channel{}, &model.ChannelKey{}, &model.ChannelModel{}, &model.ChannelGrant{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	t.Cleanup(func() { settingCache.Del(model.SettingKeyAutoAddScope) })
+
+	// 四个渠道覆盖四种情况。ReviewStatus/TrustLevel 在 Channel 上, ModelAutoAdd 在
+	// 内嵌的 ChannelConfig 里 —— 别把前两个写进 ChannelConfig, 编译期就会报没有该字段。
+	mk := func(name string, autoAdd bool, trust string) {
+		ch := model.Channel{
+			ReviewStatus: model.ChannelReviewApproved,
+			TrustLevel:   trust,
+		}
+		ch.Name = name
+		ch.BaseURL = "http://up"
+		ch.ModelAutoAdd = autoAdd
+		if err := db.GetDB().Create(&ch).Error; err != nil {
+			t.Fatalf("create channel %s: %v", name, err)
+		}
+	}
+	mk("on-approved", true, model.ChannelTrustTrusted)
+	mk("off-approved", false, model.ChannelTrustTrusted)
+	mk("on-revoked", true, model.ChannelTrustRevoked)
+	// 未过审但开了渠道开关: 不该被任何 scope 选中。
+	draft := model.Channel{ReviewStatus: model.ChannelReviewDraft, TrustLevel: model.ChannelTrustTrusted}
+	draft.Name = "on-draft"
+	draft.BaseURL = "http://up"
+	draft.ModelAutoAdd = true
+	if err := db.GetDB().Create(&draft).Error; err != nil {
+		t.Fatalf("create draft: %v", err)
+	}
+
+	caseList := []struct {
+		name  string
+		scope string
+		want  []string
+	}{
+		{"flagged 只取渠道级开关打开的", "flagged", []string{"on-approved"}},
+		{"approved 覆盖全部已过审", "approved", []string{"off-approved", "on-approved"}},
+	}
+	for _, c := range caseList {
+		t.Run(c.name, func(t *testing.T) {
+			settingCache.Set(model.SettingKeyAutoAddScope, c.scope)
+			var got []model.Channel
+			if err := autoAddScopeQuery(context.Background()).Order("name").Find(&got).Error; err != nil {
+				t.Fatalf("query: %v", err)
+			}
+			names := make([]string, 0, len(got))
+			for _, ch := range got {
+				names = append(names, ch.Name)
+			}
+			if len(names) != len(c.want) {
+				t.Fatalf("scope %q selected %v, want %v", c.scope, names, c.want)
+			}
+			for i := range c.want {
+				if names[i] != c.want[i] {
+					t.Fatalf("scope %q selected %v, want %v", c.scope, names, c.want)
+				}
+			}
+		})
+	}
+}
+
+// TestAutoAddChannelsRunProbesScope 验证 AutoAddChannelsRun 真的按 scope 去探测,
+// 而不只是查询条件写对了: 抓 ProbeClientFactory 的入参, 看哪些渠道进了探测循环。
+func TestAutoAddChannelsRunProbesScope(t *testing.T) {
+	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "probe.db"), false); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	if err := db.GetDB().AutoMigrate(&model.Channel{}, &model.ChannelKey{}, &model.ChannelModel{}, &model.ChannelGrant{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	t.Cleanup(func() {
+		settingCache.Del(model.SettingKeyAutoAddBackground)
+		settingCache.Del(model.SettingKeyAutoAddScope)
+	})
+
+	mk := func(name string, autoAdd bool) {
+		ch := model.Channel{ReviewStatus: model.ChannelReviewApproved, TrustLevel: model.ChannelTrustTrusted}
+		ch.Name = name
+		ch.BaseURL = "http://up"
+		ch.ModelAutoAdd = autoAdd
+		if err := db.GetDB().Create(&ch).Error; err != nil {
+			t.Fatalf("create channel %s: %v", name, err)
+		}
+	}
+	mk("on-approved", true)
+	mk("off-approved", false)
+
+	settingCache.Set(model.SettingKeyAutoAddBackground, "true")
+
+	// 工厂返回错误: 探测必然失败并走 continue, 我们只关心「谁被探测了」。
+	var probed []string
+	original := ProbeClientFactory
+	t.Cleanup(func() { ProbeClientFactory = original })
+	ProbeClientFactory = func(cfg model.ChannelConfig) (*http.Client, error) {
+		probed = append(probed, cfg.Name)
+		return nil, fmt.Errorf("probe disabled in test")
+	}
+
+	caseList := []struct {
+		name  string
+		scope string
+		want  []string
+	}{
+		{"flagged 只探测开关打开的", "flagged", []string{"on-approved"}},
+		{"approved 探测全部已过审", "approved", []string{"off-approved", "on-approved"}},
+	}
+	for _, c := range caseList {
+		t.Run(c.name, func(t *testing.T) {
+			settingCache.Set(model.SettingKeyAutoAddScope, c.scope)
+			probed = nil
+			if err := AutoAddChannelsRun(context.Background()); err != nil {
+				t.Fatalf("run: %v", err)
+			}
+			sort.Strings(probed)
+			if len(probed) != len(c.want) {
+				t.Fatalf("scope %q probed %v, want %v", c.scope, probed, c.want)
+			}
+			for i := range c.want {
+				if probed[i] != c.want[i] {
+					t.Fatalf("scope %q probed %v, want %v", c.scope, probed, c.want)
+				}
 			}
 		})
 	}
