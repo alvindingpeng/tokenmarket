@@ -1,10 +1,13 @@
 import { memo, useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Trash2, X, Pencil } from 'lucide-react';
+import { Trash2, X, Pencil, Filter } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { type Group, type GroupUpdateRequest, useDeleteGroup, useUpdateGroup } from '@/api/group';
 import { useTranslations } from 'use-intl';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { CopyIconButton } from '@/components/common/CopyButton';
+import { ModelRuleEditor } from '@/components/modules/model/RuleEditor';
+import { ruleIsEmpty, type ModelAutoAddRule } from '@/api/model-rule';
 import { IconButton } from '@/components/common/IconButton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { SelectedMember } from './ItemList';
@@ -49,7 +52,16 @@ function EditDialogContent({ group, displayMembers, isSubmitting, onSubmit }: Ed
     );
 }
 
-export const GroupCard = memo(function GroupCard({ group, now }: { group: Group; now: number }) {
+// rules 由分组页统一取一次下发, 不再每张卡各查一遍。
+export const GroupCard = memo(function GroupCard({
+    group,
+    now,
+    rules,
+}: {
+    group: Group;
+    now: number;
+    rules: Map<string, ModelAutoAddRule> | undefined;
+}) {
     const t = useTranslations('group');
     const updateGroup = useUpdateGroup();
     const activateItem = useUpdateGroup(); // 与配置提交分开持有: 共用一个实例会让点选成员点亮编辑弹窗的提交态。
@@ -80,6 +92,13 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
     useEffect(() => {
         if (!isDragging.current) setMembers([...displayMembers]);
     }, [displayMembers]);
+
+    // 漏斗高亮表示这个分组里已经有模型被单独设过条件。不只看当前生效成员: 排查「这个模型为什么
+    // 没被收进来」时, 被排除的往往正是没在用的那个, 只按当前成员高亮会把线索藏起来。
+    const customized = useMemo(
+        () => (group.items || []).some((item) => !ruleIsEmpty(rules?.get(item.model_name.toLowerCase()))),
+        [group.items, rules]
+    );
 
     const onSuccess = useCallback(() => toast.success(t('toast.updated')), [t]);
     const onError = useCallback((error: Error) => toast.error(t('toast.updateFailed'), { description: error.message }), [t]);
@@ -162,7 +181,29 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
                     </Tooltip>
                 </div>
 
+                {/* 自动添加条件的入口放在分组卡片上, 是因为用户从上游拿到的新模型名往往还没有渠道供货,
+                    在价格页里根本不存在, 只能从「这个分组在用的模型」这里点进去设。
+                    按钮常驻不藏进悬浮态: 藏起来等于又把它变得难找, 而难找正是这次要修的问题。 */}
                 <div className="flex items-center gap-1 shrink-0">
+                    <ModelRuleEditor
+                        nameEntry
+                        rule={undefined}
+                        trigger={
+                            <button
+                                type="button"
+                                title={customized ? t('rule.customized') : t('rule.open')}
+                                className={cn(
+                                    'h-7 w-7 flex items-center justify-center rounded-lg transition-colors',
+                                    customized
+                                        ? 'bg-primary/15 text-primary hover:bg-primary/25'
+                                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                                )}
+                            >
+                                <Filter className="size-4" />
+                            </button>
+                        }
+                    />
+
                     <MorphingDialog>
                         {/* trigger 自身渲染 motion.div 承担弹窗形变, 故由它出元素, IconButton 只补样式。 */}
                         <IconButton asChild className="size-7">

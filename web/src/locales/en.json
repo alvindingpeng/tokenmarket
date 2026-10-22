@@ -115,7 +115,8 @@
                     "free": "Pricing not configured"
                 }
             }
-        }
+        },
+        "autoAddRule": "Auto-add conditions"
     },
     "site": {
         "announcement": "Announcement",
@@ -608,7 +609,12 @@
             "member_stream_idle_timeout_secondsHint": "Abort if no new stream events arrive; default 60 seconds."
         },
         "memberPrice": "Read {input} / write {output} (m)",
-        "modelPrice": "read {input} / write {output} / cache read {cacheRead} / cache write {cacheWrite} (m)"
+        "modelPrice": "read {input} / write {output} / cache read {cacheRead} / cache write {cacheWrite} (m)",
+        "ruleHint": "Set auto-add conditions for a single model: force it in, never add it, or override only some of the price / markup / include-exclude rules. Blank fields follow the global defaults in System settings. Conditions are evaluated per model when a channel auto-adds.",
+        "rule": {
+            "open": "Auto-add conditions",
+            "customized": "Customized"
+        }
     },
     "model": {
         "create": {
@@ -672,7 +678,10 @@
             "badge": "Custom conditions",
             "save": "Save",
             "saved": "Auto-add conditions saved for this model",
-            "saveFailed": "Save failed"
+            "saveFailed": "Save failed",
+            "name": "Model name",
+            "namePlaceholder": "e.g. claude-opus-4-6",
+            "nameHint": "The probed upstream name may differ; the name the upstream returns wins."
         }
     },
     "log": {

@@ -115,7 +115,8 @@
                     "free": "未配置價格"
                 }
             }
-        }
+        },
+        "autoAddRule": "自動新增條件"
     },
     "site": {
         "announcement": "公告",
@@ -608,7 +609,12 @@
             "member_stream_idle_timeout_secondsHint": "連續無串流事件時中止，預設 60 秒。"
         },
         "memberPrice": "讀 {input} / 寫 {output}（m）",
-        "modelPrice": "讀 {input} / 寫 {output} / 快取讀 {cacheRead} / 快取寫 {cacheWrite}（m）"
+        "modelPrice": "讀 {input} / 寫 {output} / 快取讀 {cacheRead} / 快取寫 {cacheWrite}（m）",
+        "ruleHint": "給單個模型單獨設定「自動新增條件」：可強制併入、永不併入，或只覆蓋價格/倍率/黑白名單中的某幾項；沒填的項目跟隨系統設定裡的全域預設。渠道開啟自動新增後按模型逐條判定。",
+        "rule": {
+            "open": "自動新增條件",
+            "customized": "已單獨設定"
+        }
     },
     "model": {
         "create": {
@@ -672,7 +678,10 @@
             "badge": "已單獨設定條件",
             "save": "保存",
             "saved": "該模型的自動添加條件已保存",
-            "saveFailed": "保存失敗"
+            "saveFailed": "保存失敗",
+            "name": "模型名",
+            "namePlaceholder": "例如 claude-opus-4-6",
+            "nameHint": "上游探測到的模型名可能與這裡的寫法不同，以上游返回的名稱為準。"
         }
     },
     "log": {
