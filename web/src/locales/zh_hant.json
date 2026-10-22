@@ -973,7 +973,11 @@
                 "interval": "複查週期(小時)",
                 "backgroundEnabled": "啟用後台複查",
                 "backgroundEnabledHint": "開啟後, 後台任務會定期探測已開啟自動新增的渠道, 把上游新增的模型併入",
-                "intervalHint": "預設 24 小時, 範圍 1-168"
+                "intervalHint": "預設 24 小時, 範圍 1-168",
+                "scope": "複查範圍",
+                "scopeHint": "後台任務每輪探測哪些頻道",
+                "scopeFlagged": "僅已開啟自動新增的頻道",
+                "scopeApproved": "全部已過審頻道"
             }
         }
     },

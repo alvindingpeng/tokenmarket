@@ -89,6 +89,7 @@ export const SettingKey = {
     // 后台自动添加: 关掉保存触发的一次性行为, 改成周期复查上游模型清单并自动并入。
     AutoAddBackground: 'channel_auto_add_background', // 后台复查开关, 默认 false。
     AutoAddInterval: 'channel_auto_add_interval', // 后台复查周期(小时), 默认 24。
+    AutoAddScope: 'channel_auto_add_scope', // 复查范围: flagged(仅已开启自动添加) | approved(全部已过审)。
 } as const;
 
 /**

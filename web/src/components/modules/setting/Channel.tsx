@@ -4,6 +4,7 @@ import { Dices, RefreshCw, ShieldCheck } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useSettingList, useSetSetting, SettingKey } from '@/api/setting';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -22,6 +23,7 @@ const CHANNEL_KEYS = [
     SettingKey.AutoAddFillPrice,
     SettingKey.AutoAddBackground,
     SettingKey.AutoAddInterval,
+    SettingKey.AutoAddScope,
 ] as const;
 
 // rowClass 是「说明在左、控件在右」的统一行布局, 与运维设置卡片保持一致。
@@ -73,6 +75,40 @@ export function SettingChannel() {
     };
 
     const boolValue = (key: string) => (values[key] ?? '') === 'true';
+
+    // selectRow 用于枚举值设置项(如 scope): 失焦/变化时即存，草稿仅做临时回显。
+    const selectRow = (
+        key: string,
+        id: string,
+        label: string,
+        hint: string,
+        options: { value: string; label: string }[]
+    ) => (
+        <div className={rowClass + ' ' + dividerClass} key={key}>
+            <div className="min-w-0">
+                <Label htmlFor={id} className="text-sm font-medium">
+                    {label}
+                </Label>
+                <p className="text-xs text-muted-foreground">{hint}</p>
+            </div>
+            <Select
+                value={values[key] ?? options[0]?.value ?? ''}
+                onValueChange={(value) => {
+                    setDraft((prev) => ({ ...prev, [key]: value }));
+                    save(key, value);
+                }}
+            >
+                <SelectTrigger id={id} className="h-9 w-40 shrink-0 rounded-xl">
+                    <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                    {options.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
+        </div>
+    );
 
     // numberRow 复用同一段 JSX: 六个数字输入只差 key / 范围 / 兜底值 / 文案。
     const numberRow = (
@@ -213,8 +249,16 @@ export function SettingChannel() {
                 />
             </div>
             {/* 周期只在开关打开时出现: 关着的时候它不生效, 摆在界面上只会让人以为改它有用。 */}
-            {boolValue(SettingKey.AutoAddBackground) &&
-                numberRow(SettingKey.AutoAddInterval, 'aa-interval', t('autoAdd.interval'), t('autoAdd.intervalHint'), 1, 168, 1, '24')}
+            {boolValue(SettingKey.AutoAddBackground) && (
+                <>
+                    {numberRow(SettingKey.AutoAddInterval, 'aa-interval', t('autoAdd.interval'), t('autoAdd.intervalHint'), 1, 168, 1, '24')}
+                    {/* scope 同上: 只在总开关打开时编辑, 否则改了也是等关了才生效, 防用户困惑。 */}
+                    {selectRow(SettingKey.AutoAddScope, 'aa-scope', t('autoAdd.scope'), t('autoAdd.scopeHint'), [
+                        { value: 'flagged', label: t('autoAdd.scopeFlagged') },
+                        { value: 'approved', label: t('autoAdd.scopeApproved') },
+                    ])}
+                </>
+            )}
         </div>
     );
 }

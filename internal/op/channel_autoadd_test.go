@@ -372,3 +372,46 @@ func TestAutoAddIncludeSettingValidated(t *testing.T) {
 		t.Fatalf("expected validation error for 0-hour interval")
 	}
 }
+// TestAutoAddScope 验证复查范围的取值语义: 只有字面 "approved" 才放大到全部已过审渠道。
+// 读不到键或值拼错时必须退回 false(只扫已开启的) —— 范围放大等于向上游多发请求,
+// 不能因为一次配置读取失败就变成对全部渠道的探测。
+func TestAutoAddScope(t *testing.T) {
+	t.Cleanup(func() { settingCache.Del(model.SettingKeyAutoAddScope) })
+
+	caseList := []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{"未配置时保守取 false", "", false},
+		{"flagged 只扫已开启渠道", "flagged", false},
+		{"approved 覆盖全部已过审", "approved", true},
+		{"大小写不符不算命中", "Approved", false},
+		{"拼错的值退回保守", "aproved", false},
+	}
+	for _, c := range caseList {
+		t.Run(c.name, func(t *testing.T) {
+			settingCache.Set(model.SettingKeyAutoAddScope, c.value)
+			if got := AutoAddScopeAllApproved(); got != c.want {
+				t.Fatalf("AutoAddScopeAllApproved(%q) = %v, want %v", c.value, got, c.want)
+			}
+		})
+	}
+}
+
+// TestAutoAddScopeSettingValidated 验证 scope 保存校验: 拼错的值必须在保存时被拒,
+// 否则它会静默退回"只扫已开启渠道", 管理员会以为功能没生效。
+func TestAutoAddScopeSettingValidated(t *testing.T) {
+	for _, bad := range []string{"", "aproved", "all", "APPROVED"} {
+		s := model.Setting{Key: model.SettingKeyAutoAddScope, Value: bad}
+		if err := s.Validate(); err == nil {
+			t.Fatalf("expected validation error for scope %q", bad)
+		}
+	}
+	for _, good := range []string{"flagged", "approved"} {
+		s := model.Setting{Key: model.SettingKeyAutoAddScope, Value: good}
+		if err := s.Validate(); err != nil {
+			t.Fatalf("scope %q should be valid, got %v", good, err)
+		}
+	}
+}

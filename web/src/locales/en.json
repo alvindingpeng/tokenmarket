@@ -973,7 +973,11 @@
                 "interval": "Re-check interval (hours)",
                 "backgroundEnabled": "Enable scheduled re-check",
                 "backgroundEnabledHint": "When on, the background task periodically probes channels with auto-add enabled and merges models added upstream since",
-                "intervalHint": "Default 24h, range 1-168h"
+                "intervalHint": "Default 24h, range 1-168h",
+                "scope": "Re-check scope",
+                "scopeHint": "Which channels the background task probes each round",
+                "scopeFlagged": "Channels with auto-add enabled",
+                "scopeApproved": "All approved channels"
             }
         }
     },
