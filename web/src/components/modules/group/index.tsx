@@ -90,12 +90,16 @@ export function Group() {
     }, [sortedGroups, searchTerm, filter]);
 
     return (
-        <div className="flex flex-col gap-3">
+        // 外层必须自己占满高度并把剩余空间让给列表: 页面容器是 absolute inset-0 + overflow-hidden,
+        // 这里若只是普通 flex 列, 说明行会把容器撑高, VirtualizedGrid 的 h-full 随之按撑高的高度解析,
+        // 结果它自己的滚动区没有可滚内容(h == scrollHeight), 页面被整体裁掉 —— 一页滑不动。
+        <div className="flex h-full min-h-0 flex-col gap-3">
             {/* 系统设置里那组条件只是全局默认; 想给单个模型另设一份, 入口在这里和顶栏漏斗。 */}
             <p className="shrink-0 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
                 {t('ruleHint')}
             </p>
 
+            <div className="min-h-0 flex-1">
             <VirtualizedGrid
             items={visibleGroups}
             // 一行 2 卡: 分组卡片里带成员矩阵与运行态, 三列会把每张卡压到 400px 上下,
@@ -117,6 +121,7 @@ export function Group() {
                 );
             }}
             />
+            </div>
         </div>
     );
 }
