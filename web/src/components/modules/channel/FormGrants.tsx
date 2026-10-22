@@ -12,6 +12,8 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { IconButton } from '@/components/common/IconButton';
+import { ModelRuleEditor } from '@/components/modules/model/RuleEditor';
+import { useModelAutoAddRules } from '@/api/model-rule';
 import { useModelProbe } from './probe';
 import { grantKey, type ChannelFormState } from './state';
 
@@ -93,6 +95,8 @@ export function FormGrants({ state, setState }: {
 }) {
     const t = useTranslations('channel.form');
     const { probe, pendingKey } = useModelProbe();
+    // 模型级自动添加条件: 与模型页共用同一份数据, 在这里就地编辑, 不必切页面。
+    const { data: autoAddRules } = useModelAutoAddRules();
     const [expanded, setExpanded] = useState<Set<string>>(new Set()); // 已展开的模型名, 支持同时展开多个。
     const [adding, setAdding] = useState('');
     const [selectedKey, setSelectedKey] = useState('');
@@ -224,6 +228,12 @@ export function FormGrants({ state, setState }: {
                                             {granted}/{keyNames.length}
                                         </span>
                                     </button>
+                                    {/* 自动添加条件按(用户, 模型)存: 在这里给模型调条件, 影响的是该用户所有渠道探测到这个模型时的并入判定。
+                                        放在模型行上而不是设置页: 「这个模型要不要收」正是在挑模型时才会想到的事。 */}
+                                    <ModelRuleEditor
+                                        modelName={modelName}
+                                        rule={autoAddRules?.get(modelName.toLowerCase())}
+                                    />
                                     <GrantCells
                                         state={state} setState={setState}
                                         models={[modelName]} keyNames={keyNames}

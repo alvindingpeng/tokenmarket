@@ -45,6 +45,9 @@ type AutoAddFilter struct {
 	FillPrice bool
 	// Baseline 是渠道现有模型参考价的中位数, 作为倍率条件的基准; 0 表示渠道尚无定价模型, 倍率条件不生效。
 	Baseline float64
+	// Mode 是模型级三态开关落地后的结论: "on" 直接放行(跳过其余条件), "off" 直接拒绝, 空表示按条件判定。
+	// 只有按模型解析(见 forModel)时才会被填上; 全局条件本身没有这一档。
+	Mode string
 }
 
 // loadAutoAddFilter 从设置读取自动添加条件; 正则编译失败时降级为不排除并记日志。
@@ -76,6 +79,39 @@ func loadAutoAddFilter(baseline float64) AutoAddFilter {
 		}
 	}
 	return filter
+}
+
+// forModel 在全局条件之上叠加「该渠道归属者为该模型设的」条件, 返回它实际生效的条件。
+//
+// 逐字段回落: 模型级条件留空的字段沿用全局值, 填了才覆盖 —— 用户只给某个贵模型
+// 单独设一条价格上限即可, 其余条件继续跟着全局走, 不必把整份条件抄一遍。
+// 没有为该模型登记条件时原样返回全局条件, 升级到本版不改变任何既有渠道的并入结果。
+func (f AutoAddFilter) forModel(userID uint, name string) AutoAddFilter {
+	rule, ok := AutoAddRuleGet(userID, name)
+	if !ok {
+		return f
+	}
+	// 三态开关直接定结论: 强制并入时其余条件一律不看, 强制排除时也不必再算价格。
+	if rule.Mode == model.AutoAddRuleModeOn || rule.Mode == model.AutoAddRuleModeOff {
+		out := f
+		out.Mode = rule.Mode
+		return out
+	}
+	out := f
+	out.PriceMin = ruleFloatOr(rule.PriceMin, f.PriceMin)
+	out.PriceMax = ruleFloatOr(rule.PriceMax, f.PriceMax)
+	out.MarkupMin = ruleFloatOr(rule.MarkupMin, f.MarkupMin)
+	out.MarkupMax = ruleFloatOr(rule.MarkupMax, f.MarkupMax)
+	out.FillPrice = ruleBoolOr(rule.FillPrice, f.FillPrice)
+	// 正则按「填了才覆盖」处理: 模型级留空表示沿用全局正则, 而不是把全局正则取消掉。
+	// 想给单个模型放宽, 就给它填一条能命中它的白名单, 或直接把全局正则清空。
+	if pattern := strings.TrimSpace(rule.Exclude); pattern != "" {
+		out.Exclude = compileRuleRegex(pattern, "exclude")
+	}
+	if pattern := strings.TrimSpace(rule.Include); pattern != "" {
+		out.Include = compileRuleRegex(pattern, "include")
+	}
+	return out
 }
 
 // settingBoolDefault 读布尔设置, 缺键或非法时返回 fallback。
@@ -127,6 +163,13 @@ func channelPriceBaseline(channelID int) float64 {
 // 否则条件一开就再也添加不进新厂商的模型。倍率同理 —— 没有参考价就无从计算倍率。
 // 渠道尚无定价模型(Baseline=0)时倍率条件整体跳过: 新渠道没有"平时价位"可言。
 func (f AutoAddFilter) Allow(name string) (bool, string) {
+	// 模型级开关最优先: 它表达的是「这个模型我说了算」, 与条件无关, 故排在所有条件之前。
+	switch f.Mode {
+	case model.AutoAddRuleModeOn:
+		return true, ""
+	case model.AutoAddRuleModeOff:
+		return false, "disabled by model rule"
+	}
 	// 白名单在最前: 设了 Include 就只放行命中的模型, 后面的条件只对通过白名单的名字生效。
 	if f.Include != nil {
 		matched, err := f.Include.MatchString(name)
@@ -175,6 +218,15 @@ func (f AutoAddFilter) Allow(name string) (bool, string) {
 	return true, ""
 }
 
+// channelOwnerID 返回渠道归属者的用户主键; 缓存里没有该渠道时返回 0。
+// 模型级条件按用户存, 探测时要先知道「这次替谁筛」。
+func channelOwnerID(channelID int) uint {
+	if channel, ok := channelCache.Get(channelID); ok {
+		return channel.UserID
+	}
+	return 0
+}
+
 // referenceBlendedPrice 返回模型的参考 blended 单价(每百万 token)与是否有登记。
 // 与改价工作台同一口径: 输入输出均值, 查 models.dev 同步来的价格表(llm_infos)。
 // 名称按小写匹配: models.dev 的键统一小写, 上游返回的模型名可能带大写。
@@ -210,6 +262,9 @@ func AutoAddChannelModels(ctx context.Context, channelID int, config model.Chann
 		return fmt.Errorf("failed to load channel keys: %w", err)
 	}
 	filter := loadAutoAddFilter(channelPriceBaseline(channelID))
+	// 模型级条件按渠道归属者取: 渠道是谁的, 就按谁设的条件筛。查不到归属(已删除的用户)时
+	// ownerID 为 0, AutoAddRuleGet 必然落空, 等价于只用全局条件 —— 这正是升级前的行为。
+	ownerID := channelOwnerID(channelID)
 	keyIDByName := make(map[string]int, len(keys))
 	type probeResult struct {
 		keyName string
@@ -228,9 +283,10 @@ func AutoAddChannelModels(ctx context.Context, channelID int, config model.Chann
 			continue
 		}
 		// 条件过滤在探测之后、入库之前: 探测本身无法预知模型价格, 只能先拿到清单再筛。
+		// 每个模型先解析出它自己生效的条件(模型级覆盖叠加在全局之上), 再判是否并入。
 		allowed := make([]model.ChannelFetchModel, 0, len(fetched))
 		for _, item := range fetched {
-			ok, reason := filter.Allow(item.Name)
+			ok, reason := filter.forModel(ownerID, item.Name).Allow(item.Name)
 			if !ok {
 				skipped = append(skipped, item.Name+" ("+reason+")")
 				continue
@@ -264,8 +320,15 @@ func AutoAddChannelModels(ctx context.Context, channelID int, config model.Chann
 				truncated = truncated || keyTruncated
 			}
 			// 预填供货价(B4): 只填参考价, 不改变上架状态 —— 上架等于对客可见, 必须人工确认。
-			if filter.FillPrice {
-				if err := fillSupplyPriceFromReference(tx, channelID, added); err != nil {
+			// 预填与否按模型各算一次: 模型级条件可以单独覆盖全局开关(全局关但某模型强制预填, 或反之)。
+			fillNames := make([]string, 0, len(added))
+			for _, name := range added {
+				if filter.forModel(ownerID, name).FillPrice {
+					fillNames = append(fillNames, name)
+				}
+			}
+			if len(fillNames) > 0 {
+				if err := fillSupplyPriceFromReference(tx, channelID, fillNames); err != nil {
 					// 预填失败不该回滚已并入的模型: 模型本身已经可用, 只是价格还要人工补。
 					log.Warnf("auto-add: fill supply price for channel %d failed: %v", channelID, err)
 				}

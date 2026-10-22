@@ -62,6 +62,7 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.Group{},
 		&model.GroupItem{},
 		&model.LLMInfo{},
+		&model.ModelAutoAddRule{}, // 按(用户, 模型)存放的自动添加条件; 独立于价格表, 免受价格同步覆盖。
 		&model.ModelCapability{},
 		&model.APIKey{},
 		&model.BillingRecord{},

@@ -24,6 +24,9 @@ func InitCache() error {
 	if err := llmRefreshCache(ctx); err != nil {
 		return fmt.Errorf("llm refresh cache error: %v", err)
 	}
+	if err := autoAddRuleRefreshCache(ctx); err != nil {
+		return fmt.Errorf("model auto-add rule refresh cache error: %v", err)
+	}
 	if err := capabilityRefreshCache(ctx); err != nil {
 		return fmt.Errorf("model capability refresh cache error: %v", err)
 	}
