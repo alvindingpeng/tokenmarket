@@ -34,12 +34,17 @@ const (
 	SettingKeyChannelObservationMinSamples SettingKey = "channel_observation_min_samples"   // 毕业最低请求数, 默认 100
 	SettingKeyChannelObservationSuccessFlr SettingKey = "channel_observation_success_floor" // 毕业成功率线(0..1), 默认 0.98
 	// 渠道模型自动添加条件(B4): 只有通过条件的上游模型才会被并入, 并可自动预填供货价。
-	SettingKeyAutoAddPriceMin      SettingKey = "channel_auto_add_price_min"  // 参考价最低单价(每百万 token, 0 不限)
-	SettingKeyAutoAddPriceMax      SettingKey = "channel_auto_add_price_max"  // 参考价最高单价(每百万 token, 0 不限)
-	SettingKeyAutoAddMarkupMin     SettingKey = "channel_auto_add_markup_min" // 倍率下限(模型参考价 ÷ 渠道价位中位数, 0 不限)
-	SettingKeyAutoAddMarkupMax     SettingKey = "channel_auto_add_markup_max" // 倍率上限(模型参考价 ÷ 渠道价位中位数, 0 不限)
-	SettingKeyAutoAddExclude       SettingKey = "channel_auto_add_exclude"    // 排除正则(与渠道/全局过滤同取 AND)
-	SettingKeyAutoAddFillPrice     SettingKey = "channel_auto_add_fill_price" // 并入时按参考价自动预填供货价(默认关)
+	SettingKeyAutoAddPriceMin  SettingKey = "channel_auto_add_price_min"  // 参考价最低单价(每百万 token, 0 不限)
+	SettingKeyAutoAddPriceMax  SettingKey = "channel_auto_add_price_max"  // 参考价最高单价(每百万 token, 0 不限)
+	SettingKeyAutoAddMarkupMin SettingKey = "channel_auto_add_markup_min" // 倍率下限(模型参考价 ÷ 渠道价位中位数, 0 不限)
+	SettingKeyAutoAddMarkupMax SettingKey = "channel_auto_add_markup_max" // 倍率上限(模型参考价 ÷ 渠道价位中位数, 0 不限)
+	SettingKeyAutoAddExclude   SettingKey = "channel_auto_add_exclude"    // 排除正则(与渠道/全局过滤同取 AND)
+	SettingKeyAutoAddInclude   SettingKey = "channel_auto_add_include"    // 名称白名单正则: 非空时只有命中的模型才并入
+	SettingKeyAutoAddFillPrice SettingKey = "channel_auto_add_fill_price" // 并入时按参考价自动预填供货价(默认关)
+	// 后台自动添加: 保存时探测只覆盖"那一刻"的上游清单, 上游后来上新的模型永远不会被发现。
+	// 开关打开后由定时任务按周期复查「已开启 model_auto_add 的渠道」, 让自动添加从一次性动作变成持续同步。
+	SettingKeyAutoAddBackground    SettingKey = "channel_auto_add_background" // 后台周期复查开关, 默认关
+	SettingKeyAutoAddInterval      SettingKey = "channel_auto_add_interval"   // 后台复查周期(小时), 默认 24
 	SettingKeyShareCodeSeq         SettingKey = "share_code_seq"              // 发布编码取号计数器(4 位数字, 1001 起), 号码只发不收
 	SettingKeyBalanceReserveCap    SettingKey = "balance_reserve_output_cap"  // 余额预扣估算的默认输出 token 上限。
 	SettingKeyBalanceReserveImages SettingKey = "balance_reserve_images"      // 生图预扣保守张数(无 N 时使用), 默认 4。
@@ -198,7 +203,11 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyAutoAddMarkupMin, Value: "0"},
 		{Key: SettingKeyAutoAddMarkupMax, Value: "0"},
 		{Key: SettingKeyAutoAddExclude, Value: ""},
+		{Key: SettingKeyAutoAddInclude, Value: ""},
 		{Key: SettingKeyAutoAddFillPrice, Value: "false"}, // 默认不预填价格, 保持既有行为
+		// 后台复查默认关: 打开会周期性向每个开启了自动添加的渠道发探测请求, 属于要管理员明确点头的动作。
+		{Key: SettingKeyAutoAddBackground, Value: "false"},
+		{Key: SettingKeyAutoAddInterval, Value: "24"},     // 每天复查一次: 上游新模型上线速度不会快到需要更频繁。
 		{Key: SettingKeyShareCodeSeq, Value: "1000"},      // 发布编码从 1001 起, 记录已发到的最大号
 		{Key: SettingKeyBalanceReserveCap, Value: "4096"}, // 预扣估算默认输出上限
 		{Key: SettingKeyBalanceReserveImages, Value: "4"}, // 生图预扣保守张数, 4 张覆盖 dall-e-3 / gpt-image-1 n=4 上限
@@ -380,9 +389,23 @@ func (s *Setting) Validate() error {
 			}
 		}
 		return nil
-	case SettingKeyAutoAddFillPrice:
+	case SettingKeyAutoAddInclude:
+		// 白名单正则同理: 编译不过就等于"什么都不命中", 自动添加会静默变成永不并入。
+		if strings.TrimSpace(s.Value) != "" {
+			if _, err := regexp2.Compile(s.Value, regexp2.ECMAScript); err != nil {
+				return fmt.Errorf("invalid auto-add include regex: %v", err)
+			}
+		}
+		return nil
+	case SettingKeyAutoAddFillPrice, SettingKeyAutoAddBackground:
 		if _, err := strconv.ParseBool(s.Value); err != nil {
 			return fmt.Errorf("%s must be a boolean", s.Key)
+		}
+		return nil
+	case SettingKeyAutoAddInterval:
+		// 周期必须为正: 0 小时等于每秒一轮探测, 会直接把上游打进限流。
+		if hours, err := strconv.Atoi(s.Value); err != nil || hours < 1 || hours > 8760 {
+			return fmt.Errorf("%s must be a positive integer", s.Key)
 		}
 		return nil
 	case SettingKeyWithdrawalFeeRate:

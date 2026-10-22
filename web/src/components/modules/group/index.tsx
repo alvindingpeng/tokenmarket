@@ -73,7 +73,9 @@ export function Group() {
     return (
         <VirtualizedGrid
             items={visibleGroups}
-            columns={{ default: 1, md: 2, lg: 3 }}
+            // 一行 2 卡: 分组卡片里带成员矩阵与运行态, 三列会把每张卡压到 400px 上下,
+            // 成员行被迫折行到看不清归属。两列给足宽度后信息才排得开。
+            columns={{ default: 1, md: 2, lg: 2 }}
             estimateItemHeight={520}
             getItemKey={(group) => group.id}
             renderItem={(group) => {

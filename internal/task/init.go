@@ -28,6 +28,8 @@ var settingTasks = map[model.SettingKey][]string{
 	model.SettingKeyHealthCheckMinutes:      {TaskChannelHealth},
 	model.SettingKeyUpdateCheckEnabled:      {TaskUpdateCheck},
 	model.SettingKeyUpdateCheckMinutes:      {TaskUpdateCheck},
+	model.SettingKeyAutoAddBackground:       {TaskChannelAutoAdd},
+	model.SettingKeyAutoAddInterval:         {TaskChannelAutoAdd},
 }
 
 // ApplySetting 重算某项设置影响到的全部任务周期。
@@ -213,6 +215,22 @@ func Init() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 			defer cancel()
 			return op.ChannelQualitySnapshotRun(ctx)
+		},
+	})
+
+	// 渠道模型后台自动添加: 周期复查「已开启自动添加」的渠道, 把上游新增的模型并入。
+	//
+	// 为什么要后台跑而不是只在保存时跑: 保存触发的探测只覆盖"那一刻"的上游清单, 上游后来上新的
+	// 模型永远发现不了 —— 自动添加因此只是一次性动作。周期复查让它变成持续同步。
+	// 默认关(周期为 0, 任务就地停摆): 它会对每个开启的渠道发上游请求, 属于要管理员明确打开的动作。
+	// 不设 RunOnStart: 启动即向全部渠道发探测会在重启时集中制造上游流量, 等第一个周期更稳妥。
+	Define(Spec{
+		Name:     TaskChannelAutoAdd,
+		Interval: enabledHoursInterval(model.SettingKeyAutoAddBackground, model.SettingKeyAutoAddInterval, 24),
+		Fn: func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+			defer cancel()
+			return op.AutoAddChannelsRun(ctx)
 		},
 	})
 

@@ -8,6 +8,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/relay"
+	"github.com/alvindingpeng/switchyard/internal/rhttp"
 	"github.com/alvindingpeng/switchyard/internal/server"
 	"github.com/alvindingpeng/switchyard/internal/server/auth"
 	"github.com/alvindingpeng/switchyard/internal/task"
@@ -53,6 +54,11 @@ var startCmd = &cobra.Command{
 		op.AlertDispatcher = func(ctx context.Context, a alert.Alert) bool {
 			return alert.Send(ctx, a)
 		}
+
+		// 后台自动添加的探测客户端工厂: 后台任务要按渠道配置建 HTTP 客户端, 而建客户端要读设置
+		// (rhttp 依赖 op), op 反向 import rhttp 会成环, 故在这里注入。
+		// 与保存触发的自动添加共用 rhttp.ForChannel, 两处出口选择不会漂移。
+		op.ProbeClientFactory = rhttp.ForChannel
 
 		// 后台任务故障接线: 任务连续失败达到阈值后经同一条告警管道通知管理员。
 		// 改造前任务失败只有 log.Warnf —— 备份不再产出、归档停在原地都没人知道,

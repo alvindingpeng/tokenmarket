@@ -940,6 +940,41 @@
             "successShort": "成功率 {rate}%",
             "avgWait": "均耗时 {ms}ms",
             "uptimeShort": "可用率 {uptime}%"
+        },
+        "settings": {
+            "saved": "已保存",
+            "saveFailed": "保存失败",
+            "observation": {
+                "title": "渠道观察期",
+                "hint": "审核通过的渠道先试运行, 达标自动转正, 不达标逐级降级。三项门槛对全部渠道生效。",
+                "days": "观察期天数",
+                "daysHint": "默认 7 天, 从审核通过那一刻开始计时",
+                "minSamples": "毕业最低请求数",
+                "minSamplesHint": "默认 100, 样本不足时不判达标也不判不达标",
+                "successFloor": "毕业成功率线",
+                "successFloorHint": "默认 0.98, 观察期内成功率低于此值首轮延长、次轮收回"
+            },
+            "autoAdd": {
+                "title": "模型自动添加条件",
+                "hint": "渠道开启「自动添加模型」后, 只有满足下列条件的上游模型才会被并入。条件全空表示不限制。",
+                "priceMin": "参考价下限",
+                "priceMax": "参考价上限",
+                "markupMin": "倍率下限",
+                "markupMax": "倍率上限",
+                "markupHint": "模型参考价 ÷ 渠道现有价位中位数; 渠道尚无定价模型时该条件跳过",
+                "exclude": "排除模型名",
+                "excludeHint": "正则表达式, 命中的模型不并入; 留空不排除",
+                "include": "仅添加模型名",
+                "includeHint": "正则表达式, 非空时只有命中的模型才并入; 留空不限",
+                "fillPrice": "按参考价预填供货价",
+                "fillPriceHint": "只填四价全为 0 的模型, 不覆盖已有人工定价; 上架仍需人工确认",
+                "background": "后台周期自动添加",
+                "backgroundHint": "保存渠道时只探测当时的上游清单。打开后由后台任务按周期复查已开启自动添加的渠道, 把上游后来新增的模型也并入。",
+                "interval": "复查周期(小时)",
+                "backgroundEnabled": "启用后台复查",
+                "backgroundEnabledHint": "打开后, 后台任务会定期探测已开启自动添加的渠道, 把上游新增的模型并入",
+                "intervalHint": "默认 24 小时, 范围 1-168"
+            }
         }
     },
     "share": {

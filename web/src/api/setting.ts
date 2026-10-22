@@ -84,7 +84,11 @@ export const SettingKey = {
     AutoAddMarkupMin: 'channel_auto_add_markup_min', // 倍率下限(模型价 ÷ 渠道价位中位数), 0 不限。
     AutoAddMarkupMax: 'channel_auto_add_markup_max', // 倍率上限, 0 不限。
     AutoAddExclude: 'channel_auto_add_exclude', // 排除正则。
+    AutoAddInclude: 'channel_auto_add_include', // 名称白名单正则: 非空时只有命中的模型才并入。
     AutoAddFillPrice: 'channel_auto_add_fill_price', // 并入时按参考价预填供货价, 默认 false。
+    // 后台自动添加: 关掉保存触发的一次性行为, 改成周期复查上游模型清单并自动并入。
+    AutoAddBackground: 'channel_auto_add_background', // 后台复查开关, 默认 false。
+    AutoAddInterval: 'channel_auto_add_interval', // 后台复查周期(小时), 默认 24。
 } as const;
 
 /**

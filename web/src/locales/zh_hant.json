@@ -940,6 +940,41 @@
             "successShort": "成功率 {rate}%",
             "avgWait": "均耗時 {ms}ms",
             "uptimeShort": "可用率 {uptime}%"
+        },
+        "settings": {
+            "saved": "已儲存",
+            "saveFailed": "儲存失敗",
+            "observation": {
+                "title": "渠道觀察期",
+                "hint": "審核通過的渠道先試運行, 達標自動轉正, 不達標逐級降級。三項門檻對全部渠道生效。",
+                "days": "觀察期天數",
+                "daysHint": "預設 7 天, 從審核通過那一刻開始計時",
+                "minSamples": "畢業最低請求數",
+                "minSamplesHint": "預設 100, 樣本不足時不判達標也不判不達標",
+                "successFloor": "畢業成功率線",
+                "successFloorHint": "預設 0.98, 觀察期內成功率低於此值首輪延長、次輪收回"
+            },
+            "autoAdd": {
+                "title": "模型自動新增條件",
+                "hint": "渠道開啟「自動新增模型」後, 只有滿足下列條件的上游模型才會被併入。條件全空表示不限制。",
+                "priceMin": "參考價下限",
+                "priceMax": "參考價上限",
+                "markupMin": "倍率下限",
+                "markupMax": "倍率上限",
+                "markupHint": "模型參考價 ÷ 渠道現有價位中位數; 渠道尚無定價模型時該條件跳過",
+                "exclude": "排除模型名",
+                "excludeHint": "正規表達式, 命中的模型不併入; 留空不排除",
+                "include": "僅新增模型名",
+                "includeHint": "正規表達式, 非空時只有命中的模型才併入; 留空不限",
+                "fillPrice": "依參考價預填供貨價",
+                "fillPriceHint": "只填四價全為 0 的模型, 不覆蓋已有人工定價; 上架仍需人工確認",
+                "background": "後台週期自動新增",
+                "backgroundHint": "儲存渠道時只探測當時的上游清單。開啟後由後台任務按週期複查已開啟自動新增的渠道, 把上游後來新增的模型也併入。",
+                "interval": "複查週期(小時)",
+                "backgroundEnabled": "啟用後台複查",
+                "backgroundEnabledHint": "開啟後, 後台任務會定期探測已開啟自動新增的渠道, 把上游新增的模型併入",
+                "intervalHint": "預設 24 小時, 範圍 1-168"
+            }
         }
     },
     "share": {
