@@ -452,6 +452,12 @@ func AutoAddChannelsRun(ctx context.Context) error {
 		return fmt.Errorf("failed to list channels for background auto-add: %w", err)
 	}
 	if len(channels) == 0 {
+		// 空集不是"正常无事发生", 而是最容易被误判成功能没生效的状态:
+		// 总开关开着、任务按时调度, 但渠道级开关一个都没开, 每轮都空跑。
+		// 把范围与原因打进日志, 管理员看日志就知道该改 scope 还是去开渠道开关。
+		log.Infof("auto-add-background: no channel in scope (scope=%s), nothing to do; "+
+			"set %s=approved to cover all approved channels",
+			AutoAddScopeName(), model.SettingKeyAutoAddScope)
 		return nil
 	}
 
@@ -498,11 +504,21 @@ func autoAddChannelOnce(ctx context.Context, channelID int, config model.Channel
 // 缺键或值非法一律按 false(只扫已开启的): 范围放大到全部渠道属于"会向上游多发请求"的动作,
 // 读不到明确配置时保守处理, 不让一次配置读取失败变成对所有渠道的探测。
 func AutoAddScopeAllApproved() bool {
+	return AutoAddScopeName() == "approved"
+}
+
+// AutoAddScopeName 返回规范化后的复查范围名, 供日志与判定共用。
+// 未配置/读取失败/值拼错一律归一成 flagged: 范围放大意味着向更多上游发真实请求,
+// 配置不可信时保守处理, 不让一次读取失败悄悄扩散探测面。
+func AutoAddScopeName() string {
 	scope, err := SettingGetString(model.SettingKeyAutoAddScope)
 	if err != nil {
-		return false
+		return "flagged"
 	}
-	return strings.TrimSpace(scope) == "approved"
+	if strings.TrimSpace(scope) == "approved" {
+		return "approved"
+	}
+	return "flagged"
 }
 
 // countChannelModels 数某渠道当前的模型数; 后台任务据此算出本轮新增了多少。

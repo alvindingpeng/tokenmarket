@@ -372,6 +372,7 @@ func TestAutoAddIncludeSettingValidated(t *testing.T) {
 		t.Fatalf("expected validation error for 0-hour interval")
 	}
 }
+
 // TestAutoAddScope 验证复查范围的取值语义: 只有字面 "approved" 才放大到全部已过审渠道。
 // 读不到键或值拼错时必须退回 false(只扫已开启的) —— 范围放大等于向上游多发请求,
 // 不能因为一次配置读取失败就变成对全部渠道的探测。
