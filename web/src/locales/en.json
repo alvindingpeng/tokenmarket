@@ -451,23 +451,6 @@
             "placeholder": "Default 60",
             "hint": "Between 1 and 1440. Saving reschedules the task immediately - no restart needed. Anonymous GitHub calls are limited to 60 per hour, so keep this large unless an access token is set."
         },
-        "mail": {
-            "title": "Email Service (SMTP)",
-            "desc": "Delivery channel for registration codes and password resets. Leave empty to disable code sending. Password is stored masked and never echoed.",
-            "host": "SMTP Host",
-            "port": "Port",
-            "username": "Username",
-            "password": "Password",
-            "passwordPlaceholder": "Configured - leave empty to keep",
-            "from": "From Address",
-            "save": "Save",
-            "saved": "Mail settings saved",
-            "saveFailed": "Save failed",
-            "testTo": "Test Recipient",
-            "testSend": "Send Test Email",
-            "testSent": "Test email sent",
-            "testFailed": "Test email failed"
-        },
         "payment": {
             "title": "Recharge & payment",
             "desc": "Epay merchant parameters, exchange rate and bonus rules. All parameterized - fill in and they apply immediately.",

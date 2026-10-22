@@ -10,24 +10,27 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
-// 邮件发送(SMTP): 服务注册验证码与找回密码; 与告警邮件(alert 包)各用各的设置, 互不牵连。
-// 配置在管理后台「邮件服务」卡片, 未配置时调用方拿到明确错误, 不静默吞掉。
+// 邮件发送(SMTP): 服务注册验证码与找回密码。
+//
+// 读的是「告警邮件」那一套键(alert_email_*): 站内只保留一份发信配置, 管理后台也就只有一处
+// 可配。此前这里另读一套 smtp_* 键, 两处都叫「SMTP 配置」却互不影响, 管理员填了不生效无从判断。
+// 未配置时调用方拿到明确错误, 不静默吞掉。
 
 // MailConfigured 返回 SMTP 是否已配置完整; 界面据此决定是否展示发码入口。
 func MailConfigured() bool {
-	host, _ := SettingGetString(model.SettingKeySMTPHost)
-	username, _ := SettingGetString(model.SettingKeySMTPUsername)
-	from, _ := SettingGetString(model.SettingKeySMTPFrom)
+	host, _ := SettingGetString(model.SettingKeyAlertEmailSMTPHost)
+	username, _ := SettingGetString(model.SettingKeyAlertEmailUsername)
+	from, _ := SettingGetString(model.SettingKeyAlertEmailFrom)
 	return host != "" && username != "" && from != ""
 }
 
 // MailSend 发送一封纯文本邮件; 465 端口走隐式 TLS, 其余由 net/smtp 自行协商 STARTTLS。
 func MailSend(to, subject, body string) error {
-	host, _ := SettingGetString(model.SettingKeySMTPHost)
-	portStr, _ := SettingGetString(model.SettingKeySMTPPort)
-	username, _ := SettingGetString(model.SettingKeySMTPUsername)
-	password, _ := SettingGetString(model.SettingKeySMTPPassword)
-	from, _ := SettingGetString(model.SettingKeySMTPFrom)
+	host, _ := SettingGetString(model.SettingKeyAlertEmailSMTPHost)
+	portStr, _ := SettingGetString(model.SettingKeyAlertEmailSMTPPort)
+	username, _ := SettingGetString(model.SettingKeyAlertEmailUsername)
+	password, _ := SettingGetString(model.SettingKeyAlertEmailPassword)
+	from, _ := SettingGetString(model.SettingKeyAlertEmailFrom)
 
 	if host == "" || username == "" || from == "" {
 		return fmt.Errorf("smtp not configured")

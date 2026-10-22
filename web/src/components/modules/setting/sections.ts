@@ -11,7 +11,6 @@ export type SettingCardID =
     | 'system'
     | 'platform'
     | 'payment'
-    | 'mail'
     | 'llmPrice'
     | 'log'
     | 'ops'
@@ -30,7 +29,6 @@ export const SETTING_CARD_IDS: SettingCardID[] = [
     'system',
     'platform',
     'payment',
-    'mail',
     'llmPrice',
     'log',
     'ops',
@@ -59,7 +57,7 @@ export const SETTING_SECTIONS: SettingSection[] = [
     { id: 'audit', icon: ClipboardList, adminOnly: true, cards: [], views: ['audit'] },
     { id: 'ratelimit', icon: Gauge, adminOnly: true, cards: [], views: ['ratelimit'] },
     { id: 'redemption', icon: Ticket, adminOnly: true, cards: [], views: ['redemption'] },
-    { id: 'site', icon: Globe, adminOnly: true, cards: ['systemInfo', 'info', 'mail'], views: [] },
+    { id: 'site', icon: Globe, adminOnly: true, cards: ['systemInfo', 'info'], views: [] },
     { id: 'system', icon: Monitor, adminOnly: true, cards: ['system', 'platform'], views: [] },
     { id: 'billing', icon: CreditCard, adminOnly: true, cards: ['payment', 'llmPrice'], views: [] },
     { id: 'ops', icon: HeartPulse, adminOnly: true, cards: ['log', 'ops', 'backup', 'channel'], views: [] },
