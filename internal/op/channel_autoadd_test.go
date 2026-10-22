@@ -586,3 +586,46 @@ func TestAutoAddChannelsRunProbesScope(t *testing.T) {
 		})
 	}
 }
+
+// TestAutoAddChannelsRunEmptyScope 验证空集时既不报错也不发探测。
+// 线上真实场景: 21 个渠道里 model_auto_add=1 的是 0 个 —— 开关开着、任务按时调度,
+// 每轮都扫到空集。这时必须 ① 返回 nil(不能把空集算成任务失败, 否则会一路飙到告警阈值),
+// ② 一个上游请求都不发(探测要花上游配额), ③ 打出可排查的日志(见 AutoAddChannelsRun)。
+func TestAutoAddChannelsRunEmptyScope(t *testing.T) {
+	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "empty.db"), false); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	if err := db.GetDB().AutoMigrate(&model.Channel{}, &model.ChannelKey{}, &model.ChannelModel{}, &model.ChannelGrant{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	t.Cleanup(func() {
+		settingCache.Del(model.SettingKeyAutoAddBackground)
+		settingCache.Del(model.SettingKeyAutoAddScope)
+	})
+
+	// 渠道存在但渠道级开关关着: flagged 范围下这就是空集。
+	ch := model.Channel{ReviewStatus: model.ChannelReviewApproved, TrustLevel: model.ChannelTrustTrusted}
+	ch.Name = "quiet"
+	ch.BaseURL = "http://up"
+	if err := db.GetDB().Create(&ch).Error; err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+
+	settingCache.Set(model.SettingKeyAutoAddBackground, "true")
+	settingCache.Set(model.SettingKeyAutoAddScope, "flagged")
+
+	called := false
+	original := ProbeClientFactory
+	t.Cleanup(func() { ProbeClientFactory = original })
+	ProbeClientFactory = func(cfg model.ChannelConfig) (*http.Client, error) {
+		called = true
+		return nil, fmt.Errorf("must not probe when scope is empty")
+	}
+
+	if err := AutoAddChannelsRun(context.Background()); err != nil {
+		t.Fatalf("empty scope must not fail the task, got %v", err)
+	}
+	if called {
+		t.Fatalf("empty scope must not probe any upstream")
+	}
+}
