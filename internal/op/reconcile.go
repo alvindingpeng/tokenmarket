@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/alert"
@@ -69,12 +70,7 @@ func ReconcileDay(ctx context.Context, day time.Time) (model.BillingReconcile, e
 	result.Unsettled = int64(len(unsettled))
 	result.StaleHold = int64(len(unsettled))
 
-	if result.StaleHold > 0 {
-		result.Status = model.ReconcileStatusReview
-	}
-	if result.Missing > 0 || result.Duplicated > 0 {
-		result.Status = model.ReconcileStatusMismatch
-	}
+	result.Status = reconcileStatusFor(result)
 	detail, _ := json.Marshal(map[string]any{
 		"records":    result.Records,
 		"missing":    result.Missing,
@@ -89,6 +85,17 @@ func ReconcileDay(ctx context.Context, day time.Time) (model.BillingReconcile, e
 	if previousErr != nil && previousErr != gorm.ErrRecordNotFound {
 		return model.BillingReconcile{}, fmt.Errorf("load prior reconcile evidence: %w", previousErr)
 	}
+	// 已写处置说明的日子: 重算数字与当时一致就保持 explained; 数字变了说明情况已经不同
+	// (差异真的消失, 或又冒出新的), 落回对账自己算出的状态, 让新情况重新进入视野。
+	keepExplained := previousErr == nil &&
+		previous.Status == model.ReconcileStatusExplained &&
+		previous.Missing == result.Missing &&
+		previous.Duplicated == result.Duplicated &&
+		previous.StaleHold == result.StaleHold
+	if keepExplained {
+		result.Status = model.ReconcileStatusExplained
+	}
+
 	if previousErr == nil && previous.Missing > result.Missing {
 		var retained int64
 		if err := db.GetDB().WithContext(ctx).Model(&model.RelayRequest{}).
@@ -100,11 +107,19 @@ func ReconcileDay(ctx context.Context, day time.Time) (model.BillingReconcile, e
 		}
 	}
 
+	// note/noted_at/noted_by 刻意不在 DoUpdates 里: 重算是机器动作, 人工写下的处置说明属于
+	// 记录本身, 不能被下一次重算抹掉 —— 否则「查清了但数字改不了」的结论每次重算都要重来一遍。
 	if err := db.GetDB().WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "day"}},
 		DoUpdates: clause.AssignmentColumns([]string{"records", "user_cost", "owner_revenue", "platform_rev", "duplicated", "missing", "stale_hold", "unsettled", "status", "detail", "updated_at"}),
 	}).Create(&result).Error; err != nil {
 		return model.BillingReconcile{}, fmt.Errorf("save reconcile: %w", err)
+	}
+	// 回填保留下来的人工说明, 让调用方直接看到完整记录(界面刷新后用的是列表接口, 这里主要是返回值一致)。
+	// 已写说明的记录状态以 explained 为准: 数字仍是对账算出的原始数字, 只是结论已定。
+	var saved model.BillingReconcile
+	if err := db.GetDB().WithContext(ctx).Where("day = ?", result.Day).Take(&saved).Error; err == nil {
+		result = saved
 	}
 	// 告警闭环: 对账差异/长期预扣等都触发告警, 由 RaiseAlert 统一去重。
 	if result.Status != model.ReconcileStatusBalanced {
@@ -128,6 +143,70 @@ func ReconcileDay(ctx context.Context, day time.Time) (model.BillingReconcile, e
 	return result, nil
 }
 
+// reconcileStatusFor 按差异项判定对账状态: 有漏结算/重复即 mismatch, 只有长期预扣则 review。
+func reconcileStatusFor(result model.BillingReconcile) string {
+	if result.Missing > 0 || result.Duplicated > 0 {
+		return model.ReconcileStatusMismatch
+	}
+	if result.StaleHold > 0 {
+		return model.ReconcileStatusReview
+	}
+	return model.ReconcileStatusBalanced
+}
+
+// reconcileNoteMax 处置说明长度上限: 说明是给人读的结论, 不是证据仓库, 长了反而没人看。
+const reconcileNoteMax = 2000
+
+// ReconcileNoteSet 为某日对账写人工处置说明: **数字一个都不改**, 只把「为什么差」钉在记录上。
+//
+// 为什么需要它: 有些差异查清之后仍然改不了 —— 证据已过请求日志保留窗口, 或者差异本就来自
+// 当时的产品策略(例如全量计费修复前的 admin 免计费流量)。这种日子会永远停在 mismatch,
+// 于是「有差异」和「这个差异已经查过」在界面上长得一模一样, 下一次还得从头推演一遍。
+// explained 状态把两者分开: 数字保持对账算出的原值(不粉饰), 结论写明是怎么查的、为什么不动。
+//
+// note 传空表示撤销处置: 清除说明并把状态交回对账自己算。
+// 只允许对有差异的记录写说明: balanced 的日子没有差异可解释, 给它挂一段说明只会让状态语义混乱。
+func ReconcileNoteSet(ctx context.Context, day, note string, actorID uint) (model.BillingReconcile, error) {
+	note = strings.TrimSpace(note)
+	if len(note) > reconcileNoteMax {
+		return model.BillingReconcile{}, fmt.Errorf("note too long: %d > %d", len(note), reconcileNoteMax)
+	}
+	var record model.BillingReconcile
+	if err := db.GetDB().WithContext(ctx).Where("day = ?", day).Take(&record).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return model.BillingReconcile{}, fmt.Errorf("no reconcile record for day %s", day)
+		}
+		return model.BillingReconcile{}, fmt.Errorf("load reconcile record: %w", err)
+	}
+	hasDiff := record.Missing > 0 || record.Duplicated > 0 || record.StaleHold > 0
+	if note != "" && !hasDiff && record.Status != model.ReconcileStatusExplained {
+		return model.BillingReconcile{}, fmt.Errorf("reconcile %s has no discrepancy to explain", day)
+	}
+
+	now := time.Now()
+	if note == "" {
+		record.Note, record.NotedAt, record.NotedBy = "", nil, 0
+		record.Status = reconcileStatusFor(record)
+	} else {
+		record.Note, record.NotedAt, record.NotedBy = note, &now, actorID
+		record.Status = model.ReconcileStatusExplained
+	}
+	record.UpdatedAt = now
+	// 只更新这四个字段: 差异数字仍由对账逻辑掌管, 人工处置不得顺手改数字。
+	if err := db.GetDB().WithContext(ctx).Model(&model.BillingReconcile{}).
+		Where("day = ?", day).
+		Updates(map[string]any{
+			"note":       record.Note,
+			"noted_at":   record.NotedAt,
+			"noted_by":   record.NotedBy,
+			"status":     record.Status,
+			"updated_at": record.UpdatedAt,
+		}).Error; err != nil {
+		return model.BillingReconcile{}, fmt.Errorf("save reconcile note: %w", err)
+	}
+	return record, nil
+}
+
 // reconcileStatusLabel 对账结论的中文说明: 告警里管理员不该只看到裸的 "review"。
 func reconcileStatusLabel(status string) string {
 	switch status {
@@ -137,6 +216,8 @@ func reconcileStatusLabel(status string) string {
 		return "发现差异, 待人工核查"
 	case model.ReconcileStatusReview:
 		return "存在待核查项(重复/漏结算/长期预扣)"
+	case model.ReconcileStatusExplained:
+		return "差异已查清并留存说明(数字未改动)"
 	}
 	return status
 }

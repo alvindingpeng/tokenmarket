@@ -124,13 +124,34 @@ jobs:
           prerelease: false
           tag_name: ${{ steps.version.outputs.version }}
 
+      # Docker Hub 是可选镜像源: 没配 DOCKERHUB_USERNAME/DOCKERHUB_TOKEN 时整段跳过。
+      # 之前这两步无条件执行, 缺密钥会让整个 Release 流水线红着失败, 但归档产物其实早就传好了。
+      - name: Check Docker Hub credentials
+        id: dockerhub
+        env:
+          DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          IMAGES="ghcr.io/${{ github.repository }}"
+          if [ -n "$DOCKERHUB_USER" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            IMAGES=$(printf '%s\n%s' "$IMAGES" "$DOCKERHUB_USER/${{ github.event.repository.name }}")
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "DOCKERHUB_USERNAME/DOCKERHUB_TOKEN 未配置, 跳过 Docker Hub 镜像推送(仅推 ghcr.io)。"
+          fi
+          {
+            echo "images<<DOCKERHUB_EOF"
+            echo "$IMAGES"
+            echo "DOCKERHUB_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: |
-            ghcr.io/${{ github.repository }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
+          # 镜像清单在上一步按有无凭据算好: 条件为假时只留 ghcr, 不会给 metadata-action 一个空镜像名。
+          images: ${{ steps.dockerhub.outputs.images }}
           tags: |
             type=raw,value=latest
             type=raw,value=${{ steps.version.outputs.version }}
@@ -149,6 +170,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to Docker Hub
+        if: steps.dockerhub.outputs.enabled == 'true'
         uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}

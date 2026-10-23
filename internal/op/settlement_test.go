@@ -286,6 +286,44 @@ func TestSettlementRerunIsIdempotent(t *testing.T) {
 	}
 }
 
+// TestSettlementRerunPicksUpLateRecords 结算单只由管理员手工点「生成」触发, 于是当天生成过
+// 一次之后, 再晚进来的调用就永远落在单据之外 —— 生产 20261016 那单就是这么少了 41 笔
+// 0.998436396(单据 12:09:29 生成, 当天最后一批计费发生在 13:32)。
+// 未审核单必须能被重算刷新到全天真实数字; 这是每日重算任务存在的理由。
+func TestSettlementRerunPicksUpLateRecords(t *testing.T) {
+	buyer, owner, admin := settlementTestDB(t, "late")
+	day := time.Date(2025, 4, 3, 0, 0, 0, 0, time.Local)
+	ctx := context.Background()
+	dayKey := day.Format("20060102")
+	_ = admin
+
+	// 当天 12:09 生成单据时只有前半天的账。
+	settlementRecord(t, buyer.ID, owner.ID, day.Add(10*time.Hour), 150, 100, 0.5)
+	if err := SettlementGenerateDay(ctx, dayKey); err != nil {
+		t.Fatalf("first generate: %v", err)
+	}
+	first := settlementMustGet(t, owner.ID, dayKey)
+	settlementAssertAmounts(t, first, 100, 0, 100)
+	if first.RequestCount != 1 {
+		t.Fatalf("first statement requests = %d, want 1", first.RequestCount)
+	}
+
+	// 生成之后当天仍有调用进来。
+	settlementRecord(t, buyer.ID, owner.ID, day.Add(13*time.Hour), 45, 30, 0.5)
+	if err := SettlementGenerateDay(ctx, dayKey); err != nil {
+		t.Fatalf("regenerate: %v", err)
+	}
+	second := settlementMustGet(t, owner.ID, dayKey)
+	settlementAssertAmounts(t, second, 130, 0, 130)
+	if second.RequestCount != 2 {
+		t.Fatalf("regenerated statement requests = %d, want 2 (late record must be included)", second.RequestCount)
+	}
+	// 刷新是就地改写同一张单: 单号与身份字段不动, 渠道商不会被凭空多出一张单。
+	if second.StatementNo != first.StatementNo || second.ID != first.ID {
+		t.Fatalf("regenerate must refresh in place: first=%+v second=%+v", first, second)
+	}
+}
+
 // TestSettlementLocalDayBoundaryMatchesReconcile 账期边界与 ReconcileDay 同口径:
 // 服务进程本地自然日, 不是 UTC 日界(否则 UTC+8 下凌晨的调用会被切进前一天, 与对账对不上)。
 func TestSettlementLocalDayBoundaryMatchesReconcile(t *testing.T) {

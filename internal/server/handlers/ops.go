@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -25,6 +26,11 @@ func init() {
 			router.NewRoute("/reconcile/run", http.MethodPost).
 				Allow(model.RoleAdmin).
 				Handle(runReconcile),
+		).
+		AddRoute(
+			router.NewRoute("/reconcile/note", http.MethodPost).
+				Allow(model.RoleAdmin).
+				Handle(setReconcileNote),
 		).
 		AddRoute(
 			router.NewRoute("/reconcile/list", http.MethodGet).
@@ -125,6 +131,34 @@ func runReconcile(c *gin.Context) {
 		return
 	}
 	resp.Success(c, gin.H{"items": results})
+}
+
+type reconcileNoteReq struct {
+	Day  string `json:"day"`
+	Note string `json:"note"` // 空串表示撤销处置。
+}
+
+// setReconcileNote 为某日对账写下/撤销人工处置说明。
+// 只写 note/noted_at/noted_by 与状态, 差异数字一个都不动 —— 这是「查清了但改不了」的唯一出口。
+func setReconcileNote(c *gin.Context) {
+	var req reconcileNoteReq
+	if err := c.ShouldBindJSON(&req); err != nil || req.Day == "" {
+		resp.Error(c, http.StatusBadRequest, "day is required")
+		return
+	}
+	actorID, _ := middleware.CurrentUser(c)
+	record, err := op.ReconcileNoteSet(c.Request.Context(), req.Day, req.Note, actorID)
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	action := "reconcile_note_set"
+	if strings.TrimSpace(req.Note) == "" {
+		action = "reconcile_note_clear"
+	}
+	// 审计只记长度与动作, 不抄正文: 正文可能很长, 且审计表要长期留存。
+	audit(c, action, req.Day, fmt.Sprintf("note length %d", len(strings.TrimSpace(req.Note))))
+	resp.Success(c, record)
 }
 
 // listReconcile 返回历史对账结果。

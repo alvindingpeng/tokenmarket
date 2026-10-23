@@ -1581,7 +1581,21 @@
             "runFailed": "對帳失敗",
             "statusBalanced": "對平",
             "statusMismatch": "不平",
-            "statusReview": "需複核"
+            "statusReview": "需複核",
+            "statusExplained": "已查清",
+            "note": "差異處置說明",
+            "noteAction": "登記說明",
+            "noteTitle": "登記對帳差異處置說明",
+            "noteDesc": "只寫說明與狀態, 差異數字一個都不改。適用於查清了「為什麼差」但數字確實改不了的日子 —— 例如證據已過請求日誌保留窗口, 或差異本就來自當時的產品策略。重算不會覆蓋已登記說明。",
+            "notePlaceholder": "說明差在哪、怎麼查出來的、為什麼不改動數字",
+            "noteHint": "已登記說明的日子在重算後仍保持「已查清」; 數字一旦再有變化會自動落回真實狀態。",
+            "noteSave": "儲存說明",
+            "noteClear": "撤銷說明",
+            "noteSaved": "說明已登記",
+            "noteCleared": "說明已撤銷",
+            "noteFailed": "操作失敗",
+            "noteDay": "帳期",
+            "noteUpdated": "登記於"
         },
         "flow": {
             "desc": "餘額預扣/結算/釋放流水(最近 100 筆), 管理員可按使用者 ID 篩選。",

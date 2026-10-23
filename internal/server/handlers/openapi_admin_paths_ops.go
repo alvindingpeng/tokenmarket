@@ -178,6 +178,12 @@ func openAPIAdminPathsOps() gin.H {
 				itemsArray("对账历史", "BillingReconcile"), true,
 				intQuery("limit", "条数", 30)),
 		},
+		"/api/v1/ops/reconcile/note": gin.H{
+			"post": adminPath("ops", "登记/撤销对账差异处置说明",
+				"为某日对账写一段处置说明并把状态置为 explained, 或传空串撤销。**只改说明与状态, 差异数字一个都不动** —— 供「查清了但数字改不了」的日子(证据已过保留窗口、或差异源自当时的产品策略)留下结论。重算不会覆盖已写下的说明; 数字若再有变化则自动落回对账算出的状态。",
+				"ReconcileNoteRequest",
+				adminItem("对账记录", "BillingReconcile"), true),
+		},
 		"/api/v1/ops/log-lifecycle/run": gin.H{
 			"post": adminPath("ops", "立即执行日志生命周期",
 				"按保留策略归档并清理转发日志, 返回本次归档条数等明细; 失败会触发 system 类告警。", "",

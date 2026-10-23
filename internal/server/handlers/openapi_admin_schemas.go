@@ -676,11 +676,19 @@ func openAPIAdminSchemas() gin.H {
 			"missing":          fieldNumber("integer", "有用量但缺少计费明细的请求"),
 			"stale_hold":       fieldNumber("integer", "超时未结算且已回滚的预扣"),
 			"unsettled":        fieldNumber("integer", "仍未结算的预扣"),
-			"status":           fieldString("对账结论"),
+			"status":           fieldString("对账结论: balanced 对平 / mismatch 发现差异 / review 存在待核查项 / explained 差异已查清并留存说明"),
 			"detail":           fieldString("差异明细文本"),
+			"note":             fieldString("人工处置说明: 查清「为什么差」但数字不可改时留下的结论; 只有该字段可由人工改写"),
+			"noted_at":         datetime("说明写入时刻"),
+			"noted_by":         fieldNumber("integer", "写说明的管理员用户 ID"),
 			"created_at":       datetime(""),
 			"updated_at":       datetime(""),
 		}),
+
+		"ReconcileNoteRequest": object(gin.H{
+			"day":  fieldString("账期 YYYYMMDD"),
+			"note": fieldString("处置说明; 传空串表示撤销, 状态交回按差异重算"),
+		}, "day"),
 
 		"ArchiveResult": object(gin.H{
 			"cutoff":           datetime("本次清理的时间界"),
