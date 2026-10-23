@@ -15,8 +15,14 @@
 | `roadmap.md` P3 充值 | 「未开始, 后端无任何实现」 | 早已全线实现: `handlers/recharge.go`(8 路由) / `wallet.go` / `redemption.go`(6 路由) / `withdrawal.go`(7 路由); `internal/pay` 四渠道 epay/alipay/stripe/creem; 前端 `wallet/` `redemption/` `withdrawals/` 三模块齐全 |
 | `design-recharge-redemption-withdrawal.md` 头部 | 「待评审, 尚未实现」 | P1 钱包底座+兑换码 / P2 支付+充值 / P3 提现 全部已上线 |
 | `design-channel-review-observation-quality.md` 头部 | 「设计稿, 未实施」 | P1 审核已完成; P2/P3 于 2026-10-21 开发 |
+| 本文 §4 交付索引 | 引用两份不存在的文档 | **2026-10-22 已修正**: 两个文件名从未存在, 改为指向实际记载位置 |
 
-前端遗留过期文案: `web/src/locales/zh_hans.json` 的「充值功能后续上线」。
+### 2026-10-22 复核: 各项状态未变
+
+对本文全部条目重新核对了一次(代码 grep + 生产库查询), 结论与 2026-10-21 一致, 无一项因新增版本而改变:
+出口池仍 0 行、区域亲和仍为 0、多实例三障碍仍在、B5 仍未做、支付渠道商户参数仍全未配置。
+
+前端遗留过期文案: `users.form.balanceHint` 的「充值功能后续上线」。**2026-10-22 已删除**(三语同步)。
 
 ---
 
@@ -60,8 +66,8 @@
 
 ### 1.4 渠道模型自动上架(B5)
 `roadmap.md`: 「B4/B5 自动定价/自动上架(P2) 未纳入本版」。
-2026-10-21 已补 **B4 自动预填供货价 + 条件过滤**(见 `docs/channel-auto-add-conditions.md`),
-2026-10-22 (v0.42.0) 已补 **A3 后台周期自动添加 + 名称白名单**。
+2026-10-21 已补 **B4 自动预填供货价 + 条件过滤**(见 `roadmap.md` 的「渠道模型自动添加」一节),
+2026-10-22 (v0.42.0) 已补 **A3 后台周期自动添加 + 名称白名单**, 2026-10-22 (v0.43.3) 已补**按模型单独设置条件**。
 但 **B5 自动上架(listed=true) 仍不做**: 上架等于对客可见, 必须人工确认价格, 自动上架会把零价模型暴露给用户。
 
 ---
@@ -99,12 +105,19 @@
 
 ---
 
-## 4. 2026-10-21 本次交付
+## 4. 各批次交付索引
 
-| 事项 | 文档 |
-|---|---|
-| 渠道观察期(P2) + 质量展示(P3) | `docs/channel-observation-quality.md` |
-| 渠道模型自动添加条件(价格/倍率/形态/排除) | `docs/channel-auto-add-conditions.md` |
+| 事项 | 版本 | 文档 |
+|---|---|---|
+| 渠道观察期(P2) + 质量展示(P3) | v0.41.0 | `docs/design-channel-review-observation-quality.md` |
+| 渠道模型自动添加条件(价格/倍率/形态/排除) | v0.41.0 | `docs/roadmap.md`「渠道模型自动添加」一节 |
+| A3 后台周期自动添加 + 名称白名单 | v0.42.0 | `docs/roadmap.md`「A3 后台周期自动添加」 |
+| 按模型单独设置自动添加条件 + 入口补到「模型配置」页 | v0.43.0 / v0.43.3 | `CHANGELOG.md` |
+| 发信配置收敛成一套(删除失效的邮件服务卡片) | v0.43.4 | `CHANGELOG.md` |
+
+> 2026-10-22 修正: 本表原先引用的 `docs/channel-observation-quality.md` 与
+> `docs/channel-auto-add-conditions.md` **从未存在过**(git 全历史无此文件), 是凭印象写下的文档名。
+> 实际记载位置见上表。
 
 ---
 
