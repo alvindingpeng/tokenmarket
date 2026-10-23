@@ -1308,7 +1308,7 @@
             "save": "Save",
             "saving": "Saving...",
             "balance": "Balance",
-            "balanceHint": "Set the absolute balance; leave unchanged to skip. Recharge feature comes later."
+            "balanceHint": "Set the absolute balance; leave unchanged to skip."
         },
         "action": {
             "edit": "Edit",
