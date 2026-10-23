@@ -66,6 +66,15 @@ func ResetRouteState(groupID int) {
 	delete(routes, groupID)
 }
 
+// ResetAllRouteStates discards every process-local group route state.
+// It is intended for tests and controlled cache/database replacement only.
+func ResetAllRouteStates() {
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	routes = make(map[int]*RouteState)
+}
+
 // pickGroupItem 按分组模式选择本轮目标成员, 没有可用成员时返回零值; group.Items 已按 Priority 升序排列。
 // 手动模式固定人工成员; 其余模式为动态选路, 共用冷却, 探测与亲和机制:
 // 先在未冷却成员中按模式策略择优, 优先级高于全部候选的冷却到期成员获得一个探测请求。
