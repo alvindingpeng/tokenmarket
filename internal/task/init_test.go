@@ -49,6 +49,7 @@ func TestTaskNameConstantsStable(t *testing.T) {
 	want := map[string]string{
 		TaskBillingRollback:  "billing_rollback",
 		TaskBillingReconcile: "billing_reconcile",
+		TaskSettlementDaily:  "settlement_daily",
 		TaskBillingRecovery:  "billing_recovery",
 		TaskStatsSave:        "stats_save",
 		TaskLogArchive:       "log_archive",

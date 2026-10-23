@@ -27,7 +27,9 @@ export function useRunBillingRecovery() {
 export type ReconcileRow = {
     id: number; day: string; records: number; user_cost: number; owner_revenue: number;
     platform_revenue: number; duplicated: number; missing: number; stale_hold: number;
-    unsettled: number; status: 'balanced' | 'mismatch' | 'review'; detail: string;
+    unsettled: number; status: 'balanced' | 'mismatch' | 'review' | 'explained'; detail: string;
+    // note 是人工处置说明: 差异查清但数字不可改时留下的结论, 重算不会覆盖它。
+    note: string; noted_at: string | null; noted_by: number;
     created_at: string; updated_at: string;
 };
 
@@ -108,6 +110,17 @@ export function useRunReconcile() {
     return useMutation({
         mutationFn: (days: number = 1) =>
             apiRequest<{ items: ReconcileRow[] }>('/api/v1/ops/reconcile/run?days=' + days, { method: 'POST', timeoutMs: 90000 }).then(r => r.items),
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['ops', 'reconcile'] }),
+    });
+}
+
+// useSetReconcileNote 登记/撤销某日对账差异的处置说明。
+// 只写说明与状态, 差异数字一个都不动 —— 后端也拒绝改数字。
+export function useSetReconcileNote() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ day, note }: { day: string; note: string }) =>
+            apiRequest<ReconcileRow>('/api/v1/ops/reconcile/note', { method: 'POST', body: { day, note } }),
         onSuccess: () => qc.invalidateQueries({ queryKey: ['ops', 'reconcile'] }),
     });
 }

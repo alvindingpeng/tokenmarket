@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
@@ -215,6 +216,29 @@ func Init() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 			defer cancel()
 			return op.ChannelQualitySnapshotRun(ctx)
+		},
+	})
+
+	// 渠道商结算单每日重算: 结算单此前只有管理员在计费页手工点「生成」才会更新, 于是当天生成过
+	// 一次之后, 再晚进来的调用就永远落在单据之外 —— 20261016 那单差了 41 笔 / 0.998436396 就是这么来的
+	// (单据 12:09:29 生成, 当天最后一批计费发生在 13:32)。日任务把「昨天的单据」在当天流量彻底
+	// 收尾后再算一遍, 让未审核单自己收敛到全天真实数字。
+	//
+	// 只重算昨日, 不碰今天: 今天仍在写账单, 重算只会反复改动同一个未审核单。
+	// 已审核(audited)的定稿单一个字段都不写, 由 SettlementGenerateDay 自己守着;
+	// 若重算值与定稿不符, 该函数会整次报错并保持原样, 交给人工按跨期调整处理。
+	Define(Spec{
+		Name:       TaskSettlementDaily,
+		Interval:   fixedInterval(24 * time.Hour),
+		RunOnStart: true,
+		Fn: func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			day := time.Now().AddDate(0, 0, -1).Format("20060102")
+			if err := op.SettlementGenerateDay(ctx, day); err != nil {
+				return fmt.Errorf("generate settlement for %s: %w", day, err)
+			}
+			return nil
 		},
 	})
 

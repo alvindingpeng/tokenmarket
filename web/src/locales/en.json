@@ -1581,7 +1581,21 @@
             "runFailed": "Reconcile failed",
             "statusBalanced": "Balanced",
             "statusMismatch": "Mismatch",
-            "statusReview": "Needs review"
+            "statusReview": "Needs review",
+            "statusExplained": "Explained",
+            "note": "Discrepancy note",
+            "noteAction": "Add note",
+            "noteTitle": "Record a discrepancy note",
+            "noteDesc": "Writes only the note and status; not a single figure changes. Use it for days whose difference is understood but genuinely uncorrectable — the evidence aged out of the request-log window, or the difference came from the product policy in force at the time. Recomputing never overwrites a recorded note.",
+            "notePlaceholder": "What differs, how you checked, why the figures stay as they are",
+            "noteHint": "A day with a recorded note stays Explained across recomputes; if the figures change again it drops back to the computed status.",
+            "noteSave": "Save note",
+            "noteClear": "Clear note",
+            "noteSaved": "Note recorded",
+            "noteCleared": "Note cleared",
+            "noteFailed": "Action failed",
+            "noteDay": "Day",
+            "noteUpdated": "Recorded at"
         },
         "flow": {
             "desc": "Reserve/settle/release balance flow (latest 100). Admins may filter by user ID.",

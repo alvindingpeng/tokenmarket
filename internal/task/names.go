@@ -17,6 +17,7 @@ const (
 	TaskChannelTrustEval = "channel_trust_eval"       // 渠道观察期评估: 达标转正, 不达标降级。
 	TaskChannelQuality   = "channel_quality_snapshot" // 渠道质量日快照: 昨日流量与探测可用率固化成一行。
 	TaskChannelAutoAdd   = "channel_model_autoadd"    // 渠道模型后台自动添加: 周期复查上游模型清单并并入。
+	TaskSettlementDaily  = "settlement_daily"         // 每日重算昨日渠道商结算单: 只刷新未审核单, 已定稿不动。
 	TaskUpdateCheck      = "update_check"             // 检查本分支 Release 是否有新版本。
 	TaskVideoJobCleanup  = "video_job_cleanup"        // 清理过期的生视频任务归属。
 )

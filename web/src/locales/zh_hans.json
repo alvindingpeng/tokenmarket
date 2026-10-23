@@ -1581,7 +1581,21 @@
             "runFailed": "对账失败",
             "statusBalanced": "对平",
             "statusMismatch": "不平",
-            "statusReview": "需复核"
+            "statusReview": "需复核",
+            "statusExplained": "已查清",
+            "note": "差异处置说明",
+            "noteAction": "登记说明",
+            "noteTitle": "登记对账差异处置说明",
+            "noteDesc": "只写说明与状态, 差异数字一个都不改。适用于查清了「为什么差」但数字确实改不了的日子 —— 例如证据已过请求日志保留窗口, 或差异本就来自当时的产品策略。重算不会覆盖已登记说明。",
+            "notePlaceholder": "说明差在哪、怎么查出来的、为什么不改动数字",
+            "noteHint": "已登记说明的日子在重算后仍保持「已查清」; 数字一旦再有变化会自动落回真实状态。",
+            "noteSave": "保存说明",
+            "noteClear": "撤销说明",
+            "noteSaved": "说明已登记",
+            "noteCleared": "说明已撤销",
+            "noteFailed": "操作失败",
+            "noteDay": "账期",
+            "noteUpdated": "登记于"
         },
         "flow": {
             "desc": "余额预扣/结算/释放流水(最近 100 条), 管理员可按用户 ID 过滤。",

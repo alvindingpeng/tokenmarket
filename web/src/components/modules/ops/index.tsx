@@ -1,16 +1,24 @@
 import { useState, type ReactNode } from 'react';
 import BillingRecovery from './BillingRecovery';
 import { useTranslations } from 'use-intl';
-import { Archive, DatabaseBackup, Gauge, HeartPulse, RefreshCw, Scale, ShieldAlert, Wallet } from 'lucide-react';
+import { Archive, DatabaseBackup, Gauge, HeartPulse, RefreshCw, Scale, ShieldAlert, StickyNote, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import {
+    MorphingDialog,
+    MorphingDialogContainer,
+    MorphingDialogContent,
+    MorphingDialogTrigger,
+    useMorphingDialog,
+} from '@/components/ui/morphing-dialog';
 import { toast } from 'sonner';
 import {
     useArchives, useBackups, useBalanceFlow, useChannelAlerts, useChannelHealth,
-    useLatencyBreakdown, useOpsOverview, useReconcileList, useRunBackup, useRunHealthCheck, useRunLogLifecycle, useRunReconcile,
+    useLatencyBreakdown, useOpsOverview, useReconcileList, useRunBackup, useRunHealthCheck, useRunLogLifecycle, useRunReconcile, useSetReconcileNote,
     type BalanceFlow, type ChannelAlert, type ChannelHealth, type LatencyRow, type ReconcileRow,
 } from '@/api/ops';
 
@@ -161,9 +169,75 @@ function ReconcileStatusBadge({ status }: { status: string }) {
         balanced: { label: t('reconcile.statusBalanced'), className: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
         mismatch: { label: t('reconcile.statusMismatch'), className: 'bg-red-500/15 text-red-600 dark:text-red-400' },
         review: { label: t('reconcile.statusReview'), className: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },
+        explained: { label: t('reconcile.statusExplained'), className: 'bg-sky-500/15 text-sky-600 dark:text-sky-400' },
     };
     const item = map[status] ?? { label: status, className: 'bg-muted text-muted-foreground' };
     return <Badge variant='outline' className={item.className}>{item.label}</Badge>;
+}
+
+// ReconcileNoteCell 差异处置说明单元格: 已登记的日子显示说明与登记入口, 未登记则显示入口。
+// 只有存在差异的行才给入口 —— 对平的日子没有差异可解释。
+function ReconcileNoteCell({ row }: { row: ReconcileRow }) {
+    const t = useTranslations('ops');
+    const hasDiff = row.missing > 0 || row.duplicated > 0 || row.stale_hold > 0;
+    if (!hasDiff && !row.note) {
+        return <span className='text-muted-foreground'>-</span>;
+    }
+    return (
+        <div className='flex max-w-[320px] flex-col gap-1'>
+            {row.note && <span className='line-clamp-2 text-xs text-muted-foreground'>{row.note}</span>}
+            <MorphingDialog>
+                <MorphingDialogTrigger className='w-fit text-xs text-primary underline-offset-2 hover:underline'>
+                    {t('reconcile.noteAction')}
+                </MorphingDialogTrigger>
+                <MorphingDialogContainer>
+                    <MorphingDialogContent
+                        dismissOnClickOutside={false}
+                        className='flex max-h-[calc(100dvh-2rem)] w-fit max-w-full flex-col overflow-hidden rounded-3xl bg-card px-6 py-5 text-card-foreground'>
+                        <ReconcileNoteDialogContent row={row} />
+                    </MorphingDialogContent>
+                </MorphingDialogContainer>
+            </MorphingDialog>
+        </div>
+    );
+}
+
+// ReconcileNoteDialogContent 登记/撤销处置说明。
+// 界面把「只写说明与状态」写明白: 差异数字一个都不动是这条路径的全部意义。
+function ReconcileNoteDialogContent({ row }: { row: ReconcileRow }) {
+    const t = useTranslations('ops');
+    const { setIsOpen } = useMorphingDialog();
+    const [note, setNote] = useState(row.note ?? '');
+    const save = useSetReconcileNote();
+
+    const submit = (next: string) => {
+        save.mutate({ day: row.day, note: next }, {
+            onSuccess: () => {
+                toast.success(next.trim() ? t('reconcile.noteSaved') : t('reconcile.noteCleared'));
+                setIsOpen(false);
+            },
+            onError: (error) => toast.error(error instanceof Error ? error.message : t('reconcile.noteFailed')),
+        });
+    };
+
+    return (
+        <div className='flex w-[min(92vw,520px)] flex-col gap-3 overflow-y-auto'>
+            <div className='flex items-center gap-2 text-base font-semibold'><StickyNote className='size-4 text-muted-foreground' />{t('reconcile.noteTitle')}</div>
+            <p className='text-xs text-muted-foreground'>{t('reconcile.noteDesc')}</p>
+            <div className='flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground'>
+                <span>{t('reconcile.noteDay')}: <span className='font-mono'>{row.day}</span></span>
+                <span>{t('reconcile.missing')}: {row.missing}</span>
+                <span>{t('reconcile.duplicated')}: {row.duplicated}</span>
+                <span>{t('reconcile.staleHold')}: {row.stale_hold}</span>
+            </div>
+            <Textarea value={note} onChange={(event) => setNote(event.target.value)} rows={6} placeholder={t('reconcile.notePlaceholder')} />
+            <p className='text-xs text-muted-foreground'>{t('reconcile.noteHint')}</p>
+            <div className='flex items-center justify-end gap-2'>
+                <Button variant='outline' size='sm' className='rounded-xl' disabled={save.isPending || !row.note} onClick={() => submit('')}>{t('reconcile.noteClear')}</Button>
+                <Button size='sm' className='rounded-xl' disabled={save.isPending || !note.trim()} onClick={() => submit(note)}>{t('reconcile.noteSave')}</Button>
+            </div>
+        </div>
+    );
 }
 
 // ReconcileSection 每日对账结果: 支持回溯 1/3/7 天手动执行。
@@ -191,6 +265,7 @@ function ReconcileSection() {
         { key: 'stale_hold', label: t('reconcile.staleHold') },
         { key: 'unsettled', label: t('reconcile.unsettled') },
         { key: 'status', label: t('reconcile.status'), render: (row) => <ReconcileStatusBadge status={row.status} /> },
+        { key: 'note', label: t('reconcile.note'), render: (row) => <ReconcileNoteCell row={row} /> },
         { key: 'created_at', label: t('reconcile.time'), render: (row) => formatTime(row.created_at) },
     ];
 
