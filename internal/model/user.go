@@ -128,6 +128,8 @@ type UserView struct {
 	TotalRevenue   float64    `json:"total_revenue"`
 	TotalWithdrawn float64    `json:"total_withdrawn"`
 	WithdrawFrozen float64    `json:"withdraw_frozen"`
+	// MustChangePassword 仅登录/状态响应携带: 默认管理员未改初始密码时为真, 前端据此强制引导改密。
+	MustChangePassword bool  `json:"must_change_password,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 }
 

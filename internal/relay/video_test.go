@@ -244,6 +244,10 @@ func newVideoTaskEnv(t *testing.T) videoTaskEnv {
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "video_task.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}
+	// httptest 上游都在 127.0.0.1: 打开私网放行, SSRF 防护由 op 层的拒绝用例单独覆盖。
+	if err := op.SettingUpsert(model.SettingKeyAllowPrivateUpstream, "true"); err != nil {
+		t.Fatalf("seed allow-private setting: %v", err)
+	}
 	ctx := context.Background()
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano()%1e9)
 	user, err := op.UserCreate("u"+suffix, "u"+suffix+"@test.local", "password123", model.RoleAdmin, model.StatusActive)

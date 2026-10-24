@@ -44,6 +44,14 @@ func Auth() gin.HandlerFunc {
 		c.Set("user_id", int(user.ID))
 		c.Set("role", string(user.Role))
 		c.Set("username", user.Username)
+		// 默认管理员改密闸门: 初始 admin/admin 未改前, 除改密/登出/身份查询外的请求一律拒绝。
+		// 攻击窗口是"部署后没人改密"的那段时间 —— 初始凭据写在文档里, 等于公开后门。
+		// 挂在 Auth 内部而不是全局: 角色在此刻已定, 且登录/注册等公开端点不受影响。
+		if user.Role == model.RoleAdmin && !op.AdminDefaultPasswordChanged() && !passwordChangeExemptPaths[c.Request.URL.Path] {
+			resp.Error(c, http.StatusForbidden, "change the default admin password first")
+			c.Abort()
+			return
+		}
 		c.Next()
 	}
 }
@@ -61,6 +69,13 @@ func RequireRole(roles ...model.Role) gin.HandlerFunc {
 		resp.Error(c, http.StatusForbidden, "insufficient permissions")
 		c.Abort()
 	}
+}
+
+// passwordChangeExemptPaths 默认管理员未改密时仍可访问的端点: 改密本身, 登出与身份查询。
+var passwordChangeExemptPaths = map[string]bool{
+	"/api/v1/user/change-password": true,
+	"/api/v1/user/logout":          true,
+	"/api/v1/user/status":          true,
 }
 
 func APIKeyAuth() gin.HandlerFunc {

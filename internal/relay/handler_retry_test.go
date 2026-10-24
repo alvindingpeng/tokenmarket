@@ -36,6 +36,10 @@ func relayRetryTestDB(t *testing.T) {
 	if err := op.SettingUpsert(model.SettingKeyMarkupRatio, "0"); err != nil {
 		t.Fatalf("seed markup setting: %v", err)
 	}
+	// httptest 上游都在 127.0.0.1: 打开私网放行, SSRF 防护由 op 层的拒绝用例单独覆盖。
+	if err := op.SettingUpsert(model.SettingKeyAllowPrivateUpstream, "true"); err != nil {
+		t.Fatalf("seed allow-private setting: %v", err)
+	}
 	routeMu.Lock()
 	clear(routes)
 	routeMu.Unlock()

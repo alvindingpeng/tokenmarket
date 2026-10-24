@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/netguard"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"golang.org/x/net/proxy"
 )
@@ -155,7 +156,7 @@ func Direct() (*http.Client, error) {
 	}
 	// 克隆自 http.DefaultTransport 会带上 ProxyFromEnvironment, 直连须显式清掉。
 	cloned.Proxy = nil
-	directClient = &http.Client{Transport: cloned, CheckRedirect: rejectRedirects}
+	directClient = &http.Client{Transport: &limitedBodyTransport{Base: cloned}, CheckRedirect: rejectRedirects}
 	return directClient, nil
 }
 
@@ -177,6 +178,7 @@ func ForChannel(target model.ChannelConfig) (*http.Client, error) {
 
 // clonedDefaultTransport 克隆默认 Transport 并调好连接池参数。
 // 所有客户端都从这里出发, 参数只需在这一处维护。
+// 拨号入口统一挂私网防护: 每次建连按解析结果复核目标地址, 防 DNS rebinding 绕过保存时校验。
 func clonedDefaultTransport() (*http.Transport, error) {
 	transport, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
@@ -188,6 +190,9 @@ func clonedDefaultTransport() (*http.Transport, error) {
 	cloned.IdleConnTimeout = idleConnTimeout
 	// 上游多为 HTTPS, 显式开启让 HTTP/2 的多路复用不被旧版行为挡住。
 	cloned.ForceAttemptHTTP2 = true
+	// 保留默认拨号器的超时与 KeepAlive, 只在其外包一层私网复核。
+	base := cloned.DialContext
+	cloned.DialContext = netguard.DialGuard{AllowPrivate: op.AllowPrivateUpstream, Next: base}.DialContext
 	return cloned, nil
 }
 
@@ -218,13 +223,14 @@ func newCustomProxyClient(proxyURLStr string) (*http.Client, error) {
 			return nil, fmt.Errorf("socks proxy dialer does not support context")
 		}
 		// SOCKS 代理无法通过 Transport.Proxy 表达, 只能改拨号入口。
+		// 代理服务器地址本身同样过私网复核: 代理指向内网与直连内网是同一类风险。
 		cloned.Proxy = nil
-		cloned.DialContext = contextDialer.DialContext
+		cloned.DialContext = netguard.DialGuard{AllowPrivate: op.AllowPrivateUpstream, Next: contextDialer.DialContext}.DialContext
 	default:
 		return nil, fmt.Errorf("unsupported proxy scheme: %s", proxyURL.Scheme)
 	}
 
-	return &http.Client{Transport: cloned, CheckRedirect: rejectRedirects}, nil
+	return &http.Client{Transport: &limitedBodyTransport{Base: cloned}, CheckRedirect: rejectRedirects}, nil
 }
 
 func rejectRedirects(_ *http.Request, _ []*http.Request) error {

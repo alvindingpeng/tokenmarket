@@ -22,6 +22,10 @@ func TestBillingRecoveryRoutesRequireAdministrator(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
+	// 测试库的 admin 是测试自建的(非默认 admin/admin): 翻转改密标记, 闸门由专门用例覆盖。
+	if err := op.SettingUpsert(model.SettingKeyAdminDefaultPwdChanged, "true"); err != nil {
+		t.Fatal(err)
+	}
 	if err := auth.InitSecret(); err != nil {
 		t.Fatal(err)
 	}

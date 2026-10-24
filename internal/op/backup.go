@@ -96,7 +96,7 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 	// 渠道配置须与接口提交走同一套规范化: 手改过的备份文件同样可能带空白,
 	// 空串或缺省字段, 不在此收敛则读侧要为每个字段各自兜底。
 	for i := range dump.Channels {
-		config, err := normalizeChannelConfig(dump.Channels[i].ChannelConfig)
+		config, err := normalizeChannelConfig(ctx, dump.Channels[i].ChannelConfig)
 		if err != nil {
 			return nil, fmt.Errorf("import channel %d: %w", dump.Channels[i].ID, err)
 		}

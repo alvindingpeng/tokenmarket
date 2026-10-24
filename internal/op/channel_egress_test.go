@@ -11,6 +11,10 @@ import (
 // 出口配错不会在保存时报错, 只会在转发时炸, 所以这一路的每一步都要有断言。
 func TestChannelEgressRoundTrip(t *testing.T) {
 	ctx, _, admin := reviewTestEnv(t)
+	// 用例特意用私网地址验证读写链路: 打开私网放行, SSRF 拒绝语义由专门用例覆盖。
+	if err := SettingUpsert(model.SettingKeyAllowPrivateUpstream, "true"); err != nil {
+		t.Fatalf("seed allow-private: %v", err)
+	}
 
 	detail := reviewTestDetail("egress-roundtrip")
 	detail.Egresses = []model.ChannelEgress{

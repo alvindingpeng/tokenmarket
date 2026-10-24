@@ -11,6 +11,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/alvindingpeng/switchyard/internal/server/router"
+	"github.com/charmbracelet/log"
 	"github.com/gin-gonic/gin"
 )
 
@@ -139,7 +140,10 @@ func login(c *gin.Context) {
 	// Secure 跟随实际协议: 上了 TLS 就只允许 HTTPS 回传, 隧道/内网 http 访问则保持可用。
 	// 恒为 false 会让会话 cookie 在明文链路上也能被读走, 恒为 true 又会让 http 访问直接登不上。
 	c.SetCookie("auth", token, maxAge, "/", "", requestIsHTTPS(c), true)
-	resp.Success(c, account.View())
+	view := account.View()
+	// 默认管理员未改密时在登录响应里点名: 前端据此弹"先改密"引导, 后端同时强制收口(见 RequirePasswordChanged)。
+	view.MustChangePassword = account.Role == model.RoleAdmin && !op.AdminDefaultPasswordChanged()
+	resp.Success(c, view)
 }
 
 // logout 服务端登出: 自增 TokenVersion 使当前令牌立即失效 (同时也会清掉此账号其他端的登录态)。
@@ -271,6 +275,13 @@ func changePassword(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	// 默认管理员改密即解除"未完成部署"标记: 此后管理面不再被强制跳转改密。
+	if role := model.Role(c.GetString("role")); role == model.RoleAdmin && !op.AdminDefaultPasswordChanged() {
+		if err := op.SettingUpsert(model.SettingKeyAdminDefaultPwdChanged, "true"); err != nil {
+			// 标记写失败不回滚改密本身: 密码已换新, 只是强制跳转会多留一轮。
+			log.Warnf("mark admin password changed failed: %v", err)
+		}
+	}
 	resp.Success(c, "password changed successfully")
 }
 
@@ -296,7 +307,9 @@ func status(c *gin.Context) {
 		resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
 		return
 	}
-	resp.Success(c, account.View())
+	view := account.View()
+	view.MustChangePassword = account.Role == model.RoleAdmin && !op.AdminDefaultPasswordChanged()
+	resp.Success(c, view)
 }
 
 func listUsers(c *gin.Context) {

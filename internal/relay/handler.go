@@ -677,12 +677,21 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			c.Header("Cache-Control", "no-cache")
 			var encoded bytes.Buffer
 			var chunks []*httpclient.StreamEvent
+			// 聚合缓冲上限: chunks 是计费聚合的输入, 无上限时恶意上游可用长流把内存打爆。
+			// 超限按本轮失败收场; 已写给客户端的部分不受影响(提交后的失败不再重试)。
+			var aggregatedBytes int
 			event := result.first
 			last := result.last // 已转发的最后一个事件是否已按客户端协议结束整个响应流。
 			committed := false
 			idleErr := errors.New("upstream stream idle timeout")
 			for {
 				if event != nil {
+					var allowed bool
+					aggregatedBytes, allowed = trackAggregatedChunk(aggregatedBytes, event.Data)
+					if !allowed {
+						err = fmt.Errorf("aggregated stream exceeds %d bytes", maxAggregatedStreamBytes)
+						break
+					}
 					chunks = append(chunks, event)
 					// 每个事件计一个输出字符供日志页展示, 按节流间隔发布。
 					request.addOutput()

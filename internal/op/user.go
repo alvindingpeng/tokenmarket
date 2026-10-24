@@ -43,7 +43,9 @@ func UserInit() error {
 	}
 	userCache.Set(int(admin.ID), admin)
 	userNameIndex.Set(admin.Username, int(admin.ID))
-	log.Infof("initial user: admin,password: admin")
+	// 初始凭据不再进日志: 日志可能被采集到聚合系统, 明文密码等于把后门写进检索。
+	// 未改密前由 admin_default_pwd_changed 标记驱动管理面强制改密。
+	log.Infof("initial admin created: admin (default password, change it on first login)")
 	return nil
 }
 
