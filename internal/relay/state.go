@@ -107,6 +107,17 @@ const streamBuffer = 16                              // 单个状态流连接的
 const maxFinished = 500                              // 进程内保留的终态请求数量, 供日志分页回溯。
 const maxBodyKeep = 50                               // 其中最近这些条保留请求/响应正文, 更早的释放正文只留概览。
 const outputPublishInterval = 500 * time.Millisecond // 输出字符数实时推送的最短发布间隔。
+const maxAggregatedStreamBytes = 128 << 20           // 流式聚合缓冲上限: 计费用, 超限按本轮失败, 防长流打爆内存。
+
+// trackAggregatedChunk 累计流事件字节数并判定是否超出聚合上限。
+// 返回新累计值与是否放行: 超限的轮次按失败收场, 不再把事件计入计费聚合。
+func trackAggregatedChunk(aggregated int, data []byte) (int, bool) {
+	next := aggregated + len(data)
+	if next > maxAggregatedStreamBytes {
+		return aggregated, false
+	}
+	return next, true
+}
 
 var (
 	idSeq    atomic.Uint64                             // 进程内严格递增的请求 ID。
@@ -693,6 +704,20 @@ func (r *RequestState) settleBillingLocked(usage *llm.Usage) {
 		record.MediaUnits = mediaUnits
 		record.PriceSource = "channel_model_media"
 	} else if usage == nil {
+		// 成功却拿不到用量: 预扣照旧释放(不发明计费), 但必须留痕 —— 上游不回用量等于免费调用,
+		// 渠道商自供自用时是可被主动利用的漏洞; 告警进对账视野, 由人工决定换渠道或补计费。
+		if r.Status == StatusSuccess {
+			op.RaiseAlertFacts(context.Background(), op.AlertFacts{
+				Kind:   "usage_missing",
+				Reason: "succeeded request returned no usage",
+				Fields: []alert.Field{
+					{Label: "调用请求", Value: fmt.Sprintf("#%d", r.ID)},
+					{Label: "模型", Value: r.Model},
+					{Label: "落地渠道", Value: r.TargetChannelCode},
+					{Label: "处置", Value: "已释放预扣, 未计费; 请核对上游是否支持用量回传, 必要时停用该渠道"},
+				},
+			})
+		}
 		if err := op.BillingRelease(reservationID); err != nil {
 			log.Warnf("billing release failed for reservation %d request %d: %v", reservationID, r.ID, err)
 			// 释放失败: 不动钱也不清登记, 同上。

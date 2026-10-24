@@ -13,6 +13,7 @@ import (
 
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/netguard"
 	"github.com/alvindingpeng/switchyard/internal/utils/cache"
 	"github.com/charmbracelet/log"
 	"gorm.io/gorm"
@@ -95,7 +96,7 @@ func ChannelStatsList(scope model.Scope) []model.ChannelStats {
 // 三者在同一事务内落库: 授权按名称引用两侧, 待凭据与模型拿到主键后由 syncChannelGrants 解析,
 // 由此建一个带授权的渠道只需一趟请求。
 func ChannelCreate(detail *model.ChannelDetail, scope model.Scope, ctx context.Context) (*model.ChannelDetail, error) {
-	if err := normalizeChannelDetail(detail); err != nil {
+	if err := normalizeChannelDetail(ctx, detail); err != nil {
 		return nil, err
 	}
 
@@ -141,7 +142,7 @@ func ChannelUpdate(detail *model.ChannelDetail, scope model.Scope, ctx context.C
 	if !ok || !scope.Owns(existing.UserID) {
 		return nil, fmt.Errorf("channel not found")
 	}
-	if err := normalizeChannelDetail(detail); err != nil {
+	if err := normalizeChannelDetail(ctx, detail); err != nil {
 		return nil, err
 	}
 
@@ -212,7 +213,7 @@ func ChannelUpdate(detail *model.ChannelDetail, scope model.Scope, ctx context.C
 // normalizeChannelConfig 补齐提交配置中的默认值并校验协议路径。
 // 路径留空会与地址拼成错误的上游地址, 故一律回退到协议默认路径; Header 恒为数组, 免得落库后读出 null。
 // 全部字段在此去空白: 落库后的配置被读侧无条件信任, 空白与空串都不会再传到转发链路。
-func normalizeChannelConfig(config model.ChannelConfig) (model.ChannelConfig, error) {
+func normalizeChannelConfig(ctx context.Context, config model.ChannelConfig) (model.ChannelConfig, error) {
 	config.Name = strings.TrimSpace(config.Name)
 	if config.Name == "" {
 		return config, fmt.Errorf("channel name is required")
@@ -253,14 +254,25 @@ func normalizeChannelConfig(config model.ChannelConfig) (model.ChannelConfig, er
 	config.ChannelProxy = strings.TrimSpace(config.ChannelProxy)
 	config.ParamOverride = strings.TrimSpace(config.ParamOverride)
 	config.MatchRegex = strings.TrimSpace(config.MatchRegex)
+	// SSRF 防护: 上游地址与渠道专用代理都不得指向私网(环回/内网/链路本地)。
+	// 校验放在保存入口而非拨号时才拦: 错误配置当场报错, 管理员能立刻知道是哪一项被拒。
+	// 管理员自建内网上游(本地 vLLM 等)可显式打开 allow_private_upstream 放行。
+	if err := netguard.CheckURL(ctx, config.BaseURL, AllowPrivateUpstream()); err != nil {
+		return config, fmt.Errorf("channel %s: %w", config.Name, err)
+	}
+	if config.ChannelProxy != "" {
+		if err := netguard.CheckURL(ctx, config.ChannelProxy, AllowPrivateUpstream()); err != nil {
+			return config, fmt.Errorf("channel %s proxy: %w", config.Name, err)
+		}
+	}
 	return config, nil
 }
 
 // normalizeChannelDetail 规范化整份提交配置; 渠道自身的字段交由 normalizeChannelConfig 处理。
 // 凭据, 模型与授权的名称在此去空白并校验非空: 名称是三者的匹配与引用依据, 集中在入口清理后,
 // 下游三个同步函数拿到的即是干净数据, 无需各自再 trim 一遍。
-func normalizeChannelDetail(detail *model.ChannelDetail) error {
-	config, err := normalizeChannelConfig(detail.ChannelConfig)
+func normalizeChannelDetail(ctx context.Context, detail *model.ChannelDetail) error {
+	config, err := normalizeChannelConfig(ctx, detail.ChannelConfig)
 	if err != nil {
 		return err
 	}
@@ -300,6 +312,12 @@ func normalizeChannelDetail(detail *model.ChannelDetail) error {
 			return fmt.Errorf("duplicated egress name: %s", normalized.Name)
 		}
 		seenEgress[normalized.Name] = struct{}{}
+		// SSRF 防护: 出口代理地址同样不得指向私网; direct 出口无地址, 不校验。
+		if normalized.Kind != model.EgressKindDirect && normalized.URL != "" {
+			if err := netguard.CheckURL(context.Background(), normalized.URL, AllowPrivateUpstream()); err != nil {
+				return fmt.Errorf("egress %s: %w", normalized.Name, err)
+			}
+		}
 		detail.Egresses[i] = normalized
 	}
 	return nil

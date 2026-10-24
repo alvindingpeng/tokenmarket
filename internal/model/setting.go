@@ -14,6 +14,8 @@ type SettingKey string
 
 const (
 	SettingKeyProxyURL                SettingKey = "proxy_url"
+	SettingKeyAllowPrivateUpstream    SettingKey = "allow_private_upstream"     // 允许上游/出口指向私网地址(SSRF 防护例外); 默认关, 管理员自建内网上游时才开
+	SettingKeyAdminDefaultPwdChanged  SettingKey = "admin_default_pwd_changed"  // 默认管理员是否已改过初始密码; 未改前管理面被强制跳转改密
 	SettingKeyStatsSaveInterval       SettingKey = "stats_save_interval"        // 将统计信息写入数据库的周期(分钟)
 	SettingKeyModelInfoUpdateInterval SettingKey = "model_info_update_interval" // 模型信息更新间隔(小时)
 	SettingKeyCORSAllowOrigins        SettingKey = "cors_allow_origins"         // 跨域白名单(逗号分隔, 如 "example.com,example2.com"). 为空不允许跨域, "*"允许所有
@@ -206,10 +208,12 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyAutoAddInterval, Value: "24"}, // 每天复查一次: 上游新模型上线速度不会快到需要更频繁。
 		// 默认沿用渠道级开关: 升级前只有显式开启 model_auto_add 的渠道会自动添加, 保持该语义不变。
 		{Key: SettingKeyAutoAddScope, Value: "flagged"},
-		{Key: SettingKeyShareCodeSeq, Value: "1000"},      // 发布编码从 1001 起, 记录已发到的最大号
-		{Key: SettingKeyBalanceReserveCap, Value: "4096"}, // 预扣估算默认输出上限
-		{Key: SettingKeyBalanceReserveImages, Value: "4"}, // 生图预扣保守张数, 4 张覆盖 dall-e-3 / gpt-image-1 n=4 上限
-		{Key: SettingKeyMinBalance, Value: "0"},           // 不允许透支
+		{Key: SettingKeyShareCodeSeq, Value: "1000"},            // 发布编码从 1001 起, 记录已发到的最大号
+		{Key: SettingKeyBalanceReserveCap, Value: "4096"},       // 预扣估算默认输出上限
+		{Key: SettingKeyBalanceReserveImages, Value: "4"},       // 生图预扣保守张数, 4 张覆盖 dall-e-3 / gpt-image-1 n=4 上限
+		{Key: SettingKeyMinBalance, Value: "0"},                 // 不允许透支
+		{Key: SettingKeyAllowPrivateUpstream, Value: "false"},   // SSRF 防护默认开: 私网上游需管理员显式放行
+		{Key: SettingKeyAdminDefaultPwdChanged, Value: "false"}, // 初始 admin/admin 未改前视为未完成部署
 		// 充值与支付: 全部留空/默认, 商户信息在管理端补上即启用。
 		{Key: SettingKeyEpayGatewayURL, Value: ""},                                        // 留空表示支付未配置, 充值入口优雅降级
 		{Key: SettingKeyEpayPID, Value: ""},                                               // 商户 ID 后配
@@ -323,6 +327,16 @@ func (s *Setting) Validate() error {
 		value, err := strconv.ParseFloat(s.Value, 64)
 		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
 			return fmt.Errorf("min balance must be a finite non-negative number")
+		}
+		return nil
+	case SettingKeyAllowPrivateUpstream:
+		if _, err := strconv.ParseBool(s.Value); err != nil {
+			return fmt.Errorf("%s must be a boolean", s.Key)
+		}
+		return nil
+	case SettingKeyAdminDefaultPwdChanged:
+		if _, err := strconv.ParseBool(s.Value); err != nil {
+			return fmt.Errorf("%s must be a boolean", s.Key)
 		}
 		return nil
 	case SettingKeyRechargeRate:

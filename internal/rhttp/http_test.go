@@ -54,7 +54,14 @@ func TestTransportPoolTuning(t *testing.T) {
 	}
 	transport, ok := client.Transport.(*http.Transport)
 	if !ok {
-		t.Fatalf("Direct() 的 Transport 类型不符: %T", client.Transport)
+		limited, isLimited := client.Transport.(*limitedBodyTransport)
+		if !isLimited {
+			t.Fatalf("Direct() 的 Transport 类型不符: %T", client.Transport)
+		}
+		transport, ok = limited.Base.(*http.Transport)
+		if !ok {
+			t.Fatalf("limitedBodyTransport.Base 类型不符: %T", limited.Base)
+		}
 	}
 	if transport.MaxIdleConnsPerHost != maxIdleConnsPerHost {
 		t.Fatalf("MaxIdleConnsPerHost = %d, want %d", transport.MaxIdleConnsPerHost, maxIdleConnsPerHost)

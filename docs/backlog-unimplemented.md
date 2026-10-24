@@ -98,11 +98,10 @@
 - 登录态页面与**真实交易全流程验收**未执行(充值与提现未用真实资金测过)
 - MySQL / PostgreSQL **真实服务集成验收**未做(`financial-hardening-phase2a.md:64`)
 - **已补(v0.44.1)**: 备份导入非法版本/媒体单价/设置值/渠道配置拒绝测试; 分组按用户隔离与改名/全量刷新清理索引测试; 用户缓存跨数据库刷新清理测试; 路由按分组隔离、手动模式绕过运行时状态、全量重置测试; 出口状态按 ID 隔离与重置测试。测试边界不触碰生产数据。
+- **已补(v0.45.0 第一批)**: SSRF 私网防护(保存时校验 + 拨号层复核防 rebinding, `allow_private_upstream` 例外开关); 非流式响应 128 MiB 读取上限(传输层, SSE 旁路); 流式聚合 128 MiB 上限(超限按本轮失败); 成功但上游不回用量 → 释放预扣并挂 `usage_missing` 告警; 默认 admin/admin 未改密前管理面强制跳转改密(登录/状态响应带 `must_change_password`)。登录失败限流此前已在(`login_max_attempts`/`login_lockout_seconds`)。
 
 ### 3.3 已知代码限制(设计上接受, 非 bug)
-- gin `Flush()` 错误在 writer 层不可观测 → 死客户端会一直抽干上游直到空闲超时
-- 流式成功响应体缓冲**无大小上限**
-- 流式聚合 `result.usage == nil` 时按 0 用量结算
+- gin `Flush()` 错误在 writer 层不可观测 → 死客户端会一直抽干上游直到空闲超时(客户端断开的取消信号已随请求 ctx 传播, 剩余窗口是"已提交后的空闲超时段")
 - 旧 `VideoJob` 记录缺 `ChannelID` → 授权删除后无法恢复(fail-closed by design)
 
 ---

@@ -170,3 +170,17 @@ func settingRefreshCache(ctx context.Context) error {
 	}
 	return nil
 }
+
+// AllowPrivateUpstream 返回是否允许上游/出口指向私网地址(SSRF 防护例外)。
+// 读取失败按不允许处理: 防护缺失时宁可拒绝内网目标, 也不能静默放开。
+func AllowPrivateUpstream() bool {
+	allowed, err := SettingGetBool(model.SettingKeyAllowPrivateUpstream)
+	return err == nil && allowed
+}
+
+// AdminDefaultPasswordChanged 返回默认管理员是否已改过初始密码。
+// 读取失败按"未改"处理: 强制改密是保守方向的误判, 放开才是危险方向的误判。
+func AdminDefaultPasswordChanged() bool {
+	changed, err := SettingGetBool(model.SettingKeyAdminDefaultPwdChanged)
+	return err == nil && changed
+}

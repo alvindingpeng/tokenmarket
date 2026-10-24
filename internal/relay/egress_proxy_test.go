@@ -4,12 +4,28 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/op"
 )
+
+// egressProxyTestDB 出口代理测试要过拨号层私网复核: httptest 代理全在 127.0.0.1,
+// 打开私网放行; SSRF 拒绝语义由 op 层用例覆盖。
+func egressProxyTestDB(t *testing.T) {
+	t.Helper()
+	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "egress_proxy.db"), false); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := op.SettingUpsert(model.SettingKeyAllowPrivateUpstream, "true"); err != nil {
+		t.Fatalf("seed allow-private: %v", err)
+	}
+}
 
 // newRecordingProxy 起一个最小可用的正向代理, 记录被使用的次数。
 // 用它模拟"两个出口": 请求经过哪个代理, 就说明本轮走的是哪条线路。
@@ -41,6 +57,7 @@ func newRecordingProxy(t *testing.T, counter *atomic.Int32) *httptest.Server {
 // TestEgressSwitchoverKeepsRequestsSucceeding 对应出口池的验收标准:
 // 摘掉当前最优的出口后, 请求自动走另一条线路且不失败。
 func TestEgressSwitchoverKeepsRequestsSucceeding(t *testing.T) {
+	egressProxyTestDB(t)
 	resetEgressStates()
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -110,6 +127,7 @@ func TestEgressSwitchoverKeepsRequestsSucceeding(t *testing.T) {
 
 // TestEgressFailureCoolsAndSwitches 一个出口失败后进入冷却, 下一轮自动换另一条。
 func TestEgressFailureCoolsAndSwitches(t *testing.T) {
+	egressProxyTestDB(t)
 	resetEgressStates()
 
 	dead := model.ChannelEgress{ID: 201, Name: "dead", Kind: model.EgressKindHTTP, URL: "http://127.0.0.1:1", Weight: 9, Enabled: true}
