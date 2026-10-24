@@ -16,7 +16,7 @@ English | [简体中文](README_zh.md)
 </div>
 
 > **Name and lineage.** This codebase began as a production fork of
-> [alvindingpeng/switchyard](https://github.com/alvindingpeng/switchyard) (baseline `v0.13.9`) and has since grown
+This project has grown from an early open-source baseline and since diverged heavily.
 > well past it — routing, billing, media handling, and operations were largely rewritten. It now ships
 > under its own name, **Switchyard**, which describes what it actually does: a marshalling yard for LLM
 > traffic. The delta against the original is itemised in [CHANGELOG.md](CHANGELOG.md).
@@ -150,7 +150,7 @@ docker run -d --name switchyard -v /path/to/data:/app/data -p 8080:8080 switchya
 ```
 
 The repo ships a `docker-compose.yml`, but note its `image:` line still points at the **upstream** image
-name (`alvindingpeng/switchyard`) — swap it for the tag you just built locally before `docker compose up -d`, or
+image name — swap it for the tag you just built locally before `docker compose up -d`, or
 you will be running upstream's build with none of this fork's code.
 
 ### First login
@@ -815,10 +815,9 @@ Full backlog: [docs/roadmap.md](docs/roadmap.md).
 
 ## Acknowledgments
 
-- 🙏 [alvindingpeng/switchyard](https://github.com/alvindingpeng/switchyard) — the upstream project this fork builds on
+- 🙏 This project builds on earlier open-source work (see LICENSE).
 - 🙏 [looplj/axonhub](https://github.com/looplj/axonhub) — the LLM API adaptation module derives from it
 - 📊 [sst/models.dev](https://github.com/sst/models.dev) — model pricing data
-- 🇨🇳 [AtomGit](https://github.com/alvindingpeng/switchyard) — China-based mirror of upstream
 - 💬 [Linux.do](https://linux.do/)
 
 ## License

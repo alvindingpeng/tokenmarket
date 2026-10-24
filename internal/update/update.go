@@ -27,7 +27,7 @@ import (
 )
 
 // 更新源就是本仓库自己的 Releases(见 docs/update-pipeline.md)。
-// 绝不指回上游 alvindingpeng/switchyard: 上游产物里没有本分支的功能, 用它覆盖线上等于把系统降级。
+// 绝不指回上游仓库: 上游产物里没有本分支的功能, 用它覆盖线上等于把系统降级。
 const (
 	RepoSlug = "alvindingpeng/tokenmarket"
 

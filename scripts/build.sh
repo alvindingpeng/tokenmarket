@@ -7,7 +7,7 @@ readonly VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo 'dev')" #
 readonly COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')" # 当前提交短哈希。
 # 模块路径必须从 go.mod 读, 不能写死: -X 的目标包路径对不上时 go 不报错, 静默忽略,
 # 打出来的二进制就带着 conf 里的默认值(Version=dev / Commit=unknown / BuildTime=unknown)。
-# 上游仓库 fork 到 alvindingpeng 之后, 这里长期写死 alvindingpeng, 导致每个 Release 产物
+# 此前这里长期写死一个旧仓库名, 导致每个 Release 产物
 # 都自称 dev —— 应用内「检查更新」把 rel.TagName 与 "dev" 比较, 判定永远有更新。
 readonly MODULE="$(sed -n 's/^module[[:space:]]\+\(.*\)$/\1/p' go.mod | head -1)" # 模块路径。
 if [ -z "${MODULE}" ]; then

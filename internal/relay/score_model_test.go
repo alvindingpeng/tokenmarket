@@ -98,7 +98,7 @@ func TestLatencyModePrefersMeasuredMember(t *testing.T) {
 	}
 }
 
-// TestSelectByScoreSoftPenaltyKeepsCheapestAhead 复现 admin 反馈: 价格权重 60 时,
+// TestSelectByScoreSoftPenaltyKeepsCheapestAhead 复现 用户反馈: 价格权重 60 时,
 // 最便宜但成功率略低于下限(如 0.66 < 0.70)的模型不应被硬门槛压到更贵模型之后。
 // 软性惩罚按 succ/floor 折减, 只要折扣后仍最高就应胜出; 而彻底不可用(succ≈0)者必须垫底。
 func TestSelectByScoreSoftPenaltyKeepsCheapestAhead(t *testing.T) {

@@ -15,7 +15,7 @@
 
 </div>
 
-> **名字与来历。** 这份代码最初是 [alvindingpeng/switchyard](https://github.com/alvindingpeng/switchyard) 的生产分支
+> **名字与来历。** 这份代码源自早期开源基线的生产分支
 > （基线 `v0.13.9`），后来长得远超它 —— 选路、计费、媒体处理与运维基本重写过。现在它以**Switchyard**
 > 这个名字独立发布，而这个名字说的正是它做的事：LLM 流量的编组场。与原项目的差异逐条记在
 > [CHANGELOG.md](CHANGELOG.md) 里。
@@ -137,7 +137,7 @@ docker build -f scripts/dockerfile/Dockerfile -t switchyard .
 docker run -d --name switchyard -v /path/to/data:/app/data -p 8080:8080 switchyard
 ```
 
-仓库里带的 `docker-compose.yml` 中，`image:` 仍指向上游镜像名（`alvindingpeng/switchyard`）。用之前先把它换成
+仓库里带的 `docker-compose.yml` 中，`image:` 仍指向旧镜像名。用之前先把它换成
 你刚构建出来的 tag，否则跑的是上游那份没有本分支功能的代码。
 
 ### 首次登录
@@ -738,10 +738,9 @@ gofmt -l internal/server/handlers/      # 必须不输出任何内容（只对 h
 
 ## 致谢
 
-- 🙏 [alvindingpeng/switchyard](https://github.com/alvindingpeng/switchyard) —— 本分支所基于的上游项目
+- 🙏 本项目基于早期开源工作构建（见 LICENSE）。
 - 🙏 [looplj/axonhub](https://github.com/looplj/axonhub) —— 本项目的 LLM API 适配模块源自该仓库的实现
 - 📊 [sst/models.dev](https://github.com/sst/models.dev) —— AI 模型数据库，提供模型价格数据
-- 🇨🇳 [AtomGit](https://github.com/alvindingpeng/switchyard) —— 上游的国内代码托管
 - 💬 [Linux.do](https://linux.do/)
 
 ## 许可证
