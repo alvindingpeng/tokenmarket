@@ -52,8 +52,10 @@ func init() {
 			router.NewRoute("/billing/records", http.MethodGet).
 				Handle(getBillingRecords),
 		).
+		// 计费明细导出是敏感导出(逐笔资金记录): 要求 step-up。
 		AddRoute(
 			router.NewRoute("/billing/records/export", http.MethodGet).
+				Use(middleware.RequireStepUp()).
 				Handle(exportBillingRecords),
 		).
 		AddRoute(

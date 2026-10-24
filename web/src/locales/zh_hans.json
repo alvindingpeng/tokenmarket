@@ -1,4 +1,14 @@
 {
+    "stepUp": {
+        "title": "高危操作确认",
+        "description": "这个操作会改动资金或系统配置, 请重新输入登录密码, 确认是你本人在操作。",
+        "passwordPlaceholder": "登录密码",
+        "hint": "确认后 5 分钟内的高危操作无需重复输入; 改密或退出登录会让确认立即失效。",
+        "confirm": "确认并继续",
+        "cancel": "取消",
+        "busy": "验证中...",
+        "errorGeneric": "验证失败, 请重试"
+    },
     "errorBoundary": {
         "title": "这个界面出了点问题",
         "description": "渲染时发生异常, 数据没有丢失。可以重试, 或重新加载页面。",
@@ -246,8 +256,8 @@
             "loadFailed": "加载失败",
             "form": {
                 "name": "名称",
-                "value": "密钥值",
-                "valuePlaceholder": "留空自动生成",
+                "valueHint": "密钥由服务端生成, 创建后仅展示一次。",
+                "currentKey": "当前密钥",
                 "maxCost": "最大金额",
                 "maxCostPlaceholder": "请输入金额",
                 "unlimited": "无限制",
@@ -292,6 +302,11 @@
                 "updateError": "API 密钥更新失败",
                 "deleteSuccess": "API 密钥删除成功",
                 "deleteError": "API 密钥删除失败"
+            },
+            "created": {
+                "title": "密钥已创建",
+                "warning": "请立即复制保存, 关闭后将无法再次查看此密钥。",
+                "done": "我已保存"
             }
         },
         "llmPrice": {

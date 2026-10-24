@@ -31,6 +31,7 @@ func init() {
 		AddRoute(
 			router.NewRoute("/batch/create", http.MethodPost).
 				Allow(model.RoleAdmin).
+				Use(middleware.RequireStepUp()).
 				Handle(createRedemptionBatch),
 		).
 		AddRoute(
@@ -46,6 +47,7 @@ func init() {
 		AddRoute(
 			router.NewRoute("/code/disable", http.MethodPost).
 				Allow(model.RoleAdmin).
+				Use(middleware.RequireStepUp()).
 				Handle(disableRedemptionCode),
 		)
 }

@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"strings"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -18,7 +20,110 @@ func openAPIAdminPaths() gin.H {
 	for path, item := range openAPIAdminPathsOps() {
 		paths[path] = item
 	}
+	applyStepUpContract(paths)
 	return paths
+}
+
+// stepUpProtectedRoutes 受 step-up 保护的高危写/敏感读路由清单(文档侧的单一事实源):
+// 与各 handler 注册处的 middleware.RequireStepUp() 一一对应。value 是"为什么高危",
+// 会追加进该接口的说明里。TestStepUpOpenAPIContractMatchesEnforcement 拿它逐条对照
+// 真实路由(不带凭证必须 428)与文档条目(必须标了 X-Step-Up-Token 与 428), 三方不一致即测试失败。
+//
+// 说明: 清单后处理作用在合并后的整张路径表上, 本文件不改 schemas、也不改
+// openapi_admin_paths_ops.go —— 与其它 agent 的同文件改动天然错开。
+var stepUpProtectedRoutes = map[string]string{
+	"POST /api/v1/user/manage/create":          "建号可指定角色与初始余额",
+	"POST /api/v1/user/manage/update":          "余额调整与账号状态变更",
+	"POST /api/v1/user/manage/reset-password":  "重置他人密码",
+	"DELETE /api/v1/user/manage/delete/{id}":   "删号",
+	"POST /api/v1/setting/set":                 "系统设置写入, 改全局行为",
+	"POST /api/v1/setting/import":              "备份导入, 整库覆盖",
+	"GET /api/v1/setting/export":               "整库导出, 含凭据",
+	"GET /api/v1/audit/export":                 "审计导出",
+	"GET /api/v1/log/export":                   "日志导出, 可还原使用行为",
+	"GET /api/v1/stats/billing/records/export": "计费明细导出, 逐笔资金",
+	"POST /api/v1/settlement/generate":         "结算生成, 决定打款口径",
+	"POST /api/v1/dispute/review":              "争议裁决",
+	"POST /api/v1/withdrawal/review":           "提现审核",
+	"POST /api/v1/withdrawal/mark-paid":        "提现打款确认",
+	"POST /api/v1/withdrawal/rollback":         "提现回滚",
+	"POST /api/v1/redemption/batch/create":     "兑换码批量生成, 等价发钱",
+	"POST /api/v1/redemption/code/disable":     "兑换码作废",
+	"POST /api/v1/ops/billing-recovery/run":    "计费恢复, 资金补偿执行",
+	"POST /api/v1/ops/backup/run":              "备份生成",
+	"POST /api/v1/ops/log-lifecycle/run":       "日志归档/清理执行",
+	"POST /api/v1/ops/auth-secret/rotate":      "登录签名密钥轮换, 全员下线",
+	"GET /api/v1/ops/metrics/token":            "指标令牌读取, 敏感凭据",
+	"POST /api/v1/ops/metrics/token/rotate":    "指标令牌轮换",
+	"POST /api/v1/update":                      "系统更新",
+}
+
+// stepUpHeaderParam X-Step-Up-Token 请求头的参数定义: 短期验证凭证的完整语义写在这里,
+// 各受保护接口引用同一段说明。
+func stepUpHeaderParam() gin.H {
+	return gin.H{
+		"name":     "X-Step-Up-Token",
+		"in":       "header",
+		"required": true,
+		"description": "step-up 短期凭证(JWT, 默认 5 分钟): 由 POST /api/v1/user/step-up 用登录密码换取。" +
+			"凭证绑定 用户 + token_version + 当前登录会话: 改密、禁用、登出或换会话任一发生即失效, 期满也失效。" +
+			"缺失或失效返回 428(error_code=step_up_required)且请求不会执行 —— 客户端应弹密码确认后把原请求原样重发一次。",
+		"schema": gin.H{"type": "string"},
+	}
+}
+
+// stepUp428 缺 step-up 凭证的响应: 不套 AdminEnvelopeError 的 $ref, 免得本条说明依赖
+// schemas 文件里的条目(那个文件由其它 agent 维护)。
+func stepUp428() gin.H {
+	return gin.H{
+		"description": "缺少、过期或不属于当前登录会话的 X-Step-Up-Token: 请求不会执行(零副作用)。" +
+			"响应带 error_code=step_up_required, 调用方(含前端)据此弹密码确认后原样重发一次。",
+		"content": jsonContent(gin.H{
+			"type": "object",
+			"properties": gin.H{
+				"code":       gin.H{"type": "integer", "example": 428},
+				"message":    gin.H{"type": "string", "example": "Step-up verification required"},
+				"error_code": gin.H{"type": "string", "example": "step_up_required"},
+			},
+		}),
+	}
+}
+
+// applyStepUpContract 给受保护路由补上 X-Step-Up-Token 头参数、428 响应与一句高危说明。
+// 只标记已进文档的条目, 不硬造路径(提现/结算/兑换码等尚未进文档的路由保持原状)。
+func applyStepUpContract(paths gin.H) {
+	for key, reason := range stepUpProtectedRoutes {
+		method, path, _ := strings.Cut(key, " ")
+		route, ok := paths[path].(gin.H)
+		if !ok {
+			continue
+		}
+		operation, ok := route[strings.ToLower(method)].(gin.H)
+		if !ok {
+			continue
+		}
+		switch params := operation["parameters"].(type) {
+		case []gin.H:
+			operation["parameters"] = append(params, stepUpHeaderParam())
+		default:
+			operation["parameters"] = []gin.H{stepUpHeaderParam()}
+		}
+		if description, ok := operation["description"].(string); ok && description != "" {
+			operation["description"] = description + adminNewLine + adminNewLine +
+				"高危操作(" + reason + "): 除登录态外还要求 X-Step-Up-Token 短期凭证, 语义见 POST /api/v1/user/step-up。"
+		}
+		if responses, ok := operation["responses"].(gin.H); ok {
+			responses["428"] = stepUp428()
+		}
+	}
+}
+
+// stepUpResponses 二次验证端点的响应: 200 换凭证, 401 口令不对, 429 触发防爆破。
+func stepUpResponses() gin.H {
+	responses := adminItem("验证通过, data 为短期 step-up 凭证", "StepUpCredential")
+	responses["401"] = gin.H{"description": "密码不正确", "content": jsonContent(gin.H{"$ref": "#/components/schemas/AdminEnvelopeError"})}
+	responses["429"] = gin.H{"description": "密码验证被限流(与登录同一套防爆破闸门), 按 Retry-After 等待后再试", "content": jsonContent(gin.H{"$ref": "#/components/schemas/AdminEnvelopeError"})}
+	return responses
 }
 
 // openAPIAdminPathsAuth 账号、渠道、分组、模型价格库与 API Key。
@@ -30,6 +135,15 @@ func openAPIAdminPathsAuth() gin.H {
 				"用户名密码登录, 成功后用 Set-Cookie 下发 HttpOnly 会话 Cookie(auth), 后续管理面请求由浏览器自动携带。"+adminNewLine+adminNewLine+
 					"防爆破: 按 IP 与账号两个维度独立限流, 任一超限返回 429; 开启维护模式时非管理员返回 503。",
 				"LoginRequest", adminItem("登录成功, data 为账号信息", "UserView")),
+		},
+		"/api/v1/user/step-up": gin.H{
+			"post": adminPath("auth", "高危操作二次验证(step-up)",
+				"用当前账号的密码重新确认身份, 换一枚短期 step-up 凭证。凭证绑定 用户 + token_version + 当前登录会话: 改密、禁用、登出或换会话任一发生即失效, 5 分钟后过期。"+
+					adminNewLine+adminNewLine+
+					"受保护的高危写操作(余额调整与用户管理、提现审核/打款/回滚、备份导入、整库/审计/日志/计费明细导出、结算生成、计费恢复、系统设置)要求把凭证放进 X-Step-Up-Token 头提交; 缺失或失效返回 428 且响应带 error_code=step_up_required, 请求不会执行 —— 客户端应弹密码确认后把原请求原样重发一次。读列表类接口不需要。"+
+					adminNewLine+adminNewLine+
+					"防爆破: 密码验证与登录共用同一套限流闸门(计数独立), 超限 429 + Retry-After。审计只记结果, 不含密码与凭证。",
+				"StepUpRequest", stepUpResponses(), false),
 		},
 		"/api/v1/user/register": gin.H{
 			"post": adminPathPublic("auth", "注册用户",
@@ -339,19 +453,23 @@ func openAPIAdminPathsAuth() gin.H {
 		// ---------------- API Key ----------------
 		"/api/v1/apikey/list": gin.H{
 			"get": adminPath("apikey", "API Key 列表",
-				"当前身份可见范围内的 Key(管理员为全站), 归属取自登录身份。", "",
+				"当前身份可见范围内的 Key(管理员为全站), 归属取自登录身份。"+
+					"列表项只含掩码片段 key_prefix/key_last4 与档案字段: 不含明文 api_key, 也不含指纹 key_hash。", "",
 				adminArray("Key 列表", "APIKey"), false),
 		},
 		"/api/v1/apikey/create": gin.H{
 			"post": adminPath("apikey", "创建 API Key",
-				"api_key 留空时后端生成随机串并原样返回。"+adminNewLine+adminNewLine+
+				"创建请求必须省略或留空 api_key，非空自选密钥返回 400；后端生成高熵随机串，明文只在这一次响应里返回, 此后任何接口都拿不到, 库里只存指纹与掩码。"+
+					"响应里的 key_prefix/key_last4 是今后识别这把 Key 的唯一展示(形如 prefix********last4), 请当场复制保存 api_key。"+adminNewLine+adminNewLine+
 					"归属强制为当前登录账号, 不信任请求体里的 user_id。",
 				"APIKey", adminItem("新建 Key", "APIKey"), false),
 		},
 		"/api/v1/apikey/update": gin.H{
 			"post": adminPath("apikey", "更新 API Key",
-				"整体替换名称、启停、过期时间、限额、可用模型白名单与配额字段。",
-				"APIKey", adminItem("更新后的 Key", "APIKey"), false),
+				"更新名称、启停、过期时间、限额、可用模型白名单与配额; 未提交的字段保留原值。"+
+					"Key 本身不可替换: 请求带 api_key 一律 400, 旧 Key 原样可用, 权限与额度不受影响。"+
+					"响应不含明文, 与列表一致只给 key_prefix/key_last4 掩码。",
+				"APIKey", adminItem("更新后的 Key; 无明文, 只给 key_prefix/key_last4 掩码", "APIKey"), false),
 		},
 		"/api/v1/apikey/delete/{id}": gin.H{
 			"delete": adminPath("apikey", "删除 API Key",
@@ -373,7 +491,7 @@ func openAPIAdminPathsAuth() gin.H {
 						"type": "object",
 						"properties": gin.H{
 							"stats": ref("StatsAPIKey"),
-							"info":  refWithDesc("APIKey", "Key 档案; supported_models 已按当前可用分组收敛"),
+							"info":  refWithDesc("APIKey", "Key 档案; supported_models 已按当前可用分组收敛; 无明文/指纹, 只给 key_prefix/key_last4 掩码"),
 						},
 					})},
 					"401": bearerFail(),

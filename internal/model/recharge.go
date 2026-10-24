@@ -32,18 +32,18 @@ type RechargeOrder struct {
 	OrderNo     string     `json:"order_no" gorm:"size:32;not null;uniqueIndex"` // 业务单号 yyyymmddHHMMSS+随机
 	UserID      uint       `json:"user_id" gorm:"index"`
 	Provider    string     `json:"provider" gorm:"size:16;not null"`
-	Method      string     `json:"method" gorm:"size:16;not null"`                  // alipay|wechat|qq|空=收银台自选
-	AmountCents int64      `json:"amount_cents" gorm:"not null"`                    // CNY 分基准(展示与入账口径)
-	Currency    string     `json:"currency" gorm:"size:8;not null;default:CNY"`     // 基准币种, 恒为 CNY
-	PayCents    int64      `json:"pay_cents" gorm:"not null;default:0"`             // 渠道实付额(渠道币种分); 0=商品定价不核金额
-	PayCurrency string     `json:"pay_currency" gorm:"size:8;not null;default:CNY"` // 渠道收款币种
-	Credits     float64    `json:"credits" gorm:"type:decimal(18,6);not null"`      // 入账余额(不含赠送)
+	Method      string     `json:"method" gorm:"size:16;not null"`                     // alipay|wechat|qq|空=收银台自选
+	AmountCents int64      `json:"amount_cents" gorm:"not null"`                       // CNY 分基准(展示与入账口径)
+	Currency    string     `json:"currency" gorm:"size:8;not null;default:CNY"`        // 基准币种, 恒为 CNY
+	PayCents    int64      `json:"pay_cents" gorm:"not null;default:0"`                // 渠道实付额(渠道币种分); 0=商品定价不核金额
+	PayCurrency string     `json:"pay_currency" gorm:"size:8;not null;default:CNY"`    // 渠道收款币种
+	Credits     float64    `json:"credits" gorm:"type:decimal(18,6);not null"`         // 入账余额(不含赠送)
 	Bonus       float64    `json:"bonus" gorm:"type:decimal(18,6);not null;default:0"` // 满赠送的余额
 	Subject     string     `json:"subject" gorm:"size:128;not null"`
 	Status      string     `json:"status" gorm:"size:16;not null;index"`
-	TradeNo     *string    `json:"trade_no" gorm:"size:64;uniqueIndex"`                     // 第三方流水号(幂等键); 未支付为空, 唯一索引只对非空生效
+	TradeNo     *string    `json:"trade_no" gorm:"size:64;uniqueIndex"` // 第三方流水号(幂等键); 未支付为空, 唯一索引只对非空生效
 	FailReason  string     `json:"fail_reason" gorm:"size:255"`
-	NotifyRaw   string     `json:"notify_raw" gorm:"type:text"`                      // 回调原文(审计/纠纷取证)
+	NotifyRaw   string     `json:"notify_raw" gorm:"type:text"` // 回调原文(审计/纠纷取证)
 	CreatedAt   time.Time  `json:"created_at" gorm:"index"`
 	ExpiredAt   time.Time  `json:"expired_at"`
 	PaidAt      *time.Time `json:"paid_at"`

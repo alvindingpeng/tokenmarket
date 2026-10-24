@@ -36,6 +36,7 @@ func init() {
 		AddRoute(
 			router.NewRoute("/review", http.MethodPost).
 				Allow(model.RoleAdmin).
+				Use(middleware.RequireStepUp()).
 				Handle(reviewDispute),
 		)
 
@@ -45,8 +46,10 @@ func init() {
 			router.NewRoute("/list", http.MethodGet).
 				Handle(listSettlements),
 		).
+		// 结算单生成直接决定打款口径, 属高危写操作: 要求 step-up。
 		AddRoute(
 			router.NewRoute("/generate", http.MethodPost).
+				Use(middleware.RequireStepUp()).
 				Allow(model.RoleAdmin).
 				Handle(generateSettlement),
 		).

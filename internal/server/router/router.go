@@ -111,17 +111,23 @@ func RegisterAll(engine *gin.Engine) error {
 		// Register all routes in the group
 		for _, route := range router.Routes {
 			handlers := make([]gin.HandlerFunc, 0, len(route.Middlewares)+len(route.Handlers)+1)
-			handlers = append(handlers, route.Middlewares...)
 			// 声明式 RBAC: 带角色白名单的路由统一在此挂角色中间件, 免得各处手写一遍。
+			// 角色闸门排在路由自定义中间件之前: 403 必须先于 step-up 的 428 落地。
+			// 无权限者既不该被弹密码框(那是给有权者的二次确认), 428 也不该比 403 更早地把
+			// 「存在这么个高危端点」透露给无权限者。两个闸门都排在业务 handler 之前,
+			// 任何一边拒绝都不会产生业务副作用。
 			if len(route.Roles) > 0 {
 				handlers = append(handlers, middleware.RequireRole(route.Roles...))
 			}
+			handlers = append(handlers, route.Middlewares...)
 			handlers = append(handlers, route.Handlers...)
 
 			registerRoute(group, route.Method, route.Path, handlers)
 		}
 	}
-	registeredRouters = nil
+	// 注册表不再清空: 它就是路由表本体。保留既便于启动后核对(GetRouterCount),
+	// 也让测试能从同一张表各自构建引擎来验证「真实注册」而不是手抄一份路由。
+	// 同一个 engine 只能 RegisterAll 一次: 重复注册同路径会触发 gin 的 panic。
 	return nil
 }
 

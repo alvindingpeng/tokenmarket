@@ -4,6 +4,11 @@ import "time"
 
 // DBDump is a full-database JSON export format for Switchyard.
 // Import uses incremental semantics (insert new rows, and upsert on tables with natural keys).
+//
+// 注意: 导出是"解密后"的明文快照 —— 渠道凭据、密钥类设置项在 JSON 里都是可直接使用的明文。
+// 这是跨实例恢复的前提(目标实例的主密钥不同也能导入, 导入时用目标实例的主密钥重新加密),
+// 但也意味着裸 JSON 文件本身就是泄密面: 只能经既有备份加密封装(backup.passphrase, OCTOBK1)后外传,
+// 或在受控通道内流转。不要指望"备份天然不含明文" —— 未经封装的导出文件就是一份凭据清单。
 type DBDump struct {
 	Version    int       `json:"version"`
 	ExportedAt time.Time `json:"exported_at"`

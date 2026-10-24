@@ -31,7 +31,7 @@ func openAPISpec() gin.H {
 			"description": "OpenAI / Anthropic 兼容的统一 LLM 网关转发接口。用分组名(客户端模型名)作为 model 参数, 由网关按路由策略选择上游渠道; 计费按实际用量结算。",
 			"version":     conf.Version,
 		},
-		"servers": []gin.H{{"url": "/", "description": "当前站点"}},
+		"servers":  []gin.H{{"url": "/", "description": "当前站点"}},
 		"security": auth,
 		"paths": gin.H{
 			"/v1/models": gin.H{
@@ -171,12 +171,12 @@ func openAPISpec() gin.H {
 					"type":     "object",
 					"required": []string{"model", "messages"},
 					"properties": gin.H{
-						"model":  gin.H{"type": "string", "description": "客户端模型名(分组名)", "example": "deepseek-v4-flash"},
+						"model": gin.H{"type": "string", "description": "客户端模型名(分组名)", "example": "deepseek-v4-flash"},
 						"messages": gin.H{
 							"type":        "array",
 							"description": "对话消息列表",
 							"items": gin.H{
-								"type": "object",
+								"type":     "object",
 								"required": []string{"role", "content"},
 								"properties": gin.H{
 									"role":    gin.H{"type": "string", "enum": []string{"system", "user", "assistant", "tool"}},
@@ -220,11 +220,11 @@ func openAPISpec() gin.H {
 					"type":     "object",
 					"required": []string{"model", "messages"},
 					"properties": gin.H{
-						"model":    gin.H{"type": "string"},
-						"messages": gin.H{"type": "array", "items": gin.H{"type": "object"}},
-						"system":   gin.H{"description": "系统提示", "oneOf": []gin.H{{"type": "string"}, {"type": "array", "items": gin.H{"type": "object"}}}},
+						"model":      gin.H{"type": "string"},
+						"messages":   gin.H{"type": "array", "items": gin.H{"type": "object"}},
+						"system":     gin.H{"description": "系统提示", "oneOf": []gin.H{{"type": "string"}, {"type": "array", "items": gin.H{"type": "object"}}}},
 						"max_tokens": gin.H{"type": "integer", "description": "必填(上游协议要求)"},
-						"stream":   gin.H{"type": "boolean", "default": false},
+						"stream":     gin.H{"type": "boolean", "default": false},
 					},
 				},
 				"AnthropicMessageResponse": gin.H{"type": "object", "properties": gin.H{"id": gin.H{"type": "string"}, "content": gin.H{"type": "array", "items": gin.H{"type": "object"}}, "usage": gin.H{"$ref": "#/components/schemas/Usage"}}},

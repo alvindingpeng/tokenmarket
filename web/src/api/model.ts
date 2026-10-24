@@ -219,7 +219,7 @@ export function useSaveModelCapability() {
         mutationFn: (data: ModelCapability) =>
             apiRequest<ModelCapability>('/api/v1/model/capability/save', { method: 'POST', body: data }),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['models', 'capabilities'] });
+            return queryClient.invalidateQueries({ queryKey: ['models', 'capabilities'] });
         },
     });
 }
@@ -234,7 +234,7 @@ export function useDeleteModelCapability() {
         mutationFn: (name: string) =>
             apiRequest<null>('/api/v1/model/capability/delete', { method: 'POST', body: { name } }),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['models', 'capabilities'] });
+            return queryClient.invalidateQueries({ queryKey: ['models', 'capabilities'] });
         },
     });
 }

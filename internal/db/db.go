@@ -49,6 +49,9 @@ func InitDB(dbType, dsn string, debug bool) error {
 	sqlDB.SetConnMaxLifetime(time.Hour)
 	sqlDB.SetConnMaxIdleTime(10 * time.Minute)
 
+	// 静态凭据落库加密: 字段序列化器随模型 tag 生效, map 写入由回调兜底(见 secretfields.go)。
+	registerSecretFieldProtection(db)
+
 	if err := migrate.BeforeAutoMigrate(db); err != nil {
 		return err
 	}

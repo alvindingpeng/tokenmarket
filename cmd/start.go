@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"os"
+	"strings"
 
 	"github.com/alvindingpeng/switchyard/internal/alert"
 	"github.com/alvindingpeng/switchyard/internal/conf"
@@ -20,23 +22,60 @@ import (
 
 var cfgFile string
 
+// 演练开关: --database / --port 让同一份 config 指向副本库/隔离端口(部署前演练),
+// 不必临时改生产 config。不给时行为不变(config 的 database.path / server.port)。
+var startDBOverride string
+var startPortOverride int
+
 var startCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start " + conf.APP_NAME,
-	PreRun: func(cmd *cobra.Command, args []string) {
+	PreRunE: func(cmd *cobra.Command, args []string) error {
 		conf.PrintBanner()
-		conf.Load(cfgFile)
+		if err := conf.Load(cfgFile); err != nil {
+			return err
+		}
 		if level, err := log.ParseLevel(conf.AppConfig.Log.Level); err == nil {
 			log.SetLevel(level)
 		}
+		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		shutdown.Init(log.Default())
+
+		if strings.TrimSpace(startDBOverride) != "" {
+			conf.AppConfig.Database.Path = strings.TrimSpace(startDBOverride)
+		}
+		if startPortOverride != 0 {
+			conf.AppConfig.Server.Port = startPortOverride
+		}
+
+		// 静态凭据信封加密: 主密钥来自外部文件/环境变量(secret.go), 缺失或非法一律拒绝启动(fail closed),
+		// 没有"未配置主密钥就明文跑"的降级模式。必须先于任何写库就绪, 保证从第一行起就是密文落库。
+		// 这两类失败以非零码退出: systemd 要能看见失败(Restart=on-failure 才有机会在补配密钥后拉起),
+		// 悄悄 exit 0 会把"没起来"伪装成"正常结束"。
+		if err := initSecretStore(); err != nil {
+			log.Errorf("secret master key init error: %v", err)
+			os.Exit(1)
+		}
 		if err := db.InitDB(conf.AppConfig.Database.Type, conf.AppConfig.Database.Path, conf.IsDebug()); err != nil {
 			log.Errorf("database init error: %v", err)
-			return
+			os.Exit(1)
 		}
 		shutdown.Register(db.Close)
+
+		// 既有明文原子幂等迁移: 存量明文凭据就地包进信封(重复启动零写入);
+		// 存量信封打不开(主密钥配错/keyID 不符)在这里 fail closed, 不带错误密钥继续跑。
+		if stats, err := db.MigrateSecretRows(context.Background(), false); err != nil {
+			log.Errorf("secret migration error: %v", err)
+			os.Exit(1)
+		} else {
+			// 每次启动都打一行全量验证结果: 库里每个信封都已用当前主密钥逐条验开,
+			// 错误 KEK 在这里就 fail closed(上一行 exit 1), 不必等有流量才发现;
+			// 这行日志就是"启动时已验证所有加密行"的可见凭证。
+			log.Infof("secret at-rest verified: encrypted_rows=%d newly_encrypted=%d (settings=%d channel_keys=%d) empty_skipped=%d",
+				stats.AlreadyEncrypted, stats.Total(), stats.SettingsEncrypted, stats.ChannelKeysEncrypted, stats.EmptySkipped)
+		}
 
 		if err := op.InitCache(); err != nil {
 			log.Errorf("cache init error: %v", err)
@@ -129,5 +168,7 @@ var startCmd = &cobra.Command{
 
 func init() {
 	startCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./data/config.json)")
+	startCmd.PersistentFlags().StringVar(&startDBOverride, "database", "", "override config database.path (e.g. rehearsal against a copied DB)")
+	startCmd.PersistentFlags().IntVar(&startPortOverride, "port", 0, "override config server.port (e.g. rehearsal on an isolated port)")
 	rootCmd.AddCommand(startCmd)
 }

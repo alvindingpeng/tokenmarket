@@ -5,10 +5,10 @@ import { useAPIKeyDashboardStats } from '@/api/apikey';
 import { useAuthStore } from '@/api/user';
 import { useSettingStore } from '@/stores/setting';
 import { AnimatedNumber } from '@/components/common/AnimatedNumber';
+import { maskAPIKey } from '@/lib/apikey';
 import Logo from '@/components/modules/logo';
 import { SiteBanners } from '@/components/site-banners';
 import { useSiteConfig, DEFAULT_SITE_NAME } from '@/api/site';
-import { CopyIconButton } from '@/components/common/CopyButton';
 import { useCopyToClipboard } from '@uidotdev/usehooks';
 import { useCallback } from 'react';
 import type { JSX } from 'react';
@@ -135,15 +135,10 @@ export function APIKeyDashboard() {
                                 <KeyRound aria-hidden="true" className="pointer-events-none absolute top-6 right-6 h-27 w-27 text-muted-foreground/10" />
                                 <h2 className="text-2xl font-bold truncate pr-16">{info.name}</h2>
                                 <div className="mt-4 flex items-center gap-2 rounded-xl border border-border/50 bg-muted/50 p-3">
+                                    {/*明文签发后不再出现: 只展示掩码片段, 不提供复制。 */}
                                     <code className="flex-1 font-mono text-sm truncate">
-                                        {info.api_key.slice(0, 11)}********{info.api_key.slice(-4)}
+                                        {maskAPIKey(info.key_prefix, info.key_last4)}
                                     </code>
-                                    <CopyIconButton
-                                        text={info.api_key}
-                                        className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary transition-all hover:bg-primary hover:text-primary-foreground active:scale-95"
-                                        copyIconClassName="size-4"
-                                        checkIconClassName="size-4"
-                                    />
                                 </div>
                                 {/* Expiry & Quota inline */}
                                 <div className="mt-auto pt-6 text-sm">

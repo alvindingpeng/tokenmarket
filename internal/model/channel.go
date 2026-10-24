@@ -35,7 +35,7 @@ type ChannelConfig struct {
 	Name                      string         `json:"name" gorm:"uniqueIndex:idx_channel_owner_name;not null"`                                                // 渠道名称。
 	Dialect                   Dialect        `json:"dialect" gorm:"not null;default:generic"`                                                                // 上游方言, 决定出站转换器的厂商特化配置。
 	Enabled                   bool           `json:"enabled" gorm:"default:true"`                                                                            // 渠道是否可用。
-	BaseURL                   string         `json:"base_url"`                                                                                               // 上游地址, 各协议共用。
+	BaseURL                   string         `json:"base_url"`                                                                                               // 上游地址, 各协议共用; [覆盖范围外] user:pass@host 形态的内嵌凭据当前不落库加密。
 	OpenAIChatCompletionPath  string         `json:"openai_chat_completion_path" gorm:"column:openai_chat_completion_path;default:/v1/chat/completions"`     // OpenAI Chat Completions 请求路径; 留空由后端填默认路径。
 	OpenAIResponsePath        string         `json:"openai_response_path" gorm:"column:openai_response_path;default:/v1/responses"`                          // OpenAI Responses 请求路径; 留空由后端填默认路径。
 	OpenAIImageGenerationPath string         `json:"openai_image_generation_path" gorm:"column:openai_image_generation_path;default:/v1/images/generations"` // OpenAI Images 协议: 图像生成请求路径; 留空由后端填默认路径。
@@ -43,9 +43,9 @@ type ChannelConfig struct {
 	OpenAIVideoBasePath       string         `json:"openai_video_base_path" gorm:"column:openai_video_base_path;default:/v1"`                                // OpenAI Videos 协议: 视频接口基路径; 留空由后端填默认路径。
 	AnthropicMessagePath      string         `json:"anthropic_message_path" gorm:"column:anthropic_message_path;default:/v1/messages"`                       // Anthropic Messages 请求路径; 留空由后端填默认路径。
 	Proxy                     bool           `json:"proxy" gorm:"default:false"`                                                                             // 是否使用代理。
-	ChannelProxy              string         `json:"channel_proxy"`                                                                                          // 渠道专用代理地址; 留空表示不用渠道专用代理。
-	CustomHeader              []CustomHeader `json:"custom_header" gorm:"serializer:json"`                                                                   // 追加到上游请求的 Header。
-	ParamOverride             string         `json:"param_override"`                                                                                         // 请求参数覆盖配置; 留空表示不覆盖。
+	ChannelProxy              string         `json:"channel_proxy"`                                                                                          // 渠道专用代理地址; 留空表示不用渠道专用代理。[覆盖范围外] 可能含 user:pass 凭据, 当前不落库加密。
+	CustomHeader              []CustomHeader `json:"custom_header" gorm:"serializer:json"`                                                                   // 追加到上游请求的 Header。[覆盖范围外] 可能含 Authorization 等凭据, 当前不落库加密。
+	ParamOverride             string         `json:"param_override"`                                                                                         // 请求参数覆盖配置; 留空表示不覆盖。[覆盖范围外] 可能夹带凭据参数, 当前不落库加密。
 	MatchRegex                string         `json:"match_regex"`                                                                                            // 拉取模型列表时的过滤表达式; 留空表示不过滤。
 	ModelAutoAdd              bool           `json:"model_auto_add" gorm:"column:model_auto_add;default:false"`                                              // 保存后自动探测上游模型并入渠道; 默认关, 只增不删、授权按位 OR。
 	KeyRotationStrategy       string         `json:"key_rotation_strategy" gorm:"default:roundrobin"`                                                        // Key 轮换策略: roundrobin(轮询) / random(随机) / failover(故障切换)。
@@ -95,9 +95,9 @@ type Channel struct {
 // 渠道凭据的可编辑配置; 名称在渠道内唯一, 整体替换时以它为匹配依据。
 // 与 ChannelConfig 同理, 库内实体与读写接口共用这一份定义。
 type ChannelKeyConfig struct {
-	Name    string `json:"name" gorm:"not null;index:idx_channel_key,unique"` // 凭据名称, 界面展示与人工识别用。
-	Key     string `json:"key" gorm:"not null"`                               // 上游访问凭据。
-	Enabled bool   `json:"enabled" gorm:"default:true"`                       // 是否可用, 禁用后不参与选路但保留统计。
+	Name    string `json:"name" gorm:"not null;index:idx_channel_key,unique"`            // 凭据名称, 界面展示与人工识别用。
+	Key     string `json:"key" gorm:"not null;serializer:switchyard_secret_channel_key"` // 上游访问凭据; 信封加密落库(绑定 channel_id+name 归属), 运行时读明文。
+	Enabled bool   `json:"enabled" gorm:"default:true"`                                  // 是否可用, 禁用后不参与选路但保留统计。
 	// Key 轮换与故障追踪。
 	Priority      int        `json:"priority" gorm:"default:0"`      // 优先级(failover 模式), 数值越小越优先。
 	ErrorCount    int        `json:"error_count" gorm:"default:0"`   // 累计错误次数。

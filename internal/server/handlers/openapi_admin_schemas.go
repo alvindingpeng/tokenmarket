@@ -30,6 +30,15 @@ func openAPIAdminSchemas() gin.H {
 			"reason":   fieldString("渠道商注册的申请说明, 供管理员审批时参考; 普通用户注册忽略"),
 		}, "username", "password"),
 
+		"StepUpRequest": object(gin.H{
+			"password": fieldString("当前登录账号的密码明文, 只用于这一次二次验证; 服务端不落日志、不进审计"),
+		}, "password"),
+
+		"StepUpCredential": object(gin.H{
+			"token":      fieldString("短期 step-up 凭证(JWT), 高危请求放进 X-Step-Up-Token 头提交"),
+			"expires_in": fieldNumber("integer", "有效期秒数, 当前固定 300(5 分钟)"),
+		}, "token", "expires_in"),
+
 		"ChangePasswordRequest": object(gin.H{
 			"old_password": fieldString("当前密码, 必须匹配"),
 			"new_password": fieldString("新密码"),
@@ -369,10 +378,16 @@ func openAPIAdminSchemas() gin.H {
 
 		// ---------- API Key ----------
 		"APIKey": object(gin.H{
-			"id":                  fieldNumber("integer", "主键"),
-			"user_id":             fieldNumber("integer", "归属用户, 计费与数据隔离的依据; 服务端强制覆盖为当前登录账号"),
-			"name":                fieldString("Key 名称"),
-			"api_key":             fieldString("转发用的密钥; 创建时留空由后端生成"),
+			"id":      fieldNumber("integer", "主键"),
+			"user_id": fieldNumber("integer", "归属用户, 计费与数据隔离的依据; 服务端强制覆盖为当前登录账号"),
+			"name":    fieldString("Key 名称"),
+			"api_key": fieldString("转发用的明文密钥。创建请求必须省略或留空，由后端生成高熵随机串；非空自选密钥被拒绝；" +
+				"响应侧只在创建响应里出现这一次, 列表/详情/更新/统计响应一律不返回。" +
+				"更新请求携带本字段一律 400 —— Key 不可替换, 只能新建; 指纹 key_hash 永不出现在任何 API。"+
+				"存量 Key(旧库迁移/旧备份导入)不受影响, 不强制轮换; 前端创建表单本就不提交 api_key, 只有外部脚本需要删除该字段。"),
+			"key_prefix": gin.H{"type": "string", "readOnly": true, "description": "掩码前缀(响应只读, 创建/更新请求忽略)。明文签发后不可再取, " +
+				"列表与详情只给 key_prefix + key_last4 两段, 展示形如 ${prefix}********${last4}"},
+			"key_last4":           gin.H{"type": "string", "readOnly": true, "description": "掩码尾段 4 位(响应只读, 创建/更新请求忽略); 与 key_prefix 组成掩码识别这把 Key"},
 			"enabled":             fieldBool(""),
 			"expire_at":           fieldNumber("integer", "过期 Unix 秒; 0 表示永不过期"),
 			"max_cost":            fieldNumber("number", "累计消费上限; 0 表示不限"),
@@ -400,7 +415,7 @@ func openAPIAdminSchemas() gin.H {
 			"groups":         gin.H{"type": "array", "items": ref("GroupDump")},
 			"group_items":    gin.H{"type": "array", "items": ref("GroupItemDump")},
 			"llm_infos":      gin.H{"type": "array", "items": ref("LLMInfo")},
-			"api_keys":       gin.H{"type": "array", "items": ref("APIKey")},
+			"api_keys":       gin.H{"type": "array", "items": ref("APIKey"), "description": "备份行带 key_hash 指纹与掩码片段, 不含明文; 旧版明文 api_key 字段仅导入兼容, 导入即换算指纹丢弃明文"},
 			"settings":       gin.H{"type": "array", "items": ref("Setting")},
 			"stats_total":    gin.H{"type": "array", "items": ref("StatsTotal")},
 			"stats_daily":    gin.H{"type": "array", "items": ref("StatsDaily")},

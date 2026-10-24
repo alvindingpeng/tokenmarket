@@ -29,13 +29,13 @@ func walletSummary(c *gin.Context) {
 		return
 	}
 	resp.Success(c, gin.H{
-		"balance":          user.Balance,
-		"frozen":           user.Frozen,
-		"total_spent":      user.TotalSpent,
-		"total_revenue":    user.TotalRevenue,
-		"total_recharged":  user.TotalRecharged,
-		"total_withdrawn":  user.TotalWithdrawn,
-		"withdraw_frozen":  user.WithdrawFrozen,
+		"balance":            user.Balance,
+		"frozen":             user.Frozen,
+		"total_spent":        user.TotalSpent,
+		"total_revenue":      user.TotalRevenue,
+		"total_recharged":    user.TotalRecharged,
+		"total_withdrawn":    user.TotalWithdrawn,
+		"withdraw_frozen":    user.WithdrawFrozen,
 		"withdraw_available": user.TotalRevenue - user.TotalWithdrawn - user.WithdrawFrozen,
 	})
 }

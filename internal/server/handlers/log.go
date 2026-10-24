@@ -51,8 +51,10 @@ func init() {
 			router.NewRoute("/list", http.MethodGet).
 				Handle(listLogs),
 		).
+		// 日志导出是敏感导出(逐条调用记录可还原使用行为): 要求 step-up。
 		AddRoute(
 			router.NewRoute("/export", http.MethodGet).
+				Use(middleware.RequireStepUp()).
 				Handle(exportLogs),
 		).
 		AddRoute(
@@ -302,6 +304,9 @@ func prepareSSE(c *gin.Context) {
 // replayResponseLimit 重放响应收集上限(4MB): 正常对话响应远小于此, 超出按截断返回。
 const replayResponseLimit = 4 << 20
 
+// replayCredentialTTL 重放自调用凭据有效期: 盖过单次转发超时(10 分钟)即可, 不留长尾。
+const replayCredentialTTL = 15 * time.Minute
+
 // replayPath 把请求协议映射回转发入口路径; 媒体请求保存的请求体是 multipart 摘要而非原文, 无法原样重放。
 func replayPath(protocol model.Protocol) (string, bool) {
 	switch protocol {
@@ -372,7 +377,13 @@ func replayRequest(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, "failed to build replay request")
 		return
 	}
-	upstream.Header.Set("Authorization", "Bearer "+apiKey.APIKey)
+	// 库里只剩 Key 指纹, 明文不可回: 自调用改用短命签名凭据过认证, 绑定该 Key 的 ID 与过期时间。
+	replayToken, err := op.APIKeyIssueReplayToken(apiKey.ID, replayCredentialTTL)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, "failed to issue replay credential")
+		return
+	}
+	upstream.Header.Set("Authorization", "Bearer "+replayToken)
 	upstream.Header.Set("Content-Type", "application/json")
 	started := time.Now()
 	client := &http.Client{Timeout: 10 * time.Minute}
@@ -397,4 +408,3 @@ func replayRequest(c *gin.Context) {
 		"content_type":  upstreamResp.Header.Get("Content-Type"),
 	})
 }
-

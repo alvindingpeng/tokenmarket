@@ -39,13 +39,13 @@ func ValidEmail(email string) bool {
 
 // User 平台账号; 余额三字段承担计费: Balance 可用余额, Frozen 预扣冻结, 其余为累计口径。
 type User struct {
-	ID       uint       `json:"id" gorm:"primaryKey"`
-	Username string     `json:"username" gorm:"unique;not null"`
-	Password string     `json:"-" gorm:"not null"`
+	ID       uint   `json:"id" gorm:"primaryKey"`
+	Username string `json:"username" gorm:"unique;not null"`
+	Password string `json:"-" gorm:"not null"`
 	// Email 注册邮箱(注册必填, 找回密码凭据); 空串表示老账号未绑定, 唯一性由应用层保证。
-	Email    string     `json:"email" gorm:"size:254;not null;default:'';index"`
-	Role     Role       `json:"role" gorm:"not null;default:user;index"`
-	Status   UserStatus `json:"status" gorm:"not null;default:active;index"`
+	Email  string     `json:"email" gorm:"size:254;not null;default:'';index"`
+	Role   Role       `json:"role" gorm:"not null;default:user;index"`
+	Status UserStatus `json:"status" gorm:"not null;default:active;index"`
 	// TokenVersion 随改密/禁用递增, 使既有 JWT 全部失效。
 	TokenVersion int `json:"-" gorm:"not null;default:0"`
 	// 计费口径: Balance 可用余额; Frozen 预扣冻结额(可用余额 = Balance - Frozen 的语义由扣费 SQL 保证);
@@ -117,33 +117,33 @@ type UserManageRequest struct {
 
 // UserView 对外展示的账号信息, 不含密码与令牌版本。
 type UserView struct {
-	ID           uint       `json:"id"`
-	Username     string     `json:"username"`
-	Email        string     `json:"email"`
-	Role         Role       `json:"role"`
-	Status       UserStatus `json:"status"`
-	Balance      float64    `json:"balance"`
-	Frozen       float64    `json:"frozen"`
-	TotalSpent   float64    `json:"total_spent"`
+	ID             uint       `json:"id"`
+	Username       string     `json:"username"`
+	Email          string     `json:"email"`
+	Role           Role       `json:"role"`
+	Status         UserStatus `json:"status"`
+	Balance        float64    `json:"balance"`
+	Frozen         float64    `json:"frozen"`
+	TotalSpent     float64    `json:"total_spent"`
 	TotalRevenue   float64    `json:"total_revenue"`
 	TotalWithdrawn float64    `json:"total_withdrawn"`
 	WithdrawFrozen float64    `json:"withdraw_frozen"`
 	// MustChangePassword 仅登录/状态响应携带: 默认管理员未改初始密码时为真, 前端据此强制引导改密。
-	MustChangePassword bool  `json:"must_change_password,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
+	MustChangePassword bool      `json:"must_change_password,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
 }
 
 // View 返回账号的对外副本。
 func (u *User) View() UserView {
 	return UserView{
-		ID:           u.ID,
-		Username:     u.Username,
-		Email:        u.Email,
-		Role:         u.Role,
-		Status:       u.Status,
-		Balance:      u.Balance,
-		Frozen:       u.Frozen,
-		TotalSpent:   u.TotalSpent,
+		ID:             u.ID,
+		Username:       u.Username,
+		Email:          u.Email,
+		Role:           u.Role,
+		Status:         u.Status,
+		Balance:        u.Balance,
+		Frozen:         u.Frozen,
+		TotalSpent:     u.TotalSpent,
 		TotalRevenue:   u.TotalRevenue,
 		TotalWithdrawn: u.TotalWithdrawn,
 		WithdrawFrozen: u.WithdrawFrozen,

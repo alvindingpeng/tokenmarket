@@ -65,6 +65,8 @@ func init() {
 				Handle(logout),
 		)
 	// 管理后台: 用户管理仅管理员可用(含重置密码)。
+	// 写操作(建号/改号/重置密码/删号, 其中改号含余额调整)统一要求 step-up 二次确认,
+	// /list 只读不设闸。
 	router.NewGroupRouter("/api/v1/user/manage").
 		Use(middleware.Auth()).
 		Use(middleware.RequireJSON()).
@@ -75,21 +77,25 @@ func init() {
 		).
 		AddRoute(
 			router.NewRoute("/create", http.MethodPost).
+				Use(middleware.RequireStepUp()).
 				Allow(model.RoleAdmin).
 				Handle(createUser),
 		).
 		AddRoute(
 			router.NewRoute("/update", http.MethodPost).
+				Use(middleware.RequireStepUp()).
 				Allow(model.RoleAdmin).
 				Handle(updateUser),
 		).
 		AddRoute(
 			router.NewRoute("/reset-password", http.MethodPost).
+				Use(middleware.RequireStepUp()).
 				Allow(model.RoleAdmin).
 				Handle(resetPassword),
 		).
 		AddRoute(
 			router.NewRoute("/delete/:id", http.MethodDelete).
+				Use(middleware.RequireStepUp()).
 				Allow(model.RoleAdmin).
 				Handle(deleteUser),
 		)

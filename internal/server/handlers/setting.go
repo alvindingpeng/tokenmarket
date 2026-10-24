@@ -28,9 +28,12 @@ func init() {
 				Allow(model.RoleAdmin).
 				Handle(getSettingList),
 		).
+		// 系统设置写入、整库导入与整库导出都是高危面: 前者改全局行为, 后两者一头连着全量数据
+		// (含凭据), 统一要求 step-up 二次确认; /list 只读不设闸。
 		AddRoute(
 			router.NewRoute("/set", http.MethodPost).
 				Use(middleware.RequireJSON()).
+				Use(middleware.RequireStepUp()).
 				Allow(model.RoleAdmin).
 				Handle(setSetting),
 		).
@@ -42,11 +45,13 @@ func init() {
 		).
 		AddRoute(
 			router.NewRoute("/export", http.MethodGet).
+				Use(middleware.RequireStepUp()).
 				Allow(model.RoleAdmin).
 				Handle(exportDB),
 		).
 		AddRoute(
 			router.NewRoute("/import", http.MethodPost).
+				Use(middleware.RequireStepUp()).
 				Allow(model.RoleAdmin).
 				Handle(importDB),
 		)
@@ -111,13 +116,23 @@ func setSetting(c *gin.Context) {
 		update.Invalidate()
 	}
 	audit(c, "setting.set", string(setting.Key), auditSettingValue(setting))
-	resp.Success(c, setting)
+	resp.Success(c, model.Setting{Key: setting.Key, Value: responseSettingValue(setting)})
 }
 
-// auditSettingValue 供审计记录使用: 密钥类设置项(令牌/密码)绝不写原文。
+// auditSettingValue 供审计记录使用: 密钥类/内部设置项(令牌/密码/内部凭据)绝不写原文。
 // 审计日志是长期留存且随备份外传的, 一旦写入令牌等于把凭据铺开到备份副本里。
 func auditSettingValue(setting model.Setting) string {
-	if model.IsSecretSetting(setting.Key) {
+	if model.SettingNeedsAtRestEncryption(setting.Key) {
+		return model.TokenConfiguredMask
+	}
+	return setting.Value
+}
+
+// responseSettingValue 供写接口回显使用: 密钥类/内部设置项一律回掩码占位符。
+// 刚提交的真值原样回显等于把凭据再明文送回浏览器与沿途代理日志(接口回显与审计同一口径);
+// /list 早已按此脱敏, 写接口的回显不能成为绕过掩码的另一条路。
+func responseSettingValue(setting model.Setting) string {
+	if model.SettingNeedsAtRestEncryption(setting.Key) && setting.Value != "" {
 		return model.TokenConfiguredMask
 	}
 	return setting.Value
@@ -144,7 +159,11 @@ func smtpTest(c *gin.Context) {
 	resp.Success(c, "test email sent")
 }
 
+// exportDB 整库导出。注意: 响应体是解密后的明文 JSON 快照(渠道凭据、密钥类设置项都在其中),
+// 不是加密封装的备份文件 —— 不能声称"导出天然加密"。当前靠 step-up 二次确认闸 + 传输通道保护这个端点;
+// 需要落盘/外传时必须另行经备份加密封装(backup.passphrase, OCTOBK1)或用户侧受控通道。
 func exportDB(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 	dump, err := op.DBExportAll(c.Request.Context())
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())

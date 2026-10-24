@@ -23,6 +23,7 @@ import {
     type APIKey,
 } from '@/api/apikey';
 import { useGroupList } from '@/api/group';
+import { maskAPIKey, toAPIKeyCreatePayload, toAPIKeyUpdatePayload, type APIKeyFormState } from '@/lib/apikey';
 import { useStatsAPIKey } from '@/api/stats';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -57,7 +58,8 @@ function normalizeMoneyInput(input: string): string {
     return rest.length > 0 ? `${intPart}.${rest.join('').slice(0, 6)}` : intPart;
 }
 
-type APIKeyFormData = Omit<APIKey, 'id'>;
+// 表单只承载可编辑字段: 明文由服务端生成并只返回一次, 旧 Key 不可替换。
+type APIKeyFormData = APIKeyFormState;
 
 interface APIKeyFormProps {
     apiKey?: APIKey;
@@ -73,7 +75,6 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
 
     const [form, setForm] = useState<APIKeyFormData>(() => ({
         name: apiKey?.name ?? '',
-        api_key: apiKey?.api_key ?? '',
         enabled: apiKey?.enabled ?? true,
         expire_at: apiKey?.expire_at,
         max_cost: apiKey?.max_cost,
@@ -100,7 +101,8 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
     const [expireOpen, setExpireOpen] = useState(false);
 
     const availableModels = Array.from(new Set(groups.map((g) => g.name).filter(Boolean)));
-    const supportedModels = new Set(form.supported_models);
+    const selectedModels = form.supported_models ?? [];
+    const supportedModels = new Set(selectedModels);
 
     const expireDate = parseExpireDate(form.expire_at);
     const neverExpire = !form.expire_at;
@@ -173,17 +175,19 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
                 />
             </label>
 
-            <label className="grid gap-1 text-xs text-muted-foreground">
-                {t('apiKey.form.value')}
-                <Input
-                    type="text"
-                    value={form.api_key}
-                    onChange={(e) => updateForm({ api_key: e.target.value })}
-                    placeholder={t('apiKey.form.valuePlaceholder')}
-                    className="h-9 text-sm rounded-xl"
-                    disabled={isPending}
-                />
-            </label>
+            {/*密钥值不可填也不可改: 服务端生成, 创建后只展示一次; 旧 Key 不可替换。 */}
+            {apiKey ? (
+                <div className="grid gap-1 text-xs text-muted-foreground">
+                    {t('apiKey.form.currentKey')}
+                    <code className="truncate rounded-xl border border-border/50 bg-muted/40 px-3 py-2 font-mono text-xs text-muted-foreground">
+                        {maskAPIKey(apiKey.key_prefix, apiKey.key_last4)}
+                    </code>
+                </div>
+            ) : (
+                <div className="rounded-xl border border-border/50 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                    {t('apiKey.form.valueHint')}
+                </div>
+            )}
 
             <div className="grid gap-1 text-xs text-muted-foreground">
                 {t('apiKey.form.maxCost')}
@@ -298,8 +302,8 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
                                         disabled={isPending}
                                         onClick={() => updateForm({
                                             supported_models: checked
-                                                ? form.supported_models.filter((name) => name !== m)
-                                                : [...form.supported_models, m],
+                                                ? selectedModels.filter((name) => name !== m)
+                                                : [...selectedModels, m],
                                         })}
                                         className="text-left disabled:opacity-50"
                                     >
@@ -523,7 +527,13 @@ function APIKeyKeyItem({
             transition={{ type: 'spring', stiffness: 500, damping: 30 }}
             className="group relative flex items-center justify-between gap-3 p-3 rounded-xl bg-muted/50 overflow-hidden origin-top"
         >
-            <span className="text-sm font-medium truncate">{apiKey.name}</span>
+            <div className="min-w-0 flex-1">
+                <span className="block text-sm font-medium truncate">{apiKey.name}</span>
+                {/*列表只给掩码片段: 明文签发后不再出现, 也不提供复制。 */}
+                <code className="block truncate font-mono text-xs text-muted-foreground">
+                    {maskAPIKey(apiKey.key_prefix, apiKey.key_last4)}
+                </code>
+            </div>
 
             <div className="flex items-center gap-1.5">
                 <motion.button
@@ -542,13 +552,6 @@ function APIKeyKeyItem({
                 >
                     <Pencil className="size-4" />
                 </motion.button>
-                <CopyIconButton
-                    text={apiKey.api_key}
-                    className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary transition-all hover:bg-primary hover:text-primary-foreground active:scale-95"
-                    copyIconClassName="size-4"
-                    checkIconClassName="size-4"
-                />
-
                 {!confirmDelete && (
                     <motion.button
                         layoutId={deleteLayoutId}
@@ -588,6 +591,50 @@ function APIKeyKeyItem({
     );
 }
 
+/**
+ * 创建成功后的「一次性展示」: 明文只在这一刻存在, 复制保存后即关闭, 页面此后只留掩码。
+ */
+function APIKeyCreatedCard({ apiKey, onClose }: { apiKey: APIKey; onClose: () => void }) {
+    const t = useTranslations('setting');
+    return (
+        <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            className="fixed left-1/2 top-1/2 z-50 flex w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col gap-3 rounded-3xl border border-border bg-card p-5"
+        >
+            <div className="flex items-center gap-2">
+                <KeyRound className="size-4 text-primary" />
+                <h3 className="text-sm font-semibold text-card-foreground">{t('apiKey.created.title')}</h3>
+            </div>
+
+            <div className="flex items-center gap-2 rounded-xl border border-border/50 bg-muted/40 p-3">
+                <code className="flex-1 select-all break-all font-mono text-xs text-foreground">
+                    {apiKey.api_key}
+                </code>
+                <CopyIconButton
+                    text={apiKey.api_key ?? ''}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary transition-all hover:bg-primary hover:text-primary-foreground active:scale-95"
+                    copyIconClassName="size-4"
+                    checkIconClassName="size-4"
+                />
+            </div>
+
+            <p className="text-xs text-muted-foreground">{t('apiKey.created.warning')}</p>
+
+            <button
+                type="button"
+                onClick={onClose}
+                className="h-9 w-full flex items-center justify-center gap-1.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium transition-all hover:bg-primary/90 active:scale-[0.98]"
+            >
+                <Check className="size-4" />
+                {t('apiKey.created.done')}
+            </button>
+        </motion.div>
+    );
+}
+
 function APIKeyPanelBase({
     idPrefix,
     containerClassName,
@@ -614,6 +661,7 @@ function APIKeyPanelBase({
     const deletePrefix = `${idPrefix}-delete-`;
 
     const [isAdding, setIsAdding] = useState(false);
+    const [createdKey, setCreatedKey] = useState<APIKey | null>(null);
     const [viewingStats, setViewingStats] = useState<APIKey | null>(null);
     const [editingKey, setEditingKey] = useState<APIKey | null>(null);
     const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -636,6 +684,7 @@ function APIKeyPanelBase({
 
     const closeAllOverlays = () => {
         setIsAdding(false);
+        setCreatedKey(null);
         setViewingStats(null);
         setEditingKey(null);
     };
@@ -643,10 +692,18 @@ function APIKeyPanelBase({
     const disabledHeaderActions = createAPIKey.isPending || isAdding || !!viewingStats || !!editingKey;
 
     const handleCreate = (data: APIKeyFormData) => {
-        createAPIKey.mutate(data, {
-            onSuccess: () => {
-                toast.success(t('apiKey.toast.createSuccess'));
+        createAPIKey.mutate(toAPIKeyCreatePayload(data), {
+            onSuccess: (created) => {
                 setIsAdding(false);
+                if (created?.api_key) {
+                    // 明文只有这一次: 当场弹出供复制保存, 关闭后任何接口都拿不回来。
+                    setCreatedKey({ ...created });
+                    // Keep the one-time value solely in dialog state, not TanStack mutation data.
+                    created.api_key = undefined;
+                    createAPIKey.reset();
+                } else {
+                    toast.success(t('apiKey.toast.createSuccess'));
+                }
             },
             onError: (error) => {
                 const msg = error instanceof Error ? error.message : undefined;
@@ -656,7 +713,7 @@ function APIKeyPanelBase({
     };
 
     const handleUpdate = (apiKey: APIKey, data: APIKeyFormData) => {
-        updateAPIKey.mutate({ id: apiKey.id, ...data }, {
+        updateAPIKey.mutate(toAPIKeyUpdatePayload(apiKey.id, data), {
             onSuccess: () => {
                 toast.success(t('apiKey.toast.updateSuccess'));
                 setEditingKey(null);
@@ -697,6 +754,18 @@ function APIKeyPanelBase({
                         submitLabel={t('apiKey.form.create')}
                         onSubmit={handleCreate}
                         onClose={() => setIsAdding(false)}
+                    />
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {createdKey && (
+                    <APIKeyCreatedCard
+                        apiKey={createdKey}
+                        onClose={() => {
+                            setCreatedKey(null);
+                            toast.success(t('apiKey.toast.createSuccess'));
+                        }}
                     />
                 )}
             </AnimatePresence>

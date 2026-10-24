@@ -17,11 +17,12 @@ func quotaTestSetup(t *testing.T) model.APIKey {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	key := model.APIKey{Name: "quota", APIKey: "quota-test", QuotaRequests: 10, QuotaInputTokens: 100, QuotaOutputTokens: 50}
+	// 明文由 APIKeyCreate 统一生成: 自定义密钥已停用(低熵自选值会让指纹被字典爆破)。
+	key := model.APIKey{Name: "quota", QuotaRequests: 10, QuotaInputTokens: 100, QuotaOutputTokens: 50}
 	if err := APIKeyCreate(&key, context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { apiKeyCache.Del(key.ID); apiKeyIDMap.Del(key.APIKey) })
+	t.Cleanup(func() { apiKeyCache.Del(key.ID); apiKeyFingerprintMap.Del(model.APIKeyFingerprint(key.APIKey)) })
 	return key
 }
 

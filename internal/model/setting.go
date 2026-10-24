@@ -13,7 +13,7 @@ import (
 type SettingKey string
 
 const (
-	SettingKeyProxyURL                SettingKey = "proxy_url"
+	SettingKeyProxyURL                SettingKey = "proxy_url"                  // 全局代理 URL; [覆盖范围外] 可能含 user:pass 凭据, 当前不落库加密(见 docs/secret-kek-runbook.md 覆盖范围)。
 	SettingKeyAllowPrivateUpstream    SettingKey = "allow_private_upstream"     // 允许上游/出口指向私网地址(SSRF 防护例外); 默认关, 管理员自建内网上游时才开
 	SettingKeyAdminDefaultPwdChanged  SettingKey = "admin_default_pwd_changed"  // 默认管理员是否已改过初始密码; 未改前管理面被强制跳转改密
 	SettingKeyStatsSaveInterval       SettingKey = "stats_save_interval"        // 将统计信息写入数据库的周期(分钟)
@@ -171,9 +171,16 @@ func IsSecretSetting(key SettingKey) bool {
 		key == SettingKeyCreemWebhook
 }
 
+// SettingNeedsAtRestEncryption 是需要落库加密(信封加密)的设置键: 密钥类与内部键都是真秘密
+// —— 可原样取回的凭据, 与 API Key 的单向哈希是两回事。判定集中在此处,
+// 落库加密(internal/db/secretfields.go)与既有明文迁移共用同一口径, 免得两处漂移。
+func SettingNeedsAtRestEncryption(key SettingKey) bool {
+	return IsSecretSetting(key) || IsInternalSetting(key)
+}
+
 type Setting struct {
 	Key   SettingKey `json:"key" gorm:"primaryKey"`
-	Value string     `json:"value" gorm:"not null"`
+	Value string     `json:"value" gorm:"not null;serializer:switchyard_secret_setting"` // 密钥类/内部键信封加密落库, 运行时读明文。
 }
 
 func DefaultSettings() []Setting {

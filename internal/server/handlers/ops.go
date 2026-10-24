@@ -53,6 +53,7 @@ func init() {
 		AddRoute(
 			router.NewRoute("/log-lifecycle/run", http.MethodPost).
 				Allow(model.RoleAdmin).
+				Use(middleware.RequireStepUp()).
 				Handle(runLogLifecycle),
 		).
 		AddRoute(
@@ -63,6 +64,7 @@ func init() {
 		AddRoute(
 			router.NewRoute("/backup/run", http.MethodPost).
 				Allow(model.RoleAdmin).
+				Use(middleware.RequireStepUp()).
 				Handle(runAutoBackup),
 		).
 		AddRoute(
@@ -93,11 +95,13 @@ func init() {
 		AddRoute(
 			router.NewRoute("/metrics/token", http.MethodGet).
 				Allow(model.RoleAdmin).
+				Use(middleware.RequireStepUp()).
 				Handle(getMetricsToken),
 		).
 		AddRoute(
 			router.NewRoute("/metrics/token/rotate", http.MethodPost).
 				Allow(model.RoleAdmin).
+				Use(middleware.RequireStepUp()).
 				Handle(rotateMetricsToken),
 		).
 		AddRoute(
@@ -118,6 +122,7 @@ func init() {
 		AddRoute(
 			router.NewRoute("/auth-secret/rotate", http.MethodPost).
 				Allow(model.RoleAdmin).
+				Use(middleware.RequireStepUp()).
 				Handle(rotateAuthSecret),
 		)
 }
@@ -284,6 +289,7 @@ func listAlertRules(c *gin.Context) {
 // getMetricsToken 回显当前抓取令牌, 管理员专用。
 // 令牌是内部键, 不随 /setting/list 外露, 只在管理员显式索取时返回, 便于配到抓取端。
 func getMetricsToken(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 	token, err := op.MetricsTokenEnsure()
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
@@ -294,6 +300,7 @@ func getMetricsToken(c *gin.Context) {
 
 // rotateMetricsToken 轮换抓取令牌: 旧令牌立即失效, 用于凭据泄漏后的处置。
 func rotateMetricsToken(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 	token, err := op.MetricsTokenRotate()
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())

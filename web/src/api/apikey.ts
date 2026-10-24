@@ -3,6 +3,7 @@ import { apiRequest } from './client';
 import { apiKeyDashboardStatsQueryOptions, apiKeyListQueryOptions } from './queries';
 import { useAuthStore } from './user';
 import { StatsAPIKey, StatsAPIKeyFormatted } from './stats';
+import type { APIKeyCreatePayload, APIKeyUpdatePayload } from '@/lib/apikey';
 import { formatCount, formatMoney, formatTime } from '@/lib/utils';
 import { POLL_SLOW } from '@/lib/polling';
 
@@ -12,7 +13,13 @@ import { POLL_SLOW } from '@/lib/polling';
 export interface APIKey {
     id: number;
     name: string;
-    api_key: string;
+    /**
+     * 明文密钥: 只在创建响应里出现一次, 此后任何接口都不返回。
+     * 列表与详情只给 key_prefix / key_last4 两段掩码。
+     */
+    api_key?: string;
+    key_prefix: string;
+    key_last4: string;
     enabled: boolean;
     expire_at?: number; // Unix 时间戳（秒），不传表示永不过期
     max_cost?: number; // 不传表示无限制
@@ -87,14 +94,14 @@ export function useAPIKeyDashboardStats() {
 }
 
 /**
- * 创建 API Key 请求
+ * 创建 API Key 请求: 密钥值由服务端生成, 一次性返回; 提交载荷不带任何密钥材料。
  */
-type CreateAPIKeyRequest = Omit<APIKey, 'id'> & { enabled?: boolean };
+type CreateAPIKeyRequest = APIKeyCreatePayload;
 
 /**
- * 更新 API Key 请求
+ * 更新 API Key 请求: Key 本身不可更新 —— 旧 Key 原样保留, 权限与额度不受影响。
  */
-type UpdateAPIKeyRequest = Pick<APIKey, 'id'> & CreateAPIKeyRequest;
+type UpdateAPIKeyRequest = APIKeyUpdatePayload;
 
 /**
  * 获取 API Key 列表 Hook
@@ -128,6 +135,7 @@ export function useCreateAPIKey() {
     const queryClient = useQueryClient();
 
     return useMutation({
+        gcTime: 0, // one-time plaintext must not survive as an unused mutation cache entry
         mutationFn: (data: CreateAPIKeyRequest) =>
             apiRequest<APIKey>('/api/v1/apikey/create', { method: 'POST', body: data }),
         onSuccess: () => queryClient.invalidateQueries({ queryKey: apiKeyListQueryOptions.queryKey }),

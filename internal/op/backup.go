@@ -12,15 +12,27 @@ import (
 )
 
 // 渠道拆分为渠道, 凭据, 模型与渠道授权后导出结构变化, 版本随之递增;
-// 版本 5 起 api_keys.supported_models 由逗号分隔字符串改为 JSON 数组。
-const dbDumpVersion = 5
+// 版本 5 起 api_keys.supported_models 由逗号分隔字符串改为 JSON 数组;
+// 版本 6 起 api_keys 只带指纹 key_hash 与掩码片段, 不再携带明文 api_key。
+const (
+	dbDumpVersion = 6
+	// dbDumpVersionLegacyAPIKeyPlaintext 是最后一版仍带明文 api_key 的格式。
+	// 导入继续接受: 老备份里的明文 Key 现场换算指纹并丢弃明文(见 model 的 dump codec),
+	// 原 Key 无感可用, 不需要任何手工转换; 更早的版本照旧拒绝。
+	dbDumpVersionLegacyAPIKeyPlaintext = 5
+)
 
 // internalSettingKeys 内部设置键集合, 导出时排除。
+// 与 model.IsInternalSetting 同一口径: auth_secret 与 metrics_token 都是本机凭据,
+// 不随备份外传(导入侧同样按 IsInternalSetting 过滤), 只列一个会让 metrics_token 漏出到导出文件。
 func internalSettingKeys() []model.SettingKey {
-	return []model.SettingKey{model.SettingKeyAuthSecret}
+	return []model.SettingKey{model.SettingKeyAuthSecret, model.SettingKeyMetricsToken}
 }
 
 // DBExportAll 导出完整数据库内容，包括所有统计数据。
+//
+// 读经 gorm 序列化器自动解密: 库内的信封密文在导出快照里还原成明文(见 model.DBDump 的明文风险说明)。
+// 跨实例恢复正是靠这一点: 导出解密 -> 导入按目标实例的主密钥重新加密封存。
 func DBExportAll(ctx context.Context) (*model.DBDump, error) {
 	conn := db.GetDB().WithContext(ctx)
 
@@ -78,7 +90,8 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 		return nil, fmt.Errorf("empty dump")
 	}
 
-	if dump.Version != 0 && dump.Version != dbDumpVersion {
+	// 0(未标版本的手拼 JSON)、5(明文 Key 的旧格式)与 6(当前格式)都收; 其余拒绝。
+	if dump.Version != 0 && dump.Version != dbDumpVersion && dump.Version != dbDumpVersionLegacyAPIKeyPlaintext {
 		return nil, fmt.Errorf("unsupported dump version: %d", dump.Version)
 	}
 
@@ -106,6 +119,9 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 	conn := db.GetDB().WithContext(ctx)
 	res := &model.DBImportResult{RowsAffected: map[string]int64{}}
 	err := conn.Transaction(func(tx *gorm.DB) error {
+		if err := validateImportedAPIKeys(tx, dump.APIKeys); err != nil {
+			return err
+		}
 		// base tables
 		if n, err := createDoNothing(tx, dump.Channels); err != nil {
 			return fmt.Errorf("import channels: %w", err)

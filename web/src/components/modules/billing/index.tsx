@@ -4,7 +4,9 @@ import { ArrowDownToLine, ArrowUpFromLine, ChevronLeft, ChevronRight, CreditCard
 import { useTranslations } from 'use-intl';
 import dayjs from 'dayjs';
 import { billingExportUrl, createDispute, generateSettlement, reviewDispute, useAccountProfile, useBalanceLedger, useBillingDaily, useBillingRecords, useDisputes, useProfitMargin, useRevenueDaily, useSettlements, useTradeDetail, type BillingDaily, type BillingFilter, type Dispute } from '@/api/billing';
+import { toast } from 'sonner';
 import { formatPlainMoney } from '@/lib/money';
+import { downloadFile, isStepUpRequired } from '@/api/client';
 import { useAuth } from '@/api/user';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,6 +17,17 @@ import { MorphingDialog, MorphingDialogContainer, MorphingDialogContent, useMorp
 
 // 计费金额可能不足 0.001, 固定 6 位小数再截尾零（与 share 模块同一口径, 实现见 lib/money）。
 const formatMoney = formatPlainMoney;
+
+// exportBillingRecords 计费明细导出走通用客户端: 敏感导出撞上 step-up 会弹密码确认,
+// 不用 window.open —— 那样带不了验证头。
+async function exportBillingRecords(filter: BillingFilter) {
+    try {
+        await downloadFile(billingExportUrl(filter), 'switchyard-billing.csv');
+    } catch (error) {
+        // 用户取消密码确认 = 请求没发出去, 不必再报错。
+        if (!isStepUpRequired(error)) toast.error(error instanceof Error ? error.message : String(error));
+    }
+}
 
 // 词元为整数, 只显示千位分隔符。
 function formatCount(value: number): string {
@@ -216,7 +229,7 @@ function SpendingTable({ owner, onView }: { owner: boolean; onView: (id: number)
                         <Search className="size-4" />
                         {t('filters.apply')}
                     </Button>
-                    <Button variant="outline" size="sm" className="h-8 rounded-xl" onClick={() => window.open(billingExportUrl(filter), '_blank')}>
+                    <Button variant="outline" size="sm" className="h-8 rounded-xl" onClick={() => void exportBillingRecords(filter)}>
                         <Download className="size-4" />
                         {t('filters.export')}
                     </Button>

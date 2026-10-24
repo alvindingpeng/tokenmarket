@@ -19,7 +19,7 @@ type Dispute struct {
 	ChannelID  int        `json:"channel_id"`                       // 渠道 ID
 	ModelName  string     `json:"model_name" gorm:"size:128"`       // 模型名
 	UserCost   float64    `json:"user_cost" gorm:"type:decimal(18,6);not null"`
-	Reason     string     `json:"reason" gorm:"size:512;not null"`  // 申诉原因/问题描述
+	Reason     string     `json:"reason" gorm:"size:512;not null"` // 申诉原因/问题描述
 	Status     string     `json:"status" gorm:"size:16;not null;default:'pending';index"`
 	ReviewNote string     `json:"review_note" gorm:"size:512;not null;default:''"` // 审核备注
 	ReviewedBy uint       `json:"reviewed_by" gorm:"not null;default:0"`           // 审核管理员 ID

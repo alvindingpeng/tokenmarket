@@ -1020,7 +1020,11 @@ func syncChannelKeys(tx *gorm.DB, channelID int, requested []model.ChannelKeyCon
 	for _, requestedKey := range requested {
 		if current, ok := existingByName[requestedKey.Name]; ok {
 			if current.Key != requestedKey.Key || current.Enabled != requestedKey.Enabled {
-				if err := tx.Model(&model.ChannelKey{}).Where("id = ?", current.ID).
+				// map 更新绕过字段序列化器, key 列密文由 gorm 回调按归属绑定生成, Model 必须带上
+				// (channel_id, name) 身份: 回调推不出归属会 fail closed 拒绝写入。
+				identity := model.ChannelKey{ID: current.ID, ChannelID: current.ChannelID,
+					ChannelKeyConfig: model.ChannelKeyConfig{Name: current.Name}}
+				if err := tx.Model(&identity).Where("id = ?", current.ID).
 					Updates(map[string]any{"key": requestedKey.Key, "enabled": requestedKey.Enabled}).Error; err != nil {
 					return fmt.Errorf("failed to update channel key: %w", err)
 				}

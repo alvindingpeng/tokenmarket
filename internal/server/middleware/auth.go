@@ -94,7 +94,8 @@ func APIKeyAuth() gin.HandlerFunc {
 			return
 		}
 
-		apiKeyObj, err := op.APIKeyGetByAPIKey(apiKey, c.Request.Context())
+		// 常规凭据按指纹查; 重放自调用用签名凭据(绑定 key ID 与过期时间), 由 op 统一解析。
+		apiKeyObj, err := op.APIKeyResolveCredential(apiKey, c.Request.Context())
 		if err != nil {
 			resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
 			c.Abort()

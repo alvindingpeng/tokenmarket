@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'use-intl';
 import { AlertCircle, ArrowDownToLine, ChevronLeft, ChevronRight, ClipboardList, Loader2, RefreshCw, Search, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { auditExportUrl, useAuditActions, useAuditLogs } from '@/api/audit';
+import { downloadFile, isStepUpRequired } from '@/api/client';
 import { formatDateTime } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -67,6 +69,24 @@ export default function Audit() {
         setPage(0);
     };
 
+    // 导出与当前筛选同源: 先把草稿条件落到生效态再下载, 避免"看到的和导出的不一样"。
+    // 审计导出是敏感导出, 走通用客户端(撞上 step-up 会弹密码确认并带凭证重发这一次);
+    // 不用 window.open —— 那样带不了验证头, 服务端只会回一段 JSON。
+    const exportAuditRecords = async () => {
+        try {
+            await downloadFile(auditExportUrl({
+                keyword: draftKeyword.trim() || undefined,
+                operator: draftOperator.trim() || undefined,
+                action: action || undefined,
+                from: toBoundary(from, false),
+                to: toBoundary(to, true),
+            }), 'switchyard-audit.csv');
+        } catch (error) {
+            // 用户在密码确认里点了取消 = 请求根本没发出去, 不必再报错。
+            if (!isStepUpRequired(error)) toast.error(error instanceof Error ? error.message : String(error));
+        }
+    };
+
     return (
         <div className="flex h-full min-h-0 flex-col gap-3 pb-24 md:pb-0">
             <div className="flex shrink-0 items-center justify-between gap-4">
@@ -105,14 +125,7 @@ export default function Audit() {
                 <Input type="date" className="h-9 w-36 rounded-xl" aria-label={t('filters.to')} value={to} onChange={(event) => { setTo(event.target.value); setPage(0); }} />
                 <Button variant="outline" size="sm" className="rounded-xl" onClick={applyTextFilters}><Search className="size-4" />{t('filters.search')}</Button>
                 <Button variant="ghost" size="sm" className="rounded-xl" onClick={resetFilters}>{t('filters.reset')}</Button>
-                {/* 导出与当前筛选同源: 先把草稿条件落到生效态再下载, 避免"看到的和导出的不一样"。 */}
-                <Button variant="outline" size="sm" className="rounded-xl" onClick={() => window.open(auditExportUrl({
-                    keyword: draftKeyword.trim() || undefined,
-                    operator: draftOperator.trim() || undefined,
-                    action: action || undefined,
-                    from: toBoundary(from, false),
-                    to: toBoundary(to, true),
-                }), '_blank')}><ArrowDownToLine className="size-4" />{t('filters.export')}</Button>
+                <Button variant="outline" size="sm" className="rounded-xl" onClick={() => void exportAuditRecords()}><ArrowDownToLine className="size-4" />{t('filters.export')}</Button>
             </div>
 
             <div className="min-h-0 flex-1 overflow-auto overscroll-contain rounded-3xl border border-border bg-card">

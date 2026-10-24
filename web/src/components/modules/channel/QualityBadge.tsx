@@ -5,7 +5,7 @@ import type { ChannelQualitySnapshot, ChannelTrustLevel } from '@/api/channel';
 // 配色遵循「绿=已转正、蓝=观察中、黄=延长观察、红=已收回」的语义梯度，
 // 与审核徽章（draft/pending/approved/rejected/stale）用同一套语义色，避免两套色系打架。
 // 文案走 i18n（channel.quality.trust.*），这里只保留与语言无关的样式。
-export const trustTone: Record<ChannelTrustLevel, string> = {
+const trustTone: Record<ChannelTrustLevel, string> = {
     trusted: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-emerald-500/20',
     observing: 'bg-sky-500/10 text-sky-600 dark:text-sky-400 ring-sky-500/20',
     probation: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-amber-500/20',
@@ -14,7 +14,7 @@ export const trustTone: Record<ChannelTrustLevel, string> = {
 
 // gradeTone 是质量等级的展示配色。
 // 空等级（样本不足）单独给一档中性色，避免显示成 "D" 让人误判成最差。
-export const gradeTone: Record<string, string> = {
+const gradeTone: Record<string, string> = {
     A: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-emerald-500/20',
     B: 'bg-sky-500/10 text-sky-600 dark:text-sky-400 ring-sky-500/20',
     C: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-amber-500/20',

@@ -4,14 +4,14 @@ import "time"
 
 // 余额流水类型: 预扣/结算/释放由计费链路写入, 调账由管理员改余额时写入。
 const (
-	LedgerKindReserve = "reserve" // 请求开始, 冻结预估费用。
-	LedgerKindSettle  = "settle"  // 请求结束, 解冻预估并扣除实际费用。
-	LedgerKindRelease = "release" // 驳回: 无用量, 解冻预估并退还。
-	LedgerKindAdjust  = "adjust"  // 管理员直接设置余额(充值/扣减)。
-	LedgerKindTopup   = "topup"   // 充值入账。
+	LedgerKindReserve = "reserve"    // 请求开始, 冻结预估费用。
+	LedgerKindSettle  = "settle"     // 请求结束, 解冻预估并扣除实际费用。
+	LedgerKindRelease = "release"    // 驳回: 无用量, 解冻预估并退还。
+	LedgerKindAdjust  = "adjust"     // 管理员直接设置余额(充值/扣减)。
+	LedgerKindTopup   = "topup"      // 充值入账。
 	LedgerKindRedeem  = "redemption" // 兑换码入账。
-	LedgerKindBonus   = "bonus"   // 充值满赠送的余额(D6); 不计入累计充值口径。
-	LedgerKindRefund  = "refund"  // 申诉退款返还余额并记录冲正。
+	LedgerKindBonus   = "bonus"      // 充值满赠送的余额(D6); 不计入累计充值口径。
+	LedgerKindRefund  = "refund"     // 申诉退款返还余额并记录冲正。
 	// 提现三态 + 打款回滚(P3): 记在收益池口径, Balance 不动(充值款不可提现),
 	// amount = 可提余额的变动(freeze -a / unfreeze +a), paid 与 rollback 可提不变故记 0。
 	LedgerKindWithdrawFreeze   = "withdraw_freeze"

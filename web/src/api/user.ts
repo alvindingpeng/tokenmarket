@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { queryOptions, useMutation } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { apiRequest, apiUnauthorizedEvent, setAPIKey } from './client';
+import { apiRequest, apiUnauthorizedEvent, clearStepUpToken, setAPIKey } from './client';
 
 /**
  * 用户登录请求
@@ -108,6 +108,7 @@ export const useAuthStore = create<AuthState>()(
 
             setAuth: (user: UserView) => {
                 setAPIKey(null);
+                clearStepUpToken(); // 新登录是新会话, 旧会话的二次验证凭证一律作废。
                 set({
                     isAuthenticated: true,
                     isAPIKeyAuth: false,
@@ -155,6 +156,7 @@ export const useAuthStore = create<AuthState>()(
 
             logout: () => {
                 setAPIKey(null);
+                clearStepUpToken(); // 登出即丢弃二次验证凭证, 不给下一个使用者留通行证。
                 set({
                     isAuthenticated: false,
                     isAPIKeyAuth: false,
@@ -279,6 +281,7 @@ export function useChangePassword() {
                     new_password: data.newPassword,
                 },
             }),
+        onSuccess: () => clearStepUpToken(), // 改密即换 token_version: 旧的二次验证凭证当场作废, 本地也不留。
     });
 }
 

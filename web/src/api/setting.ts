@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ApiError, apiRequest } from './client';
+import { apiRequest, apiUpload, downloadFile } from './client';
 import { POLL_SLOW } from '@/lib/polling';
 
 /**
@@ -147,13 +147,6 @@ interface DBImportResult {
     rows_affected: Record<string, number>;
 }
 
-function parseFilename(contentDisposition: string | null): string | null {
-    if (!contentDisposition) return null;
-    // e.g. attachment; filename="switchyard-export-20250101120000.json"
-    const match = contentDisposition.match(/filename="([^"]+)"/i);
-    return match?.[1] ?? null;
-}
-
 function exportFallbackFilename() {
     const d = new Date();
     const pad = (n: number) => String(n).padStart(2, '0');
@@ -161,39 +154,14 @@ function exportFallbackFilename() {
     return `switchyard-export-${ts}.json`;
 }
 
-async function downloadBlob(blob: Blob, filename: string) {
-    const url = URL.createObjectURL(blob);
-    try {
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-    } finally {
-        URL.revokeObjectURL(url);
-    }
-}
-
 /**
  * 导出数据库（下载 JSON 文件）
+ * 整库导出是敏感导出: 走通用客户端, 撞上 step-up 时弹密码确认并带凭证重发这一次。
  */
 export function useExportDB() {
     return useMutation({
         mutationFn: async () => {
-            const res = await fetch('./api/v1/setting/export', {
-                method: 'GET',
-                credentials: 'include',
-            });
-
-            if (!res.ok) {
-                const data = await res.json().catch(() => null) as { message?: string } | null;
-                throw new ApiError(res.status, data?.message || `Request failed: ${res.status}`);
-            }
-
-            const blob = await res.blob();
-            const filename = parseFilename(res.headers.get('content-disposition')) || exportFallbackFilename();
-            await downloadBlob(blob, filename);
+            const filename = await downloadFile('/api/v1/setting/export', exportFallbackFilename());
             return { filename };
         },
     });
@@ -201,32 +169,14 @@ export function useExportDB() {
 
 /**
  * 导入数据库（上传 JSON 文件）
+ * 备份导入是高危写操作: 与导出同一套 step-up 二次确认。
  */
 export function useImportDB() {
     return useMutation({
         mutationFn: async (file: File) => {
             const form = new FormData();
             form.append('file', file);
-
-            const res = await fetch('./api/v1/setting/import', {
-                method: 'POST',
-                body: form,
-                credentials: 'include',
-            });
-
-            const contentType = res.headers.get('content-type') || '';
-            const isJson = contentType.includes('application/json');
-            const data = isJson
-                ? await res.json() as { message?: string; data?: DBImportResult }
-                : await res.text();
-
-            if (!res.ok) {
-                const message = typeof data === 'string' ? data : data.message;
-                throw new ApiError(res.status, message || `Request failed: ${res.status}`);
-            }
-
-            // 支持后端标准 ApiResponse：{code,message,data:{...}}
-            return typeof data === 'string' ? data as unknown as DBImportResult : data.data as DBImportResult;
+            return await apiUpload<DBImportResult>('/api/v1/setting/import', form);
         },
     });
 }

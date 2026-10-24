@@ -33,6 +33,7 @@ func SettingList(ctx context.Context) ([]model.Setting, error) {
 }
 
 // SettingUpsert 写入或更新任意键(含内部键); 供启动初始化等内部流程使用。
+// 密钥类/内部键落库为信封密文(map 更新由 gorm 回调加密), 运行时缓存与读取仍是明文。
 func SettingUpsert(key model.SettingKey, value string) error {
 	setting := model.Setting{Key: key, Value: value}
 	result := db.GetDB().Model(&setting).
@@ -42,7 +43,9 @@ func SettingUpsert(key model.SettingKey, value string) error {
 		return fmt.Errorf("failed to upsert setting: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		if err := db.GetDB().Create(&setting).Error; err != nil {
+		// 兜底创建必须用干净的明文结构体: map 更新会把 map 值(已是库内密文形态)回写进上面的
+		// setting 结构体, 拿它 Create 会被序列化器二次加密, 解开一层后剩下的是信封而不是秘密。
+		if err := db.GetDB().Create(&model.Setting{Key: key, Value: value}).Error; err != nil {
 			return fmt.Errorf("failed to create setting: %w", err)
 		}
 	}

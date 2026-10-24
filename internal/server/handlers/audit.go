@@ -31,8 +31,10 @@ func init() {
 				Allow(model.RoleAdmin).
 				Handle(listAuditActions),
 		).
+		// 审计导出是敏感导出(谁做过什么全在里面): 要求 step-up; 列表/筛选只读不设闸。
 		AddRoute(
 			router.NewRoute("/export", http.MethodGet).
+				Use(middleware.RequireStepUp()).
 				Allow(model.RoleAdmin).
 				Handle(exportAuditLogs),
 		)

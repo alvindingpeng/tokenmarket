@@ -45,6 +45,8 @@ func AutoBackupRun() (AutoBackupResult, error) {
 	path := filepath.Join(BackupDir(), name)
 
 	// VACUUM INTO 需要在主库连接上执行, 生成的文件是完整一致快照。
+	// 注意: 这是物理快照, 静态凭据列存的是信封密文(绑定本机主密钥): 换一台主密钥不同的实例恢复时,
+	// 必须连同同一份 KEK 一起搬; 跨 KEK 的迁移/恢复请走 JSON 导出导入(导出解密、导入用目标 KEK 重加密)。
 	sqlDB, err := db.GetDB().DB()
 	if err != nil {
 		return AutoBackupResult{}, fmt.Errorf("get sql db: %w", err)

@@ -63,11 +63,19 @@ type Backup struct {
 	RemotePassword string `mapstructure:"remote_password"` // WebDAV 密码(可选)。
 }
 
+// Secret 静态凭据信封加密的主密钥(KEK)配置: 只走 config.json 或环境变量(SWITCHYARD_SECRET_*), 不入库。
+// 主密钥没有任何默认值或零值回退: 缺失/非法时启动拒绝(fail closed), 不存在"未配置就明文跑"的模式。
+type Secret struct {
+	KEKFile string `mapstructure:"kek_file"` // 主密钥文件路径(内容 hex 或 base64, 32 字节)。
+	KeyID   string `mapstructure:"key_id"`   // 可选显式密钥 ID; 留空按密钥材料派生(共享 KEK 的实例自动一致)。
+}
+
 type Config struct {
 	Server   Server   `mapstructure:"server"`
 	Log      Log      `mapstructure:"log"`
 	Database Database `mapstructure:"database"`
 	Backup   Backup   `mapstructure:"backup"`
+	Secret   Secret   `mapstructure:"secret"`
 }
 
 var AppConfig Config
@@ -118,4 +126,7 @@ func setDefaults() {
 	viper.SetDefault("database.type", "sqlite")
 	viper.SetDefault("database.path", "data/data.db")
 	viper.SetDefault("log.level", "info")
+	// 主密钥配置默认留空即可: 空表示"没配", 启动会 fail closed 报错, 不会有任何默认密钥。
+	viper.SetDefault("secret.kek_file", "")
+	viper.SetDefault("secret.key_id", "")
 }

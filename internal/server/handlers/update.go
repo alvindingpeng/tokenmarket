@@ -34,6 +34,7 @@ func init() {
 		AddRoute(
 			router.NewRoute("", http.MethodPost).
 				Allow(model.RoleAdmin).
+				Use(middleware.RequireStepUp()).
 				Handle(updateFunc),
 		)
 }

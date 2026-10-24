@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useTranslations } from 'use-intl';
 import { ChevronLeft, ChevronRight, Download, Loader2, Logs, Search, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { logExportUrl, useLogList, useLogs } from '@/api/log';
+import { downloadFile, isStepUpRequired } from '@/api/client';
 import { VirtualizedGrid } from '@/components/common/VirtualizedGrid';
 import { LogCard } from './Item';
 import { Input } from '@/components/ui/input';
@@ -54,14 +56,20 @@ function LogHistory() {
     };
 
     // 导出使用与列表一致的筛选条件, 浏览器直接下载 CSV。
-    const exportLogs = () => {
-        window.open(logExportUrl({
-            keyword: keyword || undefined,
-            status: status || undefined,
-            clientIp: clientIp || undefined,
-            model: model || undefined,
-            channel: channel || undefined,
-        }), '_blank');
+    // 日志导出是敏感导出, 走通用客户端(撞上 step-up 会弹密码确认并带凭证重发这一次)。
+    const exportLogs = async () => {
+        try {
+            await downloadFile(logExportUrl({
+                keyword: keyword || undefined,
+                status: status || undefined,
+                clientIp: clientIp || undefined,
+                model: model || undefined,
+                channel: channel || undefined,
+            }), 'switchyard-logs.csv');
+        } catch (error) {
+            // 用户取消密码确认 = 请求没发出去, 不必再报错。
+            if (!isStepUpRequired(error)) toast.error(error instanceof Error ? error.message : String(error));
+        }
     };
 
     return (
@@ -119,7 +127,7 @@ function LogHistory() {
                     <Search className="size-4" />
                     {t('search')}
                 </Button>
-                <Button variant="outline" size="sm" className="rounded-xl" onClick={exportLogs}>
+                <Button variant="outline" size="sm" className="rounded-xl" onClick={() => void exportLogs()}>
                     <Download className="size-4" />
                     {t('export')}
                 </Button>

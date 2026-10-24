@@ -17,7 +17,8 @@ import (
 func init() {
 	router.NewGroupRouter("/api/v1/ops/billing-recovery").Use(middleware.Auth()).
 		AddRoute(router.NewRoute("/list", http.MethodGet).Allow(model.RoleAdmin).Handle(listBillingRecovery)).
-		AddRoute(router.NewRoute("/run", http.MethodPost).Allow(model.RoleAdmin).Handle(runBillingRecovery))
+		// 计费恢复会按快照重放资金变更, 属高危写操作: 要求 step-up; /list 只读不设闸。
+		AddRoute(router.NewRoute("/run", http.MethodPost).Use(middleware.RequireStepUp()).Allow(model.RoleAdmin).Handle(runBillingRecovery))
 }
 
 func listBillingRecovery(c *gin.Context) {

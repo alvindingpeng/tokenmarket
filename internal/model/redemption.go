@@ -6,11 +6,11 @@ import "time"
 type RedemptionBatch struct {
 	ID           uint       `json:"id" gorm:"primaryKey"`
 	Name         string     `json:"name" gorm:"size:64;not null"`
-	Credits      float64    `json:"credits" gorm:"type:decimal(18,6);not null"`                    // 每张面额(余额单位)。
-	Count        int        `json:"count" gorm:"not null"`                                          // 生成张数。
-	Prefix       string     `json:"prefix" gorm:"size:8"`                                           // 码前缀, 便于识别活动来源。
-	PerUserLimit int        `json:"per_user_limit" gorm:"not null;default:0"`                       // 单用户可兑张数上限; 0 表示不限。
-	ExpiresAt    *time.Time `json:"expires_at"`                                                     // 过期时间; 空表示不过期。
+	Credits      float64    `json:"credits" gorm:"type:decimal(18,6);not null"` // 每张面额(余额单位)。
+	Count        int        `json:"count" gorm:"not null"`                      // 生成张数。
+	Prefix       string     `json:"prefix" gorm:"size:8"`                       // 码前缀, 便于识别活动来源。
+	PerUserLimit int        `json:"per_user_limit" gorm:"not null;default:0"`   // 单用户可兑张数上限; 0 表示不限。
+	ExpiresAt    *time.Time `json:"expires_at"`                                 // 过期时间; 空表示不过期。
 	CreatedBy    uint       `json:"created_by" gorm:"index"`
 	CreatedAt    time.Time  `json:"created_at"`
 }

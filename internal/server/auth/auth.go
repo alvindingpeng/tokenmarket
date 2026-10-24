@@ -83,12 +83,24 @@ func GenerateJWTToken(user model.User, expiresSec int) (string, int, error) {
 	return token, maxAge, nil
 }
 
+// strictJWTParserOptions 令牌解析的统一硬约束: 只收 HS256(防算法混淆)、签发者必须是本服务
+// (防拿别的系统签的 JWT 冒充)、必须带过期时间(防永久票)、签发时间不得在将来(防预签)。
+// 登录令牌与 step-up 凭证共用同一把密钥, 两者都按这套约束解析。
+func strictJWTParserOptions() []jwt.ParserOption {
+	return []jwt.ParserOption{
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithIssuer(conf.APP_NAME),
+		jwt.WithExpirationRequired(),
+		jwt.WithIssuedAt(),
+	}
+}
+
 // VerifyJWTToken 校验令牌并返回身份; 令牌有效但账号已禁用/改密/角色变化时由调用方按 claims 与库内账号比对。
 func VerifyJWTToken(token string) (*Claims, error) {
 	claims := &Claims{}
 	jwtToken, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
 		return secret, nil
-	})
+	}, strictJWTParserOptions()...)
 	if err != nil || !jwtToken.Valid {
 		return nil, fmt.Errorf("invalid token")
 	}

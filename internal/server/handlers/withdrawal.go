@@ -39,21 +39,26 @@ func init() {
 				Allow(model.RoleAdmin, model.RoleReseller).
 				Handle(cancelWithdrawal),
 		).
+		// 提现审批是资金高危操作: 审核/打款/回滚统一要求 step-up(密码二次确认后才放行),
+		// 申请/取消/查询不动别人的钱, 不加这道闸。
 		AddRoute(
 			router.NewRoute("/review", http.MethodPost).
 				Use(middleware.RequireJSON()).
+				Use(middleware.RequireStepUp()).
 				Allow(model.RoleAdmin).
 				Handle(reviewWithdrawal),
 		).
 		AddRoute(
 			router.NewRoute("/mark-paid", http.MethodPost).
 				Use(middleware.RequireJSON()).
+				Use(middleware.RequireStepUp()).
 				Allow(model.RoleAdmin).
 				Handle(payWithdrawal),
 		).
 		AddRoute(
 			router.NewRoute("/rollback", http.MethodPost).
 				Use(middleware.RequireJSON()).
+				Use(middleware.RequireStepUp()).
 				Allow(model.RoleAdmin).
 				Handle(rollbackWithdrawal),
 		)
