@@ -6,7 +6,7 @@
 
 **A self-hosted LLM marshalling gateway — many upstreams in, one protocol out, every call metered.**
 
-[![version](https://img.shields.io/badge/version-v0.38.0-4c6ef5?style=flat-square)](#versioning-and-releases)
+[![version](https://img.shields.io/badge/version-v1.0.0-4c6ef5?style=flat-square)](#versioning-and-releases)
 [![go](https://img.shields.io/badge/go-1.26-00ADD8?style=flat-square&logo=go&logoColor=white)](go.mod)
 [![license](https://img.shields.io/badge/license-AGPL--3.0--only-blue?style=flat-square)](LICENSE)
 [![deploy](https://img.shields.io/badge/deploy-single%20binary-2b8a3e?style=flat-square)](#quick-start)
@@ -15,11 +15,11 @@ English | [简体中文](README_zh.md)
 
 </div>
 
-> **Name and lineage.** This codebase began as a production fork of
-This project has grown from an early open-source baseline and since diverged heavily.
-> well past it — routing, billing, media handling, and operations were largely rewritten. It now ships
-> under its own name, **Switchyard**, which describes what it actually does: a marshalling yard for LLM
-> traffic. The delta against the original is itemised in [CHANGELOG.md](CHANGELOG.md).
+> **Name and lineage.** Switchyard grew out of an early open-source LLM-gateway baseline and has since
+> diverged well past it — routing, billing, media handling, and operations were largely rewritten. It now
+> ships under its own name, **Switchyard**, which describes what it actually does: a marshalling yard for
+> LLM traffic. The work remains licensed under AGPL-3.0 (see [LICENSE](LICENSE)); the delta against the
+> original baseline is itemised in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -57,7 +57,7 @@ This project has grown from an early open-source baseline and since diverged hea
 - [Versioning and releases](#versioning-and-releases)
 - [Roadmap](#roadmap)
 - [Acknowledgments](#acknowledgments)
-
+- [License](#license)
 
 ---
 
@@ -118,9 +118,9 @@ the request is in flight, and keeps a record of what it cost.
 
 ### Get a binary
 
-**This fork publishes standard release archives.** The tag-triggered release workflow uploads
-`switchyard-<os>-<arch>.zip` assets (including the running platform) after the release notes are created.
-For a local build or an offline deployment, build the binary yourself:
+**Standard release archives are published for every version tag.** The tag-triggered release workflow
+uploads `switchyard-<os>-<arch>.zip` assets (including the running platform) after the release notes are
+created. For a local build or an offline deployment, build the binary yourself:
 
 ```bash
 bash scripts/build-local.sh -o ./switchyard    # one binary for the machine you are on
@@ -139,9 +139,7 @@ is the default SQLite database.
 
 ### Docker
 
-This fork publishes **no container image** — the upstream workflow pushes to registries this repository
-does not own, so `docker run` examples pointing at upstream image names will not deliver this fork's code.
-Build the image locally instead:
+Switchyard publishes **no container image**. Build the image locally:
 
 ```bash
 ./scripts/build.sh            # cross-compiles into build/
@@ -149,9 +147,9 @@ docker build -f scripts/dockerfile/Dockerfile -t switchyard .
 docker run -d --name switchyard -v /path/to/data:/app/data -p 8080:8080 switchyard
 ```
 
-The repo ships a `docker-compose.yml`, but note its `image:` line still points at the **upstream** image
-image name — swap it for the tag you just built locally before `docker compose up -d`, or
-you will be running upstream's build with none of this fork's code.
+The repo ships a `docker-compose.yml`, but note its `image:` line may still point at a placeholder name —
+swap it for the tag you just built locally before `docker compose up -d`, or you will not be running your
+own build.
 
 ### First login
 
@@ -195,7 +193,7 @@ URL must **not** include `/v1` or a specific endpoint:
 | Anthropic Messages | `/v1/messages` | `https://api.anthropic.com` |
 | OpenAI Images | `/v1/images/generations`, `/v1/images/edits` | `https://api.openai.com` |
 
-> 💡 **Gemini and other providers.** Native Gemini protocol support was removed upstream at `v0.13.9`:
+> 💡 **Gemini and other providers.** Native Gemini protocol support was removed at `v0.13.9`:
 > `gemini`-typed channels migrate to the OpenAI Chat protocol. Point such channels at the provider's
 > OpenAI-compatible endpoint instead.
 
@@ -513,25 +511,16 @@ Every key is overridable through the environment as `SWITCHYARD_` + the path joi
 | MySQL | `user:password@tcp(host:port)/dbname` |
 | PostgreSQL | `host=localhost user=postgres password=xxx dbname=switchyard port=5432 sslmode=disable` |
 
-> 💡 Create the MySQL/PostgreSQL database yourself; the schema is migrated automatically.
-> Schema migrations are ordered, additive files under `internal/db/migrate/` — they never rewrite history,
-> which is what makes the "repricing must not alter old invoices" guarantee hold across upgrades.
+> 💡 Create the MySQL/PostgreSQL database yourself; the program migrates tables but does not issue
+> `CREATE DATABASE`. SQLite is the zero-config default and is what the single-binary deploy expects.
 
 ### Runtime settings (not in the config file)
 
-Thirty-plus operational settings — statistics flush interval, model info sync interval, markup ratio,
-registration switches, reserve caps, score weights, log retention, backup cadence, health probe tuning,
-alert thresholds, metrics auth, site identity — live in the database under the `setting` table and are
-edited in the console. They are **exportable and importable** as JSON (`/api/v1/setting/export`,
-`/api/v1/setting/import`), so a tuned instance can be reproduced on another.
-
-Saving one of the cadence settings (statistics flush, model sync, log retention, archive and backup
-intervals, health probe cadence, update-check interval and its on/off switches) reschedules the running
-background task immediately — no restart. A setting that fails to apply returns an error rather than
-reporting success, because a silently-ignored interval is worse than a visible failure.
-
-> ⚠️ **Shutdown with `Ctrl+C` or `SIGTERM`, never `kill -9`.** Statistics accumulate in memory and flush to
-> the database every `stats_save_interval` minutes (default 10); a forced kill drops whatever is buffered.
+Most behaviour is tuned in the console and stored in the database — routing weights, timeouts, rate limits,
+prices, alerts, site identity, registration, and metrics auth among them. The settings API reads and writes
+these; the config file only holds what must exist before the database is reachable (listen address, database
+DSN, log level, backup credentials). Two internal keys, `auth_secret` and `metrics_token`, are generated on
+first start and never returned by `/api/v1/setting/list`.
 
 ---
 
@@ -725,7 +714,7 @@ go run main.go start
 > 💡 `static/static.go` embeds `static/out` into the binary. Build the frontend **before** the backend,
 > or you ship yesterday's UI inside today's binary.
 
-Two build scripts matter if you deploy this fork:
+Two build scripts matter for deployment:
 
 ```bash
 bash scripts/build-local.sh -o /path/to/binary   # local: web + backend, injects BOTH version strings
@@ -756,17 +745,17 @@ gofmt -l internal/server/handlers/      # must print nothing
 ```
 
 - The vitest suite targets **pure frontend logic**: price formatting, stats math, URL assembly. It was
-  written from zero in this fork; see [docs/frontend-tests.md](docs/frontend-tests.md).
+  written from zero for this project; see [docs/frontend-tests.md](docs/frontend-tests.md).
 - The Go unit tests (in `internal/model`, `internal/op`, `internal/ratelimit`, `internal/relay`) cover the
   auto-add merge rules, alert dedup, backup crypto and remote push, log masking, limit clamping, and the
-  wait queue. `gofmt` is gated only on `internal/server/handlers/`; `internal/` still carries upstream
+  wait queue. `gofmt` is gated only on `internal/server/handlers/`; `internal/` still carries some legacy
   formatting drift.
 - Cross-stack behaviour is covered by an out-of-tree end-to-end harness (156 assertions: billing, settlement,
   rate limits, image protocols, auto-add rules) that builds a temporary binary with a fresh SQLite
   database on an isolated port, so it never touches production data.
 - `.github/workflows/build.yaml` builds frontend + backend on every push. `.github/workflows/release-assets.yaml`
   builds the frontend and standard cross-platform archives on version tags, then uploads them to the matching Release.
-  The existing upstream-oriented `release.yaml` remains separate from this fork's release-asset workflow.
+  The legacy `release.yaml` workflow remains separate from this project's release-asset workflow.
 
 ---
 
@@ -783,7 +772,7 @@ Semver here: a new user-visible capability bumps the **minor** version; fixes, s
 the **patch** version. At runtime the version appears in `switchyard version`, `/healthz`,
 `switchyard_build_info`, and the console's Settings → Info page.
 
-A `post-commit` hook keeps the fork in sync in real time: it pushes `HEAD` to `main` on GitHub, then — if
+A `post-commit` hook keeps the repository in sync in real time: it pushes `HEAD` to `main` on GitHub, then — if
 the marker changed — tags, pushes the tag, and creates the Release from the matching CHANGELOG section
 (idempotent: it PATCHes rather than duplicating). Logs: `.git/auto-push.log`, `.git/publish-release.log`.
 
@@ -797,7 +786,7 @@ for the self-update and asset pipeline, and [CHANGELOG.md](CHANGELOG.md) for wha
 
 ## Roadmap
 
-Known gaps in this fork, with the reasoning kept where the code is:
+Known gaps, with the reasoning kept where the code is:
 
 | Area | Status |
 |------|--------|
@@ -806,8 +795,8 @@ Known gaps in this fork, with the reasoning kept where the code is:
 | Model capability detection by probe instead of name keywords | Done (v0.19.0): driven by the capability registry, name keywords kept only as fallback |
 | Scheduled channel model sync (cron rather than on-save) | Rejected for now: unbounded upstream cost and churn risk |
 | Automatic pricing / automatic listing on auto-add | Deliberately excluded: both are money-moving actions |
-| In-app self-update | Enabled for admins; checks this fork's Releases and atomically replaces the service binary from the matching `switchyard-<os>-<arch>.zip` asset |
-| Container images for this fork | Not published |
+| In-app self-update | Enabled for admins; checks this project's Releases and atomically replaces the service binary from the matching `switchyard-<os>-<arch>.zip` asset |
+| Container images | Not published |
 
 Full backlog: [docs/roadmap.md](docs/roadmap.md).
 
@@ -822,5 +811,4 @@ Full backlog: [docs/roadmap.md](docs/roadmap.md).
 
 ## License
 
-AGPL-3.0-only, as upstream. See [LICENSE](LICENSE).
-
+AGPL-3.0-only. See [LICENSE](LICENSE).
