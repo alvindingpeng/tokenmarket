@@ -74,6 +74,28 @@ export type ChannelEgress = {
     enabled: boolean;
 };
 
+export type ChannelEgressHealth = {
+    id: number;
+    name: string;
+    kind: 'direct' | 'http' | 'socks5';
+    region: string;
+    weight: number;
+    enabled: boolean;
+    samples: number;
+    has_data: boolean;
+    success_rate: number;
+    avg_wait_ms: number;
+    cooldown_until?: string | null;
+    cooldown_remaining_ms: number;
+    cooling: boolean;
+    updated_at?: string | null;
+};
+
+export type ChannelEgressHealthResponse = {
+    channel_id: number;
+    egresses: ChannelEgressHealth[];
+};
+
 export type ChannelDetail = {
     id: number;
     name: string;
@@ -240,6 +262,17 @@ export type ChannelQualitySummary = {
     yesterday?: ChannelQualitySnapshot;
     trend: ChannelQualitySnapshot[];
 };
+
+// useChannelEgressHealth 拉取渠道出口运行时健康快照。
+export function useChannelEgressHealth(channelId: number, enabled = true) {
+    return useQuery({
+        queryKey: ['channels', 'egress-health', channelId],
+        queryFn: () => apiRequest<ChannelEgressHealthResponse>(`/api/v1/channel/egress-health/${channelId}`),
+        enabled: enabled && channelId > 0,
+        refetchInterval: POLL_SLOW,
+        refetchOnMount: 'always',
+    });
+}
 
 // useChannelQuality 拉取单个渠道的质量概览与趋势。
 // 默认关闭自动轮询：质量数据每天才更新一次，实时轮询纯属浪费；

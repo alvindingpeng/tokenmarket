@@ -841,7 +841,20 @@
             "trendRequests": "請求",
             "trendSuccessRate": "成功率",
             "trendAvgLatency": "平均延遲",
-            "trendEmpty": "暫無資料"
+            "trendEmpty": "暫無資料",
+            "egressHealth": "出口健康",
+            "egressLoading": "正在載入出口健康…",
+            "egressLoadFailed": "出口健康載入失敗",
+            "egressEmpty": "未設定出口池，目前使用通道代理。",
+            "egressDirect": "直連",
+            "egressHealthy": "健康",
+            "egressCold": "暫無樣本",
+            "egressCooling": "冷卻中",
+            "egressDisabled": "已停用",
+            "egressSuccess": "成功率",
+            "egressLatency": "延遲",
+            "egressSamples": "樣本",
+            "egressCooldownRemaining": "冷卻剩餘 {duration}"
         },
         "form": {
             "stepPreset": "開始",

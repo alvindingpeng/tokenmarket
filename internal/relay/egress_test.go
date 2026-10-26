@@ -3,6 +3,7 @@ package relay
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
@@ -29,7 +30,27 @@ func testEgress(id int, name string, weight int) model.ChannelEgress {
 	}
 }
 
-// TestPickEgressWithoutPool 没有配出口池的渠道必须回落到渠道自身的代理配置。
+// TestEgressRuntimeViews verifies cold, sampled, and cooling snapshots.
+func TestEgressRuntimeViews(t *testing.T) {
+	resetEgressStates()
+	t.Cleanup(resetEgressStates)
+	egress := testEgress(9001, "snapshot", 1)
+	views := EgressRuntimeViews([]model.ChannelEgress{egress, testEgress(9002, "cold", 1)})
+	if len(views) != 2 || views[0].EgressID != 9001 || views[0].HasData || views[0].Samples != 0 {
+		t.Fatalf("unexpected cold snapshot: %#v", views)
+	}
+	recordEgressSample(9001, 20, 125, true)
+	views = EgressRuntimeViews([]model.ChannelEgress{egress})
+	if len(views) != 1 || !views[0].HasData || views[0].Samples != 1 || views[0].SuccessRate <= 0 || views[0].AvgWaitMs != 125 {
+		t.Fatalf("unexpected sampled snapshot: %#v", views)
+	}
+	coolEgress(9001, 10)
+	views = EgressRuntimeViews([]model.ChannelEgress{egress})
+	if !views[0].Cooling || views[0].CooldownRemainingMs <= 0 || views[0].CooldownUntil <= time.Now().UnixMilli() {
+		t.Fatalf("unexpected cooldown snapshot: %#v", views[0])
+	}
+}
+
 func TestPickEgressWithoutPool(t *testing.T) {
 	resetEgressStates()
 

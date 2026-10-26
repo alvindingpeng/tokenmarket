@@ -841,7 +841,20 @@
             "trendRequests": "Requests",
             "trendSuccessRate": "Success Rate",
             "trendAvgLatency": "Avg Latency",
-            "trendEmpty": "No data yet"
+            "trendEmpty": "No data yet",
+            "egressHealth": "Egress health",
+            "egressLoading": "Loading egress health…",
+            "egressLoadFailed": "Failed to load egress health",
+            "egressEmpty": "No egress pool: the channel proxy is in use.",
+            "egressDirect": "Direct",
+            "egressHealthy": "Healthy",
+            "egressCold": "No samples",
+            "egressCooling": "Cooling",
+            "egressDisabled": "Disabled",
+            "egressSuccess": "Success",
+            "egressLatency": "Latency",
+            "egressSamples": "Samples",
+            "egressCooldownRemaining": "Cooldown {duration} remaining"
         },
         "form": {
             "stepPreset": "Start",

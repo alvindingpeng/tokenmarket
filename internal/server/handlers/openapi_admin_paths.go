@@ -240,6 +240,11 @@ func openAPIAdminPathsAuth() gin.H {
 				"整份渠道配置: 上游地址与各协议路径、凭据(含密钥)、模型名、授权组合、方言与轮换策略。凭据属敏感数据, 仅归属者与管理员可读, 越权 404。", "",
 				adminItem("渠道配置", "ChannelDetail"), true, pathID("渠道 ID")),
 		},
+		"/api/v1/channel/egress-health/{id}": gin.H{
+			"get": adminPath("channel", "渠道出口健康",
+				"返回渠道出口池的实时成功率、平均首响应耗时与冷却状态; 不返回代理 URL 或凭据。无样本时明确表示为冷出口。", "",
+				adminItem("出口健康", "ChannelEgressHealth"), true, pathID("渠道 ID")),
+		},
 		"/api/v1/channel/stats/daily/{id}": gin.H{
 			"get": adminPath("channel", "渠道按日统计",
 				"渠道本身与其各模型的按日用量曲线。", "",

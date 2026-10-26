@@ -32,6 +32,7 @@ import { GradeBadge, ObservationProgress, QualityTrend, TrustBadge } from './Qua
 import { type StatsMetricsFormatted } from '@/api/stats';
 import { formatTime } from '@/lib/utils';
 import { useMorphingDialog } from '@/components/ui/morphing-dialog';
+import { EgressHealth } from './EgressHealth';
 
 type FormattedMetric = StatsMetricsFormatted['request_count'];
 
@@ -459,6 +460,7 @@ export function ChannelStats({ channel, onEdit }: {
                     {/* 质量与观察期(P2/P3): 只有展开详情才拉取 —— 列表页不需要逐卡请求质量接口。
                         观察期进度条与质量趋势并列: 前者解释"为什么还没转正", 后者解释"转正后表现如何"。 */}
                     <QualityPanel channelId={channel.channel_id} trustLevel={channel.trust_level} />
+                    <EgressHealth channelId={channel.channel_id} />
                 </section>
 
                 {/* 右列: 模型统计, 仅列出当前维度下的前五名 */}

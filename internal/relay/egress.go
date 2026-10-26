@@ -149,6 +149,45 @@ func coolEgress(egressID, seconds int) {
 	state.cooldownUntil = time.Now().UnixMilli() + int64(seconds)*1000
 }
 
+// EgressRuntimeView 是出口健康看板使用的运行时快照。它不包含代理 URL 或凭据。
+type EgressRuntimeView struct {
+	EgressID            int     `json:"egress_id"`
+	Samples             int     `json:"samples"`
+	HasData             bool    `json:"has_data"`
+	SuccessRate         float64 `json:"success_rate"`
+	AvgWaitMs           float64 `json:"avg_wait_ms"`
+	CooldownUntil       int64   `json:"cooldown_until"`
+	CooldownRemainingMs int64   `json:"cooldown_remaining_ms"`
+	Cooling             bool    `json:"cooling"`
+	UpdatedAt           int64   `json:"updated_at"`
+}
+
+// EgressRuntimeViews 返回指定出口的只读健康快照。调用方须先按资源作用域裁剪出口列表。
+func EgressRuntimeViews(egresses []model.ChannelEgress) []EgressRuntimeView {
+	egressMu.Lock()
+	defer egressMu.Unlock()
+
+	now := time.Now().UnixMilli()
+	views := make([]EgressRuntimeView, 0, len(egresses))
+	for _, egress := range egresses {
+		view := EgressRuntimeView{EgressID: egress.ID}
+		if state := egressStates[egress.ID]; state != nil {
+			view.Samples = state.samples
+			view.HasData = state.samples > 0
+			view.SuccessRate = state.emaSuccess
+			view.AvgWaitMs = state.emaWaitMs
+			view.CooldownUntil = state.cooldownUntil
+			if state.cooldownUntil > now {
+				view.Cooling = true
+				view.CooldownRemainingMs = state.cooldownUntil - now
+			}
+			view.UpdatedAt = state.updatedAt
+		}
+		views = append(views, view)
+	}
+	return views
+}
+
 // egressCooling 判断出口当前是否处于冷却中, 供排查与测试使用。
 func egressCooling(egressID int) bool {
 	egressMu.Lock()

@@ -841,7 +841,20 @@
             "trendRequests": "请求",
             "trendSuccessRate": "成功率",
             "trendAvgLatency": "平均延迟",
-            "trendEmpty": "暂无数据"
+            "trendEmpty": "暂无数据",
+            "egressHealth": "出口健康",
+            "egressLoading": "正在加载出口健康…",
+            "egressLoadFailed": "出口健康加载失败",
+            "egressEmpty": "未配置出口池，当前使用渠道代理。",
+            "egressDirect": "直连",
+            "egressHealthy": "健康",
+            "egressCold": "暂无样本",
+            "egressCooling": "冷却中",
+            "egressDisabled": "已停用",
+            "egressSuccess": "成功率",
+            "egressLatency": "延迟",
+            "egressSamples": "样本",
+            "egressCooldownRemaining": "冷却剩余 {duration}"
         },
         "form": {
             "stepPreset": "开始",

@@ -96,6 +96,23 @@ func openAPIAdminSchemas() gin.H {
 			"enabled": fieldBool("停用后不参与选路但保留配置"),
 		}, "name", "kind"),
 
+		"ChannelEgressHealth": object(gin.H{
+			"id": fieldNumber("integer", "出口主键"),
+			"name": fieldString("出口名称"),
+			"kind": fieldString("出口类型"),
+			"region": fieldString("出口地区码"),
+			"weight": fieldNumber("integer", "同分时优先权重"),
+			"enabled": fieldBool("是否参与选路"),
+			"samples": fieldNumber("integer", "已观测样本数; 0 表示进程重启后尚无样本"),
+			"has_data": fieldBool("是否已有运行时样本"),
+			"success_rate": fieldNumber("number", "成功率 EMA, 0 到 1; 无样本时为 0"),
+			"avg_wait_ms": fieldNumber("number", "首响应耗时 EMA, 毫秒; 无样本时为 0"),
+			"cooldown_remaining_ms": fieldNumber("integer", "按服务端时钟计算的剩余冷却毫秒数"),
+			"cooldown_until": gin.H{"type": "string", "format": "date-time", "nullable": true},
+			"cooling": fieldBool("当前是否冷却"),
+			"updated_at": gin.H{"type": "string", "format": "date-time", "nullable": true},
+		}),
+
 		"ChannelGrantConfig": object(gin.H{
 			"model_name": fieldString("渠道模型名称, 按名称引用"),
 			"key_name":   fieldString("渠道凭据名称, 按名称引用"),
