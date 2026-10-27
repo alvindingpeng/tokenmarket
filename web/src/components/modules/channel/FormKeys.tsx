@@ -51,7 +51,7 @@ export function FormKeys({ state, setState }: {
                 ...k,
                 name,
                 key: draft.key.trim() || k.key,
-                app_id: draft.app_id.trim(),
+                app_id: draft.app_id.trim() || k.app_id,
                 api_secret: draft.api_secret.trim() || k.api_secret,
                 domain: draft.domain.trim(),
             } : k)),

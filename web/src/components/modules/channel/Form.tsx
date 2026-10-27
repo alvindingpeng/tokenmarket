@@ -89,15 +89,22 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
     const keyNeedsSparkCreds = (keyName: string) =>
         state.dialect === 'xunfei'
         && state.models.some((modelName) => sparkOnly(state.grants.get(grantKey(modelName, keyName)) ?? 0));
-    const canSubmit = state.name.trim() !== ''
-        && state.base_url.trim() !== ''
-        && [state.openai_chat_completion_path, state.openai_response_path, state.anthropic_message_path]
-            .every((path) => path === '' || path.startsWith('/'))
-        && state.keys.length > 0
-        && state.keys.every((k) => k.key.trim() !== ''
-            && (!keyNeedsSparkCreds(k.name) || (k.app_id.trim() !== '' && k.api_secret.trim() !== ''))
-            && (!(hostIsMaaS && state.dialect === 'xunfei') || k.api_secret.trim() !== ''))
-        && state.models.length > 0;
+    // 缺项逐条列在保存按钮旁: 按钮点不动时要能看到缺什么, 免得对着一个无反应的按钮无从下手。
+    const saveBlockers: string[] = [];
+    if (state.name.trim() === '') saveBlockers.push(t('saveBlockedName'));
+    if (state.base_url.trim() === '') saveBlockers.push(t('saveBlockedBaseUrl'));
+    if ([state.openai_chat_completion_path, state.openai_response_path, state.anthropic_message_path]
+        .some((path) => path !== '' && !path.startsWith('/'))) saveBlockers.push(t('saveBlockedPaths'));
+    if (state.keys.length === 0) saveBlockers.push(t('saveBlockedNoKeys'));
+    for (const k of state.keys) {
+        if (k.key.trim() === '') saveBlockers.push(t('saveBlockedKeySecret', { name: k.name }));
+        if (keyNeedsSparkCreds(k.name) && (k.app_id.trim() === '' || k.api_secret.trim() === ''))
+            saveBlockers.push(t('saveBlockedSparkCreds', { name: k.name }));
+        if (hostIsMaaS && state.dialect === 'xunfei' && k.api_secret.trim() === '')
+            saveBlockers.push(t('saveBlockedApiSecret', { name: k.name }));
+    }
+    if (state.models.length === 0) saveBlockers.push(t('saveBlockedNoModels'));
+    const canSubmit = saveBlockers.length === 0;
 
     const steps: { id: StepID; label: string }[] = [
         ...(channel ? [] : [{ id: 'preset' as StepID, label: t('stepPreset') }]),
@@ -343,7 +350,12 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
                     )}
                 </div>
 
-                <div className="shrink-0 flex justify-end gap-2 pt-4">
+                <div className="shrink-0 flex items-center justify-end gap-2 pt-4">
+                    {saveBlockers.length > 0 && (
+                        <span className="flex-1 text-right text-xs text-muted-foreground truncate" title={saveBlockers.join(' · ')}>
+                            {t('saveBlockedHint')}{saveBlockers.join(' · ')}
+                        </span>
+                    )}
                     <Button
                         type="button"
                         variant="secondary"
