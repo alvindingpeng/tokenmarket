@@ -1,5 +1,14 @@
 # 更新说明
 
+## v1.2.1 — 2026-10-27
+
+### 讯飞渠道改为 API 鉴权默认并修正官方地址
+
+- 讯飞有两套官方接口，地址不同：**MaaS 平台**（新版控制台）HTTP 接口为 `https://maas-api.cn-huabei-1.xf-yun.com/v2/chat/completions`（API 鉴权：Key 填 APIPassword，Bearer）；**经典开放平台**为 `https://spark-api-open.xf-yun.com/v1/chat/completions`。渠道预设默认指向 MaaS 控制台地址，连接页对讯飞渠道隐藏不适用的 Responses/Anthropic 路径并给出两套鉴权方式的端点指引。
+- 原生 WebSocket 保留为可选项（授权矩阵勾选 Spark 列）：MaaS 平台 WebSocket 端点固定 `wss://maas-api.cn-huabei-1.xf-yun.com/v1.1/chat`（版本由帧内 domain 决定），开放平台按 Domain 生成版本路径。两平台路径规则经官方文档与线上实测核对（2026-10-27）。
+- WebSocket 端点推导补齐官方 Domain 映射：lite/general→/v1.1/chat、max-32k→/chat/max-32k、pro-128k→/chat/pro-128k、kjwx→/v1.1/chat_kjwx（独立主机）。
+- 模型探测对讯飞渠道只探 OpenAI Chat 一侧（无 Responses/Anthropic 接口），协议位预勾 Chat|Spark（API 鉴权优先）；App ID/API Secret 仅在 Spark 位真正生效时才必填，纯 API 鉴权只需 Key。
+
 ## v1.2.0 — 2026-10-27
 
 ### 科大讯飞星火原生 WebSocket 渠道

@@ -3,6 +3,7 @@ import { ChevronLeft, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslations } from 'use-intl';
 import {
+    Protocol,
     type ChannelDetail,
     useChannelDetail,
     useCreateChannel,
@@ -23,6 +24,7 @@ import { SHELL_HEIGHT } from './layout';
 import {
     emptyFormState,
     fromChannel,
+    grantKey,
     toChannelDetail,
     type ChannelFormState,
 } from './state';
@@ -70,14 +72,22 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
     const idPrefix = channel ? `channel-${channel.id}` : 'new-channel';
 
     // 后端会拒的四项在此先挡: 名称与地址非空, 路径以 / 开头, 至少一份填了 Key 的凭据, 至少一个模型。
-    // 讯飞渠道的凭据还要求 App ID 与 API Secret: 星火签名两项都要用, 缺一个这凭据就调不通, 保存后再报错更难查。
+    // 讯飞渠道的凭据: 只有 Spark 协议位在该凭据上真正生效(授权没有任何 HTTP 协议位兜底)时才要求
+    // App ID 与 API Secret —— 星火签名两项都要用, 缺一个这凭据就调不通, 保存后再报错更难查;
+    // API 鉴权(HTTP)只需 Key, 不强迫填 WebSocket 签名凭据。
+    const sparkOnly = (protocols: number) =>
+        (protocols & Protocol.XunfeiSpark) !== 0
+        && (protocols & (Protocol.OpenAIChatCompletion | Protocol.OpenAIResponse | Protocol.AnthropicMessage)) === 0;
+    const keyNeedsSparkCreds = (keyName: string) =>
+        state.dialect === 'xunfei'
+        && state.models.some((modelName) => sparkOnly(state.grants.get(grantKey(modelName, keyName)) ?? 0));
     const canSubmit = state.name.trim() !== ''
         && state.base_url.trim() !== ''
         && [state.openai_chat_completion_path, state.openai_response_path, state.anthropic_message_path]
             .every((path) => path === '' || path.startsWith('/'))
         && state.keys.length > 0
         && state.keys.every((k) => k.key.trim() !== ''
-            && (state.dialect !== 'xunfei' || (k.app_id.trim() !== '' && k.api_secret.trim() !== '')))
+            && (!keyNeedsSparkCreds(k.name) || (k.app_id.trim() !== '' && k.api_secret.trim() !== '')))
         && state.models.length > 0;
 
     const steps: { id: StepID; label: string }[] = [
@@ -194,11 +204,14 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
                                     required
                                 />
                             </div>
+                            {/* 讯飞没有 Responses/Anthropic 接口, 这两项对讯飞渠道不适用; 只留 Chat 路径并给两套鉴权方式的端点指引。 */}
                             {([
                                 ['openai_chat_completion_path', 'OpenAI Chat'],
                                 ['openai_response_path', 'OpenAI Responses'],
                                 ['anthropic_message_path', 'Anthropic'],
-                            ] as const).map(([field, label]) => (
+                            ] as const)
+                                .filter(([field]) => state.dialect !== 'xunfei' || field === 'openai_chat_completion_path')
+                                .map(([field, label]) => (
                                 <div key={field} className="space-y-2">
                                     <Label htmlFor={`${idPrefix}-${field}`}>{label}</Label>
                                     <Input
@@ -210,6 +223,9 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
                                     />
                                 </div>
                             ))}
+                            {state.dialect === 'xunfei' && (
+                                <div className="text-xs text-muted-foreground leading-relaxed">{t('xunfeiConnectionHint')}</div>
+                            )}
                             <div className="flex flex-wrap items-center gap-6">
                                 {([['enabled', t('enabled')], ['proxy', t('proxy')]] as const).map(([field, label]) => (
                                     <label key={field} className="flex items-center gap-2 cursor-pointer">

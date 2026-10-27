@@ -885,6 +885,8 @@
             "keyAppId": "App ID",
             "keyApiSecret": "API Secret",
             "keyDomain": "Domain",
+            "keyXunfei": "APIPassword（WS 填 APIKey）",
+            "xunfeiConnectionHint": "API 鑒權：OpenAI Chat 路徑按控制台填寫（MaaS 平台為 /v2/chat/completions），Key 填 APIPassword。可選原生 WebSocket：在授權矩陣勾選 Spark 欄（純 WebSocket 請取消 Chat 勾選），MaaS 端點固定 /v1.1/chat，開放平台按 Domain 生成版本路徑。",
             "keySecretKeep": "留空保持原值",
             "grantProtocols": "chat / response / message / image",
             "grantProtocolSpark": "spark",

@@ -141,6 +141,13 @@ func EndpointFromBaseURL(baseURL, domain string) (string, error) {
 	if u.Path != "" && u.Path != "/" {
 		return u.String(), nil
 	}
+	// 讯飞两套平台的 WebSocket 路径规则不同(2026-10 官方文档与线上实测):
+	// MaaS 平台(maas-api.*)只暴露 /v1.1/chat 一个端点, 服务版本由帧内 domain 决定;
+	// 经典开放平台(spark-api.*)按 domain 生成版本路径。基地址带路径时一律按原样使用, 覆盖上述规则。
+	if strings.HasPrefix(u.Hostname(), "maas-api.") {
+		u.Path = "/v1.1/chat"
+		return u.String(), nil
+	}
 	path, ok := sparkPathByDomain(domain)
 	if !ok {
 		return "", fmt.Errorf("xunfei spark domain %q has no known websocket path: configure the full wss endpoint in the channel base url", domain)
@@ -149,10 +156,13 @@ func EndpointFromBaseURL(baseURL, domain string) (string, error) {
 	return u.String(), nil
 }
 
-// sparkPathByDomain 按讯飞官方文档的 domain→服务版本映射给出 WebSocket 路径。
+// sparkPathByDomain 按讯飞经典开放平台的 domain→服务版本映射给出 WebSocket 路径
+// (2026-10 官方文档: lite/general→/v1.1/chat, generalv2→/v2.1/chat, generalv3→/v3.1/chat,
+// generalv3.5→/v3.5/chat, 4.0Ultra→/v4.0/chat, max-32k→/chat/max-32k, pro-128k→/chat/pro-128k)。
+// MaaS 平台不走此表(见 EndpointFromBaseURL); 表中同时兼作「合法 Domain」白名单供模型名解析。
 func sparkPathByDomain(domain string) (string, bool) {
 	switch domain {
-	case "general":
+	case "lite", "general":
 		return "/v1.1/chat", true
 	case "generalv2":
 		return "/v2.1/chat", true
@@ -162,6 +172,14 @@ func sparkPathByDomain(domain string) (string, bool) {
 		return "/v3.5/chat", true
 	case "4.0Ultra":
 		return "/v4.0/chat", true
+	case "max-32k":
+		return "/chat/max-32k", true
+	case "pro-128k":
+		return "/chat/pro-128k", true
+	case "kjwx":
+		// 科技文献行业大模型在独立主机(spark-openapi-n.cn-huabei-1.xf-yun.com),
+		// 基地址须填该主机或直接填完整 wss 端点。
+		return "/v1.1/chat_kjwx", true
 	default:
 		return "", false
 	}

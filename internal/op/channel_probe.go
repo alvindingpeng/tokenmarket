@@ -21,6 +21,9 @@ var ErrProbeBaseURLRequired = errors.New("channel base url is required")
 // ErrProbeInvalidFilter 过滤表达式无法编译: 属请求参数错误, 调用方按 400 返回。
 var ErrProbeInvalidFilter = errors.New("invalid filter regex")
 
+// errXunfeiNoAnthropicSide 表示讯飞渠道没有 Anthropic messages 接口, 该侧探测按「无」处理。
+var errXunfeiNoAnthropicSide = errors.New("xunfei channel has no anthropic messages endpoint, openai side only")
+
 // ProbeChannelModels 按渠道配置与凭据拉取上游模型列表, 并按过滤表达式筛选后返回。
 // 同时探测 OpenAI 与 Anthropic 两侧, 谁返回了哪些模型, 就给对应协议位打勾: 协议支持由探测结果决定, 无需用户声明。
 // OpenAI 侧记为 Responses 而不是 Chat: Chat Completions 已被官方标记弃用, 新渠道应默认走 Responses,
@@ -29,9 +32,11 @@ var ErrProbeInvalidFilter = errors.New("invalid filter regex")
 // 只有两侧都失败(且没有讯飞 Domain 可登记)才算失败; 一侧失败属正常情况, 单协议上游本就只有一侧讲得通, 按成功那侧的结果返回。
 // 编辑表单的手动刷新与渠道保存后的自动添加共用此函数, 保证两侧看到同一份结果。
 //
-// 讯飞星火 WebSocket 渠道经 appID/apiSecret/domain 三个凭据字段识别(编辑表单只在 xunfei 方言下携带):
-// HTTP 侧探测只用 key; appID/apiSecret 是 WebSocket 帧与 URL 签名凭据, 探测不拨 WebSocket, 暂不消费;
-// Domain 即模型名(出站转换器按「模型名是合法 Domain」直接选用服务版本), 探测以它登记 spark 协议位。
+// 讯飞渠道经 appID/apiSecret/domain 三个凭据字段识别(编辑表单只在 xunfei 方言下携带):
+// HTTP 侧探测只用 key(API 鉴权即 APIPassword 的 Bearer); appID/apiSecret 是 WebSocket 帧与 URL 签名凭据, 探测不拨 WebSocket, 暂不消费。
+// 讯飞只有 OpenAI Chat 一种 HTTP 接口(无 Responses/Anthropic): 只探测 OpenAI 一侧, 模型列表地址从 Chat 路径推导;
+// 协议位一律预勾 Chat|Spark —— API 鉴权(HTTP)优先, 原生 WebSocket 兜底, 纯 WebSocket 用法在授权矩阵取消 Chat 勾选即可。
+// Domain 即模型名(出站转换器按「模型名是合法 Domain」直接选用服务版本), 探测以它单独登记一条模型。
 func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key, appID, apiSecret, domain string, ctx context.Context) ([]model.ChannelFetchModel, error) {
 	// 探测收的是尚未落库的提交配置, 不经 normalizeChannelConfig, 故在此自行去空白;
 	// 其中只有地址是硬需求: 渠道尚未命名时也可试拉, 故名称不在此校验。
@@ -49,12 +54,21 @@ func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key, ap
 	var openaiErr, anthropicErr error
 	var wg sync.WaitGroup
 	wg.Add(2)
+	openaiModelsURL := modelsURL(target.BaseURL, target.OpenAIResponsePath)
+	if target.Dialect == model.DialectXunfei {
+		// 讯飞只有 OpenAI Chat 一种 HTTP 接口, 模型列表地址从 Chat 路径推导(如 /v2/chat/completions → /v2/models)。
+		openaiModelsURL = modelsURL(target.BaseURL, target.OpenAIChatCompletionPath)
+	}
 	go func() {
 		defer wg.Done()
-		openaiModels, openaiErr = fetchOpenAIModels(client, ctx, target, key, modelsURL(target.BaseURL, target.OpenAIResponsePath))
+		openaiModels, openaiErr = fetchOpenAIModels(client, ctx, target, key, openaiModelsURL)
 	}()
 	go func() {
 		defer wg.Done()
+		if target.Dialect == model.DialectXunfei {
+			anthropicErr = errXunfeiNoAnthropicSide
+			return
+		}
 		anthropicModels, anthropicErr = fetchAnthropicModels(client, ctx, target, key, modelsURL(target.BaseURL, target.AnthropicMessagePath))
 	}()
 	wg.Wait()
@@ -119,7 +133,11 @@ func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key, ap
 		if _, ok := protocolsByModel[name]; !ok {
 			order = append(order, name)
 		}
-		protocolsByModel[name] |= model.ProtocolOpenAIResponse
+		if target.Dialect == model.DialectXunfei {
+			protocolsByModel[name] |= model.ProtocolOpenAIChatCompletion | model.ProtocolXunfeiSparkWS
+		} else {
+			protocolsByModel[name] |= model.ProtocolOpenAIResponse
+		}
 	}
 	for _, name := range anthropicModels {
 		matched, err := matches(name)
@@ -135,8 +153,8 @@ func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key, ap
 		protocolsByModel[name] |= model.ProtocolAnthropicMessage
 	}
 
-	// 讯飞 Domain 登记为 spark WebSocket 协议的模型(服务版本即模型名, 出站按模型名解析 Domain);
-	// 与 HTTP 侧同名时协议位取并集, 过滤表达式与其他模型同规则。
+	// 讯飞 Domain 登记为一条模型(服务版本即模型名, 出站按模型名解析 Domain), 协议位与其他讯飞模型一致
+	// 预勾 Chat|Spark(API 鉴权优先, WebSocket 兜底); 与 HTTP 侧同名时协议位取并集, 过滤表达式同规则。
 	if sparkDomain := strings.TrimSpace(domain); sparkDomain != "" {
 		matched, err := matches(sparkDomain)
 		if err != nil {
@@ -146,7 +164,7 @@ func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key, ap
 			if _, ok := protocolsByModel[sparkDomain]; !ok {
 				order = append(order, sparkDomain)
 			}
-			protocolsByModel[sparkDomain] |= model.ProtocolXunfeiSparkWS
+			protocolsByModel[sparkDomain] |= model.ProtocolOpenAIChatCompletion | model.ProtocolXunfeiSparkWS
 		}
 	}
 

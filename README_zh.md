@@ -181,7 +181,8 @@ GET  /v1/models               # 调用方密钥可见的模型列表
 | OpenAI Responses | `/v1/responses` | `https://api.openai.com` |
 | Anthropic Messages | `/v1/messages` | `https://api.anthropic.com` |
 | OpenAI 生图 | `/v1/images/generations`、`/v1/images/edits` | `https://api.openai.com` |
-| 讯飞星火 WebSocket | 原生 `wss://` 端点；由 Domain 选择接口版本路径 | `https://spark-api-open.xf-yun.com`，或完整 `wss://.../v1.1/chat` 端点 |
+| 讯飞星火（API 鉴权） | OpenAI 兼容 Chat Completions；Key 填 APIPassword（Bearer） | `https://maas-api.cn-huabei-1.xf-yun.com` + `/v2/chat/completions`（MaaS 控制台），或 `https://spark-api-open.xf-yun.com` + `/v1/chat/completions`（开放平台） |
+| 讯飞星火（原生 WebSocket） | 原生 `wss://` 帧；MaaS 端点固定 `/v1.1/chat`，开放平台按 Domain 生成版本路径 | `https://maas-api.cn-huabei-1.xf-yun.com`（MaaS）或 `https://spark-api.xf-yun.com`（开放平台）；也接受完整 `wss://` 端点 |
 
 > 💡 **Gemini 与其他供应商。** Gemini 原生协议在 `v0.13.9` 被移除：原本 `gemini` 类型的渠道会迁移成
 > OpenAI Chat 协议。这类渠道请改填该供应商的 OpenAI 兼容端点。

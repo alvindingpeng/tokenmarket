@@ -125,7 +125,7 @@ export function FormGrants({ state, setState }: {
 
     // 自定义模型直接授权给当前选中的凭据, 协议位沿用该凭据在其他模型上已有的并集。
     // 并集来自此前刷新探测出的结果, 即该凭据确实讲得通的协议; 该凭据尚无任何授权时退回 Responses
-    // (讯飞渠道退回 spark), 与探测的默认一致: Chat Completions 已被官方标记弃用, 需要它的渠道由用户手动勾选 Chat 列。
+    // (讯飞渠道退回 Chat|Spark: API 鉴权优先、原生 WebSocket 兜底, 纯 WebSocket 用法取消 Chat 勾选), 与探测的默认一致。
     const addModel = () => {
         const name = adding.trim();
         if (!name || state.models.includes(name)) return;
@@ -134,7 +134,7 @@ export function FormGrants({ state, setState }: {
             protocols |= state.grants.get(grantKey(modelName, activeKey)) ?? 0;
         }
         const grants = new Map(state.grants);
-        if (activeKey) grants.set(grantKey(name, activeKey), protocols || (state.dialect === 'xunfei' ? Protocol.XunfeiSpark : Protocol.OpenAIResponse));
+        if (activeKey) grants.set(grantKey(name, activeKey), protocols || (state.dialect === 'xunfei' ? Protocol.OpenAIChatCompletion | Protocol.XunfeiSpark : Protocol.OpenAIResponse));
         setState({ ...state, models: [...state.models, name], grants });
         setAdding('');
     };

@@ -106,7 +106,7 @@ export function FormKeys({ state, setState }: {
                                 autoComplete="off"
                                 value={draft.key}
                                 onChange={(e) => setDraft({ ...draft, key: e.target.value })}
-                                placeholder={channelKey.key ? t('keySecretKeep') : t('apiKey')}
+                                placeholder={channelKey.key ? t('keySecretKeep') : state.dialect === 'xunfei' ? t('keyXunfei') : t('apiKey')}
                                 className="rounded-lg h-9 flex-1"
                             />
                             <IconButton

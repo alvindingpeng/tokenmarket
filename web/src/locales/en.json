@@ -885,6 +885,8 @@
             "keyAppId": "App ID",
             "keyApiSecret": "API Secret",
             "keyDomain": "Domain",
+            "keyXunfei": "APIPassword (APIKey for WebSocket)",
+            "xunfeiConnectionHint": "API auth: set the OpenAI Chat path per your console (MaaS: /v2/chat/completions), Key = APIPassword. Optional native WebSocket: tick the Spark column (untick Chat for pure WebSocket); the MaaS endpoint is fixed at /v1.1/chat, the open platform derives version paths from Domain.",
             "keySecretKeep": "Leave blank to keep current",
             "grantProtocols": "chat / response / message / image",
             "grantProtocolSpark": "spark",

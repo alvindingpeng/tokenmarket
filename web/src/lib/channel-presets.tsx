@@ -168,12 +168,17 @@ export const CHANNEL_PRESETS: ChannelPreset[] = [
     {
         id: 'xunfei', label: '讯飞 Spark', Icon: IflytekIcon,
         description: {
-            zh_hans: '讯飞星火大模型 API', zh_hant: '訊飛星火大模型 API', en: 'iFlytek Spark API',
+            zh_hans: 'API 鉴权(Key 填 APIPassword), 可选原生 WebSocket',
+            zh_hant: 'API 鑒權(Key 填 APIPassword), 可選原生 WebSocket',
+            en: 'API auth (Key = APIPassword), optional native WebSocket',
         },
         dialect: 'xunfei',
-        // 讯飞星火走 OpenAI 兼容端点; 线协议差异由授权上的 spark 协议位表达, 路径仍是标准三件。
-        base_url: 'https://spark-api-open.xf-yun.com',
-        openai_chat_completion_path: CHAT, openai_response_path: RESP, anthropic_message_path: ANTH,
+        // API 鉴权走讯飞 MaaS 控制台给出的 OpenAI 兼容接口(https://maas-api.cn-huabei-1.xf-yun.com/v2/chat/completions);
+        // 经典开放平台请改填 https://spark-api-open.xf-yun.com 与 /v1/chat/completions。
+        // 讯飞没有 Responses/Anthropic 接口, 这两项留空且讯飞渠道的连接页不显示;
+        // 原生 WebSocket 由授权矩阵的 Spark 列启用(MaaS 端点固定 /v1.1/chat, 开放平台按 Domain 生成版本路径)。
+        base_url: 'https://maas-api.cn-huabei-1.xf-yun.com',
+        openai_chat_completion_path: '/v2/chat/completions', openai_response_path: '', anthropic_message_path: '',
     },
     {
         id: 'xai', label: 'xAI', Icon: XAIIcon, iconClassName: 'brightness-0 dark:invert',
