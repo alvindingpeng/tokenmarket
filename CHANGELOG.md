@@ -8,6 +8,7 @@
 - 新增 `internal/relay/xfyun/httpsig` 签名包：`Authorization: api_key="...", algorithm="hmac-sha256", headers="host date request-line", signature="..."`（明文 authorization_origin），Date 为 GMT RFC1123；签名基串 `host:/date:/request-line`，HMAC-SHA256(API Secret) 后 base64。格式与日期要求经线上网关逐项实测确认。
 - 出站 OpenAI Chat 与模型探测在讯飞 MaaS 目标上自动改用签名鉴权（渠道填了 API Secret 即启用）；经典开放平台 `spark-api-open.xf-yun.com` 保持 Bearer APIPassword（API Secret 留空）。
 - 模型列表地址从 Chat 路径推导（`/v2/chat/completions` → `/v2/models`，实测该路由存在）；表单对 MaaS 主机要求填写 API Secret，三语文案说明两套平台的凭据用法。
+- 已于 2026-10-27 部署至生产（tt.xjj.se，v1.2.2）：恢复点 `releases/20261027-231355-security-batch2`（pre-upgrade.db 带 SHA-256），旧二进制存 `bin/switchyard.prev-v8` 可回滚，存量数据完整无丢失。
 
 ## v1.2.1 — 2026-10-27
 
