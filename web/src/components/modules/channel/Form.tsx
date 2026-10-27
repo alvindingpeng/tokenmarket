@@ -78,6 +78,14 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
     const sparkOnly = (protocols: number) =>
         (protocols & Protocol.XunfeiSpark) !== 0
         && (protocols & (Protocol.OpenAIChatCompletion | Protocol.OpenAIResponse | Protocol.AnthropicMessage)) === 0;
+    // 讯飞 MaaS 主机(maas-api.*)的 HTTP 接口走 APIKey/APISecret 签名鉴权, API Secret 不能为空。
+    const hostIsMaaS = (() => {
+        try {
+            return new URL(state.base_url.trim()).hostname.startsWith('maas-api.');
+        } catch {
+            return false;
+        }
+    })();
     const keyNeedsSparkCreds = (keyName: string) =>
         state.dialect === 'xunfei'
         && state.models.some((modelName) => sparkOnly(state.grants.get(grantKey(modelName, keyName)) ?? 0));
@@ -87,7 +95,8 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
             .every((path) => path === '' || path.startsWith('/'))
         && state.keys.length > 0
         && state.keys.every((k) => k.key.trim() !== ''
-            && (!keyNeedsSparkCreds(k.name) || (k.app_id.trim() !== '' && k.api_secret.trim() !== '')))
+            && (!keyNeedsSparkCreds(k.name) || (k.app_id.trim() !== '' && k.api_secret.trim() !== ''))
+            && (!(hostIsMaaS && state.dialect === 'xunfei') || k.api_secret.trim() !== ''))
         && state.models.length > 0;
 
     const steps: { id: StepID; label: string }[] = [

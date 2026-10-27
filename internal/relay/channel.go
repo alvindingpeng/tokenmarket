@@ -49,6 +49,10 @@ func buildOutbound(channel model.Channel, grant model.ChannelGrant, channelKey m
 	switch protocol {
 	case model.ProtocolOpenAIChatCompletion:
 		outbound, err := openai.NewOutboundTransformerWithConfig(&openai.Config{PlatformType: openai.PlatformOpenAI, BaseURL: channel.BaseURL, EndpointPath: channel.OpenAIChatCompletionPath, APIKeyProvider: key})
+		if err == nil && channel.Dialect == model.DialectXunfei && xfyun.HTTPSigningRequired(channel.BaseURL, channelKey.APISecret) {
+			// 讯飞 MaaS 的 HTTP 接口只认 APIKey/APISecret 的 V2 签名鉴权, 装签名包装器把 Bearer 换成签名头。
+			return xfyun.NewHTTPSigningOutbound(outbound, xfyun.Credentials{APIKey: channelKey.Key, APISecret: channelKey.APISecret}), protocol, passthrough, nil
+		}
 		return outbound, protocol, passthrough, err
 	case model.ProtocolOpenAIResponse:
 		outbound, err := responses.NewOutboundTransformerWithConfig(&responses.Config{BaseURL: channel.BaseURL, EndpointPath: channel.OpenAIResponsePath, APIKeyProvider: key})

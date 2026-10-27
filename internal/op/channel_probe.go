@@ -10,8 +10,10 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/relay/xfyun/httpsig"
 	"github.com/dlclark/regexp2"
 )
 
@@ -61,7 +63,7 @@ func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key, ap
 	}
 	go func() {
 		defer wg.Done()
-		openaiModels, openaiErr = fetchOpenAIModels(client, ctx, target, key, openaiModelsURL)
+		openaiModels, openaiErr = fetchOpenAIModels(client, ctx, target, key, apiSecret, openaiModelsURL)
 	}()
 	go func() {
 		defer wg.Done()
@@ -225,12 +227,19 @@ func modelsURL(baseURL, protocolPath string) string {
 }
 
 // refer: https://platform.openai.com/docs/api-reference/models/list
-func fetchOpenAIModels(httpClient *http.Client, ctx context.Context, target model.ChannelConfig, key, url string) ([]string, error) {
+// 讯飞 MaaS 渠道按 APIKey/APISecret 的 V2 签名鉴权(见 httpsig), 其余渠道走 Bearer。
+func fetchOpenAIModels(httpClient *http.Client, ctx context.Context, target model.ChannelConfig, key, apiSecret, url string) ([]string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+key)
+	if httpsig.Required(target.BaseURL, apiSecret) {
+		if err := httpsig.SignHTTPV2(req, key, apiSecret, time.Now()); err != nil {
+			return nil, err
+		}
+	} else {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
 	for _, header := range target.CustomHeader {
 		if header.HeaderKey != "" {
 			req.Header.Set(header.HeaderKey, header.HeaderValue)

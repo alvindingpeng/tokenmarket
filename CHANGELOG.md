@@ -1,5 +1,14 @@
 # 更新说明
 
+## v1.2.2 — 2026-10-27
+
+### 讯飞 MaaS 签名鉴权（APIKey/APISecret）
+
+- 修正“拉取模型读不到可用模型”的根因：讯飞 MaaS 平台（`maas-api.cn-huabei-1.xf-yun.com`）的 HTTP 接口**只认 APIKey/APISecret 的 V2 通用 HMAC 签名鉴权**，不认 Bearer（线上实测网关回 `HMAC signature cannot be verified`）。此前按 Bearer APIPassword 发出的探测与请求均被 401 拒绝。
+- 新增 `internal/relay/xfyun/httpsig` 签名包：`Authorization: api_key="...", algorithm="hmac-sha256", headers="host date request-line", signature="..."`（明文 authorization_origin），Date 为 GMT RFC1123；签名基串 `host:/date:/request-line`，HMAC-SHA256(API Secret) 后 base64。格式与日期要求经线上网关逐项实测确认。
+- 出站 OpenAI Chat 与模型探测在讯飞 MaaS 目标上自动改用签名鉴权（渠道填了 API Secret 即启用）；经典开放平台 `spark-api-open.xf-yun.com` 保持 Bearer APIPassword（API Secret 留空）。
+- 模型列表地址从 Chat 路径推导（`/v2/chat/completions` → `/v2/models`，实测该路由存在）；表单对 MaaS 主机要求填写 API Secret，三语文案说明两套平台的凭据用法。
+
 ## v1.2.1 — 2026-10-27
 
 ### 讯飞渠道改为 API 鉴权默认并修正官方地址
