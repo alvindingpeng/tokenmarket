@@ -79,6 +79,9 @@ func openAPIAdminSchemas() gin.H {
 		"ChannelKeyConfig": object(gin.H{
 			"name":           fieldString("凭据名称, 在渠道内唯一, 也是整体替换时的匹配依据"),
 			"key":            fieldString("上游访问凭据"),
+			"app_id":         fieldString("讯飞 App ID"),
+			"api_secret":     fieldString("讯飞 API Secret"),
+			"domain":         fieldString("讯飞 Domain"),
 			"enabled":        fieldBool("禁用后不参与选路但保留统计"),
 			"priority":       fieldNumber("integer", "优先级, 数值越小越优先"),
 			"error_count":    fieldNumber("integer", "累计错误次数"),
@@ -97,20 +100,20 @@ func openAPIAdminSchemas() gin.H {
 		}, "name", "kind"),
 
 		"ChannelEgressHealth": object(gin.H{
-			"id": fieldNumber("integer", "出口主键"),
-			"name": fieldString("出口名称"),
-			"kind": fieldString("出口类型"),
-			"region": fieldString("出口地区码"),
-			"weight": fieldNumber("integer", "同分时优先权重"),
-			"enabled": fieldBool("是否参与选路"),
-			"samples": fieldNumber("integer", "已观测样本数; 0 表示进程重启后尚无样本"),
-			"has_data": fieldBool("是否已有运行时样本"),
-			"success_rate": fieldNumber("number", "成功率 EMA, 0 到 1; 无样本时为 0"),
-			"avg_wait_ms": fieldNumber("number", "首响应耗时 EMA, 毫秒; 无样本时为 0"),
+			"id":                    fieldNumber("integer", "出口主键"),
+			"name":                  fieldString("出口名称"),
+			"kind":                  fieldString("出口类型"),
+			"region":                fieldString("出口地区码"),
+			"weight":                fieldNumber("integer", "同分时优先权重"),
+			"enabled":               fieldBool("是否参与选路"),
+			"samples":               fieldNumber("integer", "已观测样本数; 0 表示进程重启后尚无样本"),
+			"has_data":              fieldBool("是否已有运行时样本"),
+			"success_rate":          fieldNumber("number", "成功率 EMA, 0 到 1; 无样本时为 0"),
+			"avg_wait_ms":           fieldNumber("number", "首响应耗时 EMA, 毫秒; 无样本时为 0"),
 			"cooldown_remaining_ms": fieldNumber("integer", "按服务端时钟计算的剩余冷却毫秒数"),
-			"cooldown_until": gin.H{"type": "string", "format": "date-time", "nullable": true},
-			"cooling": fieldBool("当前是否冷却"),
-			"updated_at": gin.H{"type": "string", "format": "date-time", "nullable": true},
+			"cooldown_until":        gin.H{"type": "string", "format": "date-time", "nullable": true},
+			"cooling":               fieldBool("当前是否冷却"),
+			"updated_at":            gin.H{"type": "string", "format": "date-time", "nullable": true},
 		}),
 
 		"ChannelGrantConfig": object(gin.H{
@@ -130,8 +133,11 @@ func openAPIAdminSchemas() gin.H {
 		})),
 
 		"ChannelFetchModelRequest": object(gin.H{
-			"channel": ref("ChannelConfig"),
-			"key":     fieldString("拉取使用的上游凭据; 必填"),
+			"channel":    ref("ChannelConfig"),
+			"key":        fieldString("拉取使用的上游凭据; 必填"),
+			"app_id":     fieldString("讯飞 App ID; Spark 渠道使用"),
+			"api_secret": fieldString("讯飞 API Secret; Spark 渠道使用"),
+			"domain":     fieldString("讯飞 Domain; Spark 渠道使用"),
 		}, "key"),
 
 		"ChannelFetchModel": object(gin.H{
@@ -400,7 +406,7 @@ func openAPIAdminSchemas() gin.H {
 			"name":    fieldString("Key 名称"),
 			"api_key": fieldString("转发用的明文密钥。创建请求必须省略或留空，由后端生成高熵随机串；非空自选密钥被拒绝；" +
 				"响应侧只在创建响应里出现这一次, 列表/详情/更新/统计响应一律不返回。" +
-				"更新请求携带本字段一律 400 —— Key 不可替换, 只能新建; 指纹 key_hash 永不出现在任何 API。"+
+				"更新请求携带本字段一律 400 —— Key 不可替换, 只能新建; 指纹 key_hash 永不出现在任何 API。" +
 				"存量 Key(旧库迁移/旧备份导入)不受影响, 不强制轮换; 前端创建表单本就不提交 api_key, 只有外部脚本需要删除该字段。"),
 			"key_prefix": gin.H{"type": "string", "readOnly": true, "description": "掩码前缀(响应只读, 创建/更新请求忽略)。明文签发后不可再取, " +
 				"列表与详情只给 key_prefix + key_last4 两段, 展示形如 ${prefix}********${last4}"},
@@ -961,7 +967,7 @@ func withChannelConfig(props gin.H) gin.H {
 func channelConfigProperties() gin.H {
 	return gin.H{
 		"name":                         fieldString("渠道名称, 在同一归属内唯一"),
-		"dialect":                      gin.H{"type": "string", "description": "上游方言, 决定出站转换器的厂商特化配置", "enum": []string{"generic", "openai", "anthropic", "gemini", "deepseek", "moonshot", "zai", "xai"}},
+		"dialect":                      gin.H{"type": "string", "description": "上游方言, 决定出站转换器的厂商特化配置", "enum": []string{"generic", "openai", "anthropic", "gemini", "deepseek", "moonshot", "zai", "xai", "xunfei"}},
 		"enabled":                      fieldBool("为假时不参与选路, 配置与统计保留"),
 		"base_url":                     fieldString("上游地址, 各协议共用"),
 		"openai_chat_completion_path":  fieldString("留空由后端填默认 /v1/chat/completions"),
@@ -1039,7 +1045,7 @@ func datetime(desc string) gin.H {
 // protocolBitmask 协议位掩码的统一描述: 具体位值写在描述里而不是 enum 里,
 // 因为它本质是可按位或的组合, 不是枚举值集合。
 func protocolBitmask(desc string) gin.H {
-	bits := "协议位掩码: 2=openai_chat_completion, 4=openai_response, 8=anthropic_message, 16=openai_image, 32=openai_video(预留); 多个协议按位或"
+	bits := "协议位掩码: 2=openai_chat_completion, 4=openai_response, 8=anthropic_message, 16=openai_image, 32=openai_video(预留), 64=xunfei_spark_websocket; 多个协议按位或"
 	if desc != "" {
 		bits = desc + "; " + bits
 	}

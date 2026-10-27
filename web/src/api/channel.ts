@@ -12,11 +12,12 @@ export const Protocol = {
     OpenAIResponse: 1 << 2,
     AnthropicMessage: 1 << 3,
     OpenAIImage: 1 << 4, // 生图协议(generations / edits); P2 视频为 1 << 5。
+    XunfeiSpark: 1 << 6, // 讯飞星火协议。1 << 0 保留、1 << 5 已被视频占坑, 新位只能顺延; 落库后与后端 model.Protocol 一致, 同样不可再变更。
 } as const;
 
 // Dialect 是上游在标准协议之上的方言，决定出站转换器的厂商特化配置。
 // 地址与路径不属于方言范畴，由前端按服务商预填到渠道字段上。
-export type Dialect = 'generic';
+export type Dialect = 'generic' | 'xunfei';
 
 type CustomHeader = {
     header_key: string;
@@ -26,7 +27,11 @@ type CustomHeader = {
 // ChannelKey 是渠道下的一份上游凭据；名称在渠道内唯一，读写都按它引用。
 export type ChannelKey = {
     name: string;
-    key: string;
+    key: string; // 上游访问凭据; 讯飞渠道用它承载 API Key。
+    // 讯飞星火专用字段(dialect=xunfei 才填写); 读侧可能缺省, 写侧恒带三项。
+    app_id?: string;
+    api_secret?: string;
+    domain?: string;
     enabled: boolean;
 };
 
@@ -220,6 +225,10 @@ export type ChannelStatsFormatted = {
 type FetchModelRequest = {
     channel: Omit<ChannelDetail, 'id' | 'keys' | 'models' | 'grants' | 'egresses'>;
     key: string;
+    // 讯飞星火签名所需凭据；通用渠道保持可选以兼容旧探测接口。
+    app_id?: string;
+    api_secret?: string;
+    domain?: string;
 };
 
 // FetchModel 是探测到的单个上游模型及其支持的协议集合。

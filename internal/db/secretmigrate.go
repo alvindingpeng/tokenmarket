@@ -12,8 +12,8 @@ import (
 // 既有明文的原子幂等迁移: 把 settings / channel_keys 里遗留的明文凭据包进信封。
 //
 //   - 幂等: 已是信封的行只验不改(顺带校验当前主密钥能开这些信封), 重复执行零写入;
-//   - 全量验证: settings.value 与 channel_keys.key 里出现的每一个信封都会被验开 —— 包括落在
-//     非密钥设置行里的信封。错误的主密钥在启动的这一步就暴露, 不必等有流量才发现;
+//   - 全量验证: settings.value 与 channel_keys 的秘密列(key / api_secret)里出现的每一个信封都会被验开 ——
+//     包括落在非密钥设置行里的信封。错误的主密钥在启动的这一步就暴露, 不必等有流量才发现;
 //   - 原子: 全部 UPDATE 收在一个事务里, 中途失败不留半加密状态;
 //   - fail closed: 任何信封打不开(主密钥配错/被换行搬运)都在写入前报错, 启动拒绝继续。
 //
@@ -21,7 +21,7 @@ import (
 // 拿它做迁移会把已加密行反复重新加密, 也会让库里到底是什么变得不可见。
 type SecretMigrationStats struct {
 	SettingsEncrypted    int `json:"settings_encrypted"`     // 本次加密的密钥类设置行。
-	ChannelKeysEncrypted int `json:"channel_keys_encrypted"` // 本次加密的渠道凭据行。
+	ChannelKeysEncrypted int `json:"channel_keys_encrypted"` // 本次加密的渠道凭据秘密列(key / api_secret)。
 	AlreadyEncrypted     int `json:"already_encrypted"`      // 已是信封并验开通过的行。
 	EmptySkipped         int `json:"empty_skipped"`          // 空值行: 无秘密可言, 保持空串。
 }
@@ -75,13 +75,20 @@ func MigrateSecretRows(ctx context.Context, dryRun bool) (SecretMigrationStats, 
 		ChannelID int
 		Name      string
 		Key       string
+		APISecret string
 	}
-	if err := conn.Raw("SELECT id, channel_id, name, key FROM channel_keys").Scan(&keyRows).Error; err != nil {
+	// 老库可能还没有 api_secret 列(只读巡检/尚未跑过补列迁移): 缺列时以空串代入, 只迁 key。
+	secretSelect := "key, api_secret"
+	if !conn.Migrator().HasColumn("channel_keys", "api_secret") {
+		secretSelect = "key, '' AS api_secret"
+	}
+	if err := conn.Raw("SELECT id, channel_id, name, " + secretSelect + " FROM channel_keys").Scan(&keyRows).Error; err != nil {
 		return stats, fmt.Errorf("read channel keys for secret migration: %w", err)
 	}
 	type keyUpdate struct {
-		id    int
-		value string
+		id     int
+		column string
+		value  string
 	}
 	keyUpdates := make([]keyUpdate, 0)
 	for _, row := range keyRows {
@@ -89,12 +96,25 @@ func MigrateSecretRows(ctx context.Context, dryRun bool) (SecretMigrationStats, 
 			// 归属缺失的行没法绑 AAD: 与其写进弱绑定密文, 不如把问题摆出来。
 			return stats, fmt.Errorf("channel key row %d has no channel_id ownership, refusing to migrate", row.ID)
 		}
-		sealed, encrypted, err := migrateSecretValue(store, secretstore.ChannelKeyBinding(row.ChannelID, row.Name), row.Key, &stats)
-		if err != nil {
-			return stats, fmt.Errorf("channel key %d/%q: %w", row.ChannelID, row.Name, err)
-		}
-		if encrypted {
-			keyUpdates = append(keyUpdates, keyUpdate{id: row.ID, value: sealed})
+		// key 与 api_secret 两个秘密列走同一套迁移: 明文包进信封, 信封逐个验开。
+		// api_secret 是讯飞专用的第二秘密列, 绝大多数凭据没有它: 空值不计入统计,
+		// 免得每行凭据都多报一次 empty_skipped, 扰动既有行级计数语义。
+		for _, secretColumn := range []struct {
+			column    string
+			value     string
+			skipEmpty bool
+		}{{column: "key", value: row.Key}, {column: "api_secret", value: row.APISecret, skipEmpty: true}} {
+			if secretColumn.skipEmpty && secretColumn.value == "" {
+				continue
+			}
+			// 绑定带列名: key 与 api_secret 的密文互换位置在这里就会被归属比对拦下。
+			sealed, encrypted, err := migrateSecretValue(store, secretstore.ChannelKeyColumnBinding(row.ChannelID, row.Name, secretColumn.column), secretColumn.value, &stats)
+			if err != nil {
+				return stats, fmt.Errorf("channel key %d/%q: %w", row.ChannelID, row.Name, err)
+			}
+			if encrypted {
+				keyUpdates = append(keyUpdates, keyUpdate{id: row.ID, column: secretColumn.column, value: sealed})
+			}
 		}
 	}
 
@@ -108,7 +128,7 @@ func MigrateSecretRows(ctx context.Context, dryRun bool) (SecretMigrationStats, 
 			}
 		}
 		for _, update := range keyUpdates {
-			if err := tx.Exec("UPDATE channel_keys SET key = ? WHERE id = ?", update.value, update.id).Error; err != nil {
+			if err := tx.Exec("UPDATE channel_keys SET "+update.column+" = ? WHERE id = ?", update.value, update.id).Error; err != nil {
 				return err
 			}
 		}

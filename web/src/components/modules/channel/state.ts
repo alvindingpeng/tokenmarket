@@ -11,7 +11,15 @@ export type ChannelFormState = {
     openai_chat_completion_path: string;
     openai_response_path: string;
     anthropic_message_path: string;
-    keys: { name: string; key: string; enabled: boolean }[];
+    keys: {
+        name: string;
+        key: string; // 上游访问凭据; 讯飞渠道用它承载 API Key。
+        // 讯飞星火专用(dialect=xunfei 才填写); 读侧可能缺省, 归一为空串, 写侧恒带三项。
+        app_id: string;
+        api_secret: string;
+        domain: string;
+        enabled: boolean;
+    }[];
     // 出口池按名称组织, 与凭据一致: 后端同样按名称增删改, 新建渠道时主键尚不存在。
     egresses: { name: string; kind: ChannelDetail['egresses'][number]['kind']; url: string; region: string; weight: number; enabled: boolean }[];
     models: string[];
@@ -59,7 +67,11 @@ export function fromChannel(channel: ChannelDetail): ChannelFormState {
         openai_chat_completion_path: channel.openai_chat_completion_path,
         openai_response_path: channel.openai_response_path,
         anthropic_message_path: channel.anthropic_message_path,
-        keys: channel.keys.map(({ name, key, enabled }) => ({ name, key, enabled })),
+        // 讯飞三项读侧可能缺省, 归一为空串: 表单里处处少判一次 undefined。
+        keys: channel.keys.map(({ name, key, enabled, app_id, api_secret, domain }) => ({
+            name, key, enabled,
+            app_id: app_id ?? '', api_secret: api_secret ?? '', domain: domain ?? '',
+        })),
         // 后端承诺 egresses 恒为数组; 老库没有出口时就是空数组。
         egresses: (channel.egresses ?? []).map(({ name, kind, url, region, weight, enabled }) => ({ name, kind, url, region, weight, enabled })),
         models: [...channel.models],
@@ -99,7 +111,11 @@ export function toChannelDetail(state: ChannelFormState, id: number): ChannelDet
     return {
         ...toChannelConfig(state),
         id,
-        keys: state.keys.map(({ name, key, enabled }) => ({ name: name.trim(), key: key.trim(), enabled })),
+        // 讯飞三项写侧恒带, 与读侧的可能缺省相反: 后端整体替换凭据, 少带一项会被当作清空。
+        keys: state.keys.map(({ name, key, enabled, app_id, api_secret, domain }) => ({
+            name: name.trim(), key: key.trim(), enabled,
+            app_id: app_id.trim(), api_secret: api_secret.trim(), domain: domain.trim(),
+        })),
         // 出口不带主键提交: 后端按名称匹配, 主键由它自己维护, 换 ID 会让历史成绩对不上。
         egresses: state.egresses.map(({ name, kind, url, region, weight, enabled }) => ({
             id: 0, // 提交不带主键: 后端按名称匹配已有出口, 主键由它维护。

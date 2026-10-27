@@ -26,9 +26,13 @@ var ErrProbeInvalidFilter = errors.New("invalid filter regex")
 // OpenAI 侧记为 Responses 而不是 Chat: Chat Completions 已被官方标记弃用, 新渠道应默认走 Responses,
 // 仍需 Chat 的渠道由用户在界面上手动勾选。两侧的 /models 地址与认证形态不同, 故必须分别探测:
 // 单协议上游只有一侧会成功, "哪侧成功" 本身就是协议支持的证据。
-// 只有两侧都失败才算失败; 一侧失败属正常情况, 单协议上游本就只有一侧讲得通, 按成功那侧的结果返回。
+// 只有两侧都失败(且没有讯飞 Domain 可登记)才算失败; 一侧失败属正常情况, 单协议上游本就只有一侧讲得通, 按成功那侧的结果返回。
 // 编辑表单的手动刷新与渠道保存后的自动添加共用此函数, 保证两侧看到同一份结果。
-func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key string, ctx context.Context) ([]model.ChannelFetchModel, error) {
+//
+// 讯飞星火 WebSocket 渠道经 appID/apiSecret/domain 三个凭据字段识别(编辑表单只在 xunfei 方言下携带):
+// HTTP 侧探测只用 key; appID/apiSecret 是 WebSocket 帧与 URL 签名凭据, 探测不拨 WebSocket, 暂不消费;
+// Domain 即模型名(出站转换器按「模型名是合法 Domain」直接选用服务版本), 探测以它登记 spark 协议位。
+func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key, appID, apiSecret, domain string, ctx context.Context) ([]model.ChannelFetchModel, error) {
 	// 探测收的是尚未落库的提交配置, 不经 normalizeChannelConfig, 故在此自行去空白;
 	// 其中只有地址是硬需求: 渠道尚未命名时也可试拉, 故名称不在此校验。
 	target.BaseURL = strings.TrimSpace(target.BaseURL)
@@ -55,8 +59,9 @@ func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key str
 	}()
 	wg.Wait()
 
-	if openaiErr != nil && anthropicErr != nil {
+	if openaiErr != nil && anthropicErr != nil && strings.TrimSpace(domain) == "" {
 		// 上游鉴权失败或地址不通属于调用方配置问题, 带上上游原文, 便于在界面上直接看到原因。
+		// 讯飞 WebSocket 渠道没有可探测的 /models 端点, Domain 即模型清单, 有 Domain 时不算失败。
 		return nil, fmt.Errorf("openai: %v; anthropic: %v", openaiErr, anthropicErr)
 	}
 
@@ -128,6 +133,21 @@ func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key str
 			order = append(order, name)
 		}
 		protocolsByModel[name] |= model.ProtocolAnthropicMessage
+	}
+
+	// 讯飞 Domain 登记为 spark WebSocket 协议的模型(服务版本即模型名, 出站按模型名解析 Domain);
+	// 与 HTTP 侧同名时协议位取并集, 过滤表达式与其他模型同规则。
+	if sparkDomain := strings.TrimSpace(domain); sparkDomain != "" {
+		matched, err := matches(sparkDomain)
+		if err != nil {
+			return nil, err
+		}
+		if matched {
+			if _, ok := protocolsByModel[sparkDomain]; !ok {
+				order = append(order, sparkDomain)
+			}
+			protocolsByModel[sparkDomain] |= model.ProtocolXunfeiSparkWS
+		}
 	}
 
 	models := make([]model.ChannelFetchModel, 0, len(order))

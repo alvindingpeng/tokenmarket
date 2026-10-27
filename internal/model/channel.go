@@ -14,6 +14,7 @@ const (
 	ProtocolAnthropicMessage     Protocol = 1 << 3 // Anthropic Messages 协议。
 	ProtocolOpenAIImage          Protocol = 1 << 4 // OpenAI Images 协议(generations / edits / variations)。
 	ProtocolOpenAIVideo          Protocol = 1 << 5 // OpenAI Videos 协议(P2 异步任务, 当前未启用)。
+	ProtocolXunfeiSparkWS        Protocol = 1 << 6 // 科大讯飞星火原生 WebSocket 协议。
 )
 
 // 上游在标准协议之上的方言。
@@ -24,6 +25,7 @@ type Dialect string
 
 const (
 	DialectGeneric Dialect = "generic" // 标准协议, 不做任何厂商特化。
+	DialectXunfei  Dialect = "xunfei"  // 科大讯飞星火原生 WebSocket。
 )
 
 // 渠道的可编辑配置; 落库时平铺成 channels 的各列, 出入 JSON 时平铺成渠道读写接口的各字段。
@@ -95,9 +97,12 @@ type Channel struct {
 // 渠道凭据的可编辑配置; 名称在渠道内唯一, 整体替换时以它为匹配依据。
 // 与 ChannelConfig 同理, 库内实体与读写接口共用这一份定义。
 type ChannelKeyConfig struct {
-	Name    string `json:"name" gorm:"not null;index:idx_channel_key,unique"`            // 凭据名称, 界面展示与人工识别用。
-	Key     string `json:"key" gorm:"not null;serializer:switchyard_secret_channel_key"` // 上游访问凭据; 信封加密落库(绑定 channel_id+name 归属), 运行时读明文。
-	Enabled bool   `json:"enabled" gorm:"default:true"`                                  // 是否可用, 禁用后不参与选路但保留统计。
+	Name      string `json:"name" gorm:"not null;index:idx_channel_key,unique"`            // 凭据名称, 界面展示与人工识别用。
+	Key       string `json:"key" gorm:"not null;serializer:switchyard_secret_channel_key"` // 上游访问凭据; 信封加密落库(绑定 channel_id+name 归属), 运行时读明文。
+	AppID     string `json:"app_id"`                                                       // 讯飞 App ID。
+	APISecret string `json:"api_secret" gorm:"serializer:switchyard_secret_channel_key"`   // 讯飞 API Secret; 信封加密落库。
+	Domain    string `json:"domain"`                                                       // 讯飞服务域名/模型 Domain。
+	Enabled   bool   `json:"enabled" gorm:"default:true"`                                  // 是否可用, 禁用后不参与选路但保留统计。
 	// Key 轮换与故障追踪。
 	Priority      int        `json:"priority" gorm:"default:0"`      // 优先级(failover 模式), 数值越小越优先。
 	ErrorCount    int        `json:"error_count" gorm:"default:0"`   // 累计错误次数。
@@ -253,8 +258,11 @@ type CustomHeader struct {
 // 且探测用的地址, 路径, 代理与过滤表达式必须与保存后生效的完全一致, 收同一份即可; 探测用不上的字段忽略即可。
 // 不指定协议: 一次探测同时试 OpenAI 与 Anthropic 两侧, 协议支持情况由各侧的响应决定。
 type ChannelFetchModelRequest struct {
-	Channel ChannelConfig `json:"channel"`                // 用于拉取的渠道配置, 提供地址, 路径, 代理与 Header。
-	Key     string        `json:"key" binding:"required"` // 拉取使用的上游凭据。
+	Channel   ChannelConfig `json:"channel"`                // 用于拉取的渠道配置, 提供地址, 路径, 代理与 Header。
+	Key       string        `json:"key" binding:"required"` // 拉取使用的上游凭据。
+	AppID     string        `json:"app_id,omitempty"`       // 讯飞 App ID。
+	APISecret string        `json:"api_secret,omitempty"`   // 讯飞 API Secret。
+	Domain    string        `json:"domain,omitempty"`       // 讯飞模型 Domain。
 }
 
 // 探测到的单个上游模型及其支持的协议集合。

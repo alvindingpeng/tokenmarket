@@ -70,12 +70,14 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
     const idPrefix = channel ? `channel-${channel.id}` : 'new-channel';
 
     // 后端会拒的四项在此先挡: 名称与地址非空, 路径以 / 开头, 至少一份填了 Key 的凭据, 至少一个模型。
+    // 讯飞渠道的凭据还要求 App ID 与 API Secret: 星火签名两项都要用, 缺一个这凭据就调不通, 保存后再报错更难查。
     const canSubmit = state.name.trim() !== ''
         && state.base_url.trim() !== ''
         && [state.openai_chat_completion_path, state.openai_response_path, state.anthropic_message_path]
             .every((path) => path === '' || path.startsWith('/'))
         && state.keys.length > 0
-        && state.keys.every((k) => k.key.trim() !== '')
+        && state.keys.every((k) => k.key.trim() !== ''
+            && (state.dialect !== 'xunfei' || (k.app_id.trim() !== '' && k.api_secret.trim() !== '')))
         && state.models.length > 0;
 
     const steps: { id: StepID; label: string }[] = [

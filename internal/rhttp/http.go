@@ -176,6 +176,24 @@ func ForChannel(target model.ChannelConfig) (*http.Client, error) {
 	}
 }
 
+// BaseTransport 取出共享客户端底层的 *http.Transport, 供 WebSocket 拨号复用同一份
+// 代理与拨号配置(含 SOCKS 代理走 DialContext、私网防护的拨号封装)。
+// 包装层不是 *http.Transport 时返回 nil, 调用方按直连处理。
+func BaseTransport(client *http.Client) *http.Transport {
+	if client == nil {
+		return nil
+	}
+	switch transport := client.Transport.(type) {
+	case *http.Transport:
+		return transport
+	case *limitedBodyTransport:
+		base, _ := transport.Base.(*http.Transport)
+		return base
+	default:
+		return nil
+	}
+}
+
 // clonedDefaultTransport 克隆默认 Transport 并调好连接池参数。
 // 所有客户端都从这里出发, 参数只需在这一处维护。
 // 拨号入口统一挂私网防护: 每次建连按解析结果复核目标地址, 防 DNS rebinding 绕过保存时校验。

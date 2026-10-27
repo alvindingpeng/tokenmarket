@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/relay/xfyun"
 	"github.com/alvindingpeng/switchyard/internal/rhttp"
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/httpclient"
@@ -192,7 +193,14 @@ func sendConverted(ctx context.Context, format llm.APIFormat, raw *httpclient.Re
 		return nil, err
 	}
 	middleware := &conversionMiddleware{channel: channel, format: outbound.APIFormat()}
-	processor := pipeline.NewFactory(httpclient.NewHttpClientWithClient(httpClient)).Pipeline(
+	// 星火 WebSocket 上游不走 HTTP 执行器: 出站转换器产出签名 URL 与协议帧后,
+	// 由 xfyun 执行器拨 WebSocket 收发帧; 其余协议仍走 HTTP 执行器。
+	// WebSocket 复用同一个上游客户端的代理与拨号配置, 与 HTTP 同一条出口线路。
+	executor := pipeline.Executor(httpclient.NewHttpClientWithClient(httpClient))
+	if _, ok := outbound.(*xfyun.Outbound); ok {
+		executor = xfyun.NewExecutor(httpClient)
+	}
+	processor := pipeline.NewFactory(executor).Pipeline(
 		inbound,
 		outbound,
 		pipeline.WithMiddlewares(middleware),

@@ -64,7 +64,8 @@ func (settingSecretCodec) Scan(ctx context.Context, field *schema.Field, dst ref
 	return nil
 }
 
-// channelKeySecretCodec 处理 channel_keys.key: 渠道凭据全部按秘密加密封存。
+// channelKeySecretCodec 处理 channel_keys 的秘密列(key 与 api_secret): 渠道凭据全部按秘密加密封存。
+// 归属绑定带列名(见 secretstore.ChannelKeyColumnBinding): key 与 api_secret 两列的密文互换位置解不开。
 type channelKeySecretCodec struct{}
 
 func (channelKeySecretCodec) Value(ctx context.Context, field *schema.Field, dst reflect.Value, fieldValue interface{}) (interface{}, error) {
@@ -76,7 +77,7 @@ func (channelKeySecretCodec) Value(ctx context.Context, field *schema.Field, dst
 	if err != nil {
 		return nil, fmt.Errorf("channel key %d: %w", row.ChannelID, err)
 	}
-	return sealSecretValue(secretstore.ChannelKeyBinding(row.ChannelID, row.Name), value)
+	return sealSecretValue(secretstore.ChannelKeyColumnBinding(row.ChannelID, row.Name, field.DBName), value)
 }
 
 func (channelKeySecretCodec) Scan(ctx context.Context, field *schema.Field, dst reflect.Value, dbValue interface{}) error {
@@ -92,7 +93,7 @@ func (channelKeySecretCodec) Scan(ctx context.Context, field *schema.Field, dst 
 		// 归属列还没扫进来(或行本身缺归属)就无法校验密文归属, 拒绝解密而不是猜。
 		return fmt.Errorf("channel key read: missing ownership identity (channel_id)")
 	}
-	value, err := openSecretValue(secretstore.ChannelKeyBinding(row.ChannelID, row.Name), stored)
+	value, err := openSecretValue(secretstore.ChannelKeyColumnBinding(row.ChannelID, row.Name, field.DBName), stored)
 	if err != nil {
 		return fmt.Errorf("channel key %d/%q: %w", row.ChannelID, row.Name, err)
 	}

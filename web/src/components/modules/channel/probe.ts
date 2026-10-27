@@ -29,6 +29,9 @@ export function useModelProbe() {
             const fetched = await fetchModel.mutateAsync({
                 channel: toChannelConfig(state),
                 key: channelKey.key.trim(),
+                app_id: state.dialect === 'xunfei' ? (channelKey.app_id ?? '').trim() : undefined,
+                api_secret: state.dialect === 'xunfei' ? (channelKey.api_secret ?? '').trim() : undefined,
+                domain: state.dialect === 'xunfei' ? (channelKey.domain ?? '').trim() : undefined,
             });
             if (fetched.length === 0) {
                 toast.warning(t('modelRefreshEmpty'));

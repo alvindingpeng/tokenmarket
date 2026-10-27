@@ -17,10 +17,14 @@ import { useModelAutoAddRules } from '@/api/model-rule';
 import { useModelProbe } from './probe';
 import { grantKey, type ChannelFormState } from './state';
 
-// GrantCells 渲染一行右侧固定的四格: chat, response, message 三个协议勾选和一个删除。
+// GrantCells 渲染一行右侧固定的协议格加一个删除格: chat, response, message, image, 讯飞渠道再加 spark。
 // 表头, 模型行, 凭据子行的差别只是这一行覆盖的 (模型 × 凭据) 范围与删除动作, 勾选,
 // 三态和写入是同一套逻辑, 故三级共用此段, 列宽与对齐也因此天然一致。
-// 三个协议列固定, 凭据作为模型的子行, 故列数不随凭据数变化。
+// 协议列按渠道方言固定(讯飞多一列), 凭据作为模型的子行, 故列数不随凭据数变化。
+// spark 列只在讯飞渠道出现; 老数据带着该位时也显示, 免得授权变成看不见的暗格。
+const hasSparkColumn = (state: ChannelFormState) =>
+    state.dialect === 'xunfei'
+    || [...state.grants.values()].some((protocols) => (protocols & Protocol.XunfeiSpark) !== 0);
 function GrantCells({ state, setState, models, keyNames, remove, icon: Icon, tip }: {
     state: ChannelFormState;
     setState: (next: ChannelFormState) => void;
@@ -70,6 +74,7 @@ function GrantCells({ state, setState, models, keyNames, remove, icon: Icon, tip
             {cell(Protocol.OpenAIResponse)}
             {cell(Protocol.AnthropicMessage)}
             {cell(Protocol.OpenAIImage)}
+            {hasSparkColumn(state) && cell(Protocol.XunfeiSpark)}
             <span className="w-7 flex justify-center">
                 {remove && (
                     <IconButton
@@ -119,8 +124,8 @@ export function FormGrants({ state, setState }: {
     };
 
     // 自定义模型直接授权给当前选中的凭据, 协议位沿用该凭据在其他模型上已有的并集。
-    // 并集来自此前刷新探测出的结果, 即该凭据确实讲得通的协议; 该凭据尚无任何授权时退回 Responses,
-    // 与探测的默认一致: Chat Completions 已被官方标记弃用, 需要它的渠道由用户手动勾选 Chat 列。
+    // 并集来自此前刷新探测出的结果, 即该凭据确实讲得通的协议; 该凭据尚无任何授权时退回 Responses
+    // (讯飞渠道退回 spark), 与探测的默认一致: Chat Completions 已被官方标记弃用, 需要它的渠道由用户手动勾选 Chat 列。
     const addModel = () => {
         const name = adding.trim();
         if (!name || state.models.includes(name)) return;
@@ -129,7 +134,7 @@ export function FormGrants({ state, setState }: {
             protocols |= state.grants.get(grantKey(modelName, activeKey)) ?? 0;
         }
         const grants = new Map(state.grants);
-        if (activeKey) grants.set(grantKey(name, activeKey), protocols || Protocol.OpenAIResponse);
+        if (activeKey) grants.set(grantKey(name, activeKey), protocols || (state.dialect === 'xunfei' ? Protocol.XunfeiSpark : Protocol.OpenAIResponse));
         setState({ ...state, models: [...state.models, name], grants });
         setAdding('');
     };
@@ -189,8 +194,9 @@ export function FormGrants({ state, setState }: {
                     >
                         {allExpanded ? <ChevronsDownUp className="size-3.5" /> : <ChevronsUpDown className="size-3.5" />}
                     </IconButton>
+                    {/* 协议列的表头: 语言无关的协议缩写, 故只随列数增减, 不做逐词翻译。 */}
                     <span className="ml-auto min-w-0 truncate text-xs text-muted-foreground">
-                        chat / response / message / image
+                        {t('grantProtocols')}{hasSparkColumn(state) ? ` / ${t('grantProtocolSpark')}` : ''}
                     </span>
                     {/* 表头覆盖全部模型全部凭据, 故勾选即批量, 删除即清空全部模型及其授权。 */}
                     <GrantCells

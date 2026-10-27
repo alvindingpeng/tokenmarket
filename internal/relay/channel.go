@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/relay/xfyun"
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/auth"
 	"github.com/looplj/axonhub/llm/httpclient"
@@ -36,6 +37,10 @@ func buildOutbound(channel model.Channel, grant model.ChannelGrant, channelKey m
 				protocol = model.ProtocolOpenAIResponse
 			case grant.Protocols&model.ProtocolOpenAIChatCompletion != 0:
 				protocol = model.ProtocolOpenAIChatCompletion
+			case grant.Protocols&model.ProtocolXunfeiSparkWS != 0:
+				// 星火 WebSocket 只承接纯文本对话(无工具/视觉), 排在 HTTP 协议之后兜底:
+				// 同一授权能走 OpenAI 兼容 HTTP 时优先走它, 不丢能力。
+				protocol = model.ProtocolXunfeiSparkWS
 			}
 		}
 	}
@@ -68,6 +73,15 @@ func buildOutbound(channel model.Channel, grant model.ChannelGrant, channelKey m
 		// 因此把渠道的基路径并入 BaseURL 一并交给转换器, 而不是走上面几个协议的路径字段。
 		baseURL := strings.TrimSuffix(channel.BaseURL, "/") + channel.OpenAIVideoBasePath
 		outbound, err := openai.NewOutboundTransformerWithConfig(&openai.Config{PlatformType: openai.PlatformOpenAI, BaseURL: baseURL, APIKeyProvider: key})
+		return outbound, protocol, passthrough, err
+	case model.ProtocolXunfeiSparkWS:
+		// 星火 WebSocket 出站: AppID 进请求帧, APIKey/APISecret 只参与 URL 签名(不进 Header);
+		// Domain 决定服务版本路径, 留空时按上游模型名解析。拨号收发由 xfyun 执行器完成。
+		outbound, err := xfyun.NewOutbound(xfyun.Config{
+			BaseURL:     channel.BaseURL,
+			Credentials: xfyun.Credentials{AppID: channelKey.AppID, APIKey: channelKey.Key, APISecret: channelKey.APISecret},
+			Domain:      channelKey.Domain,
+		})
 		return outbound, protocol, passthrough, err
 	default:
 		return nil, 0, false, fmt.Errorf("channel grant %d supports no known protocol: %d", grant.ID, grant.Protocols)

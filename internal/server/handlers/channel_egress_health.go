@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/relay"
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
@@ -16,20 +16,20 @@ import (
 // channelEgressHealth is the safe public shape of an egress health row.
 // Proxy URLs and credentials are intentionally excluded.
 type channelEgressHealth struct {
-	ID            int               `json:"id"`
-	Name          string            `json:"name"`
-	Kind          string            `json:"kind"`
-	Region        string            `json:"region"`
-	Weight        int               `json:"weight"`
-	Enabled       bool              `json:"enabled"`
-	Samples             int               `json:"samples"`
-	HasData             bool              `json:"has_data"`
-	SuccessRate         float64           `json:"success_rate"`
-	AvgWaitMs           float64           `json:"avg_wait_ms"`
-	CooldownUntil       *time.Time        `json:"cooldown_until,omitempty"`
-	CooldownRemainingMs int64             `json:"cooldown_remaining_ms"`
-	Cooling             bool              `json:"cooling"`
-	UpdatedAt           *time.Time        `json:"updated_at,omitempty"`
+	ID                  int        `json:"id"`
+	Name                string     `json:"name"`
+	Kind                string     `json:"kind"`
+	Region              string     `json:"region"`
+	Weight              int        `json:"weight"`
+	Enabled             bool       `json:"enabled"`
+	Samples             int        `json:"samples"`
+	HasData             bool       `json:"has_data"`
+	SuccessRate         float64    `json:"success_rate"`
+	AvgWaitMs           float64    `json:"avg_wait_ms"`
+	CooldownUntil       *time.Time `json:"cooldown_until,omitempty"`
+	CooldownRemainingMs int64      `json:"cooldown_remaining_ms"`
+	Cooling             bool       `json:"cooling"`
+	UpdatedAt           *time.Time `json:"updated_at,omitempty"`
 }
 
 func init() {

@@ -10,6 +10,7 @@ import GroqIcon from '@thesvg/react/groq';
 import QwenIcon from '@thesvg/react/qwen';
 import MoonshotIcon from '@thesvg/react/moonshot-ai';
 import ZhipuIcon from '@thesvg/react/zhipu';
+import IflytekIcon from '@thesvg/react/iflytekcloud';
 import XAIIcon from '@thesvg/react/xai-grok';
 import SiliconFlowIcon from '@thesvg/react/siliconcloud-siliconflow';
 import AzureIcon from '@thesvg/react/azure-azure-openai';
@@ -163,6 +164,16 @@ export const CHANNEL_PRESETS: ChannelPreset[] = [
         dialect: 'generic',
         base_url: 'https://open.bigmodel.cn',
         openai_chat_completion_path: '/api/coding/paas/v4/chat/completions', openai_response_path: '/api/v1/responses', anthropic_message_path: '/api/anthropic/v1/messages',
+    },
+    {
+        id: 'xunfei', label: '讯飞 Spark', Icon: IflytekIcon,
+        description: {
+            zh_hans: '讯飞星火大模型 API', zh_hant: '訊飛星火大模型 API', en: 'iFlytek Spark API',
+        },
+        dialect: 'xunfei',
+        // 讯飞星火走 OpenAI 兼容端点; 线协议差异由授权上的 spark 协议位表达, 路径仍是标准三件。
+        base_url: 'https://spark-api-open.xf-yun.com',
+        openai_chat_completion_path: CHAT, openai_response_path: RESP, anthropic_message_path: ANTH,
     },
     {
         id: 'xai', label: 'xAI', Icon: XAIIcon, iconClassName: 'brightness-0 dark:invert',

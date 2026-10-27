@@ -33,7 +33,7 @@ var channelModelCacheWriteMu sync.Mutex
 
 // 已定义的全部协议位, 用于校验提交的协议掩码。
 // ProtocolOpenAIVideo 一并列入, 管理后台勾选不会被判为非法位; 视频路由本身 P2 阶段再补。
-const definedProtocols = model.ProtocolOpenAIChatCompletion | model.ProtocolOpenAIResponse | model.ProtocolAnthropicMessage | model.ProtocolOpenAIImage | model.ProtocolOpenAIVideo
+const definedProtocols = model.ProtocolOpenAIChatCompletion | model.ProtocolOpenAIResponse | model.ProtocolAnthropicMessage | model.ProtocolOpenAIImage | model.ProtocolOpenAIVideo | model.ProtocolXunfeiSparkWS
 
 // ChannelDetailGet 返回指定渠道的完整配置, 供编辑表单读取; 非归属者按不存在处理。
 func ChannelDetailGet(id int, scope model.Scope) (model.ChannelDetail, error) {
@@ -1019,13 +1019,13 @@ func syncChannelKeys(tx *gorm.DB, channelID int, requested []model.ChannelKeyCon
 	}
 	for _, requestedKey := range requested {
 		if current, ok := existingByName[requestedKey.Name]; ok {
-			if current.Key != requestedKey.Key || current.Enabled != requestedKey.Enabled {
+			if current.Key != requestedKey.Key || current.AppID != requestedKey.AppID || current.APISecret != requestedKey.APISecret || current.Domain != requestedKey.Domain || current.Enabled != requestedKey.Enabled {
 				// map 更新绕过字段序列化器, key 列密文由 gorm 回调按归属绑定生成, Model 必须带上
 				// (channel_id, name) 身份: 回调推不出归属会 fail closed 拒绝写入。
 				identity := model.ChannelKey{ID: current.ID, ChannelID: current.ChannelID,
 					ChannelKeyConfig: model.ChannelKeyConfig{Name: current.Name}}
 				if err := tx.Model(&identity).Where("id = ?", current.ID).
-					Updates(map[string]any{"key": requestedKey.Key, "enabled": requestedKey.Enabled}).Error; err != nil {
+					Updates(map[string]any{"key": requestedKey.Key, "app_id": requestedKey.AppID, "api_secret": requestedKey.APISecret, "domain": requestedKey.Domain, "enabled": requestedKey.Enabled}).Error; err != nil {
 					return fmt.Errorf("failed to update channel key: %w", err)
 				}
 			}

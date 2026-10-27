@@ -192,6 +192,7 @@ URL must **not** include `/v1` or a specific endpoint:
 | OpenAI Responses | `/v1/responses` | `https://api.openai.com` |
 | Anthropic Messages | `/v1/messages` | `https://api.anthropic.com` |
 | OpenAI Images | `/v1/images/generations`, `/v1/images/edits` | `https://api.openai.com` |
+| Xunfei Spark WebSocket | native `wss://` endpoint; domain selects the API version path | `https://spark-api-open.xf-yun.com` or the full `wss://.../v1.1/chat` endpoint |
 
 > 💡 **Gemini and other providers.** Native Gemini protocol support was removed at `v0.13.9`:
 > `gemini`-typed channels migrate to the OpenAI Chat protocol. Point such channels at the provider's

@@ -23,12 +23,15 @@ const (
 
 	secretSettingValueColumn = "value"
 	secretChannelKeyColumn   = "key"
+	// channel_keys 里带 serializer 的秘密列都要被 map 写入兜底覆盖; 少一列就有一列明文落库。
+	secretChannelKeyAPISecretColumn = "api_secret"
 )
 
 // registerSecretFieldProtection 挂接 map 写入兜底回调; 在 InitDB 打开连接后调用一次。
+// 插入与更新分开挂: 插入没有存量密文, 不受"改归属必须重给每一列秘密"约束。
 func registerSecretFieldProtection(connector *gorm.DB) {
-	_ = connector.Callback().Create().Before("gorm:create").Register("switchyard:protect_secret_create", protectSecretMapWrites)
-	_ = connector.Callback().Update().Before("gorm:update").Register("switchyard:protect_secret_update", protectSecretMapWrites)
+	_ = connector.Callback().Create().Before("gorm:create").Register("switchyard:protect_secret_create", func(tx *gorm.DB) { protectSecretMapWrites(tx, true) })
+	_ = connector.Callback().Update().Before("gorm:update").Register("switchyard:protect_secret_update", func(tx *gorm.DB) { protectSecretMapWrites(tx, false) })
 }
 
 // 小包装: map 写入回调与字段序列化器共用 model 里的同一套封存策略(幂等、空值透传、无钥透传)。

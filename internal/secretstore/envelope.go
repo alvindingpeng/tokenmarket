@@ -59,9 +59,16 @@ func SettingBinding(key string) Binding {
 	return Binding{Table: "settings", Owner: "key:" + key, Column: "value"}
 }
 
-// ChannelKeyBinding 渠道凭据行的归属绑定: 行内凭据名与所属渠道构成归属, 两者在业务上不随更新而变。
+// ChannelKeyBinding 渠道凭据行 key 列的归属绑定(存量信封即以此封存, 保持读兼容)。
 func ChannelKeyBinding(channelID int, name string) Binding {
-	return Binding{Table: "channel_keys", Owner: fmt.Sprintf("channel_id:%d;name:%s", channelID, name), Column: "key"}
+	return ChannelKeyColumnBinding(channelID, name, "key")
+}
+
+// ChannelKeyColumnBinding 渠道凭据行指定秘密列(key / api_secret)的归属绑定:
+// 行内凭据名与所属渠道构成归属, 两者在业务上不随更新而变; 列名同样进绑定,
+// key 与 api_secret 两列的密文互换位置会在解密前被归属比对拦下。
+func ChannelKeyColumnBinding(channelID int, name, column string) Binding {
+	return Binding{Table: "channel_keys", Owner: fmt.Sprintf("channel_id:%d;name:%s", channelID, name), Column: column}
 }
 
 // IsEnvelope 判断库内取到的值是否为信封格式。历史明文与空值都不是信封。

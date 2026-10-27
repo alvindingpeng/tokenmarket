@@ -481,7 +481,7 @@ func fetchModel(c *gin.Context) {
 		resp.Error(c, http.StatusBadGateway, err.Error())
 		return
 	}
-	fetched, err := op.ProbeChannelModels(client, request.Channel, request.Key, c.Request.Context())
+	fetched, err := op.ProbeChannelModels(client, request.Channel, request.Key, request.AppID, request.APISecret, request.Domain, c.Request.Context())
 	if err != nil {
 		// 地址缺失与过滤正则编译错误属请求参数问题, 按 400; 两侧探测都失败是调用方配置问题, 按 502 带上游原文。
 		if errors.Is(err, op.ErrProbeBaseURLRequired) || errors.Is(err, op.ErrProbeInvalidFilter) {

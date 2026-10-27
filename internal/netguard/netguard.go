@@ -59,16 +59,17 @@ func CheckHost(ctx context.Context, host string, allowPrivate bool) error {
 	return nil
 }
 
-// CheckURL 校验 URL 的主机指向: 仅接受 http/https, 主机不得解析到私网(除非允许)。
+// CheckURL 校验 URL 的主机指向: 仅接受 http/https 与 ws/wss(讯飞星火等 WebSocket 上游的完整端点),
+// 主机不得解析到私网(除非允许)。ws/wss 只是 HTTP 升级协议, 主机防护语义与 http(s) 完全一致。
 func CheckURL(ctx context.Context, rawURL string, allowPrivate bool) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("invalid upstream url: %w", err)
 	}
 	switch parsed.Scheme {
-	case "http", "https":
+	case "http", "https", "ws", "wss":
 	default:
-		return fmt.Errorf("upstream url scheme must be http or https, got %q", parsed.Scheme)
+		return fmt.Errorf("upstream url scheme must be http, https, ws or wss, got %q", parsed.Scheme)
 	}
 	return CheckHost(ctx, parsed.Hostname(), allowPrivate)
 }

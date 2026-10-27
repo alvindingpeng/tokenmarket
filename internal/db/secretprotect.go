@@ -13,7 +13,7 @@ import (
 // map 写入兜底: gorm 对 map[string]any 的 Updates/Create 不走字段序列化器,
 // 直接把 map 值塞进 SQL 参数。没有这层拦截, SettingUpsert 之类的 map 写入会把明文凭据落库。
 // 拦截后按行归属加密封存; 归属推不出来时直接报错, 不允许写入弱绑定或明文的密文列。
-func protectSecretMapWrites(tx *gorm.DB) {
+func protectSecretMapWrites(tx *gorm.DB, isCreate bool) {
 	if tx == nil || tx.Error != nil || tx.Statement == nil || tx.Statement.Dest == nil {
 		return
 	}
@@ -21,7 +21,7 @@ func protectSecretMapWrites(tx *gorm.DB) {
 		return
 	}
 	for _, row := range secretMapRowsOf(tx.Statement.Dest) {
-		if err := protectSecretMapRow(tx, row); err != nil {
+		if err := protectSecretMapRow(tx, row, isCreate); err != nil {
 			_ = tx.AddError(err)
 			return
 		}
@@ -51,7 +51,7 @@ func secretMapRowsOf(dest interface{}) []map[string]interface{} {
 }
 
 // protectSecretMapRow 处理一行 map 写入: 只关心密文列出现在 SET 里的情况。
-func protectSecretMapRow(tx *gorm.DB, row map[string]interface{}) error {
+func protectSecretMapRow(tx *gorm.DB, row map[string]interface{}, isCreate bool) error {
 	var (
 		table        string
 		parsedSchema *schema.Schema
@@ -66,7 +66,7 @@ func protectSecretMapRow(tx *gorm.DB, row map[string]interface{}) error {
 	case secretSettingTable:
 		return protectSettingMapRow(parsedSchema, tx.Statement.Model, row)
 	case secretChannelKeyTable:
-		return protectChannelKeyMapRow(parsedSchema, tx.Statement.Model, row)
+		return protectChannelKeyMapRow(parsedSchema, tx.Statement.Model, row, isCreate)
 	default:
 		return nil
 	}
@@ -111,11 +111,12 @@ func protectSettingMapRow(parsedSchema *schema.Schema, modelValue interface{}, r
 	return nil
 }
 
-// protectChannelKeyMapRow channel_keys.key 的 map 写入。
+// protectChannelKeyMapRow channel_keys 全部秘密列(key 与 api_secret)的 map 写入。
 // 归属绑定需要 (channel_id, name): map 里改了 name/channel_id 却不重给 key 时,
 // 存量密文的绑定会失效, 这种写入直接拒绝。
-func protectChannelKeyMapRow(parsedSchema *schema.Schema, modelValue interface{}, row map[string]interface{}) error {
+func protectChannelKeyMapRow(parsedSchema *schema.Schema, modelValue interface{}, row map[string]interface{}, isCreate bool) error {
 	keyColumn := secretMapColumn(parsedSchema, row, secretChannelKeyColumn)
+	apiSecretColumn := secretMapColumn(parsedSchema, row, secretChannelKeyAPISecretColumn)
 	nameColumn := secretMapColumn(parsedSchema, row, "name")
 	channelIDColumn := secretMapColumn(parsedSchema, row, "channel_id")
 
@@ -150,24 +151,39 @@ func protectChannelKeyMapRow(parsedSchema *schema.Schema, modelValue interface{}
 		}
 	}
 
-	if keyColumn == "" || row[keyColumn] == nil {
-		if (nameColumn != "" || channelIDColumn != "") && secretstore.Active() != nil {
-			return fmt.Errorf("refusing to move/rename channel key without re-supplying the key: stored ciphertext is bound to (channel_id, name)")
-		}
+	// 全部秘密列(key 与 api_secret)同一套处理: map 写入绕过字段序列化器, 少封一列就有一列明文落库。
+	// 封存绑定带列名(见 secretstore.ChannelKeyColumnBinding), 两列密文互换位置验不过。
+	type secretWrite struct{ mapKey, column string }
+	secretWrites := make([]secretWrite, 0, 2)
+	if keyColumn != "" && row[keyColumn] != nil {
+		secretWrites = append(secretWrites, secretWrite{mapKey: keyColumn, column: secretChannelKeyColumn})
+	}
+	if apiSecretColumn != "" && row[apiSecretColumn] != nil {
+		secretWrites = append(secretWrites, secretWrite{mapKey: apiSecretColumn, column: secretChannelKeyAPISecretColumn})
+	}
+	if !isCreate && (nameColumn != "" || channelIDColumn != "") && secretstore.Active() != nil && len(secretWrites) < 2 {
+		// 改归属(name/channel_id)会让存量密文的 (channel_id, name) 绑定失效: 每一列秘密都必须
+		// 随行重给、按新归属重封。只给一列就改名/搬移, 另一列留在旧绑定上, 之后读不开 —— 直接拒绝。
+		// 插入没有存量密文, 不受此约束。
+		return fmt.Errorf("refusing to move/rename channel key without re-supplying every secret (key and api_secret): stored ciphertext is bound to (channel_id, name)")
+	}
+	if len(secretWrites) == 0 {
 		return nil
 	}
 	if channelID == 0 {
-		return fmt.Errorf("refusing to write channel_keys.key without channel_id: the secret envelope binds to row ownership")
+		return fmt.Errorf("refusing to write channel_keys secrets without channel_id: the secret envelope binds to row ownership")
 	}
-	value, err := secretFieldString(row[keyColumn])
-	if err != nil {
-		return fmt.Errorf("channel key %d/%q: %w", channelID, name, err)
+	for _, write := range secretWrites {
+		value, err := secretFieldString(row[write.mapKey])
+		if err != nil {
+			return fmt.Errorf("channel key %d/%q: %w", channelID, name, err)
+		}
+		sealed, err := sealSecretValue(secretstore.ChannelKeyColumnBinding(channelID, name, write.column), value)
+		if err != nil {
+			return fmt.Errorf("channel key %d/%q: %w", channelID, name, err)
+		}
+		row[write.mapKey] = sealed
 	}
-	sealed, err := sealSecretValue(secretstore.ChannelKeyBinding(channelID, name), value)
-	if err != nil {
-		return fmt.Errorf("channel key %d/%q: %w", channelID, name, err)
-	}
-	row[keyColumn] = sealed
 	return nil
 }
 

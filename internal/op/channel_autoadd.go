@@ -277,7 +277,7 @@ func AutoAddChannelModels(ctx context.Context, channelID int, config model.Chann
 			continue
 		}
 		keyIDByName[channelKey.Name] = channelKey.ID
-		fetched, err := ProbeChannelModels(client, config, channelKey.Key, ctx)
+		fetched, err := ProbeChannelModels(client, config, channelKey.Key, channelKey.AppID, channelKey.APISecret, channelKey.Domain, ctx)
 		if err != nil {
 			log.Warnf("auto-add: probe key %q of channel %d failed: %v", channelKey.Name, channelID, err)
 			continue
