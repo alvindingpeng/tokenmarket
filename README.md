@@ -6,7 +6,7 @@
 
 **A self-hosted LLM marshalling gateway — many upstreams in, one protocol out, every call metered.**
 
-[![version](https://img.shields.io/badge/version-v1.0.0-4c6ef5?style=flat-square)](#versioning-and-releases)
+[![version](https://img.shields.io/badge/version-v1.2.5-4c6ef5?style=flat-square)](#versioning-and-releases)
 [![go](https://img.shields.io/badge/go-1.26-00ADD8?style=flat-square&logo=go&logoColor=white)](go.mod)
 [![license](https://img.shields.io/badge/license-AGPL--3.0--only-blue?style=flat-square)](LICENSE)
 [![deploy](https://img.shields.io/badge/deploy-single%20binary-2b8a3e?style=flat-square)](#quick-start)

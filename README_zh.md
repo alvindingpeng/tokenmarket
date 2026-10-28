@@ -6,7 +6,7 @@
 
 **自托管的 LLM 编组网关 —— 多条上游汇入，一种协议发出，每一次调用都被计量。**
 
-[![version](https://img.shields.io/badge/version-v1.0.0-4c6ef5?style=flat-square)](#版本号与发布)
+[![version](https://img.shields.io/badge/version-v1.2.5-4c6ef5?style=flat-square)](#版本号与发布)
 [![go](https://img.shields.io/badge/go-1.26-00ADD8?style=flat-square&logo=go&logoColor=white)](go.mod)
 [![license](https://img.shields.io/badge/license-AGPL--3.0--only-blue?style=flat-square)](LICENSE)
 [![deploy](https://img.shields.io/badge/deploy-single%20binary-2b8a3e?style=flat-square)](#快速开始)
