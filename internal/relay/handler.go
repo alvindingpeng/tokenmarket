@@ -258,6 +258,11 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			item := pickGroupItem(group)
 			request.setRouteDecision(routeExplanation(group, item))
 			if item.ID == 0 {
+				// 分组一个成员都没有时, 等待永远等不到上游: 直接点明配置缺失, 不再报笼统的"无可用上游"。
+				if len(group.Items) == 0 {
+					stop(fmt.Errorf("group %q has no upstream members configured", group.Name), http.StatusServiceUnavailable)
+					return
+				}
 				if !waitAvailable() {
 					return
 				}

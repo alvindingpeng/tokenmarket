@@ -1,5 +1,12 @@
 # 更新说明
 
+## v1.2.5 — 2026-10-28
+
+### 空分组错误提示明确化
+
+- 分组未配置任何上游成员时，直接返回 `group "X" has no upstream members configured`（503），不再报笼统的 `no available upstream; waiting disabled`；配置缺失一眼可见。
+- 仓库忽略 `dist/` 构建产物目录。
+
 ## v1.2.4 — 2026-10-28
 
 ### 讯飞 MaaS 三接口 HTTP 密码模式
