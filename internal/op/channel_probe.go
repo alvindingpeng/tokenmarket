@@ -23,9 +23,6 @@ var ErrProbeBaseURLRequired = errors.New("channel base url is required")
 // ErrProbeInvalidFilter 过滤表达式无法编译: 属请求参数错误, 调用方按 400 返回。
 var ErrProbeInvalidFilter = errors.New("invalid filter regex")
 
-// errXunfeiNoAnthropicSide 表示讯飞渠道没有 Anthropic messages 接口, 该侧探测按「无」处理。
-var errXunfeiNoAnthropicSide = errors.New("xunfei channel has no anthropic messages endpoint, openai side only")
-
 // ProbeChannelModels 按渠道配置与凭据拉取上游模型列表, 并按过滤表达式筛选后返回。
 // 同时探测 OpenAI 与 Anthropic 两侧, 谁返回了哪些模型, 就给对应协议位打勾: 协议支持由探测结果决定, 无需用户声明。
 // OpenAI 侧记为 Responses 而不是 Chat: Chat Completions 已被官方标记弃用, 新渠道应默认走 Responses,
@@ -36,8 +33,9 @@ var errXunfeiNoAnthropicSide = errors.New("xunfei channel has no anthropic messa
 //
 // 讯飞渠道经 appID/apiSecret/domain 三个凭据字段识别(编辑表单只在 xunfei 方言下携带):
 // HTTP 侧探测只用 key(API 鉴权即 APIPassword 的 Bearer); appID/apiSecret 是 WebSocket 帧与 URL 签名凭据, 探测不拨 WebSocket, 暂不消费。
-// 讯飞只有 OpenAI Chat 一种 HTTP 接口(无 Responses/Anthropic): 只探测 OpenAI 一侧, 模型列表地址从 Chat 路径推导;
-// 协议位一律预勾 Chat|Spark —— API 鉴权(HTTP)优先, 原生 WebSocket 兜底, 纯 WebSocket 用法在授权矩阵取消 Chat 勾选即可。
+// 讯飞 MaaS 三个原生接口(chat/responses/anthropic)共用一份模型列表(线上实测 /v2/models、/v1/models、/anthropic/v1/models 均可用),
+// OpenAI 侧模型列表地址从 Chat 路径推导(如 /v2/chat/completions → /v2/models), 两侧照常都探测;
+// OpenAI 侧协议位预勾 Chat|Responses|Spark, Anthropic 侧探测成功另记 Anthropic 位 —— 三种请求格式都走原生透传。
 // Domain 即模型名(出站转换器按「模型名是合法 Domain」直接选用服务版本), 探测以它单独登记一条模型。
 func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key, appID, apiSecret, domain string, ctx context.Context) ([]model.ChannelFetchModel, error) {
 	// 探测收的是尚未落库的提交配置, 不经 normalizeChannelConfig, 故在此自行去空白;
@@ -67,10 +65,6 @@ func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key, ap
 	}()
 	go func() {
 		defer wg.Done()
-		if target.Dialect == model.DialectXunfei {
-			anthropicErr = errXunfeiNoAnthropicSide
-			return
-		}
 		anthropicModels, anthropicErr = fetchAnthropicModels(client, ctx, target, key, modelsURL(target.BaseURL, target.AnthropicMessagePath))
 	}()
 	wg.Wait()
@@ -136,7 +130,9 @@ func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key, ap
 			order = append(order, name)
 		}
 		if target.Dialect == model.DialectXunfei {
-			protocolsByModel[name] |= model.ProtocolOpenAIChatCompletion | model.ProtocolXunfeiSparkWS
+			// 讯飞 MaaS 的 Chat 与 Responses 是并列的原生接口, 都记上让两种请求格式都走原生透传;
+			// Spark 位标记「该模型名也可走原生 WebSocket」。
+			protocolsByModel[name] |= model.ProtocolOpenAIChatCompletion | model.ProtocolOpenAIResponse | model.ProtocolXunfeiSparkWS
 		} else {
 			protocolsByModel[name] |= model.ProtocolOpenAIResponse
 		}

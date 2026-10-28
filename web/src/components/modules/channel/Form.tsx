@@ -78,14 +78,6 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
     const sparkOnly = (protocols: number) =>
         (protocols & Protocol.XunfeiSpark) !== 0
         && (protocols & (Protocol.OpenAIChatCompletion | Protocol.OpenAIResponse | Protocol.AnthropicMessage)) === 0;
-    // 讯飞 MaaS 主机(maas-api.*)的 HTTP 接口走 APIKey/APISecret 签名鉴权, API Secret 不能为空。
-    const hostIsMaaS = (() => {
-        try {
-            return new URL(state.base_url.trim()).hostname.startsWith('maas-api.');
-        } catch {
-            return false;
-        }
-    })();
     const keyNeedsSparkCreds = (keyName: string) =>
         state.dialect === 'xunfei'
         && state.models.some((modelName) => sparkOnly(state.grants.get(grantKey(modelName, keyName)) ?? 0));
@@ -100,8 +92,6 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
         if (k.key.trim() === '') saveBlockers.push(t('saveBlockedKeySecret', { name: k.name }));
         if (keyNeedsSparkCreds(k.name) && (k.app_id.trim() === '' || k.api_secret.trim() === ''))
             saveBlockers.push(t('saveBlockedSparkCreds', { name: k.name }));
-        if (hostIsMaaS && state.dialect === 'xunfei' && k.api_secret.trim() === '')
-            saveBlockers.push(t('saveBlockedApiSecret', { name: k.name }));
     }
     if (state.models.length === 0) saveBlockers.push(t('saveBlockedNoModels'));
     const canSubmit = saveBlockers.length === 0;
@@ -220,13 +210,11 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
                                     required
                                 />
                             </div>
-                            {/* 讯飞没有 Responses/Anthropic 接口, 这两项对讯飞渠道不适用; 只留 Chat 路径并给两套鉴权方式的端点指引。 */}
                             {([
                                 ['openai_chat_completion_path', 'OpenAI Chat'],
                                 ['openai_response_path', 'OpenAI Responses'],
                                 ['anthropic_message_path', 'Anthropic'],
                             ] as const)
-                                .filter(([field]) => state.dialect !== 'xunfei' || field === 'openai_chat_completion_path')
                                 .map(([field, label]) => (
                                 <div key={field} className="space-y-2">
                                     <Label htmlFor={`${idPrefix}-${field}`}>{label}</Label>

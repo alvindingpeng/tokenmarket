@@ -168,18 +168,18 @@ export const CHANNEL_PRESETS: ChannelPreset[] = [
     {
         id: 'xunfei', label: '讯飞 Spark', Icon: IflytekIcon,
         description: {
-            zh_hans: 'MaaS 签名鉴权(Key=APIKey, API Secret=APISecret), 可选原生 WebSocket',
-            zh_hant: 'MaaS 簽名鑒權(Key=APIKey, API Secret=APISecret), 可選原生 WebSocket',
-            en: 'MaaS HMAC signing (Key=APIKey, API Secret=APISecret), optional native WebSocket',
+            zh_hans: 'MaaS HTTP 密码鉴权(Key=ak- 开头), Chat/Responses/Anthropic 三接口, 可选原生 WebSocket',
+            zh_hant: 'MaaS HTTP 密碼鑒權(Key=ak- 開頭), Chat/Responses/Anthropic 三接口, 可選原生 WebSocket',
+            en: 'MaaS HTTP password auth (Key starts with ak-), Chat/Responses/Anthropic endpoints, optional native WebSocket',
         },
         dialect: 'xunfei',
-        // API 鉴权走讯飞 MaaS 控制台给出的 OpenAI 兼容接口(https://maas-api.cn-huabei-1.xf-yun.com/v2/chat/completions),
-        // MaaS 只认 APIKey/APISecret 的 V2 签名鉴权(填 API Secret 即自动签名);
-        // 经典开放平台(spark-api-open.xf-yun.com, /v1/chat/completions)只认 Bearer APIPassword(API Secret 留空)。
+        // 讯飞 MaaS 是三协议网关(线上实测三接口均以 HTTP 密码的 Bearer 通过):
+        // chat=/v2/chat/completions, responses=/v1/responses, anthropic=/anthropic/v1/messages, 密码为 ak- 开头的 API 密码;
+        // 若改用 APIKey/APISecret 的 V2 签名鉴权, 填 API Secret 后自动启用签名; 经典开放平台(spark-api-open.xf-yun.com)只认 Bearer APIPassword。
         // 讯飞没有 Responses/Anthropic 接口, 这两项留空且讯飞渠道的连接页不显示;
         // 原生 WebSocket 由授权矩阵的 Spark 列启用(MaaS 端点固定 /v1.1/chat, 开放平台按 Domain 生成版本路径)。
         base_url: 'https://maas-api.cn-huabei-1.xf-yun.com',
-        openai_chat_completion_path: '/v2/chat/completions', openai_response_path: '', anthropic_message_path: '',
+        openai_chat_completion_path: '/v2/chat/completions', openai_response_path: '/v1/responses', anthropic_message_path: '/anthropic/v1/messages',
     },
     {
         id: 'xai', label: 'xAI', Icon: XAIIcon, iconClassName: 'brightness-0 dark:invert',

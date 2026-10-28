@@ -1,5 +1,13 @@
 # 更新说明
 
+## v1.2.4 — 2026-10-28
+
+### 讯飞 MaaS 三接口 HTTP 密码模式
+
+- 按用户提供的集中调用示例实测确认：讯飞 MaaS 是**三协议网关 + 单一 HTTP 密码鉴权**（`Bearer ak-…`），三个原生接口全部可用：Chat `/v2/chat/completions`、Responses `/v1/responses`、Anthropic `/anthropic/v1/messages`；`/v2/models`、`/v1/models`、`/anthropic/v1/models` 均返回标准模型列表。此前「MaaS 必须 APIKey/APISecret 签名」的判断只对非 `ak-` 前缀 token 成立，HTTP 密码模式无需签名。
+- 讯飞预设改为一体化三接口配置（三条路径默认填好），表单不再隐藏 Responses/Anthropic 路径，也不再强制 API Secret；API Secret 仅在改用 APIKey/APISecret 签名鉴权或原生 WebSocket 时填写（签名逻辑保留为可选）。
+- 模型探测恢复双侧探测：OpenAI 侧预勾 Chat|Responses|Spark，Anthropic 侧成功另记 Anthropic 位——三种请求格式都走原生透传。
+
 ## v1.2.3 — 2026-10-27
 
 ### 保存按钮缺项可见化
