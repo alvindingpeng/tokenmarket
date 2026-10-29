@@ -57,13 +57,20 @@ func RotateSecret() (string, error) {
 	return value, nil
 }
 
+// maxAllowedTokenAge 令牌有效期服务端上限: 与「记住我」(-1) 的 30 天一致。
+// 登录请求体的 expire 只是偏好, 不得越过此上限 —— 否则可签发超长寿令牌(近乎永久后门)。
+var maxAllowedTokenAge = int((30 * 24 * time.Hour).Seconds())
+
 func GenerateJWTToken(user model.User, expiresSec int) (string, int, error) {
 	now := time.Now()
 	maxAge := int((15 * time.Minute).Seconds())
 	if expiresSec > 0 {
 		maxAge = expiresSec
+		if maxAge > maxAllowedTokenAge {
+			maxAge = maxAllowedTokenAge
+		}
 	} else if expiresSec == -1 {
-		maxAge = int((30 * 24 * time.Hour).Seconds())
+		maxAge = maxAllowedTokenAge
 	}
 	claims := &Claims{
 		UserID:       user.ID,

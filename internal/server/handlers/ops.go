@@ -39,7 +39,7 @@ func init() {
 		).
 		AddRoute(
 			router.NewRoute("/overview", http.MethodGet).
-				Handle(opsOverview),
+				Allow(model.RoleAdmin).Handle(opsOverview),
 		).
 		AddRoute(
 			router.NewRoute("/latency", http.MethodGet).

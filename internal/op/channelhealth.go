@@ -3,16 +3,29 @@ package op
 import (
 	"context"
 	"fmt"
-	"github.com/alvindingpeng/switchyard/internal/alert"
 	"net/http"
 	"time"
 
+	"github.com/alvindingpeng/switchyard/internal/alert"
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/netguard"
 )
 
-// channelHealthClient 专用探测 HTTP 客户端, 超时较短避免长阻塞。
-var channelHealthClient = &http.Client{Timeout: 15 * time.Second}
+// channelHealthClient 专用探测 HTTP 客户端: 超时较短, 挂 DialGuard 防私网 SSRF 且禁止跟随重定向。
+// 原实现是裸 http.Client(默认跟随最多 10 跳重定向、无拨号复核), 渠道商可用 302 → 169.254.169.254
+// 借健康检查打内网。此处不能 import rhttp(会与 op 形成循环依赖), 故直接用 netguard 构建。
+var channelHealthClient = func() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = netguard.DialGuard{AllowPrivate: AllowPrivateUpstream, Next: transport.DialContext}.DialContext
+	return &http.Client{
+		Timeout:   15 * time.Second,
+		Transport: transport,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}()
 
 // alertFailStreakDefault 连续失败次数阈值默认值: 达到此数才判定宕机, 避免单次抖动误报。
 // 实际取值来自设置 alert_fail_streak, 未配置时回退到此默认值。

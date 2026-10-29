@@ -28,8 +28,11 @@ func Cors() gin.HandlerFunc {
 		if allowed == "" {
 			return false
 		}
+		// AllowCredentials 恒为 true(会话是 cookie 鉴权), 而 "*" + 凭据等于「任意恶意网页都能
+		// 以登录用户身份发跨域请求并读取响应」——等同浏览器内账户接管。故 "*" 一律拒绝,
+		// 必须配置带 scheme 的完整 origin 白名单(如 https://example.com)。
 		if allowed == "*" {
-			return true
+			return false
 		}
 
 		origin = strings.TrimSpace(origin)

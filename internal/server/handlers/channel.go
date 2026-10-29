@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/netguard"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/price"
 	"github.com/alvindingpeng/switchyard/internal/rhttp"
@@ -475,6 +476,18 @@ func fetchModel(c *gin.Context) {
 	if err := c.ShouldBindJSON(&request); err != nil {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
+	}
+	// SSRF 防护: 探测收到的是未落库配置, 不经保存时的 normalizeChannelConfig 校验,
+	// 必须在入口显式复核地址 —— 否则渠道商可用本端点探测内网/云元数据。
+	if err := netguard.CheckURL(c.Request.Context(), request.Channel.BaseURL, op.AllowPrivateUpstream()); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if strings.TrimSpace(request.Channel.ChannelProxy) != "" {
+		if err := netguard.CheckProxyURL(c.Request.Context(), request.Channel.ChannelProxy, op.AllowPrivateUpstream()); err != nil {
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	client, err := probeHTTPClient(request.Channel)
 	if err != nil {

@@ -45,7 +45,8 @@ func writeMarker(backupPath, oldVersion, newVersion string) {
 		log.Warnf("failed to marshal update marker: %v", err)
 		return
 	}
-	if err := os.WriteFile(markerPath(), data, 0644); err != nil {
+	// 0600: marker 含备份二进制绝对路径等本地信息, 不应让同机其他用户读取。
+	if err := os.WriteFile(markerPath(), data, 0600); err != nil {
 		log.Warnf("failed to write update marker: %v", err)
 	}
 }
@@ -117,13 +118,26 @@ func HealthCheckAndRollback() {
 
 func doRollback(backupPath, failedVersion, restoreVersion string) {
 	log.Warnf("rolling back from %s to %s (backup: %s)", failedVersion, restoreVersion, backupPath)
-	if _, err := os.Stat(backupPath); err != nil {
-		log.Errorf("backup binary %s unavailable, cannot rollback: %v", backupPath, err)
-		return
-	}
 	execPath, err := os.Executable()
 	if err != nil {
 		log.Errorf("cannot determine current executable path: %v", err)
+		return
+	}
+	execPath, err = filepath.Abs(execPath)
+	if err != nil {
+		log.Errorf("cannot resolve executable path: %v", err)
+		return
+	}
+	// 回滚来源必须严格等于「当前可执行文件 + .old」: marker 里的 backup_path 来自磁盘 JSON,
+	// 不校验就等于允许本地任意文件被 rename 到可执行路径再被执行(提权/驻留原语)。
+	expected := execPath + ".old"
+	if filepath.Clean(backupPath) != filepath.Clean(expected) {
+		log.Errorf("refusing rollback: backup path %q is not the expected %q", backupPath, expected)
+		removeMarker()
+		return
+	}
+	if _, err := os.Stat(backupPath); err != nil {
+		log.Errorf("backup binary %s unavailable, cannot rollback: %v", backupPath, err)
 		return
 	}
 	if err := os.Rename(backupPath, execPath); err != nil {

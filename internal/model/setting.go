@@ -306,8 +306,9 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyBreakerModelMinutes, Value: "5"},     // 渠道模型熔断 5 分钟
 		{Key: SettingKeyBreakerMaxMinutes, Value: "60"},      // 连续熔断的时长上限 60 分钟
 		{Key: SettingKeyEgressRegionBonusMs, Value: "0"},     // 区域亲和默认关闭
-		{Key: SettingKeyBreakerCoolAuthSeconds, Value: "60"}, // 鉴权/额度成员冷却 60 秒
-		{Key: SettingKeyBreakerCoolSoftSeconds, Value: "30"}, // 过载/模型缺失成员冷却 30 秒
+		{Key: SettingKeyBreakerCoolAuthSeconds, Value: "60"},   // 鉴权/额度成员冷却 60 秒
+		{Key: SettingKeyBreakerCoolSoftSeconds, Value: "30"},   // 过载/模型缺失成员冷却 30 秒
+		{Key: SettingKeyBreakerDegradeThreshold, Value: "3"},    // 熔断降级告警阈值: 累计3次即生成 degraded 告警
 
 		{Key: SettingKeyQualityWeightSuccess, Value: "40"}, // 质量评分成功率权重 40%
 		{Key: SettingKeyQualityWeightLatency, Value: "35"}, // 质量评分延迟权重 35%

@@ -47,7 +47,9 @@ func Auth() gin.HandlerFunc {
 		// 默认管理员改密闸门: 初始 admin/admin 未改前, 除改密/登出/身份查询外的请求一律拒绝。
 		// 攻击窗口是"部署后没人改密"的那段时间 —— 初始凭据写在文档里, 等于公开后门。
 		// 挂在 Auth 内部而不是全局: 角色在此刻已定, 且登录/注册等公开端点不受影响。
-		if user.Role == model.RoleAdmin && !op.AdminDefaultPasswordChanged() && !passwordChangeExemptPaths[c.Request.URL.Path] {
+		// 只认「默认账号 admin」本身: 不能按 role==admin 判, 否则新建的其他管理员也会被
+		// 误拦(摩擦), 而全局标记又被任意管理员改密翻转, 反而放走仍持默认口令的 admin 账号。
+		if user.Role == model.RoleAdmin && user.Username == "admin" && !op.AdminDefaultPasswordChanged() && !passwordChangeExemptPaths[c.Request.URL.Path] {
 			resp.Error(c, http.StatusForbidden, "change the default admin password first")
 			c.Abort()
 			return

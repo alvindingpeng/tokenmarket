@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -65,6 +66,16 @@ func Apply(forceSameVersion bool) (*Result, error) {
 	if status.AssetMissing || status.DownloadURL == "" {
 		return nil, fmt.Errorf("release %s has no asset for %s: %s", status.LatestVersion, status.Platform, status.ExpectedAsset)
 	}
+	// 下载地址必须落在本仓库的 releases/download 前缀下: GitHub API 响应被投毒、代理回退链
+	// 被劫持时, 都不能把下载指向任意 URL —— 那会演变成「下载并执行任意代码」。
+	if !isTrustedDownloadURL(status.DownloadURL) {
+		return nil, fmt.Errorf("untrusted download URL for update: %s", status.DownloadURL)
+	}
+	// 缺 SHA-256 digest 直接拒绝: 原实现仅告警后继续, 会在无任何完整性验证的情况下
+	// 执行下载来的候选二进制(verifyCandidate 本身就会运行它)。
+	if status.AssetSHA256 == "" {
+		return nil, errors.New("release asset has no SHA-256 digest; refusing to run unverified update")
+	}
 
 	data, err := doRequestWithFallback(status.DownloadURL)
 	if err != nil {
@@ -73,15 +84,11 @@ func Apply(forceSameVersion bool) (*Result, error) {
 	if len(data) == 0 {
 		return nil, errors.New("downloaded update archive is empty")
 	}
-	if status.AssetSHA256 != "" {
-		actual := sha256Hex(data)
-		if !strings.EqualFold(actual, status.AssetSHA256) {
-			return nil, fmt.Errorf("update archive checksum mismatch: got %s, expected %s", actual, status.AssetSHA256)
-		}
-		log.Infof("verified update archive sha256=%s", actual)
-	} else {
-		log.Warnf("release %s has no asset digest; relying on binary verification", status.LatestVersion)
+	actual := sha256Hex(data)
+	if !strings.EqualFold(actual, status.AssetSHA256) {
+		return nil, fmt.Errorf("update archive checksum mismatch: got %s, expected %s", actual, status.AssetSHA256)
 	}
+	log.Infof("verified update archive sha256=%s", actual)
 
 	execPath, err := os.Executable()
 	if err != nil {
@@ -146,6 +153,21 @@ func Apply(forceSameVersion bool) (*Result, error) {
 }
 
 var versionLine = regexp.MustCompile("(?m)Version:\\s*(\\S+)")
+
+// isTrustedDownloadURL 校验下载地址严格落在本仓库 release 资产前缀下(https 且路径以
+// downloadBase 开头)。downloadBase 形如 https://github.com/alvindingpeng/tokenmarket/releases/download,
+// 是编译期常量、不随 API 响应变化, 因此能作为独立于 API 响应的下载地址信任锚。
+func isTrustedDownloadURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "https" {
+		return false
+	}
+	// downloadBase 是常量(不含尾斜杠), 要求其后的第一个字符必须是 "/" 以防前缀拼接绕过。
+	return strings.HasPrefix(u.String(), downloadBase+"/")
+}
 
 func verifyCandidate(path, expected string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

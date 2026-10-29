@@ -281,8 +281,10 @@ func changePassword(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	// 默认管理员改密即解除"未完成部署"标记: 此后管理面不再被强制跳转改密。
-	if role := model.Role(c.GetString("role")); role == model.RoleAdmin && !op.AdminDefaultPasswordChanged() {
+	// 默认管理员(初始 admin/admin)改密即解除"未完成部署"标记: 此后管理面不再被强制跳转改密。
+	// 只认初始账号 admin 本身改密, 不认"任意管理员改密": 否则新建的第二个管理员改一次密,
+	// 就会把仍持有公开默认口令的 admin/admin 账号解禁(初始凭据写在文档里, 等于公开后门重新敞开)。
+	if username := c.GetString("username"); username == "admin" && !op.AdminDefaultPasswordChanged() {
 		if err := op.SettingUpsert(model.SettingKeyAdminDefaultPwdChanged, "true"); err != nil {
 			// 标记写失败不回滚改密本身: 密码已换新, 只是强制跳转会多留一轮。
 			log.Warnf("mark admin password changed failed: %v", err)

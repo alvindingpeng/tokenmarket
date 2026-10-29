@@ -1,6 +1,7 @@
 package rhttp
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -229,9 +230,10 @@ func newCustomProxyClient(proxyURLStr string) (*http.Client, error) {
 	case "http", "https":
 		cloned.Proxy = http.ProxyURL(proxyURL)
 	case "socks5", "socks5h":
-		// forward 必须显式给出带 Timeout 的 Dialer: proxy.Direct 用的是零值 net.Dialer, 拨到 SOCKS 服务器这一跳没有超时,
-		// 而替换 DialContext 又会覆盖掉 DefaultTransport 自带的 30s 拨号超时。
-		socksDialer, err := proxy.FromURL(proxyURL, &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second})
+		// forward 拨号器负责连接 SOCKS 服务器本身, 必须显式带 Timeout(proxy.Direct 用零值 net.Dialer 无超时),
+		// 且要包一层 DialGuard 复核代理服务器地址 —— 否则「代理指向内网」与「直连内网」是同一类风险却无人把关。
+		forward := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+		socksDialer, err := proxy.FromURL(proxyURL, guardForwardDialer{base: forward})
 		if err != nil {
 			return nil, fmt.Errorf("invalid socks proxy: %w", err)
 		}
@@ -241,7 +243,7 @@ func newCustomProxyClient(proxyURLStr string) (*http.Client, error) {
 			return nil, fmt.Errorf("socks proxy dialer does not support context")
 		}
 		// SOCKS 代理无法通过 Transport.Proxy 表达, 只能改拨号入口。
-		// 代理服务器地址本身同样过私网复核: 代理指向内网与直连内网是同一类风险。
+		// 外层 DialGuard 复核的是目标地址; 代理服务器地址由上面的 guardForwardDialer 复核。
 		cloned.Proxy = nil
 		cloned.DialContext = netguard.DialGuard{AllowPrivate: op.AllowPrivateUpstream, Next: contextDialer.DialContext}.DialContext
 	default:
@@ -253,4 +255,16 @@ func newCustomProxyClient(proxyURLStr string) (*http.Client, error) {
 
 func rejectRedirects(_ *http.Request, _ []*http.Request) error {
 	return http.ErrUseLastResponse
+}
+
+// guardForwardDialer 在连接代理服务器(HTTP/SOCKS 跳点)前用 DialGuard 复核其地址。
+// proxy.FromURL 的 forward 拨号器只负责连代理服务器本身, 这一跳此前无人把关;
+// 包上 DialGuard 后, 指向内网的代理服务器地址会在拨号层被拦下。
+type guardForwardDialer struct{ base *net.Dialer }
+
+func (g guardForwardDialer) Dial(network, addr string) (net.Conn, error) {
+	return netguard.DialGuard{
+		AllowPrivate: op.AllowPrivateUpstream,
+		Next:         g.base.DialContext,
+	}.DialContext(context.Background(), network, addr)
 }

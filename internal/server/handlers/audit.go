@@ -114,10 +114,10 @@ func exportAuditLogs(c *gin.Context) {
 		_ = writer.Write([]string{
 			strconv.FormatUint(uint64(item.ID), 10),
 			item.CreatedAt.Format(time.RFC3339),
-			item.Username,
-			item.Action,
-			item.Target,
-			item.Detail,
+			sanitizeCSVCell(item.Username),
+			sanitizeCSVCell(item.Action),
+			sanitizeCSVCell(item.Target),
+			sanitizeCSVCell(item.Detail),
 		})
 	}
 	if int64(len(logs)) < total {

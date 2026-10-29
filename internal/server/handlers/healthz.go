@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"runtime"
 	"strconv"
@@ -60,7 +61,8 @@ func metricsAuthorized(c *gin.Context) bool {
 	if provided == "" {
 		provided = c.Query("token")
 	}
-	return provided != "" && provided == token
+	// 常量时间比较, 避免时序侧信道逐字节泄露令牌。
+	return provided != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(token)) == 1
 }
 
 func prometheusMetrics(c *gin.Context) {

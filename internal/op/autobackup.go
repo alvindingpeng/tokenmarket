@@ -51,7 +51,10 @@ func AutoBackupRun() (AutoBackupResult, error) {
 	if err != nil {
 		return AutoBackupResult{}, fmt.Errorf("get sql db: %w", err)
 	}
-	if _, err := sqlDB.Exec(fmt.Sprintf("VACUUM INTO '%s'", path)); err != nil {
+	// VACUUM INTO 不接受绑定参数, 只能拼接; path 由服务端时间戳生成本无用户输入,
+	// 但 CWD 目录名可能含单引号, 故做标准 SQL 字符串转义防语句破坏/注入。
+	escaped := strings.ReplaceAll(path, "'", "''")
+	if _, err := sqlDB.Exec(fmt.Sprintf("VACUUM INTO '%s'", escaped)); err != nil {
 		return AutoBackupResult{}, fmt.Errorf("vacuum into backup: %w", err)
 	}
 	info, err := os.Stat(path)

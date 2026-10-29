@@ -261,7 +261,8 @@ func normalizeChannelConfig(ctx context.Context, config model.ChannelConfig) (mo
 		return config, fmt.Errorf("channel %s: %w", config.Name, err)
 	}
 	if config.ChannelProxy != "" {
-		if err := netguard.CheckURL(ctx, config.ChannelProxy, AllowPrivateUpstream()); err != nil {
+		// 渠道专用代理允许 http/https/socks5/socks5h(与转发层一致), 用 CheckProxyURL 而非 CheckURL。
+		if err := netguard.CheckProxyURL(ctx, config.ChannelProxy, AllowPrivateUpstream()); err != nil {
 			return config, fmt.Errorf("channel %s proxy: %w", config.Name, err)
 		}
 	}
@@ -313,8 +314,9 @@ func normalizeChannelDetail(ctx context.Context, detail *model.ChannelDetail) er
 		}
 		seenEgress[normalized.Name] = struct{}{}
 		// SSRF 防护: 出口代理地址同样不得指向私网; direct 出口无地址, 不校验。
+		// 出口 URL 允许 http/https/socks5/socks5h, 用 CheckProxyURL 与转发层口径一致。
 		if normalized.Kind != model.EgressKindDirect && normalized.URL != "" {
-			if err := netguard.CheckURL(context.Background(), normalized.URL, AllowPrivateUpstream()); err != nil {
+			if err := netguard.CheckProxyURL(context.Background(), normalized.URL, AllowPrivateUpstream()); err != nil {
 				return fmt.Errorf("egress %s: %w", normalized.Name, err)
 			}
 		}
@@ -942,6 +944,27 @@ func reloadChannelChildren(ctx context.Context, channelID int) error {
 	return nil
 }
 
+// maskSecretMark 掩码占位标记, 与前端 maskKey 的圆点字符一致(U+2022)。
+// 真实上游密钥几乎不可能含此字符, 故可作为「提交回来的是掩码而非明文」的可靠判据。
+const maskSecretMark = "••••"
+
+// maskChannelSecret 掩码回显: 保留前3 + 后4, 中间以圆点代替; 过短的秘密整条掩掉。
+// 与前端 FormKeys.maskKey 口径一致, 避免两端显示长短不一。
+func maskChannelSecret(s string) string {
+	if s == "" {
+		return ""
+	}
+	if len(s) <= 8 {
+		return "••••••••"
+	}
+	return s[:3] + "••••••••" + s[len(s)-4:]
+}
+
+// isMaskedChannelSecret 判断提交值是否为掩码占位(含圆点标记): 掩码时保持库中原值不覆盖。
+func isMaskedChannelSecret(s string) bool {
+	return s != "" && strings.Contains(s, maskSecretMark)
+}
+
 // channelDetail 把渠道缓存与其凭据, 模型和授权合并为编辑表单所需的完整配置。
 // 授权按名称给出而不给主键: 名称在渠道内唯一, 提交时也按名称引用, 读写同一种寻址界面才无需翻译。
 // 三个集合字段恒为数组, 空集合也给出, 免得各消费方各自兜底 null; Header 由写入侧保证已是数组。
@@ -953,7 +976,12 @@ func channelDetail(channel model.Channel) model.ChannelDetail {
 	keyNameByID := make(map[int]string)
 	for _, channelKey := range channelKeyCache.GetAll() {
 		if channelKey.ChannelID == channel.ID {
-			detail.Keys = append(detail.Keys, channelKey.ChannelKeyConfig)
+			// 上游凭据回显掩码而非明文: 明文经 API 返回会被 XSS/会话劫持/抓包/前端日志带走,
+			// 掩码后编辑表单只显示尾4位, 留空提交由 syncChannelKeys 识别掩码并保持原值。
+			cfg := channelKey.ChannelKeyConfig
+			cfg.Key = maskChannelSecret(cfg.Key)
+			cfg.APISecret = maskChannelSecret(cfg.APISecret)
+			detail.Keys = append(detail.Keys, cfg)
 			keyNameByID[channelKey.ID] = channelKey.Name
 		}
 	}
@@ -1019,13 +1047,23 @@ func syncChannelKeys(tx *gorm.DB, channelID int, requested []model.ChannelKeyCon
 	}
 	for _, requestedKey := range requested {
 		if current, ok := existingByName[requestedKey.Name]; ok {
-			if current.Key != requestedKey.Key || current.AppID != requestedKey.AppID || current.APISecret != requestedKey.APISecret || current.Domain != requestedKey.Domain || current.Enabled != requestedKey.Enabled {
+			// 掩码占位: 编辑表单留空提交时, 前端把回显的掩码值原样带回来, 这里识别掩码并保持原值,
+			// 避免把「sk-••••abcd」当新密钥覆盖真实凭据。
+			key := requestedKey.Key
+			if isMaskedChannelSecret(key) {
+				key = current.Key
+			}
+			apiSecret := requestedKey.APISecret
+			if isMaskedChannelSecret(apiSecret) {
+				apiSecret = current.APISecret
+			}
+			if current.Key != key || current.AppID != requestedKey.AppID || current.APISecret != apiSecret || current.Domain != requestedKey.Domain || current.Enabled != requestedKey.Enabled {
 				// map 更新绕过字段序列化器, key 列密文由 gorm 回调按归属绑定生成, Model 必须带上
 				// (channel_id, name) 身份: 回调推不出归属会 fail closed 拒绝写入。
 				identity := model.ChannelKey{ID: current.ID, ChannelID: current.ChannelID,
 					ChannelKeyConfig: model.ChannelKeyConfig{Name: current.Name}}
 				if err := tx.Model(&identity).Where("id = ?", current.ID).
-					Updates(map[string]any{"key": requestedKey.Key, "app_id": requestedKey.AppID, "api_secret": requestedKey.APISecret, "domain": requestedKey.Domain, "enabled": requestedKey.Enabled}).Error; err != nil {
+					Updates(map[string]any{"key": key, "app_id": requestedKey.AppID, "api_secret": apiSecret, "domain": requestedKey.Domain, "enabled": requestedKey.Enabled}).Error; err != nil {
 					return fmt.Errorf("failed to update channel key: %w", err)
 				}
 			}
