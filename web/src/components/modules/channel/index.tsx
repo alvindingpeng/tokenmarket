@@ -117,7 +117,7 @@ export function Channel() {
                 <VirtualizedGrid
                     items={visibleChannels}
                     layout={layout}
-                    columns={{ default: 1, sm: 2, md: 2, lg: 4, xl: 5, '2xl': 6 }}
+                    columns={{ default: 1, sm: 2, md: 2, lg: 3, xl: 4, '2xl': 5 }}
                     estimateItemHeight={232}
                     getItemKey={(channel) => `channel-${channel.channel_id}`}
                     renderItem={(channel) => (
