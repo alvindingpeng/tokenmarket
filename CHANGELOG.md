@@ -1,5 +1,24 @@
 # 更新说明
 
+## v1.2.7 — 2026-10-29
+
+### P0-1 熔断自动恢复验证
+
+- 渠道凭据/模型熔断恢复后，系统会**自动发起探测请求**验证可用性，避免因上游已恢复但系统未感知导致流量持续失败。
+- 新增后台任务：每分钟扫描 `disabled_until` 刚过期的渠道凭据/模型，发送轻量探测请求（`{"messages": [{"role": "user", "content": "hi"}], "max_tokens": 1}`），成功后清空熔断计数器，失败则延长禁用期。
+- 数据库迁移 033: 增加 `probe_last_at` / `probe_success` / `probe_error` 字段记录探测历史。
+- 探测任务已注册到 `internal/task/init.go`，与限流清理、质量快照等任务一起运行。
+
+### P0-2 渠道成本追踪
+
+- `relay_requests` 表增加 **supply_cost**（上游供货成本）、**user_charge**（用户实付）、**profit**（毛利）字段，记录每次请求的成本与利润。
+- 请求完成时，系统同时计算：
+  - 用户侧成本（供货价 × 加价率）→ `user_charge`
+  - 供货侧成本（供货价原价）→ `supply_cost`
+  - 毛利 = `user_charge - supply_cost`
+- 渠道统计（`channel_keys` / `channel_models` / `channel_grants`）的 `InputCost` / `OutputCost` 字段本身就是供货成本（因为传入 `SupplyPrice` 计算），无需额外字段。
+- 为后续成本分析、利润核算、异常检测奠定数据基础。
+
 ## v1.2.6 — 2026-10-29
 
 ### P2-9 限流 TOP 10 榜单
