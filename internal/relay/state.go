@@ -59,6 +59,8 @@ type RequestState struct {
 	Usage              llm.Usage      `json:"usage"`            // 请求结束时写入的展示用量。
 	Cost               float64        `json:"cost"`             // 请求结束时写入的累计费用（用户侧，含加价）。
 	SupplyCost         float64        `json:"supply_cost"`      // 上游供货成本（不含加价）。
+	UserCharge         float64        `json:"user_charge"`      // 用户实际扣款金额（等于 Cost）。
+	Profit             float64        `json:"profit"`           // 毛利 = UserCharge - SupplyCost。
 	OutputChars        int            `json:"output_chars"`     // 流式过程中按事件数量估算并实时累计的输出字符数, 仅用于界面展示, 不参与结算。
 
 	Round             int            `json:"round"`               // 最新一轮循环的递增序号, 人工中止按此匹配以免误杀下一轮。
@@ -554,6 +556,10 @@ func (r *RequestState) finishLocked(usage *llm.Usage) *billingLease {
 			r.SupplyCost += supplyMediaCost
 		}
 	}
+	// 计算用户实付与毛利。
+	r.UserCharge = r.Cost // 用户实付 = 计费金额（含加价）。
+	r.Profit = r.UserCharge - r.SupplyCost // 毛利 = 用户实付 - 供货成本。
+
 	r.Duration = time.Since(r.StartedAt)
 	metrics.WaitTime = r.Duration.Milliseconds()
 	if r.Status == StatusSuccess {

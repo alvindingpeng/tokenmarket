@@ -2,6 +2,7 @@ package ratelimit
 
 import (
 	"math"
+	"sort"
 	"sync"
 	"time"
 )
@@ -110,10 +111,37 @@ func (l *Limiter) bucketLocked(scope Scope, window int64) *bucket {
 	return b
 }
 
+// scopePriority 返回限流范围的优先级, 数字越小优先级越高。
+// 优先级顺序: system(1) > group(2) > channel(3) > user(4) > api_key(5) > channel_key/channel_model(6)。
+func scopePriority(kind string) int {
+	switch kind {
+	case "system":
+		return 1
+	case "group":
+		return 2
+	case "channel":
+		return 3
+	case "user":
+		return 4
+	case "api_key":
+		return 5
+	case "channel_key", "channel_model":
+		return 6
+	default:
+		return 99 // 未知范围排最后
+	}
+}
+
 // Reserve 为一批范围一次性预留额度: 全部范围均放行才扣减, 任一触顶则整批不扣。
 // estInput/estOutput 为本次请求的 token 预估, 结束时以 Commit 按真实用量结算。
+// 按优先级顺序检查范围: system > group > channel > user > api_key > channel_key/channel_model,
+// 高优先级限流命中时短路拒绝, 避免全局限流被低优先级范围绕过。
 func (l *Limiter) Reserve(scopes []Scope, estInput, estOutput int64) Decision {
 	scopes = l.scopes(scopes)
+	// 按优先级排序: 高优先级范围先检查, 命中时短路拒绝。
+	sort.Slice(scopes, func(i, j int) bool {
+		return scopePriority(scopes[i].Kind) < scopePriority(scopes[j].Kind)
+	})
 	estInput, estOutput = max(0, estInput), max(0, estOutput)
 	estimated := tokenSum(estInput, estOutput)
 	l.mu.Lock()

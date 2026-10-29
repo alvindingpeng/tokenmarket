@@ -51,8 +51,8 @@ func (r *RequestState) rowLocked() model.RelayRequest {
 		CacheWriteTokens:     writeCached,
 		Cost:                 r.Cost,
 		SupplyCost:           r.SupplyCost,
-		UserCharge:           r.Cost, // 用户实付等于 Cost
-		Profit:               r.Cost - r.SupplyCost,
+		UserCharge:           r.UserCharge,
+		Profit:               r.Profit,
 		OutputChars:          r.OutputChars,
 		TargetChannelKey:     r.TargetChannelKey,
 		TargetChannelCode:    r.TargetChannelCode,

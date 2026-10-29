@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 func InitCache() error {
@@ -33,6 +35,10 @@ func InitCache() error {
 	if err := statsRefreshCache(ctx); err != nil {
 		return fmt.Errorf("stats refresh cache error: %v", err)
 	}
+
+	// 注入质量权重读取函数（供 model.QualityGradeOf 跨包读取设置）。
+	model.QualityWeightGetter = SettingGetIntDefault
+
 	return nil
 }
 

@@ -19,6 +19,23 @@
 - 渠道统计（`channel_keys` / `channel_models` / `channel_grants`）的 `InputCost` / `OutputCost` 字段本身就是供货成本（因为传入 `SupplyPrice` 计算），无需额外字段。
 - 为后续成本分析、利润核算、异常检测奠定数据基础。
 
+### P1-1 限流范围优先级调整
+
+- 引入限流范围优先级机制，解决全局限流被用户限流绕过的问题。
+- **优先级顺序**：system（系统全局）> group（分组）> channel（渠道）> user（用户）> api_key（API Key）> channel_key/channel_model（渠道凭据/模型）。
+- **短路机制**：高优先级限流命中时，立即拒绝请求，不再检查低优先级限流。
+- 保持向后兼容：不改变配置格式，仅调整检查逻辑顺序。
+
+### P1-2 质量评分权重可调
+
+- 渠道质量评分权重从硬编码改为可配置，支持不同场景定制权重策略。
+- 新增 3 个设置项：
+  - `quality_weight_success`：成功率权重（默认 40）
+  - `quality_weight_latency`：延迟权重（默认 35）
+  - `quality_weight_uptime`：可用性权重（默认 25）
+- 权重范围 0-100，系统自动归一化确保总和为 100%。
+- 支持延迟敏感场景（提高 latency 权重）、成本优先场景（提高 success 权重）、稳定性优先场景（提高 uptime 权重）。
+
 ## v1.2.6 — 2026-10-29
 
 ### P2-9 限流 TOP 10 榜单

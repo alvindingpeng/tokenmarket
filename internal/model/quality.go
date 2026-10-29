@@ -2,6 +2,9 @@ package model
 
 import "time"
 
+// 质量权重读取辅助（跨包依赖通过函数变量注入，由 op 包初始化时设置）。
+var QualityWeightGetter func(SettingKey, int) int
+
 // ChannelQualitySnapshot 是渠道的按日质量快照(P3)。
 // 健康探测记录会被轮转(每渠道只留最近 1000 条), 而质量历史需要长期保留, 故单独落一张轻量表:
 // 每日把 StatsChannelDaily(真实流量)与 ChannelHealthRecord(探测可用率)汇总成一行, 供 30 天趋势与等级展示。
@@ -50,19 +53,39 @@ func QualityGradeOf(successRate float64, avgWaitMs int64, uptimePct float64, req
 	if requestCount < QualityMinSamples {
 		return 0, ""
 	}
+	// 读取可调权重，默认 40/35/25（权重会自动归一化）。
+	wSuccess, wLatency, wUptime := 40, 35, 25
+	if QualityWeightGetter != nil {
+		wSuccess = QualityWeightGetter(SettingKeyQualityWeightSuccess, 40)
+		wLatency = QualityWeightGetter(SettingKeyQualityWeightLatency, 35)
+		wUptime = QualityWeightGetter(SettingKeyQualityWeightUptime, 25)
+	}
+	// 权重归一化到总和 1.0（避免用户配置总和不等于 100）。
+	weightSum := float64(wSuccess + wLatency + wUptime)
+	if weightSum <= 0 {
+		weightSum = 100 // 全零时兜底
+	}
+	wSuccessNorm := float64(wSuccess) / weightSum
+	wLatencyNorm := float64(wLatency) / weightSum
+	wUptimeNorm := float64(wUptime) / weightSum
+
 	// 成功率维度: 直接用成功率 × 100。
 	successDim := clamp01(successRate) * 100
 	// 延迟维度: <2s 满分, 2-5s 线性衰减, >5s 归零。
 	latencyDim := latencyDimension(avgWaitMs)
-	score = 0.40*successDim + 0.35*latencyDim
-	weightSum := 0.75
+
+	// 计算加权得分。
+	score = wSuccessNorm*successDim + wLatencyNorm*latencyDim
+	activeWeightSum := wSuccessNorm + wLatencyNorm
 	if healthChecks >= qualityMinHealthChecks {
 		uptimeDim := clamp01(uptimePct/100) * 100
-		score += 0.25 * uptimeDim
-		weightSum += 0.25
+		score += wUptimeNorm * uptimeDim
+		activeWeightSum += wUptimeNorm
 	}
-	// 归一化到 0-100: 探测未开启时三维权重只剩 0.75, 不归一的话最高只能得 75 分。
-	score = score / weightSum
+	// 归一化到 0-100: 探测未开启时权重只有成功率+延迟，需重新归一。
+	if activeWeightSum > 0 {
+		score = score / activeWeightSum
+	}
 	switch {
 	case score >= 90 && successRate >= 0.995:
 		return score, QualityGradeA

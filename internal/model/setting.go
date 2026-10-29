@@ -144,6 +144,11 @@ const (
 	SettingKeyBreakerCoolSoftSeconds SettingKey = "breaker_cool_soft_seconds" // 换路冷却: 过载/模型缺失等软错误后该成员冷却秒数, 默认 30。
 	SettingKeyBreakerDegradeThreshold SettingKey = "breaker_degrade_threshold" // 熔断降级告警阈值: 熔断次数达到此值时生成 degraded 告警, 默认 3。
 
+	// 质量评分权重
+	SettingKeyQualityWeightSuccess SettingKey = "quality_weight_success" // 质量评分成功率权重(0-100), 默认 40。三个权重会自动归一化到总和 100。
+	SettingKeyQualityWeightLatency SettingKey = "quality_weight_latency" // 质量评分延迟权重(0-100), 默认 35。
+	SettingKeyQualityWeightUptime  SettingKey = "quality_weight_uptime"  // 质量评分可用性权重(0-100), 默认 25。
+
 	// 内部键: 只存库不出任何读取接口, 也不进备份。
 	SettingKeyAuthSecret SettingKey = "auth_secret"
 )
@@ -303,6 +308,10 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyEgressRegionBonusMs, Value: "0"},     // 区域亲和默认关闭
 		{Key: SettingKeyBreakerCoolAuthSeconds, Value: "60"}, // 鉴权/额度成员冷却 60 秒
 		{Key: SettingKeyBreakerCoolSoftSeconds, Value: "30"}, // 过载/模型缺失成员冷却 30 秒
+
+		{Key: SettingKeyQualityWeightSuccess, Value: "40"}, // 质量评分成功率权重 40%
+		{Key: SettingKeyQualityWeightLatency, Value: "35"}, // 质量评分延迟权重 35%
+		{Key: SettingKeyQualityWeightUptime, Value: "25"},  // 质量评分可用性权重 25%
 
 	}
 }
@@ -560,6 +569,14 @@ func (s *Setting) Validate() error {
 			return fmt.Errorf("breaker degrade threshold must be an integer between 0 and 20")
 		}
 		return nil
+
+	case SettingKeyQualityWeightSuccess, SettingKeyQualityWeightLatency, SettingKeyQualityWeightUptime:
+		// 质量权重: 0-100, 会自动归一化, 所以不要求总和为 100。
+		if n, err := strconv.Atoi(s.Value); err != nil || n < 0 || n > 100 {
+			return fmt.Errorf("quality weight must be an integer between 0 and 100")
+		}
+		return nil
+
 	case SettingKeyMetricsAuth:
 		if s.Value != "off" && s.Value != "bearer" {
 			return fmt.Errorf("metrics auth must be off or bearer")
