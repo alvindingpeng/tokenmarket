@@ -2,6 +2,11 @@
 
 ## v1.2.7 — 2026-10-29
 
+### 修复
+
+- 修复 BreakerRecoveryProbe 调用 `ChannelGet` 多传参数与不存在的 `model.ScopeAdmin`、限流范围展示误用 `ChannelModel.ModelName`（正确字段为 `Name`）导致的编译错误。
+- 新增 `deploy/` 部署工具（纯 Python 标准库 pty 自动化，零外部依赖）：ssh_auto.py（远端执行）、scp_auto.py（文件上传）、pull_build.sh / swap_deploy.sh / verify_db.sh，见 `deploy/README.md`。
+
 ### P0-1 熔断自动恢复验证
 
 - 渠道凭据/模型熔断恢复后，系统会**自动发起探测请求**验证可用性，避免因上游已恢复但系统未感知导致流量持续失败。
@@ -35,6 +40,13 @@
   - `quality_weight_uptime`：可用性权重（默认 25）
 - 权重范围 0-100，系统自动归一化确保总和为 100%。
 - 支持延迟敏感场景（提高 latency 权重）、成本优先场景（提高 success 权重）、稳定性优先场景（提高 uptime 权重）。
+
+### 部署记录
+
+- 已于 2026-10-29 部署至生产（tt.xjj.se，v1.2.7）：旧二进制存 `bin/switchyard.prev-v12`，存量数据完整无丢失。
+- 首次在该服务器准备完整构建环境：安装 Go 1.26.4（`/usr/local/go`）、源码克隆至 `/opt/switchyard/src/switchyard`、前端产物本地构建后上传。
+- 数据库迁移 033/034 自动执行完成（`relay_requests` 新增 supply_cost/user_charge/profit；`channel_keys`/`channel_models` 新增 probe_count/probe_at）；质量权重默认值 40/35/25 已写入 settings 表。
+- 熔断探测任务上线首轮即在生产实际恢复 15 个渠道模型（`breaker probe: ... recovered after 1 probes`）。
 
 ## v1.2.6 — 2026-10-29
 
