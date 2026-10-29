@@ -20,4 +20,5 @@ const (
 	TaskSettlementDaily  = "settlement_daily"         // 每日重算昨日渠道商结算单: 只刷新未审核单, 已定稿不动。
 	TaskUpdateCheck      = "update_check"             // 检查本分支 Release 是否有新版本。
 	TaskVideoJobCleanup  = "video_job_cleanup"        // 清理过期的生视频任务归属。
+	TaskBreakerProbe     = "breaker_probe"            // 熔断恢复探测: 验证到期的熔断成员健康后才完全解除。
 )

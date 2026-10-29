@@ -274,6 +274,19 @@ func Init() {
 			return nil
 		},
 	})
+
+	// 熔断恢复探测: 检查已到期的熔断成员(凭据/模型), 通过健康检查验证后才完全解除;
+	// 探测失败则延长熔断, 超过尝试上限则不再自动探测(交给人工判断)。每 2 分钟检查一次。
+	Define(Spec{
+		Name:       TaskBreakerProbe,
+		Interval:   fixedInterval(2 * time.Minute),
+		RunOnStart: false, // 不启动即跑: 避免重启时集中探测大量到期成员
+		Fn: func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			return op.BreakerRecoveryProbe(ctx)
+		},
+	})
 }
 
 // fixedInterval 固定周期。

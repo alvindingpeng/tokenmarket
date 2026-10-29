@@ -109,6 +109,8 @@ type ChannelKeyConfig struct {
 	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`        // 最后错误时间。
 	DisabledUntil *time.Time `json:"disabled_until,omitempty"`       // 自动禁用截止时间(故障熔断)。
 	BreakerTrips  int        `json:"breaker_trips" gorm:"default:0"` // 自上次成功以来累计熔断次数; 熔断时长按它翻倍, 成功即清零。
+	ProbeCount    int        `json:"probe_count" gorm:"default:0"`    // 熔断恢复探测尝试次数; 超过上限则不再自动探测。
+	ProbeAt       *time.Time `json:"probe_at,omitempty"`              // 上次探测时间。
 }
 
 // 渠道下的一份上游凭据; 不同凭据通常对应不同的额度与计费。
@@ -134,6 +136,8 @@ type ChannelModel struct {
 	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`        // 最后错误时间。
 	DisabledUntil *time.Time `json:"disabled_until,omitempty"`       // 自动禁用截止时间(故障熔断)。
 	BreakerTrips  int        `json:"breaker_trips" gorm:"default:0"` // 自上次成功以来累计熔断次数; 熔断时长按它翻倍, 成功即清零。
+	ProbeCount    int        `json:"probe_count" gorm:"default:0"`    // 熔断恢复探测尝试次数; 超过上限则不再自动探测。
+	ProbeAt       *time.Time `json:"probe_at,omitempty"`              // 上次探测时间。
 }
 
 // UserPrice 按比例放大 LLMPrice 形式供货价得到用户单价。

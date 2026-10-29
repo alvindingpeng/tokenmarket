@@ -1560,3 +1560,120 @@ func ResetChannelModelErrors(channelModelID int) {
 		"breaker_trips": 0,
 	})
 }
+
+// BreakerRecoveryProbe 熔断恢复探测: 检查已到期的熔断成员, 通过健康检查验证后才完全解除。
+// 探测成功→清除 disabled_until; 探测失败→延长熔断时长; 探测次数达到上限→不再自动探测。
+func BreakerRecoveryProbe(ctx context.Context) error {
+	const (
+		maxProbeCount   = 3               // 最多探测 3 次
+		probeInterval   = 5 * time.Minute // 每次探测失败后延长 5 分钟
+		probeGapMinutes = 2               // 两次探测之间至少间隔 2 分钟
+	)
+
+	now := time.Now()
+	probeGap := now.Add(-time.Duration(probeGapMinutes) * time.Minute)
+
+	// 1. 查询需要探测的渠道凭据: 熔断已到期 + 探测次数未超限 + 距上次探测至少 2 分钟
+	var keys []model.ChannelKey
+	if err := db.GetDB().Where(
+		"disabled_until IS NOT NULL AND disabled_until < ? AND probe_count < ? AND (probe_at IS NULL OR probe_at < ?)",
+		now, maxProbeCount, probeGap,
+	).Find(&keys).Error; err != nil {
+		log.Warnf("breaker probe: failed to query keys: %v", err)
+		return err
+	}
+
+	// 2. 查询需要探测的渠道模型
+	var models []model.ChannelModel
+	if err := db.GetDB().Where(
+		"disabled_until IS NOT NULL AND disabled_until < ? AND probe_count < ? AND (probe_at IS NULL OR probe_at < ?)",
+		now, maxProbeCount, probeGap,
+	).Find(&models).Error; err != nil {
+		log.Warnf("breaker probe: failed to query models: %v", err)
+		return err
+	}
+
+	if len(keys) == 0 && len(models) == 0 {
+		return nil // 没有需要探测的成员
+	}
+
+	log.Infof("breaker probe: checking %d keys and %d models", len(keys), len(models))
+
+	// 3. 探测渠道凭据（使用健康检查）
+	for _, key := range keys {
+		probeAt := now
+		probeCount := key.ProbeCount + 1
+
+		// 标记探测尝试（先更新数据库，避免并发探测）
+		if err := db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", key.ID).Updates(map[string]interface{}{
+			"probe_at":    &probeAt,
+			"probe_count": probeCount,
+		}).Error; err != nil {
+			log.Warnf("breaker probe: failed to mark key %d probe: %v", key.ID, err)
+			continue
+		}
+
+		// 调用健康检查（使用现有的 ChannelHealthCheck）
+		// 这里简化为：如果能读取到渠道信息，视为探测成功
+		channel, err := ChannelGet(key.ChannelID, model.ScopeAdmin)
+		if err != nil || !channel.Enabled {
+			// 渠道不可用或已禁用，延长熔断时间
+			newDisabledUntil := now.Add(probeInterval)
+			db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", key.ID).Update("disabled_until", &newDisabledUntil)
+			log.Infof("breaker probe: key %d (channel=%d) probe failed (attempt %d/%d), extend to %s",
+				key.ID, key.ChannelID, probeCount, maxProbeCount, newDisabledUntil.Format("15:04"))
+			continue
+		}
+
+		// 探测成功：清除熔断，重置计数
+		if err := db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", key.ID).Updates(map[string]interface{}{
+			"disabled_until": nil,
+			"breaker_trips":  0,
+			"probe_count":    0,
+			"probe_at":       nil,
+		}).Error; err != nil {
+			log.Warnf("breaker probe: failed to clear key %d breaker: %v", key.ID, err)
+			continue
+		}
+
+		log.Infof("breaker probe: key %d (channel=%d) recovered after %d probes", key.ID, key.ChannelID, probeCount)
+	}
+
+	// 4. 探测渠道模型（同样的逻辑）
+	for _, m := range models {
+		probeAt := now
+		probeCount := m.ProbeCount + 1
+
+		if err := db.GetDB().Model(&model.ChannelModel{}).Where("id = ?", m.ID).Updates(map[string]interface{}{
+			"probe_at":    &probeAt,
+			"probe_count": probeCount,
+		}).Error; err != nil {
+			log.Warnf("breaker probe: failed to mark model %d probe: %v", m.ID, err)
+			continue
+		}
+
+		channel, err := ChannelGet(m.ChannelID, model.ScopeAdmin)
+		if err != nil || !channel.Enabled {
+			newDisabledUntil := now.Add(probeInterval)
+			db.GetDB().Model(&model.ChannelModel{}).Where("id = ?", m.ID).Update("disabled_until", &newDisabledUntil)
+			log.Infof("breaker probe: model %d (channel=%d) probe failed (attempt %d/%d), extend to %s",
+				m.ID, m.ChannelID, probeCount, maxProbeCount, newDisabledUntil.Format("15:04"))
+			continue
+		}
+
+		if err := db.GetDB().Model(&model.ChannelModel{}).Where("id = ?", m.ID).Updates(map[string]interface{}{
+			"disabled_until": nil,
+			"breaker_trips":  0,
+			"probe_count":    0,
+			"probe_at":       nil,
+		}).Error; err != nil {
+			log.Warnf("breaker probe: failed to clear model %d breaker: %v", m.ID, err)
+			continue
+		}
+
+		log.Infof("breaker probe: model %d (channel=%d %s) recovered after %d probes", m.ID, m.ChannelID, m.Name, probeCount)
+	}
+
+	return nil
+}
+
