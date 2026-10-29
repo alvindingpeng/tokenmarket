@@ -304,8 +304,8 @@ func resolveEntityName(scopeType string, scopeID int) string {
 		}
 	case model.RateScopeChannelModel:
 		var cm model.ChannelModel
-		if err := database.Select("model_name").First(&cm, scopeID).Error; err == nil {
-			return cm.ModelName
+		if err := database.Select("name").First(&cm, scopeID).Error; err == nil {
+			return cm.Name
 		}
 	}
 	return strconv.Itoa(scopeID)

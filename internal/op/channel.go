@@ -1615,7 +1615,7 @@ func BreakerRecoveryProbe(ctx context.Context) error {
 
 		// 调用健康检查（使用现有的 ChannelHealthCheck）
 		// 这里简化为：如果能读取到渠道信息，视为探测成功
-		channel, err := ChannelGet(key.ChannelID, model.ScopeAdmin)
+		channel, err := ChannelGet(key.ChannelID)
 		if err != nil || !channel.Enabled {
 			// 渠道不可用或已禁用，延长熔断时间
 			newDisabledUntil := now.Add(probeInterval)
@@ -1652,7 +1652,7 @@ func BreakerRecoveryProbe(ctx context.Context) error {
 			continue
 		}
 
-		channel, err := ChannelGet(m.ChannelID, model.ScopeAdmin)
+		channel, err := ChannelGet(m.ChannelID)
 		if err != nil || !channel.Enabled {
 			newDisabledUntil := now.Add(probeInterval)
 			db.GetDB().Model(&model.ChannelModel{}).Where("id = ?", m.ID).Update("disabled_until", &newDisabledUntil)
