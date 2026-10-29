@@ -10,13 +10,22 @@
    ```
 2. 克隆源码到 `/opt/switchyard/src/switchyard` 并配置 remote 含 PAT（供 git pull）。
 
-## 二进制构建（两段式）
+## 二进制构建（必须注入版本信息）
 
-前端产物 `static/out/` 不进 git（`//go:embed all:out` 需要它）：
+> ⚠️ **禁止裸 `go build`**：不注入 ldflags 时 `conf.Version="dev"`、前端 `VITE_APP_VERSION` 缺失，
+> 「设置 > 信息」会因前后端版本不同源弹红色版本错误告警（详见 `docs/release-versioning.md`）。
 
-1. 本地构建前端：`cd web && pnpm run build`（产物输出到 `../static/out/`）
-2. 打包上传：`tar -czf /tmp/static_out.tgz -C static out` → `python3 deploy/scp_auto.py <host> '<pwd>' /tmp/static_out.tgz /tmp/static_out.tgz`
-3. 服务器拉取并编译：`python3 deploy/ssh_auto.py <host> '<pwd>' deploy/pull_build.sh 540`
+**推荐路径（本地构建 + 上传，一条命令出完整产物）：**
+
+```bash
+bash scripts/build-local.sh -o /tmp/switchyard-vX.Y.Z    # 前端+后端同源注入版本
+python3 deploy/scp_auto.py <host> '<pwd>' /tmp/switchyard-vX.Y.Z /opt/switchyard/bin/switchyard.new
+python3 deploy/ssh_auto.py <host> '<pwd>' deploy/swap_deploy.sh 120
+```
+
+`build-local.sh` 自动完成：`scripts/version.sh` 取版本 → 前端 `VITE_APP_VERSION` 构建（产物 `static/out/`）→ 后端 `-ldflags` 注入 `conf.Version/Commit/BuildTime` + `-tags=jsoniter`。
+
+**服务器端构建（备选，pull_build.sh 已含版本注入）：** 前端产物 `static/out/` 不进 git（`//go:embed all:out` 需要它），需先本地 `cd web && pnpm run build` → `tar -czf /tmp/static_out.tgz -C static out` → `scp_auto.py` 上传 → `ssh_auto.py ... deploy/pull_build.sh 540`。
 
 ## 替换部署
 
