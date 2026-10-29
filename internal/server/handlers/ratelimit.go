@@ -43,6 +43,11 @@ func init() {
 			router.NewRoute("/usage", http.MethodGet).
 				Allow(model.RoleAdmin).
 				Handle(listRateUsage),
+		).
+		AddRoute(
+			router.NewRoute("/usage/top", http.MethodGet).
+				Allow(model.RoleAdmin).
+				Handle(listRateUsageTop),
 		)
 }
 
@@ -180,6 +185,19 @@ func listRateUsage(c *gin.Context) {
 	scopeID, _ := strconv.Atoi(c.Query("scope_id"))
 	hours, _ := strconv.Atoi(c.Query("hours"))
 	rows, err := op.RateUsageList(scopeType, scopeID, hours)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, gin.H{"items": rows})
+}
+
+// listRateUsageTop 返回最近若干小时限流被拒 TOP N 榜单。
+func listRateUsageTop(c *gin.Context) {
+	scopeType := strings.TrimSpace(c.Query("scope_type"))
+	hours, _ := strconv.Atoi(c.Query("hours"))
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	rows, err := op.RateUsageTopRejected(scopeType, hours, limit)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return

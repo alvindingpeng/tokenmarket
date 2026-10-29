@@ -82,3 +82,41 @@ func channelName(channelID int) string {
 	}
 	return fmt.Sprintf("渠道 #%d", channelID)
 }
+
+// raiseKeyDegradeAlert 在凭据多次熔断达到降级阈值时告警。
+//
+// 与 raiseKeyBreakerAlert 区分: 熔断告警是"本次停多久", 降级告警是"累计停太多次了"。
+func raiseKeyDegradeAlert(key model.ChannelKey, trips int, threshold int) {
+	subject := channelName(key.ChannelID)
+	RaiseAlertFacts(context.Background(), AlertFacts{
+		ChannelID: key.ChannelID,
+		Subject:   subject,
+		Kind:      "key_degraded",
+		Reason:    fmt.Sprintf("channel key %s reached degradation threshold (breaker trips: %d)", key.Name, trips),
+		Fields: []alert.Field{
+			{Label: "渠道", Value: subject},
+			{Label: "凭据", Value: fmt.Sprintf("%s (#%d)", key.Name, key.ID)},
+			{Label: "累计熔断", Value: fmt.Sprintf("%d 次", trips)},
+			{Label: "降级阈值", Value: fmt.Sprintf("%d 次", threshold)},
+			{Label: "建议", Value: "考虑手动降低该凭据优先级或暂时禁用该渠道"},
+		},
+	})
+}
+
+// raiseModelDegradeAlert 在渠道模型多次熔断达到降级阈值时告警。
+func raiseModelDegradeAlert(channelModel model.ChannelModel, trips int, threshold int) {
+	subject := channelName(channelModel.ChannelID)
+	RaiseAlertFacts(context.Background(), AlertFacts{
+		ChannelID: channelModel.ChannelID,
+		Subject:   subject,
+		Kind:      "model_degraded",
+		Reason:    fmt.Sprintf("channel model %s reached degradation threshold (breaker trips: %d)", channelModel.Name, trips),
+		Fields: []alert.Field{
+			{Label: "渠道", Value: subject},
+			{Label: "渠道模型", Value: fmt.Sprintf("%s (#%d)", channelModel.Name, channelModel.ID)},
+			{Label: "累计熔断", Value: fmt.Sprintf("%d 次", trips)},
+			{Label: "降级阈值", Value: fmt.Sprintf("%d 次", threshold)},
+			{Label: "建议", Value: "考虑手动降低该模型优先级或暂时禁用该渠道"},
+		},
+	})
+}

@@ -1,6 +1,7 @@
 package op
 
 import (
+	"strconv"
 	"sync"
 	"time"
 
@@ -210,3 +211,103 @@ func RateUsageList(scopeType string, scopeID int, hours int) ([]model.RateLimitU
 	}
 	return rows, nil
 }
+
+// RateUsageTopItem 限流 TOP 榜单项: 按范围聚合的被拒次数与实体信息。
+type RateUsageTopItem struct {
+	ScopeType   string `json:"scope_type"`
+	ScopeID     int    `json:"scope_id"`
+	Rejected    int64  `json:"rejected"`
+	Requests    int64  `json:"requests"`
+	RejectedPct float64 `json:"rejected_pct"` // 被拒率, 百分比。
+	EntityName  string  `json:"entity_name"`   // 实体名称: 用户名/API Key 名/分组名等。
+}
+
+// RateUsageTopRejected 返回最近若干小时限流被拒 TOP N 榜单, 按范围聚合并关联实体名称。
+func RateUsageTopRejected(scopeType string, hours, limit int) ([]RateUsageTopItem, error) {
+	if hours <= 0 || hours > 168 {
+		hours = 24
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 10
+	}
+	since := time.Now().Add(-time.Duration(hours) * time.Hour).Truncate(time.Hour)
+	
+	// 聚合: 按范围分组, 统计被拒次数与总请求数。
+	type agg struct {
+		ScopeType string
+		ScopeID   int
+		Rejected  int64
+		Requests  int64
+	}
+	var aggregated []agg
+	query := db.GetDB().Model(&model.RateLimitUsageHourly{}).
+		Select("scope_type, scope_id, SUM(rejected) as rejected, SUM(requests) as requests").
+		Where("hour >= ?", since).
+		Group("scope_type, scope_id").
+		Order("rejected DESC").
+		Limit(limit)
+	if scopeType != "" {
+		query = query.Where("scope_type = ?", scopeType)
+	}
+	if err := query.Scan(&aggregated).Error; err != nil {
+		return nil, err
+	}
+	
+	// 关联实体名称。
+	result := make([]RateUsageTopItem, 0, len(aggregated))
+	for _, row := range aggregated {
+		item := RateUsageTopItem{
+			ScopeType: row.ScopeType,
+			ScopeID:   row.ScopeID,
+			Rejected:  row.Rejected,
+			Requests:  row.Requests,
+		}
+		if row.Requests > 0 {
+			item.RejectedPct = float64(row.Rejected) / float64(row.Requests) * 100
+		}
+		item.EntityName = resolveEntityName(row.ScopeType, row.ScopeID)
+		result = append(result, item)
+	}
+	return result, nil
+}
+
+// resolveEntityName 根据范围类型与 ID 解析实体名称; 失败返回 ID 字符串。
+func resolveEntityName(scopeType string, scopeID int) string {
+	database := db.GetDB()
+	switch scopeType {
+	case model.RateScopeSystem:
+		return "System"
+	case model.RateScopeUser:
+		var user model.User
+		if err := database.Select("username").First(&user, scopeID).Error; err == nil {
+			return user.Username
+		}
+	case model.RateScopeAPIKey:
+		var key model.APIKey
+		if err := database.Select("name").First(&key, scopeID).Error; err == nil {
+			return key.Name
+		}
+	case model.RateScopeGroup:
+		var group model.Group
+		if err := database.Select("name, user_id").First(&group, scopeID).Error; err == nil {
+			return group.Name + " (uid:" + strconv.Itoa(int(group.UserID)) + ")"
+		}
+	case model.RateScopeChannel:
+		var channel model.Channel
+		if err := database.Select("name").First(&channel, scopeID).Error; err == nil {
+			return channel.Name
+		}
+	case model.RateScopeChannelKey:
+		var key model.ChannelKey
+		if err := database.Select("id").First(&key, scopeID).Error; err == nil {
+			return "ChannelKey#" + strconv.Itoa(scopeID)
+		}
+	case model.RateScopeChannelModel:
+		var cm model.ChannelModel
+		if err := database.Select("model_name").First(&cm, scopeID).Error; err == nil {
+			return cm.ModelName
+		}
+	}
+	return strconv.Itoa(scopeID)
+}
+

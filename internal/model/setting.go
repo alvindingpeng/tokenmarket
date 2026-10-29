@@ -142,6 +142,7 @@ const (
 	SettingKeyEgressRegionBonusMs    SettingKey = "egress_region_bonus_ms"    // 出口区域亲和加成(毫秒), 默认 0 即关闭。
 	SettingKeyBreakerCoolAuthSeconds SettingKey = "breaker_cool_auth_seconds" // 换路冷却: 鉴权/额度错误后该成员冷却秒数, 默认 60。
 	SettingKeyBreakerCoolSoftSeconds SettingKey = "breaker_cool_soft_seconds" // 换路冷却: 过载/模型缺失等软错误后该成员冷却秒数, 默认 30。
+	SettingKeyBreakerDegradeThreshold SettingKey = "breaker_degrade_threshold" // 熔断降级告警阈值: 熔断次数达到此值时生成 degraded 告警, 默认 3。
 
 	// 内部键: 只存库不出任何读取接口, 也不进备份。
 	SettingKeyAuthSecret SettingKey = "auth_secret"
@@ -551,6 +552,12 @@ func (s *Setting) Validate() error {
 		// 冷却只防本轮重复选中, 上限 10 分钟。
 		if n, err := strconv.Atoi(s.Value); err != nil || n < 0 || n > 600 {
 			return fmt.Errorf("breaker cooldown must be an integer between 0 and 600 seconds")
+		}
+		return nil
+	case SettingKeyBreakerDegradeThreshold:
+		// 降级告警阈值: 0 关闭, 上限 20 次。
+		if n, err := strconv.Atoi(s.Value); err != nil || n < 0 || n > 20 {
+			return fmt.Errorf("breaker degrade threshold must be an integer between 0 and 20")
 		}
 		return nil
 	case SettingKeyMetricsAuth:

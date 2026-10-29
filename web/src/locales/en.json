@@ -1588,7 +1588,8 @@
             "archive": "Log Archive",
             "health": "Channel Health",
             "alerts": "Alerts",
-            "latency": "Latency"
+            "latency": "Latency",
+            "ratelimit": "Rate Limit TOP"
         },
         "latency": {
             "desc": "Time to first byte = connect (DNS/TCP/TLS) + upstream wait. High upstream wait means the channel itself is slow; high connect or TLS means your own egress or the edge hop is the problem. A zero under connect has three causes: the connection was reused, the upstream is plain http, or the upstream address is a bare IP; check the reused rate and the channel URL instead of reading it as fast. Only requests that produced a first byte are counted.",
@@ -1603,6 +1604,24 @@
             "connect": "Connect",
             "tls": "TLS",
             "upstreamWait": "Upstream wait"
+        },
+        "ratelimit": {
+            "desc": "Top sources with the most rate-limited rejections in recent hours (users, API keys, channels, models, etc.), helping identify hotspots and abnormal traffic.",
+            "hours24": "24 Hours",
+            "hours72": "72 Hours",
+            "entity": "Entity",
+            "scope": "Scope Type",
+            "rejected": "Rejected",
+            "requests": "Total Requests",
+            "rejectedPct": "Rejection Rate",
+            "empty": "No rate limit records in this period",
+            "scopeSystem": "System",
+            "scopeUser": "User",
+            "scopeApiKey": "API Key",
+            "scopeGroup": "Group",
+            "scopeChannel": "Channel",
+            "scopeChannelKey": "Channel Key",
+            "scopeChannelModel": "Channel Model"
         },
         "reconcile": {
             "desc": "Daily reconciliation of billing and settlements; mismatches plus backup/archive failures raise alerts and push to the webhook.",

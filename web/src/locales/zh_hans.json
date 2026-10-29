@@ -1588,7 +1588,8 @@
             "archive": "日志归档",
             "health": "渠道健康",
             "alerts": "告警记录",
-            "latency": "延迟归因"
+            "latency": "延迟归因",
+            "ratelimit": "限流 TOP"
         },
         "latency": {
             "desc": "首字节 = 建连(DNS/建连/TLS) + 上游等待。上游等待偏高说明该换上游渠道; 建连与 TLS 偏高说明该加出口或走边缘接入。建连列为 0 有三种情况: 复用了连接、上游用 http 明文、上游地址是 IP —— 看复用率与渠道地址区分, 不要一律读成「很快」。只统计拿到首字节的请求。",
@@ -1603,6 +1604,24 @@
             "connect": "建连",
             "tls": "TLS",
             "upstreamWait": "上游等待"
+        },
+        "ratelimit": {
+            "desc": "最近时段限流被拒次数最多的范围（用户、API Key、渠道、模型等），帮助识别热点和异常流量。",
+            "hours24": "24 小时",
+            "hours72": "72 小时",
+            "entity": "对象",
+            "scope": "范围类型",
+            "rejected": "被拒次数",
+            "requests": "总请求",
+            "rejectedPct": "拒绝率",
+            "empty": "该时段无限流记录",
+            "scopeSystem": "全局",
+            "scopeUser": "用户",
+            "scopeApiKey": "API Key",
+            "scopeGroup": "分组",
+            "scopeChannel": "渠道",
+            "scopeChannelKey": "渠道密钥",
+            "scopeChannelModel": "渠道模型"
         },
         "reconcile": {
             "desc": "每日自动核对计费明细与预扣结算; 对账差异与备份/归档失败会自动生成告警并推送 Webhook。",

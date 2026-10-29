@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import BillingRecovery from './BillingRecovery';
 import { useTranslations } from 'use-intl';
-import { Archive, DatabaseBackup, Gauge, HeartPulse, RefreshCw, Scale, ShieldAlert, StickyNote, Wallet } from 'lucide-react';
+import { Archive, DatabaseBackup, Gauge, HeartPulse, ListFilter, RefreshCw, Scale, ShieldAlert, StickyNote, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,6 +21,7 @@ import {
     useLatencyBreakdown, useOpsOverview, useReconcileList, useRunBackup, useRunHealthCheck, useRunLogLifecycle, useRunReconcile, useSetReconcileNote,
     type BalanceFlow, type ChannelAlert, type ChannelHealth, type LatencyRow, type ReconcileRow,
 } from '@/api/ops';
+import { useRateUsageTop } from '@/api/ratelimit';
 
 // formatTime 把 RFC3339 时间转成本地展示, 无效值原样返回。
 function formatTime(value: string): string {
@@ -122,6 +123,7 @@ const TABS = [
     { id: 'health', icon: HeartPulse },
     { id: 'alerts', icon: ShieldAlert },
     { id: 'latency', icon: Gauge },
+    { id: 'ratelimit', icon: ListFilter },
 ] as const;
 
 // Ops 运维中心: 对账/流水/备份/归档/健康/告警六个页签, 全部管理员可见。
@@ -157,6 +159,7 @@ export default function Ops() {
                 {tab === 'health' && <HealthSection />}
                 {tab === 'alerts' && <AlertsSection />}
                 {tab === 'latency' && <LatencySection />}
+                {tab === 'ratelimit' && <RateLimitTopSection />}
             </div>
         </div>
     );
@@ -557,3 +560,74 @@ function AlertsSection() {
         </div>
     );
 }
+
+
+// RateLimitTopSection 限流 TOP 10 榜单: 展示最近 24 小时限流被拒次数最多的范围。
+function RateLimitTopSection() {
+    const t = useTranslations('ops');
+    const [hours, setHours] = useState('24');
+    const { data, isLoading, isError, refetch, isRefetching } = useRateUsageTop(Number(hours), 10);
+    
+    const scopeTypeBadge = (scopeType: string) => {
+        const map: Record<string, { label: string; className: string }> = {
+            system: { label: t('ratelimit.scopeSystem'), className: 'bg-slate-500/15 text-slate-600 dark:text-slate-400' },
+            user: { label: t('ratelimit.scopeUser'), className: 'bg-sky-500/15 text-sky-600 dark:text-sky-400' },
+            api_key: { label: t('ratelimit.scopeApiKey'), className: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
+            group: { label: t('ratelimit.scopeGroup'), className: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },
+            channel: { label: t('ratelimit.scopeChannel'), className: 'bg-purple-500/15 text-purple-600 dark:text-purple-400' },
+            channel_key: { label: t('ratelimit.scopeChannelKey'), className: 'bg-orange-500/15 text-orange-600 dark:text-orange-500' },
+            channel_model: { label: t('ratelimit.scopeChannelModel'), className: 'bg-pink-500/15 text-pink-600 dark:text-pink-400' },
+        };
+        const item = map[scopeType] ?? { label: scopeType, className: 'bg-muted text-muted-foreground' };
+        return <Badge variant='outline' className={item.className}>{item.label}</Badge>;
+    };
+    
+    const columns: Col<import('@/api/ratelimit').RateUsageTopItem>[] = [
+        { key: 'entity_name', label: t('ratelimit.entity'), render: (row) => (
+            <span className='block max-w-56 truncate font-medium' title={row.entity_name}>
+                {row.entity_name}
+            </span>
+        ) },
+        { key: 'scope_type', label: t('ratelimit.scope'), render: (row) => scopeTypeBadge(row.scope_type) },
+        { key: 'rejected', label: t('ratelimit.rejected'), render: (row) => (
+            <span className='font-semibold text-red-600 dark:text-red-400'>{row.rejected.toLocaleString()}</span>
+        ) },
+        { key: 'requests', label: t('ratelimit.requests'), render: (row) => row.requests.toLocaleString() },
+        { key: 'rejected_pct', label: t('ratelimit.rejectedPct'), render: (row) => (
+            <span className={'font-medium ' + (row.rejected_pct > 10 ? 'text-red-600 dark:text-red-400' : row.rejected_pct > 5 ? 'text-amber-600 dark:text-amber-500' : '')}>
+                {row.rejected_pct.toFixed(1)}%
+            </span>
+        ) },
+    ];
+    
+    return (
+        <div className='space-y-3'>
+            <div className='flex flex-wrap items-center justify-between gap-3'>
+                <p className='max-w-3xl text-sm text-muted-foreground'>{t('ratelimit.desc')}</p>
+                <div className='flex items-center gap-2'>
+                    <Select value={hours} onValueChange={setHours}>
+                        <SelectTrigger className='h-9 w-32 rounded-xl'><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value='1'>{t('reconcile.days1')}</SelectItem>
+                            <SelectItem value='24'>{t('ratelimit.hours24')}</SelectItem>
+                            <SelectItem value='72'>{t('ratelimit.hours72')}</SelectItem>
+                            <SelectItem value='168'>{t('reconcile.days7')}</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <RefreshButton onClick={() => void refetch()} busy={isRefetching} label={t('refresh')} />
+                </div>
+            </div>
+            {isError ? (
+                <div className='rounded-3xl border border-border bg-card p-10 text-center text-sm text-muted-foreground'>{t('loadFailed')}</div>
+            ) : (
+                <OpsTable 
+                    columns={columns} 
+                    rows={data?.items ?? []} 
+                    empty={isLoading ? t('loading') : t('ratelimit.empty')}
+                    rowKey={(row) => row.scope_type + '-' + row.scope_id} 
+                />
+            )}
+        </div>
+    );
+}
+

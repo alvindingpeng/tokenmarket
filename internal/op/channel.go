@@ -1373,6 +1373,10 @@ func RecordChannelKeyError(channelKeyID int, errorType string) {
 		key.DisabledUntil = &disabledUntil
 		// 熔断是一次自动降级决策, 必须让管理员知道: 哪家渠道、哪个凭据、停到几点、第几次。
 		raiseKeyBreakerAlert(key, errorType, disabledUntil, 0, trips)
+		// 检查是否达到降级阈值
+		if degradeThreshold := breakerDegradeThreshold(); degradeThreshold > 0 && trips >= degradeThreshold {
+			raiseKeyDegradeAlert(key, trips, degradeThreshold)
+		}
 		return
 	}
 
@@ -1389,6 +1393,10 @@ func RecordChannelKeyError(channelKeyID int, errorType string) {
 	// 告警放在写库之后: 库里没落上就发通知, 管理员会看到一条查无实据的熔断。
 	if breakerAt != nil {
 		raiseKeyBreakerAlert(key, errorType, *breakerAt, threshold, trips)
+		// 检查是否达到降级阈值
+		if degradeThreshold := breakerDegradeThreshold(); degradeThreshold > 0 && trips >= degradeThreshold {
+			raiseKeyDegradeAlert(key, trips, degradeThreshold)
+		}
 	}
 }
 
@@ -1417,6 +1425,8 @@ const (
 
 	defaultBreakerCoolAuthSeconds = 60
 	defaultBreakerCoolSoftSeconds = 30
+	
+	defaultBreakerDegradeThreshold = 3
 )
 
 func breakerSetting(key model.SettingKey, fallback int, max int) int {
@@ -1449,6 +1459,10 @@ func breakerModelMinutes() int {
 
 func breakerMaxMinutes() int {
 	return breakerSetting(model.SettingKeyBreakerMaxMinutes, defaultBreakerMaxMinutes, 1440)
+}
+
+func breakerDegradeThreshold() int {
+	return breakerSetting(model.SettingKeyBreakerDegradeThreshold, defaultBreakerDegradeThreshold, 20)
 }
 
 // EgressRegionBonusMs 出口区域亲和加成(毫秒): 调用方地区与出口地区一致时, 该出口的排序分数
@@ -1532,6 +1546,10 @@ func RecordChannelModelError(channelModelID int, errorType string) {
 	// 与 Key 级熔断同理: 熔断落地后再告警, 并给出渠道名与模型名。
 	if breakerAt != nil {
 		raiseModelBreakerAlert(channelModel, errorType, *breakerAt, threshold, trips)
+		// 检查是否达到降级阈值
+		if degradeThreshold := breakerDegradeThreshold(); degradeThreshold > 0 && trips >= degradeThreshold {
+			raiseModelDegradeAlert(channelModel, trips, degradeThreshold)
+		}
 	}
 }
 

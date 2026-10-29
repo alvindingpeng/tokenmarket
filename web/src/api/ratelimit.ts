@@ -130,3 +130,27 @@ export function useRateUsage(hours = 24, scopeType = '', scopeId = 0) {
         refetchInterval: POLL_SLOW,
     });
 }
+
+/**
+ * RateUsageTopItem 限流 TOP 榜单项。
+ */
+export type RateUsageTopItem = {
+    scope_type: string;
+    scope_id: number;
+    rejected: number;
+    requests: number;
+    rejected_pct: number;
+    entity_name: string;
+};
+
+/**
+ * useRateUsageTop 拉取限流被拒 TOP N 榜单。
+ */
+export function useRateUsageTop(hours = 24, limit = 10, scopeType = '') {
+    const query = new URLSearchParams({ hours: String(hours), limit: String(limit), scope_type: scopeType });
+    return useQuery({
+        queryKey: ['ratelimit', 'usage-top', hours, limit, scopeType],
+        queryFn: () => apiRequest<{ items: RateUsageTopItem[] }>('/api/v1/ratelimit/usage/top?' + query.toString()),
+        refetchInterval: POLL_SLOW,
+    });
+}
