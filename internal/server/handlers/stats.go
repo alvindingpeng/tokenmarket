@@ -313,12 +313,12 @@ func exportBillingRecords(c *gin.Context) {
 			strconv.FormatUint(record.RequestID, 10),
 			strconv.FormatUint(uint64(record.UserID), 10),
 			strconv.Itoa(record.APIKeyID),
-			record.GroupModel,
-			record.ModelName,
+			sanitizeCSVCell(record.GroupModel),
+			sanitizeCSVCell(record.ModelName),
 			strconv.Itoa(record.ChannelID),
 			strconv.FormatUint(uint64(record.OwnerID), 10),
-			record.ShareCode,
-			record.PriceSource,
+			sanitizeCSVCell(record.ShareCode),
+			sanitizeCSVCell(record.PriceSource),
 			strconv.FormatInt(record.InputToken, 10),
 			strconv.FormatInt(record.OutputToken, 10),
 			strconv.FormatInt(record.CacheReadToken, 10),
@@ -330,7 +330,7 @@ func exportBillingRecords(c *gin.Context) {
 			strconv.FormatFloat(record.UserCost, 'f', 6, 64),
 			strconv.FormatFloat(record.OwnerRevenue, 'f', 6, 64),
 			strconv.FormatFloat(record.PlatformRevenue, 'f', 6, 64),
-			record.Status,
+			sanitizeCSVCell(record.Status),
 		})
 	}
 	writer.Flush()
