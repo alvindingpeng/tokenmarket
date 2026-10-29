@@ -3,8 +3,8 @@ package model
 type StatsMetrics struct {
 	InputToken     int64   `json:"input_token" gorm:"bigint"`
 	OutputToken    int64   `json:"output_token" gorm:"bigint"`
-	InputCost      float64 `json:"input_cost" gorm:"type:real"`
-	OutputCost     float64 `json:"output_cost" gorm:"type:real"`
+	InputCost      float64 `json:"input_cost" gorm:"type:real"`  // 成本金额: 请求级统计传用户价(含加价), 渠道侧统计传供货价。
+	OutputCost     float64 `json:"output_cost" gorm:"type:real"` // 成本金额: 请求级统计传用户价(含加价), 渠道侧统计传供货价。
 	WaitTime       int64   `json:"wait_time" gorm:"bigint"`
 	RequestSuccess int64   `json:"request_success" gorm:"bigint"`
 	RequestFailed  int64   `json:"request_failed" gorm:"bigint"`

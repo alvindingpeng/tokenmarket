@@ -57,7 +57,8 @@ type RequestState struct {
 	GroupID            int            `json:"group_id"`         // 承载本请求的分组 ID, 供界面按主键直接定位分组而不必按名称回查。
 	APIKeyName         string         `json:"api_key_name"`     // 发起请求时的 API Key 名称。
 	Usage              llm.Usage      `json:"usage"`            // 请求结束时写入的展示用量。
-	Cost               float64        `json:"cost"`             // 请求结束时写入的累计费用。
+	Cost               float64        `json:"cost"`             // 请求结束时写入的累计费用（用户侧，含加价）。
+	SupplyCost         float64        `json:"supply_cost"`      // 上游供货成本（不含加价）。
 	OutputChars        int            `json:"output_chars"`     // 流式过程中按事件数量估算并实时累计的输出字符数, 仅用于界面展示, 不参与结算。
 
 	Round             int            `json:"round"`               // 最新一轮循环的递增序号, 人工中止按此匹配以免误杀下一轮。
@@ -529,21 +530,28 @@ func (r *RequestState) finishLocked(usage *llm.Usage) *billingLease {
 	// 本轮落地渠道的供货价上浮后即渠道模型发布价, 与 settleBillingLocked 的结算完全同口径。
 	metrics := usageMetrics(r.targetSupplyPrice.Scale(op.SettingGetFloat(model.SettingKeyMarkupRatio)), usage)
 	r.Cost = metrics.InputCost + metrics.OutputCost
+	// 同时计算上游供货成本(不含加价), 用于成本追踪与利润分析。
+	supplyMetrics := usageMetrics(r.targetSupplyPrice, usage)
+	r.SupplyCost = supplyMetrics.InputCost + supplyMetrics.OutputCost
 	// 媒体计费: 按张/按秒的费用折入输出侧桶, 图表与统计的输入/输出两桶口径保持不变。
 	switch r.targetKind {
 	case model.MediaKindImage:
 		if images := mediaImageCount(r.responseBody); images > 0 {
-			mediaCost := r.targetMediaSupply.Scale(op.SettingGetFloat(model.SettingKeyMarkupRatio)).CostImages(images, "")
-			metrics.OutputCost += mediaCost
-			r.Cost += mediaCost
+			userMediaCost := r.targetMediaSupply.Scale(op.SettingGetFloat(model.SettingKeyMarkupRatio)).CostImages(images, "")
+			supplyMediaCost := r.targetMediaSupply.CostImages(images, "")
+			metrics.OutputCost += userMediaCost
+			r.Cost += userMediaCost
+			r.SupplyCost += supplyMediaCost
 		}
 	case model.MediaKindVideo:
 		if units := mediaVideoUnits(r.responseBody, r.requestedMedia); units.Videos > 0 {
 			r.recordVideoJob()
 			userMedia := r.targetMediaSupply.Scale(op.SettingGetFloat(model.SettingKeyMarkupRatio))
-			mediaCost := userMedia.CostVideos(units.Videos, units.Seconds, units.Resolution)
-			metrics.OutputCost += mediaCost
-			r.Cost += mediaCost
+			userMediaCost := userMedia.CostVideos(units.Videos, units.Seconds, units.Resolution)
+			supplyMediaCost := r.targetMediaSupply.CostVideos(units.Videos, units.Seconds, units.Resolution)
+			metrics.OutputCost += userMediaCost
+			r.Cost += userMediaCost
+			r.SupplyCost += supplyMediaCost
 		}
 	}
 	r.Duration = time.Since(r.StartedAt)

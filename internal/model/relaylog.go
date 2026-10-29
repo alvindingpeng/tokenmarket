@@ -46,7 +46,10 @@ type RelayRequest struct {
 	CompletionTokens     int64             `json:"completion_tokens"`
 	CachedTokens         int64             `json:"cached_tokens"`
 	CacheWriteTokens     int64             `json:"cache_write_tokens"`
-	Cost                 float64           `json:"cost"`
+	Cost                 float64           `json:"cost"`              // 用户侧计费金额(美元), 含加价。
+	SupplyCost           float64           `json:"supply_cost"`       // 上游供货成本(美元), 不含加价。
+	UserCharge           float64           `json:"user_charge"`       // 用户实际扣款金额(美元), 等于 Cost。
+	Profit               float64           `json:"profit"`            // 毛利(美元) = UserCharge - SupplyCost。
 	OutputChars          int               `json:"output_chars"`
 	TargetChannelKey     string            `json:"target_channel_key"`
 	TargetChannelCode    string            `json:"target_channel_code"`
