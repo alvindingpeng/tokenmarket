@@ -581,7 +581,7 @@ export default function Share() {
     return (
         // h-full + overflow-y-auto: 页面切换层是 absolute inset-0, 外层不会跟着内容长高,
         // 因此这一层必须自己滚, 否则内容超出视口后拖不动(手机上只能看到顶部一屏)。
-        <div className="grid h-full grid-cols-1 content-start gap-4 overflow-y-auto overscroll-contain pb-24 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid h-full grid-cols-1 content-start gap-4 overflow-y-auto overscroll-contain pb-24 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3">
             {channels.map((channel) => (
                 <ShareCard key={channel.channel_id} channel={channel} />
             ))}
