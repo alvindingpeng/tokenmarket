@@ -95,7 +95,8 @@
         "wallet": "钱包",
         "redemption": "兑换码",
         "withdrawals": "提现管理",
-        "notification": "通知"
+        "notification": "通知",
+        "analytics": "统计"
     },
     "toolbar": {
         "hideChannelName": "模糊渠道名称",
@@ -2182,5 +2183,36 @@
         "type_recharge": "充值成功",
         "type_dispute": "争议处理",
         "type_ticket": "工单回复"
+    },
+    "analytics": {
+        "title": "调用统计",
+        "loading": "加载中...",
+        "range": {
+            "today": "今天",
+            "week": "最近7天",
+            "month": "最近30天",
+            "custom": "自定义"
+        },
+        "granularity": {
+            "day": "按天",
+            "week": "按周",
+            "month": "按月"
+        },
+        "card": {
+            "requests": "总调用量",
+            "successRate": "成功率",
+            "cost": "总费用",
+            "tokens": "总Token"
+        },
+        "chart": {
+            "trend": "调用趋势",
+            "requests": "调用量",
+            "cost": "费用",
+            "modelCost": "模型费用分布",
+            "modelRequests": "模型调用量"
+        },
+        "model": {
+            "other": "其他"
+        }
     }
 }

@@ -95,7 +95,8 @@
         "wallet": "錢包",
         "redemption": "兌換碼",
         "withdrawals": "提現管理",
-        "notification": "通知"
+        "notification": "通知",
+        "analytics": "統計"
     },
     "toolbar": {
         "hideChannelName": "模糊渠道名稱",
@@ -2182,5 +2183,36 @@
         "type_recharge": "充值成功",
         "type_dispute": "爭議處理",
         "type_ticket": "工單回覆"
+    },
+    "analytics": {
+        "title": "呼叫統計",
+        "loading": "載入中...",
+        "range": {
+            "today": "今天",
+            "week": "最近7天",
+            "month": "最近30天",
+            "custom": "自訂"
+        },
+        "granularity": {
+            "day": "按天",
+            "week": "按週",
+            "month": "按月"
+        },
+        "card": {
+            "requests": "總呼叫量",
+            "successRate": "成功率",
+            "cost": "總費用",
+            "tokens": "總Token"
+        },
+        "chart": {
+            "trend": "呼叫趨勢",
+            "requests": "呼叫量",
+            "cost": "費用",
+            "modelCost": "模型費用分佈",
+            "modelRequests": "模型呼叫量"
+        },
+        "model": {
+            "other": "其他"
+        }
     }
 }

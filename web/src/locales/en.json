@@ -95,7 +95,8 @@
         "wallet": "Wallet",
         "redemption": "Redemption Codes",
         "withdrawals": "Withdrawals",
-        "notification": "Notification"
+        "notification": "Notification",
+        "analytics": "Analytics"
     },
     "toolbar": {
         "hideChannelName": "Blur channel names",
@@ -2182,5 +2183,36 @@
         "type_recharge": "Top-up",
         "type_dispute": "Dispute",
         "type_ticket": "Ticket reply"
+    },
+    "analytics": {
+        "title": "Analytics",
+        "loading": "Loading...",
+        "range": {
+            "today": "Today",
+            "week": "Last 7 Days",
+            "month": "Last 30 Days",
+            "custom": "Custom"
+        },
+        "granularity": {
+            "day": "Day",
+            "week": "Week",
+            "month": "Month"
+        },
+        "card": {
+            "requests": "Total Requests",
+            "successRate": "Success Rate",
+            "cost": "Total Cost",
+            "tokens": "Total Tokens"
+        },
+        "chart": {
+            "trend": "Request Trend",
+            "requests": "Requests",
+            "cost": "Cost",
+            "modelCost": "Model Cost Distribution",
+            "modelRequests": "Model Requests"
+        },
+        "model": {
+            "other": "Other"
+        }
     }
 }
