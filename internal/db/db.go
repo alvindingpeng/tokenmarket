@@ -78,6 +78,7 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.RedemptionCode{},
 		&model.Setting{},
 		&model.AuditLog{},
+		&model.Notification{},
 		&model.StatsTotal{},
 		&model.StatsDaily{},
 		&model.StatsHourly{},
