@@ -24,13 +24,14 @@ import (
 const webhookTestSecret = "signing-secret-0123456789abcd"
 
 // webhookDispatchTestSetup 同 webhookTestSetup, 并显式放行私网拨号:
-// httptest 服务监听环回, 只在测试里放行; 生产 webhookAllowPrivate 恒为 nil(全拒)。
+// httptest 服务监听环回, 只在测试里替换 webhookDialAllowPrivate(默认恒 false, 全拒);
+// 生产代码没有任何入口能改写该判定。
 func webhookDispatchTestSetup(t *testing.T) {
 	t.Helper()
 	webhookTestSetup(t)
-	prev := webhookAllowPrivate
-	webhookAllowPrivate = func() bool { return true }
-	t.Cleanup(func() { webhookAllowPrivate = prev })
+	prev := webhookDialAllowPrivate
+	webhookDialAllowPrivate = func() bool { return true }
+	t.Cleanup(func() { webhookDialAllowPrivate = prev })
 }
 
 // webhookSeedHook 直接种一行订阅(绕过 URL 保存校验, 便于指向 httptest 环回服务);
@@ -445,7 +446,7 @@ func TestWebhookEnvProxyIgnored(t *testing.T) {
 
 // 拨号层防内网: 默认(非测试放行)下环回目标被 DialGuard 拦截, 请求根本到不了服务。
 func TestWebhookDialBlocksPrivateTargets(t *testing.T) {
-	webhookTestSetup(t) // 不放行私网: webhookAllowPrivate 保持 nil
+	webhookTestSetup(t) // 不放行私网: webhookDialAllowPrivate 保持生产默认(恒 false)
 	server, captured, mu := webhookCaptureServer(t, nil)
 	hook := webhookSeedHook(t, 1, server.URL, webhookTestSecret, []string{"system"}, 0)
 	d := webhookSeedDelivery(t, hook, string(model.NotificationTypeSystem))
@@ -487,6 +488,33 @@ func TestWebhookTimeoutRetryable(t *testing.T) {
 }
 
 
+
+// 生产客户端硬化: 无代理(环境代理无效)、不跟随重定向、拨号判定是显式 false ——
+// DialGuard 对 AllowPrivate == nil 的语义是放行, 判定函数绝不能缺位。
+func TestWebhookHTTPClientHardening(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:9")
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+	client := webhookHTTPClient()
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport type = %T", client.Transport)
+	}
+	if transport.Proxy != nil {
+		t.Fatal("proxy must be hard-disabled (Proxy == nil); env proxies must not apply")
+	}
+	req, err := http.NewRequest(http.MethodGet, "https://hooks.example.com/x", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.CheckRedirect(req, nil); err != http.ErrUseLastResponse {
+		t.Fatalf("CheckRedirect = %v, want ErrUseLastResponse (no redirect following)", err)
+	}
+	// 判定必须是显式 false 的函数: 传 nil 会被 DialGuard 解释成"放行私网"。
+	if webhookDialAllowPrivate == nil || webhookDialAllowPrivate() {
+		t.Fatal("production dial allow-private must be an explicit func returning false")
+	}
+	// 不复用管理员「允许私网」设置: 该判定与设置层零耦合(无任何读取路径), 管理员例外只属于上游渠道。
+}
 
 // 崩溃恢复: lease 过期的 processing 会被重新抢占补投(至少一次); lease 未到期的不抢。
 func TestWebhookStaleLeaseReclaimed(t *testing.T) {

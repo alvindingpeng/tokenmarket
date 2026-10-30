@@ -55,9 +55,16 @@ const (
 
 var (
 	// webhookHTTPTimeout 单次投递的总超时(含连接、TLS、写请求、读响应头)。
+	// 测试会临时改小以加速; 它不是防护开关, 生产无任何配置入口改写。
 	webhookHTTPTimeout = 5 * time.Second
-	// webhookAllowPrivate 测试钩子: 拨号层是否放行私网目标。生产恒 false, 私网/环回/元数据全拒。
-	webhookAllowPrivate func() bool
+	// webhookDialAllowPrivate 拨号层"放行私网目标"的判定。生产就是下面这个显式 false 字面量。
+	//
+	// 必须显式 func() bool { return false }, 不能图省事传 nil: netguard.DialGuard 对
+	// AllowPrivate == nil 的语义是「放行」(管理员例外开关), 传 nil 等于把内网大开。
+	// 也绝不接管理员「允许私网」设置、配置文件或环境变量 —— webhook 目标永远只允许公网,
+	// 管理员例外只属于上游渠道, 不得复用到这里。只有同包 _test.go 替换本变量
+	// (让 httptest 环回监听可达), 生产没有任何入口能改写它。
+	webhookDialAllowPrivate = func() bool { return false }
 	// webhookDispatchRunning 单飞标志: 上一轮还在跑就跳过本轮 tick。
 	webhookDispatchRunning int32
 )
@@ -184,7 +191,8 @@ func webhookEnqueueForNotificationTx(tx *gorm.DB, n *model.Notification) error {
 //   - 总超时 5s。
 func webhookHTTPClient() *http.Client {
 	guard := netguard.DialGuard{AllowPrivate: func() bool {
-		return webhookAllowPrivate != nil && webhookAllowPrivate()
+		// 显式判定而非 nil: 即便钩子被清空也回落到 false(拦截), 决不回落到 DialGuard 的 nil=放行。
+		return webhookDialAllowPrivate != nil && webhookDialAllowPrivate()
 	}}
 	transport := &http.Transport{
 		Proxy:                  nil,
