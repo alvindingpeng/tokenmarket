@@ -2291,11 +2291,13 @@
     "analytics": {
         "title": "Analytics",
         "loading": "Loading...",
+        "error": "Failed to load statistics",
+        "retry": "Retry",
+        "empty": "No data in this range",
         "range": {
             "today": "Today",
             "week": "Last 7 Days",
-            "month": "Last 30 Days",
-            "custom": "Custom"
+            "month": "Last 30 Days"
         },
         "granularity": {
             "day": "Day",

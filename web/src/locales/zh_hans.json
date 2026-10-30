@@ -2291,11 +2291,13 @@
     "analytics": {
         "title": "调用统计",
         "loading": "加载中...",
+        "error": "加载失败，请重试",
+        "retry": "重试",
+        "empty": "该时间段内暂无数据",
         "range": {
             "today": "今天",
             "week": "最近7天",
-            "month": "最近30天",
-            "custom": "自定义"
+            "month": "最近30天"
         },
         "granularity": {
             "day": "按天",

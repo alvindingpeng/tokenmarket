@@ -2291,11 +2291,13 @@
     "analytics": {
         "title": "呼叫統計",
         "loading": "載入中...",
+        "error": "載入失敗，請重試",
+        "retry": "重試",
+        "empty": "該時間段內暫無數據",
         "range": {
             "today": "今天",
             "week": "最近7天",
-            "month": "最近30天",
-            "custom": "自訂"
+            "month": "最近30天"
         },
         "granularity": {
             "day": "按天",

@@ -64,6 +64,14 @@ export function isStepUpRequired(error: unknown): boolean {
     return error instanceof ApiError && error.code === stepUpErrorCode;
 }
 
+// apiQueryRetry 查询失败的重试策略: 4xx(404/400/401...)是路径或参数问题, 重试必然还是同样的失败,
+// 只会把「明确报错」拖成「慢慢报错」—— 前面缺 /api/v1 前缀打 404 时就是被默认重试拖慢的。
+// 这类错误一次失败就交给界面报错 + 手动重试; 其余(网络抖动/5xx/超时)最多再试 2 次。
+export function apiQueryRetry(failureCount: number, error: unknown): boolean {
+    if (error instanceof ApiError && error.status >= 400 && error.status < 500) return false;
+    return failureCount < 2;
+}
+
 // StepUpHandler 弹窗实现: 走完"输密码 -> 换凭证"的交互, 成功返回凭证;
 // 用户取消(或没有弹窗可弹)返回 null。返回 null 时调用方原样抛出 step-up 错误。
 export type StepUpHandler = () => Promise<string | null>;

@@ -6,9 +6,11 @@ import "time"
 // 三方账目在同一行对平: UserCost = OwnerRevenue + PlatformRevenue;
 // OwnerRevenue 按供货价计入渠道归属者(渠道归属 admin 时也记 owner, 平台收入为上浮部分)。
 type BillingRecord struct {
-	ID         uint64 `json:"id" gorm:"primaryKey"`
-	RequestID  uint64 `json:"request_id" gorm:"index"`
-	UserID     uint   `json:"user_id" gorm:"index"` // 付费方: API Key 归属用户。
+	ID        uint64 `json:"id" gorm:"primaryKey"`
+	RequestID uint64 `json:"request_id" gorm:"index"`
+	// 复合索引 (user_id, created_at) 服务用户统计的按时间范围聚合(user_stats), 让范围过滤在索引内完成;
+	// 单列索引保留供按 user_id 的全量查询。本次只优化用户调用分析, 暂不新增 owner 复合索引。
+	UserID     uint   `json:"user_id" gorm:"index;index:idx_billing_records_user_created,priority:1"` // 付费方: API Key 归属用户。
 	APIKeyID   int    `json:"api_key_id"`
 	GroupID    int    `json:"group_id"`
 	GroupModel string `json:"group_model"` // 客户端模型名, 即分组名。
@@ -37,8 +39,9 @@ type BillingRecord struct {
 	OwnerRevenue    float64 `json:"owner_revenue" gorm:"type:decimal(18,6)"`    // 发布者收入(供货价)。
 	PlatformRevenue float64 `json:"platform_revenue" gorm:"type:decimal(18,6)"` // 平台收入(上浮部分)。
 
-	Status    string    `json:"status"` // settled | refunded
-	CreatedAt time.Time `json:"created_at" gorm:"index"`
+	Status string `json:"status"` // settled | refunded
+	// 复合索引第二列 (见 UserID 处说明); 单列索引保留。
+	CreatedAt time.Time `json:"created_at" gorm:"index;index:idx_billing_records_user_created,priority:2"`
 }
 
 // BalanceReservation 余额预扣记录; 请求结束时结算, 超时未结算由定时任务回滚冻结额。

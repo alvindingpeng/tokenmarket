@@ -1,5 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from './client';
+import { queryOptions, useQuery } from '@tanstack/react-query';
+import { apiRequest, apiQueryRetry } from './client';
+import { useAuthStore } from './user';
 
 // UserStatsOverview 用户调用概览。
 export type UserStatsOverview = {
@@ -41,29 +42,57 @@ function buildQueryString(params: UserStatsQuery): string {
     return qs.toString();
 }
 
+// userStatsOverviewPath / userStatsTrendPath / userStatsModelsPath 服务端路由挂在 /api/v1/user-stats 组下
+// (internal/server/handlers/user_stats.go), 前缀缺一不可 —— 少了 /api/v1 就是 404。
+export const userStatsOverviewPath = '/api/v1/user-stats/overview';
+export const userStatsTrendPath = '/api/v1/user-stats/trend';
+export const userStatsModelsPath = '/api/v1/user-stats/models';
+
+// userStatsOverviewQueryOptions 用户调用概览查询定义。
+// queryFn 接 react-query 的 signal: 组件卸载/切范围时正在飞的请求立刻中止, 不白等。
+export function userStatsOverviewQueryOptions(params: UserStatsQuery = {}, userId = 0) {
+    const qs = buildQueryString(params);
+    return queryOptions({
+        queryKey: ['user-stats', 'overview', params, userId] as const,
+        queryFn: ({ signal }) => apiRequest<UserStatsOverview>(`${userStatsOverviewPath}?${qs}`, { signal }),
+        retry: apiQueryRetry,
+    });
+}
+
+// userStatsTrendQueryOptions 用户调用趋势查询定义。
+export function userStatsTrendQueryOptions(params: UserStatsQuery = {}, userId = 0) {
+    const qs = buildQueryString(params);
+    return queryOptions({
+        queryKey: ['user-stats', 'trend', params, userId] as const,
+        queryFn: ({ signal }) => apiRequest<UserStatsTrend[]>(`${userStatsTrendPath}?${qs}`, { signal }),
+        retry: apiQueryRetry,
+    });
+}
+
+// userStatsModelsQueryOptions 用户按模型统计查询定义。
+export function userStatsModelsQueryOptions(params: UserStatsQuery = {}, userId = 0) {
+    const qs = buildQueryString(params);
+    return queryOptions({
+        queryKey: ['user-stats', 'models', params, userId] as const,
+        queryFn: ({ signal }) => apiRequest<UserStatsModel[]>(`${userStatsModelsPath}?${qs}`, { signal }),
+        retry: apiQueryRetry,
+    });
+}
+
 // useUserStatsOverview 查询用户调用概览。
 export function useUserStatsOverview(params: UserStatsQuery = {}) {
-    const qs = buildQueryString(params);
-    return useQuery({
-        queryKey: ['user-stats', 'overview', params],
-        queryFn: () => apiRequest<UserStatsOverview>(`/user-stats/overview?${qs}`),
-    });
+    const userId = useAuthStore((state) => state.userId);
+    return useQuery(userStatsOverviewQueryOptions(params, userId));
 }
 
 // useUserStatsTrend 查询用户调用趋势。
 export function useUserStatsTrend(params: UserStatsQuery = {}) {
-    const qs = buildQueryString(params);
-    return useQuery({
-        queryKey: ['user-stats', 'trend', params],
-        queryFn: () => apiRequest<UserStatsTrend[]>(`/user-stats/trend?${qs}`),
-    });
+    const userId = useAuthStore((state) => state.userId);
+    return useQuery(userStatsTrendQueryOptions(params, userId));
 }
 
 // useUserStatsModels 查询用户按模型统计。
 export function useUserStatsModels(params: UserStatsQuery = {}) {
-    const qs = buildQueryString(params);
-    return useQuery({
-        queryKey: ['user-stats', 'models', params],
-        queryFn: () => apiRequest<UserStatsModel[]>(`/user-stats/models?${qs}`),
-    });
+    const userId = useAuthStore((state) => state.userId);
+    return useQuery(userStatsModelsQueryOptions(params, userId));
 }
