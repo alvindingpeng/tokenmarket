@@ -32,7 +32,7 @@ export function ticketStatusOptions(current: TicketStatus): TicketStatus[] {
 
 /**
  * TicketView 工单视图(列表行, 与后端 model.TicketView 对齐)。
- * assigned_to 为空表示未分配; message_count 是消息数(含首条正文)。
+ * assigned_to 为空表示未分配; message_count 只计回复(后端只数 ticket_messages 行, 不含首正文, 见 docs/TICKETS.md)。
  */
 export type TicketView = {
     id: number;
