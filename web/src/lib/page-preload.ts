@@ -13,6 +13,7 @@ export const pageImports = {
     billing: () => import('@/components/modules/billing'),
     apikey: () => import('@/components/modules/apikey'),
     log: () => import('@/components/modules/log'),
+    notification: () => import('@/components/modules/notification'),
     setting: () => import('@/components/modules/setting'),
 };
 

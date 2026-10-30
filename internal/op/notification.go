@@ -9,6 +9,30 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
+// notificationDedupWindow 同类未读通知的去重窗口。
+//
+// 余额不足、限流触发这类事件会在短时间内高频重复: 每一次结算都可能命中同一个条件。
+// 如果每次都落一条, 用户打开通知中心看到的就是几十条一模一样的提醒, 真正的信息被淹没。
+// 窗口内已有同类未读通知时不再新增 —— 用户读掉之后, 下一次事件仍会正常提醒。
+const notificationDedupWindow = time.Hour
+
+// NotificationCreateDedup 创建通知, 窗口内已有同类未读通知时跳过。
+// 返回是否真的写入了一条(被去重时为 false), 供调用方判断是否需要后续动作。
+func NotificationCreateDedup(ctx context.Context, userID uint, notifType model.NotificationType, title, content, link string, relatedID uint64) (bool, error) {
+	var existing int64
+	err := db.GetDB().WithContext(ctx).Model(&model.Notification{}).
+		Where("user_id = ? AND type = ? AND status = ? AND created_at >= ?",
+			userID, notifType, model.NotificationStatusUnread, time.Now().Add(-notificationDedupWindow)).
+		Count(&existing).Error
+	if err != nil {
+		return false, fmt.Errorf("failed to check notification dedup: %w", err)
+	}
+	if existing > 0 {
+		return false, nil
+	}
+	return true, NotificationCreate(ctx, userID, notifType, title, content, link, relatedID)
+}
+
 // NotificationCreate 创建通知
 func NotificationCreate(ctx context.Context, userID uint, notifType model.NotificationType, title, content, link string, relatedID uint64) error {
 	notification := model.Notification{

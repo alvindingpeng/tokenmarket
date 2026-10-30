@@ -374,6 +374,10 @@ func RechargeNotify(ctx context.Context, provider string, req *pay.CallbackReque
 		return err
 	}
 	UserTouchBalance(order.UserID)
+	// 充值到账通知: 在入账提交之后发, 失败只记日志, 绝不影响已入账的资金事实。
+	notifyAsync(ctx, order.UserID, model.NotificationTypeRecharge, "充值成功",
+		fmt.Sprintf("您的账户已成功充值 %.2f 元，订单号：%s。", order.Credits+order.Bonus, order.OrderNo),
+		"", 0)
 	return nil
 }
 

@@ -293,7 +293,13 @@ func WithdrawReview(ctx context.Context, id uint, approve bool, note string, act
 			}
 			return nil
 		})
-		return err
+		if err != nil {
+			return err
+		}
+		notifyAsync(ctx, order.UserID, model.NotificationTypeWithdrawal, "提现审核通过",
+			fmt.Sprintf("您的提现申请 #%d（金额 %.2f 元）已审核通过，等待打款。", id, order.Amount),
+			"", uint64(id))
+		return nil
 	}
 	err := withdrawUnfreeze(ctx, id, model.WithdrawStatusPending, model.WithdrawStatusRejected,
 		"提现单 #%d 拒绝解冻", nil, actorName)

@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'use-intl';
 import Logo from '@/components/modules/logo';
 import { LanguageSwitch } from '@/components/language-switch';
+import { NotificationBell } from '@/components/modules/notification/NotificationBell';
 import { SiteBanners } from '@/components/site-banners';
 import { navItemsFor, useAppStore } from '@/stores/app';
 import { useAuthStore } from '@/api/user';
@@ -159,6 +160,8 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                     页面操作按钮依次排在它左侧, 顶栏换行/截断规则保持不变。 */}
                 <div className="ml-auto flex items-center gap-x-2">
                     {actions}
+                    {/* 通知铃铛常驻顶栏: 未读数让用户在不进页面就能发现余额/限流/审核事件。 */}
+                    <NotificationBell />
                     <LanguageSwitch />
                 </div>
             </header>

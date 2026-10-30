@@ -34,6 +34,7 @@ const Withdrawals = lazy(() => pageImports.withdrawals());
 const Billing = lazy(() => pageImports.billing());
 const Apikey = lazy(() => pageImports.apikey());
 const Log = lazy(() => pageImports.log().then((module) => ({ default: module.Log })));
+const Notification = lazy(() => pageImports.notification().then((module) => ({ default: module.NotificationCenter })));
 const Setting = lazy(() => pageImports.setting().then((module) => ({ default: module.Setting })));
 const HomeActions = lazy(() => pageImports.home().then((module) => ({ default: module.HomeActions })));
 const ChannelActions = lazy(() => pageImports.channel().then((module) => ({ default: module.ChannelActions })));
@@ -194,6 +195,7 @@ export function AppContainer() {
                                 {visibleItem === 'group' && <Group />}
                                 {visibleItem === 'model' && <Model />}
                                 {visibleItem === 'log' && <Log />}
+                                {visibleItem === 'notification' && <Notification />}
                                 {visibleItem === 'setting' && <Setting />}
                             </ErrorBoundary>
                         </motion.div>

@@ -94,7 +94,8 @@
         "ops": "Ops",
         "wallet": "Wallet",
         "redemption": "Redemption Codes",
-        "withdrawals": "Withdrawals"
+        "withdrawals": "Withdrawals",
+        "notification": "Notification"
     },
     "toolbar": {
         "hideChannelName": "Blur channel names",
@@ -2132,5 +2133,30 @@
         "rollback": {
             "done": "Withdrawal #{id} rolled back to approved"
         }
+    },
+    "notification": {
+        "title": "Notifications",
+        "empty": "No notifications",
+        "loading": "Loading...",
+        "markRead": "Mark as read",
+        "markAllRead": "Mark all as read",
+        "delete": "Delete",
+        "actionFailed": "Action failed",
+        "markFailed": "Failed to mark as read",
+        "prev": "Previous",
+        "next": "Next",
+        "total": "{total} total",
+        "filterAll": "All",
+        "filterUnread": "Unread",
+        "filterRead": "Read",
+        "type_system": "System",
+        "type_balance_low": "Low balance",
+        "type_ratelimit_hit": "Rate limit hit",
+        "type_channel_down": "Channel down",
+        "type_channel_review": "Channel review",
+        "type_withdrawal": "Withdrawal",
+        "type_recharge": "Top-up",
+        "type_dispute": "Dispute",
+        "type_ticket": "Ticket reply"
     }
 }

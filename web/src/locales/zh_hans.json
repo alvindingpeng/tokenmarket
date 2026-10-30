@@ -94,7 +94,8 @@
         "ops": "运维中心",
         "wallet": "钱包",
         "redemption": "兑换码",
-        "withdrawals": "提现管理"
+        "withdrawals": "提现管理",
+        "notification": "通知"
     },
     "toolbar": {
         "hideChannelName": "模糊渠道名称",
@@ -2132,5 +2133,30 @@
         "rollback": {
             "done": "提现单 #{id} 已回滚到已通过"
         }
+    },
+    "notification": {
+        "title": "通知",
+        "empty": "暂无通知",
+        "loading": "加载中...",
+        "markRead": "标记已读",
+        "markAllRead": "全部标记已读",
+        "delete": "删除",
+        "actionFailed": "操作失败",
+        "markFailed": "标记已读失败",
+        "prev": "上一页",
+        "next": "下一页",
+        "total": "共 {total} 条",
+        "filterAll": "全部",
+        "filterUnread": "未读",
+        "filterRead": "已读",
+        "type_system": "系统通知",
+        "type_balance_low": "余额不足",
+        "type_ratelimit_hit": "限流触发",
+        "type_channel_down": "渠道故障",
+        "type_channel_review": "渠道审核",
+        "type_withdrawal": "提现通知",
+        "type_recharge": "充值成功",
+        "type_dispute": "争议处理",
+        "type_ticket": "工单回复"
     }
 }

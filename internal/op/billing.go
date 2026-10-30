@@ -221,6 +221,10 @@ func maybeRaiseLowBalanceAlert(ctx context.Context, userID uint, estimate float6
 			{Label: "建议", Value: "通知用户充值, 或调整最低余额与额度"},
 		},
 	})
+	// 用户侧站内通知: 管理员告警与用户通知同源触发, 用户不进钱包页也能被铃铛提醒。
+	notifyAsync(ctx, userID, model.NotificationTypeBalanceLow, "余额不足",
+		fmt.Sprintf("您的可用余额 (%.2f 元) 已接近起扣门槛，下一次调用可能会被拒绝，请及时充值。", available),
+		"", 0)
 }
 
 // BillingRelease 释放预扣不扣费, 用于失败或取消且没有产生用量的请求。
