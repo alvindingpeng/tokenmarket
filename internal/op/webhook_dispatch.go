@@ -267,6 +267,7 @@ func webhookClaimDelivery(ctx context.Context, id uint64) (webhookClaim, bool, e
 		var hook model.Webhook
 		herr := tx.Where("id = ?", d.WebhookID).First(&hook).Error
 		cancel := false
+		cancelReason := "delivery target no longer valid"
 		switch {
 		case errors.Is(herr, gorm.ErrRecordNotFound):
 			cancel = true // 订阅已被删除: 残留投递取消。
@@ -277,8 +278,25 @@ func webhookClaimDelivery(ctx context.Context, id uint64) (webhookClaim, bool, e
 		case !hook.Enabled && d.Event != model.WebhookEventTest:
 			cancel = true // 已禁用: 只放行用户显式的测试发送。
 		}
+		// 发送前的收件人闸门: UserDelete 只删 users 行不级联, 注销/禁用账号会留下孤儿订阅
+		// 与积压投递 —— 一律在此抑制, 注销账号后不得继续外发(孤儿行清理留给后续批次)。
+		// 读 model.User 字段判定: 行不存在=已注销, Status=disabled=已禁用。
+		if !cancel {
+			var user model.User
+			uerr := tx.Where("id = ?", d.UserID).First(&user).Error
+			switch {
+			case errors.Is(uerr, gorm.ErrRecordNotFound):
+				cancel = true
+				cancelReason = "recipient account is deleted"
+			case uerr != nil:
+				return uerr
+			case user.Status == model.StatusDisabled:
+				cancel = true
+				cancelReason = "recipient account is disabled"
+			}
+		}
 		if cancel {
-			if err := webhookMarkDoneTx(tx, d.ID, d.Status, model.WebhookDeliveryStatusCancelled, 0, "delivery target no longer valid", now); err != nil {
+			if err := webhookMarkDoneTx(tx, d.ID, d.Status, model.WebhookDeliveryStatusCancelled, 0, cancelReason, now); err != nil {
 				return err
 			}
 			if herr == nil {
@@ -356,16 +374,17 @@ func webhookDispatchOne(ctx context.Context, id uint64) {
 	secret, err := webhookOpenSecret(claim.hook)
 	if err != nil {
 		// 密钥解不开(主密钥不对/密文被搬动): 配置性故障, 重试无意义, 直接终结。
-		webhookFinalize(ctx, claim, 0, fmt.Errorf("webhook secret unavailable: %w", err))
+		webhookFinalize(ctx, claim, 0, 0, fmt.Errorf("webhook secret unavailable: %w", err))
 		return
 	}
+	sendStart := time.Now()
 	statusCode, sendErr := webhookSend(ctx, claim.hook.URL, secret, claim.delivery.Payload, claim.delivery.DeliveryID)
-	webhookFinalize(ctx, claim, statusCode, sendErr)
+	webhookFinalize(ctx, claim, statusCode, time.Since(sendStart).Milliseconds(), sendErr)
 }
 
 // webhookFinalize 投递收尾: 2xx 成功; 429/408/5xx/网络失败按指数退避重试(不超过 retry_count);
 // 其余状态(3xx 不跟随、其它 4xx)终结失败。收尾条件写回防止归属易手后的覆盖。
-func webhookFinalize(ctx context.Context, claim webhookClaim, statusCode int, sendErr error) {
+func webhookFinalize(ctx context.Context, claim webhookClaim, statusCode int, durationMs int64, sendErr error) {
 	now := time.Now()
 	status := model.WebhookDeliveryStatusSucceeded
 	lastErr := ""
@@ -387,6 +406,7 @@ func webhookFinalize(ctx context.Context, claim webhookClaim, statusCode int, se
 		Updates(map[string]interface{}{
 			"status":           status,
 			"last_status_code": statusCode,
+			"duration_ms":      durationMs,
 			"last_error":       lastErr,
 			"next_attempt_at":  next,
 			"lease_expires_at": nil,

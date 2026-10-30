@@ -427,14 +427,15 @@ func WebhookLogList(ctx context.Context, userID uint, id uint64, req model.Webho
 	items := make([]model.WebhookDeliveryLogView, 0, len(deliveries))
 	for _, d := range deliveries {
 		items = append(items, model.WebhookDeliveryLogView{
-			DeliveryID: d.DeliveryID,
-			Event:      d.Event,
-			Status:     d.Status,
-			Attempts:   d.Attempts,
-			StatusCode: d.LastStatusCode,
-			Error:      d.LastError,
-			CreatedAt:  d.CreatedAt,
-			UpdatedAt:  d.UpdatedAt,
+			DeliveryID:   d.DeliveryID,
+			Event:        d.Event,
+			Status:       d.Status,
+			Attempts:     d.Attempts,
+			ResponseCode: d.LastStatusCode,
+			DurationMs:   d.DurationMs,
+			Error:        d.LastError,
+			CreatedAt:    d.CreatedAt,
+			UpdatedAt:    d.UpdatedAt,
 		})
 	}
 	return model.WebhookLogPage{Items: items, Total: total, Page: page, PageSize: pageSize}, nil

@@ -38,7 +38,8 @@ const logRow = {
     event: 'ticket',
     status: 'succeeded',
     attempts: 2,
-    http_status: 200,
+    response_code: 200,
+    duration_ms: 1234,
     error: 'dial tcp: i/o timeout',
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:01Z',
@@ -161,7 +162,9 @@ describe('WebhookLogs 投递日志(mock SSR)', () => {
         expect(html).toContain('dlv-20260101-0001'); // delivery id(接收方按它去重)
         expect(html).toContain('Ticket reply');
         expect(html).toContain('Succeeded'); // 状态(与 model.WebhookDeliveryStatus 同词)
-        expect(html).toContain('200'); // HTTP 码
+        expect(html).toContain('200'); // response_code
+        expect(html).toContain('1234'); // duration_ms
+        expect(html).toContain('Duration'); // localized column heading
         expect(html).toContain('dial tcp: i/o timeout'); // 脱敏错误摘要
         expect(html).toContain('Back to list');
         // 响应体(哪怕后端将来带回 HTML)一概不渲染。

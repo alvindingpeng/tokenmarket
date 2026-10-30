@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -36,8 +37,11 @@ func webhookDispatchTestSetup(t *testing.T) {
 
 // webhookSeedHook 直接种一行订阅(绕过 URL 保存校验, 便于指向 httptest 环回服务);
 // 保存校验本身由 TestWebhookValidateURL 覆盖。
+// 同时保证用户行存在(投递前校验"用户存在且未禁用", 种子必须建 fixture;
+// 生产 UserDelete 只删 users 行不级联, 被删后残留投递由 worker 抑制)。
 func webhookSeedHook(t *testing.T, userID uint, rawURL, secret string, events []string, retry int) model.Webhook {
 	t.Helper()
+	webhookSeedUser(t, userID)
 	encoded, err := model.WebhookEncodeEvents(events)
 	if err != nil {
 		t.Fatal(err)
@@ -65,6 +69,29 @@ func webhookSeedHook(t *testing.T, userID uint, rawURL, secret string, events []
 	}
 	hook.SecretEncrypted = sealed
 	return hook
+}
+
+// webhookSeedUser 建一个 active 用户 fixture(幂等)。
+func webhookSeedUser(t *testing.T, userID uint) {
+	t.Helper()
+	var user model.User
+	err := db.GetDB().Where("id = ?", userID).First(&user).Error
+	if err == nil {
+		return
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatal(err)
+	}
+	user = model.User{
+		ID:       userID,
+		Username: "hook-user-" + strconv.FormatUint(uint64(userID), 10),
+		Password: "x",
+		Role:     model.RoleUser,
+		Status:   model.StatusActive,
+	}
+	if err := db.GetDB().Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
 }
 
 // webhookSeedDelivery 直接种一条待投递记录。
@@ -211,6 +238,24 @@ func TestWebhookDispatchSignsAndDeliversPayload(t *testing.T) {
 	}
 	if hookRow.LastStatus != model.WebhookDeliveryStatusSucceeded {
 		t.Fatalf("hook last_status = %s", hookRow.LastStatus)
+	}
+
+	// 日志视图按契约字段名(前端按此实现): response_code / duration_ms。
+	logs, err := WebhookLogList(context.Background(), 42, hook.ID, model.WebhookListRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(logs.Items) != 1 || logs.Items[0].ResponseCode != 200 || logs.Items[0].DurationMs < 0 {
+		t.Fatalf("log view = %+v", logs.Items)
+	}
+	logJSON, err := json.Marshal(logs.Items[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"delivery_id", "event", "status", "attempts", "response_code", "duration_ms", "error", "created_at", "updated_at"} {
+		if !strings.Contains(string(logJSON), "\""+key+"\"") {
+			t.Fatalf("log view missing %q: %s", key, logJSON)
+		}
 	}
 }
 
@@ -485,9 +530,10 @@ func TestWebhookTimeoutRetryable(t *testing.T) {
 	if got.Status != model.WebhookDeliveryStatusPending || got.Attempts != 1 || got.LastStatusCode != 0 {
 		t.Fatalf("delivery = %+v", got)
 	}
+	if got.DurationMs < 100 {
+		t.Fatalf("duration_ms = %d, want >= 100 (150ms timeout attempt)", got.DurationMs)
+	}
 }
-
-
 
 // 生产客户端硬化: 无代理(环境代理无效)、不跟随重定向、拨号判定是显式 false ——
 // DialGuard 对 AllowPrivate == nil 的语义是放行, 判定函数绝不能缺位。
@@ -514,6 +560,85 @@ func TestWebhookHTTPClientHardening(t *testing.T) {
 		t.Fatal("production dial allow-private must be an explicit func returning false")
 	}
 	// 不复用管理员「允许私网」设置: 该判定与设置层零耦合(无任何读取路径), 管理员例外只属于上游渠道。
+}
+
+// 账号注销/禁用抑制: UserDelete 只删 users 行不级联, 孤儿订阅与积压投递不得继续外发;
+// worker 投递前读 model.User 校验"存在且未 disabled"。孤儿行清理留给后续批次。
+func TestWebhookDispatchSuppressesDeletedOrDisabledUser(t *testing.T) {
+	t.Run("deleted user suppresses delivery", func(t *testing.T) {
+		webhookDispatchTestSetup(t)
+		server, captured, mu := webhookCaptureServer(t, nil)
+		hook := webhookSeedHook(t, 9, server.URL, webhookTestSecret, []string{"system"}, 2)
+		d := webhookSeedDelivery(t, hook, string(model.NotificationTypeSystem))
+		// 模拟 UserDelete: 只删 users 行, webhook/投递行原样残留。
+		if err := db.GetDB().Where("id = ?", uint(9)).Delete(&model.User{}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := WebhookDispatchRun(context.Background(), 10); err != nil {
+			t.Fatal(err)
+		}
+		got := webhookLoadDelivery(t, d.ID)
+		if got.Status != model.WebhookDeliveryStatusCancelled {
+			t.Fatalf("delivery = %+v, want cancelled", got)
+		}
+		if !strings.Contains(got.LastError, "recipient account is deleted") {
+			t.Fatalf("last_error = %q", got.LastError)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if len(*captured) != 0 {
+			t.Fatalf("requests = %d, want 0 (deleted user must not receive)", len(*captured))
+		}
+	})
+
+	t.Run("disabled user suppresses delivery", func(t *testing.T) {
+		webhookDispatchTestSetup(t)
+		server, captured, mu := webhookCaptureServer(t, nil)
+		hook := webhookSeedHook(t, 9, server.URL, webhookTestSecret, []string{"system"}, 2)
+		d := webhookSeedDelivery(t, hook, string(model.NotificationTypeSystem))
+		if err := db.GetDB().Model(&model.User{}).Where("id = ?", uint(9)).
+			Update("status", model.StatusDisabled).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := WebhookDispatchRun(context.Background(), 10); err != nil {
+			t.Fatal(err)
+		}
+		got := webhookLoadDelivery(t, d.ID)
+		if got.Status != model.WebhookDeliveryStatusCancelled {
+			t.Fatalf("delivery = %+v, want cancelled", got)
+		}
+		if !strings.Contains(got.LastError, "recipient account is disabled") {
+			t.Fatalf("last_error = %q", got.LastError)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if len(*captured) != 0 {
+			t.Fatalf("requests = %d, want 0 (disabled user must not receive)", len(*captured))
+		}
+	})
+
+	t.Run("active user still delivers and pending user is not blocked", func(t *testing.T) {
+		webhookDispatchTestSetup(t)
+		server, captured, mu := webhookCaptureServer(t, nil)
+		hook := webhookSeedHook(t, 9, server.URL, webhookTestSecret, []string{"system"}, 2)
+		d := webhookSeedDelivery(t, hook, string(model.NotificationTypeSystem))
+		// pending(待审批)不等于 disabled: 口径是"未 disabled"才放行。
+		if err := db.GetDB().Model(&model.User{}).Where("id = ?", uint(9)).
+			Update("status", model.StatusPending).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := WebhookDispatchRun(context.Background(), 10); err != nil {
+			t.Fatal(err)
+		}
+		if got := webhookLoadDelivery(t, d.ID); got.Status != model.WebhookDeliveryStatusSucceeded {
+			t.Fatalf("delivery = %+v, want succeeded", got)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if len(*captured) != 1 {
+			t.Fatalf("requests = %d, want 1", len(*captured))
+		}
+	})
 }
 
 // 崩溃恢复: lease 过期的 processing 会被重新抢占补投(至少一次); lease 未到期的不抢。
@@ -706,13 +831,13 @@ func TestWebhookCleanupRetentionAndCaps(t *testing.T) {
 		rows := make([]model.WebhookDelivery, 0, n)
 		for i := 0; i < n; i++ {
 			rows = append(rows, model.WebhookDelivery{
-				DeliveryID: model.WebhookEventTest + "-" + status + "-" + strconv.Itoa(i) + "-" + strconv.FormatInt(time.Now().UnixNano(), 10),
-				WebhookID:  hook.ID,
-				UserID:     hook.UserID,
+				DeliveryID:  model.WebhookEventTest + "-" + status + "-" + strconv.Itoa(i) + "-" + strconv.FormatInt(time.Now().UnixNano(), 10),
+				WebhookID:   hook.ID,
+				UserID:      hook.UserID,
 				HookVersion: hook.Version,
-				Event:      model.WebhookEventTest,
-				Payload:    "{}",
-				Status:     status,
+				Event:       model.WebhookEventTest,
+				Payload:     "{}",
+				Status:      status,
 			})
 		}
 		if err := db.GetDB().CreateInBatches(&rows, 200).Error; err != nil {

@@ -77,7 +77,7 @@ func TestWebhookValidateURL(t *testing.T) {
 		"https://hooks.example.com/webhook",
 		"https://hooks.example.com:443/webhook",
 		"https://hooks.example.com/webhook?token=abc123", // 查询串允许(URL 里的 token 属用户配置)
-		"https://8.8.8.8/hook", // 公网 IP
+		"https://8.8.8.8/hook",                           // 公网 IP
 	}
 	for _, raw := range accepts {
 		if err := webhookValidateURL(ctx, raw); err != nil {
@@ -109,8 +109,6 @@ func TestWebhookValidateEvents(t *testing.T) {
 		t.Fatalf("dedupe failed: %v", got)
 	}
 }
-
-
 
 // 越权即 404: 别人的订阅读/改/删/测试/日志一律 ErrWebhookNotFound。
 func TestWebhookUserIsolation(t *testing.T) {
@@ -430,12 +428,43 @@ func TestNotificationCreateFailsOnCorruptWebhookEvents(t *testing.T) {
 	}
 }
 
-func boolPtr(v bool) *bool    { return &v }
-func intPtr(v int) *int       { return &v }
+// 备份边界(本期约定): JSON 导出 DBExportAll 只含路由/设置/统计, 与用户通知/工单/账单同口径,
+// 不扩大到 webhook —— 明文 dump 绝不能出现订阅密钥(明文或信封)。
+// 全库 sqlite 备份天然覆盖 webhook 表; 跨实例恢复需连主密钥文件一起备份(信封 AAD 绑定行归属)。
+// 本测试锁死"不扩大 JSON dump 范围"的边界, 防止后续有人顺手把 webhook 塞进明文 dump。
+func TestWebhookStaysOutOfJSONDump(t *testing.T) {
+	webhookTestSetup(t)
+	ctx := context.Background()
+	const secret = "dump-boundary-secret-0123456789"
+	hook := webhookTestCreate(t, 1, "https://hooks.example.com/x", []string{"system"}, secret)
+
+	var row model.Webhook
+	if err := db.GetDB().Where("id = ?", hook.ID).First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !secretstore.IsEnvelope(row.SecretEncrypted) {
+		t.Fatalf("secret not sealed: %q", row.SecretEncrypted)
+	}
+	dump, err := DBExportAll(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(dump)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{secret, row.SecretEncrypted, "secret_encrypted", "webhook"} {
+		if strings.Contains(string(body), forbidden) {
+			t.Fatalf("json dump leaks %q (webhook must stay out of DBExportAll scope)", forbidden)
+		}
+	}
+}
+func boolPtr(v bool) *bool { return &v }
+func intPtr(v int) *int    { return &v }
 
 // 密钥长度 16..128 字节(按 UTF-8 字节数)。
 func TestWebhookValidateSecret(t *testing.T) {
-	for _, secret := range []string{"", "short", strings.Repeat("s", model.WebhookSecretMaxBytes + 1)} {
+	for _, secret := range []string{"", "short", strings.Repeat("s", model.WebhookSecretMaxBytes+1)} {
 		if _, err := webhookValidateSecret(secret); !errors.Is(err, ErrWebhookSecretInvalid) {
 			t.Fatalf("secret %q(len=%d) should be rejected: %v", secret, len(secret), err)
 		}

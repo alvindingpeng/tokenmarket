@@ -73,6 +73,7 @@ export function WebhookLogs({ userId, id, onBack }: { userId: number; id: number
                                     <th className="px-4 py-3 font-medium">{t('logs.table.event')}</th>
                                     <th className="px-4 py-3 font-medium">{t('logs.table.status')}</th>
                                     <th className="px-4 py-3 font-medium">{t('logs.table.httpCode')}</th>
+                                    <th className="px-4 py-3 font-medium">{t('logs.table.duration')}</th>
                                     <th className="px-4 py-3 font-medium">{t('logs.table.attempts')}</th>
                                 </tr>
                             </thead>
@@ -91,7 +92,7 @@ export function WebhookLogs({ userId, id, onBack }: { userId: number; id: number
 
 // LogRow 单条投递记录; 字段名与 model.WebhookDeliveryLogView 对齐, 缺省显示占位符, 不猜、不补。
 // 响应正文(含 HTML)一概不渲染 —— 后端也永不落库响应正文, error 只是脱敏摘要。
-// http_status 0 表示未获得响应(网络失败/超时), 与「响应 0 码」不是一回事, 按占位符显示。
+// response_code 0 表示未获得响应(网络失败/超时), 与「响应 0 码」不是一回事, 按占位符显示。
 function LogRow({ item }: { item: WebhookDeliveryLog }) {
     return (
         <tr className="border-t border-border align-middle">
@@ -99,7 +100,8 @@ function LogRow({ item }: { item: WebhookDeliveryLog }) {
             <td className="px-4 py-3 font-mono text-xs">{item.delivery_id || '\u2014'}</td>
             <td className="px-4 py-3">{item.event ? <EventBadge event={item.event} /> : <span className="text-muted-foreground">{'\u2014'}</span>}</td>
             <td className="px-4 py-3"><DeliveryStatusBadge status={item.status} /></td>
-            <td className="px-4 py-3 tabular-nums">{item.http_status ? item.http_status : '\u2014'}</td>
+            <td className="px-4 py-3 tabular-nums">{item.response_code ? item.response_code : '\u2014'}</td>
+            <td className="px-4 py-3 tabular-nums">{item.duration_ms ?? 0} ms</td>
             <td className="max-w-[20rem] truncate px-4 py-3 text-muted-foreground" title={item.error || undefined}>{item.error || '\u2014'}</td>
             <td className="px-4 py-3 tabular-nums">{item.attempts ?? '\u2014'}</td>
         </tr>

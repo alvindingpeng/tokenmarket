@@ -114,10 +114,12 @@ type WebhookDelivery struct {
 	NextAttemptAt  time.Time  `json:"next_attempt_at" gorm:"index"`
 	LeaseExpiresAt *time.Time `json:"lease_expires_at" gorm:"index"`
 	// LastStatusCode 最近一次 HTTP 状态码; 0 = 未获得响应(网络失败/超时)。
-	LastStatusCode int       `json:"last_status_code" gorm:"not null;default:0"`
-	LastError      string    `json:"last_error" gorm:"type:text"`
-	CreatedAt      time.Time `json:"created_at" gorm:"autoCreateTime;index"`
-	UpdatedAt      time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	LastStatusCode int `json:"last_status_code" gorm:"not null;default:0"`
+	// DurationMs 最近一次投递耗时(毫秒); 未发出请求为 0。
+	DurationMs int64     `json:"duration_ms" gorm:"not null;default:0"`
+	LastError  string    `json:"last_error" gorm:"type:text"`
+	CreatedAt  time.Time `json:"created_at" gorm:"autoCreateTime;index"`
+	UpdatedAt  time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 // WebhookView API 返回的订阅视图: 只暴露 has_secret, 永不带密钥(明文或密文)。
@@ -136,14 +138,15 @@ type WebhookView struct {
 // WebhookDeliveryLogView API 返回的投递日志条目:
 // 不含 Payload、不含响应正文、不含 URL(日志不回显可能带 token 的地址与 SSRF 响应)。
 type WebhookDeliveryLogView struct {
-	DeliveryID string    `json:"delivery_id"`
-	Event      string    `json:"event"`
-	Status     string    `json:"status"`
-	Attempts   int       `json:"attempts"`
-	StatusCode int       `json:"http_status"`
-	Error      string    `json:"error"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	DeliveryID   string    `json:"delivery_id"`
+	Event        string    `json:"event"`
+	Status       string    `json:"status"`
+	Attempts     int       `json:"attempts"`
+	ResponseCode int       `json:"response_code"`
+	DurationMs   int64     `json:"duration_ms"`
+	Error        string    `json:"error"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // WebhookCreateRequest 创建订阅请求。

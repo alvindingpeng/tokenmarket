@@ -61,7 +61,7 @@ export type WebhookView = {
  * WebhookDeliveryLog 一条投递日志(字段名与 model.WebhookDeliveryLogView 对齐)。
  * 只描述投递元数据; 响应正文后端永不落库, 界面也不渲染任何响应内容。
  * delivery_id 是载荷里给接收方去重用的投递 ID(至少一次投递语义)。
- * 日志字段严格与后端视图对齐: 不包含耗时、响应正文或未声明字段。
+ * 日志字段严格与后端视图对齐: 包含响应码和最近一次耗时, 不包含响应正文。
  * 全部服务端字段按可缺省处理, 缺字段显示占位符而不是猜值。
  */
 export type WebhookDeliveryLog = {
@@ -69,7 +69,8 @@ export type WebhookDeliveryLog = {
     event?: string;
     status?: string;
     attempts?: number;
-    http_status?: number;
+    response_code?: number;
+    duration_ms?: number;
     error?: string;
     created_at?: string;
     updated_at?: string;
