@@ -37,10 +37,18 @@ func NotificationCreateDedup(ctx context.Context, userID uint, notifType model.N
 // NotificationCreate 创建通知。
 //
 // Webhook 入队与通知写入同事务(webhookEnqueueForNotificationTx): 通知落了库, 该用户
-// 订阅了此事件的 webhook 就一定在队里; 入队失败则整单回滚并上抛 —— 不吞错误, 否则用户
-// 收到了通知、订阅方永远等不到。测试里没有 webhook 表的场景应补 fixture(建全表),
-// 而不是让生产路径静默跳过入队。
+// 订阅了此事件的 webhook 就一定在队里; 真实入队写入失败则整单回滚并上抛(不吞错),
+// 否则用户收到了通知、订阅方永远等不到。
+// 但 webhook 基建问题只抑制出站、绝不连累通知本身: 缺表(旧测试 fixture/老库)与
+// 用户不存在(旧用例虚设 userID)都只是"无处可发/不该发", 通知照常成功;
+// 出站抑制由 worker 收件人闸门负责。损坏的订阅事件行仍报错可见(数据损坏需暴露)。
 func NotificationCreate(ctx context.Context, userID uint, notifType model.NotificationType, title, content, link string, relatedID uint64) error {
+	// 目标预读放在事务外(只读): 事务里只留写(通知行+投递行), 尽量短持锁,
+	// 避免长事务加剧 SQLite 写锁竞争。损坏事件行在此即报错, 不会创建半截通知。
+	targets, err := webhookEnqueueTargets(ctx, userID, string(notifType))
+	if err != nil {
+		return fmt.Errorf("failed to enqueue webhook deliveries: %w", err)
+	}
 	return db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		notification := model.Notification{
 			UserID:    userID,
@@ -54,7 +62,7 @@ func NotificationCreate(ctx context.Context, userID uint, notifType model.Notifi
 		if err := tx.Create(&notification).Error; err != nil {
 			return fmt.Errorf("failed to create notification: %w", err)
 		}
-		if err := webhookEnqueueForNotificationTx(tx, &notification); err != nil {
+		if err := webhookEnqueueForNotificationTx(tx, &notification, targets); err != nil {
 			return fmt.Errorf("failed to enqueue webhook deliveries: %w", err)
 		}
 		return nil

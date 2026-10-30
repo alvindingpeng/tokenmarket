@@ -149,17 +149,43 @@ func webhookEventSubscribed(events []string, event string) bool {
 	return false
 }
 
-// webhookEnqueueForNotificationTx 通知落库时同步入队: 只匹配该用户自己的、且订阅了该事件的订阅。
-// 与通知写入同事务; 任何失败都上抛(不吞错), 由调用方整单回滚。
-func webhookEnqueueForNotificationTx(tx *gorm.DB, n *model.Notification) error {
-	if n == nil || n.UserID == 0 {
-		return nil
+// webhookEnqueueTargets 事务外预读入队目标: 该用户自己的、启用中的、订阅了该事件的订阅。
+// 只读不写 —— 决策依据允许比事务略旧(写入仍然原子): 并发新建的订阅错过这一条通知可接受;
+// 并发删除/禁用/改绑由投递前的版本闸门兜底, 不会发往旧地址。
+// 损坏的事件行在这里就报错(不吞), 调用方在创建通知之前失败, 不留半截状态。
+func webhookEnqueueTargets(ctx context.Context, userID uint, event string) ([]model.Webhook, error) {
+	if userID == 0 {
+		return nil, nil
+	}
+	// webhook 基建缺表(旧测试 fixture/老库): 只导致不出站, 绝不连累通知本身 ——
+	// 通知是业务事实, webhook 只是外发通道; 缺表=无处可发, 通知照常成功。
+	if !db.GetDB().Migrator().HasTable(&model.Webhook{}) ||
+		!db.GetDB().Migrator().HasTable(&model.WebhookDelivery{}) {
+		return nil, nil
 	}
 	var hooks []model.Webhook
-	if err := tx.Where("user_id = ? AND enabled = ?", n.UserID, true).Find(&hooks).Error; err != nil {
-		return fmt.Errorf("load webhooks for notification: %w", err)
+	if err := db.GetDB().WithContext(ctx).Where("user_id = ? AND enabled = ?", userID, true).Find(&hooks).Error; err != nil {
+		return nil, fmt.Errorf("load webhooks for notification: %w", err)
 	}
-	if len(hooks) == 0 {
+	targets := make([]model.Webhook, 0, len(hooks))
+	for _, hook := range hooks {
+		events, err := model.WebhookDecodeEvents(hook.Events)
+		if err != nil {
+			// 存量损坏订阅行: 报错可见, 不静默投空也不静默跳过。
+			return nil, fmt.Errorf("webhook %d events: %w", hook.ID, err)
+		}
+		if webhookEventSubscribed(events, event) {
+			targets = append(targets, hook)
+		}
+	}
+	return targets, nil
+}
+
+// webhookEnqueueForNotificationTx 与通知写入同事务的入队写入(只含写, 尽量短持锁):
+// 通知行与投递行全成或全败 —— 通知落了库, 该用户订阅了此事件的 webhook 就一定在队里;
+// 入队失败整单回滚并上抛, 不吞错。
+func webhookEnqueueForNotificationTx(tx *gorm.DB, n *model.Notification, targets []model.Webhook) error {
+	if n == nil || len(targets) == 0 {
 		return nil
 	}
 	data := model.WebhookPayloadData{
@@ -168,15 +194,7 @@ func webhookEnqueueForNotificationTx(tx *gorm.DB, n *model.Notification) error {
 		Link:      n.Link,
 		RelatedID: n.RelatedID,
 	}
-	for _, hook := range hooks {
-		events, err := model.WebhookDecodeEvents(hook.Events)
-		if err != nil {
-			// 存量损坏订阅行: 报错可见, 不静默投空也不静默跳过。
-			return fmt.Errorf("webhook %d events: %w", hook.ID, err)
-		}
-		if !webhookEventSubscribed(events, string(n.Type)) {
-			continue
-		}
+	for _, hook := range targets {
 		if _, err := webhookEnqueueTx(tx, hook, string(n.Type), n.ID, data); err != nil {
 			return err
 		}
@@ -361,9 +379,45 @@ func webhookSetLastStatusTx(tx *gorm.DB, webhookID uint64, status string) error 
 	return nil
 }
 
+// webhookTransientDBError 判断是否为可安全重试的瞬时库错误: 典型是 SQLite/WAL 下
+// "读-写事务升级"冲突(事务内先读后写, 期间另一写者提交 => database is locked,
+// busy_timeout 不覆盖此类冲突), 以及死锁/锁等待超时。抢占与收尾都是幂等的条件写,
+// 事务失败即整体回滚, 重跑不会产生重复副作用(不会多发一次网络请求)。
+func webhookTransientDBError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "database is locked") ||
+		strings.Contains(msg, "database table is locked") ||
+		strings.Contains(msg, "SQLITE_BUSY") ||
+		strings.Contains(msg, "deadlock") ||
+		strings.Contains(msg, "Lock wait timeout")
+}
+
+// webhookClaimDeliveryTransient 抢占包一层瞬时错误重试: 每次重试是完整的新事务
+// (重新读门禁条件), 不改变语义, 只是把"这一 tick 偶发锁竞争"变成"稍后再抢一次"。
+func webhookClaimDeliveryTransient(ctx context.Context, id uint64) (webhookClaim, bool, error) {
+	var claim webhookClaim
+	var owned bool
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		claim, owned, err = webhookClaimDelivery(ctx, id)
+		if err == nil || !webhookTransientDBError(err) {
+			return claim, owned, err
+		}
+		select {
+		case <-ctx.Done():
+			return claim, false, ctx.Err()
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+	return claim, owned, err
+}
+
 // webhookDispatchOne 处理一条投递: 抢占 -> 解钥 -> 发送 -> 按结果收尾。
 func webhookDispatchOne(ctx context.Context, id uint64) {
-	claim, owned, err := webhookClaimDelivery(ctx, id)
+	claim, owned, err := webhookClaimDeliveryTransient(ctx, id)
 	if err != nil {
 		log.Warnf("webhook delivery %d claim failed: %v", id, err)
 		return
@@ -374,17 +428,16 @@ func webhookDispatchOne(ctx context.Context, id uint64) {
 	secret, err := webhookOpenSecret(claim.hook)
 	if err != nil {
 		// 密钥解不开(主密钥不对/密文被搬动): 配置性故障, 重试无意义, 直接终结。
-		webhookFinalize(ctx, claim, 0, 0, fmt.Errorf("webhook secret unavailable: %w", err))
+		webhookFinalize(ctx, claim, 0, fmt.Errorf("webhook secret unavailable: %w", err))
 		return
 	}
-	sendStart := time.Now()
 	statusCode, sendErr := webhookSend(ctx, claim.hook.URL, secret, claim.delivery.Payload, claim.delivery.DeliveryID)
-	webhookFinalize(ctx, claim, statusCode, time.Since(sendStart).Milliseconds(), sendErr)
+	webhookFinalize(ctx, claim, statusCode, sendErr)
 }
 
 // webhookFinalize 投递收尾: 2xx 成功; 429/408/5xx/网络失败按指数退避重试(不超过 retry_count);
 // 其余状态(3xx 不跟随、其它 4xx)终结失败。收尾条件写回防止归属易手后的覆盖。
-func webhookFinalize(ctx context.Context, claim webhookClaim, statusCode int, durationMs int64, sendErr error) {
+func webhookFinalize(ctx context.Context, claim webhookClaim, statusCode int, sendErr error) {
 	now := time.Now()
 	status := model.WebhookDeliveryStatusSucceeded
 	lastErr := ""
@@ -406,7 +459,6 @@ func webhookFinalize(ctx context.Context, claim webhookClaim, statusCode int, du
 		Updates(map[string]interface{}{
 			"status":           status,
 			"last_status_code": statusCode,
-			"duration_ms":      durationMs,
 			"last_error":       lastErr,
 			"next_attempt_at":  next,
 			"lease_expires_at": nil,
