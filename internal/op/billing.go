@@ -187,6 +187,11 @@ func billingSettleApply(ctx context.Context, reservationID uint64, record *model
 	UserTouchBalance(record.OwnerID)
 	// 结算扣款后按同一笔预估测算下一单是否够付: 这是能提前告知本人的唯一时机, 过了这一笔就只能靠请求报错。
 	maybeRaiseLowBalanceAlert(context.Background(), record.UserID, reserveAmount)
+	// 用户自定义阈值预警: 与管理员侧的 low_balance 告警互补 —— 管理员关心全局,
+	// 用户关心自己设的那条线。检查失败不影响结算结果(余额已经动完了)。
+	if user, uerr := UserGetByID(record.UserID); uerr == nil {
+		BalanceAlertCheck(context.Background(), record.UserID, user.Balance-user.Frozen)
+	}
 	return nil
 }
 

@@ -2013,6 +2013,30 @@
             "paid": "已打款",
             "rejected": "已拒绝",
             "cancelled": "已取消"
+        },
+        "alert": {
+            "title": "余额预警",
+            "placeholder": "阈值(元)",
+            "invalidAmount": "请输入有效金额",
+            "saved": "预警设置已保存",
+            "saveFailed": "保存失败",
+            "deleted": "预警已取消",
+            "deleteFailed": "取消失败",
+            "enabled": "预警已启用",
+            "disabled": "预警已禁用",
+            "lastTriggered": "最近提醒：{time}",
+            "status": {
+                "set": "当前阈值：{amount}",
+                "enabled": "已启用",
+                "disabled": "已禁用",
+                "notSet": "设置可用余额阈值，低于此值时将发送通知"
+            },
+            "button": {
+                "save": "保存",
+                "enable": "启用",
+                "disable": "禁用",
+                "delete": "取消预警"
+            }
         }
     },
     "redemption": {

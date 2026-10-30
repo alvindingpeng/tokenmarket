@@ -2013,6 +2013,30 @@
             "paid": "已打款",
             "rejected": "已拒絕",
             "cancelled": "已取消"
+        },
+        "alert": {
+            "title": "餘額預警",
+            "placeholder": "閾值(元)",
+            "invalidAmount": "請輸入有效金額",
+            "saved": "預警設定已儲存",
+            "saveFailed": "儲存失敗",
+            "deleted": "預警已取消",
+            "deleteFailed": "取消失敗",
+            "enabled": "預警已啟用",
+            "disabled": "預警已停用",
+            "lastTriggered": "最近提醒：{time}",
+            "status": {
+                "set": "目前閾值：{amount}",
+                "enabled": "已啟用",
+                "disabled": "已停用",
+                "notSet": "設定可用餘額閾值，低於此值時將傳送通知"
+            },
+            "button": {
+                "save": "儲存",
+                "enable": "啟用",
+                "disable": "停用",
+                "delete": "取消預警"
+            }
         }
     },
     "redemption": {

@@ -79,6 +79,7 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.Setting{},
 		&model.AuditLog{},
 		&model.Notification{},
+		&model.BalanceAlert{},
 		&model.StatsTotal{},
 		&model.StatsDaily{},
 		&model.StatsHourly{},

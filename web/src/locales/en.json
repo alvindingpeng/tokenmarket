@@ -2013,6 +2013,30 @@
             "paid": "Paid",
             "rejected": "Rejected",
             "cancelled": "Cancelled"
+        },
+        "alert": {
+            "title": "Balance Alert",
+            "placeholder": "Threshold",
+            "invalidAmount": "Invalid amount",
+            "saved": "Alert saved",
+            "saveFailed": "Save failed",
+            "deleted": "Alert deleted",
+            "deleteFailed": "Delete failed",
+            "enabled": "Alert enabled",
+            "disabled": "Alert disabled",
+            "lastTriggered": "Last: {time}",
+            "status": {
+                "set": "Threshold: {amount}",
+                "enabled": "Enabled",
+                "disabled": "Disabled",
+                "notSet": "Set threshold to receive alerts when balance is low"
+            },
+            "button": {
+                "save": "Save",
+                "enable": "Enable",
+                "disable": "Disable",
+                "delete": "Delete"
+            }
         }
     },
     "redemption": {

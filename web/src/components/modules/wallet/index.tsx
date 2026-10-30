@@ -27,6 +27,7 @@ import {
 } from '@/api/withdrawal';
 import { useAuthStore } from '@/api/user';
 import { formatAmount, formatDateTime } from '@/lib/format';
+import { BalanceAlertSettings } from './BalanceAlertSettings';
 
 // KINDS 流水筛选项; 空串表示全部。
 const KINDS = ['', 'topup', 'bonus', 'redemption', 'reserve', 'settle', 'release', 'adjust'];
@@ -442,6 +443,8 @@ export default function Wallet() {
                     {t('redeem.submit')}
                 </Button>
             </div>
+
+            <BalanceAlertSettings />
 
             <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <Tabs value={tab} onValueChange={setTab}>
