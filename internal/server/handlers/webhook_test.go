@@ -2,14 +2,18 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/secretstore"
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
 	"github.com/alvindingpeng/switchyard/internal/server/router"
@@ -198,6 +202,48 @@ func TestWebhookHandlersValidationAndQuotaCodes(t *testing.T) {
 	code, body := webhookRequest(t, r, http.MethodPost, "/api/v1/webhook", strings.Replace(okBody, "%d", "overflow", 1))
 	if code != http.StatusConflict || !strings.Contains(body, "webhook_quota_exceeded") {
 		t.Fatalf("quota = %d %s, want 409 webhook_quota_exceeded", code, body)
+	}
+}
+
+// handler 不回显底层错误原文: url.Error 内嵌完整 URL(可能带 user:pass/token),
+// 无论已知还是未知错误, 响应只给固定文案与错误码。
+func TestWebhookHandlersNeverEchoUnderlyingError(t *testing.T) {
+	webhookHandlersTestSetup(t)
+
+	raw := &url.Error{
+		Op:  "Post",
+		URL: "https://user:pass@hooks.example.com/x?token=super-secret-token",
+		Err: errors.New("dial tcp 10.0.0.5:443: connect: connection refused"),
+	}
+	cases := []struct {
+		name     string
+		err      error
+		wantCode int
+	}{
+		{"unknown wrapped url error", fmt.Errorf("send webhook: %w", raw), http.StatusInternalServerError},
+		{"secret open failure", fmt.Errorf("webhook secret unavailable: %w", raw), http.StatusInternalServerError},
+		{"db error with SQL text", errors.New("database write failed: INSERT INTO webhook_deliveries ..."), http.StatusInternalServerError},
+		{"known url error wrapping leak", fmt.Errorf("%w: %v", op.ErrWebhookURLInvalid, raw), http.StatusBadRequest},
+		{"known not-found wrapping leak", fmt.Errorf("get webhook: %w: %v", op.ErrWebhookNotFound, raw), http.StatusNotFound},
+	}
+	for _, tc := range cases {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/webhook", strings.NewReader("{}"))
+		webhookRespondError(c, tc.err)
+		body := w.Body.String()
+		if w.Code != tc.wantCode {
+			t.Fatalf("%s: code = %d body = %s, want %d", tc.name, w.Code, body, tc.wantCode)
+		}
+		for _, forbidden := range []string{"super-secret-token", "user:pass", "hooks.example.com", "10.0.0.5", "INSERT"} {
+			if strings.Contains(body, forbidden) {
+				t.Fatalf("%s: response echoes %q: %s", tc.name, forbidden, body)
+			}
+		}
+		// 已知错误必须带机器可读 error_code; 未知内部错误按契约 error_code 可省略(只回通用文案)。
+		if tc.wantCode != http.StatusInternalServerError && !strings.Contains(body, "error_code") {
+			t.Fatalf("%s: missing machine-readable error_code: %s", tc.name, body)
+		}
 	}
 }
 
