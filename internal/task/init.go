@@ -308,6 +308,33 @@ func Init() {
 			return nil
 		},
 	})
+
+	// Webhook 投递 worker: 每 5 秒一轮, 单轮批量有界(WebhookDispatchBatch)、并发有界、
+	// 单飞不叠加; 抢占走条件更新(乐观锁), 多 worker/多实例并发也不会对同一条投递重复发网络请求。
+	// RunOnStart: 重启后先把停机积压补投掉(至少一次语义, 接收端按 delivery_id 去重)。
+	Define(Spec{
+		Name:       TaskWebhookDispatch,
+		Interval:   fixedInterval(5 * time.Second),
+		RunOnStart: true,
+		Fn: func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			return op.WebhookDispatchRun(ctx, op.WebhookDispatchBatch)
+		},
+	})
+
+	// Webhook 队列/日志容量控制: 终态记录保留 7 天, 每订阅终态日志与非终态积压都有上限,
+	// 避免失败订阅把队列表无限撑大。启动即跑 + 每小时一轮。
+	Define(Spec{
+		Name:       TaskWebhookCleanup,
+		Interval:   fixedInterval(time.Hour),
+		RunOnStart: true,
+		Fn: func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			return op.WebhookCleanupRun(ctx)
+		},
+	})
 }
 
 // fixedInterval 固定周期。

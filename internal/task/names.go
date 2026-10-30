@@ -22,4 +22,6 @@ const (
 	TaskVideoJobCleanup  = "video_job_cleanup"        // 清理过期的生视频任务归属。
 	TaskBreakerProbe     = "breaker_probe"            // 熔断恢复探测: 验证到期的熔断成员健康后才完全解除。
 	TaskTicketAutoClose  = "ticket_auto_close"        // 工单自动关闭: resolved 停留满 3 天(按 resolved_at 计时)自动关闭。
+	TaskWebhookDispatch  = "webhook_dispatch"         // Webhook 投递 worker: 每数秒批量有界处理到期投递, 原子 lease 抢占。
+	TaskWebhookCleanup   = "webhook_cleanup"          // Webhook 队列/日志容量控制: 保留期清理 + 每订阅容量收敛。
 )

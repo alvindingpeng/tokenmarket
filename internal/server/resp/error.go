@@ -11,6 +11,15 @@ const (
 	ErrDatabase          = "Database operation failed"
 	ErrUnauthorized      = "Authentication failed"
 
+	// Webhook(P0-5)机器可读错误码: 前端按码分流(校验细节/配额/测试限频/越权), 不靠文案匹配。
+	CodeInvalidRequest         = "invalid_request"
+	CodeInvalidWebhookURL      = "invalid_webhook_url"
+	CodeInvalidWebhookEvents   = "invalid_webhook_events"
+	CodeInvalidWebhookSecret   = "invalid_webhook_secret"
+	CodeWebhookNotFound        = "webhook_not_found"
+	CodeWebhookQuotaExceeded   = "webhook_quota_exceeded"
+	CodeWebhookTestRateLimited = "webhook_test_rate_limited"
+
 	// ErrStepUpRequired 高危操作缺二次验证(step-up)时的说明文案;
 	// 机器可读的判定依据是 ResponseStruct.ErrorCode == CodeStepUpRequired, 不要靠文案匹配。
 	ErrStepUpRequired = "Step-up verification required"

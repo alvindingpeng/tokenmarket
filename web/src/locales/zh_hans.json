@@ -96,6 +96,7 @@
         "redemption": "兑换码",
         "withdrawals": "提现管理",
         "notification": "通知",
+        "webhook": "Webhook 订阅",
         "analytics": "统计",
         "tickets": "工单"
     },
@@ -2185,6 +2186,122 @@
         "type_dispute": "争议处理",
         "type_ticket": "工单回复",
         "viewTicket": "查看工单"
+    },
+    "webhook": {
+        "title": "Webhook 订阅",
+        "refresh": "刷新",
+        "loading": "加载中...",
+        "error": "加载失败",
+        "retry": "重试",
+        "empty": "还没有订阅",
+        "emptyHint": "创建订阅后，事件会以带签名的 JSON 推送到你的 HTTPS 地址。",
+        "hints": {
+            "httpsOnly": "仅允许 HTTPS 公网 443 端口地址。",
+            "secretWriteOnly": "签名密钥仅可写入：加密存储后无法读取回显。",
+            "timeout": "每次投递 5 秒超时。",
+            "atLeastOnce": "投递语义为至少一次：请按载荷中的 delivery id 去重。",
+            "jsonOnly": "仅提供通用 JSON 签名 Webhook，不兼容钉钉/飞书等专有格式。"
+        },
+        "enabledBadge": {
+            "on": "启用",
+            "off": "停用"
+        },
+        "delivery": {
+            "pending": "待投递",
+            "processing": "投递中",
+            "succeeded": "成功",
+            "failed": "失败",
+            "cancelled": "已取消"
+        },
+        "table": {
+            "url": "URL",
+            "events": "事件",
+            "enabled": "启用",
+            "retryCount": "重试次数",
+            "lastStatus": "最近投递",
+            "updated": "更新时间",
+            "actions": "操作",
+            "edit": "编辑",
+            "test": "测试",
+            "logs": "投递日志",
+            "delete": "删除"
+        },
+        "pagination": {
+            "label": "订阅分页",
+            "prev": "上一页",
+            "next": "下一页",
+            "summary": "第 {current}/{pages} 页 - 共 {count} 条"
+        },
+        "form": {
+            "createButton": "新建订阅",
+            "createTitle": "新建 Webhook 订阅",
+            "editTitle": "编辑 Webhook 订阅",
+            "urlLabel": "回调地址",
+            "urlPlaceholder": "https://example.com/webhook",
+            "urlRequired": "请填写回调地址。",
+            "urlInvalid": "请输入合法的 URL。",
+            "urlHttps": "仅允许 HTTPS 公网 443 端口地址。",
+            "urlPort": "仅允许 443 端口。",
+            "secretLabel": "签名密钥",
+            "secretCreateHint": "必填：{min}..{max} 字节；保存后仅存储不可读取。",
+            "secretEditHint": "留空则保持现有密钥。",
+            "secretSet": "已设置密钥（不可读取）",
+            "secretRequired": "请填写签名密钥。",
+            "secretErrorShort": "签名密钥至少 16 字节。",
+            "secretErrorLong": "签名密钥最多 128 字节。",
+            "eventsLabel": "事件",
+            "eventsHint": "至少选择一个订阅事件。",
+            "eventsError": "请至少选择一个事件。",
+            "enabledLabel": "启用",
+            "retryLabel": "重试次数",
+            "retryHint": "投递失败后的重试次数（0..3）。",
+            "cancel": "取消",
+            "submitCreate": "创建",
+            "submitEdit": "保存",
+            "saving": "保存中...",
+            "toast": {
+                "created": "订阅已创建",
+                "updated": "订阅已更新",
+                "createFailed": "创建订阅失败",
+                "updateFailed": "更新订阅失败"
+            }
+        },
+        "test": {
+            "pending": "入队中...",
+            "toastQueued": "测试投递已排队",
+            "toastQueuedHint": "后台将执行投递，结果请查看投递日志。",
+            "toastFailed": "测试投递入队失败"
+        },
+        "delete": {
+            "pending": "删除中...",
+            "confirmTitle": "删除订阅",
+            "confirmBody": "删除后无法恢复，将立即停止向该地址投递。",
+            "confirmButton": "确认删除",
+            "cancelButton": "取消",
+            "toastDeleted": "订阅已删除",
+            "toastFailed": "删除订阅失败"
+        },
+        "logs": {
+            "title": "投递日志",
+            "back": "返回列表",
+            "empty": "暂无投递记录",
+            "emptyHint": "首次事件触发后，投递记录会出现在这里。",
+            "table": {
+                "time": "时间",
+                "deliveryId": "投递 ID",
+                "event": "事件",
+                "status": "状态",
+                "httpCode": "HTTP 状态码",
+                "duration": "耗时",
+                "attempts": "尝试次数"
+            },
+            "pagination": {
+                "label": "投递日志分页",
+                "prev": "上一页",
+                "next": "下一页",
+                "summary": "第 {current}/{pages} 页 - 共 {count} 条"
+            }
+        }
     },
     "tickets": {
         "title": "工单",

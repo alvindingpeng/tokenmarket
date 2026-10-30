@@ -14,6 +14,7 @@ export const pageImports = {
     apikey: () => import('@/components/modules/apikey'),
     log: () => import('@/components/modules/log'),
     notification: () => import('@/components/modules/notification'),
+    webhook: () => import('@/components/modules/webhook'),
     tickets: () => import('@/components/modules/tickets'),
     analytics: () => import('@/components/modules/analytics'),
     setting: () => import('@/components/modules/setting'),

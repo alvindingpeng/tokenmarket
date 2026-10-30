@@ -116,6 +116,8 @@ func TestTaskNamesAndDefinitionsInSync(t *testing.T) {
 		TaskVideoJobCleanup,
 		TaskBreakerProbe,
 		TaskTicketAutoClose,
+		TaskWebhookDispatch,
+		TaskWebhookCleanup,
 	}
 
 	tasksMu.Lock()

@@ -35,6 +35,7 @@ const Billing = lazy(() => pageImports.billing());
 const Apikey = lazy(() => pageImports.apikey());
 const Log = lazy(() => pageImports.log().then((module) => ({ default: module.Log })));
 const Notification = lazy(() => pageImports.notification().then((module) => ({ default: module.NotificationCenter })));
+const Webhooks = lazy(() => pageImports.webhook().then((module) => ({ default: module.Webhooks })));
 const Tickets = lazy(() => pageImports.tickets().then((module) => ({ default: module.Tickets })));
 const Analytics = lazy(() => pageImports.analytics().then((module) => ({ default: module.AnalyticsPage })));
 const Setting = lazy(() => pageImports.setting().then((module) => ({ default: module.Setting })));
@@ -198,6 +199,7 @@ export function AppContainer() {
                                 {visibleItem === 'model' && <Model />}
                                 {visibleItem === 'log' && <Log />}
                                 {visibleItem === 'notification' && <Notification />}
+                                {visibleItem === 'webhook' && <Webhooks />}
                                 {visibleItem === 'tickets' && <Tickets />}
                                 {visibleItem === 'analytics' && <Analytics />}
                                 {visibleItem === 'setting' && <Setting />}

@@ -79,6 +79,8 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.Setting{},
 		&model.AuditLog{},
 		&model.Notification{},
+		&model.Webhook{},
+		&model.WebhookDelivery{},
 		&model.BalanceAlert{},
 		&model.Ticket{},
 		&model.TicketMessage{},

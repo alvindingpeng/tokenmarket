@@ -71,6 +71,13 @@ func ChannelKeyColumnBinding(channelID int, name, column string) Binding {
 	return Binding{Table: "channel_keys", Owner: fmt.Sprintf("channel_id:%d;name:%s", channelID, name), Column: column}
 }
 
+// WebhookSecretBinding 出站订阅密钥列的归属绑定: 订阅行 ID 与归属用户构成归属,
+// 两者在业务上不可变(行 ID 由数据库生成, 用户归属创建后不变), 列名同样进绑定。
+// 把别的订阅的密钥密文搬到本行, 解密前即被归属比对拦下。
+func WebhookSecretBinding(webhookID uint64, userID uint) Binding {
+	return Binding{Table: "webhooks", Owner: fmt.Sprintf("webhook_id:%d;user_id:%d", webhookID, userID), Column: "secret_encrypted"}
+}
+
 // IsEnvelope 判断库内取到的值是否为信封格式。历史明文与空值都不是信封。
 func IsEnvelope(value string) bool {
 	return strings.HasPrefix(value, envelopePrefix)

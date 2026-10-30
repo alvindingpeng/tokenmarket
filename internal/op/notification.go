@@ -7,6 +7,7 @@ import (
 
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"gorm.io/gorm"
 )
 
 // notificationDedupWindow 同类未读通知的去重窗口。
@@ -33,21 +34,31 @@ func NotificationCreateDedup(ctx context.Context, userID uint, notifType model.N
 	return true, NotificationCreate(ctx, userID, notifType, title, content, link, relatedID)
 }
 
-// NotificationCreate 创建通知
+// NotificationCreate 创建通知。
+//
+// Webhook 入队与通知写入同事务(webhookEnqueueForNotificationTx): 通知落了库, 该用户
+// 订阅了此事件的 webhook 就一定在队里; 入队失败则整单回滚并上抛 —— 不吞错误, 否则用户
+// 收到了通知、订阅方永远等不到。测试里没有 webhook 表的场景应补 fixture(建全表),
+// 而不是让生产路径静默跳过入队。
 func NotificationCreate(ctx context.Context, userID uint, notifType model.NotificationType, title, content, link string, relatedID uint64) error {
-	notification := model.Notification{
-		UserID:    userID,
-		Type:      notifType,
-		Title:     title,
-		Content:   content,
-		Link:      link,
-		RelatedID: relatedID,
-		Status:    model.NotificationStatusUnread,
-	}
-	if err := db.GetDB().WithContext(ctx).Create(&notification).Error; err != nil {
-		return fmt.Errorf("failed to create notification: %w", err)
-	}
-	return nil
+	return db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		notification := model.Notification{
+			UserID:    userID,
+			Type:      notifType,
+			Title:     title,
+			Content:   content,
+			Link:      link,
+			RelatedID: relatedID,
+			Status:    model.NotificationStatusUnread,
+		}
+		if err := tx.Create(&notification).Error; err != nil {
+			return fmt.Errorf("failed to create notification: %w", err)
+		}
+		if err := webhookEnqueueForNotificationTx(tx, &notification); err != nil {
+			return fmt.Errorf("failed to enqueue webhook deliveries: %w", err)
+		}
+		return nil
+	})
 }
 
 // NotificationList 获取通知列表

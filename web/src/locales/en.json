@@ -96,6 +96,7 @@
         "redemption": "Redemption Codes",
         "withdrawals": "Withdrawals",
         "notification": "Notification",
+        "webhook": "Webhooks",
         "analytics": "Analytics",
         "tickets": "Tickets"
     },
@@ -2185,6 +2186,122 @@
         "type_dispute": "Dispute",
         "type_ticket": "Ticket reply",
         "viewTicket": "View ticket"
+    },
+    "webhook": {
+        "title": "Webhook Subscriptions",
+        "refresh": "Refresh",
+        "loading": "Loading...",
+        "error": "Failed to load",
+        "retry": "Retry",
+        "empty": "No subscriptions yet",
+        "emptyHint": "Create a subscription to receive events as signed JSON over HTTPS.",
+        "hints": {
+            "httpsOnly": "Only public HTTPS endpoints on port 443 are allowed.",
+            "secretWriteOnly": "The signing secret is write-only: stored securely and never readable again.",
+            "timeout": "Each delivery attempt times out after 5 seconds.",
+            "atLeastOnce": "Delivery is at least once: deduplicate by the delivery id in the payload.",
+            "jsonOnly": "Generic JSON webhooks with a signature only; DingTalk/Feishu proprietary formats are not supported."
+        },
+        "enabledBadge": {
+            "on": "Enabled",
+            "off": "Disabled"
+        },
+        "delivery": {
+            "pending": "Pending",
+            "processing": "Processing",
+            "succeeded": "Succeeded",
+            "failed": "Failed",
+            "cancelled": "Cancelled"
+        },
+        "table": {
+            "url": "URL",
+            "events": "Events",
+            "enabled": "Enabled",
+            "retryCount": "Retries",
+            "lastStatus": "Last delivery",
+            "updated": "Updated",
+            "actions": "Actions",
+            "edit": "Edit",
+            "test": "Test",
+            "logs": "Logs",
+            "delete": "Delete"
+        },
+        "pagination": {
+            "label": "Subscription pagination",
+            "prev": "Previous page",
+            "next": "Next page",
+            "summary": "Page {current}/{pages} - {count} total"
+        },
+        "form": {
+            "createButton": "New subscription",
+            "createTitle": "New webhook subscription",
+            "editTitle": "Edit webhook subscription",
+            "urlLabel": "Endpoint URL",
+            "urlPlaceholder": "https://example.com/webhook",
+            "urlRequired": "Enter the endpoint URL.",
+            "urlInvalid": "Enter a valid URL.",
+            "urlHttps": "Only public HTTPS endpoints on port 443 are allowed.",
+            "urlPort": "Only port 443 is allowed.",
+            "secretLabel": "Signing secret",
+            "secretCreateHint": "Required: {min}-{max} bytes. Write-only after saving.",
+            "secretEditHint": "Leave empty to keep the current secret.",
+            "secretSet": "Secret configured (write-only)",
+            "secretRequired": "The signing secret is required.",
+            "secretErrorShort": "The signing secret must be at least 16 bytes.",
+            "secretErrorLong": "The signing secret must be at most 128 bytes.",
+            "eventsLabel": "Events",
+            "eventsHint": "Pick at least one event to subscribe to.",
+            "eventsError": "Select at least one event.",
+            "enabledLabel": "Enabled",
+            "retryLabel": "Retry count",
+            "retryHint": "Retries after a failed delivery (0-3).",
+            "cancel": "Cancel",
+            "submitCreate": "Create",
+            "submitEdit": "Save",
+            "saving": "Saving...",
+            "toast": {
+                "created": "Subscription created",
+                "updated": "Subscription updated",
+                "createFailed": "Failed to create subscription",
+                "updateFailed": "Failed to update subscription"
+            }
+        },
+        "test": {
+            "pending": "Queuing...",
+            "toastQueued": "Test delivery queued",
+            "toastQueuedHint": "It runs in the background; check the delivery log for the result.",
+            "toastFailed": "Failed to queue the test delivery"
+        },
+        "delete": {
+            "pending": "Deleting...",
+            "confirmTitle": "Delete subscription",
+            "confirmBody": "This cannot be undone. Deliveries to this endpoint will stop immediately.",
+            "confirmButton": "Delete",
+            "cancelButton": "Cancel",
+            "toastDeleted": "Subscription deleted",
+            "toastFailed": "Failed to delete subscription"
+        },
+        "logs": {
+            "title": "Delivery log",
+            "back": "Back to list",
+            "empty": "No deliveries yet",
+            "emptyHint": "Deliveries will appear here after the first event fires.",
+            "table": {
+                "time": "Time",
+                "deliveryId": "Delivery ID",
+                "event": "Event",
+                "status": "Status",
+                "httpCode": "HTTP",
+                "duration": "Duration",
+                "attempts": "Attempts"
+            },
+            "pagination": {
+                "label": "Delivery log pagination",
+                "prev": "Previous page",
+                "next": "Next page",
+                "summary": "Page {current}/{pages} - {count} total"
+            }
+        }
     },
     "tickets": {
         "title": "Tickets",

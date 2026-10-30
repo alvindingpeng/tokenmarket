@@ -96,6 +96,7 @@
         "redemption": "兌換碼",
         "withdrawals": "提現管理",
         "notification": "通知",
+        "webhook": "Webhook 訂閱",
         "analytics": "統計",
         "tickets": "工單"
     },
@@ -2185,6 +2186,122 @@
         "type_dispute": "爭議處理",
         "type_ticket": "工單回覆",
         "viewTicket": "檢視工單"
+    },
+    "webhook": {
+        "title": "Webhook 訂閱",
+        "refresh": "重新整理",
+        "loading": "載入中...",
+        "error": "載入失敗",
+        "retry": "重試",
+        "empty": "尚未建立訂閱",
+        "emptyHint": "建立訂閱後，事件會以帶簽名的 JSON 推送到你的 HTTPS 位址。",
+        "hints": {
+            "httpsOnly": "僅允許 HTTPS 公網 443 埠位址。",
+            "secretWriteOnly": "簽名金鑰僅可寫入：加密儲存後無法讀取回顯。",
+            "timeout": "每次投遞 5 秒逾時。",
+            "atLeastOnce": "投遞語義為至少一次：請按承載中的 delivery id 去重。",
+            "jsonOnly": "僅提供通用 JSON 簽名 Webhook，不相容釘釘/飛書等專有格式。"
+        },
+        "enabledBadge": {
+            "on": "啟用",
+            "off": "停用"
+        },
+        "delivery": {
+            "pending": "待投遞",
+            "processing": "投遞中",
+            "succeeded": "成功",
+            "failed": "失敗",
+            "cancelled": "已取消"
+        },
+        "table": {
+            "url": "URL",
+            "events": "事件",
+            "enabled": "啟用",
+            "retryCount": "重試次數",
+            "lastStatus": "最近投遞",
+            "updated": "更新時間",
+            "actions": "操作",
+            "edit": "編輯",
+            "test": "測試",
+            "logs": "投遞日誌",
+            "delete": "刪除"
+        },
+        "pagination": {
+            "label": "訂閱分頁",
+            "prev": "上一頁",
+            "next": "下一頁",
+            "summary": "第 {current}/{pages} 頁 - 共 {count} 條"
+        },
+        "form": {
+            "createButton": "新增訂閱",
+            "createTitle": "新增 Webhook 訂閱",
+            "editTitle": "編輯 Webhook 訂閱",
+            "urlLabel": "回呼位址",
+            "urlPlaceholder": "https://example.com/webhook",
+            "urlRequired": "請填寫回呼位址。",
+            "urlInvalid": "請輸入合法的 URL。",
+            "urlHttps": "僅允許 HTTPS 公網 443 埠位址。",
+            "urlPort": "僅允許 443 埠。",
+            "secretLabel": "簽名金鑰",
+            "secretCreateHint": "必填：{min}..{max} 位元組；儲存後僅儲存不可讀取。",
+            "secretEditHint": "留空則保持現有金鑰。",
+            "secretSet": "已設定金鑰（不可讀取）",
+            "secretRequired": "請填寫簽名金鑰。",
+            "secretErrorShort": "簽名金鑰至少 16 位元組。",
+            "secretErrorLong": "簽名金鑰最多 128 位元組。",
+            "eventsLabel": "事件",
+            "eventsHint": "至少選擇一個訂閱事件。",
+            "eventsError": "請至少選擇一個事件。",
+            "enabledLabel": "啟用",
+            "retryLabel": "重試次數",
+            "retryHint": "投遞失敗後的重試次數（0..3）。",
+            "cancel": "取消",
+            "submitCreate": "建立",
+            "submitEdit": "儲存",
+            "saving": "儲存中...",
+            "toast": {
+                "created": "訂閱已建立",
+                "updated": "訂閱已更新",
+                "createFailed": "建立訂閱失敗",
+                "updateFailed": "更新訂閱失敗"
+            }
+        },
+        "test": {
+            "pending": "入隊中...",
+            "toastQueued": "測試投遞已排隊",
+            "toastQueuedHint": "背景將執行投遞，結果請查看投遞日誌。",
+            "toastFailed": "測試投遞入隊失敗"
+        },
+        "delete": {
+            "pending": "刪除中...",
+            "confirmTitle": "刪除訂閱",
+            "confirmBody": "刪除後無法恢復，將立即停止向該位址投遞。",
+            "confirmButton": "確認刪除",
+            "cancelButton": "取消",
+            "toastDeleted": "訂閱已刪除",
+            "toastFailed": "刪除訂閱失敗"
+        },
+        "logs": {
+            "title": "投遞日誌",
+            "back": "返回列表",
+            "empty": "暫無投遞記錄",
+            "emptyHint": "首次事件觸發後，投遞記錄會出現在這裡。",
+            "table": {
+                "time": "時間",
+                "deliveryId": "投遞 ID",
+                "event": "事件",
+                "status": "狀態",
+                "httpCode": "HTTP 狀態碼",
+                "duration": "耗時",
+                "attempts": "嘗試次數"
+            },
+            "pagination": {
+                "label": "投遞日誌分頁",
+                "prev": "上一頁",
+                "next": "下一頁",
+                "summary": "第 {current}/{pages} 頁 - 共 {count} 條"
+            }
+        }
     },
     "tickets": {
         "title": "工單",
