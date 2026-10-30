@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useTranslations } from 'use-intl';
 import { BarChart3, Calendar, Loader2, TrendingUp } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useUserStatsModels, useUserStatsOverview, useUserStatsTrend, type UserStatsQuery } from '@/api/user-stats';
 import { formatAmount } from '@/lib/format';

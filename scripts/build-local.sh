@@ -34,7 +34,7 @@ echo "== 前端 (VITE_APP_VERSION=${VERSION})"
 
 echo "== 后端 ${VERSION} (${COMMIT}) -> ${OUTPUT}"
 mkdir -p "$(dirname "${OUTPUT}")"
-(cd "${REPO_ROOT}" && /srv/deepseek-harness/workspaces/.toolchain/go/bin/go build -trimpath -tags=jsoniter -ldflags="${LDFLAGS}" -o "${OUTPUT}" .)
+(cd "${REPO_ROOT}" && "${GO_BIN:-go}" build -trimpath -tags=jsoniter -ldflags="${LDFLAGS}" -o "${OUTPUT}" .)
 
 echo "== 校验"
 "${OUTPUT}" version

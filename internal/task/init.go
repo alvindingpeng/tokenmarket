@@ -287,6 +287,27 @@ func Init() {
 			return op.BreakerRecoveryProbe(ctx)
 		},
 	})
+
+	// 工单自动关闭: resolved 停留满 3 天的工单自动转 closed(状态机里"用户确认 / 3 天自动关闭"),
+	// 按 resolved_at 计时(回复不重置窗口), 关闭时通知工单主人, 用户可重新打开。
+	// 每小时扫一次; 启动即跑以补上停机期间跨过阈值的工单。
+	Define(Spec{
+		Name:       TaskTicketAutoClose,
+		Interval:   fixedInterval(time.Hour),
+		RunOnStart: true,
+		Fn: func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			closed, err := op.TicketAutoCloseResolved(ctx, op.TicketAutoCloseAfter)
+			if err != nil {
+				return err
+			}
+			if closed > 0 {
+				log.Infof("ticket auto-close: closed=%d", closed)
+			}
+			return nil
+		},
+	})
 }
 
 // fixedInterval 固定周期。

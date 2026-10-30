@@ -80,6 +80,8 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.AuditLog{},
 		&model.Notification{},
 		&model.BalanceAlert{},
+		&model.Ticket{},
+		&model.TicketMessage{},
 		&model.StatsTotal{},
 		&model.StatsDaily{},
 		&model.StatsHourly{},
@@ -104,6 +106,13 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&migrate.MigrationRecord{},
 	); err != nil {
 		return err
+	}
+	// 工单 resolved_at 回填(一次性幂等): 该列新加, 存量 resolved 行为空则永远进不了
+	// 自动关闭计时。仅对空值兜底 —— 正常写入由 op.setTicketStatus 维护
+	// (resolved ⇔ resolved_at 非空), 已有值的行不会被改写。
+	if err := db.Exec("UPDATE tickets SET resolved_at = updated_at WHERE status = ? AND resolved_at IS NULL",
+		model.TicketStatusResolved).Error; err != nil {
+		return fmt.Errorf("backfill ticket resolved_at: %w", err)
 	}
 	if err := migrate.AfterAutoMigrate(db); err != nil {
 		return err

@@ -38,7 +38,7 @@ func init() {
 
 // notificationList 获取通知列表
 func notificationList(c *gin.Context) {
-	userID := c.GetUint("user_id")
+	userID, _ := middleware.CurrentUser(c)
 	var req model.NotificationListRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
 		resp.Error(c, http.StatusBadRequest, "invalid request: "+err.Error())
@@ -70,7 +70,7 @@ func notificationList(c *gin.Context) {
 
 // notificationUnreadCount 获取未读数量
 func notificationUnreadCount(c *gin.Context) {
-	userID := c.GetUint("user_id")
+	userID, _ := middleware.CurrentUser(c)
 	count, err := op.NotificationUnreadCount(c.Request.Context(), userID)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
@@ -81,7 +81,7 @@ func notificationUnreadCount(c *gin.Context) {
 
 // notificationMarkRead 标记通知为已读
 func notificationMarkRead(c *gin.Context) {
-	userID := c.GetUint("user_id")
+	userID, _ := middleware.CurrentUser(c)
 	var req model.NotificationMarkReadRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		resp.Error(c, http.StatusBadRequest, "invalid request: "+err.Error())
@@ -97,7 +97,7 @@ func notificationMarkRead(c *gin.Context) {
 
 // notificationMarkAllRead 标记所有通知为已读
 func notificationMarkAllRead(c *gin.Context) {
-	userID := c.GetUint("user_id")
+	userID, _ := middleware.CurrentUser(c)
 	if err := op.NotificationMarkAllRead(c.Request.Context(), userID); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -107,7 +107,7 @@ func notificationMarkAllRead(c *gin.Context) {
 
 // notificationDelete 删除通知
 func notificationDelete(c *gin.Context) {
-	userID := c.GetUint("user_id")
+	userID, _ := middleware.CurrentUser(c)
 	var req struct {
 		ID uint64 `uri:"id" binding:"required,min=1"`
 	}

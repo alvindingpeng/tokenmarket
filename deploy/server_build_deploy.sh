@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 export PATH="/usr/local/go/bin:$PATH"
 export GOPROXY=https://goproxy.cn,direct
 
@@ -42,7 +42,7 @@ sleep 5
 
 echo "== STATUS =="
 systemctl is-active switchyard
-curl -s http://127.0.0.1:8088/healthz | head -20
+curl --fail --silent --show-error http://127.0.0.1:8088/healthz
 
 echo ""
 echo "== LOGS (last 30 lines) =="

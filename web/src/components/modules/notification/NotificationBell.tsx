@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'use-intl';
-import { Bell, Check, CheckCheck, Trash2 } from 'lucide-react';
+import { Bell, Check, CheckCheck, ExternalLink, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { useNotificationList, useNotificationMutations, useNotificationUnreadCount } from '@/api/notification';
+import { notificationNavigation, useNotificationList, useNotificationMutations, useNotificationUnreadCount, type Notification } from '@/api/notification';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
+import { useAppStore } from '@/stores/app';
+import { useTicketFocusStore } from '@/components/modules/tickets/store';
 import { cn } from '@/lib/utils';
 
 // NOTIFICATION_ICONS 每种通知类型的图标; 用图标而不是 emoji, 跟随主题色板。
@@ -25,8 +27,20 @@ export function NotificationBell() {
     const { data: unread, refetch: refetchUnread } = useNotificationUnreadCount();
     const { data: recent } = useNotificationList({ page: 1, page_size: 5 });
     const { markRead, markAllRead } = useNotificationMutations();
+    const setCurrentPage = useAppStore((state) => state.setCurrentPage);
+    const requestTicketFocus = useTicketFocusStore((state) => state.requestFocus);
 
     const unreadCount = unread?.unread_count ?? 0;
+
+    // handleOpen 通知跳转: 有站内落地页的类型(工单)切页面并带上关联工单号, 顺手标已读、收起弹层。
+    const handleOpen = (item: Notification) => {
+        const target = notificationNavigation(item.type, item.related_id);
+        if (!target) return;
+        if (item.status === 'unread') handleMarkRead([item.id]);
+        if (target.focusTicketId) requestTicketFocus(target.focusTicketId);
+        setCurrentPage(target.page);
+        setOpen(false);
+    };
 
     // 弹层打开时刷新一次未读数, 保证点开瞬间的数字是最新的。
     useEffect(() => {
@@ -88,25 +102,43 @@ export function NotificationBell() {
                         {items.map((item) => {
                             const Icon = NOTIFICATION_ICONS[item.type] ?? Bell;
                             const unread = item.status === 'unread';
+                            const target = notificationNavigation(item.type, item.related_id);
                             return (
-                                <button
+                                // 行本体是 div: 通知内容(标记已读)与跳转入口是并列的两个按钮, 不能互相嵌套。
+                                <div
                                     key={item.id}
-                                    type="button"
-                                    onClick={() => unread && handleMarkRead([item.id])}
                                     className={cn(
-                                        'flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted',
+                                        'flex w-full items-start gap-2 px-4 py-3 transition-colors hover:bg-muted',
                                         unread && 'bg-primary/5',
                                     )}
                                 >
-                                    <Icon className={cn('mt-0.5 size-4 shrink-0 text-muted-foreground', unread && 'text-primary')} />
-                                    <div className="min-w-0 flex-1">
-                                        <div className="flex items-center gap-2">
-                                            <span className="truncate text-sm font-medium">{item.title}</span>
-                                            {unread && <span className="size-1.5 shrink-0 rounded-full bg-primary" />}
+                                    <button
+                                        type="button"
+                                        onClick={() => unread && handleMarkRead([item.id])}
+                                        className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                                    >
+                                        <Icon className={cn('mt-0.5 size-4 shrink-0 text-muted-foreground', unread && 'text-primary')} />
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-2">
+                                                <span className="truncate text-sm font-medium">{item.title}</span>
+                                                {unread && <span className="size-1.5 shrink-0 rounded-full bg-primary" />}
+                                            </div>
+                                            <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{item.content}</p>
                                         </div>
-                                        <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{item.content}</p>
-                                    </div>
-                                </button>
+                                    </button>
+                                    {target && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-7 shrink-0 gap-1 px-2 text-xs"
+                                            onClick={() => handleOpen(item)}
+                                            aria-label={t('viewTicket') + ': ' + item.title}
+                                        >
+                                            <ExternalLink className="size-3.5" />
+                                            {t('viewTicket')}
+                                        </Button>
+                                    )}
+                                </div>
                             );
                         })}
                     </div>

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from './client';
+import type { Page } from '@/stores/app';
 
 /**
  * NotificationType 通知类型; 与后端 model.NotificationType 一一对应。
@@ -30,6 +31,34 @@ export type Notification = {
     created_at: string;
     read_at?: string;
 };
+
+/**
+ * NotificationNavigation 通知的站内跳转目标: 落地页面 + 可选的关联工单聚焦。
+ */
+export type NotificationNavigation = {
+    page: Page;
+    focusTicketId?: number;
+};
+
+/**
+ * notificationNavigation 计算通知的站内跳转目标。
+ *
+ * 后端工单通知的 link 为空串、只带 related_id=工单 ID(见 op.NotifyTicket),
+ * 因此跳转不能解析 link, 只能按类型落地: 工单通知 -> 工单页, 并尽量带上要打开的工单号。
+ * 其余类型暂无稳定落地页, 返回 null(不渲染跳转入口), 后续类型接了页面再补映射。
+ */
+export function notificationNavigation(type: NotificationType, relatedId?: number): NotificationNavigation | null {
+    if (type !== 'ticket') return null;
+    return { page: 'tickets', focusTicketId: relatedId && relatedId > 0 ? relatedId : undefined };
+}
+
+/**
+ * notificationTypeKey 通知类型徽标的文案键; 类型名先清洗掉非法字符再拼键,
+ * 避免后端新增怪异类型名时 t() 因缺键直接抛错整页白屏。
+ */
+export function notificationTypeKey(type: string): string {
+    return 'type_' + type.replace(/[^a-z_]/g, '');
+}
 
 /**
  * NotificationListResponse 通知列表分页响应。

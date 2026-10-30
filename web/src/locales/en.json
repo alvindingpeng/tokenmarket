@@ -96,7 +96,8 @@
         "redemption": "Redemption Codes",
         "withdrawals": "Withdrawals",
         "notification": "Notification",
-        "analytics": "Analytics"
+        "analytics": "Analytics",
+        "tickets": "Tickets"
     },
     "toolbar": {
         "hideChannelName": "Blur channel names",
@@ -2182,7 +2183,110 @@
         "type_withdrawal": "Withdrawal",
         "type_recharge": "Top-up",
         "type_dispute": "Dispute",
-        "type_ticket": "Ticket reply"
+        "type_ticket": "Ticket reply",
+        "viewTicket": "View ticket"
+    },
+    "tickets": {
+        "title": "Tickets",
+        "refresh": "Refresh",
+        "filterAll": "All",
+        "loading": "Loading...",
+        "error": "Failed to load",
+        "retry": "Retry",
+        "empty": "No tickets",
+        "emptyHint": "Adjust the filters above to broaden the search.",
+        "actionFailed": "Action failed",
+        "status": {
+            "open": "Open",
+            "in_progress": "In progress",
+            "resolved": "Resolved",
+            "closed": "Closed"
+        },
+        "priority": {
+            "low": "Low",
+            "normal": "Normal",
+            "high": "High",
+            "urgent": "Urgent"
+        },
+        "category": {
+            "billing": "Billing",
+            "channel": "Channel",
+            "account": "Account",
+            "other": "Other"
+        },
+        "filter": {
+            "status": "Filter by status",
+            "priority": "Filter by priority",
+            "category": "Filter by category",
+            "assignee": "Filter by assignee",
+            "assigneeAll": "All assignees"
+        },
+        "table": {
+            "id": "No",
+            "title": "Title",
+            "user": "User",
+            "status": "Status",
+            "priority": "Priority",
+            "category": "Category",
+            "messages": "Messages",
+            "updated": "Updated",
+            "actions": "Actions",
+            "view": "View"
+        },
+        "pagination": {
+            "label": "Ticket pagination",
+            "prev": "Previous page",
+            "next": "Next page",
+            "summary": "Page {current}/{pages} - {count} total"
+        },
+        "create": {
+            "button": "New ticket",
+            "titleLabel": "Title",
+            "titlePlaceholder": "Brief summary of the issue",
+            "categoryLabel": "Category",
+            "priorityLabel": "Priority",
+            "contentLabel": "Description",
+            "contentPlaceholder": "Describe your issue in detail...",
+            "textOnlyHint": "Text only in this release: attachments are not supported yet.",
+            "cancel": "Cancel",
+            "submit": "Create",
+            "submitting": "Creating...",
+            "toast": {
+                "created": "Ticket created",
+                "createFailed": "Failed to create ticket"
+            }
+        },
+        "detail": {
+            "back": "Back to list",
+            "user": "User",
+            "created": "Created",
+            "updated": "Updated",
+            "assignee": "Assignee",
+            "unassigned": "Unassigned",
+            "closedAt": "Closed",
+            "statusLabel": "Status",
+            "assignLabel": "Assign to",
+            "noAdmins": "No active admin available to assign.",
+            "actions": {
+                "close": "Close ticket",
+                "reopen": "Reopen ticket"
+            },
+            "conversation": "Conversation",
+            "adminBadge": "Admin",
+            "replyLabel": "Reply",
+            "replyPlaceholder": "Type your reply...",
+            "replyDisabledPlaceholder": "Reopen the ticket to reply.",
+            "replySend": "Send",
+            "textOnlyHint": "Text only in this release: attachments are not supported yet.",
+            "closedHint": "This ticket is closed. Reopen it to reply.",
+            "toast": {
+                "replied": "Reply sent",
+                "closed": "Ticket closed",
+                "reopened": "Ticket reopened",
+                "statusChanged": "Status updated",
+                "assigned": "Ticket assigned"
+            }
+        }
     },
     "analytics": {
         "title": "Analytics",

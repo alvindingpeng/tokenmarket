@@ -96,7 +96,8 @@
         "redemption": "兑换码",
         "withdrawals": "提现管理",
         "notification": "通知",
-        "analytics": "统计"
+        "analytics": "统计",
+        "tickets": "工单"
     },
     "toolbar": {
         "hideChannelName": "模糊渠道名称",
@@ -2182,7 +2183,110 @@
         "type_withdrawal": "提现通知",
         "type_recharge": "充值成功",
         "type_dispute": "争议处理",
-        "type_ticket": "工单回复"
+        "type_ticket": "工单回复",
+        "viewTicket": "查看工单"
+    },
+    "tickets": {
+        "title": "工单",
+        "refresh": "刷新",
+        "filterAll": "全部",
+        "loading": "加载中...",
+        "error": "加载失败",
+        "retry": "重试",
+        "empty": "暂无工单",
+        "emptyHint": "调整上方筛选条件以扩大范围。",
+        "actionFailed": "操作失败",
+        "status": {
+            "open": "待处理",
+            "in_progress": "处理中",
+            "resolved": "已解决",
+            "closed": "已关闭"
+        },
+        "priority": {
+            "low": "低",
+            "normal": "普通",
+            "high": "高",
+            "urgent": "紧急"
+        },
+        "category": {
+            "billing": "计费问题",
+            "channel": "渠道问题",
+            "account": "账号问题",
+            "other": "其他"
+        },
+        "filter": {
+            "status": "按状态筛选",
+            "priority": "按优先级筛选",
+            "category": "按分类筛选",
+            "assignee": "按分配人筛选",
+            "assigneeAll": "全部分配人"
+        },
+        "table": {
+            "id": "编号",
+            "title": "标题",
+            "user": "用户",
+            "status": "状态",
+            "priority": "优先级",
+            "category": "分类",
+            "messages": "消息数",
+            "updated": "更新时间",
+            "actions": "操作",
+            "view": "查看"
+        },
+        "pagination": {
+            "label": "工单分页",
+            "prev": "上一页",
+            "next": "下一页",
+            "summary": "第 {current}/{pages} 页 · 共 {count} 条"
+        },
+        "create": {
+            "button": "创建工单",
+            "titleLabel": "标题",
+            "titlePlaceholder": "问题简述",
+            "categoryLabel": "分类",
+            "priorityLabel": "优先级",
+            "contentLabel": "问题描述",
+            "contentPlaceholder": "请详细描述你遇到的问题...",
+            "textOnlyHint": "本期仅支持文本，暂不支持附件。",
+            "cancel": "取消",
+            "submit": "创建",
+            "submitting": "创建中...",
+            "toast": {
+                "created": "工单已创建",
+                "createFailed": "创建工单失败"
+            }
+        },
+        "detail": {
+            "back": "返回列表",
+            "user": "用户",
+            "created": "创建时间",
+            "updated": "更新时间",
+            "assignee": "分配给",
+            "unassigned": "未分配",
+            "closedAt": "关闭时间",
+            "statusLabel": "状态",
+            "assignLabel": "分配给",
+            "noAdmins": "暂无可分配的有效管理员。",
+            "actions": {
+                "close": "关闭工单",
+                "reopen": "重新打开"
+            },
+            "conversation": "对话记录",
+            "adminBadge": "管理员",
+            "replyLabel": "回复内容",
+            "replyPlaceholder": "输入回复内容...",
+            "replyDisabledPlaceholder": "工单已关闭，重新打开后可回复。",
+            "replySend": "发送",
+            "textOnlyHint": "本期仅支持文本回复，暂不支持附件。",
+            "closedHint": "工单已关闭，重新打开后可回复。",
+            "toast": {
+                "replied": "回复已发送",
+                "closed": "工单已关闭",
+                "reopened": "工单已重新打开",
+                "statusChanged": "状态已更新",
+                "assigned": "工单已分配"
+            }
+        }
     },
     "analytics": {
         "title": "调用统计",

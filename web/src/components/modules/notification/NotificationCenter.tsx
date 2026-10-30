@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useTranslations } from 'use-intl';
-import { Bell, Check, CheckCheck, Trash2 } from 'lucide-react';
+import { Bell, Check, CheckCheck, ExternalLink, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { useNotificationList, useNotificationMutations, type NotificationType } from '@/api/notification';
+import { notificationNavigation, notificationTypeKey, useNotificationList, useNotificationMutations, type Notification } from '@/api/notification';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { useAppStore } from '@/stores/app';
+import { useTicketFocusStore } from '@/components/modules/tickets/store';
 import { cn } from '@/lib/utils';
 
 // NotificationCenter 通知中心页面: 完整列表 + 已读管理。
@@ -21,6 +23,8 @@ export function NotificationCenter() {
         page_size: pageSize,
     });
     const { markRead, markAllRead, remove } = useNotificationMutations();
+    const setCurrentPage = useAppStore((state) => state.setCurrentPage);
+    const requestTicketFocus = useTicketFocusStore((state) => state.requestFocus);
 
     const items = data?.items ?? [];
     const total = data?.total ?? 0;
@@ -40,6 +44,14 @@ export function NotificationCenter() {
 
     const handleRemove = (id: number) => {
         remove.mutate(id, { onError: handleError });
+    };
+
+    // handleOpen 通知跳转: 有站内落地页的类型(工单)切页面并带上关联工单号。
+    const handleOpen = (item: Notification) => {
+        const target = notificationNavigation(item.type, item.related_id);
+        if (!target) return;
+        if (target.focusTicketId) requestTicketFocus(target.focusTicketId);
+        setCurrentPage(target.page);
     };
 
     const filters: { id: typeof status; label: string }[] = [
@@ -96,7 +108,7 @@ export function NotificationCenter() {
                                         <div className="flex flex-wrap items-center gap-2">
                                             <span className="font-medium">{item.title}</span>
                                             <Badge variant={unread ? 'default' : 'secondary'} className="text-[10px]">
-                                                {t('type_' + (item.type as NotificationType).replace(/[^a-z_]/g, ''))}
+                                                {t(notificationTypeKey(item.type))}
                                             </Badge>
                                             {unread && <span className="size-1.5 rounded-full bg-primary" />}
                                         </div>
@@ -106,6 +118,16 @@ export function NotificationCenter() {
                                         </span>
                                     </div>
                                     <div className="flex shrink-0 items-center gap-1">
+                                        {notificationNavigation(item.type, item.related_id) && (
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                aria-label={t('viewTicket') + ': ' + item.title}
+                                                onClick={() => handleOpen(item)}
+                                            >
+                                                <ExternalLink className="size-4 text-primary" />
+                                            </Button>
+                                        )}
                                         {unread && (
                                             <Button
                                                 variant="ghost"

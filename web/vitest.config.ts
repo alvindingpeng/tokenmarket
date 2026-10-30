@@ -10,7 +10,8 @@ export default defineConfig({
     },
   },
   test: {
-    environment: 'node', // 被测对象是纯函数与 URL 构造, 不需要 jsdom。
-    include: ['src/**/*.test.ts'],
+    // 被测对象是纯函数、URL 构造与页面组件的 mock SSR(react-dom/server 出字符串), 不需要 jsdom。
+    environment: 'node',
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
   },
 });
