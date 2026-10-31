@@ -157,12 +157,6 @@ func webhookEnqueueTargets(ctx context.Context, userID uint, event string) ([]mo
 	if userID == 0 {
 		return nil, nil
 	}
-	// webhook 基建缺表(旧测试 fixture/老库): 只导致不出站, 绝不连累通知本身 ——
-	// 通知是业务事实, webhook 只是外发通道; 缺表=无处可发, 通知照常成功。
-	if !db.GetDB().Migrator().HasTable(&model.Webhook{}) ||
-		!db.GetDB().Migrator().HasTable(&model.WebhookDelivery{}) {
-		return nil, nil
-	}
 	var hooks []model.Webhook
 	if err := db.GetDB().WithContext(ctx).Where("user_id = ? AND enabled = ?", userID, true).Find(&hooks).Error; err != nil {
 		return nil, fmt.Errorf("load webhooks for notification: %w", err)
@@ -428,16 +422,17 @@ func webhookDispatchOne(ctx context.Context, id uint64) {
 	secret, err := webhookOpenSecret(claim.hook)
 	if err != nil {
 		// 密钥解不开(主密钥不对/密文被搬动): 配置性故障, 重试无意义, 直接终结。
-		webhookFinalize(ctx, claim, 0, fmt.Errorf("webhook secret unavailable: %w", err))
+		webhookFinalize(ctx, claim, 0, 0, fmt.Errorf("webhook secret unavailable: %w", err))
 		return
 	}
+	sendStart := time.Now()
 	statusCode, sendErr := webhookSend(ctx, claim.hook.URL, secret, claim.delivery.Payload, claim.delivery.DeliveryID)
-	webhookFinalize(ctx, claim, statusCode, sendErr)
+	webhookFinalize(ctx, claim, statusCode, time.Since(sendStart).Milliseconds(), sendErr)
 }
 
 // webhookFinalize 投递收尾: 2xx 成功; 429/408/5xx/网络失败按指数退避重试(不超过 retry_count);
 // 其余状态(3xx 不跟随、其它 4xx)终结失败。收尾条件写回防止归属易手后的覆盖。
-func webhookFinalize(ctx context.Context, claim webhookClaim, statusCode int, sendErr error) {
+func webhookFinalize(ctx context.Context, claim webhookClaim, statusCode int, durationMs int64, sendErr error) {
 	now := time.Now()
 	status := model.WebhookDeliveryStatusSucceeded
 	lastErr := ""
@@ -459,6 +454,7 @@ func webhookFinalize(ctx context.Context, claim webhookClaim, statusCode int, se
 		Updates(map[string]interface{}{
 			"status":           status,
 			"last_status_code": statusCode,
+			"duration_ms":      durationMs,
 			"last_error":       lastErr,
 			"next_attempt_at":  next,
 			"lease_expires_at": nil,
