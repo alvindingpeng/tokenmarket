@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { queryOptions, useMutation } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { apiRequest, apiUnauthorizedEvent, clearStepUpToken, setAPIKey } from './client';
+import { apiRequest, apiUnauthorizedEvent, clearStepUpToken, currentAuthGeneration, resetAuthSession, setAPIKey } from './client';
 
 /**
  * 用户登录请求
@@ -96,6 +96,8 @@ interface AuthState {
 /**
  * 认证状态管理 Store（使用 zustand + persist）
  */
+let authCheck = 0;
+
 export const useAuthStore = create<AuthState>()(
     persist(
         (set, get) => ({
@@ -108,7 +110,7 @@ export const useAuthStore = create<AuthState>()(
 
             setAuth: (user: UserView) => {
                 setAPIKey(null);
-                clearStepUpToken(); // 新登录是新会话, 旧会话的二次验证凭证一律作废。
+                resetAuthSession();
                 set({
                     isAuthenticated: true,
                     isAPIKeyAuth: false,
@@ -121,27 +123,36 @@ export const useAuthStore = create<AuthState>()(
 
             setAPIKeyAuth: (apiKey: string) => {
                 setAPIKey(apiKey);
+                resetAuthSession();
                 set({
                     isAuthenticated: true,
                     isAPIKeyAuth: true,
                     token: apiKey,
                     role: null,
+                    userId: 0,
                     isLoading: false
                 });
             },
 
             checkAuth: async () => {
+                const generation = currentAuthGeneration();
+                const check = ++authCheck;
+                const isCurrent = () => generation === currentAuthGeneration() && check === authCheck;
                 const { token, isAPIKeyAuth } = get();
                 setAPIKey(isAPIKeyAuth ? token : null);
 
                 if (isAPIKeyAuth && !token) {
-                    set({ isAuthenticated: false, isLoading: false });
+                    get().logout();
                     return;
                 }
 
                 try {
                     const endpoint = isAPIKeyAuth ? '/api/v1/apikey/login' : '/api/v1/user/status';
                     const profile = await apiRequest<UserView>(endpoint, { dispatchUnauthorized: false });
+                    if (!isCurrent()) return;
+                    if (get().userId !== (profile?.id ?? 0) || get().role !== (profile?.role ?? null)) {
+                        resetAuthSession();
+                    }
                     set({
                         isAuthenticated: true,
                         isLoading: false,
@@ -150,13 +161,13 @@ export const useAuthStore = create<AuthState>()(
                         userId: profile?.id ?? 0
                     });
                 } catch {
-                    get().logout();
+                    if (isCurrent()) get().logout();
                 }
             },
 
             logout: () => {
                 setAPIKey(null);
-                clearStepUpToken(); // 登出即丢弃二次验证凭证, 不给下一个使用者留通行证。
+                resetAuthSession();
                 set({
                     isAuthenticated: false,
                     isAPIKeyAuth: false,

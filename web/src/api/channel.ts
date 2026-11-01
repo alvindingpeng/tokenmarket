@@ -609,7 +609,7 @@ export function channelProfitPath(channelId: number, startDate: string, endDate:
 export function channelProfitQueryOptions(channelId: number, startDate: string, endDate: string) {
     return queryOptions({
         queryKey: channelProfitQueryKey(channelId, startDate, endDate),
-        queryFn: () => apiRequest<ChannelProfit>(channelProfitPath(channelId, startDate, endDate)),
+        queryFn: ({ signal }) => apiRequest<ChannelProfit>(channelProfitPath(channelId, startDate, endDate), { signal }),
         // 日期为空时不发请求：后端虽有默认区间，但界面此刻还没有可展示的范围。
         enabled: channelId > 0 && Boolean(startDate) && Boolean(endDate),
         refetchOnMount: 'always' as const,

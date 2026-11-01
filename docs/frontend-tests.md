@@ -9,7 +9,7 @@
 - `environment: "node"`: 被测对象全是纯函数与 URL 构造, 不需要 jsdom。
 - 运行: `pnpm --filter switchyard test`(或在 web 目录 `pnpm test`); `test:watch` 供本地循环。
 
-## 覆盖面(4 个文件 / 24 条)
+## 初始覆盖面(4 个文件 / 24 条)
 
 | 文件 | 测什么 |
 |---|---|
@@ -17,6 +17,13 @@
 | `src/lib/pricing.test.ts` | `markupOf` 非法值回落(不能返回 NaN); `userPriceOf` 与后端计费口径一致 |
 | `src/api/stats.test.ts` | `formatStatsMetrics` 合计项 = 成功+失败 / 输入+输出 |
 | `src/api/urls.test.ts` | `billingExportUrl`/`auditExportUrl`: 筛选逐个落参、空串不落参、**分页不进导出地址** |
+
+## 认证会话隔离回归（v1.4.1）
+
+- 使用真实 Zustand 认证 store 与共享 QueryClient 验证管理员退出、切换账号及 API Key 认证时旧缓存被清理。
+- 使用可控的延迟响应验证旧请求、旧 401 与旧认证检查不会污染或登出新会话；不依赖 sleep 碰竞态。
+- 覆盖利润查询的 AbortSignal，以及旧 mutation 回调对认证和缓存的影响。
+- 单元测试不代表真实浏览器多账号验收；取消前端请求也不能撤销服务端已经执行的操作。
 
 ## 顺带收敛的重复实现
 

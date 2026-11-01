@@ -64,6 +64,23 @@ describe('channel profit 请求路径', () => {
         expect(calls[0].init?.method ?? 'GET').toBe('GET');
     });
 
+    it('QueryClient cancelQueries 把 AbortSignal 传到底层 fetch', async () => {
+        const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+        let signal: AbortSignal | null | undefined;
+        vi.stubGlobal('fetch', (_url: string, init: RequestInit) => {
+            signal = init.signal;
+            return new Promise<Response>((_resolve, reject) => {
+                signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+            });
+        });
+        const pending = client.fetchQuery(channelProfitQueryOptions(12, '2026-10-02', '2026-11-01')).catch(error => error);
+        expect(signal?.aborted).toBe(false);
+        await client.cancelQueries();
+        expect(signal?.aborted).toBe(true);
+        await pending;
+        client.clear();
+    });
+
     it('日期与渠道 id 都进 queryKey: 换范围/换渠道不会复用旧缓存', () => {
         expect(channelProfitQueryKey(12, '2026-10-02', '2026-11-01')).not.toEqual(
             channelProfitQueryKey(12, '2026-09-01', '2026-09-30'),

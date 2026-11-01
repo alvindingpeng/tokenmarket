@@ -1,7 +1,60 @@
-import { QueryClient } from '@tanstack/react-query';
+import { MutationCache, QueryClient, type MutationObserver } from '@tanstack/react-query';
+
+let authGeneration = 0;
+let authController = new AbortController();
+
+export function currentAuthGeneration(): number {
+    return authGeneration;
+}
+
+function assertCurrentAuth(generation: number) {
+    if (generation !== authGeneration) throw new DOMException('Authentication changed', 'AbortError');
+}
+
+// clear() 不会停止已执行的 mutation。除请求结果外，还要隔离延迟的缓存/认证回调。
+const mutationGenerations = new WeakMap<object, number>();
+const mutationObservers = new Set<MutationObserver>();
+const mutationCache = new MutationCache({
+    onSuccess: (_data, _variables, _context, mutation) => {
+        assertCurrentAuth(mutationGenerations.get(mutation) ?? authGeneration);
+    },
+    onError: (_error, _variables, _context, mutation) => {
+        if (mutationGenerations.get(mutation) !== authGeneration) {
+            mutation.setOptions({ ...mutation.options, onError: undefined, onSettled: undefined });
+        }
+    },
+    onSettled: (_data, _error, _variables, _context, mutation) => {
+        if (mutationGenerations.get(mutation) !== authGeneration) {
+            mutation.setOptions({ ...mutation.options, onSettled: undefined });
+        }
+    },
+});
+mutationCache.subscribe((event) => {
+    if (event.type === 'observerAdded') mutationObservers.add(event.observer);
+    if (event.type === 'observerRemoved') mutationObservers.delete(event.observer);
+    if (event.type !== 'added') return;
+    const mutation = event.mutation;
+    mutationGenerations.set(mutation, authGeneration);
+    const mutationFn = mutation.options.mutationFn;
+    if (!mutationFn) return;
+    mutation.setOptions({
+        ...mutation.options,
+        mutationFn: (variables, context) => {
+            const generation = mutationGenerations.get(mutation);
+            if (generation !== undefined) assertCurrentAuth(generation);
+            try {
+                return mutationFn(variables, context);
+            } finally {
+                // API Key 登录在 mutationFn 内同步切换认证，本次验证属于切换后的会话。
+                mutationGenerations.set(mutation, authGeneration);
+            }
+        },
+    });
+});
 
 // queryClient 管理整个前端应用共享的查询缓存和请求状态。
 export const queryClient = new QueryClient({
+    mutationCache,
     defaultOptions: {
         queries: {
             staleTime: 60 * 1000,
@@ -9,6 +62,19 @@ export const queryClient = new QueryClient({
         },
     },
 });
+
+// 必须在 store 发布新身份前同步完成，不能 await cancelQueries 后再清新会话缓存。
+export function resetAuthSession() {
+    authGeneration += 1;
+    const previous = authController;
+    authController = new AbortController();
+    clearStepUpToken();
+    previous.abort();
+    void queryClient.cancelQueries();
+    // mutate(..., { onSuccess/onError }) 属于 observer，不受 MutationCache hooks 控制。
+    for (const observer of [...mutationObservers]) observer.reset();
+    queryClient.clear();
+}
 
 type RequestOptions = {
     method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -68,6 +134,7 @@ export function isStepUpRequired(error: unknown): boolean {
 // 只会把「明确报错」拖成「慢慢报错」—— 前面缺 /api/v1 前缀打 404 时就是被默认重试拖慢的。
 // 这类错误一次失败就交给界面报错 + 手动重试; 其余(网络抖动/5xx/超时)最多再试 2 次。
 export function apiQueryRetry(failureCount: number, error: unknown): boolean {
+    if (error instanceof Error && error.name === 'AbortError') return false;
     if (error instanceof ApiError && error.status >= 400 && error.status < 500) return false;
     return failureCount < 2;
 }
@@ -167,6 +234,8 @@ function resolveAPIURL(path: string): URL {
 // sendOnce 执行一次 HTTP 往返: 超时/取消语义在这里, 也在这里把错误外壳解析成 ApiError。
 // 成功响应的 body 不动, 留给调用方(json/blob/text 各取所需)。
 async function sendOnce(path: string, raw: RawRequest): Promise<SendOutcome> {
+    const generation = authGeneration;
+    const sessionSignal = authController.signal;
     const headers = new Headers();
     if (raw.contentType && raw.body !== undefined) headers.set('Content-Type', raw.contentType);
     if (apiKey) headers.set('Authorization', `Bearer ${apiKey}`);
@@ -181,6 +250,7 @@ async function sendOnce(path: string, raw: RawRequest): Promise<SendOutcome> {
         controller.abort();
     }, raw.timeoutMs ?? apiTimeoutMs);
     const forwardAbort = () => controller.abort();
+    sessionSignal.addEventListener('abort', forwardAbort, { once: true });
     raw.signal?.addEventListener('abort', forwardAbort, { once: true });
     if (raw.signal?.aborted) controller.abort();
 
@@ -199,10 +269,13 @@ async function sendOnce(path: string, raw: RawRequest): Promise<SendOutcome> {
     } finally {
         globalThis.clearTimeout(timer);
         raw.signal?.removeEventListener('abort', forwardAbort);
+        sessionSignal.removeEventListener('abort', forwardAbort);
     }
+    assertCurrentAuth(generation);
     if (response.ok) return { ok: true, response };
 
     const payload = await response.json().catch(() => null) as { message?: string; error_code?: string } | null;
+    assertCurrentAuth(generation);
     if (response.status === 401 && raw.dispatchUnauthorized !== false) {
         clearStepUpToken();
         if (typeof window !== 'undefined') window.dispatchEvent(new Event(apiUnauthorizedEvent));
@@ -213,14 +286,32 @@ async function sendOnce(path: string, raw: RawRequest): Promise<SendOutcome> {
 // sendWithStepUp 带二次验证交互的往返: 只有"明确的 step-up 错误"才弹密码确认并原样重发一次。
 // 重发的结果就是最终结果 —— 成功返回, 失败按失败抛出, 绝不第二次弹窗、绝不第三次请求。
 async function sendWithStepUp(path: string, raw: RawRequest, allowStepUp: boolean): Promise<SendOutcome> {
+    const session = authGeneration;
     const generation = stepUpGeneration;
     const first = await sendOnce(path, raw);
+    assertCurrentAuth(session);
     if (generation !== stepUpGeneration) return first;
     if (first.ok || !allowStepUp || !isStepUpRequired(first.error)) return first;
 
     // 走到这里说明旧凭证已被服务端判失效(过期/改密/换会话), 丢掉它重新确认一次。
     stepUpToken = null;
-    const token = await acquireStepUpToken();
+    // 换会话时立即结束旧等待者，不依赖用户继续操作已经过期的密码弹窗。
+    const signal = authController.signal;
+    let onAbort: (() => void) | undefined;
+    let token: string | null;
+    try {
+        token = await Promise.race([
+            acquireStepUpToken(),
+            new Promise<never>((_resolve, reject) => {
+                onAbort = () => reject(new DOMException('Authentication changed', 'AbortError'));
+                signal.addEventListener('abort', onAbort, { once: true });
+                if (signal.aborted) onAbort();
+            }),
+        ]);
+    } finally {
+        if (onAbort) signal.removeEventListener('abort', onAbort);
+    }
+    assertCurrentAuth(session);
     if (!token || generation !== stepUpGeneration) return first; // 取消或会话已变更, 不再请求
     if (raw.signal?.aborted) throw new DOMException("Request aborted", "AbortError");
     return sendOnce(path, raw);
@@ -232,6 +323,7 @@ async function sendWithStepUp(path: string, raw: RawRequest, allowStepUp: boolea
 
 // 相对于当前页面目录发送 API 请求，保留反向代理的子路径前缀。
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+    const generation = authGeneration;
     const outcome = await sendWithStepUp(
         path,
         {
@@ -246,6 +338,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     );
     if (!outcome.ok) throw outcome.error;
     const data = await outcome.response.json().catch(() => null) as { message?: string; data?: T } | null;
+    assertCurrentAuth(generation);
     return data?.data as T;
 }
 
@@ -261,10 +354,13 @@ export type DownloadResult = { blob: Blob; filename: string | null };
 // apiDownload 拉文件(整库导出/各类敏感 CSV): 走同一套 step-up 交互,
 // 文件本体经 fetch+blob 下载 —— a[href]/window.open 带不了 X-Step-Up-Token 头。
 export async function apiDownload(path: string, options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<DownloadResult> {
+    const generation = authGeneration;
     const outcome = await sendWithStepUp(path, { method: 'GET', timeoutMs: options.timeoutMs, signal: options.signal }, true);
     if (!outcome.ok) throw outcome.error;
+    const blob = await outcome.response.blob();
+    assertCurrentAuth(generation);
     return {
-        blob: await outcome.response.blob(),
+        blob,
         filename: filenameFromDisposition(outcome.response.headers.get('content-disposition')),
     };
 }
@@ -294,9 +390,11 @@ export async function downloadFile(path: string, fallbackFilename: string, optio
 
 // apiUpload 上传表单(备份导入): FormData 由浏览器自己带 boundary, 不能手写 Content-Type。
 export async function apiUpload<T>(path: string, form: FormData, options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<T> {
+    const generation = authGeneration;
     const outcome = await sendWithStepUp(path, { method: 'POST', body: form, timeoutMs: options.timeoutMs, signal: options.signal }, true);
     if (!outcome.ok) throw outcome.error;
     const text = await outcome.response.text().catch(() => '');
+    assertCurrentAuth(generation);
     let payload: unknown = text;
     try {
         payload = JSON.parse(text);
