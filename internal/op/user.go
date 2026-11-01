@@ -402,14 +402,42 @@ func UserChangeUsername(id uint, newUsername string) error {
 }
 
 // UserDelete 删除账号; 不允许删除自己, 由 handler 层保证。
+//
+// 注销必须连带清空该用户的出站订阅与投递行, 否则 users 行一删它们就成了没人认领的孤儿:
+// 数据留在库里、日志接口仍能查到, 只能靠投递前的收件人闸门抑制外发 —— 等于注销没注销干净。
+// 三张表在**同一事务**内按子表→父表的顺序删, 中途失败整单回滚, 不会留下
+// "投递删了、订阅还在"或"订阅删了、用户还在"的半截状态。
 func UserDelete(id uint) error {
 	user, err := UserGetByID(id)
 	if err != nil {
 		return err
 	}
-	if err := db.GetDB().Delete(&model.User{}, id).Error; err != nil {
+	conn := db.GetDB()
+	// 老库/测试 fixture 可能没有 webhook 表: 建表与否只做跳过分支, 不算失败。
+	// 判断必须放在事务**外**: SQLite 的 DEFERRED 事务里先读(HasTable 的 SELECT)再写
+	// 会变成共享锁升级, 撞上别的写者直接 SQLITE_BUSY, busy_timeout 不覆盖这类冲突;
+	// 事务内因此只保留写入语句。
+	hasDeliveries := conn.Migrator().HasTable(&model.WebhookDelivery{})
+	hasWebhooks := conn.Migrator().HasTable(&model.Webhook{})
+	if err := conn.Transaction(func(tx *gorm.DB) error {
+		if hasDeliveries {
+			if err := tx.Where("user_id = ?", id).Delete(&model.WebhookDelivery{}).Error; err != nil {
+				return fmt.Errorf("delete webhook deliveries: %w", err)
+			}
+		}
+		if hasWebhooks {
+			if err := tx.Where("user_id = ?", id).Delete(&model.Webhook{}).Error; err != nil {
+				return fmt.Errorf("delete webhooks: %w", err)
+			}
+		}
+		if err := tx.Delete(&model.User{}, id).Error; err != nil {
+			return fmt.Errorf("delete user: %w", err)
+		}
+		return nil
+	}); err != nil {
 		return fmt.Errorf("failed to delete user: %w", err)
 	}
+	// 缓存只在事务提交后清: 回滚时库里的用户还在, 提前清缓存会让它以"不存在"的状态留在内存之外。
 	userCache.Del(int(id))
 	userNameIndex.Del(user.Username)
 	return nil

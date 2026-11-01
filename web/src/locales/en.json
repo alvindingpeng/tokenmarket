@@ -2286,6 +2286,21 @@
             "back": "Back to list",
             "empty": "No deliveries yet",
             "emptyHint": "Deliveries will appear here after the first event fires.",
+            "filter": {
+                "status": "Status",
+                "event": "Event",
+                "all": "All",
+                "eventTest": "Test delivery"
+            },
+            "action": {
+                "replay": "Replay"
+            },
+            "replay": {
+                "pending": "Replaying...",
+                "success": "Replay requested",
+                "failed": "Failed to replay delivery",
+                "disabled": "Only failed or cancelled deliveries can be replayed"
+            },
             "table": {
                 "time": "Time",
                 "deliveryId": "Delivery ID",
@@ -2293,7 +2308,8 @@
                 "status": "Status",
                 "httpCode": "HTTP",
                 "duration": "Duration",
-                "attempts": "Attempts"
+                "attempts": "Attempts",
+                "actions": "Actions"
             },
             "pagination": {
                 "label": "Delivery log pagination",

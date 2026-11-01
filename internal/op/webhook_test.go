@@ -618,3 +618,326 @@ func TestWebhookUpdateSecretSemantics(t *testing.T) {
 		t.Fatalf("secret changed after rejected update: %q", opened)
 	}
 }
+
+// webhookTestDeliveryRow 直接在库里造一条指定状态的投递行(绕过入队/投递引擎),
+// 专供重放与日志过滤测试构造终态数据。
+func webhookTestDeliveryRow(t *testing.T, hookID uint64, userID uint, deliveryID, event, status string) model.WebhookDelivery {
+	t.Helper()
+	// 用生产同一个构造函数造 body: 重放要按字段重建 payload, 测试必须覆盖真实的字段形状。
+	payload, err := webhookBuildPayload(deliveryID, event, time.Now().Add(-time.Hour), userID, model.WebhookPayloadData{
+		Title:     "重放测试",
+		Content:   "payload 内容",
+		Link:      "/wallet",
+		RelatedID: 42,
+	})
+	if err != nil {
+		t.Fatalf("build delivery payload: %v", err)
+	}
+	row := model.WebhookDelivery{
+		DeliveryID:    deliveryID,
+		WebhookID:     hookID,
+		UserID:        userID,
+		HookVersion:   1,
+		Event:         event,
+		Payload:       payload,
+		Status:        status,
+		Attempts:      0,
+		NextAttemptAt: time.Now().Add(-time.Minute),
+	}
+	if err := db.GetDB().Create(&row).Error; err != nil {
+		t.Fatalf("create delivery row %s: %v", deliveryID, err)
+	}
+	return row
+}
+
+func webhookTestLoadDelivery(t *testing.T, deliveryID string) model.WebhookDelivery {
+	t.Helper()
+	var row model.WebhookDelivery
+	if err := db.GetDB().Where("delivery_id = ?", deliveryID).First(&row).Error; err != nil {
+		t.Fatalf("load delivery %s: %v", deliveryID, err)
+	}
+	return row
+}
+
+// 重放: 新建一条 pending 行并复制 event/payload/hook_version/归属; 原行完全不动(保留审计)。
+func TestWebhookReplayDeliveryCreatesNewPendingRow(t *testing.T) {
+	webhookTestSetup(t)
+	ctx := context.Background()
+	hook := webhookTestCreate(t, 1, "https://hooks.example.com/replay", []string{"system"}, strings.Repeat("k", 16))
+
+	const originalID = "original-delivery-0001"
+	webhookTestDeliveryRow(t, hook.ID, 1, originalID, string(model.NotificationTypeSystem), model.WebhookDeliveryStatusFailed)
+	// 首投的失败痕迹: 重放后原行必须原样保留。
+	if err := db.GetDB().Model(&model.WebhookDelivery{}).Where("delivery_id = ?", originalID).
+		Updates(map[string]interface{}{
+			"attempts":         3,
+			"last_status_code": 500,
+			"duration_ms":      120,
+			"last_error":       "endpoint responded 500",
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	src := webhookTestLoadDelivery(t, originalID)
+
+	view, err := WebhookReplayDelivery(ctx, 1, hook.ID, originalID)
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if view.DeliveryID == "" || view.DeliveryID == src.DeliveryID {
+		t.Fatalf("replay must get a fresh delivery id, got %q", view.DeliveryID)
+	}
+	if view.Status != model.WebhookDeliveryStatusPending || view.Attempts != 0 {
+		t.Fatalf("replay view = %+v, want fresh pending", view)
+	}
+	if view.ResponseCode != 0 || view.DurationMs != 0 || view.Error != "" {
+		t.Fatalf("replay view leaks previous attempt result: %+v", view)
+	}
+
+	replayed := webhookTestLoadDelivery(t, view.DeliveryID)
+	if replayed.ID == src.ID {
+		t.Fatal("replay must insert a new row, not reuse the original")
+	}
+	if replayed.WebhookID != src.WebhookID || replayed.UserID != src.UserID {
+		t.Fatalf("ownership not copied: %+v", replayed)
+	}
+	if replayed.Event != src.Event || replayed.HookVersion != src.HookVersion {
+		t.Fatalf("content not copied: event=%q hook_version=%d", replayed.Event, replayed.HookVersion)
+	}
+	// body 必须按新投递 ID 重建: 接收端按 payload.id 去重, 照抄旧 id 会整条被丢掉。
+	var srcPayload model.WebhookPayload
+	if err := json.Unmarshal([]byte(src.Payload), &srcPayload); err != nil {
+		t.Fatal(err)
+	}
+	var replayPayload model.WebhookPayload
+	if err := json.Unmarshal([]byte(replayed.Payload), &replayPayload); err != nil {
+		t.Fatalf("replay payload not decodable: %v (%s)", err, replayed.Payload)
+	}
+	if replayPayload.ID != view.DeliveryID || replayPayload.ID == srcPayload.ID {
+		t.Fatalf("replay payload id = %q, want %q (original %q)", replayPayload.ID, view.DeliveryID, srcPayload.ID)
+	}
+	if replayPayload.Timestamp == 0 {
+		t.Fatal("replay payload must carry a timestamp")
+	}
+	if replayPayload.Event != srcPayload.Event || replayPayload.UserID != srcPayload.UserID ||
+		replayPayload.Data != srcPayload.Data {
+		t.Fatalf("replay payload changed content: %+v, original %+v", replayPayload, srcPayload)
+	}
+	if replayed.Payload == src.Payload {
+		t.Fatal("replay payload must be rebuilt, not copied byte-for-byte")
+	}
+	if replayed.Status != model.WebhookDeliveryStatusPending || replayed.Attempts != 0 {
+		t.Fatalf("replay row = %+v, want pending with 0 attempts", replayed)
+	}
+	if replayed.NextAttemptAt.IsZero() || replayed.NextAttemptAt.After(time.Now().Add(5*time.Second)) {
+		t.Fatalf("replay must be immediately due, next_attempt_at=%v", replayed.NextAttemptAt)
+	}
+	if replayed.LeaseExpiresAt != nil || replayed.LastStatusCode != 0 || replayed.DurationMs != 0 || replayed.LastError != "" {
+		t.Fatalf("replay row must reset attempt columns: %+v", replayed)
+	}
+	if replayed.NotificationID != 0 {
+		t.Fatalf("replay must not inherit notification id: %d", replayed.NotificationID)
+	}
+
+	// 原行是审计记录: 重放改不动它。
+	after := webhookTestLoadDelivery(t, originalID)
+	if after.Status != model.WebhookDeliveryStatusFailed || after.Attempts != 3 ||
+		after.LastStatusCode != 500 || after.DurationMs != 120 || after.LastError != "endpoint responded 500" {
+		t.Fatalf("original row mutated by replay: %+v", after)
+	}
+	var count int64
+	db.GetDB().Model(&model.WebhookDelivery{}).Where("webhook_id = ?", hook.ID).Count(&count)
+	if count != 2 {
+		t.Fatalf("delivery rows = %d, want 2 (original + replay)", count)
+	}
+
+	// 同一行可以重复重放: 每次都是独立 id + 各自匹配的 body.id。
+	second, err := WebhookReplayDelivery(ctx, 1, hook.ID, originalID)
+	if err != nil {
+		t.Fatalf("second replay: %v", err)
+	}
+	if second.DeliveryID == view.DeliveryID {
+		t.Fatalf("two replays must get different ids, both %q", second.DeliveryID)
+	}
+	secondRow := webhookTestLoadDelivery(t, second.DeliveryID)
+	var secondPayload model.WebhookPayload
+	if err := json.Unmarshal([]byte(secondRow.Payload), &secondPayload); err != nil {
+		t.Fatal(err)
+	}
+	if secondPayload.ID != second.DeliveryID {
+		t.Fatalf("second replay payload id = %q, want %q", secondPayload.ID, second.DeliveryID)
+	}
+	if secondPayload.Data != srcPayload.Data || secondPayload.Event != srcPayload.Event {
+		t.Fatalf("second replay payload changed content: %+v", secondPayload)
+	}
+	// 第一次重放的行不受第二次重放影响。
+	if again := webhookTestLoadDelivery(t, view.DeliveryID); again.Payload != replayed.Payload {
+		t.Fatalf("first replay row mutated by second replay: %q", again.Payload)
+	}
+	db.GetDB().Model(&model.WebhookDelivery{}).Where("webhook_id = ?", hook.ID).Count(&count)
+	if count != 3 {
+		t.Fatalf("delivery rows = %d, want 3 (original + 2 replays)", count)
+	}
+}
+
+// cancelled 同样可重放(用户手动取消后想把这条再发一次)。
+func TestWebhookReplayDeliveryAllowsCancelled(t *testing.T) {
+	webhookTestSetup(t)
+	ctx := context.Background()
+	hook := webhookTestCreate(t, 1, "https://hooks.example.com/cancelled", []string{"system"}, strings.Repeat("k", 16))
+	webhookTestDeliveryRow(t, hook.ID, 1, "cancelled-delivery-0001", string(model.NotificationTypeSystem), model.WebhookDeliveryStatusCancelled)
+
+	view, err := WebhookReplayDelivery(ctx, 1, hook.ID, "cancelled-delivery-0001")
+	if err != nil {
+		t.Fatalf("replay cancelled delivery: %v", err)
+	}
+	if view.Status != model.WebhookDeliveryStatusPending {
+		t.Fatalf("status = %s, want pending", view.Status)
+	}
+}
+
+// 损坏的存量 body: 重放必须报错而不是退回旧 payload(退回等于让接收端按旧 id 去重丢弃)。
+func TestWebhookReplayDeliveryRejectsCorruptPayload(t *testing.T) {
+	webhookTestSetup(t)
+	ctx := context.Background()
+	hook := webhookTestCreate(t, 1, "https://hooks.example.com/corrupt", []string{"system"}, strings.Repeat("k", 16))
+	webhookTestDeliveryRow(t, hook.ID, 1, "corrupt-delivery-0001", string(model.NotificationTypeSystem), model.WebhookDeliveryStatusFailed)
+	if err := db.GetDB().Model(&model.WebhookDelivery{}).Where("delivery_id = ?", "corrupt-delivery-0001").
+		Update("payload", "{corrupt").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := WebhookReplayDelivery(ctx, 1, hook.ID, "corrupt-delivery-0001"); err == nil {
+		t.Fatal("replay of a corrupt payload must fail, not fall back to the old body")
+	}
+	var count int64
+	db.GetDB().Model(&model.WebhookDelivery{}).Where("webhook_id = ?", hook.ID).Count(&count)
+	if count != 1 {
+		t.Fatalf("delivery rows = %d, want 1 (no replay row on failure)", count)
+	}
+}
+
+// 非终态不允许重放: pending/processing 还在队列里(再插一条就是重复外发), succeeded 重放是主动重复推送。
+func TestWebhookReplayDeliveryRejectsNonTerminal(t *testing.T) {
+	webhookTestSetup(t)
+	ctx := context.Background()
+	hook := webhookTestCreate(t, 1, "https://hooks.example.com/not-terminal", []string{"system"}, strings.Repeat("k", 16))
+
+	for i, status := range []string{
+		model.WebhookDeliveryStatusPending,
+		model.WebhookDeliveryStatusProcessing,
+		model.WebhookDeliveryStatusSucceeded,
+	} {
+		deliveryID := "non-terminal-" + status
+		webhookTestDeliveryRow(t, hook.ID, 1, deliveryID, string(model.NotificationTypeSystem), status)
+		if _, err := WebhookReplayDelivery(ctx, 1, hook.ID, deliveryID); !errors.Is(err, ErrWebhookDeliveryNotReplayable) {
+			t.Fatalf("status %s replay: %v, want ErrWebhookDeliveryNotReplayable", status, err)
+		}
+		var count int64
+		db.GetDB().Model(&model.WebhookDelivery{}).Where("webhook_id = ?", hook.ID).Count(&count)
+		if count != int64(i+1) {
+			t.Fatalf("status %s must not insert a row: count = %d", status, count)
+		}
+	}
+}
+
+// 归属隔离: 别人的订阅是 404 webhook_not_found; 投递不在该订阅下一律 404 webhook_delivery_not_found。
+func TestWebhookReplayDeliveryIsolation(t *testing.T) {
+	webhookTestSetup(t)
+	ctx := context.Background()
+	mine := webhookTestCreate(t, 1, "https://hooks.example.com/mine", []string{"system"}, strings.Repeat("k", 16))
+	sibling := webhookTestCreate(t, 1, "https://hooks.example.com/sibling", []string{"system"}, strings.Repeat("k", 16))
+	theirs := webhookTestCreate(t, 2, "https://hooks.example.com/theirs", []string{"system"}, strings.Repeat("k", 16))
+	webhookTestDeliveryRow(t, mine.ID, 1, "isolation-delivery-0001", string(model.NotificationTypeSystem), model.WebhookDeliveryStatusFailed)
+
+	if _, err := WebhookReplayDelivery(ctx, 1, theirs.ID, "isolation-delivery-0001"); !errors.Is(err, ErrWebhookNotFound) {
+		t.Fatalf("replay on other user's webhook: %v, want ErrWebhookNotFound", err)
+	}
+	if _, err := WebhookReplayDelivery(ctx, 2, mine.ID, "isolation-delivery-0001"); !errors.Is(err, ErrWebhookNotFound) {
+		t.Fatalf("replay as other user: %v, want ErrWebhookNotFound", err)
+	}
+	if _, err := WebhookReplayDelivery(ctx, 1, sibling.ID, "isolation-delivery-0001"); !errors.Is(err, ErrWebhookDeliveryNotFound) {
+		t.Fatalf("delivery of another webhook: %v, want ErrWebhookDeliveryNotFound", err)
+	}
+	if _, err := WebhookReplayDelivery(ctx, 1, mine.ID, "no-such-delivery"); !errors.Is(err, ErrWebhookDeliveryNotFound) {
+		t.Fatalf("missing delivery: %v, want ErrWebhookDeliveryNotFound", err)
+	}
+	var count int64
+	db.GetDB().Model(&model.WebhookDelivery{}).Count(&count)
+	if count != 1 {
+		t.Fatalf("replay failures must not insert rows: count = %d", count)
+	}
+}
+
+// 日志过滤: status/event 同时作用于 Count 与 Find, 分页时 total 仍是过滤后的总数。
+func TestWebhookLogListFilters(t *testing.T) {
+	webhookTestSetup(t)
+	ctx := context.Background()
+	hook := webhookTestCreate(t, 1, "https://hooks.example.com/filters", []string{"system"}, strings.Repeat("k", 16))
+
+	rows := []struct{ deliveryID, event, status string }{
+		{"filter-delivery-1", string(model.NotificationTypeSystem), model.WebhookDeliveryStatusPending},
+		{"filter-delivery-2", string(model.NotificationTypeSystem), model.WebhookDeliveryStatusFailed},
+		{"filter-delivery-3", string(model.NotificationTypeRecharge), model.WebhookDeliveryStatusFailed},
+		{"filter-delivery-4", string(model.NotificationTypeSystem), model.WebhookDeliveryStatusSucceeded},
+		{"filter-delivery-5", model.WebhookEventTest, model.WebhookDeliveryStatusCancelled},
+	}
+	for _, row := range rows {
+		webhookTestDeliveryRow(t, hook.ID, 1, row.deliveryID, row.event, row.status)
+	}
+
+	cases := []struct {
+		name      string
+		req       model.WebhookListRequest
+		wantTotal int64
+	}{
+		{"no filter", model.WebhookListRequest{}, 5},
+		{"status failed", model.WebhookListRequest{Status: model.WebhookDeliveryStatusFailed}, 2},
+		{"status succeeded", model.WebhookListRequest{Status: model.WebhookDeliveryStatusSucceeded}, 1},
+		{"event system", model.WebhookListRequest{Event: string(model.NotificationTypeSystem)}, 3},
+		{"event test", model.WebhookListRequest{Event: model.WebhookEventTest}, 1},
+		{"status+event", model.WebhookListRequest{Status: model.WebhookDeliveryStatusFailed, Event: string(model.NotificationTypeRecharge)}, 1},
+		{"no match", model.WebhookListRequest{Status: model.WebhookDeliveryStatusFailed, Event: string(model.NotificationTypeTicket)}, 0},
+	}
+	for _, tc := range cases {
+		page, err := WebhookLogList(ctx, 1, hook.ID, tc.req)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if page.Total != tc.wantTotal {
+			t.Fatalf("%s: total = %d, want %d", tc.name, page.Total, tc.wantTotal)
+		}
+		if int64(len(page.Items)) != tc.wantTotal {
+			t.Fatalf("%s: items = %d, want %d", tc.name, len(page.Items), tc.wantTotal)
+		}
+		for _, item := range page.Items {
+			if tc.req.Status != "" && item.Status != tc.req.Status {
+				t.Fatalf("%s: item status = %s", tc.name, item.Status)
+			}
+			if tc.req.Event != "" && item.Event != tc.req.Event {
+				t.Fatalf("%s: item event = %s", tc.name, item.Event)
+			}
+		}
+	}
+
+	// 分页: total 是过滤后的总数, 不是当前页长度。
+	page, err := WebhookLogList(ctx, 1, hook.ID, model.WebhookListRequest{
+		Status: model.WebhookDeliveryStatusFailed, Page: 2, PageSize: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 2 || len(page.Items) != 1 {
+		t.Fatalf("paginated filter = %+v, want total 2 with 1 item", page)
+	}
+
+	// 非法闭集外的取值是错误, 不是"查不到"。
+	if _, err := WebhookLogList(ctx, 1, hook.ID, model.WebhookListRequest{Status: "bogus"}); !errors.Is(err, ErrWebhookStatusInvalid) {
+		t.Fatalf("invalid status: %v, want ErrWebhookStatusInvalid", err)
+	}
+	if _, err := WebhookLogList(ctx, 1, hook.ID, model.WebhookListRequest{Event: "bogus"}); !errors.Is(err, ErrWebhookEventInvalid) {
+		t.Fatalf("invalid event: %v, want ErrWebhookEventInvalid", err)
+	}
+	// 别人的订阅: 过滤参数不影响归属判定, 仍然 404。
+	if _, err := WebhookLogList(ctx, 2, hook.ID, model.WebhookListRequest{Status: model.WebhookDeliveryStatusFailed}); !errors.Is(err, ErrWebhookNotFound) {
+		t.Fatalf("cross-user filtered logs: %v, want ErrWebhookNotFound", err)
+	}
+}

@@ -13,7 +13,8 @@ import type { NotificationType } from './notification';
 //   PUT    /api/v1/webhook/:id             {url,secret?,events,enabled,retry_count}
 //   DELETE /api/v1/webhook/:id
 //   POST   /api/v1/webhook/:id/test        -> queued(异步入队, 不是发送成功)
-//   GET    /api/v1/webhook/:id/logs?page&page_size   -> {items,total}
+//   GET    /api/v1/webhook/:id/logs?page&page_size&status&event -> {items,total}
+//   POST   /api/v1/webhook/:id/deliveries/:delivery_id/replay   -> {delivery}
 //
 // 安全红线(本层与界面共同遵守):
 //   - 密钥只进不出: has_secret 是唯一回读信号, 任何接口都不会带回密钥明文;
@@ -34,6 +35,19 @@ export const WEBHOOK_EVENTS: WebhookEvent[] = [
     'dispute',
     'ticket',
 ];
+
+// 投递状态闭集(与 model.WebhookDeliveryStatus 同词): 筛选下拉与「能否重放」都从这里取,
+// 不散落在组件里, 免得后端加状态时界面各处口径不一致。
+export const WEBHOOK_DELIVERY_STATUSES = ['pending', 'processing', 'succeeded', 'failed', 'cancelled'] as const;
+export type WebhookDeliveryStatus = (typeof WEBHOOK_DELIVERY_STATUSES)[number];
+
+// 投递日志可选的事件筛选值: 订阅事件闭集 + test。
+// test 是「测试发送」, 不在订阅事件里, 但日志里会出现 —— 少了它就没法只看测试投递。
+export const WEBHOOK_LOG_EVENT_FILTERS: string[] = [...WEBHOOK_EVENTS, 'test'];
+
+// WebhookLogFilter 日志筛选条件: 空串/缺省都表示「不筛选」。
+// 空串绝不能拼进 query string —— 后端会把 status= 当成一个不存在的状态值, 结果是永远空列表。
+export type WebhookLogFilter = { status?: string; event?: string };
 
 // isWebhookEvent 判断事件名是否在已知枚举内; 后端新增事件名原样展示, 不硬拼文案键(缺键会白屏)。
 export function isWebhookEvent(value: string): value is WebhookEvent {
@@ -117,13 +131,27 @@ export function webhookTestPath(id: number): string {
     return webhookCollectionPath + '/' + String(id) + '/test';
 }
 
-/** webhookLogsPath 投递日志: /api/v1/webhook/7/logs?page=1&page_size=20 */
-export function webhookLogsPath(id: number, page: number, pageSize: number): string {
+/**
+ * webhookLogsPath 投递日志: /api/v1/webhook/7/logs?page=1&page_size=20[&status=failed][&event=ticket]
+ * status/event 只在有值时才拼: 空串代表「全部」, 拼成空参数会被后端当成一个不存在的取值。
+ */
+export function webhookLogsPath(id: number, page: number, pageSize: number, filter: WebhookLogFilter = {}): string {
     const query = new URLSearchParams({
         page: String(Math.max(1, page)),
         page_size: String(pageSize),
     });
+    if (filter.status) query.set('status', filter.status);
+    if (filter.event) query.set('event', filter.event);
     return webhookCollectionPath + '/' + String(id) + '/logs?' + query.toString();
+}
+
+/**
+ * webhookReplayPath 重放一条投递: /api/v1/webhook/7/deliveries/dlv-1/replay
+ * delivery_id 编码后再拼路径: 它是载荷里给接收方去重的字符串, 含 / 或空格时
+ * 原样拼接会把路径切碎, 变成另一个(不存在的)接口。
+ */
+export function webhookReplayPath(webhookId: number, deliveryId: string): string {
+    return webhookItemPath(webhookId) + '/deliveries/' + encodeURIComponent(deliveryId) + '/replay';
 }
 
 // ---------------------------------------------------------------------------
@@ -190,11 +218,26 @@ export function webhookListQueryOptions(userId: number, page: number, pageSize =
     };
 }
 
-export function webhookLogsQueryOptions(userId: number, id: number | null, page: number, pageSize = WEBHOOK_LOG_PAGE_SIZE) {
+export function webhookLogsQueryOptions(
+    userId: number,
+    id: number | null,
+    page: number,
+    pageSize = WEBHOOK_LOG_PAGE_SIZE,
+    filter: WebhookLogFilter = {},
+) {
+    // 空串归一成空串语义: '' 与 undefined 都是「不筛选」, 必须算出同一个 key,
+    // 否则同义状态会各拉一次请求(还可能让 placeholderData 误判成换页)。
+    const status = filter.status || '';
+    const event = filter.event || '';
     return {
-        queryKey: ['webhook', 'logs', userId, id, page, pageSize] as const,
+        // status/event 必须进 queryKey: TanStack Query 靠 key 判缓存命中和失效,
+        // key 里不含筛选就会「改了筛选但列表不动」—— 点了没反应比报错更难查。
+        queryKey: ['webhook', 'logs', userId, id, page, pageSize, status, event] as const,
         queryFn: ({ signal }: { signal: AbortSignal }) =>
-            apiRequest<WebhookLogListResponse>(webhookLogsPath(id as number, page, pageSize), { signal }),
+            apiRequest<WebhookLogListResponse>(
+                webhookLogsPath(id as number, page, pageSize, { status, event }),
+                { signal },
+            ),
         retry: apiQueryRetry,
         enabled: id !== null,
         placeholderData: (previous: WebhookLogListResponse | undefined) => previous,
@@ -205,8 +248,8 @@ export function useWebhookList(userId: number, page: number) {
     return useQuery(webhookListQueryOptions(userId, page));
 }
 
-export function useWebhookLogs(userId: number, id: number | null, page: number) {
-    return useQuery(webhookLogsQueryOptions(userId, id, page));
+export function useWebhookLogs(userId: number, id: number | null, page: number, filter: WebhookLogFilter = {}) {
+    return useQuery(webhookLogsQueryOptions(userId, id, page, WEBHOOK_LOG_PAGE_SIZE, filter));
 }
 
 // ---------------------------------------------------------------------------
@@ -308,5 +351,47 @@ export function useTestWebhook() {
             const { id, signal } = input;
             return requestWebhookTest(id, { signal });
         },
+    });
+}
+
+// ---------------------------------------------------------------------------
+// 重放(POST /api/v1/webhook/:id/deliveries/:delivery_id/replay)
+//
+// 重放是把原投递重新入队, 不是「重发成功」; 结果仍要回来投递日志里看。
+// 只有终点状态(failed/cancelled)允许重放: 在飞的重放会重复投递, 已成功的不需要。
+// ---------------------------------------------------------------------------
+
+/** WebhookReplayResponse 重放回执: 与原投递同构的日志视图(状态通常回到 pending)。 */
+export type WebhookReplayResponse = { delivery: WebhookDeliveryLog };
+
+// canReplayDelivery 该状态是否可重放。状态词与 model.WebhookDeliveryStatus 同词;
+// 未知状态一律按不可重放处理(界面上置灰比允许调用一个必然 409 的接口更诚实)。
+export function canReplayDelivery(status?: string | null): boolean {
+    return status === 'failed' || status === 'cancelled';
+}
+
+// replayDelivery 重放一次投递。404/409 让 apiRequest 原样抛出, 由界面给通用失败文案。
+export async function replayDelivery(
+    webhookId: number,
+    deliveryId: string,
+    opts: WebhookRequestOptions = {},
+): Promise<WebhookDeliveryLog> {
+    const response = await apiRequest<WebhookReplayResponse>(
+        webhookReplayPath(webhookId, deliveryId),
+        { method: 'POST', signal: opts.signal },
+    );
+    return response.delivery;
+}
+
+export function useReplayDelivery() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (input: { webhookId: number; deliveryId: string } & WebhookRequestOptions) => {
+            const { webhookId, deliveryId, signal } = input;
+            return replayDelivery(webhookId, deliveryId, { signal });
+        },
+        // 重放会新增一条投递记录并刷新原记录状态: 失效日志子树让当前列表重新拉取。
+        // 用前缀 key 失效, 命中该订阅下所有筛选/翻页组合, 不只当前这一页。
+        onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['webhook', 'logs'] }),
     });
 }

@@ -68,6 +68,26 @@ const (
 // WebhookLastStatusNone 表示该订阅从未有过投递。
 const WebhookLastStatusNone = "none"
 
+// WebhookDeliveryStatuses 投递状态闭集: 日志过滤的合法取值, 顺序按状态机走向排列。
+var WebhookDeliveryStatuses = []string{
+	WebhookDeliveryStatusPending,
+	WebhookDeliveryStatusProcessing,
+	WebhookDeliveryStatusSucceeded,
+	WebhookDeliveryStatusFailed,
+	WebhookDeliveryStatusCancelled,
+}
+
+// WebhookValidDeliveryStatus 判断状态名是否在投递状态闭集内。
+// 过滤参数来自 query, 非法值必须被拒(400)而不是被当成"查不到"静默返回空列表。
+func WebhookValidDeliveryStatus(status string) bool {
+	for _, s := range WebhookDeliveryStatuses {
+		if s == status {
+			return true
+		}
+	}
+	return false
+}
+
 // Webhook 一条出站订阅。
 type Webhook struct {
 	ID     uint64 `json:"id" gorm:"primaryKey"`
@@ -171,6 +191,11 @@ type WebhookUpdateRequest struct {
 type WebhookListRequest struct {
 	Page     int `form:"page" binding:"omitempty,min=1"`
 	PageSize int `form:"page_size" binding:"omitempty,min=1,max=100"`
+	// Status / Event 只对投递日志端点有意义(订阅列表忽略它们): 空串=不过滤。
+	// 合法值不写在 binding 标签里 —— 闭集校验放在 op 层, 那里能同时管住 Count 与 Find,
+	// 也能给出"非法状态"与"非法事件"两个可区分的错误码。
+	Status string `form:"status"`
+	Event  string `form:"event"`
 }
 
 // WebhookPage 订阅列表分页返回。

@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from './client';
 import {
+    canReplayDelivery,
     checkWebhookSecret,
     checkWebhookUrl,
     createWebhook,
     deleteWebhook,
     redactWebhookError,
+    replayDelivery,
     requestWebhookTest,
     updateWebhook,
     webhookCollectionPath,
@@ -14,6 +16,7 @@ import {
     webhookListQueryOptions,
     webhookLogsPath,
     webhookLogsQueryOptions,
+    webhookReplayPath,
     webhookSecretByteLength,
     webhookTestPath,
     WEBHOOK_LOG_PAGE_SIZE,
@@ -244,5 +247,111 @@ describe('webhook 错误文案脱敏', () => {
 
     it('空值安全: 未提供的敏感串不影响原文', () => {
         expect(redactWebhookError('plain failure', [null, undefined, ''])).toBe('plain failure');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 筛选与重放: 这两条链路都是前端自己拼 query string / 路径 —— 拼错后端不会拒绝,
+// 只会静默返回「全部」或 404, 所以把参数与路径逐字钉在测试里。
+// ---------------------------------------------------------------------------
+
+describe('webhook 日志筛选(status/event)', () => {
+    const originalDocument = (globalThis as { document?: unknown }).document;
+    let calls: { url: string; init?: RequestInit }[] = [];
+
+    beforeEach(() => {
+        (globalThis as { document?: unknown }).document = { baseURI: 'http://localhost/' };
+        calls = [];
+        vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+            calls.push({ url: String(url), init });
+            return new Response(JSON.stringify({ code: 200, message: 'success', data: { items: [], total: 0 } }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        });
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        (globalThis as { document?: unknown }).document = originalDocument;
+    });
+
+    it('status/event 真的拼进请求(不是前端本地过滤)', async () => {
+        await webhookLogsQueryOptions(7, 9, 1, WEBHOOK_LOG_PAGE_SIZE, { status: 'failed', event: 'ticket' })
+            .queryFn({ signal: new AbortController().signal });
+        const url = new URL(calls[0].url);
+        expect(url.pathname).toBe('/api/v1/webhook/9/logs');
+        expect(url.searchParams.get('page')).toBe('1');
+        expect(url.searchParams.get('page_size')).toBe(String(WEBHOOK_LOG_PAGE_SIZE));
+        expect(url.searchParams.get('status')).toBe('failed');
+        expect(url.searchParams.get('event')).toBe('ticket');
+    });
+
+    it('空串/缺省不拼参数: 拼成 status= 会被后端当成一个不存在的取值, 列表永远空', async () => {
+        await webhookLogsQueryOptions(7, 9, 1, WEBHOOK_LOG_PAGE_SIZE, { status: '', event: '' })
+            .queryFn({ signal: new AbortController().signal });
+        const url = new URL(calls[0].url);
+        expect(url.searchParams.has('status')).toBe(false);
+        expect(url.searchParams.has('event')).toBe(false);
+        expect(webhookLogsPath(3, 1, 20, { status: '', event: '' })).toBe('/api/v1/webhook/3/logs?page=1&page_size=20');
+        expect(webhookLogsPath(3, 1, 20, { status: 'failed', event: 'test' })).toBe('/api/v1/webhook/3/logs?page=1&page_size=20&status=failed&event=test');
+    });
+
+    it('queryKey 含 status/event: 换筛选才会重拉(否则点了没反应)', () => {
+        const all = webhookLogsQueryOptions(7, 9, 1).queryKey;
+        const failed = webhookLogsQueryOptions(7, 9, 1, WEBHOOK_LOG_PAGE_SIZE, { status: 'failed' }).queryKey;
+        const ticket = webhookLogsQueryOptions(7, 9, 1, WEBHOOK_LOG_PAGE_SIZE, { status: 'failed', event: 'ticket' }).queryKey;
+        expect(all).not.toEqual(failed);
+        expect(failed).not.toEqual(ticket);
+        expect(ticket).toContain('failed');
+        expect(ticket).toContain('ticket');
+        // '' 与 undefined 同义(都不筛选): 必须算出同一个 key, 否则同义状态各拉一次请求。
+        expect(webhookLogsQueryOptions(7, 9, 1, WEBHOOK_LOG_PAGE_SIZE, { status: '', event: '' }).queryKey).toEqual(all);
+    });
+});
+
+describe('webhook 投递重放', () => {
+    const originalDocument = (globalThis as { document?: unknown }).document;
+    let calls: { url: string; init?: RequestInit }[] = [];
+
+    beforeEach(() => {
+        (globalThis as { document?: unknown }).document = { baseURI: 'http://localhost/' };
+        calls = [];
+        vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+            calls.push({ url: String(url), init });
+            const data = { delivery: { delivery_id: 'dlv-1', event: 'ticket', status: 'pending', attempts: 0 } };
+            return new Response(JSON.stringify({ code: 200, message: 'success', data }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        });
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        (globalThis as { document?: unknown }).document = originalDocument;
+    });
+
+    it('POST 打到 /api/v1/webhook/:id/deliveries/:delivery_id/replay 并解出 delivery 视图', async () => {
+        const delivery = await replayDelivery(7, 'dlv-1');
+        expect(calls).toHaveLength(1);
+        expect(new URL(calls[0].url).pathname).toBe('/api/v1/webhook/7/deliveries/dlv-1/replay');
+        expect(calls[0].init?.method).toBe('POST');
+        // 返回的是回执里的 delivery 视图(重放后状态回到 pending), 不是整个信封。
+        expect(delivery.delivery_id).toBe('dlv-1');
+        expect(delivery.status).toBe('pending');
+    });
+
+    it('delivery_id 编码后再拼路径: 带 / 或空格的 ID 不会把路径切碎', () => {
+        expect(webhookReplayPath(7, 'dlv-1')).toBe('/api/v1/webhook/7/deliveries/dlv-1/replay');
+        expect(webhookReplayPath(7, 'a/b c')).toBe('/api/v1/webhook/7/deliveries/a%2Fb%20c/replay');
+    });
+
+    it('只有 failed/cancelled 可重放: 在飞与已成功的一律不可', () => {
+        expect(canReplayDelivery('failed')).toBe(true);
+        expect(canReplayDelivery('cancelled')).toBe(true);
+        for (const status of ['pending', 'processing', 'succeeded', 'none', '', null, undefined]) {
+            expect(canReplayDelivery(status)).toBe(false);
+        }
     });
 });

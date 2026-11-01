@@ -1,20 +1,48 @@
 import { useState } from 'react';
 import { useTranslations } from 'use-intl';
-import { ChevronLeft, Loader2 } from 'lucide-react';
-import { useWebhookLogs, WEBHOOK_LOG_PAGE_SIZE, type WebhookDeliveryLog } from '@/api/webhook';
+import { ChevronLeft, Loader2, RotateCcw } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+    canReplayDelivery,
+    useReplayDelivery,
+    useWebhookLogs,
+    WEBHOOK_DELIVERY_STATUSES,
+    WEBHOOK_LOG_EVENT_FILTERS,
+    WEBHOOK_LOG_PAGE_SIZE,
+    type WebhookDeliveryLog,
+} from '@/api/webhook';
+import { notificationTypeKey } from '@/api/notification';
 import { formatDateTime } from '@/lib/format';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DeliveryStatusBadge, EventBadge } from './badges';
 import { Pager } from './Pager';
 
-// WebhookLogs 投递日志: 状态/HTTP 码/脱敏错误摘要/尝试次数分页列表。
+// LogView 投递日志的筛选条件 + 页码。
+// 合成一个状态而不是三个 useState: 「换筛选必须回到第 1 页」只能经由 setLogFilter 发生,
+// 分成三个 state 后迟早有人只改筛选忘了重置页码。
+export type LogView = { page: number; status: string; event: string };
+
+// setLogFilter 变更筛选时把页码重置回 1:
+// 停在第 3 页去查一个只有 1 页结果的状态/事件, 用户看到的是空列表, 会误以为「没有数据」。
+// 空串代表「全部」, 与 api 层 webhookLogsPath 的「空值不拼参数」约定一致。
+export function setLogFilter(view: LogView, patch: Partial<Pick<LogView, 'status' | 'event'>>): LogView {
+    return { ...view, ...patch, page: 1 };
+}
+
+// WebhookLogs 投递日志: 状态/HTTP 码/脱敏错误摘要/尝试次数分页列表 + 状态/事件筛选 + 单条重放。
 // 只渲染投递元数据 —— 响应体(含 HTML)一概不读不渲染, 即使后端将来带回也不显示。
 // 字段以后端对齐为准, 全部按可缺省渲染, 缺了显示占位符而不是猜值。
 export function WebhookLogs({ userId, id, onBack }: { userId: number; id: number | null; onBack: () => void }) {
     const t = useTranslations('webhook');
-    const [page, setPage] = useState(1);
-    const logs = useWebhookLogs(userId, id, page);
+    // 事件名文案复用通知类型的三语键(与 EventBadge 同一套词), 不另起一份翻译。
+    const tn = useTranslations('notification');
+    const [view, setView] = useState<LogView>({ page: 1, status: '', event: '' });
+    const logs = useWebhookLogs(userId, id, view.page, { status: view.status, event: view.event });
     const items = logs.data?.items ?? [];
+
+    // eventLabel 事件下拉的选项文案: test 是投递专有事件, 不在通知类型闭集里, 单独给一条。
+    const eventLabel = (value: string) => (value === 'test' ? t('logs.filter.eventTest') : tn(notificationTypeKey(value)));
 
     // backButton 加载态/失败态共用: 请求卡住或报错也必须能退回列表, 否则用户被困死在日志页。
     const backButton = (
@@ -36,7 +64,7 @@ export function WebhookLogs({ userId, id, onBack }: { userId: number; id: number
         );
     }
 
-    if (logs.isError || !logs.data) {
+    if (logs.isError || !logs.data || id === null) {
         return (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
                 <p>{t('error')}</p>
@@ -57,6 +85,39 @@ export function WebhookLogs({ userId, id, onBack }: { userId: number; id: number
                 {backButton}
             </div>
 
+            {/* 筛选行: 两个下拉都走 setLogFilter —— 换筛选必然回第 1 页;
+                queryKey 里带着 status/event, 所以改完就会真的重拉, 不会出现「点了没反应」。 */}
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <Select
+                    value={view.status || 'all'}
+                    onValueChange={(value) => setView((current) => setLogFilter(current, { status: value === 'all' ? '' : value }))}
+                >
+                    <SelectTrigger className="w-36 rounded-xl" aria-label={t('logs.filter.status')}>
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">{t('logs.filter.all')}</SelectItem>
+                        {WEBHOOK_DELIVERY_STATUSES.map((option) => (
+                            <SelectItem key={option} value={option}>{t('delivery.' + option)}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                <Select
+                    value={view.event || 'all'}
+                    onValueChange={(value) => setView((current) => setLogFilter(current, { event: value === 'all' ? '' : value }))}
+                >
+                    <SelectTrigger className="w-40 rounded-xl" aria-label={t('logs.filter.event')}>
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">{t('logs.filter.all')}</SelectItem>
+                        {WEBHOOK_LOG_EVENT_FILTERS.map((option) => (
+                            <SelectItem key={option} value={option}>{eventLabel(option)}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            </div>
+
             <div className="min-h-0 flex-1 overflow-auto overscroll-contain rounded-3xl border border-border bg-card">
                 {items.length === 0 ? (
                     <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
@@ -65,7 +126,7 @@ export function WebhookLogs({ userId, id, onBack }: { userId: number; id: number
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
-                        <table className="w-full min-w-[720px] text-sm">
+                        <table className="w-full min-w-[820px] text-sm">
                             <thead className="sticky top-0 bg-card text-left text-xs text-muted-foreground">
                                 <tr>
                                     <th className="px-4 py-3 font-medium">{t('logs.table.time')}</th>
@@ -75,17 +136,26 @@ export function WebhookLogs({ userId, id, onBack }: { userId: number; id: number
                                     <th className="px-4 py-3 font-medium">{t('logs.table.httpCode')}</th>
                                     <th className="px-4 py-3 font-medium">{t('logs.table.duration')}</th>
                                     <th className="px-4 py-3 font-medium">{t('logs.table.attempts')}</th>
+                                    <th className="px-4 py-3 font-medium">{t('logs.table.actions')}</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {items.map((item, index) => <LogRow key={item.delivery_id || index} item={item} />)}
+                                {items.map((item, index) => (
+                                    <LogRow key={item.delivery_id || index} item={item} webhookId={id} />
+                                ))}
                             </tbody>
                         </table>
                     </div>
                 )}
             </div>
 
-            <Pager page={page} total={logs.data.total} pageSize={WEBHOOK_LOG_PAGE_SIZE} onChange={setPage} scope="logs.pagination" />
+            <Pager
+                page={view.page}
+                total={logs.data.total}
+                pageSize={WEBHOOK_LOG_PAGE_SIZE}
+                onChange={(page) => setView((current) => ({ ...current, page }))}
+                scope="logs.pagination"
+            />
         </div>
     );
 }
@@ -93,7 +163,25 @@ export function WebhookLogs({ userId, id, onBack }: { userId: number; id: number
 // LogRow 单条投递记录; 字段名与 model.WebhookDeliveryLogView 对齐, 缺省显示占位符, 不猜、不补。
 // 响应正文(含 HTML)一概不渲染 —— 后端也永不落库响应正文, error 只是脱敏摘要。
 // response_code 0 表示未获得响应(网络失败/超时), 与「响应 0 码」不是一回事, 按占位符显示。
-function LogRow({ item }: { item: WebhookDeliveryLog }) {
+function LogRow({ item, webhookId }: { item: WebhookDeliveryLog; webhookId: number }) {
+    const t = useTranslations('webhook');
+    const replay = useReplayDelivery();
+    const deliveryId = item.delivery_id ?? '';
+    // 服务端状态是唯一依据: 只有终点状态(failed/cancelled)可重放, 其余置灰。
+    // 在飞的重放会重复投递, 已成功的不需要重放 —— 按钮 disabled, 接口那侧也还有 409 兜底。
+    const replayable = canReplayDelivery(item.status);
+    const disabled = !replayable || deliveryId === '';
+
+    // handleReplay 重放一次投递。失败只给通用文案: 后端错误串可能带出内部地址/上游细节,
+    // 原样展示等于把内部信息漏给终端用户(与 test/delete 的错误处理同口径)。
+    const handleReplay = () => {
+        if (disabled || replay.isPending) return;
+        replay.mutate({ webhookId, deliveryId }, {
+            onSuccess: () => toast.success(t('logs.replay.success')),
+            onError: () => toast.error(t('logs.replay.failed')),
+        });
+    };
+
     return (
         <tr className="border-t border-border align-middle">
             <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatDateTime(item.created_at, '\u2014')}</td>
@@ -104,6 +192,21 @@ function LogRow({ item }: { item: WebhookDeliveryLog }) {
             <td className="px-4 py-3 tabular-nums">{item.duration_ms ?? 0} ms</td>
             <td className="max-w-[20rem] truncate px-4 py-3 text-muted-foreground" title={item.error || undefined}>{item.error || '\u2014'}</td>
             <td className="px-4 py-3 tabular-nums">{item.attempts ?? '\u2014'}</td>
+            <td className="px-4 py-3">
+                {/* 置灰时用 title 说明原因: 光看一个灰按钮, 用户会以为界面坏了。 */}
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 rounded-xl"
+                    onClick={handleReplay}
+                    disabled={disabled || replay.isPending}
+                    title={disabled ? t('logs.replay.disabled') : undefined}
+                    aria-label={(t('logs.action.replay') + ' ' + deliveryId).trim()}
+                >
+                    <RotateCcw className="size-3.5" aria-hidden="true" />
+                    {replay.isPending ? t('logs.replay.pending') : t('logs.action.replay')}
+                </Button>
+            </td>
         </tr>
     );
 }

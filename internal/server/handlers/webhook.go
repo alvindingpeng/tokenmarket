@@ -12,6 +12,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// 本批新增的机器可读错误码。按任务约定改动范围限定在 op/handlers/model 三个目录,
+// 因此不进 resp/error.go; 仍走 resp.ResponseStruct 的统一响应壳, 前端按 error_code 分流。
+const (
+	codeWebhookDeliveryNotFound      = "webhook_delivery_not_found"
+	codeWebhookDeliveryNotReplayable = "webhook_delivery_not_replayable"
+	codeInvalidWebhookStatus         = "invalid_webhook_status"
+	codeInvalidWebhookEvent          = "invalid_webhook_event"
+)
+
 // Webhook 出站订阅接口(P0-5)。全部要求登录态, 并按 user_id 隔离:
 // 不是你的资源一律 404(不区分"不存在"与"无权"), 响应永不包含密钥(只有 has_secret)。
 func init() {
@@ -42,6 +51,10 @@ func init() {
 		AddRoute(
 			router.NewRoute("/:id/logs", http.MethodGet).
 				Handle(webhookLogs),
+		).
+		AddRoute(
+			router.NewRoute("/:id/deliveries/:delivery_id/replay", http.MethodPost).
+				Handle(webhookReplayDelivery),
 		)
 }
 
@@ -63,9 +76,29 @@ func webhookRespondError(c *gin.Context, err error) {
 		resp.ErrorWithCode(c, http.StatusConflict, "webhook quota exceeded (10 per user)", resp.CodeWebhookQuotaExceeded)
 	case errors.Is(err, op.ErrWebhookTestRateLimited):
 		resp.ErrorWithCode(c, http.StatusTooManyRequests, "test webhook at most once per 60 seconds", resp.CodeWebhookTestRateLimited)
+	case errors.Is(err, op.ErrWebhookDeliveryNotFound):
+		resp.ErrorWithCode(c, http.StatusNotFound, resp.ErrResourceNotFound, codeWebhookDeliveryNotFound)
+	case errors.Is(err, op.ErrWebhookDeliveryNotReplayable):
+		resp.ErrorWithCode(c, http.StatusConflict, "only failed or cancelled deliveries can be replayed", codeWebhookDeliveryNotReplayable)
+	case errors.Is(err, op.ErrWebhookStatusInvalid):
+		resp.ErrorWithCode(c, http.StatusBadRequest, "status must be pending/processing/succeeded/failed/cancelled", codeInvalidWebhookStatus)
+	case errors.Is(err, op.ErrWebhookEventInvalid):
+		resp.ErrorWithCode(c, http.StatusBadRequest, "event must be a known webhook event or test", codeInvalidWebhookEvent)
 	default:
 		resp.Error(c, http.StatusInternalServerError, resp.ErrInternalServer)
 	}
+}
+
+// webhookBindDeliveryID 解析路径参数 :delivery_id(128 位 hex, 上限按列宽 64 截断校验)。
+func webhookBindDeliveryID(c *gin.Context) (string, bool) {
+	var req struct {
+		DeliveryID string `uri:"delivery_id" binding:"required,max=64"`
+	}
+	if err := c.ShouldBindUri(&req); err != nil {
+		resp.ErrorWithCode(c, http.StatusBadRequest, "invalid delivery id", resp.CodeInvalidRequest)
+		return "", false
+	}
+	return req.DeliveryID, true
 }
 
 // webhookBindID 解析路径参数 :id。
@@ -161,7 +194,27 @@ func webhookTest(c *gin.Context) {
 	resp.Success(c, result)
 }
 
-// webhookLogs GET /api/v1/webhook/:id/logs?page&page_size
+// webhookReplayDelivery POST /api/v1/webhook/:id/deliveries/:delivery_id/replay
+// 只允许重放 failed/cancelled; 成功即入队一条新投递(原行保留), 不代表远端已收到。
+func webhookReplayDelivery(c *gin.Context) {
+	userID, _ := middleware.CurrentUser(c)
+	id, ok := webhookBindID(c)
+	if !ok {
+		return
+	}
+	deliveryID, ok := webhookBindDeliveryID(c)
+	if !ok {
+		return
+	}
+	delivery, err := op.WebhookReplayDelivery(c.Request.Context(), userID, id, deliveryID)
+	if err != nil {
+		webhookRespondError(c, err)
+		return
+	}
+	resp.Success(c, gin.H{"delivery": delivery})
+}
+
+// webhookLogs GET /api/v1/webhook/:id/logs?page&page_size&status&event
 func webhookLogs(c *gin.Context) {
 	userID, _ := middleware.CurrentUser(c)
 	id, ok := webhookBindID(c)

@@ -11,8 +11,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/secretstore"
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
@@ -51,6 +53,7 @@ func webhookTestEngine(t *testing.T) (*gin.Engine, *int) {
 	r.DELETE("/api/v1/webhook/:id", webhookDelete)
 	r.POST("/api/v1/webhook/:id/test", webhookTest)
 	r.GET("/api/v1/webhook/:id/logs", webhookLogs)
+	r.POST("/api/v1/webhook/:id/deliveries/:delivery_id/replay", webhookReplayDelivery)
 	return r, &currentUser
 }
 
@@ -79,6 +82,7 @@ func TestWebhookRoutesRegisteredAndRequireAuth(t *testing.T) {
 		{http.MethodDelete, "/api/v1/webhook/1", ""},
 		{http.MethodPost, "/api/v1/webhook/1/test", ""},
 		{http.MethodGet, "/api/v1/webhook/1/logs", ""},
+		{http.MethodPost, "/api/v1/webhook/1/deliveries/abc/replay", ""},
 	} {
 		w := httptest.NewRecorder()
 		httpReq := httptest.NewRequest(req.method, req.path, strings.NewReader(req.body))
@@ -225,6 +229,10 @@ func TestWebhookHandlersNeverEchoUnderlyingError(t *testing.T) {
 		{"db error with SQL text", errors.New("database write failed: INSERT INTO webhook_deliveries ..."), http.StatusInternalServerError},
 		{"known url error wrapping leak", fmt.Errorf("%w: %v", op.ErrWebhookURLInvalid, raw), http.StatusBadRequest},
 		{"known not-found wrapping leak", fmt.Errorf("get webhook: %w: %v", op.ErrWebhookNotFound, raw), http.StatusNotFound},
+		{"delivery not-found wrapping leak", fmt.Errorf("get delivery: %w: %v", op.ErrWebhookDeliveryNotFound, raw), http.StatusNotFound},
+		{"not-replayable wrapping leak", fmt.Errorf("%w: %v", op.ErrWebhookDeliveryNotReplayable, raw), http.StatusConflict},
+		{"invalid status filter", op.ErrWebhookStatusInvalid, http.StatusBadRequest},
+		{"invalid event filter", op.ErrWebhookEventInvalid, http.StatusBadRequest},
 	}
 	for _, tc := range cases {
 		w := httptest.NewRecorder()
@@ -249,4 +257,179 @@ func TestWebhookHandlersNeverEchoUnderlyingError(t *testing.T) {
 
 func uint64String(v uint64) string {
 	return strconv.FormatUint(v, 10)
+}
+
+// webhookHandlerDeliveryRow 直接在库里造一条投递行: handler 测试只关心 HTTP 分流, 不走投递引擎。
+func webhookHandlerDeliveryRow(t *testing.T, userID uint, hookID uint64, deliveryID, event, status string) {
+	t.Helper()
+	row := model.WebhookDelivery{
+		DeliveryID:    deliveryID,
+		WebhookID:     hookID,
+		UserID:        userID,
+		HookVersion:   1,
+		Event:         event,
+		Payload:       "{\"id\":\"" + deliveryID + "\"}",
+		Status:        status,
+		NextAttemptAt: time.Now(),
+	}
+	if err := db.GetDB().Create(&row).Error; err != nil {
+		t.Fatalf("create delivery %s: %v", deliveryID, err)
+	}
+}
+
+// 重放 + 日志过滤的 HTTP 契约: 非法过滤 400, 非终态重放 409, 未知投递 404, 越权 404。
+func TestWebhookHandlersReplayAndLogFilters(t *testing.T) {
+	webhookHandlersTestSetup(t)
+	r, currentUser := webhookTestEngine(t)
+
+	code, body := webhookRequest(t, r, http.MethodPost, "/api/v1/webhook", webhookValidCreateBody)
+	if code != http.StatusOK {
+		t.Fatalf("create = %d %s", code, body)
+	}
+	var created struct {
+		Data struct {
+			ID uint64 `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(body), &created); err != nil {
+		t.Fatal(err)
+	}
+	hookID := created.Data.ID
+	base := "/api/v1/webhook/" + uint64String(hookID)
+
+	webhookHandlerDeliveryRow(t, 41, hookID, "h-failed-system", "system", model.WebhookDeliveryStatusFailed)
+	webhookHandlerDeliveryRow(t, 41, hookID, "h-failed-recharge", "recharge", model.WebhookDeliveryStatusFailed)
+	webhookHandlerDeliveryRow(t, 41, hookID, "h-succeeded-system", "system", model.WebhookDeliveryStatusSucceeded)
+	webhookHandlerDeliveryRow(t, 41, hookID, "h-pending-system", "system", model.WebhookDeliveryStatusPending)
+
+	type logPage struct {
+		Data struct {
+			Items []struct {
+				DeliveryID string `json:"delivery_id"`
+				Event      string `json:"event"`
+				Status     string `json:"status"`
+			} `json:"items"`
+			Total int64 `json:"total"`
+		} `json:"data"`
+	}
+	getLogs := func(query string) (int, string, logPage) {
+		t.Helper()
+		code, body := webhookRequest(t, r, http.MethodGet, base+"/logs"+query, "")
+		var page logPage
+		if code == http.StatusOK {
+			if err := json.Unmarshal([]byte(body), &page); err != nil {
+				t.Fatalf("logs%s: %v (%s)", query, err, body)
+			}
+		}
+		return code, body, page
+	}
+
+	valid := []struct {
+		query      string
+		wantStatus string
+		wantEvent  string
+		wantTotal  int64
+	}{
+		{"", "", "", 4},
+		{"?status=failed", model.WebhookDeliveryStatusFailed, "", 2},
+		{"?event=system", "", "system", 3},
+		{"?status=failed&event=recharge", model.WebhookDeliveryStatusFailed, "recharge", 1},
+		{"?event=test", "", model.WebhookEventTest, 0},
+	}
+	for _, tc := range valid {
+		code, body, page := getLogs(tc.query)
+		if code != http.StatusOK {
+			t.Fatalf("logs%s = %d %s", tc.query, code, body)
+		}
+		if page.Data.Total != tc.wantTotal || int64(len(page.Data.Items)) != tc.wantTotal {
+			t.Fatalf("logs%s total=%d items=%d, want %d", tc.query, page.Data.Total, len(page.Data.Items), tc.wantTotal)
+		}
+		for _, item := range page.Data.Items {
+			if tc.wantStatus != "" && item.Status != tc.wantStatus {
+				t.Fatalf("logs%s: status = %s", tc.query, item.Status)
+			}
+			if tc.wantEvent != "" && item.Event != tc.wantEvent {
+				t.Fatalf("logs%s: event = %s", tc.query, item.Event)
+			}
+		}
+	}
+
+	// 闭集外的过滤值是 400 + 专属错误码, 不是"查不到"的空列表。
+	code, body, _ = getLogs("?status=bogus")
+	if code != http.StatusBadRequest || !strings.Contains(body, "invalid_webhook_status") {
+		t.Fatalf("bogus status = %d %s, want 400 invalid_webhook_status", code, body)
+	}
+	code, body, _ = getLogs("?event=bogus")
+	if code != http.StatusBadRequest || !strings.Contains(body, "invalid_webhook_event") {
+		t.Fatalf("bogus event = %d %s, want 400 invalid_webhook_event", code, body)
+	}
+
+	// 重放 failed 投递: 200 + 新投递(pending), 原行不动。
+	type replayResp struct {
+		Data struct {
+			Delivery struct {
+				DeliveryID   string `json:"delivery_id"`
+				Event        string `json:"event"`
+				Status       string `json:"status"`
+				Attempts     int    `json:"attempts"`
+				ResponseCode int    `json:"response_code"`
+			} `json:"delivery"`
+		} `json:"data"`
+	}
+	code, body = webhookRequest(t, r, http.MethodPost, base+"/deliveries/h-failed-system/replay", "")
+	if code != http.StatusOK {
+		t.Fatalf("replay = %d %s", code, body)
+	}
+	for _, forbidden := range []string{"hooks.example.com", "payload", "h-failed-system"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("replay response leaks %q: %s", forbidden, body)
+		}
+	}
+	var first replayResp
+	if err := json.Unmarshal([]byte(body), &first); err != nil {
+		t.Fatal(err)
+	}
+	if first.Data.Delivery.DeliveryID == "" || first.Data.Delivery.DeliveryID == "h-failed-system" {
+		t.Fatalf("replay must return a fresh delivery id: %s", body)
+	}
+	if first.Data.Delivery.Status != model.WebhookDeliveryStatusPending || first.Data.Delivery.Attempts != 0 ||
+		first.Data.Delivery.ResponseCode != 0 || first.Data.Delivery.Event != "system" {
+		t.Fatalf("replay delivery = %+v", first.Data.Delivery)
+	}
+	// 原行仍是 failed: 可以再次重放, 每次都是一条新的待投递。
+	code, body = webhookRequest(t, r, http.MethodPost, base+"/deliveries/h-failed-system/replay", "")
+	if code != http.StatusOK {
+		t.Fatalf("second replay = %d %s", code, body)
+	}
+	var second replayResp
+	if err := json.Unmarshal([]byte(body), &second); err != nil {
+		t.Fatal(err)
+	}
+	if second.Data.Delivery.DeliveryID == first.Data.Delivery.DeliveryID {
+		t.Fatalf("each replay must get its own delivery id: %s", body)
+	}
+	if code, body, page := getLogs(""); code != http.StatusOK || page.Data.Total != 6 {
+		t.Fatalf("logs after replay = %d %s total=%d, want 6", code, body, page.Data.Total)
+	}
+
+	// 非终态拒绝重放。
+	code, body = webhookRequest(t, r, http.MethodPost, base+"/deliveries/h-pending-system/replay", "")
+	if code != http.StatusConflict || !strings.Contains(body, "webhook_delivery_not_replayable") {
+		t.Fatalf("replay pending = %d %s, want 409 webhook_delivery_not_replayable", code, body)
+	}
+	// 投递不存在。
+	code, body = webhookRequest(t, r, http.MethodPost, base+"/deliveries/nope/replay", "")
+	if code != http.StatusNotFound || !strings.Contains(body, "webhook_delivery_not_found") {
+		t.Fatalf("replay missing = %d %s, want 404 webhook_delivery_not_found", code, body)
+	}
+	// 越权: 别人的订阅一律 webhook_not_found。
+	*currentUser = 42
+	code, body = webhookRequest(t, r, http.MethodPost, base+"/deliveries/h-failed-system/replay", "")
+	if code != http.StatusNotFound || !strings.Contains(body, "webhook_not_found") {
+		t.Fatalf("replay as other user = %d %s, want 404 webhook_not_found", code, body)
+	}
+	code, body = webhookRequest(t, r, http.MethodGet, base+"/logs?status=failed", "")
+	if code != http.StatusNotFound || !strings.Contains(body, "webhook_not_found") {
+		t.Fatalf("filtered logs as other user = %d %s, want 404 webhook_not_found", code, body)
+	}
 }

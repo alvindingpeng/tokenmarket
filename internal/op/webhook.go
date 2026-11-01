@@ -2,9 +2,11 @@ package op
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/db"
@@ -31,6 +33,13 @@ var (
 	ErrWebhookRetryInvalid    = errors.New("invalid webhook retry_count")
 	ErrWebhookQuota           = errors.New("webhook quota exceeded")
 	ErrWebhookTestRateLimited = errors.New("webhook test rate limited")
+	// 投递重放: "订阅不存在/不是你的"仍然复用 ErrWebhookNotFound(越权即 404),
+	// 这两个错误码只在归属校验通过之后出现, 语义分别是"这条投递不在这条订阅下"与"该状态不能重放"。
+	ErrWebhookDeliveryNotFound      = errors.New("webhook delivery not found")
+	ErrWebhookDeliveryNotReplayable = errors.New("webhook delivery not replayable")
+	// 日志过滤参数非法: 与"合法但没有匹配行"区分开, 前者是 400, 后者是空列表。
+	ErrWebhookStatusInvalid = errors.New("invalid webhook delivery status filter")
+	ErrWebhookEventInvalid  = errors.New("invalid webhook event filter")
 )
 
 // webhookValidateURL 校验订阅地址: 仅 https、仅 443(默认或显式)、禁 userinfo/fragment、
@@ -408,37 +417,159 @@ func WebhookTest(ctx context.Context, userID uint, id uint64) (model.WebhookTest
 	return result, nil
 }
 
+// webhookDeliveryToView 投递行 -> 日志视图: 只给脱敏摘要, 不含 payload、响应正文与 URL。
+func webhookDeliveryToView(d model.WebhookDelivery) model.WebhookDeliveryLogView {
+	return model.WebhookDeliveryLogView{
+		DeliveryID:   d.DeliveryID,
+		Event:        d.Event,
+		Status:       d.Status,
+		Attempts:     d.Attempts,
+		ResponseCode: d.LastStatusCode,
+		DurationMs:   d.DurationMs,
+		Error:        d.LastError,
+		CreatedAt:    d.CreatedAt,
+		UpdatedAt:    d.UpdatedAt,
+	}
+}
+
+// webhookLogQuery 构造一次日志查询: 同一套过滤条件既要给 Count 也要给 Find。
+// 每次调用都从根链重新构造 —— GORM v2 的 *gorm.DB 链上 Count 会改写 Statement,
+// 复用同一条链再 Order/Find 会带上上一次的 select/条件残留, 计数与列表就可能对不上。
+func webhookLogQuery(ctx context.Context, userID uint, id uint64, status, event string) *gorm.DB {
+	query := db.GetDB().WithContext(ctx).Model(&model.WebhookDelivery{}).
+		Where("webhook_id = ? AND user_id = ?", id, userID)
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if event != "" {
+		query = query.Where("event = ?", event)
+	}
+	return query
+}
+
 // WebhookLogList 分页列出一个订阅的投递日志(用户隔离, 不含响应正文与 URL)。
+// status / event 为可选过滤; 闭集外的取值直接报错 —— 非法过滤条件不能退化成"查不到"的空列表。
 func WebhookLogList(ctx context.Context, userID uint, id uint64, req model.WebhookListRequest) (model.WebhookLogPage, error) {
+	status := strings.TrimSpace(req.Status)
+	if status != "" && !model.WebhookValidDeliveryStatus(status) {
+		return model.WebhookLogPage{}, ErrWebhookStatusInvalid
+	}
+	event := strings.TrimSpace(req.Event)
+	if event != "" && event != model.WebhookEventTest && !model.WebhookValidEvent(event) {
+		return model.WebhookLogPage{}, ErrWebhookEventInvalid
+	}
 	page, pageSize := webhookNormalizePage(req)
 	if _, err := webhookGetRow(ctx, nil, userID, id); err != nil {
 		return model.WebhookLogPage{}, err
 	}
-	query := db.GetDB().WithContext(ctx).Model(&model.WebhookDelivery{}).
-		Where("webhook_id = ? AND user_id = ?", id, userID)
 	var total int64
-	if err := query.Count(&total).Error; err != nil {
+	if err := webhookLogQuery(ctx, userID, id, status, event).Count(&total).Error; err != nil {
 		return model.WebhookLogPage{}, fmt.Errorf("count webhook deliveries: %w", err)
 	}
 	var deliveries []model.WebhookDelivery
-	if err := query.Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&deliveries).Error; err != nil {
+	if err := webhookLogQuery(ctx, userID, id, status, event).
+		Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&deliveries).Error; err != nil {
 		return model.WebhookLogPage{}, fmt.Errorf("list webhook deliveries: %w", err)
 	}
 	items := make([]model.WebhookDeliveryLogView, 0, len(deliveries))
 	for _, d := range deliveries {
-		items = append(items, model.WebhookDeliveryLogView{
-			DeliveryID:   d.DeliveryID,
-			Event:        d.Event,
-			Status:       d.Status,
-			Attempts:     d.Attempts,
-			ResponseCode: d.LastStatusCode,
-			DurationMs:   d.DurationMs,
-			Error:        d.LastError,
-			CreatedAt:    d.CreatedAt,
-			UpdatedAt:    d.UpdatedAt,
-		})
+		items = append(items, webhookDeliveryToView(d))
 	}
 	return model.WebhookLogPage{Items: items, Total: total, Page: page, PageSize: pageSize}, nil
+}
+
+// webhookDeliveryReplayable 只有 failed / cancelled 可重放:
+// pending/processing 还在队列里, 再插一条就是重复外发; succeeded 重放等于主动重复推送,
+// 两者都不属于"重试失败投递"的语义。
+func webhookDeliveryReplayable(status string) bool {
+	return status == model.WebhookDeliveryStatusFailed || status == model.WebhookDeliveryStatusCancelled
+}
+
+// webhookReplayPayload 重建重放投递的请求体: event/user_id/data 原样保留,
+// 只把 body 内的 id 换成新投递 ID、timestamp 换成当前时间。
+//
+// 为什么不能照抄原 body: 接收端按 payload.id 去重(docs/WEBHOOKS.md), 照抄旧 id 会让
+// 重放被当成重复直接丢掉 —— HTTP 头 X-Switchyard-Delivery-ID 换了新值, body 却还是旧的,
+// 重放等于失效。签名是发送时按 raw body 重算的, 重建 body 不影响签名正确性。
+// 反序列化失败(存量损坏行)一律报错, 不静默回退成旧 payload。
+func webhookReplayPayload(rawPayload, deliveryID string, now time.Time) (string, error) {
+	var payload model.WebhookPayload
+	if err := json.Unmarshal([]byte(rawPayload), &payload); err != nil {
+		return "", fmt.Errorf("decode webhook delivery payload: %w", err)
+	}
+	payload.ID = deliveryID
+	payload.Timestamp = now.Unix()
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("encode replay webhook payload: %w", err)
+	}
+	return string(body), nil
+}
+
+// WebhookReplayDelivery 重放一条终态失败/取消的投递: 新建一行待投递, 原行原样保留作审计。
+//
+// 为什么新建而不是把原行改回 pending: 日志即队列, 改写会抹掉"投递过几次、最后一次为什么失败"
+// 这段审计; 新行有独立 DeliveryID, 接收端按它去重, 重放在对方看来就是一条正常的新投递。
+// body 按新 id + 当前时间重建(见 webhookReplayPayload), hook_version 沿用入队时的版本 ——
+// 订阅此后若改绑 URL, 投递前的版本闸门会像对待积压投递一样取消它, 不会发往旧地址。
+func WebhookReplayDelivery(ctx context.Context, userID uint, webhookID uint64, deliveryID string) (model.WebhookDeliveryLogView, error) {
+	var view model.WebhookDeliveryLogView
+	err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		hook, err := webhookGetRow(ctx, tx, userID, webhookID)
+		if err != nil {
+			return err
+		}
+		// 归属三重条件: 订阅、投递、用户必须同时对上, 不给人拿别人的订阅 ID 碰运气的机会。
+		var src model.WebhookDelivery
+		derr := tx.Where("delivery_id = ? AND webhook_id = ? AND user_id = ?", deliveryID, webhookID, userID).
+			First(&src).Error
+		if errors.Is(derr, gorm.ErrRecordNotFound) {
+			return ErrWebhookDeliveryNotFound
+		}
+		if derr != nil {
+			return fmt.Errorf("get webhook delivery: %w", derr)
+		}
+		if !webhookDeliveryReplayable(src.Status) {
+			return ErrWebhookDeliveryNotReplayable
+		}
+		newDeliveryID, err := webhookNewDeliveryID()
+		if err != nil {
+			return err
+		}
+		now := time.Now()
+		// body 里的 id 必须跟着新投递走: 接收端按 payload.id 去重, 照抄旧 id 会把重放当重复丢弃。
+		payload, err := webhookReplayPayload(src.Payload, newDeliveryID, now)
+		if err != nil {
+			return err
+		}
+		replay := model.WebhookDelivery{
+			DeliveryID:  newDeliveryID,
+			WebhookID:   hook.ID,
+			UserID:      userID,
+			HookVersion: src.HookVersion,
+			Event:       src.Event,
+			Payload:     payload,
+			Status:      model.WebhookDeliveryStatusPending,
+			Attempts:    0,
+			// 立即到期: 重放是用户当场发起的, 不该再等一轮退避。
+			NextAttemptAt: now,
+		}
+		// 其余列(attempts/last_status_code/duration_ms/last_error/lease_expires_at/notification_id)
+		// 一律归零: 重放不是新通知, 挂在原通知上会让人误以为"同一通知有两条有效投递"。
+		// 显式列插入: status/attempts 等零值列不带 Select 会被 gorm 跳过而落到 DB default。
+		if err := tx.Select(
+			"DeliveryID", "WebhookID", "UserID", "HookVersion", "Event", "Payload",
+			"Status", "Attempts", "NextAttemptAt",
+		).Create(&replay).Error; err != nil {
+			return fmt.Errorf("replay webhook delivery: %w", err)
+		}
+		view = webhookDeliveryToView(replay)
+		return nil
+	})
+	if err != nil {
+		return model.WebhookDeliveryLogView{}, err
+	}
+	return view, nil
 }
 
 // webhookNormalizePage 分页参数兜底: 缺省 1/20, 上限 100(与通知列表同口径)。

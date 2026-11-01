@@ -2286,6 +2286,21 @@
             "back": "返回列表",
             "empty": "暂无投递记录",
             "emptyHint": "首次事件触发后，投递记录会出现在这里。",
+            "filter": {
+                "status": "状态",
+                "event": "事件",
+                "all": "全部",
+                "eventTest": "测试投递"
+            },
+            "action": {
+                "replay": "重放"
+            },
+            "replay": {
+                "pending": "重放中…",
+                "success": "已请求重放",
+                "failed": "重放失败",
+                "disabled": "仅失败或已取消的投递可重放"
+            },
             "table": {
                 "time": "时间",
                 "deliveryId": "投递 ID",
@@ -2293,7 +2308,8 @@
                 "status": "状态",
                 "httpCode": "HTTP 状态码",
                 "duration": "耗时",
-                "attempts": "尝试次数"
+                "attempts": "尝试次数",
+                "actions": "操作"
             },
             "pagination": {
                 "label": "投递日志分页",

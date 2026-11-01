@@ -14,7 +14,7 @@ import en from '@/locales/en.json';
 import zhHans from '@/locales/zh_hans.json';
 import zhHant from '@/locales/zh_hant.json';
 import { WebhookForm } from './WebhookForm';
-import { WebhookLogs } from './WebhookLogs';
+import { setLogFilter, WebhookLogs } from './WebhookLogs';
 import { Webhooks } from './index';
 
 // 页面组件的 mock SSR 冒烟(与工单同款口径): 不起服务器, 用预置 query 缓存把组件
@@ -188,5 +188,72 @@ describe('WebhookLogs 投递日志(mock SSR)', () => {
         expect(html).toContain('Failed to load');
         expect(html).toContain('Retry');
         expect(html).toContain('aria-label="Back to list"');
+    });
+});
+
+describe('WebhookLogs 重放与筛选(mock SSR)', () => {
+    // tagWithLabel 从 SSR HTML 里揪出带指定 aria-label 的 <button ...> 开标签:
+    // disabled/title 必须落在「那一行」的按钮上, 不能拿整页任意位置的 disabled 字样充数。
+    // 注意 Button 的 className 里有 disabled:opacity-50 这类 Tailwind 变体, 所以只认真属性 disabled=""。
+    function tagWithLabel(html: string, label: string): string {
+        const at = html.indexOf('aria-label="' + label + '"');
+        expect(at, 'missing aria-label: ' + label).toBeGreaterThanOrEqual(0);
+        const start = html.lastIndexOf('<button', at);
+        const end = html.indexOf('>', at);
+        return html.slice(start, end + 1);
+    }
+
+    const failedRow: WebhookDeliveryLog = {
+        delivery_id: 'dlv-failed-1',
+        event: 'ticket',
+        status: 'failed',
+        attempts: 3,
+        response_code: 500,
+        duration_ms: 800,
+        error: 'dial tcp: i/o timeout',
+        created_at: '2026-01-01T00:00:00Z',
+    };
+
+    const succeededRow: WebhookDeliveryLog = {
+        delivery_id: 'dlv-succeeded-1',
+        event: 'ticket',
+        status: 'succeeded',
+        attempts: 1,
+        response_code: 200,
+        duration_ms: 120,
+        created_at: '2026-01-01T00:01:00Z',
+    };
+
+    it('重放按钮在 failed 行可点、在 succeeded 行置灰并说明原因', () => {
+        const html = renderSSR(<WebhookLogs userId={7} id={7} onBack={() => {}} />, (client) => seedLogs(client, [failedRow, succeededRow]));
+
+        const failedButton = tagWithLabel(html, 'Replay dlv-failed-1');
+        expect(failedButton).not.toContain('disabled=""');
+        expect(failedButton).toContain('Replay');
+
+        const succeededButton = tagWithLabel(html, 'Replay dlv-succeeded-1');
+        expect(succeededButton).toContain('disabled=""');
+        // 灰按钮必须给原因, 否则用户以为界面坏了。
+        expect(succeededButton).toContain('Only failed or cancelled deliveries can be replayed');
+    });
+
+    it('cancelled 也是可重放的终点状态', () => {
+        const html = renderSSR(
+            <WebhookLogs userId={7} id={7} onBack={() => {}} />,
+            (client) => seedLogs(client, [{ ...failedRow, delivery_id: 'dlv-cancelled-1', status: 'cancelled' }]),
+        );
+        expect(tagWithLabel(html, 'Replay dlv-cancelled-1')).not.toContain('disabled=""');
+    });
+
+    it('筛选控件常驻(结果为空时也能改回来), 换筛选一律回到第 1 页', () => {
+        const empty = renderSSR(<WebhookLogs userId={7} id={7} onBack={() => {}} />, (client) => seedLogs(client, []));
+        expect(empty).toContain('aria-label="Status"');
+        expect(empty).toContain('aria-label="Event"');
+
+        // 换筛选必须回第 1 页: 停在第 3 页去查一个只有 1 页结果的状态, 看到的是空列表。
+        expect(setLogFilter({ page: 3, status: '', event: '' }, { status: 'failed' }))
+            .toEqual({ page: 1, status: 'failed', event: '' });
+        expect(setLogFilter({ page: 2, status: 'failed', event: '' }, { event: 'ticket' }))
+            .toEqual({ page: 1, status: 'failed', event: 'ticket' });
     });
 });

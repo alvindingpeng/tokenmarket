@@ -2286,6 +2286,21 @@
             "back": "返回列表",
             "empty": "暫無投遞記錄",
             "emptyHint": "首次事件觸發後，投遞記錄會出現在這裡。",
+            "filter": {
+                "status": "狀態",
+                "event": "事件",
+                "all": "全部",
+                "eventTest": "測試投遞"
+            },
+            "action": {
+                "replay": "重放"
+            },
+            "replay": {
+                "pending": "重放中…",
+                "success": "已請求重放",
+                "failed": "重放失敗",
+                "disabled": "僅失敗或已取消的投遞可重放"
+            },
             "table": {
                 "time": "時間",
                 "deliveryId": "投遞 ID",
@@ -2293,7 +2308,8 @@
                 "status": "狀態",
                 "httpCode": "HTTP 狀態碼",
                 "duration": "耗時",
-                "attempts": "嘗試次數"
+                "attempts": "嘗試次數",
+                "actions": "操作"
             },
             "pagination": {
                 "label": "投遞日誌分頁",
