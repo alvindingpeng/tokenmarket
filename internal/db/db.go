@@ -105,6 +105,7 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.ChannelAlert{},
 		&model.Dispute{},
 		&model.SettlementStatement{},
+		&model.SettlementRun{},
 		&migrate.MigrationRecord{},
 	); err != nil {
 		return err

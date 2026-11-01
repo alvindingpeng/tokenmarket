@@ -44,6 +44,28 @@ func TestBillingRecoveryRegistered(t *testing.T) {
 	}
 }
 
+// TestSettlementCatchupRegistered 保留任务名和任务告警出口, 每小时及启动补偿。
+func TestSettlementCatchupRegistered(t *testing.T) {
+	taskTestSetup(t)
+	Init()
+	tasksMu.Lock()
+	spec, ok := specs[TaskSettlementDaily]
+	tasksMu.Unlock()
+	if !ok || spec.Fn == nil || !spec.RunOnStart {
+		t.Fatal("settlement catchup must be registered and run on start")
+	}
+	if d := spec.Interval(); d != time.Hour {
+		t.Fatalf("settlement interval = %v, want 1h", d)
+	}
+	// Missing checkpoint table must surface as a task error (not swallowed by the task body).
+	if err := db.GetDB().Exec("DROP TABLE settlement_runs").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := spec.Fn(); err == nil {
+		t.Fatal("settlement task swallowed catchup error")
+	}
+}
+
 // TestTaskNameConstantsStable 任务名是告警与运维面板的稳定标识, 不许悄悄改名。
 func TestTaskNameConstantsStable(t *testing.T) {
 	want := map[string]string{

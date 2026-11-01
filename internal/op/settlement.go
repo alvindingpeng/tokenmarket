@@ -118,9 +118,17 @@ func SettlementGenerateDay(ctx context.Context, day string) error {
 		return err
 	}
 
+	database := db.GetDB()
+	return settlementRetry(ctx, database.Dialector.Name(), func() error {
+		return settlementGenerateDayOnce(ctx, database, day, start, end)
+	}, settlementRetryWait)
+}
+
+// settlementGenerateDayOnce 每次都开启新事务、重新聚合，绝不复用失败事务的快照或结果。
+func settlementGenerateDayOnce(ctx context.Context, database *gorm.DB, day string, start, end time.Time) error {
 	// 查询与写入同处一个事务: 生成过程原子提交, 读写看到的是同一时刻的账, 任何查询/写入失败
 	// 都整体回滚并向调用方报错(不再像旧实现那样吞掉错误继续跑)。
-	if err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 
 		// 1) 毛额: 供应商应收按调用发生日归集(含事后被退款的账单, 退款另有批准日的冲回调整)。
 		type ownerAgg struct {
