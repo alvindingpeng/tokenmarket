@@ -813,6 +813,37 @@
         }
     },
     "channel": {
+        "profit": {
+            "title": "利潤分析",
+            "preset": "近{days}天",
+            "startDate": "開始日期",
+            "endDate": "結束日期",
+            "rangeInvalid": "開始日期不能晚於結束日期",
+            "metric": {
+                "revenue": "收入",
+                "revenueHint": "已結算的使用者實付",
+                "cost": "成本",
+                "costHint": "頻道商供貨收入",
+                "profit": "毛利",
+                "profitHint": "收入減成本",
+                "margin": "毛利率",
+                "marginHint": "毛利除以收入",
+                "requests": "請求數"
+            },
+            "table": {
+                "date": "日期",
+                "requests": "請求數",
+                "revenue": "收入",
+                "cost": "成本",
+                "profit": "毛利",
+                "margin": "毛利率"
+            },
+            "loading": "正在載入利潤資料…",
+            "error": "利潤資料載入失敗",
+            "retry": "重試",
+            "empty": "該區間沒有已結算的計費記錄",
+            "forbidden": "僅管理員可檢視頻道利潤"
+        },
         "card": {
             "requestCount": "請求次數",
             "totalCost": "總成本",

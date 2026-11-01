@@ -813,6 +813,37 @@
         }
     },
     "channel": {
+        "profit": {
+            "title": "利润分析",
+            "preset": "近{days}天",
+            "startDate": "开始日期",
+            "endDate": "结束日期",
+            "rangeInvalid": "开始日期不能晚于结束日期",
+            "metric": {
+                "revenue": "收入",
+                "revenueHint": "已结算的用户实付",
+                "cost": "成本",
+                "costHint": "渠道商供货收入",
+                "profit": "毛利",
+                "profitHint": "收入减成本",
+                "margin": "毛利率",
+                "marginHint": "毛利除以收入",
+                "requests": "请求数"
+            },
+            "table": {
+                "date": "日期",
+                "requests": "请求数",
+                "revenue": "收入",
+                "cost": "成本",
+                "profit": "毛利",
+                "margin": "毛利率"
+            },
+            "loading": "正在加载利润数据…",
+            "error": "利润数据加载失败",
+            "retry": "重试",
+            "empty": "该区间没有已结算的计费记录",
+            "forbidden": "仅管理员可查看渠道利润"
+        },
         "card": {
             "requestCount": "请求次数",
             "totalCost": "总成本",

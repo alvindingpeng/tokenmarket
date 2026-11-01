@@ -32,7 +32,9 @@ import { GradeBadge, ObservationProgress, QualityTrend, TrustBadge } from './Qua
 import { type StatsMetricsFormatted } from '@/api/stats';
 import { formatTime } from '@/lib/utils';
 import { useMorphingDialog } from '@/components/ui/morphing-dialog';
+import { useAuth } from '@/api/user';
 import { EgressHealth } from './EgressHealth';
+import { ChannelProfitPanel } from './Profit';
 
 type FormattedMetric = StatsMetricsFormatted['request_count'];
 
@@ -206,6 +208,9 @@ export function ChannelStats({ channel, onEdit }: {
 }) {
     const t = useTranslations('channel.stats');
     const tCommon = useTranslations('common');
+    // 利润接口是管理员接口: 非管理员连面板都不挂载, 避免每开一次详情就白打一个 403。
+    const { role } = useAuth();
+    const isAdmin = role === 'admin';
     const { setIsOpen } = useMorphingDialog();
     const deleteChannel = useDeleteChannel();
     const resetBreaker = useResetChannelBreaker();
@@ -372,6 +377,12 @@ export function ChannelStats({ channel, onEdit }: {
         // 高度不能写成 @2xl/stats:h-full: 容器查询只能由祖先容器回答, 这里自己声明了 @container/stats, 查不到自己。
         // min-h-full 在分享用的屏外容器里取不到确定高度, 退化为 0, 不影响分享图。
         <div ref={contentRef} className="@container/stats cursor-default flex min-h-full flex-col">
+            {/* 利润分析只对管理员开放, 放在汇总之上: 这是经营口径, 与转发统计分开读。 */}
+            {isAdmin && (
+                <div className="mb-4">
+                    <ChannelProfitPanel channelId={channel.channel_id} />
+                </div>
+            )}
             <div className="grid flex-1 gap-4 @2xl/stats:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
                 {/* 左列: 渠道汇总 */}
                 <section className="flex min-h-0 flex-col gap-2">

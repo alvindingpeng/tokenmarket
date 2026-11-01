@@ -40,6 +40,12 @@ func init() {
 				Allow(model.RoleAdmin, model.RoleReseller).
 				Handle(getChannelDailyStats),
 		).
+		// 渠道利润分析只有管理员看: 口径是平台侧收入/成本/毛利, 渠道商不应看到平台加价空间。
+		AddRoute(
+			router.NewRoute("/profit/:id", http.MethodGet).
+				Allow(model.RoleAdmin).
+				Handle(getChannelProfit),
+		).
 		AddRoute(
 			router.NewRoute("/grants", http.MethodGet).
 				Handle(listChannelGrant),
@@ -341,6 +347,40 @@ func getChannelDailyStats(c *gin.Context) {
 		})
 	}
 	resp.Success(c, gin.H{"channel": channelDaily, "models": models})
+}
+
+// 渠道利润接口的机器可读错误码: 前端按码区分参数错误与渠道不存在, 不靠文案匹配。
+const (
+	codeChannelProfitInvalidRange = "invalid_date_range"
+	codeChannelProfitNotFound     = "channel_not_found"
+)
+
+// getChannelProfit 返回指定渠道在日期区间内的结算利润分析, 仅管理员可用。
+// 只读聚合: 不触碰账务, 也不拼接请求日志; 收入/成本/毛利全部取自 billing_records 的结算快照。
+func getChannelProfit(c *gin.Context) {
+	channelID, ok := parseChannelIDParam(c)
+	if !ok {
+		return
+	}
+	var query model.ChannelProfitQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		// 绑定错误原文会带库字段与结构体细节, 响应只给固定文案, 具体原因由错误码表达。
+		resp.ErrorWithCode(c, http.StatusBadRequest, "日期格式不正确, 应为 YYYY-MM-DD", codeChannelProfitInvalidRange)
+		return
+	}
+	profit, err := op.ChannelProfit(c.Request.Context(), channelID, query.StartDate, query.EndDate)
+	switch {
+	case errors.Is(err, op.ErrChannelProfitDateRange):
+		resp.ErrorWithCode(c, http.StatusBadRequest, "日期范围不合法: 开始日期不能晚于结束日期", codeChannelProfitInvalidRange)
+	case errors.Is(err, op.ErrChannelProfitChannelNotFound):
+		resp.ErrorWithCode(c, http.StatusNotFound, "渠道不存在", codeChannelProfitNotFound)
+	case err != nil:
+		// 底层错误(含 SQL/驱动细节)只进服务端日志, 不进响应体。
+		log.Error("channel profit query failed", "channel_id", channelID, "err", err)
+		resp.ErrorWithCode(c, http.StatusInternalServerError, resp.ErrInternalServer, "channel_profit_query_failed")
+	default:
+		resp.Success(c, profit)
+	}
 }
 
 // listChannelStats 返回全部渠道及其模型的累计统计, 也是渠道列表页的数据来源。

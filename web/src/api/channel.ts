@@ -571,3 +571,53 @@ export function useRejectChannelReview() {
         onSuccess: () => channelReviewInvalidate(queryClient),
     });
 }
+
+// ChannelProfitDaily 是渠道某一天的利润与计费汇总；daily 只含真正有结算记录的日期。
+export type ChannelProfitDaily = {
+    date: string; // YYYY-MM-DD
+    requests: number;
+    user_cost: number; // 收入：用户实付
+    owner_revenue: number; // 成本：渠道商供货收入
+    platform_revenue: number; // 毛利：收入 - 成本
+    margin_rate: number; // 毛利率 0~100，收入为 0 时为 0
+};
+
+// ChannelProfitTotals 是区间汇总；字段与单日一致，只是不带日期。
+export type ChannelProfitTotals = Omit<ChannelProfitDaily, 'date'>;
+
+// ChannelProfit 是渠道利润接口的完整响应(后端按 settled 计费记录聚合)。
+export type ChannelProfit = {
+    channel_id: number;
+    channel_name: string;
+    start_date: string;
+    end_date: string;
+    totals: ChannelProfitTotals;
+    daily: ChannelProfitDaily[];
+};
+
+// channelProfitQueryKey 收口查询键：面板与测试共用，日期必须进键，否则换范围不会重新取数。
+export function channelProfitQueryKey(channelId: number, startDate: string, endDate: string) {
+    return ['channels', 'profit', channelId, startDate, endDate] as const;
+}
+
+// channelProfitPath 拼出利润接口的请求路径；日期按查询参数转义，避免空格/特殊字符拼坏 URL。
+export function channelProfitPath(channelId: number, startDate: string, endDate: string) {
+    return `/api/v1/channel/profit/${channelId}?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`;
+}
+
+// channelProfitQueryOptions 供面板与测试共享查询定义(webhook 等模块同款做法)。
+export function channelProfitQueryOptions(channelId: number, startDate: string, endDate: string) {
+    return queryOptions({
+        queryKey: channelProfitQueryKey(channelId, startDate, endDate),
+        queryFn: () => apiRequest<ChannelProfit>(channelProfitPath(channelId, startDate, endDate)),
+        // 日期为空时不发请求：后端虽有默认区间，但界面此刻还没有可展示的范围。
+        enabled: channelId > 0 && Boolean(startDate) && Boolean(endDate),
+        refetchOnMount: 'always' as const,
+    });
+}
+
+// useChannelProfit 拉取单个渠道在日期区间内的收入、成本、毛利与每日趋势。
+// 仅管理员可用：非管理员请求会得到 403，面板据此展示无权限提示而不是空数据。
+export function useChannelProfit(channelId: number, startDate: string, endDate: string, enabled = true) {
+    return useQuery({ ...channelProfitQueryOptions(channelId, startDate, endDate), enabled: enabled && channelId > 0 && Boolean(startDate) && Boolean(endDate) });
+}

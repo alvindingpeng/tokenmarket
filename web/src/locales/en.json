@@ -813,6 +813,37 @@
         }
     },
     "channel": {
+        "profit": {
+            "title": "Profit analysis",
+            "preset": "Last {days} days",
+            "startDate": "Start date",
+            "endDate": "End date",
+            "rangeInvalid": "Start date cannot be later than end date",
+            "metric": {
+                "revenue": "Revenue",
+                "revenueHint": "Settled user payments",
+                "cost": "Cost",
+                "costHint": "Channel supply revenue",
+                "profit": "Gross profit",
+                "profitHint": "Revenue minus cost",
+                "margin": "Margin",
+                "marginHint": "Gross profit divided by revenue",
+                "requests": "Requests"
+            },
+            "table": {
+                "date": "Date",
+                "requests": "Requests",
+                "revenue": "Revenue",
+                "cost": "Cost",
+                "profit": "Profit",
+                "margin": "Margin"
+            },
+            "loading": "Loading profit data…",
+            "error": "Failed to load profit data",
+            "retry": "Retry",
+            "empty": "No settled billing records in this range",
+            "forbidden": "Only administrators can view channel profit"
+        },
         "card": {
             "requestCount": "Requests",
             "totalCost": "Total Cost",
