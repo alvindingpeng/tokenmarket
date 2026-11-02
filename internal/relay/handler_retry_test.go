@@ -43,6 +43,10 @@ func relayRetryTestDB(t *testing.T) {
 	routeMu.Lock()
 	clear(routes)
 	routeMu.Unlock()
+	metricMu.Lock()
+	clear(memberMetrics)
+	clear(modelMetrics)
+	metricMu.Unlock()
 	original := limiter
 	limiter = ratelimit.NewResolved(
 		func(scope ratelimit.Scope) ratelimit.Limits {
@@ -514,6 +518,10 @@ func TestStreamRoundFinalizesOnce(t *testing.T) {
 	if row.Status != "success" {
 		t.Fatalf("want a single success attempt row after stream end, got %q", row.Status)
 	}
+	_, success, samples := memberMetricOf(state.GroupID, state.roundItemID)
+	if samples != 1 || success != 1 {
+		t.Fatalf("complete stream must record exactly one success: samples=%d success=%v", samples, success)
+	}
 }
 
 // TestStreamDeliveredThenCanceledKeepsSuccess 钉住「完整交付与客户端断开竞态」: 结束事件已转发、
@@ -617,5 +625,34 @@ func TestStreamCommitRequiresWrittenBytes(t *testing.T) {
 	}
 	if state.FirstTokenDuration != 0 {
 		t.Fatalf("commit marker set without a single written byte: first-token=%v", state.FirstTokenDuration)
+	}
+	_, _, samples := memberMetricOf(state.GroupID, state.roundItemID)
+	if samples != 0 {
+		t.Fatalf("downstream write failure must not affect upstream metrics: samples=%d", samples)
+	}
+}
+
+// TestStreamDisconnectAfterFirstFrameDoesNotScoreSuccess verifies that an upstream
+// disconnect without a protocol terminal event records one failure, not success.
+func TestStreamDisconnectAfterFirstFrameDoesNotScoreSuccess(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		f, _ := w.(http.Flusher)
+		fmt.Fprint(w, "data: {\"id\":\"cmpl-cut\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"}}]}\n\n")
+		if f != nil {
+			f.Flush()
+		}
+	}))
+	defer srv.Close()
+	env := newRelayGroup(t, srv.URL, model.ProtocolOpenAIChatCompletion, model.MediaKindText, 1, model.DefaultGroupRelayConfigForMode(model.GroupModeFailover))
+	body := fmt.Sprintf(`{"model":%q,"stream":true,"messages":[{"role":"user","content":"hi"}]}`, env.group)
+	forwardRequest(llm.APIFormatOpenAIChatCompletion, env.userID, body)
+	state, ok := latestRelayRequest()
+	if !ok || state.Model != env.group {
+		t.Fatal("request state missing")
+	}
+	_, success, samples := memberMetricOf(state.GroupID, state.roundItemID)
+	if samples != 1 || success != 0 {
+		t.Fatalf("want one failed stream sample, got samples=%d success=%v", samples, success)
 	}
 }

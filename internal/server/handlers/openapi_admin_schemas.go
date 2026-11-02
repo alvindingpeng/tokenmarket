@@ -18,10 +18,12 @@ func openAPIAdminSchemas() gin.H {
 		}, "code", "message"),
 
 		// ---------- 账号 ----------
+		"TOTPCodeRequest": object(gin.H{"code": fieldString("6位动态码；disable 也接受一次性恢复码")}, "code"),
 		"LoginRequest": object(gin.H{
-			"username": fieldString("账号名"),
-			"password": fieldString("密码明文, 仅在传输与落库摘要之间短暂存在"),
-			"expire":   fieldNumber("integer", "会话 Cookie 有效期(秒); 0 或负数取默认值"),
+			"totp_code": fieldString("启用2FA后必填，动态码或一次性恢复码"),
+			"username":  fieldString("账号名"),
+			"password":  fieldString("密码明文, 仅在传输与落库摘要之间短暂存在"),
+			"expire":    fieldNumber("integer", "会话 Cookie 有效期(秒); 0 或负数取默认值"),
 		}, "username", "password"),
 
 		"RegisterRequest": object(gin.H{
@@ -53,6 +55,7 @@ func openAPIAdminSchemas() gin.H {
 			"username": fieldString("用户名; 仅在改名时提交, 留空即不改"),
 			"role":     gin.H{"type": "string", "enum": []string{"user", "reseller", "admin"}, "description": "账号角色"},
 			"status":   gin.H{"type": "string", "enum": []string{"active", "pending", "disabled"}, "description": "账号状态; disabled 与 pending 登录即 401"},
+			"tier":     gin.H{"type": "string", "enum": []string{"free", "basic", "pro", "enterprise"}, "description": "服务等级; 只影响限流兜底额度, 留空或空串表示清空等级(回落 free)"},
 			"balance":  fieldNumber("number", "可用余额; 指针字段, 不提交即不改动"),
 			"password": fieldString("重置密码时使用"),
 		}),
@@ -62,6 +65,7 @@ func openAPIAdminSchemas() gin.H {
 			"username":      fieldString(""),
 			"role":          gin.H{"type": "string", "enum": []string{"user", "reseller", "admin"}},
 			"status":        gin.H{"type": "string", "enum": []string{"active", "pending", "disabled"}},
+			"tier":          gin.H{"type": "string", "enum": []string{"free", "basic", "pro", "enterprise"}, "description": "生效的服务等级; 未设置时为 free"},
 			"balance":       fieldNumber("number", "可用余额"),
 			"frozen":        fieldNumber("number", "在途请求的预扣冻结额"),
 			"total_spent":   fieldNumber("number", "累计支出"),
@@ -337,6 +341,10 @@ func openAPIAdminSchemas() gin.H {
 			"score_latency_weight":                       fieldNumber("integer", "综合评分中延迟的相对权重 0-100; 0 表示跟随系统默认"),
 			"score_success_weight":                       fieldNumber("integer", "综合评分中成功率的相对权重 0-100; 0 表示跟随系统默认"),
 			"reliability_floor":                          fieldNumber("integer", "可靠性下限 0-100, 低于该成功率的成员不参与动态选路"),
+			"canary_item_id":                             fieldNumber("integer", "灰度分发目标成员的分组成员 ID; 0 表示关闭灰度"),
+			"canary_percent":                             fieldNumber("integer", "命中灰度的流量百分比 0-100"),
+			"canary_user_ids":                            gin.H{"type": "array", "items": gin.H{"type": "integer"}, "description": "显式灰度用户 ID 列表, 非空时这些用户恒走灰度并优先于比例"},
+			"canary_per_request":                         fieldBool("每请求重新抽样灰度, 为假时按 API Key 粘性分桶"),
 		}),
 
 		"RouteState": object(gin.H{
@@ -739,10 +747,36 @@ func openAPIAdminSchemas() gin.H {
 			"archive_enabled":  fieldBool("归档开关当前状态"),
 		}),
 
+		"QuotaUsage": object(gin.H{
+			"user_id":         fieldNumber("integer", ""),
+			"username":        fieldString(""),
+			"tier":            gin.H{"type": "string", "enum": []string{"free", "basic", "pro", "enterprise"}, "description": "生效等级"},
+			"rpm":             fieldNumber("integer", "本窗口 RPM 额度; 0 表示不限制"),
+			"tpm":             fieldNumber("integer", "本窗口 TPM 额度; 0 表示不限制"),
+			"concurrent":      fieldNumber("integer", "并发额度; 0 表示不限制"),
+			"source":          gin.H{"type": "string", "enum": []string{"policy", "tier", "none"}, "description": "额度来源"},
+			"model":           fieldString("额度针对的模型; 空串为全模型共享"),
+			"used_rpm":        fieldNumber("integer", "本窗口已用请求数"),
+			"used_tpm":        fieldNumber("integer", "本窗口已用词元"),
+			"in_flight":       fieldNumber("integer", "当前并发占用"),
+			"window_reset_at": fieldString("窗口刷新时间(RFC3339)"),
+		}, "user_id", "username", "tier"),
+
 		"ArchiveFile": object(gin.H{
 			"name":     fieldString("文件名(.ndjson)"),
 			"size":     fieldNumber("integer", "字节数"),
 			"mod_time": datetime(""),
+		}),
+
+		"AuditArchiveResult": object(gin.H{
+			"cutoff":          datetime("清理截止时间"),
+			"archived":        fieldNumber("integer", "本次归档条数"),
+			"file":            fieldString("归档文件路径"),
+			"deleted":         fieldNumber("integer", "本次删除条数"),
+			"retention_days":  fieldNumber("integer", "生效的留存天数"),
+			"archive_enabled": fieldBool("是否在删除前归档"),
+			"enabled":         fieldBool("归档开关(与 archive_enabled 同义)"),
+			"archive_error":   fieldString("归档失败原因; 非空时本轮不删除任何记录"),
 		}),
 
 		"AutoBackupResult": object(gin.H{

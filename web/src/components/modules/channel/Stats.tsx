@@ -35,6 +35,8 @@ import { useMorphingDialog } from '@/components/ui/morphing-dialog';
 import { useAuth } from '@/api/user';
 import { EgressHealth } from './EgressHealth';
 import { ChannelProfitPanel } from './Profit';
+import { isBroken, remainText } from './breaker';
+import { ChannelPauseBadge } from './PauseBadge';
 
 type FormattedMetric = StatsMetricsFormatted['request_count'];
 
@@ -45,24 +47,6 @@ type ModelSortKey = 'cost' | 'count' | 'tokens';
 const successRate = (success: number, failed: number) => {
     const total = success + failed;
     return total > 0 ? (success / total) * 100 : 0;
-};
-
-// 熔断状态: 后端按时间自愈, 前端只负责如实展示"熔断中"与剩余时长。
-// disabledUntil 是后端给的绝对时间, 本地时钟偏差会让它偏一点, 这里只做展示, 不参与任何判定。
-const isBroken = (disabledUntil: string | null | undefined) => {
-    if (!disabledUntil) return false;
-    const until = Date.parse(disabledUntil);
-    return Number.isFinite(until) && until > Date.now();
-};
-
-// remainText 把熔断截止时间渲染成"还剩多久"。
-const remainText = (disabledUntil: string | null | undefined) => {
-    const until = disabledUntil ? Date.parse(disabledUntil) : NaN;
-    if (!Number.isFinite(until)) return '';
-    const seconds = Math.max(0, Math.floor((until - Date.now()) / 1000));
-    if (seconds >= 3600) return Math.floor(seconds / 3600) + 'h' + Math.floor((seconds % 3600) / 60) + 'm';
-    if (seconds >= 60) return Math.floor(seconds / 60) + 'm';
-    return seconds + 's';
 };
 
 // MetricValue 统一渲染数值与单位
@@ -449,6 +433,9 @@ export function ChannelStats({ channel, onEdit }: {
                             )}
                         </div>
                     </div>
+                    {/* 渠道级额度暂停: 与人工启停、模型级熔断并列展示, 只有暂停中才出现。
+                        放在汇总之上, 是因为它解释了"为什么这条渠道的请求全在失败", 属于要先读到的结论。 */}
+                    <ChannelPauseBadge channel={channel} hint />
                     {/* 宽屏下四项各占四分之一列高: 行数与 summary 的项数一致, 等分由 grid-rows-4 表达。 */}
                     <dl className="grid grid-cols-2 gap-2 @md/stats:grid-cols-4 @2xl/stats:flex-1 @2xl/stats:grid-cols-1 @2xl/stats:grid-rows-4">
                         {summary.map(({ icon, label, value, sub }) => (

@@ -21,6 +21,17 @@ func TestUserStatsRoutesAuthenticatedScope(t *testing.T) {
 	if err := db.GetDB().Create(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
+	// 调用日志: 成功率的唯一来源。失败的调用不产生计费行, 只有这张表能反映真实失败;
+	// 顺带验证 HTTP 层不会把其他用户的日志算进来。
+	requests := []model.RelayRequest{
+		{ID: 1, UserID: user.ID, Status: "success", StartedAt: at},
+		{ID: 2, UserID: user.ID, Status: "failed", StartedAt: at.Add(time.Minute)},
+		{ID: 3, UserID: other.ID, Status: "failed", StartedAt: at.Add(2 * time.Minute)},
+		{ID: 4, UserID: other.ID, Status: "failed", StartedAt: at.Add(3 * time.Minute)},
+	}
+	if err := db.GetDB().Create(&requests).Error; err != nil {
+		t.Fatal(err)
+	}
 	suffix := "?start_date=2026-10-29&end_date=2026-10-29"
 	for _, part := range []string{"overview", "trend", "models"} {
 		path := "/api/v1/user-stats/" + part
@@ -44,6 +55,13 @@ func TestUserStatsRoutesAuthenticatedScope(t *testing.T) {
 			}
 			if result.TotalRequests != 1 || result.TotalCost != 2 || result.TotalTokens != 11 {
 				t.Fatalf("scope: %+v", result)
+			}
+			// 本人 1 成功 1 失败 → 50%; 他人的两条失败不得拉低本人的成功率。
+			if result.SuccessRate != 50 || result.RequestSuccess != 1 || result.RequestFailed != 1 {
+				t.Fatalf("success rate scope: %+v", result)
+			}
+			if result.RequestCoverageStart != "2026-10-29" || result.RequestRetentionDays <= 0 {
+				t.Fatalf("coverage: %+v", result)
 			}
 		case "trend":
 			var result []model.UserStatsTrend

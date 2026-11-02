@@ -154,6 +154,10 @@ export type ChannelStats = StatsMetrics & {
     trust_level: ChannelTrustLevel; // 信任级别，观察期进度条与质量徽章的数据源。
     observation_start?: string | null;
     observation_until?: string | null;
+    // disabled_until 是渠道级的"余额/额度不足暂停"截止时间，与 enabled（人工开关）和
+    // 模型级 disabled_until（故障熔断）是三件互不相干的事：人工开关不会被它改写，
+    // 单次成功也不会提前解除它——只有到期或人工恢复。
+    disabled_until?: string | null;
     models: ChannelModelStats[];
 };
 
@@ -213,6 +217,8 @@ export type ChannelStatsFormatted = {
     trust_level: ChannelTrustLevel;
     observation_start: string | null;
     observation_until: string | null;
+    // 渠道级额度暂停的截止时间，未暂停为 null；与模型级 disabledUntil 同风格，界面按剩余时长展示。
+    disabledUntil: string | null;
     models: ChannelModelStatsFormatted[];
     formatted: StatsMetricsFormatted;
 };
@@ -326,6 +332,7 @@ const channelStatsFormattedQueryOptions = queryOptions({
         trust_level: item.trust_level,
         observation_start: item.observation_start ?? null,
         observation_until: item.observation_until ?? null,
+        disabledUntil: item.disabled_until ?? null,
         models: item.models.map((channelModel) => ({
             model_id: channelModel.model_id,
             model_name: channelModel.model_name,
@@ -465,17 +472,33 @@ export function useDeleteChannel() {
     });
 }
 
+// ChannelBreakerResetRequest 是手动解除熔断/额度暂停的提交形状。
+// 三种作用域共用一个接口: 凭据(key_names)、渠道模型(model_names)、整条渠道(channel: true)。
+export type ChannelBreakerResetRequest = {
+    id: number;
+    key_names?: string[];
+    model_names?: string[];
+    // channel 为真表示解除整条渠道的额度暂停, 此时不必给名称; 后端按它跳到渠道级处理。
+    channel?: boolean;
+};
+
+// resetChannelBreaker 直接调用解除接口, 供 hook 与需要断言请求形状的测试复用。
+export function resetChannelBreaker(data: ChannelBreakerResetRequest) {
+    return apiRequest<{ reset: number }>('/api/v1/channel/breaker/reset', { method: 'POST', body: data });
+}
+
 /**
- * useResetChannelBreaker 手动解除渠道下的熔断。
+ * useResetChannelBreaker 手动解除渠道下的熔断, 以及渠道级的额度暂停。
  * 上游修好(换 Key, 补额度)后不必等熔断到期; 名称由后端在渠道范围内匹配, 不存在的名称不会报错。
+ * 三种作用域共用一个入口: 凭据(默认)、渠道模型(model_names)、整个渠道(channel: true)。
+ * 额度暂停与熔断都写在同一组截止时间上, 解除动作也是同一个, 故复用此封装而不另造一个。
  */
 export function useResetChannelBreaker() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: (data: { id: number; key_names?: string[]; model_names?: string[] }) =>
-            apiRequest<{ reset: number }>('/api/v1/channel/breaker/reset', { method: 'POST', body: data }),
+        mutationFn: resetChannelBreaker,
         onSuccess: () => {
-            // 熔断状态随统计下发, 解锁后立刻重取, 否则界面还会显示"熔断中"。
+            // 熔断与额度暂停状态都随统计下发, 解锁后立刻重取, 否则界面还会显示"熔断中"/"额度暂停"。
             void queryClient.invalidateQueries({ queryKey: ['channels'] });
             void queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
         },

@@ -50,6 +50,7 @@ func TestRecordChannelKeyErrorEscalates(t *testing.T) {
 	if err := db.GetDB().Create(&key).Error; err != nil {
 		t.Fatalf("创建凭据: %v", err)
 	}
+	channelKeyCache.Set(key.ID, key)
 
 	want := []struct {
 		trips    int
@@ -77,6 +78,10 @@ func TestRecordChannelKeyErrorEscalates(t *testing.T) {
 		if got := time.Until(*reloaded.DisabledUntil).Round(time.Minute); got != expect.duration {
 			t.Fatalf("第 %d 次熔断时长 = %v, want %v", expect.trips, got, expect.duration)
 		}
+		cached, ok := channelKeyCache.Get(key.ID)
+		if !ok || cached.DisabledUntil == nil || !cached.DisabledUntil.Equal(*reloaded.DisabledUntil) {
+			t.Fatalf("缓存未同步熔断状态: %+v", cached)
+		}
 	}
 }
 
@@ -98,8 +103,8 @@ func TestResetChannelKeyErrorsClearsTrips(t *testing.T) {
 	if err := db.GetDB().First(&reloaded, key.ID).Error; err != nil {
 		t.Fatalf("重读凭据: %v", err)
 	}
-	if reloaded.BreakerTrips != 0 || reloaded.ErrorCount != 0 {
-		t.Fatalf("成功后应清零, 实得 trips=%d error_count=%d", reloaded.BreakerTrips, reloaded.ErrorCount)
+	if reloaded.BreakerTrips != 0 || reloaded.ErrorCount != 0 || reloaded.DisabledUntil != nil {
+		t.Fatalf("成功后应清零并解除熔断, 实得 trips=%d error_count=%d disabled_until=%v", reloaded.BreakerTrips, reloaded.ErrorCount, reloaded.DisabledUntil)
 	}
 }
 
@@ -143,6 +148,7 @@ func TestRecordChannelModelErrorEscalates(t *testing.T) {
 	if err := db.GetDB().Create(&channelModel).Error; err != nil {
 		t.Fatalf("创建渠道模型: %v", err)
 	}
+	channelModelCache.Set(channelModel.ID, channelModel)
 
 	RecordChannelModelError(channelModel.ID, "overload")
 	var first model.ChannelModel
@@ -163,5 +169,14 @@ func TestRecordChannelModelErrorEscalates(t *testing.T) {
 	}
 	if got := time.Until(*second.DisabledUntil).Round(time.Minute); got != 10*time.Minute {
 		t.Fatalf("二次模型熔断 = %v, want 10m", got)
+	}
+	cached, ok := channelModelCache.Get(channelModel.ID)
+	if !ok || cached.DisabledUntil == nil || !cached.DisabledUntil.Equal(*second.DisabledUntil) {
+		t.Fatalf("模型缓存未同步熔断状态: %+v", cached)
+	}
+	ResetChannelModelErrors(channelModel.ID)
+	cached, ok = channelModelCache.Get(channelModel.ID)
+	if !ok || cached.DisabledUntil != nil || cached.ErrorCount != 0 || cached.BreakerTrips != 0 {
+		t.Fatalf("模型缓存未同步重置状态: %+v", cached)
 	}
 }

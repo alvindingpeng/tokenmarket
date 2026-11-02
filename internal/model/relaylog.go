@@ -22,9 +22,12 @@ type UpstreamTiming struct {
 }
 
 // RelayRequest 持久化的调用请求记录: 与进程内 RequestState 同一 ID 空间, 服务重启后仍可分页查询。
+//
+// user_id 与 started_at 上挂了 (user_id, started_at) 复合索引: 用户调用分析的成功率与延迟
+// 都按「某个用户 + 时间窗」聚合这张表, 只有单列索引时查询只能命中其中一列, 大区间会退化成全表扫。
 type RelayRequest struct {
 	ID                   uint64            `json:"id" gorm:"primaryKey;autoIncrement:false"`
-	UserID               uint              `json:"user_id" gorm:"index"`
+	UserID               uint              `json:"user_id" gorm:"index;index:idx_relay_requests_user_started,priority:1"`
 	APIKeyID             int               `json:"api_key_id" gorm:"index"`
 	APIKeyName           string            `json:"api_key_name"`
 	GroupID              int               `json:"group_id" gorm:"index"`
@@ -34,7 +37,7 @@ type RelayRequest struct {
 	Status               string            `json:"status" gorm:"index"`
 	ClientIP             string            `json:"client_ip" gorm:"size:64;index"`                // 调用方地址, 供风控与排查。
 	ClientCountry        string            `json:"client_country" gorm:"size:8;index;default:''"` // 调用方国家码(ISO 3166-1 alpha-2), 取自可信反代注入的头; 无边缘接入时为空。
-	StartedAt            time.Time         `json:"started_at" gorm:"index"`
+	StartedAt            time.Time         `json:"started_at" gorm:"index;index:idx_relay_requests_user_started,priority:2"`
 	FinishedAt           time.Time         `json:"finished_at"`
 	DurationNs           int64             `json:"duration_ns"`             // 总耗时(纳秒), 与状态流一致。
 	FirstTokenDurationNs int64             `json:"first_token_duration_ns"` // 首字节耗时(纳秒)。

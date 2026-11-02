@@ -160,6 +160,45 @@ export function useRunLogLifecycle() {
     });
 }
 
+// AuditArchiveResult 审计归档执行的回执(与 op.AuditArchiveResult 对齐)。
+// deleted 是被清掉的审计行数, archived 是写进归档文件的行数; 两者不等是正常的
+// (归档受 archive_enabled 开关控制, 关闭时只删不归档)。
+export type AuditArchiveResult = {
+    cutoff: string;
+    archived: number;
+    file: string;
+    deleted: number;
+    retention_days: number;
+    archive_enabled: boolean;
+    archive_error?: string;
+};
+
+export type AuditArchiveList = {
+    items: ArchiveFile[];
+    retention_days: number;
+    enabled: boolean;
+};
+
+// useAuditArchives 审计归档文件清单 + 当前留存配置。
+// 与调用日志归档是两个独立的目录/接口, 不能复用 useArchives(键不同, 数据也不同)。
+export function useAuditArchives() {
+    return useQuery({
+        queryKey: ['ops', 'audit-archives'],
+        queryFn: () => apiRequest<AuditArchiveList>('/api/v1/ops/audit-lifecycle/list'),
+    });
+}
+
+// useRunAuditLifecycle 立即归档并清理超期审计记录。该接口要求二次验证:
+// apiRequest 撞上 428 会走 step-up 弹窗, 管理员输一次密码后自动重发,
+// 所以这里不需要额外处理凭证(与 useRunLogLifecycle / useRunBackup 同一口径)。
+export function useRunAuditLifecycle() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: () => apiRequest<AuditArchiveResult>('/api/v1/ops/audit-lifecycle/run', { method: 'POST', timeoutMs: 90000 }),
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['ops', 'audit-archives'] }),
+    });
+}
+
 export function useBackups() {
     return useQuery({
         queryKey: ['ops', 'backups'],

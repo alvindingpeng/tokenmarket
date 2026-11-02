@@ -51,6 +51,14 @@ func TestClassifyUpstreamError(t *testing.T) {
 		{"网络连接失败", errors.New("dial tcp 10.0.0.1:443: connect: connection refused"), ErrorClassTransient},
 		{"状态码 502", &llm.ResponseError{StatusCode: 502, Detail: llm.ErrorDetail{Message: "Bad Gateway"}}, ErrorClassTransient},
 		{"状态码 404 无语义", &llm.ResponseError{StatusCode: 404, Detail: llm.ErrorDetail{Message: "Not Found"}}, ErrorClassModel},
+		{"gzip 编码不兼容覆盖通用请求类型", &llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Type: "invalid_request_error", Message: "Unsupported request content encoding: gzip"}}, ErrorClassCompatibility},
+		{"透传 gzip 编码不兼容", &httpclient.Error{StatusCode: 400, Body: []byte(`{"error":{"type":"invalid_request_error","message":"unsupported request content-encoding gzip"}}`)}, ErrorClassCompatibility},
+		{"普通400仍是客户端错误", &httpclient.Error{StatusCode: 400, Body: []byte(`{"error":{"message":"bad parameter"}}`)}, ErrorClassClient},
+		{"gzip内容错误不是编码兼容性错误", &llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Message: "invalid gzip payload"}}, ErrorClassClient},
+		{"不支持响应编码不是请求兼容性错误", &llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Message: "unsupported response content encoding gzip"}}, ErrorClassClient},
+		{"编码消息不越过内容审查", &llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Code: "content_policy_violation", Message: "unsupported request content encoding gzip"}}, ErrorClassPolicy},
+		{"无代码账户余额不足", &httpclient.Error{StatusCode: 403, Body: []byte(`{"message":"Insufficient account balance"}`)}, ErrorClassQuota},
+		{"中文余额不足", &httpclient.Error{StatusCode: 400, Body: []byte(`{"message":"账户余额不足，请充值"}`)}, ErrorClassQuota},
 		{"未识别错误", errors.New("something we have never seen"), ErrorClassUnknown},
 	}
 	for _, tc := range cases {
@@ -78,6 +86,7 @@ func TestAttemptStatusOfClass(t *testing.T) {
 		{&llm.ResponseError{StatusCode: 402, Detail: llm.ErrorDetail{Message: "Insufficient Balance"}}, "quota"},
 		{&llm.ResponseError{StatusCode: 529, Detail: llm.ErrorDetail{Type: "overloaded_error"}}, "overloaded"},
 		{&llm.ResponseError{StatusCode: 404, Detail: llm.ErrorDetail{Code: "model_not_found"}}, "model_missing"},
+		{&llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Message: "unsupported request content encoding gzip"}}, "compatibility_error"},
 		{errors.New("something we have never seen"), "failed"},
 	}
 	for _, tc := range cases {

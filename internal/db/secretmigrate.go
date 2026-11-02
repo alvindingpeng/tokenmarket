@@ -118,6 +118,10 @@ func MigrateSecretRows(ctx context.Context, dryRun bool) (SecretMigrationStats, 
 		}
 	}
 
+	// TOTP has no legacy plaintext format: validate every stored envelope before startup.
+	if err := validateUserTOTPSecrets(conn, store); err != nil {
+		return stats, err
+	}
 	if dryRun || (len(settingUpdates) == 0 && len(keyUpdates) == 0) {
 		return stats, nil
 	}

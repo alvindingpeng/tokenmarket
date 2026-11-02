@@ -114,6 +114,9 @@ func GroupCreate(req *model.GroupCreateRequest, scope model.Scope, ctx context.C
 		group.Mode = model.GroupModeManual
 	}
 	model.NormalizeGroupRelayConfigForMode(&group.RelayConfig, group.Mode)
+	// 新建分组的成员主键由数据库分配, 客户端不可能预先知道, 因此创建时不可能指定有效的灰度成员;
+	// 灰度只能在分组存在后设置, 这里一律清掉, 免得留下一个永远指不到的悬空 ID。
+	group.RelayConfig.CanaryItemID = 0
 	for i, item := range req.Items {
 		if err := validateGroupItemAccess(item.ChannelGrantID, scope); err != nil {
 			return nil, err
@@ -210,6 +213,16 @@ func GroupUpdate(id int, req *model.GroupUpdateRequest, scope model.Scope, ctx c
 		}
 		if err := tx.Preload("Items").First(&group, id).Error; err != nil {
 			return fmt.Errorf("failed to load updated group: %w", err)
+		}
+		// 灰度成员可能刚被移出分组: 留着悬空的 canary_item_id 会让界面显示"灰度开着"却永远不生效,
+		// 也会让人误以为新渠道还在接流量。成员集合定稿后立即对齐, 与分组成员保持同一事务。
+		if group.RelayConfig.CanaryItemID != 0 &&
+			!slices.ContainsFunc(group.Items, func(item model.GroupItem) bool { return item.ID == group.RelayConfig.CanaryItemID }) {
+			group.RelayConfig.CanaryItemID = 0
+			cleared := model.Group{ID: id, RelayConfig: group.RelayConfig}
+			if err := tx.Model(&model.Group{}).Where("id = ?", id).Select("relay_config").Updates(&cleared).Error; err != nil {
+				return fmt.Errorf("failed to clear canary item: %w", err)
+			}
 		}
 		// 当前成员在成员集合定稿后才写入: syncGroupItems 会清空指向已删除成员的当前成员,
 		// 先写会被它覆盖; 归属校验同样只对最终集合成立。
@@ -374,7 +387,7 @@ func groupSnapshot(group model.Group, scope model.Scope) model.Group {
 		item.UserMedia = channelModel.MediaSupply.Scale(markup)
 		item.Kind = channelModel.Kind
 		item.ChannelName = channel.Name
-		item.Available = channel.Enabled && channelKey.Enabled && !isCircuitBroken(channelKey.DisabledUntil) && !isCircuitBroken(channelModel.DisabledUntil)
+		item.Available = channel.Enabled && !isCircuitBroken(channel.DisabledUntil) && channelKey.Enabled && !isCircuitBroken(channelKey.DisabledUntil) && !isCircuitBroken(channelModel.DisabledUntil)
 		// 展示名定稿: 已发布渠道一律显示发布唯一编码(#1001 形式), 上游名称不出分组管理; 凭据名按归属脱敏。
 		if channel.ShareCode != "" {
 			item.ChannelName = "#" + channel.ShareCode

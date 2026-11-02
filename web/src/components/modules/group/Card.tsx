@@ -13,6 +13,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import type { SelectedMember } from './ItemList';
 import { MemberList } from './ItemList';
 import { GroupEditor, type GroupEditorValues } from './Editor';
+import { canaryChanged } from './canary';
 import {
     MorphingDialog,
     MorphingDialogContainer,
@@ -144,7 +145,9 @@ export const GroupCard = memo(function GroupCard({
             values.relay_config.score_price_weight !== group.relay_config.score_price_weight ||
             values.relay_config.score_latency_weight !== group.relay_config.score_latency_weight ||
             values.relay_config.score_success_weight !== group.relay_config.score_success_weight ||
-            values.relay_config.reliability_floor !== group.relay_config.reliability_floor
+            values.relay_config.reliability_floor !== group.relay_config.reliability_floor ||
+            // 灰度四项单独比: 用户 ID 是集合语义, 顺序不同不算改动, 交给 canaryChanged 统一判定。
+            canaryChanged(values.relay_config, group.relay_config)
         ) payload.relay_config = values.relay_config;
         // 成员集合与顺序有任一处不同就整体提交; 后端按授权主键匹配, 已有成员保留其主键与统计。
         const nextGrantIDs = values.members.map((m) => m.channel_grant_id);

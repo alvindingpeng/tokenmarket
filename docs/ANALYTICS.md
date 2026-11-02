@@ -6,7 +6,31 @@
 
 ## 查询策略
 
-统计只读取登录用户的 billing_records，时间使用闭开区间 `[start, endDate 次日零点)`。数据库负责 COUNT/SUM/GROUP BY，不拉取所有明细到前端或内存。保留原有计费统计口径，不借性能改动改变退费、请求成功率含义。
+统计只读取登录用户的 billing_records，时间使用闭开区间 `[start, endDate 次日零点)`。数据库负责 COUNT/SUM/GROUP BY，不拉取所有明细到前端或内存。计费口径（调用量/费用/词元含 refunded 行，模型分组只取 settled）保持不变；请求成功率改用独立数据源，见下节。
+
+## 成功率口径（v1.5.6 修正）
+
+修复前的成功率是 `settled 计费行 / 全部计费行`，结构上恒等于 100%：失败的调用不会产生计费行（没有用量就没有结算），所以分母里根本没有失败样本。线上 13861 条计费行全部 settled，而调用日志是 4388 成功 / 102 失败 / 5 取消（真实成功率 97.8%）。此外把 refunded 读成“不成功”也不对——退费是计费动作，与请求是否失败无关。
+
+现在：
+
+| 字段 | 数据源 | 含义 |
+|---|---|---|
+| `total_requests` / `total_cost` / `total_tokens` | billing_records | 计费口径，含 refunded 行 |
+| `success_rate` | relay_requests 终态 | `success / (success + failed)` |
+| `request_total` / `request_success` / `request_failed` / `request_canceled` | relay_requests | 请求口径计数，用于解释百分比 |
+| `request_coverage_start` / `request_retention_days` | relay_requests + 设置 | 真实覆盖起点与日志留存天数 |
+
+两条约束写死在实现里：
+
+- **canceled 不进分母。** 客户端主动断开或超时取消是调用方行为，不代表服务不可用；计入分母会让“用户自己中断”拉低平台可靠性指标。
+- **没有样本时返回 0 且计数为 0，由前端显示“—”。** 绝不因为计费行齐全就回填 100%。
+
+代价是 relay_requests 按 `log_retention_days`（生产 7 天）滚动删除，所以“最近 30 天”的成功率可能只覆盖最后几天。页面必须显式提示 `request_coverage_start`，与延迟面板同一原则：不假装覆盖整个区间。
+
+趋势图按桶合并两个数据源。只按计费行建桶会把“当天有调用但一次都没结算”（即全失败）整段抹掉，恰恰是最该被看到的一天，因此日志桶也参与建桶，这类桶的调用量取日志终态计数。归桶规则由 `statsBucketExprOn` 参数化列名复用同一套表达式，确保两条序列按同样的日期切片。
+
+新增 `idx_relay_requests_user_started (user_id, started_at)` 复合索引：成功率与延迟都按“用户 + 时间窗”聚合 relay_requests，只有单列索引时 SQLite 只能二选一。
 
 新增 `(user_id, created_at)` 复合索引，由 GORM AutoMigrate 幂等创建；SQL WHERE 不在 created_at 上包日期函数，日期函数仅用于 GROUP BY，确保范围条件仍可走索引。SQLite 分桶先取存储时间的日期前缀，避免带 +08:00 等偏移的凌晨记录被 DATE 隐式转 UTC 后归入前一天；周桶标签为当周周一。MySQL/PostgreSQL 使用各自方言的日期表达式。原有单列索引保留。
 

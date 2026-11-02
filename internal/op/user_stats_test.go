@@ -55,6 +55,35 @@ func userStatsInsert(t *testing.T, recs ...model.BillingRecord) {
 	}
 }
 
+// userStatsRelayRow 构造一条调用日志行; status 取终态 running/committed 时用于验证"在飞请求不计入"。
+func userStatsRelayRow(userID uint, status string, at time.Time) model.RelayRequest {
+	return model.RelayRequest{
+		ID:        uint64(at.UnixNano()),
+		UserID:    userID,
+		Model:     "m",
+		Status:    status,
+		StartedAt: at,
+	}
+}
+
+// userStatsRelayInsert 写入调用日志。ID 显式指定(autoIncrement:false), 用时间纳秒保证唯一。
+func userStatsRelayInsert(t *testing.T, recs ...model.RelayRequest) {
+	t.Helper()
+	seen := make(map[uint64]struct{}, len(recs))
+	for i := range recs {
+		for {
+			if _, ok := seen[recs[i].ID]; !ok {
+				break
+			}
+			recs[i].ID++
+		}
+		seen[recs[i].ID] = struct{}{}
+	}
+	if err := db.GetDB().Create(&recs).Error; err != nil {
+		t.Fatalf("insert relay rows: %v", err)
+	}
+}
+
 // TestUserStatsUserIsolation 各统计接口只统计本人计费行, 不串其他用户。
 func TestUserStatsUserIsolation(t *testing.T) {
 	payer, other := userStatsTestSetup(t)
@@ -169,9 +198,9 @@ func TestUserStatsEmptySet(t *testing.T) {
 	}
 }
 
-// TestUserStatsRefundKeepsBillingScope 退费行保留原口径:
-// 总量/费用/Token 含 refunded 行不剔除; 成功数仅 settled, SuccessRate 是 settled 计费行占比(并非请求成功率);
-// 模型分组保持既有 status=settled 过滤不变。
+// TestUserStatsRefundKeepsBillingScope 退费行保留原计费口径:
+// 总量/费用/Token 含 refunded 行不剔除; 模型分组保持既有 status=settled 过滤不变;
+// 成功率不再由计费行推导 —— 退费不等于请求失败, 两者必须分开。
 func TestUserStatsRefundKeepsBillingScope(t *testing.T) {
 	payer, _ := userStatsTestSetup(t)
 	at := time.Date(2026, 4, 10, 9, 0, 0, 0, time.Local)
@@ -188,15 +217,16 @@ func TestUserStatsRefundKeepsBillingScope(t *testing.T) {
 	if overview.TotalRequests != 2 || overview.TotalCost != 5 || overview.TotalTokens != 16 {
 		t.Fatalf("refunded 被剔除或超范围: %+v", overview)
 	}
-	if overview.SuccessRate != 50 {
-		t.Fatalf("成功率应为 settled 占比 50%%: %+v", overview)
+	// 退费不再被读成"失败": 该区间没有调用日志, 请求口径一律为零, 而不是拿 settled 占比当成功率。
+	if overview.SuccessRate != 0 || overview.RequestTotal != 0 {
+		t.Fatalf("退费不应进入请求成功率: %+v", overview)
 	}
 
 	trend, err := UserStatsTrend(ctx, payer.ID, "2026-04-01", "2026-04-30", "day")
 	if err != nil {
 		t.Fatalf("trend: %v", err)
 	}
-	if len(trend) != 1 || trend[0].Requests != 2 || trend[0].Cost != 5 || trend[0].SuccessRate != 50 {
+	if len(trend) != 1 || trend[0].Requests != 2 || trend[0].Cost != 5 || trend[0].SuccessRate != 0 {
 		t.Fatalf("趋势退费口径: %+v", trend)
 	}
 
@@ -206,6 +236,110 @@ func TestUserStatsRefundKeepsBillingScope(t *testing.T) {
 	}
 	if len(models) != 1 || models[0].Requests != 1 || models[0].Cost != 2 || models[0].Tokens != 11 {
 		t.Fatalf("模型分组保持 settled 过滤: %+v", models)
+	}
+}
+
+// TestUserStatsSuccessRateFromRelayLogs 成功率取调用日志的终态, 不是计费行占比:
+// 失败的调用不产生计费行, 若用计费行占比, 只要没有退费成功率就恒等于 100%。
+// canceled 不进分母(客户端主动中断/取消不算服务失败); running/committed 仍在飞, 不计入。
+func TestUserStatsSuccessRateFromRelayLogs(t *testing.T) {
+	payer, other := userStatsTestSetup(t)
+	at := time.Date(2026, 6, 10, 9, 0, 0, 0, time.Local)
+	// 计费行全部 settled: 这一组数据用旧口径算出来正好是 100%, 正是要修的 bug 形态。
+	userStatsInsert(t,
+		userStatsRow(payer.ID, "m", model.BillingStatusSettled, at, 1, 1),
+		userStatsRow(payer.ID, "m", model.BillingStatusSettled, at.Add(time.Minute), 1, 1),
+		userStatsRow(payer.ID, "m", model.BillingStatusSettled, at.Add(2*time.Minute), 1, 1),
+	)
+	userStatsRelayInsert(t,
+		userStatsRelayRow(payer.ID, "success", at),
+		userStatsRelayRow(payer.ID, "success", at.Add(time.Minute)),
+		userStatsRelayRow(payer.ID, "success", at.Add(2*time.Minute)),
+		userStatsRelayRow(payer.ID, "failed", at.Add(3*time.Minute)),
+		userStatsRelayRow(payer.ID, "canceled", at.Add(4*time.Minute)),
+		userStatsRelayRow(payer.ID, "running", at.Add(5*time.Minute)),
+		userStatsRelayRow(payer.ID, "committed", at.Add(6*time.Minute)),
+		userStatsRelayRow(other.ID, "failed", at.Add(7*time.Minute)), // 他人日志不得串入
+	)
+	ctx := context.Background()
+
+	overview, err := UserStatsOverview(ctx, payer.ID, "2026-06-01", "2026-06-30")
+	if err != nil {
+		t.Fatalf("overview: %v", err)
+	}
+	// 3 成功 / (3 成功 + 1 失败) = 75%; 取消与在飞都不进分母。
+	if overview.SuccessRate != 75 {
+		t.Fatalf("成功率应为 75%%: %+v", overview)
+	}
+	if overview.RequestTotal != 5 || overview.RequestSuccess != 3 || overview.RequestFailed != 1 || overview.RequestCanceled != 1 {
+		t.Fatalf("请求结局计数: %+v", overview)
+	}
+	// 计费口径的调用量与费用口径无关地保持原值(全 settled 的 3 行)。
+	if overview.TotalRequests != 3 || overview.TotalCost != 3 {
+		t.Fatalf("计费口径不应被成功率改动: %+v", overview)
+	}
+	if overview.RequestCoverageStart != "2026-06-10" || overview.RequestRetentionDays <= 0 {
+		t.Fatalf("必须返回日志覆盖起点与留存天数: %+v", overview)
+	}
+
+	trend, err := UserStatsTrend(ctx, payer.ID, "2026-06-01", "2026-06-30", "day")
+	if err != nil {
+		t.Fatalf("trend: %v", err)
+	}
+	if len(trend) != 1 || trend[0].Date != "2026-06-10" || trend[0].SuccessRate != 75 ||
+		trend[0].Requests != 3 || trend[0].RequestFailed != 1 || trend[0].RequestCanceled != 1 {
+		t.Fatalf("趋势成功率应与概览同源: %+v", trend)
+	}
+}
+
+// TestUserStatsAllFailedDayKeptInTrend 一天全失败时没有任何计费行, 但那天必须留在趋势里:
+// 只按计费行建桶会把它整段抹掉, "最严重的一天"反而看不见。
+func TestUserStatsAllFailedDayKeptInTrend(t *testing.T) {
+	payer, _ := userStatsTestSetup(t)
+	ok := time.Date(2026, 7, 1, 10, 0, 0, 0, time.Local)
+	bad := time.Date(2026, 7, 2, 10, 0, 0, 0, time.Local)
+	userStatsInsert(t, userStatsRow(payer.ID, "m", model.BillingStatusSettled, ok, 1, 1))
+	userStatsRelayInsert(t,
+		userStatsRelayRow(payer.ID, "success", ok),
+		userStatsRelayRow(payer.ID, "failed", bad),
+		userStatsRelayRow(payer.ID, "failed", bad.Add(time.Minute)),
+	)
+
+	trend, err := UserStatsTrend(context.Background(), payer.ID, "2026-07-01", "2026-07-31", "day")
+	if err != nil {
+		t.Fatalf("trend: %v", err)
+	}
+	if len(trend) != 2 {
+		t.Fatalf("全失败的一天必须出现在趋势里: %+v", trend)
+	}
+	if trend[0].Date != "2026-07-01" || trend[0].SuccessRate != 100 || trend[0].Requests != 1 {
+		t.Fatalf("07-01: %+v", trend[0])
+	}
+	// 07-02 无计费行: 调用量取日志终态计数(2 次失败), 成功率 0。
+	if trend[1].Date != "2026-07-02" || trend[1].SuccessRate != 0 ||
+		trend[1].Requests != 2 || trend[1].RequestFailed != 2 {
+		t.Fatalf("07-02 应保留且成功率为 0: %+v", trend[1])
+	}
+}
+
+// TestUserStatsSuccessRateWithoutLogsIsZero 查询区间落在日志留存期之外时, 成功率没有样本:
+// 必须返回 0 且计数为 0(由前端显示"无数据"), 绝不能因为计费行齐全就回填 100%。
+func TestUserStatsSuccessRateWithoutLogsIsZero(t *testing.T) {
+	payer, _ := userStatsTestSetup(t)
+	userStatsInsert(t, userStatsRow(payer.ID, "m", model.BillingStatusSettled, time.Date(2026, 2, 3, 10, 0, 0, 0, time.Local), 1, 1))
+
+	overview, err := UserStatsOverview(context.Background(), payer.ID, "2026-02-01", "2026-02-28")
+	if err != nil {
+		t.Fatalf("overview: %v", err)
+	}
+	if overview.TotalRequests != 1 {
+		t.Fatalf("计费口径仍应有 1 行: %+v", overview)
+	}
+	if overview.SuccessRate != 0 || overview.RequestTotal != 0 || overview.RequestCoverageStart != "" {
+		t.Fatalf("无日志样本时成功率应无数据: %+v", overview)
+	}
+	if overview.RequestRetentionDays <= 0 {
+		t.Fatalf("即便无样本也要给出留存天数: %+v", overview)
 	}
 }
 
@@ -322,6 +456,18 @@ func TestUserStatsBucketExprDialects(t *testing.T) {
 	if got := statsBucketExpr("unknown", "day"); got != cases[0].want {
 		t.Fatalf("兜底: %q", got)
 	}
+
+	// 成功率走调用日志, 归桶列是 started_at 而不是 created_at:
+	// 换了列名但规则必须与计费口径完全一致, 否则趋势图两条序列按不同日期切片。
+	if got := statsBucketExprOn("sqlite", "day", "started_at"); got != "DATE(SUBSTR(started_at, 1, 10))" {
+		t.Fatalf("started_at 日桶: %q", got)
+	}
+	if got := statsBucketExprOn("mysql", "week", "started_at"); got != "DATE_FORMAT(started_at - INTERVAL WEEKDAY(started_at) DAY, '%Y-%m-%d')" {
+		t.Fatalf("started_at 周桶: %q", got)
+	}
+	if got := statsBucketExprOn("postgres", "month", "started_at"); got != "TO_CHAR(DATE_TRUNC('month', started_at), 'YYYY-MM-DD')" {
+		t.Fatalf("started_at 月桶: %q", got)
+	}
 }
 
 // TestUserStatsCompositeIndexAndQueryPlan AutoMigrate 由 gorm tag 建出 (user_id, created_at) 复合索引,
@@ -418,6 +564,54 @@ func TestUserStatsCompositeIndexAndQueryPlan(t *testing.T) {
 			Scan(&out)
 	})
 	explain("trend", trendSQL)
+}
+
+// TestUserStatsRelayRequestCompositeIndex 成功率与延迟都以「用户 + 时间窗」查 relay_requests,
+// 需要 (user_id, started_at) 复合索引: 只有单列索引时 SQLite 只能二选一, 大区间会退化成全表扫。
+func TestUserStatsRelayRequestCompositeIndex(t *testing.T) {
+	payer, _ := userStatsTestSetup(t)
+	userStatsRelayInsert(t, userStatsRelayRow(payer.ID, "success", time.Date(2026, 5, 1, 10, 0, 0, 0, time.Local)))
+
+	type idxRow struct {
+		Name string
+		SQL  string
+	}
+	var indexes []idxRow
+	if err := db.GetDB().Raw("SELECT name, sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'relay_requests'").Scan(&indexes).Error; err != nil {
+		t.Fatalf("list indexes: %v", err)
+	}
+	byName := map[string]string{}
+	for _, ix := range indexes {
+		byName[ix.Name] = ix.SQL
+	}
+	if sql, ok := byName["idx_relay_requests_user_started"]; !ok {
+		t.Fatalf("复合索引缺失: %+v", byName)
+	} else if low := strings.ToLower(sql); !strings.Contains(low, "user_id") || !strings.Contains(low, "started_at") ||
+		strings.Index(low, "user_id") > strings.Index(low, "started_at") {
+		t.Fatalf("复合索引列序错误: %s", sql)
+	}
+
+	start, end := time.Date(2026, 5, 1, 0, 0, 0, 0, time.Local), time.Date(2026, 5, 2, 0, 0, 0, 0, time.Local)
+	sqlText := db.GetDB().ToSQL(func(tx *gorm.DB) *gorm.DB {
+		var out []requestOutcome
+		bucket := statsBucketExprOn(statsDialect(), "day", "started_at")
+		return tx.Model(&model.RelayRequest{}).
+			Select(bucket+" as date, COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) as success", relayStatusSuccess).
+			Where("user_id = ? AND started_at >= ? AND started_at < ?", payer.ID, start, end).
+			Group(bucket).
+			Scan(&out)
+	})
+	var plan []struct{ Detail string }
+	if err := db.GetDB().Raw("EXPLAIN QUERY PLAN " + sqlText).Scan(&plan).Error; err != nil {
+		t.Fatalf("explain: %v", err)
+	}
+	joined := ""
+	for _, p := range plan {
+		joined += p.Detail + "\n"
+	}
+	if !strings.Contains(joined, "idx_relay_requests_user_started") || !strings.Contains(joined, "SEARCH relay_requests") {
+		t.Fatalf("成功率聚合未走复合索引:\n%s", joined)
+	}
 }
 
 // userStatsBenchBase 基准数据: 单用户大批量历史计费样本(对齐生产形态: 全部行属同一用户),

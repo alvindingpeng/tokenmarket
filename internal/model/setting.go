@@ -102,10 +102,15 @@ const (
 	SettingKeyMaintenanceMode         SettingKey = "maintenance_mode"          // 维护模式, 开启后非管理员登录将被拒绝
 	SettingKeyMaintenanceNotice       SettingKey = "maintenance_notice"        // 维护提示文案
 	// 日志生命周期与备份: 留存、脱敏与自动备份。
-	SettingKeyLogRetentionDays      SettingKey = "log_retention_days"       // 调用日志留存天数, 默认 7。
-	SettingKeyLogArchiveEnabled     SettingKey = "log_archive_enabled"      // 是否在清理前归档, 默认 true。
-	SettingKeyLogStoreBody          SettingKey = "log_store_body"           // 是否保存请求/响应正文, 默认 true。
-	SettingKeyLogMaskFields         SettingKey = "log_mask_fields"          // 正文脱敏字段(逗号分隔的 JSON key)。
+	SettingKeyLogRetentionDays    SettingKey = "log_retention_days"    // 调用日志留存天数, 默认 7。
+	SettingKeyLogArchiveEnabled   SettingKey = "log_archive_enabled"   // 是否在清理前归档, 默认 true。
+	SettingKeyLogStoreBody        SettingKey = "log_store_body"        // 是否保存请求/响应正文, 默认 true。
+	SettingKeyLogMaskFields       SettingKey = "log_mask_fields"       // 正文脱敏字段(逗号分隔的 JSON key)。
+	SettingKeyAuditRetentionDays  SettingKey = "audit_retention_days"  // 审计日志留存天数, 默认 180; 超期先归档再删除。
+	SettingKeyAuditArchiveEnabled SettingKey = "audit_archive_enabled" // 审计清理前是否先归档为 NDJSON, 默认 true。
+	// 用户等级配额: JSON 形如 {"free":{"rpm":60,"tpm":60000,"concurrent":2}, ...}。
+	// 只在用户/API Key 维度没有显式限流策略时兜底, 不会覆盖管理员为个别用户单独配的策略。
+	SettingKeyUserTierPolicies      SettingKey = "user_tier_policies"
 	SettingKeyAutoBackupEnabled     SettingKey = "auto_backup_enabled"      // 自动备份开关, 默认 true。
 	SettingKeyAutoBackupKeep        SettingKey = "auto_backup_keep"         // 自动备份保留份数, 默认 7。
 	SettingKeyAutoBackupInterval    SettingKey = "auto_backup_interval"     // 自动备份间隔(小时), 默认 24。
@@ -133,15 +138,15 @@ const (
 	SettingKeyLoginMaxAttempts    SettingKey = "login_max_attempts"    // 连续失败次数阈值, 默认 5; 0 表示不按次数锁定(但退避仍然生效)。
 	SettingKeyLoginLockoutSeconds SettingKey = "login_lockout_seconds" // 首次锁定的基础秒数, 默认 900 (15 分钟); 每次额外失败后翻倍, 封顶 1 小时。
 	// 熔断参数: 上游故障的计数阈值与隔离时长, 全部可调; 阈值 0 表示不按计数熔断(立即熔断与冷却仍生效)。
-	SettingKeyBreakerKeyThreshold    SettingKey = "breaker_key_threshold"     // 凭据级熔断的错误次数阈值, 默认 5。
-	SettingKeyBreakerKeyMinutes      SettingKey = "breaker_key_minutes"       // 凭据级熔断时长(分钟), 默认 5。
-	SettingKeyBreakerKeyHardMinutes  SettingKey = "breaker_key_hard_minutes"  // 鉴权/额度错误的立即熔断时长(分钟), 默认 30。
-	SettingKeyBreakerModelThreshold  SettingKey = "breaker_model_threshold"   // 渠道模型级熔断的错误次数阈值, 默认 5。
-	SettingKeyBreakerModelMinutes    SettingKey = "breaker_model_minutes"     // 渠道模型级熔断时长(分钟), 默认 5。
-	SettingKeyBreakerMaxMinutes      SettingKey = "breaker_max_minutes"       // 熔断时长递增上限(分钟), 默认 60。
-	SettingKeyEgressRegionBonusMs    SettingKey = "egress_region_bonus_ms"    // 出口区域亲和加成(毫秒), 默认 0 即关闭。
-	SettingKeyBreakerCoolAuthSeconds SettingKey = "breaker_cool_auth_seconds" // 换路冷却: 鉴权/额度错误后该成员冷却秒数, 默认 60。
-	SettingKeyBreakerCoolSoftSeconds SettingKey = "breaker_cool_soft_seconds" // 换路冷却: 过载/模型缺失等软错误后该成员冷却秒数, 默认 30。
+	SettingKeyBreakerKeyThreshold     SettingKey = "breaker_key_threshold"     // 凭据级熔断的错误次数阈值, 默认 5。
+	SettingKeyBreakerKeyMinutes       SettingKey = "breaker_key_minutes"       // 凭据级熔断时长(分钟), 默认 5。
+	SettingKeyBreakerKeyHardMinutes   SettingKey = "breaker_key_hard_minutes"  // 鉴权/额度错误的立即熔断时长(分钟), 默认 30。
+	SettingKeyBreakerModelThreshold   SettingKey = "breaker_model_threshold"   // 渠道模型级熔断的错误次数阈值, 默认 5。
+	SettingKeyBreakerModelMinutes     SettingKey = "breaker_model_minutes"     // 渠道模型级熔断时长(分钟), 默认 5。
+	SettingKeyBreakerMaxMinutes       SettingKey = "breaker_max_minutes"       // 熔断时长递增上限(分钟), 默认 60。
+	SettingKeyEgressRegionBonusMs     SettingKey = "egress_region_bonus_ms"    // 出口区域亲和加成(毫秒), 默认 0 即关闭。
+	SettingKeyBreakerCoolAuthSeconds  SettingKey = "breaker_cool_auth_seconds" // 换路冷却: 鉴权/额度错误后该成员冷却秒数, 默认 60。
+	SettingKeyBreakerCoolSoftSeconds  SettingKey = "breaker_cool_soft_seconds" // 换路冷却: 过载/模型缺失等软错误后该成员冷却秒数, 默认 30。
 	SettingKeyBreakerDegradeThreshold SettingKey = "breaker_degrade_threshold" // 熔断降级告警阈值: 熔断次数达到此值时生成 degraded 告警, 默认 3。
 
 	// 质量评分权重
@@ -272,6 +277,9 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyLogArchiveEnabled, Value: "true"},                                 // 清理前先归档
 		{Key: SettingKeyLogStoreBody, Value: "true"},                                      // 默认保存正文
 		{Key: SettingKeyLogMaskFields, Value: ""},                                         // 默认不额外脱敏
+		{Key: SettingKeyAuditRetentionDays, Value: "180"},                                 // 审计留存 180 天(合规常见下限)
+		{Key: SettingKeyAuditArchiveEnabled, Value: "true"},                               // 清理前先归档, 避免删了才发现要查
+		{Key: SettingKeyUserTierPolicies, Value: DefaultUserTierPoliciesJSON},             // 默认四档配额
 		{Key: SettingKeyAutoBackupEnabled, Value: "true"},                                 // 默认开启自动备份
 		{Key: SettingKeyAutoBackupKeep, Value: "7"},                                       // 保留 7 份
 		{Key: SettingKeyAutoBackupInterval, Value: "24"},                                  // 每 24 小时一次
@@ -306,9 +314,9 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyBreakerModelMinutes, Value: "5"},     // 渠道模型熔断 5 分钟
 		{Key: SettingKeyBreakerMaxMinutes, Value: "60"},      // 连续熔断的时长上限 60 分钟
 		{Key: SettingKeyEgressRegionBonusMs, Value: "0"},     // 区域亲和默认关闭
-		{Key: SettingKeyBreakerCoolAuthSeconds, Value: "60"},   // 鉴权/额度成员冷却 60 秒
-		{Key: SettingKeyBreakerCoolSoftSeconds, Value: "30"},   // 过载/模型缺失成员冷却 30 秒
-		{Key: SettingKeyBreakerDegradeThreshold, Value: "3"},    // 熔断降级告警阈值: 累计3次即生成 degraded 告警
+		{Key: SettingKeyBreakerCoolAuthSeconds, Value: "60"}, // 鉴权/额度成员冷却 60 秒
+		{Key: SettingKeyBreakerCoolSoftSeconds, Value: "30"}, // 过载/模型缺失成员冷却 30 秒
+		{Key: SettingKeyBreakerDegradeThreshold, Value: "3"}, // 熔断降级告警阈值: 累计3次即生成 degraded 告警
 
 		{Key: SettingKeyQualityWeightSuccess, Value: "40"}, // 质量评分成功率权重 40%
 		{Key: SettingKeyQualityWeightLatency, Value: "35"}, // 质量评分延迟权重 35%
@@ -498,9 +506,19 @@ func (s *Setting) Validate() error {
 			return fmt.Errorf("%s must be a non-negative integer (max 600000)", s.Key)
 		}
 		return nil
-	case SettingKeyLogArchiveEnabled, SettingKeyLogStoreBody, SettingKeyAutoBackupEnabled, SettingKeyHealthCheckEnabled, SettingKeyBackupEncrypt, SettingKeyBackupRemote:
+	case SettingKeyLogArchiveEnabled, SettingKeyAuditArchiveEnabled, SettingKeyLogStoreBody, SettingKeyAutoBackupEnabled, SettingKeyHealthCheckEnabled, SettingKeyBackupEncrypt, SettingKeyBackupRemote:
 		if _, err := strconv.ParseBool(s.Value); err != nil {
 			return fmt.Errorf("%s must be a boolean", s.Key)
+		}
+		return nil
+	case SettingKeyAuditRetentionDays:
+		if n, err := strconv.Atoi(s.Value); err != nil || n < 1 || n > 3650 {
+			return fmt.Errorf("audit retention days must be an integer between 1 and 3650")
+		}
+		return nil
+	case SettingKeyUserTierPolicies:
+		if _, err := ParseUserTierPolicies(s.Value); err != nil {
+			return err
 		}
 		return nil
 	case SettingKeyAlertDedupMinutes:

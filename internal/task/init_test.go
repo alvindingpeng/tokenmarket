@@ -128,6 +128,7 @@ func TestTaskNamesAndDefinitionsInSync(t *testing.T) {
 		TaskBillingReconcile,
 		TaskBillingRecovery,
 		TaskLogArchive,
+		TaskAuditArchive,
 		TaskAutoBackup,
 		TaskChannelHealth,
 		TaskChannelTrustEval,

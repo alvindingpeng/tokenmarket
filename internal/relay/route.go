@@ -94,6 +94,33 @@ func effectiveGroupForRequest(group model.Group, preference string) model.Group 
 	return group
 }
 
+// pickCanaryItem 返回本轮应当走的灰度成员; 灰度未开启或该成员当前不可用(停用、额度熔断、冷却中、正被探测)时
+// 返回假, 由调用方回落到策略选路。命中判定不在这里做: 命中结果是每请求固定的, 由调用方算一次并复用。
+// 灰度命中者不再参与策略择优: 灰度阶段的目的就是让新成员获得固定比例的确定性流量,
+// 若仍按评分/价格挑选, 便宜的旧成员会把样本全部吃掉, 新成员永远凑不够观测数据。
+// 这里刻意不改动 route.CurrentItemID 与亲和: 路由状态是整组共享的, 把灰度成员写成当前成员会让
+// 未命中灰度的流量在亲和期内一起被带到新渠道, 相当于灰度比例被亲和放大。
+func pickCanaryItem(group model.Group) (model.GroupItem, bool) {
+	if !group.RelayConfig.CanaryActive() {
+		return model.GroupItem{}, false
+	}
+	item := itemOf(group, group.RelayConfig.CanaryItemID)
+	if item.ID == 0 || !item.Available || upstreamItemLimited(item) {
+		return model.GroupItem{}, false
+	}
+	routeMu.Lock()
+	defer routeMu.Unlock()
+	route := groupRouteLocked(group)
+	if deadline, cooling := route.Cooldowns[item.ID]; cooling && deadline > time.Now().UnixMilli() {
+		return model.GroupItem{}, false
+	}
+	// 灰度成员正被当作恢复探测对象时让出本轮: 探测流量已经确定由它承接, 再叠灰度会放大该成员的瞬时压力。
+	if route.ProbeItemID == item.ID {
+		return model.GroupItem{}, false
+	}
+	return item, true
+}
+
 func pickGroupItem(group model.Group) model.GroupItem {
 	if group.Mode == model.GroupModeManual {
 		for _, item := range group.Items {
@@ -116,7 +143,8 @@ func pickGroupItem(group model.Group) model.GroupItem {
 	// 亲和期内沿用当前成员, 不提前探测已恢复的高优先级成员。
 	if group.RequestRoutingPreference == "" && route.CurrentItemID != 0 && route.AffinityUntil > now {
 		current := itemOf(group, route.CurrentItemID)
-		if current.Available && !upstreamItemLimited(current) {
+		_, cooling := route.Cooldowns[current.ID]
+		if current.Available && !cooling && route.ProbeItemID != current.ID && !upstreamItemLimited(current) {
 			return current
 		}
 	}
@@ -142,6 +170,12 @@ func pickGroupItem(group model.Group) model.GroupItem {
 			if probeCandidate == nil {
 				probeCandidate = item
 			}
+			// A recovered member is probe-only while another probe is in flight.
+			// Keeping it in candidates would let score/price selection release
+			// normal traffic before the probe has established recovery.
+			if route.ProbeItemID != 0 {
+				continue
+			}
 		} else if !hasHealthy || item.Priority < bestHealthyPriority {
 			bestHealthyPriority, hasHealthy = item.Priority, true
 		}
@@ -149,8 +183,7 @@ func pickGroupItem(group model.Group) model.GroupItem {
 	}
 
 	// 冷却到期的成员优先级高于全部健康候选时先放一个探测请求(与故障转移原语义一致);
-	// 全组都在恢复时也探测, 避免请求永久等待。探测占用被其它请求持有时跳过, 该成员此时
-	// 留在候选池里照常参与选择, 不会因为探测被占用而再次从路由里消失。
+	// 全组都在恢复时也只放一个探测, 避免永久等待; 占用期间到期成员不进入正常候选池。
 	if probeCandidate != nil && route.ProbeItemID == 0 &&
 		(!hasHealthy || probeCandidate.Priority < bestHealthyPriority) {
 		route.ProbeItemID = probeCandidate.ID
@@ -163,6 +196,12 @@ func pickGroupItem(group model.Group) model.GroupItem {
 	}
 
 	chosen := selectGroupItem(group, candidates)
+	// Strategy-selected recovery traffic must reserve the same single probe slot.
+	if _, recovering := route.Cooldowns[chosen.ID]; recovering {
+		route.ProbeItemID = chosen.ID
+		publishRouteLocked(route)
+		return chosen
+	}
 	route.CurrentItemID = chosen.ID
 	publishRouteLocked(route)
 	return chosen
@@ -170,15 +209,22 @@ func pickGroupItem(group model.Group) model.GroupItem {
 
 // routeExplanation records observable constraints at selection time; admission
 // remains authoritative because concurrent callers may consume capacity afterwards.
-func routeExplanation(group model.Group, chosen model.GroupItem) model.RelayRouteDecision {
+func routeExplanation(group model.Group, chosen model.GroupItem, canary bool) model.RelayRouteDecision {
 	state := RouteStateOf(group)
 	now := time.Now().UnixMilli()
 	reason := "strategy_" + string(group.Mode)
-	if state.ProbeItemID == chosen.ID && chosen.ID != 0 {
-		reason = "recovery_probe"
+	// 灰度是决定本轮选路的直接原因, 其余解释都只描述状态, 不能覆盖它。
+	// 灰度命中优先记录: 它是本轮选路的决定因素, 比探测与亲和更能解释"为什么是这个成员"。
+	if canary && chosen.ID != 0 {
+		reason = "canary_rollout"
 	}
-	if group.RequestRoutingPreference == "" && state.AffinityUntil > now && state.CurrentItemID == chosen.ID && chosen.ID != 0 {
-		reason = "affinity"
+	if reason != "canary_rollout" {
+		if state.ProbeItemID == chosen.ID && chosen.ID != 0 {
+			reason = "recovery_probe"
+		}
+		if group.RequestRoutingPreference == "" && state.AffinityUntil > now && state.CurrentItemID == chosen.ID && chosen.ID != 0 {
+			reason = "affinity"
+		}
 	}
 	result := model.RelayRouteDecision{Mode: string(group.Mode), Phase: "selected", Reason: reason}
 	for _, item := range group.Items {
@@ -556,6 +602,10 @@ func releaseRouteProbe(group model.Group, itemID int) {
 func hasOtherEligible(group model.Group, excludeItemID int) bool {
 	routeMu.Lock()
 	route := routes[group.ID]
+	var cooldowns map[int]int64
+	if route != nil {
+		cooldowns = maps.Clone(route.Cooldowns)
+	}
 	routeMu.Unlock()
 
 	now := time.Now().UnixMilli()
@@ -566,10 +616,8 @@ func hasOtherEligible(group model.Group, excludeItemID int) bool {
 		if !item.Available || upstreamItemLimited(item) {
 			continue
 		}
-		if route != nil {
-			if deadline, cooling := route.Cooldowns[item.ID]; cooling && deadline > now {
-				continue
-			}
+		if deadline, cooling := cooldowns[item.ID]; cooling && deadline > now {
+			continue
 		}
 		return true
 	}

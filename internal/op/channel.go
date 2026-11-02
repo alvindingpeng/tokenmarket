@@ -31,6 +31,32 @@ var (
 // 故两处写路径互斥; 纯读(快照/选路)不参与锁, 缓存本身并发读安全。
 var channelModelCacheWriteMu sync.Mutex
 
+// channelBreakerWriteMu 串行化错误记录和成功重置的读库-写库-回写缓存,
+// 避免并发请求丢失计数, 或较早的数据库结果在较晚的重置之后才写入缓存。
+var channelBreakerWriteMu sync.Mutex
+
+// 只修改熔断字段, 不拿数据库旧统计/价格覆盖缓存中尚未落库的累加。
+// 与统计累加和子表重载使用相同的锁顺序; cache.Get/Set 本身只保证单次操作安全。
+func updateChannelKeyBreakerCache(id int, update func(*model.ChannelKey)) {
+	channelKeyStatsNeedUpdateLock.Lock()
+	defer channelKeyStatsNeedUpdateLock.Unlock()
+	if cached, ok := channelKeyCache.Get(id); ok {
+		update(&cached)
+		channelKeyCache.Set(id, cached)
+	}
+}
+
+func updateChannelModelBreakerCache(id int, update func(*model.ChannelModel)) {
+	channelModelStatsNeedUpdateLock.Lock()
+	defer channelModelStatsNeedUpdateLock.Unlock()
+	channelModelCacheWriteMu.Lock()
+	defer channelModelCacheWriteMu.Unlock()
+	if cached, ok := channelModelCache.Get(id); ok {
+		update(&cached)
+		channelModelCache.Set(id, cached)
+	}
+}
+
 // 已定义的全部协议位, 用于校验提交的协议掩码。
 // ProtocolOpenAIVideo 一并列入, 管理后台勾选不会被判为非法位; 视频路由本身 P2 阶段再补。
 const definedProtocols = model.ProtocolOpenAIChatCompletion | model.ProtocolOpenAIResponse | model.ProtocolAnthropicMessage | model.ProtocolOpenAIImage | model.ProtocolOpenAIVideo | model.ProtocolXunfeiSparkWS
@@ -75,6 +101,9 @@ func ChannelStatsList(scope model.Scope) []model.ChannelStats {
 			Shared:      channel.Shared,
 			ShareCode:   channel.ShareCode,
 			Enabled:     channel.Enabled,
+			// 额度暂停截止时间与 enabled 并列外露: 前者是上游余额不足自动写入的硬暂停,
+			// 后者是人工开关, 列表页要把两者分开显示(暂停原因与剩余时长 + 提前恢复入口)。
+			DisabledUntil: channel.DisabledUntil,
 			// 审核字段必须随列表一并外露: 卡片徽章与发布闸口只消费这一条查询,
 			// 漏拷会让 review_status 恒为空串, 徽章渲染成裸 key, 发布闸口对已过审渠道也恒判为受阻。
 			ReviewStatus: channel.ReviewStatus,
@@ -167,6 +196,7 @@ func ChannelUpdate(detail *model.ChannelDetail, scope model.Scope, ctx context.C
 	channel := model.Channel{ID: detail.ID, ChannelConfig: detail.ChannelConfig}
 	if cached, ok := channelCache.Get(detail.ID); ok {
 		channel.StatsMetrics = cached.StatsMetrics
+		channel.DisabledUntil = cached.DisabledUntil
 		channel.UserID = cached.UserID
 		channel.Shared = cached.Shared
 		channel.ShareCode = cached.ShareCode
@@ -396,6 +426,8 @@ func syncChannelEgresses(tx *gorm.DB, channelID int, requested []model.ChannelEg
 
 // ChannelEnabled 更新渠道启用状态。
 func ChannelEnabled(id int, enabled bool, scope model.Scope, ctx context.Context) error {
+	channelStatsNeedUpdateLock.Lock()
+	defer channelStatsNeedUpdateLock.Unlock()
 	channel, ok := channelCache.Get(id)
 	if !ok || !scope.Owns(channel.UserID) {
 		return fmt.Errorf("channel not found")
@@ -480,6 +512,9 @@ func ChannelGrantGet(id int) (model.ChannelGrant, error) {
 	if !ok {
 		return model.ChannelGrant{}, fmt.Errorf("channel model %d not found", grant.ChannelModelID)
 	}
+	if ChannelQuotaPaused(channelModel.ChannelID) {
+		return model.ChannelGrant{}, fmt.Errorf("channel %d quota is temporarily exhausted", channelModel.ChannelID)
+	}
 	channelKey, ok := channelKeyCache.Get(grant.ChannelKeyID)
 	if !ok {
 		return model.ChannelGrant{}, fmt.Errorf("channel key %d not found", grant.ChannelKeyID)
@@ -523,7 +558,7 @@ func ChannelGrantCandidates(scope model.Scope) []model.ChannelGrantCandidate {
 			ModelName:   channelModel.Name,
 			KeyName:     channelKey.Name,
 			Protocols:   grant.Protocols,
-			Available:   channel.Enabled && channelKey.Enabled,
+			Available:   channel.Enabled && !isCircuitBroken(channel.DisabledUntil) && channelKey.Enabled && !isCircuitBroken(channelKey.DisabledUntil) && !isCircuitBroken(channelModel.DisabledUntil),
 			Listed:      channelModel.Listed,
 			SupplyPrice: channelModel.SupplyPrice,
 			UserPrice:   channelModel.SupplyPrice.Scale(markup),
@@ -555,6 +590,8 @@ func ChannelGrantCandidates(scope model.Scope) []model.ChannelGrantCandidate {
 // ChannelPublish 发布或取消发布渠道: 发布时生成 4 位数字编码(1001 起, 界面展示 #1001 形式), 用户侧以该编码展示渠道。
 // 已发布渠道再次发布保留原编码; 取消发布清空共享标记但保留编码历史无意义, 故一并清空。
 func ChannelPublish(id int, shared bool, scope model.Scope, ctx context.Context) (model.Channel, error) {
+	channelStatsNeedUpdateLock.Lock()
+	defer channelStatsNeedUpdateLock.Unlock()
 	channel, ok := channelCache.Get(id)
 	if !ok || !scope.Owns(channel.UserID) {
 		return model.Channel{}, fmt.Errorf("channel not found")
@@ -677,10 +714,12 @@ func ShareCodeBackfill(ctx context.Context) (int, error) {
 		if err := db.GetDB().WithContext(ctx).Model(&model.Channel{}).Where("id = ?", channel.ID).Update("share_code", code).Error; err != nil {
 			return updated, err
 		}
+		channelStatsNeedUpdateLock.Lock()
 		if cached, ok := channelCache.Get(channel.ID); ok {
 			cached.ShareCode = code
 			channelCache.Set(channel.ID, cached)
 		}
+		channelStatsNeedUpdateLock.Unlock()
 		taken[code] = true
 		// 新分配的号同样要推进计数器, 否则全部存量都是旧码时计数器停在起点, 取号要靠冲突跳过兜底。
 		if v, _ := parseShareCode(code); v > maxUsed {
@@ -803,6 +842,8 @@ func ChannelModelListingUpdate(id int, listings []ChannelModelListing, scope mod
 
 // channelRefreshCache 从数据库刷新渠道, 凭据, 模型与渠道授权缓存。
 func channelRefreshCache(ctx context.Context) error {
+	channelBreakerWriteMu.Lock()
+	defer channelBreakerWriteMu.Unlock()
 	conn := db.GetDB().WithContext(ctx)
 	channels := []model.Channel{}
 	if err := conn.Find(&channels).Error; err != nil {
@@ -1337,6 +1378,9 @@ func ChannelModelBriefs(scope model.Scope) []ChannelModelBrief {
 // 支持 roundrobin(轮询)、random(随机)、failover(故障切换) 三种策略。
 // 返回选中的 key；若无可用 key 则返回 error。
 func SelectChannelKey(channelID int, strategy string) (*model.ChannelKey, error) {
+	if ChannelQuotaPaused(channelID) {
+		return nil, fmt.Errorf("channel %d quota is temporarily exhausted", channelID)
+	}
 	// 获取该渠道的所有启用的 keys，按优先级排序
 	var keys []model.ChannelKey
 	query := db.GetDB().Where("channel_id = ? AND enabled = ?", channelID, true)
@@ -1377,6 +1421,8 @@ func SelectChannelKey(channelID int, strategy string) (*model.ChannelKey, error)
 // RecordChannelKeyError 记录某个 key 的错误，用于故障熔断。
 // 当错误次数达到阈值时自动禁用该 key 一段时间。
 func RecordChannelKeyError(channelKeyID int, errorType string) {
+	channelBreakerWriteMu.Lock()
+	defer channelBreakerWriteMu.Unlock()
 	var key model.ChannelKey
 	if err := db.GetDB().First(&key, channelKeyID).Error; err != nil {
 		return
@@ -1407,7 +1453,16 @@ func RecordChannelKeyError(channelKeyID int, errorType string) {
 		disabledUntil := now.Add(escalatedBreakerDuration(hardDuration, trips, maxMinutes))
 		updates["disabled_until"] = &disabledUntil
 		updates["error_count"] = 0
-		db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", channelKeyID).Updates(updates)
+		result := db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", channelKeyID).Updates(updates)
+		if result.Error != nil || result.RowsAffected == 0 {
+			return
+		}
+		updateChannelKeyBreakerCache(channelKeyID, func(cached *model.ChannelKey) {
+			cached.ErrorCount = 0
+			cached.LastErrorAt = &now
+			cached.DisabledUntil = &disabledUntil
+			cached.BreakerTrips = trips
+		})
 		key.DisabledUntil = &disabledUntil
 		// 熔断是一次自动降级决策, 必须让管理员知道: 哪家渠道、哪个凭据、停到几点、第几次。
 		raiseKeyBreakerAlert(key, errorType, disabledUntil, 0, trips)
@@ -1427,7 +1482,16 @@ func RecordChannelKeyError(channelKeyID int, errorType string) {
 		breakerAt = &disabledUntil
 	}
 
-	db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", channelKeyID).Updates(updates)
+	result := db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", channelKeyID).Updates(updates)
+	if result.Error != nil || result.RowsAffected == 0 {
+		return
+	}
+	updateChannelKeyBreakerCache(channelKeyID, func(cached *model.ChannelKey) {
+		cached.ErrorCount = updates["error_count"].(int)
+		cached.LastErrorAt = &now
+		cached.DisabledUntil = key.DisabledUntil
+		cached.BreakerTrips = trips
+	})
 	// 告警放在写库之后: 库里没落上就发通知, 管理员会看到一条查无实据的熔断。
 	if breakerAt != nil {
 		raiseKeyBreakerAlert(key, errorType, *breakerAt, threshold, trips)
@@ -1442,9 +1506,20 @@ func RecordChannelKeyError(channelKeyID int, errorType string) {
 // breaker_trips 一并清零: 成功就是"它又能用了"的唯一证据, 不清零则恢复的成员会被
 // 之前攒下的熔断次数继续压着, 下次偶发失败直接跳到很长的熔断时长。
 func ResetChannelKeyErrors(channelKeyID int) {
-	db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", channelKeyID).Updates(map[string]interface{}{
-		"error_count":   0,
-		"breaker_trips": 0,
+	channelBreakerWriteMu.Lock()
+	defer channelBreakerWriteMu.Unlock()
+	result := db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", channelKeyID).Updates(map[string]interface{}{
+		"error_count":    0,
+		"breaker_trips":  0,
+		"disabled_until": nil,
+	})
+	if result.Error != nil || result.RowsAffected == 0 {
+		return
+	}
+	updateChannelKeyBreakerCache(channelKeyID, func(cached *model.ChannelKey) {
+		cached.ErrorCount = 0
+		cached.BreakerTrips = 0
+		cached.DisabledUntil = nil
 	})
 }
 
@@ -1463,7 +1538,7 @@ const (
 
 	defaultBreakerCoolAuthSeconds = 60
 	defaultBreakerCoolSoftSeconds = 30
-	
+
 	defaultBreakerDegradeThreshold = 3
 )
 
@@ -1550,6 +1625,8 @@ func isCircuitBroken(disabledUntil *time.Time) bool {
 // 适用于过载/临时故障等渠道模型级错误: 同渠道下其它模型正常, 或该模型的其它 Key 正常, 隔离故障面。
 // 凭据失效/余额不足仍在 Key 级熔断(影响该 Key 所有模型); 模型缺失/内容拦截/请求错误不记错误不熔断。
 func RecordChannelModelError(channelModelID int, errorType string) {
+	channelBreakerWriteMu.Lock()
+	defer channelBreakerWriteMu.Unlock()
 	var channelModel model.ChannelModel
 	if err := db.GetDB().First(&channelModel, channelModelID).Error; err != nil {
 		return
@@ -1580,7 +1657,16 @@ func RecordChannelModelError(channelModelID int, errorType string) {
 		breakerAt = &disabledUntil
 	}
 
-	db.GetDB().Model(&model.ChannelModel{}).Where("id = ?", channelModelID).Updates(updates)
+	result := db.GetDB().Model(&model.ChannelModel{}).Where("id = ?", channelModelID).Updates(updates)
+	if result.Error != nil || result.RowsAffected == 0 {
+		return
+	}
+	updateChannelModelBreakerCache(channelModelID, func(cached *model.ChannelModel) {
+		cached.ErrorCount = updates["error_count"].(int)
+		cached.LastErrorAt = &now
+		cached.DisabledUntil = channelModel.DisabledUntil
+		cached.BreakerTrips = trips
+	})
 	// 与 Key 级熔断同理: 熔断落地后再告警, 并给出渠道名与模型名。
 	if breakerAt != nil {
 		raiseModelBreakerAlert(channelModel, errorType, *breakerAt, threshold, trips)
@@ -1593,125 +1679,19 @@ func RecordChannelModelError(channelModelID int, errorType string) {
 
 // ResetChannelModelErrors 重置某个渠道模型的错误计数(成功请求时调用); 熔断次数同理清零。
 func ResetChannelModelErrors(channelModelID int) {
-	db.GetDB().Model(&model.ChannelModel{}).Where("id = ?", channelModelID).Updates(map[string]interface{}{
-		"error_count":   0,
-		"breaker_trips": 0,
+	channelBreakerWriteMu.Lock()
+	defer channelBreakerWriteMu.Unlock()
+	result := db.GetDB().Model(&model.ChannelModel{}).Where("id = ?", channelModelID).Updates(map[string]interface{}{
+		"error_count":    0,
+		"breaker_trips":  0,
+		"disabled_until": nil,
+	})
+	if result.Error != nil || result.RowsAffected == 0 {
+		return
+	}
+	updateChannelModelBreakerCache(channelModelID, func(cached *model.ChannelModel) {
+		cached.ErrorCount = 0
+		cached.BreakerTrips = 0
+		cached.DisabledUntil = nil
 	})
 }
-
-// BreakerRecoveryProbe 熔断恢复探测: 检查已到期的熔断成员, 通过健康检查验证后才完全解除。
-// 探测成功→清除 disabled_until; 探测失败→延长熔断时长; 探测次数达到上限→不再自动探测。
-func BreakerRecoveryProbe(ctx context.Context) error {
-	const (
-		maxProbeCount   = 3               // 最多探测 3 次
-		probeInterval   = 5 * time.Minute // 每次探测失败后延长 5 分钟
-		probeGapMinutes = 2               // 两次探测之间至少间隔 2 分钟
-	)
-
-	now := time.Now()
-	probeGap := now.Add(-time.Duration(probeGapMinutes) * time.Minute)
-
-	// 1. 查询需要探测的渠道凭据: 熔断已到期 + 探测次数未超限 + 距上次探测至少 2 分钟
-	var keys []model.ChannelKey
-	if err := db.GetDB().Where(
-		"disabled_until IS NOT NULL AND disabled_until < ? AND probe_count < ? AND (probe_at IS NULL OR probe_at < ?)",
-		now, maxProbeCount, probeGap,
-	).Find(&keys).Error; err != nil {
-		log.Warnf("breaker probe: failed to query keys: %v", err)
-		return err
-	}
-
-	// 2. 查询需要探测的渠道模型
-	var models []model.ChannelModel
-	if err := db.GetDB().Where(
-		"disabled_until IS NOT NULL AND disabled_until < ? AND probe_count < ? AND (probe_at IS NULL OR probe_at < ?)",
-		now, maxProbeCount, probeGap,
-	).Find(&models).Error; err != nil {
-		log.Warnf("breaker probe: failed to query models: %v", err)
-		return err
-	}
-
-	if len(keys) == 0 && len(models) == 0 {
-		return nil // 没有需要探测的成员
-	}
-
-	log.Infof("breaker probe: checking %d keys and %d models", len(keys), len(models))
-
-	// 3. 探测渠道凭据（使用健康检查）
-	for _, key := range keys {
-		probeAt := now
-		probeCount := key.ProbeCount + 1
-
-		// 标记探测尝试（先更新数据库，避免并发探测）
-		if err := db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", key.ID).Updates(map[string]interface{}{
-			"probe_at":    &probeAt,
-			"probe_count": probeCount,
-		}).Error; err != nil {
-			log.Warnf("breaker probe: failed to mark key %d probe: %v", key.ID, err)
-			continue
-		}
-
-		// 调用健康检查（使用现有的 ChannelHealthCheck）
-		// 这里简化为：如果能读取到渠道信息，视为探测成功
-		channel, err := ChannelGet(key.ChannelID)
-		if err != nil || !channel.Enabled {
-			// 渠道不可用或已禁用，延长熔断时间
-			newDisabledUntil := now.Add(probeInterval)
-			db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", key.ID).Update("disabled_until", &newDisabledUntil)
-			log.Infof("breaker probe: key %d (channel=%d) probe failed (attempt %d/%d), extend to %s",
-				key.ID, key.ChannelID, probeCount, maxProbeCount, newDisabledUntil.Format("15:04"))
-			continue
-		}
-
-		// 探测成功：清除熔断，重置计数
-		if err := db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", key.ID).Updates(map[string]interface{}{
-			"disabled_until": nil,
-			"breaker_trips":  0,
-			"probe_count":    0,
-			"probe_at":       nil,
-		}).Error; err != nil {
-			log.Warnf("breaker probe: failed to clear key %d breaker: %v", key.ID, err)
-			continue
-		}
-
-		log.Infof("breaker probe: key %d (channel=%d) recovered after %d probes", key.ID, key.ChannelID, probeCount)
-	}
-
-	// 4. 探测渠道模型（同样的逻辑）
-	for _, m := range models {
-		probeAt := now
-		probeCount := m.ProbeCount + 1
-
-		if err := db.GetDB().Model(&model.ChannelModel{}).Where("id = ?", m.ID).Updates(map[string]interface{}{
-			"probe_at":    &probeAt,
-			"probe_count": probeCount,
-		}).Error; err != nil {
-			log.Warnf("breaker probe: failed to mark model %d probe: %v", m.ID, err)
-			continue
-		}
-
-		channel, err := ChannelGet(m.ChannelID)
-		if err != nil || !channel.Enabled {
-			newDisabledUntil := now.Add(probeInterval)
-			db.GetDB().Model(&model.ChannelModel{}).Where("id = ?", m.ID).Update("disabled_until", &newDisabledUntil)
-			log.Infof("breaker probe: model %d (channel=%d) probe failed (attempt %d/%d), extend to %s",
-				m.ID, m.ChannelID, probeCount, maxProbeCount, newDisabledUntil.Format("15:04"))
-			continue
-		}
-
-		if err := db.GetDB().Model(&model.ChannelModel{}).Where("id = ?", m.ID).Updates(map[string]interface{}{
-			"disabled_until": nil,
-			"breaker_trips":  0,
-			"probe_count":    0,
-			"probe_at":       nil,
-		}).Error; err != nil {
-			log.Warnf("breaker probe: failed to clear model %d breaker: %v", m.ID, err)
-			continue
-		}
-
-		log.Infof("breaker probe: model %d (channel=%d %s) recovered after %d probes", m.ID, m.ChannelID, m.Name, probeCount)
-	}
-
-	return nil
-}
-

@@ -1,5 +1,10 @@
 package model
 
+import (
+	"reflect"
+	"slices"
+)
+
 // 分组选择上游成员的模式。
 type GroupMode string
 
@@ -87,7 +92,7 @@ type GroupRelayConfig struct {
 	RequestTimeoutSeconds                 int    `json:"request_timeout_seconds" binding:"omitempty,min=1,max=3600"`                    // 整请求最大耗时, 包含重试与流式传输。
 	MaxWaitSeconds                        int    `json:"max_wait_seconds" binding:"omitempty,min=0,max=300"`                            // 无可用成员时最大等待秒数, 0 立即返回。
 	MaxWaitingRequests                    int    `json:"max_waiting_requests" binding:"omitempty,min=0,max=1000"`                       // 同一分组同时排队的请求上限, 0 不排队。
-	MaxTotalAttempts                      int    `json:"max_total_attempts" binding:"omitempty,min=1,max=100"`                          // 单请求跨成员最大尝试轮次。
+	MaxTotalAttempts                      int    `json:"max_total_attempts" binding:"omitempty,min=1,max=100"`                          // 单请求跨成员最大尝试轮次, 含首次; score 按不同渠道模型计数, 设为 5 即最多尝试 5 个候选。
 	MemberMaxAttempts                     int    `json:"member_max_attempts" binding:"omitempty,min=1,max=100"`                         // 单个成员包含首次请求的总尝试次数, 动态选路模式(非手动)生效。
 	MemberRetryIntervalSeconds            int    `json:"member_retry_interval_seconds" binding:"omitempty,min=1,max=300"`               // 同一成员相邻两次尝试之间的等待秒数。
 	MemberNonStreamResponseTimeoutSeconds int    `json:"member_non_stream_response_timeout_seconds" binding:"omitempty,min=1,max=3600"` // 单个成员返回完整非流式响应的超时秒数。
@@ -102,6 +107,50 @@ type GroupRelayConfig struct {
 	// ReliabilityFloor 是综合评分的可靠性下限(百分比, 0-100): 成功率低于该值的成员排到全部达标成员之后。
 	// 0 表示未自定义, 运行时跟随系统默认设置; 用于避免最便宜的成员凭静态价格长期霸占首位。
 	ReliabilityFloor int `json:"reliability_floor" binding:"omitempty,min=0,max=100"`
+	// 灰度分流(金丝雀): 与上面所有选择模式正交, 命中者优先走灰度成员, 未命中或灰度不可用则完全按原模式选路。
+	// 这样新渠道/新模型不必先临时改分组模式, 也不会把未命中流量的既有行为换掉。
+	CanaryItemID     int   `json:"canary_item_id" binding:"omitempty,min=0"`         // 灰度成员的分组成员 ID; 0 表示关闭灰度。
+	CanaryPercent    int   `json:"canary_percent" binding:"omitempty,min=0,max=100"` // 命中灰度的流量百分比, 0-100。
+	CanaryUserIDs    []int `json:"canary_user_ids"`                                 // 显式灰度用户 ID 列表; 非空时这些用户恒定走灰度, 优先于比例。
+	CanaryPerRequest bool  `json:"canary_per_request"`                               // 假=按 API Key 指纹粘性分桶(同一 Key 结果稳定), 真=每请求重新抽样。
+}
+
+// canaryBuckets 是粘性分桶的固定桶数: 比例按桶划分, 分桶键只依赖请求身份, 故同一 Key 反复命中同一结果。
+// 用 100 个桶是为了让 1% 这样的细粒度比例也精确, 同时桶数固定才能让"同一 Key 落在哪个桶"保持不变。
+const canaryBuckets = 100
+
+// CanaryActive 判断灰度分流是否真的会生效: 必须指定了灰度成员且比例非零。
+// 灰度成员是否存在、是否可用由选路侧再判一次, 配置层只判"有没有配"。
+func (config GroupRelayConfig) CanaryActive() bool {
+	return config.CanaryItemID != 0 && config.CanaryPercent > 0
+}
+
+// CanaryHit 判定本次请求是否落在灰度里。
+// userID 是请求所属用户(API Key 的归属者), keyID 是 API Key 主键, requestSeed 是每请求不同的随机数。
+// 显式用户列表优先于比例: 命中列表的用户恒走灰度, 未命中列表的用户不走 —— 否则"指定用户"会被比例稀释成概率。
+// 默认按 Key 粘性分桶: 同一把 Key 的流量整体走灰度或整体不走, 避免同一客户端在两条路径间来回抖动,
+// 也就避免同一会话的连续请求打到两个不同上游而丢掉上下文缓存收益; 未绑定 Key 时退化到按用户分桶。
+// canary_per_request 打开后改为按 requestSeed 逐请求抽样, 用于"只要一点点样本先看看"的场景。
+func (config GroupRelayConfig) CanaryHit(userID uint, keyID int, requestSeed uint64) bool {
+	if !config.CanaryActive() {
+		return false
+	}
+	if len(config.CanaryUserIDs) > 0 {
+		return slices.Contains(config.CanaryUserIDs, int(userID))
+	}
+	if config.CanaryPercent >= 100 {
+		return true
+	}
+	if config.CanaryPerRequest {
+		return int(requestSeed%canaryBuckets) < config.CanaryPercent
+	}
+	seed := uint64(userID) * 0x9E3779B97F4A7C15
+	if keyID > 0 {
+		seed = uint64(keyID) * 0x9E3779B97F4A7C15
+	}
+	// 乘法散列取高位: 低位变化规律性太强, 用高位才能让相邻 Key 主键落进不同桶。
+	bucket := int((seed ^ (seed >> 29)) % canaryBuckets)
+	return bucket < config.CanaryPercent
 }
 
 // DefaultGroupRelayConfig 返回手动模式的默认参数, 兼容没有模式上下文的调用方。
@@ -151,7 +200,8 @@ func NormalizeGroupRelayConfig(config *GroupRelayConfig) {
 // NormalizeGroupRelayConfigForMode 按模式填充缺失配置, 显式设置的参数保持不变。
 func NormalizeGroupRelayConfigForMode(config *GroupRelayConfig, mode GroupMode) {
 	defaults := DefaultGroupRelayConfigForMode(mode)
-	if *config == (GroupRelayConfig{}) {
+	// 含切片后结构体不再可用 == 比较, 全零判定改用 DeepEqual; 语义与原先一致。
+	if reflect.DeepEqual(*config, GroupRelayConfig{}) {
 		*config = defaults
 		return
 	}
@@ -194,6 +244,22 @@ func NormalizeGroupRelayConfigForMode(config *GroupRelayConfig, mode GroupMode) 
 	config.ScorePriceWeight = min(max(config.ScorePriceWeight, 0), 100)
 	config.ScoreLatencyWeight = min(max(config.ScoreLatencyWeight, 0), 100)
 	config.ScoreSuccessWeight = min(max(config.ScoreSuccessWeight, 0), 100)
+	// 灰度配置只做范围收敛, 不做"没配就补默认": 灰度成员 0 与比例 0 本身就是「关闭」这一有效状态。
+	config.CanaryItemID = max(config.CanaryItemID, 0)
+	config.CanaryPercent = min(max(config.CanaryPercent, 0), 100)
+	// 用户 ID 去重并丢掉非法值: 重复项只会让列表越来越长, 负数与 0 不是合法用户。
+	if len(config.CanaryUserIDs) > 0 {
+		seen := make(map[int]bool, len(config.CanaryUserIDs))
+		cleaned := make([]int, 0, len(config.CanaryUserIDs))
+		for _, id := range config.CanaryUserIDs {
+			if id <= 0 || seen[id] {
+				continue
+			}
+			seen[id] = true
+			cleaned = append(cleaned, id)
+		}
+		config.CanaryUserIDs = cleaned
+	}
 	// 权重按提交值保留: 0 表示未自定义, 运行时由 relay 侧按系统默认设置解析(相对权重, 无须归一)。
 }
 

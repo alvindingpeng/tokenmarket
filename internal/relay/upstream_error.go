@@ -14,26 +14,29 @@ import (
 )
 
 // 上游错误分类: 同一个 HTTP 状态码在不同厂商语义可能完全不同(429 既可能是限流也可能是额度耗尽),
-// 故按"语义(code/type/文本)优先、状态码兜底"分出九类, 路由按类别决定重试、换渠道、冷却与熔断:
+// 故按"语义(code/type/文本)优先、状态码兜底"分出十类, 路由按类别决定重试、换渠道、冷却与熔断:
 //
 //   - client/policy: 请求本身有问题或内容被拦, 换渠道必然同样失败 -> 立即透传, 不重试不换渠道(policy 不换渠道是为了不跨供应商绕过内容审查)。
-//   - auth/quota:    凭据失效/额度耗尽, 该 Key 已不可用 -> 立即熔断 Key 并换渠道, 不在原地重试。
+//   - auth:          凭据失效 -> Key 级熔断并换渠道, 不在原地重试。
+//   - quota:         额度耗尽 -> 立即暂熔断整个渠道(全部 keys/模型)并换渠道。
 //   - overload:      上游暂时过载 -> 立即换渠道, 当前成员短冷却。
 //   - model:         该渠道不提供目标模型 -> 立即换渠道, 不计渠道失败率。
+//   - compatibility: 上游请求编码不兼容 -> 尚未提交响应且允许重发时换渠道; 不代表本地确实发送了 gzip。
 //   - rate:          限流 -> 标记窗口触顶供选路跳过(维持既有行为)。
-//   - transient/unknown: 临时故障 -> 先按间隔重试当前成员, 达上限或有其他成员再换(维持既有行为)。
+//   - transient/unknown: 临时故障 -> score 立即尝试尚未失败的渠道模型; 其他模式维持成员重试/换路。
 type ErrorClass string
 
 const (
-	ErrorClassClient    ErrorClass = "client"    // 请求错误: 参数不合法/上下文超长等, 任何渠道都会失败。
-	ErrorClassPolicy    ErrorClass = "policy"    // 内容被安全策略拦截: 不换渠道绕过审查, 直接透传。
-	ErrorClassAuth      ErrorClass = "auth"      // 凭据失效: 401/403 与各家 invalid_api_key 语义。
-	ErrorClassQuota     ErrorClass = "quota"     // 额度/余额耗尽: 402 与 insufficient_quota 语义。
-	ErrorClassRate      ErrorClass = "rate"      // 限流: 429 与各家 rate limit 语义。
-	ErrorClassOverload  ErrorClass = "overload"  // 上游过载: 529(Anthropic)与 overloaded 语义。
-	ErrorClassModel     ErrorClass = "model"     // 目标模型缺失: 404 与 model_not_found 语义。
-	ErrorClassTransient ErrorClass = "transient" // 临时故障: 5xx/超时/网络错误。
-	ErrorClassUnknown   ErrorClass = "unknown"   // 未能识别: 按 transient 处理, 便于事后按日志补规则。
+	ErrorClassClient        ErrorClass = "client"        // 请求错误: 参数不合法/上下文超长等, 任何渠道都会失败。
+	ErrorClassPolicy        ErrorClass = "policy"        // 内容被安全策略拦截: 不换渠道绕过审查, 直接透传。
+	ErrorClassAuth          ErrorClass = "auth"          // 凭据失效: 401/403 与各家 invalid_api_key 语义。
+	ErrorClassQuota         ErrorClass = "quota"         // 额度/余额耗尽: 402 与 insufficient_quota 语义。
+	ErrorClassRate          ErrorClass = "rate"          // 限流: 429 与各家 rate limit 语义。
+	ErrorClassOverload      ErrorClass = "overload"      // 上游过载: 529(Anthropic)与 overloaded 语义。
+	ErrorClassModel         ErrorClass = "model"         // 目标模型缺失: 404 与 model_not_found 语义。
+	ErrorClassTransient     ErrorClass = "transient"     // 临时故障: 5xx/超时/网络错误。
+	ErrorClassCompatibility ErrorClass = "compatibility" // 上游请求编码不兼容: 未提交响应时可换渠道。
+	ErrorClassUnknown       ErrorClass = "unknown"       // 未能识别: 按 transient 处理, 便于事后按日志补规则。
 )
 
 // errorRule 一条分类规则: 命中任一状态码或任一文本特征即归入 class。
@@ -58,7 +61,8 @@ var errorRules = []errorRule{
 		"model does not exist", "not found: model",
 	}},
 	{name: "quota_exhausted", class: ErrorClassQuota, tokens: []string{
-		"insufficient_quota", "insufficient_balance", "insufficient balance",
+		"insufficient_quota", "insufficient_balance", "insufficient balance", "insufficient account balance",
+		"balance is insufficient", "balance is not enough", "余额不足", "余额已耗尽",
 		"billing_hard_limit_reached", "billing hard limit", "credit balance too low", "insufficient credits",
 	}},
 	{name: "auth_invalid", class: ErrorClassAuth, tokens: []string{
@@ -73,6 +77,11 @@ var errorRules = []errorRule{
 	}},
 	{name: "overloaded", class: ErrorClassOverload, tokens: []string{
 		"overloaded", "at capacity", "server is busy",
+	}},
+	// 限定请求编码兼容性语义, 不能把通用 invalid_request_error 或所有 400 都放开。
+	// 上游可能在其内部链路压缩, 此消息本身并不能证明本地发送了 gzip。
+	{name: "request_encoding_unsupported", class: ErrorClassCompatibility, tokens: []string{
+		"unsupported request content encoding", "unsupported request content-encoding",
 	}},
 	{name: "client_invalid", class: ErrorClassClient, tokens: []string{
 		"invalid_request_error", "invalid_prompt", "context_length_exceeded",
@@ -111,7 +120,7 @@ func (r errorRule) match(status int, lowerText string) bool {
 	return false
 }
 
-// classifyUpstreamError 把上游错误归入九类, 并返回命中的规则名(进路由事件便于事后补规则)。
+// classifyUpstreamError 把上游错误归入十类, 并返回命中的规则名(进路由事件便于事后补规则)。
 func classifyUpstreamError(err error) (ErrorClass, string) {
 	if err == nil {
 		return ErrorClassUnknown, "no_error"
@@ -192,7 +201,7 @@ func classCooldownSeconds(class ErrorClass) int {
 		if v := op.BreakerCoolAuthSeconds(); v > 0 {
 			return v
 		}
-	case ErrorClassOverload, ErrorClassModel:
+	case ErrorClassOverload, ErrorClassModel, ErrorClassCompatibility:
 		if v := op.BreakerCoolSoftSeconds(); v > 0 {
 			return v
 		}
@@ -217,6 +226,8 @@ func attemptStatusOfClass(class ErrorClass) string {
 		return "overloaded"
 	case ErrorClassModel:
 		return "model_missing"
+	case ErrorClassCompatibility:
+		return "compatibility_error"
 	}
 	return "failed"
 }

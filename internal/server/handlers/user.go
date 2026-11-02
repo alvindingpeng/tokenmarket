@@ -102,6 +102,7 @@ func init() {
 }
 
 func login(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 	var user model.UserLogin
 	if err := c.ShouldBindJSON(&user); err != nil {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
@@ -125,6 +126,18 @@ func login(c *gin.Context) {
 		auth.LoginFailure(keyIP)
 		auth.LoginFailure(keyUser)
 		resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
+		return
+	}
+	account, err = op.UserTOTPLogin(account, user.TOTPCode)
+	if err != nil {
+		auth.LoginFailure(keyIP)
+		auth.LoginFailure(keyUser)
+		if err == op.ErrTOTPThrottled {
+			c.Header("Retry-After", "300")
+			resp.Error(c, http.StatusTooManyRequests, err.Error())
+			return
+		}
+		resp.Error(c, http.StatusUnauthorized, err.Error())
 		return
 	}
 	auth.LoginSuccess(keyIP)
@@ -340,7 +353,7 @@ func createUser(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	audit(c, "user.create", fmt.Sprintf("%s#%d", account.Username, account.ID), fmt.Sprintf("role=%s status=%s", account.Role, account.Status))
+	audit(c, "user.create", fmt.Sprintf("%s#%d", account.Username, account.ID), fmt.Sprintf("role=%s status=%s tier=%s", account.Role, account.Status, account.EffectiveTier()))
 	resp.Success(c, account.View())
 }
 
@@ -388,6 +401,14 @@ func updateUser(c *gin.Context) {
 			return
 		}
 		audit(c, "user.update", target, fmt.Sprintf("status: %s -> %s", old, req.Status))
+	}
+	if req.Tier != "" && req.Tier != account.EffectiveTier() {
+		old := account.EffectiveTier()
+		if err := op.UserUpdateTier(req.ID, req.Tier); err != nil {
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		audit(c, "user.tier", target, fmt.Sprintf("tier: %s -> %s", old, req.Tier))
 	}
 	// 即使目标值等于缓存余额也交由资金层核对数据库, 避免缓存过期时跳过调账。
 	if req.Balance != nil {

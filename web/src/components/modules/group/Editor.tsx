@@ -9,6 +9,7 @@ import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Accordion, AccordionContent, AccordionItem } from '@/components/ui/accordion';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -17,6 +18,7 @@ import type { GroupMode, GroupRelayConfig, PriceMetric } from '@/api/group';
 import type { SelectedMember } from './ItemList';
 import { MemberList } from './ItemList';
 import { autoAddMatches, memberKey, normalizeKey } from './utils';
+import { canaryDefaults, canaryOf, canarySubmitBlocked, canarySubmitConfig, formatCanaryUserIDs, parseCanaryUserIDs, preserveCanary, type CanaryConfig } from './canary';
 
 export type GroupEditorValues = {
     name: string;
@@ -25,8 +27,11 @@ export type GroupEditorValues = {
     members: SelectedMember[];
 };
 
+// ModeRelayDefaults 是各模式预设里与模式相关的部分: 灰度四项不随模式变化, 由 modeRelayConfig 统一补齐。
+type ModeRelayDefaults = Omit<GroupRelayConfig, keyof CanaryConfig>;
+
 // modeRelayDefaults 与后端 DefaultGroupRelayConfigForMode 保持同一套新建预设。
-const modeRelayDefaults: Record<GroupMode, GroupRelayConfig> = {
+const modeRelayDefaults: Record<GroupMode, ModeRelayDefaults> = {
     manual: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 20, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0, reliability_floor: 0 },
     failover: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 60, price_metric: 'blended', metric_window_size: 20, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0, reliability_floor: 0 },
     price: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 60, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 20, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0, reliability_floor: 0 },
@@ -36,8 +41,9 @@ const modeRelayDefaults: Record<GroupMode, GroupRelayConfig> = {
     random: { request_timeout_seconds: 600, max_wait_seconds: 30, max_waiting_requests: 0, max_total_attempts: 10, member_stream_idle_timeout_seconds: 60, member_max_attempts: 1, member_retry_interval_seconds: 1, member_non_stream_response_timeout_seconds: 120, member_stream_first_event_timeout_seconds: 30, member_cooldown_seconds: 30, member_affinity_seconds: 0, price_metric: 'blended', metric_window_size: 20, score_price_weight: 0, score_latency_weight: 0, score_success_weight: 0, reliability_floor: 0 },
 };
 
+// modeRelayConfig 返回该模式的预设; 灰度恒从关闭态起步 —— 它叠加在模式之上, 不属于任何模式的预设。
 function modeRelayConfig(mode: GroupMode): GroupRelayConfig {
-    return { ...modeRelayDefaults[mode] };
+    return { ...modeRelayDefaults[mode], ...canaryDefaults() };
 }
 
 // PROTOCOL_TAGS 是凭据行上的协议标识。
@@ -363,7 +369,13 @@ export function GroupEditor({
     const [relayConfig, setRelayConfig] = useState<GroupRelayConfig>(() => ({
         ...modeRelayConfig(initial?.mode ?? 'manual'),
         ...initial?.relay_config,
+        // 灰度四项单独兜一层: 编辑器始终拿到完整的类型, 不必在每个读取处再判空。
+        ...canaryOf(initial?.relay_config),
     }));
+    // 用户 ID 在输入框里是自由文本(允许中途敲出逗号、负数), 解析放在渲染与提交两处,
+    // 中间态只存文本, 免得每敲一个字符就被规整成列表而看不见自己输错了什么。
+    const [canaryUserIDsText, setCanaryUserIDsText] = useState(() => formatCanaryUserIDs(canaryOf(initial?.relay_config).canary_user_ids));
+    const canaryUserIDsInput = parseCanaryUserIDs(canaryUserIDsText);
     const [selectedMembers, setSelectedMembers] = useState<SelectedMember[]>(initial?.members ?? []);
     const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
@@ -419,7 +431,21 @@ export function GroupEditor({
         setRemovingIds(new Set());
     }, []);
 
-    const isValid = groupKey.length > 0 && selectedMembers.length > 0;
+    // 灰度用户 ID 有非法项时挡住提交: 静默丢掉会让人以为灰度已经生效, 而实际只对了一半用户生效。
+    // 手动模式下这一块不存在, 也就不该被它的输入挡住保存。
+    const canaryInvalid = canarySubmitBlocked(mode, canaryUserIDsText);
+    const isValid = groupKey.length > 0 && selectedMembers.length > 0 && !canaryInvalid;
+
+    // 灰度成员只能从已落库的成员里选: 新建分组尚未保存时成员还没有 item_id, 灰度无处可指,
+    // 后端创建时也会清掉 canary_item_id, 两边口径一致。
+    const canaryMembers = useMemo(
+        () => selectedMembers.filter((member) => (member.item_id ?? 0) > 0),
+        [selectedMembers],
+    );
+    // 保存的灰度成员可能已被移出分组, 找不到就回落到「关闭」, 不给一个指向不存在成员的值。
+    const canaryItemID = canaryMembers.some((member) => member.item_id === relayConfig.canary_item_id)
+        ? relayConfig.canary_item_id
+        : 0;
 
     const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -427,7 +453,8 @@ export function GroupEditor({
         onSubmit({
             name: groupName,
             mode,
-            relay_config: relayConfig,
+            // 用户列表以输入框为准: 它与 canary_user_ids 是同一份数据, 提交时统一按下标解析结果落库。
+            relay_config: canarySubmitConfig(relayConfig, canaryUserIDsText),
             members: selectedMembers,
         });
     };
@@ -458,7 +485,8 @@ export function GroupEditor({
                                     const nextMode = value as GroupMode;
                                     setMode(nextMode);
                                     // 新建分组切换策略时直接采用该策略预设; 编辑已有分组保留手工调整值。
-                                    if (!initial) setRelayConfig(modeRelayConfig(nextMode));
+                                    // 灰度不属于任何模式的预设, 换模式(含切到手动)都原样保留已填的灰度值。
+                                    if (!initial) setRelayConfig((prev) => preserveCanary(modeRelayConfig(nextMode), prev));
                                 }}
                             >
                                 <SelectTrigger id="group-mode" className="w-full rounded-xl">
@@ -508,8 +536,11 @@ export function GroupEditor({
                         <TabsContent value="relay" className="min-h-0 overflow-y-auto px-1">
                             <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-border/50 bg-muted/30 px-3 py-2">
                                 <span className="text-xs text-muted-foreground">{t('form.presetHint')}</span>
-                                <Button type="button" variant="outline" size="sm" className="rounded-lg" onClick={() => setRelayConfig(modeRelayConfig(mode))}>{t('form.applyPreset')}</Button>
+                                <Button type="button" variant="outline" size="sm" className="rounded-lg" onClick={() => setRelayConfig((prev) => preserveCanary(modeRelayConfig(mode), prev))}>{t('form.applyPreset')}</Button>
                             </div>
+                            {mode === 'score' && (
+                                <p className="mb-3 text-sm text-muted-foreground">{t('form.scoreRetryHint')}</p>
+                            )}
                             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                 {(['request_timeout_seconds', 'max_total_attempts', 'max_wait_seconds', 'max_waiting_requests', 'member_stream_idle_timeout_seconds'] as const).map((key) => (
                                     <Field key={key}>
@@ -525,6 +556,7 @@ export function GroupEditor({
                                     </FieldLabel>
                                     <Input
                                         id="group-retry-count"
+                                        disabled={mode === 'score'}
                                         type="number"
                                         inputMode="numeric"
                                         min={0}
@@ -545,6 +577,7 @@ export function GroupEditor({
                                     </FieldLabel>
                                     <Input
                                         id="group-retry-interval"
+                                        disabled={mode === 'score'}
                                         type="number"
                                         inputMode="numeric"
                                         min={1}
@@ -763,6 +796,113 @@ export function GroupEditor({
                                 </>
                                 )}
                             </div>
+                            {/* 灰度分流叠加在上面的模式之上, 手动模式除外 —— 手动的成员是硬约束, 没有可叠加的余地,
+                                故整块不渲染而不是渲染成禁用态。 */}
+                            {mode !== 'manual' && (
+                                <section className="mt-4 rounded-xl border border-border/50 bg-muted/20 p-3">
+                                    <h4 className="mb-1 text-sm font-semibold">{t('form.canaryTitle')}</h4>
+                                    <p className="mb-3 text-xs leading-relaxed text-muted-foreground">{t('form.canaryHint')}</p>
+                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                        <Field>
+                                            <FieldLabel htmlFor="group-canary-member">
+                                                {t('form.canaryMember')}
+                                                <FieldHelp text={t('form.canaryMemberHint')} />
+                                            </FieldLabel>
+                                            {canaryMembers.length === 0 ? (
+                                                // 新建分组尚未保存时成员还没有主键, 灰度无处可指; 给出原因而不是一个空下拉。
+                                                <p className="text-xs text-muted-foreground">{t('form.canaryMemberEmpty')}</p>
+                                            ) : (
+                                                <Select
+                                                    value={String(canaryItemID)}
+                                                    onValueChange={(value) => setRelayConfig((prev) => ({ ...prev, canary_item_id: Number(value) }))}
+                                                >
+                                                    <SelectTrigger id="group-canary-member" className="w-full rounded-xl">
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {/* 「关闭」恒为首项: 灰度是可选叠加, 必须能一键回到关闭。 */}
+                                                        <SelectItem value="0">{t('form.canaryOff')}</SelectItem>
+                                                        {canaryMembers.map((member) => (
+                                                            <SelectItem key={member.item_id} value={String(member.item_id)}>
+                                                                {member.channel_name} · {member.name}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            )}
+                                        </Field>
+                                        <Field>
+                                            <FieldLabel htmlFor="group-canary-percent">
+                                                {t('form.canaryPercent')}
+                                                <FieldHelp text={t('form.canaryPercentHint')} />
+                                            </FieldLabel>
+                                            <div className="flex items-center gap-2">
+                                                <Input
+                                                    id="group-canary-percent"
+                                                    type="number"
+                                                    inputMode="numeric"
+                                                    min={0}
+                                                    max={100}
+                                                    step={1}
+                                                    value={String(relayConfig.canary_percent)}
+                                                    onChange={(event) => {
+                                                        const value = Number.parseInt(event.target.value, 10);
+                                                        setRelayConfig((prev) => ({ ...prev, canary_percent: Number.isFinite(value) ? Math.min(Math.max(value, 0), 100) : 0 }));
+                                                    }}
+                                                    className="w-20 rounded-xl"
+                                                />
+                                                {/* 滑块与数字框同源: 粗调靠拖, 精确值靠输入。 */}
+                                                <input
+                                                    type="range"
+                                                    min={0}
+                                                    max={100}
+                                                    step={1}
+                                                    value={relayConfig.canary_percent}
+                                                    aria-label={t('form.canaryPercent')}
+                                                    onChange={(event) => {
+                                                        const value = Number.parseInt(event.target.value, 10);
+                                                        setRelayConfig((prev) => ({ ...prev, canary_percent: Number.isFinite(value) ? Math.min(Math.max(value, 0), 100) : 0 }));
+                                                    }}
+                                                    className="h-1.5 flex-1 accent-primary"
+                                                />
+                                            </div>
+                                        </Field>
+                                        <Field>
+                                            <FieldLabel htmlFor="group-canary-users">
+                                                {t('form.canaryUserIDs')}
+                                                <FieldHelp text={t('form.canaryUserIDsHint')} />
+                                            </FieldLabel>
+                                            <Input
+                                                id="group-canary-users"
+                                                value={canaryUserIDsText}
+                                                placeholder={t('form.canaryUserIDsPlaceholder')}
+                                                aria-invalid={canaryUserIDsInput.invalid.length > 0}
+                                                onChange={(event) => setCanaryUserIDsText(event.target.value)}
+                                                className="rounded-xl"
+                                            />
+                                            {canaryUserIDsInput.invalid.length > 0 && (
+                                                <p role="alert" className="text-xs text-destructive">
+                                                    {t('form.canaryUserIDsInvalid', { values: canaryUserIDsInput.invalid.join(', ') })}
+                                                </p>
+                                            )}
+                                        </Field>
+                                        <Field>
+                                            <FieldLabel htmlFor="group-canary-per-request">
+                                                {t('form.canaryPerRequest')}
+                                                <FieldHelp text={t('form.canaryPerRequestHint')} />
+                                            </FieldLabel>
+                                            <div className="flex items-center gap-2">
+                                                <Switch
+                                                    id="group-canary-per-request"
+                                                    checked={relayConfig.canary_per_request}
+                                                    onCheckedChange={(checked) => setRelayConfig((prev) => ({ ...prev, canary_per_request: checked }))}
+                                                />
+                                                <span className="text-xs text-muted-foreground">{t('form.canaryPerRequestHint')}</span>
+                                            </div>
+                                        </Field>
+                                    </div>
+                                </section>
+                            )}
                         </TabsContent>
                     </Tabs>
                 </FieldGroup>

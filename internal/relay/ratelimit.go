@@ -10,6 +10,13 @@ import (
 // limiter 进程内 RPM/TPM 限流器; 策略解析走系统设置与限流策略表, 越具体越优先。
 var limiter = ratelimit.NewResolved(func(scope ratelimit.Scope) ratelimit.Limits {
 	rpm, tpm, concurrent := op.RateLimitsFor(scope.Kind, scope.ID, scope.Model)
+	// 等级兜底只在"没有显式策略"时补位: 管理员为某个用户单独配的 RPM/TPM 永远优先,
+	// 否则等级会把精细策略整个盖掉, 界面上配的数字看起来生效、实际被替换。
+	if rpm == 0 && tpm == 0 && concurrent == 0 && scope.Kind == model.RateScopeUser {
+		if tier, ok := op.UserTierLimitsForUser(uint(scope.ID)); ok && !tier.Zero() {
+			return ratelimit.Limits{RPM: tier.RPM, TPM: tier.TPM, Concurrent: tier.Concurrent}
+		}
+	}
 	return ratelimit.Limits{RPM: rpm, TPM: tpm, Concurrent: concurrent}
 }, func(scope ratelimit.Scope) []ratelimit.Scope {
 	var result []ratelimit.Scope

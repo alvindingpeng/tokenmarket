@@ -23,6 +23,9 @@ func init() {
 		).
 		AddRoute(
 			router.NewRoute("/models", http.MethodGet).Handle(getUserStatsModels),
+		).
+		AddRoute(
+			router.NewRoute("/latency", http.MethodGet).Handle(getUserStatsLatency),
 		)
 }
 
@@ -34,7 +37,7 @@ func getUserStatsOverview(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, "参数错误: "+err.Error())
 		return
 	}
-	
+
 	overview, err := op.UserStatsOverview(c.Request.Context(), userID, query.StartDate, query.EndDate)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
@@ -51,7 +54,7 @@ func getUserStatsTrend(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, "参数错误: "+err.Error())
 		return
 	}
-	
+
 	trend, err := op.UserStatsTrend(c.Request.Context(), userID, query.StartDate, query.EndDate, query.Granularity)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
@@ -68,11 +71,30 @@ func getUserStatsModels(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, "参数错误: "+err.Error())
 		return
 	}
-	
+
 	models, err := op.UserStatsModelBreakdown(c.Request.Context(), userID, query.StartDate, query.EndDate)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 	resp.Success(c, models)
+}
+
+// getUserStatsLatency 查询当前用户调用延迟指标。
+// 返回体会带上真实数据覆盖起点与调用日志留存天数: 日志按留存期滚动删除,
+// 查询区间可能只有末尾少数几天有数据, 前端必须能如实提示而不是假装覆盖全区间。
+func getUserStatsLatency(c *gin.Context) {
+	userID, _ := middleware.CurrentUser(c)
+	var query model.UserStatsQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		resp.Error(c, http.StatusBadRequest, "参数错误: "+err.Error())
+		return
+	}
+
+	latency, err := op.UserStatsLatency(c.Request.Context(), userID, query.StartDate, query.EndDate)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, latency)
 }

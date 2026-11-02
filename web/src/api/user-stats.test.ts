@@ -8,6 +8,7 @@ import {
     userStatsOverviewQueryOptions,
     userStatsTrendPath,
     userStatsTrendQueryOptions,
+    type UserStatsOverview,
 } from './user-stats';
 
 // 路径回归: 这三条查询曾漏掉 /api/v1 前缀, 打到 /user-stats/* 全是 404。
@@ -115,6 +116,26 @@ describe('user-stats 重试策略', () => {
     });
 });
 
+// overviewFixture 构造一份完整的概览响应: 类型新增了请求口径字段后,
+// 这里必须补齐, 否则 tsc 会挡住构建 —— 而"缓存不跨用户共用"这条断言不能因此被删。
+const overviewFixture = (totalRequests: number): UserStatsOverview => ({
+    total_requests: totalRequests,
+    success_rate: 100,
+    total_cost: 1,
+    total_tokens: 2,
+    request_total: 0,
+    request_success: 0,
+    request_failed: 0,
+    request_canceled: 0,
+    request_coverage_start: '',
+    request_retention_days: 7,
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    cache_hit_rate: 0,
+});
+
 describe('user-stats cache isolation', () => {
     it('never shares cached statistics between user identities', () => {
         const client = new QueryClient();
@@ -122,7 +143,8 @@ describe('user-stats cache isolation', () => {
             const first: QueryKey = build({}, 41).queryKey;
             const second = build({}, 42).queryKey;
             expect(first).not.toEqual(second);
-            client.setQueryData(first, { total_requests: 41, success_rate: 100, total_cost: 1, total_tokens: 2 });
+            // 类型补齐成完整概览: 这里只关心"缓存不跨用户串", 不是断言字段是否齐全。
+            client.setQueryData(first, overviewFixture(41));
             expect(client.getQueryData(second)).toBeUndefined();
         }
         client.clear();

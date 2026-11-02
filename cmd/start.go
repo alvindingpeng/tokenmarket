@@ -98,6 +98,7 @@ var startCmd = &cobra.Command{
 		// (rhttp 依赖 op), op 反向 import rhttp 会成环, 故在这里注入。
 		// 与保存触发的自动添加共用 rhttp.ForChannel, 两处出口选择不会漂移。
 		op.ProbeClientFactory = rhttp.ForChannel
+		op.ProbeBreakerTarget = relay.ProbeBreakerTarget
 
 		// 后台任务故障接线: 任务连续失败达到阈值后经同一条告警管道通知管理员。
 		// 改造前任务失败只有 log.Warnf —— 备份不再产出、归档停在原地都没人知道,

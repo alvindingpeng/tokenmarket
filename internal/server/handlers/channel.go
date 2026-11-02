@@ -151,26 +151,48 @@ func applyChannelReprice(c *gin.Context) {
 	resp.Success(c, result)
 }
 
-// resetChannelBreaker 手动解除渠道下凭据或渠道模型的熔断。
+// resetChannelBreaker 手动解除渠道下凭据或渠道模型的熔断, 以及渠道级的额度暂停。
 // 自动熔断按时间自愈, 上游修好(换 Key、补额度)后需要能立刻恢复, 否则只能干等熔断到期。
 func resetChannelBreaker(c *gin.Context) {
 	var request struct {
 		ID         int      `json:"id"`
 		KeyNames   []string `json:"key_names,omitempty"`
 		ModelNames []string `json:"model_names,omitempty"`
+		// channel 解除渠道级额度暂停: 上游余额不足会把整条渠道硬暂停, 补好额度后不必干等到期。
+		// 它与 key_names/model_names 可同时提交, 三者合并到同一个 reset 条数里。
+		Channel bool `json:"channel,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&request); err != nil {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
-	count, err := op.ChannelBreakerReset(request.ID, request.KeyNames, request.ModelNames, scopeOf(c), c.Request.Context())
-	if err != nil {
-		resp.Error(c, http.StatusBadRequest, err.Error())
-		return
+	hasNames := len(request.KeyNames) > 0 || len(request.ModelNames) > 0
+	count := 0
+	if request.Channel {
+		resumed, err := op.ChannelQuotaResume(request.ID, scopeOf(c), c.Request.Context())
+		if err != nil {
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		if resumed {
+			count++
+			// 提前解除一个跨重启仍在的硬暂停是人工决策, 必须留痕。
+			audit(c, "channel.quota-resume", fmt.Sprintf("channel#%d", request.ID), "channel quota pause lifted")
+		}
 	}
-	if count > 0 {
-		audit(c, "channel.breaker-reset", fmt.Sprintf("channel#%d", request.ID),
-			fmt.Sprintf("keys=%v models=%v count=%d", request.KeyNames, request.ModelNames, count))
+	// 渠道级暂停没有名称可给, 故名称与 channel 是并列的三选一; 一个都没给时仍调
+	// ChannelBreakerReset, 由它给出原来那条"至少给一个名称"的错误文案, 免得两处维护同一句话。
+	if hasNames || !request.Channel {
+		resetCount, err := op.ChannelBreakerReset(request.ID, request.KeyNames, request.ModelNames, scopeOf(c), c.Request.Context())
+		if err != nil {
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		if resetCount > 0 {
+			audit(c, "channel.breaker-reset", fmt.Sprintf("channel#%d", request.ID),
+				fmt.Sprintf("keys=%v models=%v count=%d", request.KeyNames, request.ModelNames, resetCount))
+		}
+		count += resetCount
 	}
 	resp.Success(c, gin.H{"reset": count})
 }
