@@ -351,7 +351,7 @@ authenticated: adding auth to a liveness probe just breaks orchestrators.
 `/metrics` exposes `switchyard_up`, `switchyard_build_info`, `switchyard_relay_requests`,
 `switchyard_relay_tokens_total`, `switchyard_billing_cost_total`, `switchyard_active_requests`, `switchyard_channels`,
 `switchyard_users`, `switchyard_user_balance_total`, `switchyard_alerts_raised_24h`, plus Go runtime counters.
-Set `metrics_auth` to `bearer` to require a token (`Authorization: Bearer …` or `?token=`); the token is
+`metrics_auth` defaults to `bearer` and requires a token (`Authorization: Bearer …` or `?token=`); set it to `off` only to explicitly allow open scraping; the token is
 generated on demand and rotatable from the console.
 
 ### Channel health checks

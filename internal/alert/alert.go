@@ -91,38 +91,50 @@ func SendOnce(ctx context.Context, channel string, alert Alert) error {
 
 // Send 根据配置的渠道发送告警: webhook, telegram, email; 返回是否至少有一个渠道发送成功。
 // 这是全站唯一的外发入口, 调用方(op.RaiseAlert)据返回值回填"已通知"标记。
+//
+// 失败的渠道会把原因带出来(见 SendDetailed): 只回一个 false 的话, 调用方只能记
+// "没发出去", 却不知道是 token 没配、chat_id 写错还是实体解析被拒 —— 补发任务也就无从判断
+// 该重试还是该放弃。
 func Send(ctx context.Context, alert Alert) bool {
-	channelsRaw, err := settingString(model.SettingKeyAlertChannels)
-	if err != nil || channelsRaw == "" {
+	ok, _ := SendDetailed(ctx, alert)
+	return ok
+}
+
+// SendDetailed 同 Send, 额外返回各渠道的失败原因(按 "渠道: 原因" 拼接)。
+// 只要有一个渠道成功就认为整条告警已送达(ok=true), 部分失败的原因仍然返回给调用方记录。
+func SendDetailed(ctx context.Context, alert Alert) (ok bool, err error) {
+	channelsRaw, settingErr := settingString(model.SettingKeyAlertChannels)
+	if settingErr != nil || channelsRaw == "" {
 		channelsRaw = "webhook" // 默认仅 webhook
 	}
 	channels := strings.Split(channelsRaw, ",")
 
+	var failures []string
 	sent := false
 	for _, ch := range channels {
 		ch = strings.TrimSpace(ch)
+		var sendErr error
 		switch ch {
 		case "webhook":
-			if err := sendWebhook(ctx, alert); err != nil {
-				log.Errorf("failed to send webhook alert: %v", err)
-			} else {
-				sent = true
-			}
+			sendErr = sendWebhook(ctx, alert)
 		case "telegram":
-			if err := sendTelegram(ctx, alert); err != nil {
-				log.Errorf("failed to send telegram alert: %v", err)
-			} else {
-				sent = true
-			}
+			sendErr = sendTelegram(ctx, alert)
 		case "email":
-			if err := sendEmail(ctx, alert); err != nil {
-				log.Errorf("failed to send email alert: %v", err)
-			} else {
-				sent = true
-			}
+			sendErr = sendEmail(ctx, alert)
+		default:
+			continue
 		}
+		if sendErr != nil {
+			log.Errorf("failed to send %s alert: %v", ch, sendErr)
+			failures = append(failures, ch+": "+sendErr.Error())
+			continue
+		}
+		sent = true
 	}
-	return sent
+	if len(failures) > 0 {
+		return sent, fmt.Errorf("%s", strings.Join(failures, "; "))
+	}
+	return sent, nil
 }
 
 // sendWebhook 发送 Webhook 告警。
@@ -203,6 +215,10 @@ func SendWebhookTo(ctx context.Context, rawURL string, alert Alert) error {
 	return nil
 }
 
+// telegramAPIBase Telegram Bot API 基址。声明为变量而非字面量, 测试才能指向本地假服务
+// 验证"Markdown 实体解析失败 → 纯文本降级重发"这条真实路径(纯函数测试覆盖不到)。
+var telegramAPIBase = "https://api.telegram.org"
+
 // sendTelegram 发送 Telegram 告警。
 func sendTelegram(ctx context.Context, alert Alert) error {
 	botToken, err := settingString(model.SettingKeyAlertTelegramBotToken)
@@ -214,16 +230,38 @@ func sendTelegram(ctx context.Context, alert Alert) error {
 		return fmt.Errorf("telegram chat id not configured")
 	}
 
-	text := telegramText(alert)
+	url := fmt.Sprintf("%s/bot%s/sendMessage", telegramAPIBase, botToken)
 
+	err = postTelegramMessage(ctx, url, chatID, telegramText(alert), "Markdown")
+	// Markdown 实体解析失败时降级重发纯文本: 转义规则再全也可能漏掉新的可变文本来源,
+	// 而"排版丢失"远好过"告警彻底发不出去"。只有实体解析错误才降级 —— token/chat_id 这类
+	// 参数错误重发同样失败, 徒增一次无效请求并把真实原因埋在后面。
+	if err != nil && isTelegramEntityParseError(err) {
+		log.Warnf("telegram markdown rejected, resending as plain text: %v", err)
+		if plainErr := postTelegramMessage(ctx, url, chatID, telegramPlainText(alert), ""); plainErr == nil {
+			return nil
+		} else {
+			err = plainErr
+		}
+	}
+	if err != nil {
+		return telegramRequestError(err, botToken)
+	}
+	return nil
+}
+
+// postTelegramMessage 发一条 Telegram 消息; parseMode 为空表示纯文本。
+// 网络层错误原样返回, 由调用方统一做 token 脱敏。
+func postTelegramMessage(ctx context.Context, url, chatID, text, parseMode string) error {
 	payload := map[string]interface{}{
-		"chat_id":    chatID,
-		"text":       text,
-		"parse_mode": "Markdown",
+		"chat_id": chatID,
+		"text":    text,
+	}
+	if parseMode != "" {
+		payload["parse_mode"] = parseMode
 	}
 
 	body, _ := json.Marshal(payload)
-	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
 	req, _ := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -241,11 +279,30 @@ func sendTelegram(ctx context.Context, alert Alert) error {
 	return nil
 }
 
+// isTelegramEntityParseError 判断错误是否为 Markdown 实体解析失败(可降级重发)。
+func isTelegramEntityParseError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "can't parse entities") ||
+		strings.Contains(message, "can't find end of")
+}
+
 // escapeTelegramMarkdown 转义 Telegram legacy Markdown 的实体起始字符。
 // Title 与 Message 是任意文本, 错误信息里下划线/星号/反引号很常见, 不转义会被 parse_mode
 // 当成实体起点, Telegram 直接回 400 "Can't parse entities", 整条告警发不出去。
 func escapeTelegramMarkdown(s string) string {
 	return strings.NewReplacer("\\", "\\\\", "_", "\\_", "*", "\\*", "`", "\\`", "[", "\\[").Replace(s)
+}
+
+// telegramRequestError 脱敏网络错误中的 Telegram bot token, 避免 token URL 被日志记录。
+func telegramRequestError(err error, botToken string) error {
+	if err == nil {
+		return nil
+	}
+	message := strings.ReplaceAll(err.Error(), botToken, "[REDACTED]")
+	return fmt.Errorf("telegram request failed: %s", message)
 }
 
 // telegramError 把 Telegram 的错误响应还原成可读错误。

@@ -1963,6 +1963,18 @@
             "metricsTokenRotate": "重新生成",
             "metricsTokenRotated": "令牌已輪換, 舊令牌立即失效",
             "backupRemoteHint": "WebDAV 推送副本與校驗和; 地址憑據在 config.json backup.remote_*, 失敗自動告警"
+        },
+        "delivery": {
+            "warning": "有 {pending} 條告警尚未送達, {gaveUp} 條已放棄重試",
+            "attempts": "嘗試次數",
+            "nextAttempt": "下次補發",
+            "givenUp": "已放棄",
+            "lastError": "最近失敗原因",
+            "noneUndelivered": "目前沒有未送達的告警",
+            "resend": "立即補發",
+            "resending": "補發中…",
+            "resent": "補發完成: 成功 {sent} 條, 放棄 {gaveUp} 條",
+            "resendFailed": "補發失敗, 請查看服務端日誌"
         }
     },
     "landing": {

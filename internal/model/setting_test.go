@@ -8,6 +8,14 @@ import (
 	"testing"
 )
 
+func TestMetricsAuthDefaultIsBearer(t *testing.T) {
+	for _, setting := range DefaultSettings() {
+		if setting.Key == SettingKeyMetricsAuth && setting.Value != "bearer" {
+			t.Fatalf("metrics_auth default = %q, want bearer", setting.Value)
+		}
+	}
+}
+
 func TestSettingValidateFinite(t *testing.T) {
 	cases := []struct {
 		key     SettingKey

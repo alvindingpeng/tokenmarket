@@ -162,6 +162,27 @@ func Init() {
 		},
 	})
 
+	// 告警补发: 外发失败的告警按退避排期重试, 直到送达或达到上限。
+	// 改造前 notified=false 就是终点 —— 2026-11-02 实测 260 条告警因 Telegram 实体解析 400
+	// 全部静默丢失, 系统没有任何重试入口, 管理员也不知道有告警没送到。
+	// 周期 5 分钟: 补发延迟本身由 next_notify_at 控制(最短 2 分钟), 任务只管把到点的捞出来。
+	Define(Spec{
+		Name:     TaskAlertRedeliver,
+		Interval: fixedInterval(5 * time.Minute),
+		Fn: func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			sent, gaveUp, err := op.AlertRedeliverPending(ctx)
+			if err != nil {
+				return err
+			}
+			if sent > 0 || gaveUp > 0 {
+				log.Infof("alert redeliver: sent=%d gave_up=%d", sent, gaveUp)
+			}
+			return nil
+		},
+	})
+
 	// 生视频任务归属: 上游任务本身会过期, 归属记录超过保留期就没有查询价值, 定时清理避免表随调用量增长。
 	Define(Spec{
 		Name:       TaskVideoJobCleanup,

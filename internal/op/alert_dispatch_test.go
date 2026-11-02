@@ -75,6 +75,33 @@ func TestSendMultiChannelAlertWithoutDispatcherIsSafe(t *testing.T) {
 	}
 }
 
+func TestAlertSendWithRetryUsesBoundedExponentialBackoff(t *testing.T) {
+	calls := 0
+	var delays []time.Duration
+	wait := func(_ context.Context, delay time.Duration) error {
+		delays = append(delays, delay)
+		return nil
+	}
+	ok := alertSendWithRetry(func(context.Context, alert.Alert) bool {
+		calls++
+		return calls == 3
+	}, context.Background(), alert.Alert{Event: alert.EventTest}, wait)
+	if !ok || calls != 3 {
+		t.Fatalf("retry should succeed on third attempt: ok=%v calls=%d", ok, calls)
+	}
+	if len(delays) != 2 || delays[0] != alertDispatchRetryBase || delays[1] != 2*alertDispatchRetryBase {
+		t.Fatalf("backoff delays=%v, want [%v %v]", delays, alertDispatchRetryBase, 2*alertDispatchRetryBase)
+	}
+
+	calls = 0
+	if alertSendWithRetry(func(context.Context, alert.Alert) bool { calls++; return false }, context.Background(), alert.Alert{Event: alert.EventTest}, wait) {
+		t.Fatal("retry budget exhausted but reported success")
+	}
+	if calls != alertDispatchMaxAttempts {
+		t.Fatalf("calls=%d, want bounded max %d", calls, alertDispatchMaxAttempts)
+	}
+}
+
 // TestDetermineAlertEvent 校验 kind 到事件名的映射: 未知 kind 不能掉成空串,
 // 也不能伪装成 channel_degraded —— 改造后"备份失败"曾在消费端被当成"渠道延迟降级"处理。
 func TestDetermineAlertEvent(t *testing.T) {

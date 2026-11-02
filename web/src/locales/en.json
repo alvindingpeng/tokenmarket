@@ -1963,6 +1963,18 @@
             "metricsTokenRotate": "Regenerate",
             "metricsTokenRotated": "Token rotated; the old one no longer works",
             "backupRemoteHint": "Push the backup and checksum to WebDAV; credentials live in config.json backup.remote_*, failures raise alerts"
+        },
+        "delivery": {
+            "warning": "{pending} alerts have not been delivered, {gaveUp} gave up retrying",
+            "attempts": "Attempts",
+            "nextAttempt": "Next retry",
+            "givenUp": "Gave up",
+            "lastError": "Last error",
+            "noneUndelivered": "No undelivered alerts",
+            "resend": "Resend now",
+            "resending": "Resending…",
+            "resent": "Resend finished: {sent} delivered, {gaveUp} gave up",
+            "resendFailed": "Resend failed, check server logs"
         }
     },
     "landing": {

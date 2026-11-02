@@ -104,6 +104,21 @@ func init() {
 				Handle(listAlertRules),
 		).
 		AddRoute(
+			router.NewRoute("/alerts/delivery", http.MethodGet).
+				Allow(model.RoleAdmin).
+				Handle(getAlertDelivery),
+		).
+		AddRoute(
+			router.NewRoute("/alerts/undelivered", http.MethodGet).
+				Allow(model.RoleAdmin).
+				Handle(listUndeliveredAlerts),
+		).
+		AddRoute(
+			router.NewRoute("/alerts/redeliver", http.MethodPost).
+				Allow(model.RoleAdmin).
+				Handle(runAlertRedeliver),
+		).
+		AddRoute(
 			router.NewRoute("/metrics/token", http.MethodGet).
 				Allow(model.RoleAdmin).
 				Use(middleware.RequireStepUp()).
@@ -413,6 +428,44 @@ func listChannelAlerts(c *gin.Context) {
 		return
 	}
 	resp.Success(c, gin.H{"items": rows})
+}
+
+// getAlertDelivery 返回告警送达概览: 待补发、已放弃、24 小时成败与最近失败原因。
+//
+// 管理员需要的是"有没有告警没送出去"这个结论, 而不是自己去翻日志或者对着 notified=false
+// 逐行数 —— 2026-11-02 有 260 条告警因 Telegram 解析 400 静默丢失, 界面上完全看不出来。
+func getAlertDelivery(c *gin.Context) {
+	stats, err := op.AlertDeliveryStatsGet(c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, stats)
+}
+
+// listUndeliveredAlerts 返回尚未送达的告警(含排期与放弃), 供界面排查。
+func listUndeliveredAlerts(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	rows, err := op.AlertUndeliveredList(c.Request.Context(), limit)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, gin.H{"items": rows})
+}
+
+// runAlertRedeliver 手动触发一次补发(也由后台任务周期执行), 返回本轮结果。
+// 用有界上下文: 积压多时不能让管理员的一个点击把请求挂住。
+func runAlertRedeliver(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
+	defer cancel()
+	sent, gaveUp, err := op.AlertRedeliverPending(ctx)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	audit(c, "ops.alert_redeliver", "", fmt.Sprintf("sent=%d gave_up=%d", sent, gaveUp))
+	resp.Success(c, gin.H{"sent": sent, "gave_up": gaveUp})
 }
 
 // testAlertWebhook 主动测试告警 Webhook 连通性: 发送一条 mock 告警并返回是否送达。

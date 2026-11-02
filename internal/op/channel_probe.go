@@ -224,7 +224,7 @@ func modelsURL(baseURL, protocolPath string) string {
 
 // refer: https://platform.openai.com/docs/api-reference/models/list
 // 讯飞 MaaS 渠道按 APIKey/APISecret 的 V2 签名鉴权(见 httpsig), 其余渠道走 Bearer。
-func fetchOpenAIModels(httpClient *http.Client, ctx context.Context, target model.ChannelConfig, key, apiSecret, url string) ([]string, error) {
+func newOpenAIModelsRequest(ctx context.Context, target model.ChannelConfig, key, apiSecret, url string) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -241,7 +241,14 @@ func fetchOpenAIModels(httpClient *http.Client, ctx context.Context, target mode
 			req.Header.Set(header.HeaderKey, header.HeaderValue)
 		}
 	}
+	return req, nil
+}
 
+func fetchOpenAIModels(httpClient *http.Client, ctx context.Context, target model.ChannelConfig, key, apiSecret, url string) ([]string, error) {
+	req, err := newOpenAIModelsRequest(ctx, target, key, apiSecret, url)
+	if err != nil {
+		return nil, err
+	}
 	response, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err

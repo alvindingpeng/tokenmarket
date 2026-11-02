@@ -106,6 +106,16 @@ func ChannelReviewSubmit(id int, note string, scope model.Scope, ctx context.Con
 		channel.ConfigFingerprint = fp
 		channel.ReviewedBy = scope.ID
 		channel.ReviewedAt = &now
+		// 管理员免审提交也必须启动观察期, 与人工审批通过保持同一质量门槛。
+		if err := ChannelTrustStart(db.GetDB().WithContext(ctx), id); err != nil {
+			return model.Channel{}, fmt.Errorf("failed to start channel observation: %w", err)
+		}
+		var fresh model.Channel
+		if err := db.GetDB().WithContext(ctx).Select("trust_level", "observation_start", "observation_until").First(&fresh, id).Error; err == nil {
+			channel.TrustLevel = fresh.TrustLevel
+			channel.ObservationStart = fresh.ObservationStart
+			channel.ObservationUntil = fresh.ObservationUntil
+		}
 	}
 	setChannelCachePreservingQuota(channel)
 	return channel, nil
@@ -332,6 +342,18 @@ func ChannelReviewBackfill(ctx context.Context) (int, error) {
 		channel.ReviewStatus = model.ChannelReviewApproved
 		channel.ConfigFingerprint = fp
 		channel.ReviewedAt = &now
+		// 存量回填也必须进入观察期, 与管理员免审创建/提交保持同一质量门槛。
+		{
+			if err := ChannelTrustStart(conn, channel.ID); err != nil {
+				return 0, fmt.Errorf("failed to start channel observation: %w", err)
+			}
+			channel.TrustLevel = model.ChannelTrustObserving
+			var fresh model.Channel
+			if err := conn.Select("trust_level", "observation_start", "observation_until").Where("id = ?", channel.ID).Take(&fresh).Error; err == nil {
+				channel.ObservationStart = fresh.ObservationStart
+				channel.ObservationUntil = fresh.ObservationUntil
+			}
+		}
 		setChannelCachePreservingQuota(channel)
 	}
 

@@ -293,3 +293,47 @@ export function useRotateMetricsToken() {
         onSuccess: () => qc.invalidateQueries({ queryKey: ['ops', 'metrics-token'] }),
     });
 }
+// AlertDeliveryStats 告警送达概览。
+// 存在的理由: 改造前"告警没发出去"在界面上完全看不见 —— 2026-11-02 有 260 条告警
+// 因 Telegram 实体解析 400 静默丢失, 管理员直到翻日志才发现。
+export type AlertDeliveryStats = {
+    pending: number; gave_up: number; failed_24h: number; delivered_24h: number;
+    last_error: string; last_error_at?: string | null;
+};
+
+export function useAlertDelivery() {
+    return useQuery({
+        queryKey: ['ops', 'alert-delivery'],
+        queryFn: () => apiRequest<AlertDeliveryStats>('/api/v1/ops/alerts/delivery'),
+        refetchInterval: POLL_SLOW,
+    });
+}
+
+// UndeliveredAlert 尚未送达的告警(含排期与已放弃)。
+export type UndeliveredAlert = ChannelAlert & {
+    notify_attempts: number;
+    next_notify_at?: string | null;
+    last_notify_error: string;
+    notified_at?: string | null;
+};
+
+export function useUndeliveredAlerts(limit = 50) {
+    return useQuery({
+        queryKey: ['ops', 'alerts-undelivered', limit],
+        queryFn: () => apiRequest<{ items: UndeliveredAlert[] }>('/api/v1/ops/alerts/undelivered?limit=' + limit).then(r => r.items),
+        refetchInterval: POLL_SLOW,
+    });
+}
+
+// useRunAlertRedeliver 立即补发一次到期告警(后台任务也会每 5 分钟自动跑)。
+export function useRunAlertRedeliver() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: () => apiRequest<{ sent: number; gave_up: number }>('/api/v1/ops/alerts/redeliver', { method: 'POST', timeoutMs: 70000 }),
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: ['ops', 'alert-delivery'] });
+            void qc.invalidateQueries({ queryKey: ['ops', 'alerts-undelivered'] });
+            void qc.invalidateQueries({ queryKey: ['ops', 'alerts'] });
+        },
+    });
+}

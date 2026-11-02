@@ -93,6 +93,9 @@ var startCmd = &cobra.Command{
 		op.AlertDispatcher = func(ctx context.Context, a alert.Alert) bool {
 			return alert.Send(ctx, a)
 		}
+		// 细致版本额外带回失败原因: 补发任务要靠它判断"为什么没送到"并展示给管理员。
+		// 两个都注入, 老路径不受影响。
+		op.AlertDispatcherDetailed = alert.SendDetailed
 
 		// 后台自动添加的探测客户端工厂: 后台任务要按渠道配置建 HTTP 客户端, 而建客户端要读设置
 		// (rhttp 依赖 op), op 反向 import rhttp 会成环, 故在这里注入。

@@ -131,6 +131,7 @@ func TestTaskNamesAndDefinitionsInSync(t *testing.T) {
 		TaskAuditArchive,
 		TaskAutoBackup,
 		TaskChannelHealth,
+		TaskAlertRedeliver,
 		TaskChannelTrustEval,
 		TaskChannelQuality,
 		TaskChannelAutoAdd,

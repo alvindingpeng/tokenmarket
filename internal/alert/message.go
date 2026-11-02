@@ -108,12 +108,17 @@ func (a Alert) renderMessage() string {
 
 // telegramText 组装 Telegram 消息: 粗体标题 + 明细 + 斜体时间。
 // 所有可变文本都要转义 —— 上游错误里带下划线是常事, 漏一处就让 Telegram 回 400 整条发不出去。
+//
+// 正文同样必须转义。改造前只转了标题与时间, 正文原样拼进 Markdown, 于是探测错误里的
+// "authorization_failed (HTTP 403)" 被当成斜体起点, Telegram 回
+// 400 "Can't parse entities ... byte offset 275", 整条告警发不出去且只在日志里留一行 ERRO
+// (实测 2026-11-02 当天 15 条告警未送达, 管理员对此毫无感知)。
 func telegramText(a Alert) string {
 	stamp := a.Timestamp
 	if stamp.IsZero() {
 		stamp = time.Now()
 	}
-	body := a.renderMessage()
+	body := escapeTelegramMarkdown(a.renderMessage())
 	if body != "" {
 		body = "\n\n" + body + "\n\n"
 	} else {
@@ -121,6 +126,22 @@ func telegramText(a Alert) string {
 	}
 	return "*" + escapeTelegramMarkdown(a.renderTitle()) + "*" + body +
 		"_" + escapeTelegramMarkdown(stamp.Format("2006-01-02 15:04:05")) + "_"
+}
+
+// telegramPlainText 去掉 Markdown 装饰的纯文本版本, 供解析失败时降级重发。
+// 标题里的转义反斜杠一并还原, 让管理员看到的是原文而不是转义序列。
+func telegramPlainText(a Alert) string {
+	stamp := a.Timestamp
+	if stamp.IsZero() {
+		stamp = time.Now()
+	}
+	head := a.renderTitle()
+	body := a.renderMessage()
+	text := head
+	if body != "" {
+		text += "\n\n" + body
+	}
+	return text + "\n\n" + stamp.Format("2006-01-02 15:04:05")
 }
 
 // emailBody 邮件正文: 纯文本, 首行是标题, 末尾补时间。

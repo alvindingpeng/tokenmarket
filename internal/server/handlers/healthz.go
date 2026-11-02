@@ -46,7 +46,7 @@ func healthzProbe(c *gin.Context) {
 }
 
 // prometheusMetrics 输出 Prometheus 文本格式指标: 进程状态、调用累计、资源计数。
-// 默认无需登录(只暴露聚合数字); 需要收敛时把 metrics_auth 设为 bearer, 由 metrics_token 校验抓取方。
+// 默认要求 bearer(只暴露聚合数字); 仅在明确开放抓取时把 metrics_auth 设为 off。
 // metricsAuthorized 校验抓取凭据: 关闭鉴权时恒通过; 开启后接受 Authorization: Bearer 或 ?token=。
 // /healthz 不做鉴权 —— 它是存活探针, 只暴露进程与数据库状态, 加了鉴权反而让编排系统无法探活。
 func metricsAuthorized(c *gin.Context) bool {

@@ -193,6 +193,9 @@ func TestReviewAdminBypass(t *testing.T) {
 	if channel.ConfigFingerprint == "" {
 		t.Fatal("admin bypass should write fingerprint at create")
 	}
+	if channel.ObservationStart == nil || channel.ObservationUntil == nil || channel.TrustLevel != model.ChannelTrustObserving {
+		t.Fatalf("admin create must start observation: trust=%q start=%v until=%v", channel.TrustLevel, channel.ObservationStart, channel.ObservationUntil)
+	}
 	if _, err := ChannelPublish(created.ID, true, admin, ctx); err != nil {
 		t.Fatalf("admin publish: %v", err)
 	}
@@ -218,6 +221,9 @@ func TestReviewBackfillIdempotent(t *testing.T) {
 	channel, _ := channelCache.Get(created.ID)
 	if channel.ReviewStatus != model.ChannelReviewApproved || channel.ConfigFingerprint == "" {
 		t.Fatalf("backfilled status=%s fp-empty=%v", channel.ReviewStatus, channel.ConfigFingerprint == "")
+	}
+	if channel.TrustLevel != model.ChannelTrustObserving || channel.ObservationStart == nil || channel.ObservationUntil == nil {
+		t.Fatalf("backfilled channel must start observation: trust=%q start=%v until=%v", channel.TrustLevel, channel.ObservationStart, channel.ObservationUntil)
 	}
 	// 幂等: 再跑零条。
 	again, err := ChannelReviewBackfill(ctx)

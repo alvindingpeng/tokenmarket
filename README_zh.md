@@ -317,7 +317,7 @@ GET /metrics    # Prometheus 文本格式；可选 bearer 认证
 `/metrics` 暴露 `switchyard_up`、`switchyard_build_info`、`switchyard_relay_requests`、
 `switchyard_relay_tokens_total`、`switchyard_billing_cost_total`、`switchyard_active_requests`、`switchyard_channels`、
 `switchyard_users`、`switchyard_user_balance_total`、`switchyard_alerts_raised_24h`，以及 Go 运行时计数器。
-把 `metrics_auth` 设为 `bearer` 则要求令牌（`Authorization: Bearer …` 或 `?token=`）；令牌按需生成、可在界面轮换。
+`metrics_auth` 默认要求令牌（`Authorization: Bearer …` 或 `?token=`）；仅在明确开放抓取时设为 `off`。令牌按需生成、可在界面轮换。
 
 ### 渠道健康探测
 

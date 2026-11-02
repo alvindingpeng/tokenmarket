@@ -1963,6 +1963,18 @@
             "metricsTokenRotate": "重新生成",
             "metricsTokenRotated": "令牌已轮换, 旧令牌立即失效",
             "backupRemoteHint": "WebDAV 推送副本与校验和; 地址凭据在 config.json backup.remote_*, 失败自动告警"
+        },
+        "delivery": {
+            "warning": "有 {pending} 条告警尚未送达, {gaveUp} 条已放弃重试",
+            "attempts": "尝试次数",
+            "nextAttempt": "下次补发",
+            "givenUp": "已放弃",
+            "lastError": "最近失败原因",
+            "noneUndelivered": "当前没有未送达的告警",
+            "resend": "立即补发",
+            "resending": "补发中…",
+            "resent": "补发完成: 成功 {sent} 条, 放弃 {gaveUp} 条",
+            "resendFailed": "补发失败, 请查看服务端日志"
         }
     },
     "landing": {

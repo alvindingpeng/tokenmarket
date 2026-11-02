@@ -144,11 +144,26 @@ func ChannelCreate(detail *model.ChannelDetail, scope model.Scope, ctx context.C
 		if err := tx.Create(&channel).Error; err != nil {
 			return fmt.Errorf("failed to create channel: %w", err)
 		}
-		return syncChannelChildren(tx, channel.ID, detail)
+		if err := syncChannelChildren(tx, channel.ID, detail); err != nil {
+			return err
+		}
+		// 管理员免审也必须进入观察期: 免掉的是审批动作, 不是质量观察。
+		if channelReviewBypass(channel.UserID) {
+			if err := ChannelTrustStart(tx, channel.ID); err != nil {
+				return fmt.Errorf("failed to start channel observation: %w", err)
+			}
+		}
+		return nil
 	}); err != nil {
 		return nil, err
 	}
 
+	var trustFields model.Channel
+	if err := db.GetDB().WithContext(ctx).Select("trust_level", "observation_start", "observation_until").First(&trustFields, channel.ID).Error; err == nil {
+		channel.TrustLevel = trustFields.TrustLevel
+		channel.ObservationStart = trustFields.ObservationStart
+		channel.ObservationUntil = trustFields.ObservationUntil
+	}
 	channelCache.Set(channel.ID, channel)
 	// 凭据, 模型, 出口与授权的主键都在事务内分配, 此刻只在库里; 重载子表缓存以让授权候选与转发都能查到。
 	if err := reloadChannelChildren(ctx, channel.ID); err != nil {

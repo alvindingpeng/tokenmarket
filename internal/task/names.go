@@ -15,6 +15,7 @@ const (
 	TaskAuditArchive     = "audit_archive"            // 归档并清理超期审计记录(留存期独立于调用日志)。
 	TaskAutoBackup       = "auto_backup"              // 定时一致性备份。
 	TaskChannelHealth    = "channel_health"           // 低频渠道健康探测。
+	TaskAlertRedeliver   = "alert_redeliver"          // 告警补发: 外发失败的告警按退避重试, 直到送达或达上限。
 	TaskChannelTrustEval = "channel_trust_eval"       // 渠道观察期评估: 达标转正, 不达标降级。
 	TaskChannelQuality   = "channel_quality_snapshot" // 渠道质量日快照: 昨日流量与探测可用率固化成一行。
 	TaskChannelAutoAdd   = "channel_model_autoadd"    // 渠道模型后台自动添加: 周期复查上游模型清单并并入。

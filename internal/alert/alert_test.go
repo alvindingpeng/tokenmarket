@@ -1,6 +1,7 @@
 package alert
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -33,6 +34,18 @@ func TestTelegramErrorSurfacesDescription(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "chat_id") {
 		t.Fatalf("chat not found 应给出排查提示: %v", err)
+	}
+}
+
+// TestTelegramErrorFallbackWithoutDescription 校验非 JSON 响应时仍报出状态码。
+func TestTelegramRequestErrorRedactsBotToken(t *testing.T) {
+	const token = "123456:secret-token"
+	err := telegramRequestError(fmt.Errorf("Post https://api.telegram.org/bot%s/sendMessage: dial tcp: connection refused", token), token)
+	if strings.Contains(err.Error(), token) || strings.Contains(err.Error(), "secret-token") {
+		t.Fatalf("网络错误泄露 bot token: %v", err)
+	}
+	if !strings.Contains(err.Error(), "[REDACTED]") {
+		t.Fatalf("脱敏错误缺少占位符: %v", err)
 	}
 }
 

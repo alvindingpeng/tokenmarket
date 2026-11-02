@@ -47,7 +47,7 @@ func AlertRules() []AlertRule {
 	return rules
 }
 
-// MetricsAuthMode 返回 /metrics 当前生效的鉴权模式: off(默认开放) 或 bearer(需令牌)。
+// MetricsAuthMode 返回 /metrics 当前生效的鉴权模式: bearer(默认需令牌) 或 off(显式开放)。
 func MetricsAuthMode() string {
 	mode, err := SettingGetString(model.SettingKeyMetricsAuth)
 	if err != nil || mode != "bearer" {

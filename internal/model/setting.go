@@ -131,8 +131,8 @@ const (
 	SettingKeyAlertEmailPassword    SettingKey = "alert_email_password"     // SMTP 登录密码。
 	SettingKeyAlertEmailFrom        SettingKey = "alert_email_from"         // 发件人地址。
 	SettingKeyAlertEmailTo          SettingKey = "alert_email_to"           // 收件人地址(逗号分隔)。
-	// 探针鉴权: /metrics 默认开放(与 /healthz 一致, 便于本地抓取), 需要收敛时切成 bearer 并要求令牌。
-	SettingKeyMetricsAuth  SettingKey = "metrics_auth"  // off | bearer; /healthz 恒不鉴权(存活探针)。
+	// 探针鉴权: /metrics 默认要求 bearer 令牌; 仅在明确需要开放抓取时切成 off。
+	SettingKeyMetricsAuth  SettingKey = "metrics_auth"  // bearer | off; /healthz 恒不鉴权(存活探针)。
 	SettingKeyMetricsToken SettingKey = "metrics_token" // bearer 模式下的抓取令牌, 内部键不外露。
 	// 登录防爆破: 按 IP+用户名 计量连续失败次数, 超限后指数退避锁定。在设置页面上独立配置以兼容多实例共享存储的场景。
 	SettingKeyLoginMaxAttempts    SettingKey = "login_max_attempts"    // 连续失败次数阈值, 默认 5; 0 表示不按次数锁定(但退避仍然生效)。
@@ -303,7 +303,7 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyAlertEmailPassword, Value: ""},       // SMTP 登录密码
 		{Key: SettingKeyAlertEmailFrom, Value: ""},           // 发件人地址
 		{Key: SettingKeyAlertEmailTo, Value: ""},             // 收件人地址(逗号分隔)
-		{Key: SettingKeyMetricsAuth, Value: "off"},           // 探针默认开放
+		{Key: SettingKeyMetricsAuth, Value: "bearer"},        // 探针默认要求 bearer 令牌; 已有显式 off 设置保持不变
 		{Key: SettingKeyMetricsToken, Value: ""},             // 令牌留空, 开启鉴权时自动生成
 		{Key: SettingKeyLoginMaxAttempts, Value: "5"},        // 连续 5 次失败即触发退避锁定
 		{Key: SettingKeyLoginLockoutSeconds, Value: "900"},   // 锁定 15 分钟, 起效前每超一次翻倍

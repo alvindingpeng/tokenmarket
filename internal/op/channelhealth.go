@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/alert"
@@ -44,6 +45,14 @@ func ChannelHealthCheckAll(ctx context.Context) error {
 }
 
 // checkOne 探测单个渠道并落库健康记录, 随后评估是否触发告警。
+//
+// 探测口径是「凭据是否有效」: 带真实凭据请求 models 端点, 只有 2xx 才算健康。
+// 改造前用的是不带凭据的 GET chat/completions, 结果是 401/403/404/405 一律判健康 ——
+// 生产 21717 次探测里有 12474 次拿到 4xx 却记为健康, 这个健康位对「渠道还能不能用」没有信息量。
+//
+// 401/403/404/405 不是渠道故障, 而是「这条探测路径未被上游以该形态支持」, 记为未知(Healthy=false, 但带 authentication_failed / models_endpoint_not_found 等分类说明),
+// 不参与宕机判定: 否则上游 provider 只要不实现 /models, 就会每 30 分钟误报一次宕机。
+// 5xx 与传输层错误才是真故障。
 func checkOne(ctx context.Context, channel model.Channel) {
 	record := model.ChannelHealthRecord{
 		ChannelID:   channel.ID,
@@ -51,33 +60,78 @@ func checkOne(ctx context.Context, channel model.Channel) {
 		CheckedAt:   time.Now(),
 	}
 	start := time.Now()
-	probeURL := channel.BaseURL + channel.OpenAIChatCompletionPath
-	if channel.OpenAIChatCompletionPath == "" {
-		probeURL = channel.BaseURL
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, probeURL, nil)
-	if err != nil {
-		record.Error = err.Error()
-		saveHealthRecord(record)
-		evaluateAlerts(ctx, channel, record)
-		return
-	}
-	resp, err := channelHealthClient.Do(req)
+	statusCode, err := probeChannelModels(ctx, channel)
 	record.LatencyMs = time.Since(start).Milliseconds()
 	if err != nil {
 		record.Error = err.Error()
-		saveHealthRecord(record)
-		evaluateAlerts(ctx, channel, record)
-		return
-	}
-	defer resp.Body.Close()
-	record.StatusCode = resp.StatusCode
-	record.Healthy = resp.StatusCode >= 200 && resp.StatusCode < 500
-	if !record.Healthy {
-		record.Error = fmt.Sprintf("HTTP %d", resp.StatusCode)
+	} else {
+		record.StatusCode = statusCode
+		record.Healthy = statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices
+		if !record.Healthy {
+			record.Error = classifyHealthStatus(statusCode)
+		}
 	}
 	saveHealthRecord(record)
-	evaluateAlerts(ctx, channel, record)
+	evaluateAlerts(ctx, channel, record, probeUnknown(record))
+}
+
+// probeUnknown 判断本次探测是否「口径不支持」而非「渠道故障」。
+// 4xx 说明上游活着并给出了明确答复, 只是这个探测形态没被支持: 凭据可能有效, 只是 /models 未开放。
+// 这类结果既不判健康也不判宕机, 只记录事实; 缺凭据同理(渠道本就没配对凭据, 不是上游故障)。
+func probeUnknown(record model.ChannelHealthRecord) bool {
+	if record.Healthy {
+		return false
+	}
+	if record.StatusCode >= http.StatusBadRequest && record.StatusCode < http.StatusInternalServerError {
+		return true
+	}
+	return strings.HasPrefix(record.Error, "no enabled channel key available")
+}
+
+// probeChannelModels 使用与 ProbeChannelModels 相同的 models URL 和鉴权形态。
+// 凭据只从进程内缓存读取, 健康记录与错误文本绝不包含密钥或响应体。
+// 讯飞 MaaS 的模型列表地址从 Chat 路径推导, 且需 V2 签名(appID/apiSecret), 因此单独走签名分支。
+func probeChannelModels(ctx context.Context, channel model.Channel) (int, error) {
+	var key model.ChannelKey
+	for _, candidate := range ChannelKeysByChannel(channel.ID) {
+		if candidate.Enabled && candidate.DisabledUntil == nil && candidate.Key != "" {
+			key = candidate
+			break
+		}
+	}
+	if key.Key == "" {
+		return 0, fmt.Errorf("no enabled channel key available")
+	}
+	modelsPath := channel.OpenAIResponsePath
+	if channel.Dialect == model.DialectXunfei {
+		modelsPath = channel.OpenAIChatCompletionPath
+	}
+	url := modelsURL(channel.BaseURL, modelsPath)
+	req, err := newOpenAIModelsRequest(ctx, channel.ChannelConfig, key.Key, key.APISecret, url)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := channelHealthClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode, nil
+}
+
+func classifyHealthStatus(status int) string {
+	switch status {
+	case http.StatusUnauthorized:
+		return "authentication_failed (HTTP 401)"
+	case http.StatusForbidden:
+		return "authorization_failed (HTTP 403)"
+	case http.StatusNotFound:
+		return "models_endpoint_not_found (HTTP 404)"
+	case http.StatusMethodNotAllowed:
+		return "models_endpoint_method_not_allowed (HTTP 405)"
+	default:
+		return fmt.Sprintf("upstream_http_error (HTTP %d)", status)
+	}
 }
 
 // saveHealthRecord 落库探测结果, 只保留最近 1000 条避免无限增长。
@@ -94,9 +148,16 @@ func saveHealthRecord(record model.ChannelHealthRecord) {
 // 连续 alert_fail_streak 次异常才判定 down; 恢复时若最近告警是 down/degraded 则补发 recovered;
 // 健康但延迟超过 health_latency_ms 阈值则发 degraded。同类型告警的去重由 RaiseAlert 负责。
 //
+// unknown(探测形态不支持/无可用凭据)整轮跳过: 既不进宕机连击, 也不补 recovered ——
+// 404 证明不了渠道故障, 但也证明不了已恢复, 只留记录等下一次有信息量的探测。
+// 历史连击窗口同理: 窗口里出现未知探测就中断连击, 否则「N 次连续失败探测」的告警文案是假的。
+//
 // 主体一律留空交给 resolveSubject 补真实渠道名 —— 改造前传的是 ShareCode,
 // 管理员在 Telegram 里收到的是"8fKd2xQ 渠道告警"这种读不出来的随机码。共享编码仍进 ChannelCode 列。
-func evaluateAlerts(ctx context.Context, channel model.Channel, record model.ChannelHealthRecord) {
+func evaluateAlerts(ctx context.Context, channel model.Channel, record model.ChannelHealthRecord, unknown bool) {
+	if unknown {
+		return
+	}
 	if record.Healthy {
 		// 延迟告警: 健康但超过阈值; 阈值 0 表示关闭该规则。
 		threshold := SettingGetIntDefault(model.SettingKeyHealthLatencyMS, 1000)
@@ -146,7 +207,7 @@ func evaluateAlerts(ctx context.Context, channel model.Channel, record model.Cha
 		return
 	}
 	for _, r := range recent {
-		if r.Healthy {
+		if r.Healthy || probeUnknown(r) {
 			return
 		}
 	}

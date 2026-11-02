@@ -17,9 +17,9 @@ import {
 } from '@/components/ui/morphing-dialog';
 import { toast } from 'sonner';
 import {
-    useArchives, useBackups, useBalanceFlow, useChannelAlerts, useChannelHealth,
-    useLatencyBreakdown, useOpsOverview, useReconcileList, useRunBackup, useRunHealthCheck, useRunLogLifecycle, useRunReconcile, useSetReconcileNote,
-    type BalanceFlow, type ChannelAlert, type ChannelHealth, type LatencyRow, type ReconcileRow,
+    useAlertDelivery, useArchives, useBackups, useBalanceFlow, useChannelAlerts, useChannelHealth,
+    useLatencyBreakdown, useOpsOverview, useReconcileList, useRunAlertRedeliver, useRunBackup, useRunHealthCheck, useRunLogLifecycle, useRunReconcile, useSetReconcileNote, useUndeliveredAlerts,
+    type BalanceFlow, type ChannelAlert, type ChannelHealth, type LatencyRow, type ReconcileRow, type UndeliveredAlert,
 } from '@/api/ops';
 import { useRateUsageTop } from '@/api/ratelimit';
 
@@ -499,6 +499,11 @@ function LatencySection() {
 function AlertsSection() {
     const t = useTranslations('ops');
     const { data, isLoading, isError, refetch, isRefetching } = useChannelAlerts(50);
+    // 送达状态单独查询: 告警列表给的是历史, 这里回答的是"现在还有多少条没送出去"。
+    const delivery = useAlertDelivery();
+    const undelivered = useUndeliveredAlerts(50);
+    const redeliver = useRunAlertRedeliver();
+    const deliveryStats = delivery.data;
     // kindBadge 告警类型徽章。新增的熔断/任务/配额类型同样要有中文标签,
     // 否则管理员在列表里只看到裸英文 kind, 分不清是渠道挂了还是后台任务挂了。
     const kindBadge = (kind: string) => {
@@ -546,12 +551,57 @@ function AlertsSection() {
         { key: 'notified', label: t('alerts.notified'), render: (row) => (row.notified ? t('alerts.yes') : t('alerts.no')) },
         { key: 'created_at', label: t('alerts.time'), render: (row) => formatTime(row.created_at) },
     ];
+    // 未送达列表: 只在真的有待补发/已放弃时才展开, 平时不占版面。
+    // 已放弃的行排期为空(后端如此排序), 界面直接标"已放弃", 不让管理员以为还在重试。
+    const undeliveredColumns: Col<UndeliveredAlert>[] = [
+        { key: 'subject', label: t('alerts.subject'), render: (row) => (
+            <span className='block max-w-48 truncate' title={row.subject}>{row.subject || '-'}</span>
+        ) },
+        { key: 'kind', label: t('alerts.kind'), render: (row) => kindBadge(row.kind) },
+        { key: 'attempts', label: t('delivery.attempts'), render: (row) => String(row.notify_attempts ?? 0) },
+        { key: 'next', label: t('delivery.nextAttempt'), render: (row) => (
+            row.next_notify_at ? formatTime(row.next_notify_at) : <span className='text-xs text-muted-foreground'>{t('delivery.givenUp')}</span>
+        ) },
+        { key: 'error', label: t('delivery.lastError'), render: (row) => (
+            <span className='block max-w-80 truncate text-xs text-muted-foreground' title={row.last_notify_error}>{row.last_notify_error || '-'}</span>
+        ) },
+        { key: 'created_at', label: t('alerts.time'), render: (row) => formatTime(row.created_at) },
+    ];
     return (
         <div className='space-y-3'>
             <div className='flex flex-wrap items-center justify-between gap-3'>
                 <p className='text-sm text-muted-foreground'>{t('alerts.desc')}</p>
-                <RefreshButton onClick={() => void refetch()} busy={isRefetching} label={t('refresh')} />
+                <div className='flex items-center gap-2'>
+                    <Button
+                        size='sm'
+                        variant='outline'
+                        disabled={redeliver.isPending}
+                        onClick={() => redeliver.mutate(undefined, {
+                            onSuccess: (result) => toast.success(t('delivery.resent', { sent: result.sent, gaveUp: result.gave_up })),
+                            onError: () => toast.error(t('delivery.resendFailed')),
+                        })}
+                    >
+                        {redeliver.isPending ? t('delivery.resending') : t('delivery.resend')}
+                    </Button>
+                    <RefreshButton onClick={() => void refetch()} busy={isRefetching} label={t('refresh')} />
+                </div>
             </div>
+            {deliveryStats && (deliveryStats.pending > 0 || deliveryStats.gave_up > 0) ? (
+                <div className='space-y-3 rounded-3xl border border-amber-500/40 bg-amber-500/10 p-4'>
+                    <p className='text-sm font-medium text-amber-700 dark:text-amber-400'>
+                        {t('delivery.warning', { pending: deliveryStats.pending, gaveUp: deliveryStats.gave_up })}
+                    </p>
+                    {deliveryStats.last_error ? (
+                        <p className='text-xs text-muted-foreground'>{t('delivery.lastError')}: {deliveryStats.last_error}</p>
+                    ) : null}
+                    <OpsTable
+                        columns={undeliveredColumns}
+                        rows={undelivered.data ?? []}
+                        empty={undelivered.isLoading ? t('loading') : t('delivery.noneUndelivered')}
+                        rowKey={(row) => String(row.id)}
+                    />
+                </div>
+            ) : null}
             {isError ? (
                 <div className='rounded-3xl border border-border bg-card p-10 text-center text-sm text-muted-foreground'>{t('loadFailed')}</div>
             ) : (
