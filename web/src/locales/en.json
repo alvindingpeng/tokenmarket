@@ -849,7 +849,8 @@
                 "strategy_success": "Strategy: success",
                 "strategy_score": "Strategy: score",
                 "strategy_random": "Strategy: random",
-                "canary_rollout": "Canary rollout"
+                "canary_rollout": "Canary rollout",
+                "cold_start_explore": "New member trial"
             },
             "attemptStatus": {
                 "running": "Running",
@@ -876,7 +877,8 @@
                 "failed": "Failed",
                 "canceled": "Canceled",
                 "affinity": "Affinity",
-                "recovery_probe": "Recovery probe"
+                "recovery_probe": "Recovery probe",
+                "cold_start_explore": "New member trial"
             }
         },
         "group": "Model Config",

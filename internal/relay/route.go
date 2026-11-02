@@ -24,6 +24,12 @@ type RouteState struct {
 	Cooldowns     map[int]int64 `json:"cooldowns"`       // 失败成员 ID 对应的冷却截止 Unix 毫秒时间, 已到期的条目由前端按当前时间忽略。
 
 	affinityArmed bool // 当前路由下一次成功后是否开始亲和, 仅故障切换后为真。
+
+	// 冷启动探索配额的状态(见 explore.go): 计数器流水般地推进探索节奏, exploreItemID 记录
+	// 最近一轮是否由探索决定。两者都是进程内的瞬时状态, 与冷却/探测一样不落库 ——
+	// 重启后计数归零只会让探索节奏重新开始, 不影响正确性。
+	exploreCounter int // 该分组已发生的正常择优轮次, 用于按固定节奏放行探索。
+	exploreItemID  int // 最近一轮由冷启动探索选中的成员 ID, 0 表示最近一轮是正常择优。
 }
 
 const routeStreamBuffer = 16 // 单个路由流连接的非阻塞消息缓冲容量。
@@ -139,6 +145,9 @@ func pickGroupItem(group model.Group) model.GroupItem {
 	if route.AffinityUntil <= now {
 		route.AffinityUntil = 0
 	}
+	// 探索标记只对"刚刚过去的那一轮"有效: 本轮重新选路时先清掉, 免得路由解释把上一轮的
+	// 探索错记到这一轮头上(同分组的并发请求也会各自覆盖它, 故它只用于解释, 不参与决策)。
+	route.exploreItemID = 0
 
 	// 亲和期内沿用当前成员, 不提前探测已恢复的高优先级成员。
 	if group.RequestRoutingPreference == "" && route.CurrentItemID != 0 && route.AffinityUntil > now {
@@ -202,6 +211,12 @@ func pickGroupItem(group model.Group) model.GroupItem {
 		publishRouteLocked(route)
 		return chosen
 	}
+	// 冷启动探索: 按实测成绩择优的模式下, 没有观测的成员会被评分结构性排除在外
+	// (延迟与成功率只能取中性值), 永远拿不到第一批样本; 这里按固定节奏把一小部分请求
+	// 定向给这样的成员, 让它先攒够样本, 之后回到正常评分竞争(详见 explore.go)。
+	if explore, ok := coldStartExplore(group, candidates, chosen, route); ok {
+		chosen = explore
+	}
 	route.CurrentItemID = chosen.ID
 	publishRouteLocked(route)
 	return chosen
@@ -221,6 +236,11 @@ func routeExplanation(group model.Group, chosen model.GroupItem, canary bool) mo
 	if reason != "canary_rollout" {
 		if state.ProbeItemID == chosen.ID && chosen.ID != 0 {
 			reason = "recovery_probe"
+		}
+		// 冷启动探索: 本轮不是评分择优的结果, 而是给新成员的试探配额。必须如实记下来,
+		// 否则用户看到日志里"按评分选路"却打到评分排名靠后的新渠道, 无法解释。
+		if state.exploreItemID == chosen.ID && chosen.ID != 0 {
+			reason = "cold_start_explore"
 		}
 		if group.RequestRoutingPreference == "" && state.AffinityUntil > now && state.CurrentItemID == chosen.ID && chosen.ID != 0 {
 			reason = "affinity"
@@ -652,6 +672,9 @@ func groupRouteLocked(group model.Group) *RouteState {
 	}
 	if route.ProbeItemID != 0 && !items[route.ProbeItemID] {
 		route.ProbeItemID = 0
+	}
+	if route.exploreItemID != 0 && !items[route.exploreItemID] {
+		route.exploreItemID = 0
 	}
 	if route.CurrentItemID != 0 && !items[route.CurrentItemID] {
 		route.CurrentItemID = 0

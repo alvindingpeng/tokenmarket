@@ -849,7 +849,8 @@
                 "strategy_success": "策略：success",
                 "strategy_score": "策略：score",
                 "strategy_random": "策略：random",
-                "canary_rollout": "灰度分流"
+                "canary_rollout": "灰度分流",
+                "cold_start_explore": "新成员试探"
             },
             "attemptStatus": {
                 "running": "进行中",
@@ -876,7 +877,8 @@
                 "failed": "失败",
                 "canceled": "已取消",
                 "affinity": "亲和命中",
-                "recovery_probe": "恢复探测"
+                "recovery_probe": "恢复探测",
+                "cold_start_explore": "新成员试探"
             }
         },
         "group": "模型配置",
