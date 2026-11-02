@@ -152,6 +152,7 @@ func TestGzipCompatibilityFailoverAndClient400(t *testing.T) {
 	}{
 		{"encoding_compatibility", "Unsupported request content encoding: gzip", 2, http.StatusOK},
 		{"genuine_client_error", "Invalid value for temperature", 1, http.StatusBadRequest},
+		{"json_object_body_rejected", "Request body must be a valid JSON object. (request id: 202611020928475375809818268d9d6kvhIlkKa)", 2, http.StatusOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var mu sync.Mutex

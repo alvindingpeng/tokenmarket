@@ -83,6 +83,15 @@ var errorRules = []errorRule{
 	{name: "request_encoding_unsupported", class: ErrorClassCompatibility, tokens: []string{
 		"unsupported request content encoding", "unsupported request content-encoding",
 	}},
+	// 上游(实测为 sharellm 的 Anthropic 兼容网关)回 "Request body must be a valid JSON object.":
+	// 出站体是本地 json.Marshal 的结构体, 不可能不是 JSON 对象; 这条文案意味着上游链路
+	// 收错/截断了请求体(网关侧问题), 换渠道重发可能成功 ——按兼容性处理(冷却成员+换渠道),
+	// 不落进 400 一刀切的 client 分支直接透传(该分支按设计不轮转, 间歇性上游 400 会被放大)。
+	// 必须排在 client_invalid 之前: 该消息常与 invalid_request(_error) 类型同现,
+	// 不能被类型词盖回本地请求错误; 普通参数错误不含此文案, 仍走 client_invalid/status_client。
+	{name: "body_json_shape_unsupported", class: ErrorClassCompatibility, tokens: []string{
+		"must be a valid json object",
+	}},
 	{name: "client_invalid", class: ErrorClassClient, tokens: []string{
 		"invalid_request_error", "invalid_prompt", "context_length_exceeded",
 		"prompt is too long", "request_too_large", "invalid_argument", "reduce the length",

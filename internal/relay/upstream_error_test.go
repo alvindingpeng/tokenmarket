@@ -53,6 +53,9 @@ func TestClassifyUpstreamError(t *testing.T) {
 		{"状态码 404 无语义", &llm.ResponseError{StatusCode: 404, Detail: llm.ErrorDetail{Message: "Not Found"}}, ErrorClassModel},
 		{"gzip 编码不兼容覆盖通用请求类型", &llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Type: "invalid_request_error", Message: "Unsupported request content encoding: gzip"}}, ErrorClassCompatibility},
 		{"透传 gzip 编码不兼容", &httpclient.Error{StatusCode: 400, Body: []byte(`{"error":{"type":"invalid_request_error","message":"unsupported request content-encoding gzip"}}`)}, ErrorClassCompatibility},
+		{"sharellm 体形状拒绝归兼容(线上实测400)", &llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Type: "invalid_request", Message: "Request body must be a valid JSON object. (request id: 202611020928475375809818268d9d6kvhIlkKa)"}}, ErrorClassCompatibility},
+		{"透传体形状拒绝", &httpclient.Error{StatusCode: 400, Body: []byte(`{"error":{"type":"invalid_request","message":"Request body must be a valid JSON object. (request id: 123)"},"type":"error"}`)}, ErrorClassCompatibility},
+		{"体形状拒绝优先于 invalid_request_error 类型", &llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Type: "invalid_request_error", Message: "Request body must be a valid JSON object."}}, ErrorClassCompatibility},
 		{"普通400仍是客户端错误", &httpclient.Error{StatusCode: 400, Body: []byte(`{"error":{"message":"bad parameter"}}`)}, ErrorClassClient},
 		{"gzip内容错误不是编码兼容性错误", &llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Message: "invalid gzip payload"}}, ErrorClassClient},
 		{"不支持响应编码不是请求兼容性错误", &llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Message: "unsupported response content encoding gzip"}}, ErrorClassClient},
@@ -68,6 +71,15 @@ func TestClassifyUpstreamError(t *testing.T) {
 				t.Fatalf("classify(%v) = %s, want %s", tc.err, class, tc.class)
 			}
 		})
+	}
+}
+
+// TestBodyShapeRejectedRuleName 该文案的规则名进 route_events 供线上核对, 保持稳定契约。
+func TestBodyShapeRejectedRuleName(t *testing.T) {
+	err := &llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Type: "invalid_request", Message: "Request body must be a valid JSON object. (request id: 202611020928475375809818268d9d6kvhIlkKa)"}}
+	class, rule := classifyUpstreamError(err)
+	if class != ErrorClassCompatibility || rule != "body_json_shape_unsupported" {
+		t.Fatalf("classify = (%s, %q), want (compatibility, body_json_shape_unsupported)", class, rule)
 	}
 }
 
@@ -87,6 +99,7 @@ func TestAttemptStatusOfClass(t *testing.T) {
 		{&llm.ResponseError{StatusCode: 529, Detail: llm.ErrorDetail{Type: "overloaded_error"}}, "overloaded"},
 		{&llm.ResponseError{StatusCode: 404, Detail: llm.ErrorDetail{Code: "model_not_found"}}, "model_missing"},
 		{&llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Message: "unsupported request content encoding gzip"}}, "compatibility_error"},
+		{&llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Message: "Request body must be a valid JSON object."}}, "compatibility_error"},
 		{errors.New("something we have never seen"), "failed"},
 	}
 	for _, tc := range cases {
