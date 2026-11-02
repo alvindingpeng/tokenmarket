@@ -12,6 +12,7 @@ const (
 	TaskBillingReconcile = "billing_reconcile"        // 每日核对计费明细与预扣。
 	TaskBillingRecovery  = "billing_recovery"         // 重试持久入队但尚未完成的计费结算(启动即跑 + 周期跑)。
 	TaskLogArchive       = "log_archive"              // 归档并清理超期日志。
+	TaskAuditArchive     = "audit_archive"            // 归档并清理超期审计记录(留存期独立于调用日志)。
 	TaskAutoBackup       = "auto_backup"              // 定时一致性备份。
 	TaskChannelHealth    = "channel_health"           // 低频渠道健康探测。
 	TaskChannelTrustEval = "channel_trust_eval"       // 渠道观察期评估: 达标转正, 不达标降级。

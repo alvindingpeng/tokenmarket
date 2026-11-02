@@ -39,6 +39,10 @@ export const SettingKey = {
     LogArchiveEnabled: 'log_archive_enabled', // 清理前先归档, 默认 true。
     LogStoreBody: 'log_store_body', // 是否保存请求/响应正文, 默认 true。
     LogMaskFields: 'log_mask_fields', // 额外脱敏字段(逗号分隔 JSON key)。
+    AuditRetentionDays: 'audit_retention_days', // 审计日志留存天数, 默认 180, 范围 1-3650。
+    AuditArchiveEnabled: 'audit_archive_enabled', // 审计清理前是否先归档为 NDJSON, 默认 true。
+    // 用户等级配额(JSON 字符串): {"free":{"rpm":20,"tpm":40000,"concurrent":2}, ...}。
+    UserTierPolicies: 'user_tier_policies',
     AutoBackupEnabled: 'auto_backup_enabled', // 自动备份开关, 默认 true。
     AutoBackupKeep: 'auto_backup_keep', // 备份保留份数, 默认 7。
     AutoBackupInterval: 'auto_backup_interval', // 备份间隔(小时), 默认 24。

@@ -72,10 +72,13 @@ const (
 
 // 单个上游渠道的共享配置; 路径按协议分别配置, 凭据由 ChannelKey 提供。
 type Channel struct {
-	ID        int    `json:"id" gorm:"primaryKey"`                                                 // 渠道主键。
-	UserID    uint   `json:"user_id" gorm:"uniqueIndex:idx_channel_owner_name;not null;default:0"` // 归属用户; 渠道名在归属内唯一, 跨用户可重名。
-	Shared    bool   `json:"shared" gorm:"default:false"`                                          // 是否已发布到用户侧(共享)。
-	ShareCode string `json:"share_code" gorm:"index"`                                              // 发布编码: 4 位纯数字(1001 起), 界面展示为 "#1001"; 用户侧显示为渠道名称, 唯一性由发布流程保证(空串不参与)。
+	// DisabledUntil is a channel-wide hard quota pause, independent of manual Enabled.
+	// Key/model successes and recovery probes must never clear this deadline.
+	DisabledUntil *time.Time `json:"disabled_until,omitempty"`
+	ID            int        `json:"id" gorm:"primaryKey"`                                                 // 渠道主键。
+	UserID        uint       `json:"user_id" gorm:"uniqueIndex:idx_channel_owner_name;not null;default:0"` // 归属用户; 渠道名在归属内唯一, 跨用户可重名。
+	Shared        bool       `json:"shared" gorm:"default:false"`                                          // 是否已发布到用户侧(共享)。
+	ShareCode     string     `json:"share_code" gorm:"index"`                                              // 发布编码: 4 位纯数字(1001 起), 界面展示为 "#1001"; 用户侧显示为渠道名称, 唯一性由发布流程保证(空串不参与)。
 	// 准入审核(P1): 发布与对外候选都要过审; 关键配置指纹失配自动转 stale 待复审。
 	ReviewStatus      string     `json:"review_status" gorm:"size:16;not null;default:draft;index"` // 审核状态 draft|pending|approved|rejected|stale。
 	ReviewNote        string     `json:"review_note" gorm:"size:512;not null;default:''"`           // 提交说明 / 审核意见 / 驳回原因。
@@ -109,8 +112,8 @@ type ChannelKeyConfig struct {
 	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`        // 最后错误时间。
 	DisabledUntil *time.Time `json:"disabled_until,omitempty"`       // 自动禁用截止时间(故障熔断)。
 	BreakerTrips  int        `json:"breaker_trips" gorm:"default:0"` // 自上次成功以来累计熔断次数; 熔断时长按它翻倍, 成功即清零。
-	ProbeCount    int        `json:"probe_count" gorm:"default:0"`    // 熔断恢复探测尝试次数; 超过上限则不再自动探测。
-	ProbeAt       *time.Time `json:"probe_at,omitempty"`              // 上次探测时间。
+	ProbeCount    int        `json:"probe_count" gorm:"default:0"`   // 熔断恢复探测尝试次数; 超过上限则不再自动探测。
+	ProbeAt       *time.Time `json:"probe_at,omitempty"`             // 上次探测时间。
 }
 
 // 渠道下的一份上游凭据; 不同凭据通常对应不同的额度与计费。
@@ -136,8 +139,8 @@ type ChannelModel struct {
 	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`        // 最后错误时间。
 	DisabledUntil *time.Time `json:"disabled_until,omitempty"`       // 自动禁用截止时间(故障熔断)。
 	BreakerTrips  int        `json:"breaker_trips" gorm:"default:0"` // 自上次成功以来累计熔断次数; 熔断时长按它翻倍, 成功即清零。
-	ProbeCount    int        `json:"probe_count" gorm:"default:0"`    // 熔断恢复探测尝试次数; 超过上限则不再自动探测。
-	ProbeAt       *time.Time `json:"probe_at,omitempty"`              // 上次探测时间。
+	ProbeCount    int        `json:"probe_count" gorm:"default:0"`   // 熔断恢复探测尝试次数; 超过上限则不再自动探测。
+	ProbeAt       *time.Time `json:"probe_at,omitempty"`             // 上次探测时间。
 }
 
 // UserPrice 按比例放大 LLMPrice 形式供货价得到用户单价。
@@ -192,6 +195,10 @@ type ChannelStats struct {
 	Shared      bool   `json:"shared"`       // 是否已发布到用户侧。
 	ShareCode   string `json:"share_code"`   // 发布唯一编码; 未发布为空。
 	Enabled     bool   `json:"enabled"`      // 渠道是否可用, 供列表页的开关与过滤使用。
+	// 渠道级额度暂停与 Enabled 是两回事: 前者由上游明确余额不足自动写入, 后者是人工开关,
+	// 二者互不覆盖。暂停截止时间随列表外露, 卡片才能给出暂停原因与剩余时长并提供提前恢复入口,
+	// 不必再为这一列单开接口。
+	DisabledUntil *time.Time `json:"disabled_until,omitempty"` // 额度暂停截止时间; 未暂停不给出。
 	// 准入审核状态随列表一并外露: 卡片徽章与发布闸口提示只消费这一条查询, 无需另开接口。
 	ReviewStatus string     `json:"review_status"`          // 审核状态 draft|pending|approved|rejected|stale。
 	ReviewNote   string     `json:"review_note"`            // 提交说明 / 审核意见 / 驳回原因。

@@ -186,7 +186,7 @@ func channelCacheUpdateTrust(channelID int, trustLevel string) {
 		return
 	}
 	channel.TrustLevel = trustLevel
-	channelCache.Set(channelID, channel)
+	setChannelCachePreservingQuota(channel)
 }
 
 // auditTrust 记录观察期升降级; actorID 为 0 表示系统自动评估。

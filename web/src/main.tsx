@@ -3,6 +3,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '@/api/client';
 import { AppContainer } from '@/components/app';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
+import { TOTPResult } from '@/components/modules/setting/TOTPResult';
 import { StepUpDialog } from '@/components/common/StepUpDialog';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
@@ -21,6 +22,7 @@ createRoot(document.getElementById('root')!).render(
           </ErrorBoundary>
           {/* 高危操作的密码确认弹窗挂在全局: 任何页面的请求撞上 step-up 都弹同一个框。 */}
           <StepUpDialog />
+          <TOTPResult />
           <Toaster
             position="top-left"
             toastOptions={{

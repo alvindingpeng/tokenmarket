@@ -4,6 +4,10 @@ import { AlertCircle, KeyRound, Loader2, Pencil, Plus, Trash2, UserRound } from 
 import { toast } from 'sonner';
 import { useCreateUser, useDeleteUser, useResetPassword, useUpdateUser, useUserList, type UserManageRequest } from '@/api/usermanage';
 import type { Role, UserView } from '@/api/user';
+import { USER_TIERS, isUserTier, type UserTier } from '@/lib/user-tier';
+import { QuotaCard } from '@/components/modules/quota/QuotaCard';
+import { useQuotaUsageSelf } from '@/api/quota-usage';
+import { buildCreateUserRequest, buildUpdateUserRequest } from './payload';
 import { formatDateOnly, formatUsd } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -51,6 +55,24 @@ function StatusBadge({ status }: { status: UserView['status'] }) {
     );
 }
 
+// TierBadge 渲染服务等级徽标。
+// 空串/未知值显示「未设置」而不是猜一个 free: 存量账号的 tier 列就是空串,
+// 后端运行时才按 free 兜底 —— 界面把「没配」显示成「已配 free」会误导管理员。
+function TierBadge({ tier }: { tier?: UserTier | '' }) {
+    const t = useTranslations('users');
+    if (!isUserTier(tier)) {
+        return <Badge variant="outline" className="bg-muted text-muted-foreground">{t('tier.unset')}</Badge>;
+    }
+    const className = tier === 'enterprise'
+        ? 'bg-violet-500/10 text-violet-600 dark:text-violet-400'
+        : tier === 'pro'
+            ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400'
+            : tier === 'basic'
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                : 'bg-muted text-muted-foreground';
+    return <Badge variant="outline" className={className}>{t('tier.' + tier)}</Badge>;
+}
+
 // CreateDialogContent 提供创建用户表单; 密码必填, 状态默认启用。
 function CreateDialogContent() {
     const t = useTranslations('users');
@@ -61,6 +83,8 @@ function CreateDialogContent() {
     const [password, setPassword] = useState('');
     const [role, setRole] = useState<Role>('user');
     const [status, setStatus] = useState<UserManageRequest['status']>('active');
+    // 新用户默认 free: 与后端"未设置按 free 兜底"的方向一致, 不让新账号意外拿到高额度。
+    const [tier, setTier] = useState<UserTier>('free');
 
     // 用户名与密码都非空才允许提交, 与后端校验保持一致。
     const canSubmit = username.trim() !== '' && password !== '';
@@ -70,7 +94,7 @@ function CreateDialogContent() {
         if (!canSubmit || createUser.isPending) return;
 
         createUser.mutate(
-            { username: username.trim(), email: email.trim(), password, role, status },
+            buildCreateUserRequest({ username, email, password, role, status, tier }),
             {
                 onSuccess: () => {
                     toast.success(t('toast.created'));
@@ -153,6 +177,22 @@ function CreateDialogContent() {
                             </Select>
                         </div>
                     </div>
+                    <div className="space-y-2">
+                        <Label>{t('form.tier')}</Label>
+                        <Select value={tier} onValueChange={(value) => setTier(value as UserTier)}>
+                            <SelectTrigger className="w-full rounded-xl" aria-label={t('form.tier')}>
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-xl">
+                                {USER_TIERS.map((option) => (
+                                    <SelectItem key={option} value={option} className="rounded-xl">
+                                        {t('tier.' + option)}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">{t('form.tierHint')}</p>
+                    </div>
                     <div className="flex justify-end gap-2 pt-2">
                         <Button
                             type="button"
@@ -206,6 +246,8 @@ function EditUserDialogContent({ user }: { user: UserView }) {
     const [email, setEmail] = useState('');
     // 余额按绝对值调整; 与原值一致时不下发, 避免产生无意义的审计记录。
     const [balance, setBalance] = useState(String(user.balance));
+    // 空串表示"保持原等级": 存量账号的 tier 可能是空串(未设置), 编辑时不该被强行改成一档。
+    const [tier, setTier] = useState<UserTier | ''>(isUserTier(user.tier) ? user.tier : '');
 
     const canSubmit = username.trim() !== '';
 
@@ -213,19 +255,8 @@ function EditUserDialogContent({ user }: { user: UserView }) {
         event.preventDefault();
         if (!canSubmit || updateUser.isPending) return;
 
-        const request: UserManageRequest = {
-            id: user.id,
-            username: username.trim(),
-            role,
-            status,
-        };
-        // 空密码/空邮箱不下发, 后端据此保留原值。
-        if (password !== '') request.password = password;
-        if (email.trim() !== '') request.email = email.trim();
-        const parsedBalance = Number(balance);
-        if (balance.trim() !== '' && Number.isFinite(parsedBalance) && parsedBalance >= 0 && parsedBalance !== user.balance) {
-            request.balance = parsedBalance;
-        }
+        // 请求体构造规则(留空=不改等)集中在本目录的 payload.ts, 便于单测。
+        const request = buildUpdateUserRequest({ user, username, email, password, role, status, balance, tier });
 
         updateUser.mutate(request, {
             onSuccess: () => {
@@ -319,6 +350,27 @@ function EditUserDialogContent({ user }: { user: UserView }) {
                                 </SelectContent>
                             </Select>
                         </div>
+                    </div>
+                    <div className="space-y-2">
+                        <Label>{t('form.tier')}</Label>
+                        {/* 空串不是合法等级, 所以用 'unset' 作占位选项; 选它即"保持原等级"。 */}
+                        <Select
+                            value={tier === '' ? 'unset' : tier}
+                            onValueChange={(value) => setTier(value === 'unset' ? '' : (value as UserTier))}
+                        >
+                            <SelectTrigger className="w-full rounded-xl" aria-label={t('form.tier')}>
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-xl">
+                                <SelectItem value="unset" className="rounded-xl">{t('tier.unset')}</SelectItem>
+                                {USER_TIERS.map((option) => (
+                                    <SelectItem key={option} value={option} className="rounded-xl">
+                                        {t('tier.' + option)}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">{t('form.tierHint')}</p>
                     </div>
                     <div className="flex justify-end gap-2 pt-2">
                         <Button
@@ -470,6 +522,7 @@ function UsersTable({ users }: { users: UserView[] }) {
                         <th className="px-4 py-3 font-medium">{t('table.username')}</th>
                         <th className="px-4 py-3 font-medium">{t('table.role')}</th>
                         <th className="px-4 py-3 font-medium">{t('table.status')}</th>
+                        <th className="px-4 py-3 font-medium">{t('table.tier')}</th>
                         <th className="px-4 py-3 text-right font-medium">{t('table.balance')}</th>
                         <th className="px-4 py-3 text-right font-medium">{t('table.frozen')}</th>
                         <th className="px-4 py-3 text-right font-medium">{t('table.totalSpent')}</th>
@@ -484,6 +537,7 @@ function UsersTable({ users }: { users: UserView[] }) {
                             <td className="px-4 py-3 font-medium text-card-foreground">{user.username}</td>
                             <td className="px-4 py-3"><RoleBadge role={user.role} /></td>
                             <td className="px-4 py-3"><StatusBadge status={user.status} /></td>
+                            <td className="px-4 py-3"><TierBadge tier={user.tier} /></td>
                             <td className="px-4 py-3 text-right tabular-nums">{formatUsd(user.balance)}</td>
                             <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{formatUsd(user.frozen)}</td>
                             <td className="px-4 py-3 text-right tabular-nums">{formatUsd(user.total_spent)}</td>
@@ -514,6 +568,10 @@ function UsersTable({ users }: { users: UserView[] }) {
 
 // Users 渲染管理员用户管理页面正文。
 export function Users() {
+    // 我的配额: 用户自助看到自己的等级额度与当前用量。
+    // 放在页面顶部是因为它解释了下方的账号设置(等级)到底换来多少额度。
+    const selfQuota = useQuotaUsageSelf();
+
     const t = useTranslations('users');
     const { data: users, isLoading, isError, error, refetch } = useUserList();
 
@@ -526,6 +584,8 @@ export function Users() {
                 </h2>
                 <CreateUserButton />
             </div>
+
+            <QuotaCard query={selfQuota} />
 
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-24 md:pb-4">
                 {isLoading ? (

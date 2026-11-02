@@ -105,12 +105,21 @@ func sendPassthroughStream(ctx context.Context, format llm.APIFormat, request *h
 		return nil, err
 	}
 	if response.StatusCode >= http.StatusBadRequest {
-		failure, readErr := io.ReadAll(response.Body)
-		response.Body.Close()
-		if readErr != nil {
-			return nil, readErr
+		body, readErr := io.ReadAll(io.LimitReader(response.Body, httpclient.MaxErrorBodySize))
+		closeErr := response.Body.Close()
+		failure := &httpclient.Error{
+			Method:     rawRequest.Method,
+			URL:        rawRequest.URL.String(),
+			StatusCode: response.StatusCode,
+			Status:     response.Status,
+			Body:       body,
+			Headers:    response.Header,
 		}
-		return nil, fmt.Errorf("upstream responded %s: %s", response.Status, failure)
+		// 已知的 HTTP 失败不能被正文读取/关闭错误覆盖; 保留部分正文与底层错误供诊断。
+		if readErr != nil || closeErr != nil {
+			return nil, errors.Join(failure, readErr, closeErr)
+		}
+		return nil, failure
 	}
 
 	events := httpclient.NewDefaultSSEDecoder(ctx, response.Body)

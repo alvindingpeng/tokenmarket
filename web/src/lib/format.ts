@@ -25,6 +25,24 @@ export function formatAmount(value: number | null | undefined): string {
     return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 4 });
 }
 
+// Decimal token counts, not byte sizes: KB = 10^12 tokens, MB = 10^15.
+export function formatTokenCount(value: number | null | undefined): string {
+    const count = Number.isFinite(value) ? Math.max(0, value ?? 0) : 0;
+    const units = ['', 'K', 'M', 'B', 'KB', 'MB'];
+    let scaled = count;
+    let index = 0;
+    while (scaled >= 1000 && index < units.length - 1) {
+        scaled /= 1000;
+        index++;
+    }
+    // Promote rounded boundary values rather than displaying 1000.0K.
+    if (index > 0 && Number(scaled.toFixed(1)) >= 1000 && index < units.length - 1) {
+        scaled /= 1000;
+        index++;
+    }
+    return index === 0 ? String(Math.round(scaled)) : scaled.toFixed(1) + units[index];
+}
+
 // formatUsd 美元金额展示: 固定两位小数并带货币符号。
 export function formatUsd(value: number | null | undefined): string {
     return '$' + Number(value || 0).toFixed(2);

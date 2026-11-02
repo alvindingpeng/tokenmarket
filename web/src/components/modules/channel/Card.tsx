@@ -12,6 +12,7 @@ import { ReviewBadge } from './Review';
 import { TrustBadge } from './QualityBadge';
 import { usePageActionsStore } from '@/components/common/PageActions';
 import { ChannelStats } from './Stats';
+import { ChannelPauseBadge } from './PauseBadge';
 import { ChannelForm } from './Form';
 import { SHELL_HEIGHT } from './layout';
 import { useTranslations } from 'use-intl';
@@ -93,6 +94,10 @@ export function Card({ channel }: { channel: ChannelStatsFormatted }) {
                             />
                         </div>
                     </header>
+
+                    {/* 额度暂停只在这条渠道真的被暂停时出现; 列表卡片不放说明文字, 说明走 title 提示,
+                        详情弹窗里才有整行解释。 */}
+                    <ChannelPauseBadge channel={channel} />
 
                     {layout === 'list' ? (
                         <dl className="grid grid-cols-2 gap-2 lg:grid-cols-5">

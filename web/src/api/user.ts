@@ -3,13 +3,15 @@ import { queryOptions, useMutation } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { apiRequest, apiUnauthorizedEvent, clearStepUpToken, currentAuthGeneration, resetAuthSession, setAPIKey } from './client';
+import type { UserTier } from '@/lib/user-tier';
 
 /**
  * 用户登录请求
  */
-interface UserLoginRequest {
+export interface UserLoginRequest {
     username: string;
     password: string;
+    totp_code?: string;
     expire: number; // 登录状态过期时间，正数为秒，-1 表示 30 天。
 }
 
@@ -25,8 +27,11 @@ export type UserView = {
     id: number;
     username: string;
     email: string;
+    totp_enabled?: boolean;
     role: Role;
     status: 'active' | 'pending' | 'disabled';
+    // tier 服务等级: 存量账号可能回空串(未设置), 后端按 free 兜底; 界面据此显示"未设置"。
+    tier?: UserTier | '';
     balance: number;
     frozen: number;
     total_spent: number;
@@ -207,18 +212,18 @@ export const useAuthStore = create<AuthState>()(
  * if (login.isPending) return <Loading />;
  * if (login.isError) return <Error message={login.error.message} />;
  */
+export function loginUser(data: UserLoginRequest) {
+    setAPIKey(null);
+    return apiRequest<UserView>('/api/v1/user/login', {
+        method: 'POST', body: data, dispatchUnauthorized: false,
+    });
+}
+
 export function useLogin() {
     const { setAuth } = useAuthStore();
 
     return useMutation({
-        mutationFn: async (data: UserLoginRequest) => {
-            setAPIKey(null);
-            return apiRequest<UserView>('/api/v1/user/login', {
-                method: 'POST',
-                body: data,
-                dispatchUnauthorized: false,
-            });
-        },
+        mutationFn: loginUser,
         onSuccess: (user: UserView) => {
             setAuth(user);
         },

@@ -16,6 +16,10 @@
         "reload": "Reload"
     },
     "login": {
+        "totpCode": "Authenticator or recovery code (optional)",
+        "totpPlaceholder": "Enter code if 2FA is enabled",
+        "totpHint": "Leave blank if 2FA is not enabled.",
+        "totpRequired": "Two-factor authentication is required. Enter an authenticator or recovery code; your username and password are still filled in.",
         "username": "Username",
         "usernamePlaceholder": "Enter your username",
         "password": "Password",
@@ -236,6 +240,55 @@
             "hint": "Applied along with the channel's own filter when fetching models (AND); empty means no filter"
         },
         "saved": "Saved",
+        "saveFailed": "Save failed",
+        "audit": {
+            "title": "Audit Archive",
+            "retentionDays": "Audit retention (days)",
+            "retentionDaysHint": "Keep audit records for 1-3650 days, default 180. Longer than request logs because audit is compliance evidence.",
+            "archiveEnabled": "Archive before cleanup",
+            "archiveEnabledHint": "When on, expired audit records are written to NDJSON before deletion",
+            "filesTitle": "Audit archive files",
+            "filesHint": "Existing archives in the audit archive directory; read-only",
+            "runNow": "Archive now",
+            "running": "Archiving...",
+            "runSuccess": "Archived {archived}, deleted {deleted} audit records",
+            "runFailed": "Audit archive failed",
+            "refresh": "Refresh",
+            "loading": "Loading...",
+            "empty": "No archive files yet",
+            "loadFailed": "Failed to load archive files",
+            "colName": "File",
+            "colSize": "Size",
+            "colTime": "Modified"
+        },
+        "tierPolicies": {
+            "title": "User Tier Quotas",
+            "hint": "Fallback rate limits per service tier; used only when a user has no explicit policy. 0 means unlimited.",
+            "colTier": "Tier",
+            "field": {
+                "rpm": "RPM",
+                "tpm": "TPM",
+                "concurrent": "Concurrency"
+            },
+            "rpmHint": "req/min",
+            "tpmHint": "tokens/min",
+            "concurrentHint": "parallel",
+            "tier": {
+                "free": "Free",
+                "basic": "Basic",
+                "pro": "Pro",
+                "enterprise": "Enterprise"
+            },
+            "zeroHint": "All fields must be non-negative integers. 0 means that dimension is unlimited.",
+            "errorInvalidJson": "The saved value is not valid JSON. Fix it or reset to defaults before saving.",
+            "errorInvalidShape": "The saved value must be an object of tier limits.",
+            "errorInvalidTier": "The saved value contains an unknown tier name.",
+            "errorInvalidLimit": "The saved value contains a negative or non-integer limit.",
+            "invalidField": "{tier} {field} must be a non-negative integer",
+            "resetDefaults": "Reset to defaults",
+            "save": "Save",
+            "saving": "Saving..."
+        },
         "backup": {
             "title": "Backup / Restore",
             "export": {
@@ -340,6 +393,35 @@
             }
         },
         "account": {
+            "totp": {
+                "title": "Two-factor authentication (2FA)",
+                "description": "Protect password sign-in with authenticator codes.",
+                "passwordOnly": "Sign in with your password to manage 2FA.",
+                "loading": "Loading 2FA status…",
+                "loadFailed": "Could not load 2FA status.",
+                "retry": "Retry",
+                "enabled": "2FA is enabled",
+                "disabled": "2FA is not enabled",
+                "setup": "Set up 2FA",
+                "scan": "Scan with your authenticator app.",
+                "qrLabel": "Authenticator setup QR code",
+                "secretLabel": "Or enter this key manually:",
+                "secretWarning": "Keep this key private. QR codes are generated locally; keys are not saved in browser storage.",
+                "code": "Authenticator or recovery code",
+                "reloginWarning": "Changing 2FA revokes all existing sessions. You will need to sign in again.",
+                "enable": "Enable 2FA",
+                "disable": "Disable 2FA",
+                "cancel": "Cancel setup",
+                "working": "Working…",
+                "failed": "Could not update 2FA.",
+                "enabledTitle": "2FA enabled — save your recovery codes",
+                "disabledTitle": "2FA disabled",
+                "sessionRevoked": "Your previous sessions have been revoked. Sign in again to continue.",
+                "recoveryWarning": "These codes are shown only once. Save them safely now. Each code can be used once. Do not refresh or close this page until you have saved them.",
+                "recoveryCodes": "One-time recovery codes",
+                "savedLogin": "I saved my codes — continue to sign in",
+                "loginAgain": "Continue to sign in"
+            },
             "title": "Account Settings",
             "save": "Save",
             "saving": "Saving...",
@@ -599,10 +681,25 @@
             "scoreWeightHint": "Weights are relative (0-100), any mix works; set 0 to leave a dimension uncustomized so it follows the system default (adjustable by admins on the settings page)",
             "reliabilityFloor": "Score: Reliability Floor",
             "reliabilityFloorHint": "Members below this success-rate percentage rank after healthy members; 0 follows the system default (70%)",
+            "canaryTitle": "Canary rollout",
+            "canaryHint": "A request that hits the canary only tries the canary member first; if that member fails, routing falls back to the current mode's candidates. The percentage is bucketed per API key so one key keeps the same result, explicit user IDs always go canary and take precedence over the percentage.",
+            "canaryMember": "Canary member",
+            "canaryMemberHint": "Member that serves canary traffic; choosing Off turns the canary off",
+            "canaryOff": "Off",
+            "canaryPercent": "Canary percent (%)",
+            "canaryPercentHint": "Share of traffic that hits the canary, 0-100; 0 turns it off",
+            "canaryUserIDs": "Canary user IDs",
+            "canaryUserIDsHint": "User IDs separated by commas or spaces; these users always go canary and ignore the percentage",
+            "canaryUserIDsPlaceholder": "e.g. 12, 34",
+            "canaryUserIDsInvalid": "Not a valid user ID: {values}",
+            "canaryMemberEmpty": "Save the group before choosing a canary member",
+            "canaryPerRequest": "Resample every request",
+            "canaryPerRequestHint": "Off buckets traffic by API key so a key keeps the same result; on resamples for each request",
             "request_timeout_seconds": "Request timeout (seconds)",
             "request_timeout_secondsHint": "Includes queueing, retries and streaming; default 600 seconds.",
             "max_total_attempts": "Maximum total attempts",
-            "max_total_attemptsHint": "Total attempts across all members; default 10.",
+            "max_total_attemptsHint": "Total attempts across all members, including the first request; default 10.",
+            "scoreRetryHint": "Weighted score switches immediately to an untried candidate on failure and never returns to a candidate already tried in the same request. A maximum total attempts value of 5 means at most 5 different candidates, including the first attempt; it may stop earlier if candidates run out. Per-member attempts and retry interval do not apply in this mode; their saved values are preserved.",
             "max_wait_seconds": "Maximum cumulative wait (seconds)",
             "max_wait_secondsHint": "0 disables waiting; requires positive queue capacity.",
             "max_waiting_requests": "Waiting queue capacity",
@@ -751,7 +848,8 @@
                 "strategy_latency": "Strategy: latency",
                 "strategy_success": "Strategy: success",
                 "strategy_score": "Strategy: score",
-                "strategy_random": "Strategy: random"
+                "strategy_random": "Strategy: random",
+                "canary_rollout": "Canary rollout"
             },
             "attemptStatus": {
                 "running": "Running",
@@ -889,7 +987,15 @@
             "egressSuccess": "Success",
             "egressLatency": "Latency",
             "egressSamples": "Samples",
-            "egressCooldownRemaining": "Cooldown {duration} remaining"
+            "egressCooldownRemaining": "Cooldown {duration} remaining",
+            "pauseBadge": "Quota paused · {time} left",
+            "pauseResume": "Resume",
+            "pauseReset": "Quota pause lifted for {name}",
+            "pauseHint": "An upstream balance shortfall pauses the whole channel; it resumes automatically when the pause expires, or you can resume it now",
+            "breakerReset": "Breaker reset for {name}",
+            "breakerAlreadyClear": "{name} is not tripped",
+            "breakerBadge": "Tripped {time}",
+            "breakerTitle": "Tripped after {count} consecutive errors; trip #{trips} for this model, the duration doubles with each trip"
         },
         "form": {
             "stepPreset": "Start",
@@ -1352,6 +1458,7 @@
             "username": "Username",
             "role": "Role",
             "status": "Status",
+            "tier": "Tier",
             "balance": "Balance",
             "frozen": "Frozen",
             "totalSpent": "Total Spent",
@@ -1364,6 +1471,13 @@
             "admin": "Administrator",
             "reseller": "Reseller",
             "user": "User"
+        },
+        "tier": {
+            "free": "Free",
+            "basic": "Basic",
+            "pro": "Pro",
+            "enterprise": "Enterprise",
+            "unset": "Not set"
         },
         "status": {
             "active": "Active",
@@ -1381,6 +1495,8 @@
             "passwordUnchanged": "Leave empty to keep the current password",
             "role": "Role",
             "status": "Status",
+            "tier": "Tier",
+            "tierHint": "Limits requests and concurrency when the user has no explicit policy; empty tier falls back to Free.",
             "cancel": "Cancel",
             "submit": "Create",
             "submitting": "Creating...",
@@ -1572,7 +1688,10 @@
             "rejected": "Rejected"
         },
         "concurrent": "Concurrent limit",
-        "active": "Active requests"
+        "active": "Active requests",
+        "quotaCard": {
+            "title": "User quota usage: {user}"
+        }
     },
     "ops": {
         "title": "Ops Center",
@@ -2471,18 +2590,66 @@
         "card": {
             "requests": "Total Requests",
             "successRate": "Success Rate",
+            "requestsHint": "Billing count: only requests that produced usage",
             "cost": "Total Cost",
-            "tokens": "Total Tokens"
+            "tokens": "Total Tokens",
+            "cacheHitRate": "Cache hit rate",
+            "successSample": "Success {success} · Failed {failed}",
+            "successNoSamples": "No call-log samples in this range (call logs kept {days} days)",
+            "successCanceled": "· {canceled} canceled, not counted",
+            "successCoverage": "Success rate covers from {start} only (call logs kept {days} days)"
         },
         "chart": {
             "trend": "Request Trend",
             "requests": "Requests",
             "cost": "Cost",
+            "successRate": "Success rate",
             "modelCost": "Model Cost Distribution",
             "modelRequests": "Model Requests"
         },
         "model": {
             "other": "Other"
+        },
+        "tokenBreakdown": {
+            "title": "Token breakdown",
+            "input": "Input",
+            "output": "Output",
+            "cacheRead": "Cache read",
+            "cacheWrite": "Cache write"
+        },
+        "latency": {
+            "title": "Latency",
+            "coverage": "Data covers from {start} (call logs retained {days} days)",
+            "coverageHint": "Only the days still within the log retention window are counted.",
+            "avgFirstToken": "Avg first token",
+            "p95FirstToken": "First token P95",
+            "avgDuration": "Avg total duration",
+            "upstreamTtfb": "Upstream TTFB",
+            "hint": "First token: first byte for streaming, full response otherwise; includes upstream queueing.",
+            "empty": "No latency samples in this range"
+        }
+    },
+    "quota": {
+        "title": "My quota",
+        "loading": "Loading...",
+        "error": "Failed to load quota usage",
+        "retry": "Retry",
+        "rpm": "Requests / min (RPM)",
+        "tpm": "Tokens / min (TPM)",
+        "concurrent": "Concurrent",
+        "unlimited": "Unlimited",
+        "remainReset": "{remain} left this window",
+        "windowReset": "Usage resets at {time}",
+        "source": {
+            "policy": "Limits come from a policy set specifically for you",
+            "tier": "Limits come from your tier: {tier}",
+            "none": "No limits currently applied"
+        },
+        "tier": {
+            "free": "Free",
+            "basic": "Basic",
+            "pro": "Pro",
+            "enterprise": "Enterprise"
         }
     }
 }

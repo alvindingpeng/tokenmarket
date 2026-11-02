@@ -7,6 +7,7 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { useLogin, useRegister, useSendEmailCode, useForgotPassword, registerConfigQueryOptions } from "@/api/user"
 import { useAPIKeyLogin } from "@/api/apikey"
+import { ApiError } from '@/api/client'
 import { useCountdown } from '@/hooks/useCountdown'
 import { useSiteConfig, DEFAULT_SITE_NAME } from "@/api/site"
 import { SiteBanners } from "@/components/site-banners"
@@ -34,6 +35,7 @@ export function LoginForm({ onBack }: { onBack?: () => void }) {
   const [mode, setMode] = useState<LoginMode>('user')
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
+  const [totpCode, setTotpCode] = useState("")
   const [passwordConfirm, setPasswordConfirm] = useState("") // passwordConfirm 注册/找回密码的二次确认。
   const [email, setEmail] = useState("")
   const [emailCode, setEmailCode] = useState("")
@@ -87,6 +89,7 @@ export function LoginForm({ onBack }: { onBack?: () => void }) {
         await loginMutation.mutateAsync({
           username,
           password,
+          totp_code: totpCode.trim() || undefined,
           expire: trustDevice ? -1 : 86400,
         })
       } else if (mode === 'apikey') {
@@ -119,7 +122,8 @@ export function LoginForm({ onBack }: { onBack?: () => void }) {
         setMode('user')
       }
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : t('error.generic')
+      const errorMessage = err instanceof ApiError && err.code === 'two_factor_required'
+        ? t('totpRequired') : err instanceof Error ? err.message : t('error.generic')
       setError(errorMessage)
     }
   }
@@ -231,6 +235,13 @@ export function LoginForm({ onBack }: { onBack?: () => void }) {
                     required={mode === 'user'}
                     disabled={isPending}
                   />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="totp-code">{t('totpCode')}</FieldLabel>
+                  <Input id="totp-code" type="text" autoComplete="one-time-code"
+                    value={totpCode} onChange={(e) => setTotpCode(e.target.value)}
+                    placeholder={t('totpPlaceholder')} disabled={isPending} />
+                  <FieldDescription>{t('totpHint')}</FieldDescription>
                 </Field>
                 <Field orientation="horizontal" data-disabled={isPending}>
                   <Checkbox

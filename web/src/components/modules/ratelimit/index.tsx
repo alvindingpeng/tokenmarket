@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'use-intl';
+import { QuotaCard } from '@/components/modules/quota/QuotaCard';
+import { useQuotaUsageAdmin } from '@/api/quota-usage';
 import { AlertCircle, Gauge, Loader2, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import {
     RateLimitPolicy,
@@ -45,6 +47,11 @@ export default function RateLimit() {
     const deletePolicy = useDeleteRatePolicy();
     const inspect = useRateInspect(inspectScope.type, inspectScope.id, inspectScope.model);
     const usage = useRateUsage(24, inspectScope.type, inspectScope.id);
+
+    // 配额用量卡只在选中"用户"维度时才查: 其它范围没有等级/配额语义,
+    // 强行查会显示一张与当前选择无关的卡。
+    const quotaUserId = inspectScope.type === 'user' ? inspectScope.id : 0;
+    const quotaUsage = useQuotaUsageAdmin(quotaUserId);
 
     // 范围目标名称映射: 策略与用量展示都按此把主键翻译成人可读名称。
     const scopeNames = useMemo(() => {
@@ -100,6 +107,13 @@ export default function RateLimit() {
 
     return (
         <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain pb-24 md:pb-0">
+            {quotaUserId > 0 && (
+                <QuotaCard
+                    query={quotaUsage}
+                    title={t('quotaCard.title', { user: scopeLabel('user', quotaUserId) })}
+                />
+            )}
+
             <div className="flex shrink-0 items-center justify-between gap-4">
                 <h2 className="flex items-center gap-2 text-lg font-bold text-card-foreground">
                     <Gauge className="size-5" />

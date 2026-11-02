@@ -30,6 +30,8 @@ var settingTasks = map[model.SettingKey][]string{
 	model.SettingKeyUpdateCheckMinutes:      {TaskUpdateCheck},
 	model.SettingKeyAutoAddBackground:       {TaskChannelAutoAdd},
 	model.SettingKeyAutoAddInterval:         {TaskChannelAutoAdd},
+	model.SettingKeyAuditRetentionDays:      {TaskAuditArchive},
+	model.SettingKeyAuditArchiveEnabled:     {TaskAuditArchive},
 }
 
 // ApplySetting 重算某项设置影响到的全部任务周期。
@@ -139,6 +141,23 @@ func Init() {
 			}
 			log.Infof("log lifecycle: cutoff=%s archived=%d requests=%d attempts=%d bodies=%d",
 				result.Cutoff.Format("2006-01-02"), result.Archived, result.RequestsDel, result.AttemptsDel, result.BodyCleared)
+			return nil
+		},
+	})
+
+	// 审计归档: 与调用日志归档分开跑, 留存期各自独立 —— 审计证据不能被 7 天日志保留顺手删掉。
+	// 每天一次即可; 归档失败时本轮不删除任何记录(见 op.AuditLifecycleRun)。
+	Define(Spec{
+		Name:       TaskAuditArchive,
+		Interval:   fixedInterval(24 * time.Hour),
+		RunOnStart: true,
+		Fn: func() error {
+			result, err := op.AuditLifecycleRun(context.Background())
+			if err != nil {
+				return err
+			}
+			log.Infof("audit lifecycle: cutoff=%s archived=%d deleted=%d retention=%dd",
+				result.Cutoff.Format("2006-01-02"), result.Archived, result.Deleted, result.RetentionDay)
 			return nil
 		},
 	})

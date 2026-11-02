@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"slices"
 	"strconv"
@@ -86,6 +87,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			rejectRequest(c, inbound, err)
 			return
 		}
+		// ReadHTTPRequest 已解码正文; 当前依赖与原请求共享 headers, 正常 gzip 也已剥头。
+		// 仍直接清理后续实际使用的 raw.Headers, 防御非规范大小写/未来依赖复制 headers;
+		// 出站正文可能改写或重新序列化, 编码及长度不能沿用入站值。这不是生产根因证明。
+		stripDecodedRequestHeaders(raw.Headers)
 
 		// 此处只读取选组和分流所需字段; 完整协议校验由同协议上游或跨协议 pipeline 完成。
 		// 生图 edits 请求是 multipart 表单, model 在表单字段里而不是 JSON, 需单独解析;
@@ -188,6 +193,12 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		failedItemID := 0 // 当前累计连续失败次数的成员 ID。
 		failures := 0     // 该成员包含首次请求的连续失败次数。
 		totalAttempts := 0
+		var scoreRetries scoreRetryState
+		var lastScoreError error
+		// 灰度命中在请求首次解析分组时定下, 并沿用到整条重试链: 同一次请求若在灰度与常规路径之间
+		// 来回切换, 重试可能落到第三个上游, 日志也无法解释这次请求到底算不算灰度样本。
+		// 灰度成员一旦失败即在本请求内永久停用灰度, 避免冷却到期后又把同一请求送回刚失败的成员。
+		canaryHit, canaryDecided, canaryFailed, canaryWarned := false, false, false, false
 		waiter := requestWait{queue: &waiting, group: group.ID}
 		defer waiter.leave()
 		stop := func(cause error, status int) {
@@ -205,6 +216,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			}
 		}
 		waitAvailable := func() bool {
+			if group.Mode == model.GroupModeScore && lastScoreError != nil {
+				stop(lastScoreError, upstreamStatus(lastScoreError))
+				return false
+			}
 			if waiter.ticket == nil {
 				request.addRouteEvent("waiting", "waiting_for_upstream")
 			}
@@ -220,7 +235,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		}
 
 		for {
-			if group.RelayConfig.MaxTotalAttempts > 0 && totalAttempts >= group.RelayConfig.MaxTotalAttempts {
+			// Score bounds use the refreshed configuration below. Other modes
+			// retain their existing retry semantics.
+			if group.Mode != model.GroupModeScore && group.RelayConfig.MaxTotalAttempts > 0 && totalAttempts >= group.RelayConfig.MaxTotalAttempts {
 				stop(errors.New("relay maximum total attempts exceeded"), http.StatusServiceUnavailable)
 				return
 			}
@@ -252,12 +269,52 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				continue
 			}
 			group = effectiveGroupForRequest(group, c.GetString("routing_preference"))
+			group = scoreRetries.filtered(group)
+			// Recheck after refresh: a live configuration change may lower the
+			// budget or switch this request into score mode between attempts.
+			if group.Mode == model.GroupModeScore && totalAttempts >= scoreAttemptLimit(group.RelayConfig.MaxTotalAttempts) {
+				if lastScoreError != nil {
+					stop(lastScoreError, upstreamStatus(lastScoreError))
+				} else {
+					stop(errors.New("relay maximum total attempts exceeded"), http.StatusServiceUnavailable)
+				}
+				return
+			}
 
 			// 手动模式取人工指定的成员, 故障转移模式按优先级选择未禁用且不在冷却中的成员。
 			// 没有目标时等待重新选择, 期间人工切换渠道, 补齐成员或成员冷却到期即可让请求继续。
-			item := pickGroupItem(group)
-			request.setRouteDecision(routeExplanation(group, item))
+			if !canaryDecided {
+				// 手动模式是人工硬约束, 灰度不参与: 否则"人工指定"会被比例悄悄改写。
+				canaryHit = group.Mode != model.GroupModeManual &&
+					group.RelayConfig.CanaryHit(keyUserID, c.GetInt("api_key_id"), rand.Uint64())
+				canaryDecided = true
+			}
+			// 灰度先于策略选路: 命中者本轮只走灰度成员, 与价格/评分等策略无关。
+			// 灰度成员此刻不可用(已停用、额度熔断、在冷却)则不占用本轮, 直接回落策略选路 ——
+			// 灰度是"额外分一点流量给新渠道", 不能因为新渠道还没就绪就把请求卡住。
+			var item model.GroupItem
+			canary := false
+			if canaryHit && !canaryFailed {
+				if canaryItem, ok := pickCanaryItem(group); ok {
+					item, canary = canaryItem, true
+				} else if !canaryWarned {
+					// 每个请求只记一条: 灰度成员在冷却期间会连续回落, 每轮都记会把时间线刷满同一个原因。
+					// 记下来才能区分"没抽中"与"抽中了却不可用"。
+					canaryWarned = true
+					request.addRouteEvent("selection", "canary_unavailable")
+				}
+			}
+			if !canary {
+				item = pickGroupItem(group)
+			}
+			request.setRouteDecision(routeExplanation(group, item, canary))
 			if item.ID == 0 {
+				// Score retries exhaust the currently eligible remaining candidates;
+				// never wait for cooldown expiry or probe completion to revisit one.
+				if group.Mode == model.GroupModeScore && lastScoreError != nil {
+					stop(lastScoreError, upstreamStatus(lastScoreError))
+					return
+				}
 				// 分组一个成员都没有时, 等待永远等不到上游: 直接点明配置缺失, 不再报笼统的"无可用上游"。
 				if len(group.Items) == 0 {
 					stop(fmt.Errorf("group %q has no upstream members configured", group.Name), http.StatusServiceUnavailable)
@@ -500,13 +557,21 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					}
 					continue
 				}
+				// 灰度成员本轮失败: 本请求内不再走灰度, 后续轮次完全回落到原本的选择策略。
+				if canary {
+					canaryFailed = true
+				}
+				if group.Mode == model.GroupModeScore {
+					scoreRetries.exclude(item, class == ErrorClassQuota)
+					lastScoreError = err
+				}
 				// 上游限流视为限流而非故障: 标记该上游当前窗口触顶供选路跳过, 不计失败率也不冷却。
 				if class == ErrorClassRate {
 					releaseRouteProbe(group, item.ID)
 					upstreamReservation.Settle(0, 0, true)
 					limiter.MarkBlocked(upstreamScopes, upEstIn, upEstOut)
 					cancelRound()
-					if mediaOneShot {
+					if mediaOneShot || c.Writer.Written() {
 						// 429 也可能发生在上游受理创建之后, 媒体保守不重发, 直接透传限流错误。
 						stop(err, upstreamStatus(err))
 						return
@@ -538,22 +603,39 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					// 出口同样记一次失败: 出口成绩是"这条线路本身行不行", 与成员成绩互不替代。
 					recordEgressSample(egress.ID, group.RelayConfig.MetricWindowSize, time.Since(roundStartedAt).Milliseconds(), false)
 					// 记录 Key / 渠道模型错误用于故障熔断
-					// 凭据失效/余额不足在 Key 级熔断(影响该 Key 所有模型); 过载/临时故障在渠道模型级熔断(隔离故障面)。
-					if channelKey != nil && (class == ErrorClassAuth || class == ErrorClassQuota) {
+					// 余额不足立即熔断整个渠道; 凭据失效仍只影响该 Key, 临时故障隔离到渠道模型。
+					if class == ErrorClassQuota {
+						op.RecordChannelQuotaError(channel.ID)
+					} else if channelKey != nil && class == ErrorClassAuth {
 						op.RecordChannelKeyError(channelKey.ID, string(class))
 					} else if class == ErrorClassOverload || class == ErrorClassTransient || class == ErrorClassUnknown {
 						op.RecordChannelModelError(channelModel.ID, string(class))
 					}
 				}
-				// 凭据失效/额度耗尽/过载/模型缺失: 原地重试无益, 冷却当前成员后立即换渠道;
+				if group.Mode == model.GroupModeScore {
+					// One failed channel/model gets one chance per request, regardless
+					// of member retry settings, key rotation or shared recovery state.
+					cooldown := classCooldownSeconds(class)
+					if cooldown <= 0 {
+						cooldown = group.RelayConfig.MemberCooldownSeconds
+					}
+					coolItem(group, item.ID, cooldown)
+					coolEgress(egress.ID, cooldown)
+					if mediaOneShot || c.Writer.Written() {
+						stop(err, upstreamStatus(err))
+						return
+					}
+					continue
+				}
+				// 凭据失效/额度耗尽/过载/模型缺失/请求编码不兼容: 原地重试无益, 冷却当前成员后换渠道;
 				// 没有其他可用成员时等待同样无益, 立即透传最后错误(模型缺失包一层友好提示)。
-				if class == ErrorClassAuth || class == ErrorClassQuota || class == ErrorClassOverload || class == ErrorClassModel {
+				if class == ErrorClassAuth || class == ErrorClassQuota || class == ErrorClassOverload || class == ErrorClassModel || class == ErrorClassCompatibility {
 					coolItem(group, item.ID, classCooldownSeconds(class))
 					// 出口一并冷却: 下一轮即便还选同一个成员, 也不会再走这条刚失败的线路。
 					coolEgress(egress.ID, classCooldownSeconds(class))
 					// 媒体单发: 冷却照做(保护其他请求不再撞同一个故障端点), 但不换目标重发,
 					// 落到下方按类别透传错误(模型缺失包一层友好提示)。
-					if !mediaOneShot && group.Mode != model.GroupModeManual && hasOtherEligible(group, item.ID) {
+					if !c.Writer.Written() && !mediaOneShot && group.Mode != model.GroupModeManual && hasOtherEligible(group, item.ID) {
 						continue
 					}
 					if class == ErrorClassModel {
@@ -616,16 +698,21 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				request.finishRound("", "success")
 			}
 			roundWaitTime := time.Since(roundStartedAt).Milliseconds() // 流式响应只统计等待首帧的时间。
-			// 上游成功后解除该成员的冷却与探测占用, 并按路由配置开始亲和。
-			recordRouteSuccess(group, item.ID)
-			// 记录成员运行指标(首响应耗时与成功), 供延迟/成功率/综合评分策略排名。
-			recordMemberMetric(group.ID, item.ID, channelModel.ID, group.RelayConfig.MetricWindowSize, roundWaitTime, true)
-			// 出口成绩同源记录: 下一轮选出口就按这份实测耗时排序。
-			recordEgressSample(egress.ID, group.RelayConfig.MetricWindowSize, roundWaitTime, true)
-			// 成功请求重置 Key 错误计数
-			if channelKey != nil {
-				op.ResetChannelKeyErrors(channelKey.ID)
-				op.ResetChannelModelErrors(channelModel.ID)
+			// 首帧只保存延迟, 不代表流已成功。评分与熔断恢复必须等完整终态。
+			recordSuccess := func() {
+				recordRouteSuccess(group, item.ID)
+				// 记录成员运行指标(首响应耗时与成功), 供延迟/成功率/综合评分策略排名。
+				recordMemberMetric(group.ID, item.ID, channelModel.ID, group.RelayConfig.MetricWindowSize, roundWaitTime, true)
+				// 出口成绩同源记录: 下一轮选出口就按这份实测耗时排序。
+				recordEgressSample(egress.ID, group.RelayConfig.MetricWindowSize, roundWaitTime, true)
+				// 成功请求重置 Key 错误计数
+				if channelKey != nil {
+					op.ResetChannelKeyErrors(channelKey.ID)
+					op.ResetChannelModelErrors(channelModel.ID)
+				}
+			}
+			if !metadata.Streaming {
+				recordSuccess()
 			}
 			// 非流式已取得最终用量; 流式必须等到末帧聚合后才结算并释放并发租约。
 			if !metadata.Streaming {
@@ -688,6 +775,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			event := result.first
 			last := result.last // 已转发的最后一个事件是否已按客户端协议结束整个响应流。
 			committed := false
+			upstreamFailure := true // 下游写入/本地处理失败不应污染上游评分。
 			idleErr := errors.New("upstream stream idle timeout")
 			for {
 				if event != nil {
@@ -695,6 +783,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					aggregatedBytes, allowed = trackAggregatedChunk(aggregatedBytes, event.Data)
 					if !allowed {
 						err = fmt.Errorf("aggregated stream exceeds %d bytes", maxAggregatedStreamBytes)
+						upstreamFailure = false
 						break
 					}
 					chunks = append(chunks, event)
@@ -703,6 +792,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					encoded.Reset()
 					if encodeErr := sse.Encode(&encoded, sse.Event{Id: event.LastEventID, Event: event.Type, Data: event.Data}); encodeErr != nil {
 						err = encodeErr
+						upstreamFailure = false
 						break
 					}
 					n, writeErr := c.Writer.Write(encoded.Bytes())
@@ -715,6 +805,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					}
 					if writeErr != nil {
 						err = writeErr
+						upstreamFailure = false
 						break
 					}
 					c.Writer.Flush()
@@ -731,6 +822,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				}
 				if !next {
 					err = result.events.Err()
+					if err == nil {
+						err = io.ErrUnexpectedEOF // 没有协议结束事件的断流不是完整响应。
+					}
 					break
 				}
 				event = result.events.Current()
@@ -756,6 +850,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					result.usage = meta.Usage
 				}
 			}
+			if aggregateErr != nil && err == nil {
+				err = aggregateErr
+				upstreamFailure = false
+			}
 			// 结算口径(显式策略, 不是顺手为之): 部分流已写给客户端、却聚合不出用量(上游没发用量帧
 			// 或聚合失败)时, 按「未产生用量」结算 —— 释放预扣、不扣费。已交付的部分输出要不要计费
 			// 是计费侧的未决口径(估读 token 或按输出字符折算都会自造账目), 定案前转发侧只按上游
@@ -770,13 +868,53 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				request.finishRound(err.Error(), attemptStatusOf(err))
 			} else {
 				request.finishRound("", "success")
+				recordSuccess()
+			}
+			// 沿用首响应失败的分类: 限流/客户端/策略/模型缺失不降成功率。
+			countFailure := false
+			if err != nil {
+				if ctx.Err() != nil || !upstreamFailure {
+					releaseRouteProbe(group, item.ID)
+				} else {
+					class, ruleName := classifyUpstreamError(err)
+					request.addRouteEvent("error_class", ruleName)
+					switch class {
+					case ErrorClassRate:
+						releaseRouteProbe(group, item.ID)
+						limiter.MarkBlocked(upstreamScopes, upEstIn, upEstOut)
+					case ErrorClassClient, ErrorClassPolicy:
+						releaseRouteProbe(group, item.ID)
+					default:
+						countFailure = class != ErrorClassModel
+						if countFailure {
+							recordMemberMetric(group.ID, item.ID, channelModel.ID, group.RelayConfig.MetricWindowSize, roundWaitTime, false)
+							recordEgressSample(egress.ID, group.RelayConfig.MetricWindowSize, roundWaitTime, false)
+							if class == ErrorClassQuota {
+								op.RecordChannelQuotaError(channel.ID)
+							} else if channelKey != nil && class == ErrorClassAuth {
+								op.RecordChannelKeyError(channelKey.ID, string(class))
+							} else if class == ErrorClassOverload || class == ErrorClassTransient || class == ErrorClassUnknown {
+								op.RecordChannelModelError(channelModel.ID, string(class))
+							}
+						}
+						if class == ErrorClassAuth || class == ErrorClassQuota || class == ErrorClassOverload || class == ErrorClassModel || class == ErrorClassCompatibility {
+							coolItem(group, item.ID, classCooldownSeconds(class))
+							coolEgress(egress.ID, classCooldownSeconds(class))
+						} else {
+							if failedItemID != item.ID {
+								failures = 0
+							}
+							recordRouteFailure(group, item.ID, failures+1)
+						}
+					}
+				}
 			}
 			// 流式响应结束并聚合出用量后, 按最终结果完成本轮渠道和成员统计(供货价口径)。
 			metrics := usageMetrics(channelModel.SupplyPrice, result.usage)
 			metrics.WaitTime = roundWaitTime
 			if err == nil {
 				metrics.RequestSuccess = 1
-			} else {
+			} else if countFailure {
 				metrics.RequestFailed = 1
 			}
 			_ = op.ChannelStatsUpdate(channel.ID, metrics)

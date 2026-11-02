@@ -16,6 +16,10 @@
         "reload": "重新加载"
     },
     "login": {
+        "totpCode": "动态码或恢复码（可选）",
+        "totpPlaceholder": "启用双因素认证后填写",
+        "totpHint": "未启用双因素认证时请留空。",
+        "totpRequired": "此账号需要双因素认证。请输入动态码或恢复码，用户名和密码已保留。",
         "username": "用户名",
         "usernamePlaceholder": "请输入用户名",
         "password": "密码",
@@ -236,6 +240,55 @@
             "hint": "渠道获取模型时与渠道自身的过滤表达式同时生效（AND），留空不过滤"
         },
         "saved": "已保存",
+        "saveFailed": "保存失败",
+        "audit": {
+            "title": "审计归档",
+            "retentionDays": "审计留存天数",
+            "retentionDaysHint": "审计记录保留 1-3650 天, 默认 180 天; 比调用日志长, 因为审计是合规证据。",
+            "archiveEnabled": "清理前先归档",
+            "archiveEnabledHint": "开启后超期审计记录先写入 NDJSON 再删除",
+            "filesTitle": "审计归档文件",
+            "filesHint": "审计归档目录里已有的归档文件; 只读",
+            "runNow": "立即归档",
+            "running": "归档中...",
+            "runSuccess": "已归档 {archived} 条, 已清理 {deleted} 条审计记录",
+            "runFailed": "审计归档失败",
+            "refresh": "刷新",
+            "loading": "加载中...",
+            "empty": "暂无归档文件",
+            "loadFailed": "归档文件加载失败",
+            "colName": "文件",
+            "colSize": "大小",
+            "colTime": "修改时间"
+        },
+        "tierPolicies": {
+            "title": "用户等级配额",
+            "hint": "各服务等级的兜底限流额度, 仅在用户没有单独策略时生效; 0 表示该维度不限制。",
+            "colTier": "等级",
+            "field": {
+                "rpm": "RPM",
+                "tpm": "TPM",
+                "concurrent": "并发"
+            },
+            "rpmHint": "请求/分钟",
+            "tpmHint": "token/分钟",
+            "concurrentHint": "并行数",
+            "tier": {
+                "free": "免费版",
+                "basic": "基础版",
+                "pro": "专业版",
+                "enterprise": "企业版"
+            },
+            "zeroHint": "所有字段必须是非负整数; 0 表示该维度不限制。",
+            "errorInvalidJson": "已保存的值不是合法 JSON, 请修正或重置为默认值后再保存。",
+            "errorInvalidShape": "已保存的值必须是等级额度的对象。",
+            "errorInvalidTier": "已保存的值包含未知的等级名。",
+            "errorInvalidLimit": "已保存的值包含负数或非整数额度。",
+            "invalidField": "{tier} {field} 必须是非负整数",
+            "resetDefaults": "重置为默认值",
+            "save": "保存",
+            "saving": "保存中..."
+        },
         "backup": {
             "title": "备份 / 恢复",
             "export": {
@@ -340,6 +393,35 @@
             }
         },
         "account": {
+            "totp": {
+                "title": "双因素认证（2FA）",
+                "description": "使用验证器动态码保护密码登录。",
+                "passwordOnly": "请使用账号密码登录后管理双因素认证。",
+                "loading": "正在加载状态…",
+                "loadFailed": "无法加载双因素认证状态。",
+                "retry": "重试",
+                "enabled": "已启用双因素认证",
+                "disabled": "尚未启用双因素认证",
+                "setup": "设置双因素认证",
+                "scan": "使用验证器应用扫描此二维码。",
+                "qrLabel": "验证器设置二维码",
+                "secretLabel": "或手动输入此密钥：",
+                "secretWarning": "请妥善保管密钥。二维码仅在本地生成，密钥不会保存到浏览器存储。",
+                "code": "动态码或恢复码",
+                "reloginWarning": "更改双因素认证会注销所有旧会话，需要重新登录。",
+                "enable": "启用双因素认证",
+                "disable": "禁用双因素认证",
+                "cancel": "取消设置",
+                "working": "处理中…",
+                "failed": "无法更新双因素认证。",
+                "enabledTitle": "已启用双因素认证，请保存恢复码",
+                "disabledTitle": "已禁用双因素认证",
+                "sessionRevoked": "旧会话已注销，请重新登录以继续。",
+                "recoveryWarning": "恢复码仅展示一次，请立即妥善保存。每个恢复码只能使用一次。保存前请勿刷新或关闭本页。",
+                "recoveryCodes": "一次性恢复码",
+                "savedLogin": "我已保存恢复码，前往登录",
+                "loginAgain": "前往登录"
+            },
             "title": "账户设置",
             "save": "保存",
             "saving": "保存中...",
@@ -599,10 +681,25 @@
             "scoreWeightHint": "三个权重为相对值(0-100),可任意配比;填 0 表示该维度未自定义,运行时跟随系统默认参数(管理员可在设置页调整)",
             "reliabilityFloor": "评分·可靠性下限",
             "reliabilityFloorHint": "成功率低于此百分比的成员排到健康成员之后；填 0 跟随系统默认值（70%）",
+            "canaryTitle": "灰度分流",
+            "canaryHint": "命中灰度的请求只先尝试灰度成员，失败后回落到当前模式的候选。比例按 API Key 粘性分桶，同一个 Key 结果稳定；显式指定的用户恒走灰度，且优先于比例。",
+            "canaryMember": "灰度成员",
+            "canaryMemberHint": "灰度流量使用的成员；选择「关闭」即停用灰度",
+            "canaryOff": "关闭",
+            "canaryPercent": "灰度比例 (%)",
+            "canaryPercentHint": "命中灰度的流量占比，0-100；填 0 即停用",
+            "canaryUserIDs": "灰度用户 ID",
+            "canaryUserIDsHint": "用逗号或空格分隔的用户 ID；这些用户恒走灰度，不受比例影响",
+            "canaryUserIDsPlaceholder": "例如 12, 34",
+            "canaryUserIDsInvalid": "不是合法的用户 ID：{values}",
+            "canaryMemberEmpty": "请先保存分组，再选择灰度成员",
+            "canaryPerRequest": "每请求随机",
+            "canaryPerRequestHint": "关闭时按 API Key 粘性分桶，同一个 Key 结果稳定；开启后每个请求重新抽样",
             "request_timeout_seconds": "请求总超时（秒）",
             "request_timeout_secondsHint": "包含排队、重试和完整流式传输；默认 600 秒。",
             "max_total_attempts": "单请求最大尝试次数",
-            "max_total_attemptsHint": "跨所有成员的总尝试上限，默认 10。",
+            "max_total_attemptsHint": "跨所有成员的总尝试上限，包含首次请求，默认 10。",
+            "scoreRetryHint": "评分模式失败后立即切换到本请求尚未尝试的候选，不会回头重试已尝试候选。单请求最大尝试次数设为 5，表示包含首次在内最多尝试 5 个不同候选；候选耗尽时可能提前结束。单成员总尝试次数和重试间隔在此模式不生效，已保存的设置仍会保留。",
             "max_wait_seconds": "累计最大排队时间（秒）",
             "max_wait_secondsHint": "0 不等待；仅在队列容量大于 0 时生效。",
             "max_waiting_requests": "排队容量",
@@ -751,7 +848,8 @@
                 "strategy_latency": "策略：latency",
                 "strategy_success": "策略：success",
                 "strategy_score": "策略：score",
-                "strategy_random": "策略：random"
+                "strategy_random": "策略：random",
+                "canary_rollout": "灰度分流"
             },
             "attemptStatus": {
                 "running": "进行中",
@@ -889,7 +987,15 @@
             "egressSuccess": "成功率",
             "egressLatency": "延迟",
             "egressSamples": "样本",
-            "egressCooldownRemaining": "冷却剩余 {duration}"
+            "egressCooldownRemaining": "冷却剩余 {duration}",
+            "pauseBadge": "额度暂停 · 剩余 {time}",
+            "pauseResume": "恢复",
+            "pauseReset": "已恢复 {name} 的额度暂停",
+            "pauseHint": "上游余额不足会触发整渠道暂停, 到期自动恢复; 也可在此手动恢复",
+            "breakerReset": "已解除 {name} 的熔断",
+            "breakerAlreadyClear": "{name} 当前没有熔断",
+            "breakerBadge": "熔断中 {time}",
+            "breakerTitle": "连续错误 {count} 次触发熔断; 这是第 {trips} 次, 时长按次数递增, 到期自动恢复"
         },
         "form": {
             "stepPreset": "开始",
@@ -1352,6 +1458,7 @@
             "username": "用户名",
             "role": "角色",
             "status": "状态",
+            "tier": "服务等级",
             "balance": "余额",
             "frozen": "冻结",
             "totalSpent": "累计消费",
@@ -1364,6 +1471,13 @@
             "admin": "管理员",
             "reseller": "渠道商",
             "user": "用户"
+        },
+        "tier": {
+            "free": "免费版",
+            "basic": "基础版",
+            "pro": "专业版",
+            "enterprise": "企业版",
+            "unset": "未设置"
         },
         "status": {
             "active": "启用",
@@ -1381,6 +1495,8 @@
             "passwordUnchanged": "留空则保持原密码不变",
             "role": "角色",
             "status": "状态",
+            "tier": "服务等级",
+            "tierHint": "用户没有单独限流策略时按其等级兜底; 留空按免费版处理。",
             "cancel": "取消",
             "submit": "创建",
             "submitting": "创建中...",
@@ -1572,7 +1688,10 @@
             "rejected": "限流拒绝"
         },
         "concurrent": "并发上限",
-        "active": "当前活跃"
+        "active": "当前活跃",
+        "quotaCard": {
+            "title": "用户配额用量: {user}"
+        }
     },
     "ops": {
         "title": "运维中心",
@@ -2471,18 +2590,66 @@
         "card": {
             "requests": "总调用量",
             "successRate": "成功率",
+            "requestsHint": "计费口径: 只含产生了用量的调用",
             "cost": "总费用",
-            "tokens": "总Token"
+            "tokens": "总Token",
+            "cacheHitRate": "缓存命中率",
+            "successSample": "成功 {success} · 失败 {failed}",
+            "successNoSamples": "该区间没有调用日志样本(调用日志留存 {days} 天)",
+            "successCanceled": "· 另有 {canceled} 次取消, 未计入",
+            "successCoverage": "成功率仅覆盖 {start} 起(调用日志留存 {days} 天)"
         },
         "chart": {
             "trend": "调用趋势",
             "requests": "调用量",
             "cost": "费用",
+            "successRate": "成功率",
             "modelCost": "模型费用分布",
             "modelRequests": "模型调用量"
         },
         "model": {
             "other": "其他"
+        },
+        "tokenBreakdown": {
+            "title": "Token 构成",
+            "input": "输入",
+            "output": "输出",
+            "cacheRead": "缓存读取",
+            "cacheWrite": "缓存写入"
+        },
+        "latency": {
+            "title": "延迟指标",
+            "coverage": "实际数据覆盖: {start} 起(调用日志留存 {days} 天)",
+            "coverageHint": "页面区间超出日志留存期时只统计可用的那几天。",
+            "avgFirstToken": "平均首字",
+            "p95FirstToken": "首字 P95",
+            "avgDuration": "平均总耗时",
+            "upstreamTtfb": "上游首字节",
+            "hint": "首字耗时: 流式取首字节, 非流式取完整响应; 含上游排队时间。",
+            "empty": "该区间内没有可用的延迟样本"
+        }
+    },
+    "quota": {
+        "title": "我的配额",
+        "loading": "加载中...",
+        "error": "配额信息加载失败",
+        "retry": "重试",
+        "rpm": "每分钟请求 (RPM)",
+        "tpm": "每分钟词元 (TPM)",
+        "concurrent": "并发",
+        "unlimited": "不限制",
+        "remainReset": "本窗口剩余 {remain}",
+        "windowReset": "用量将在 {time} 归零",
+        "source": {
+            "policy": "额度来自专门为你配置的限流策略",
+            "tier": "额度来自服务等级: {tier}",
+            "none": "当前没有任何限制"
+        },
+        "tier": {
+            "free": "免费",
+            "basic": "基础",
+            "pro": "专业",
+            "enterprise": "企业"
         }
     }
 }

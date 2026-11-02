@@ -7,6 +7,23 @@ import (
 // openAPIAdminPathsOps 设置、日志、统计、运维、限流、审计、升级与站点配置。
 func openAPIAdminPathsOps() gin.H {
 	return gin.H{
+		// ---------------- 配额用量 ----------------
+		"/api/v1/ops/quota-usage": gin.H{
+			"get": adminPath("ops", "用户配额用量",
+				"按用户查限流额度与当前窗口用量。响应带 remain_* 剩余量, 服务端已处理不限制的维度(额度为 0)。"+adminNewLine+
+					"usage.source 说明额度来源: policy(专门配置的策略) / tier(等级兜底) / none(不限制) —— 两者数值可能相同但含义不同, 缺了它改等级没反应时无从判断。",
+				"", adminEnvelope("配额用量", gin.H{
+					"type": "object",
+					"properties": gin.H{
+						"usage":             gin.H{"$ref": "#/components/schemas/QuotaUsage"},
+						"remain_rpm":        gin.H{"type": "integer"},
+						"remain_tpm":        gin.H{"type": "integer"},
+						"remain_concurrent": gin.H{"type": "integer"},
+					},
+				}), true,
+				query("user_id", "目标用户 ID(必填)", "int", true, nil),
+				query("model", "只看某个模型的额度; 省略为全模型共享额度", "string", false, nil)),
+		},
 		// ---------------- 系统设置 ----------------
 		"/api/v1/setting/list": gin.H{
 			"get": adminPath("setting", "设置列表",
@@ -197,6 +214,23 @@ func openAPIAdminPathsOps() gin.H {
 					"properties": gin.H{
 						"items":          gin.H{"type": "array", "items": gin.H{"$ref": "#/components/schemas/ArchiveFile"}},
 						"retention_days": gin.H{"type": "integer"},
+					},
+				}), true),
+		},
+		"/api/v1/ops/audit-lifecycle/run": gin.H{
+			"post": adminPath("ops", "立即归档审计日志",
+				"按审计留存策略归档并清理超期审计记录, 返回归档条数与删除条数; 归档失败时本轮不删除任何记录并触发 system 类告警。高危操作, 需 X-Step-Up-Token。", "",
+				adminItem("归档结果", "AuditArchiveResult"), true),
+		},
+		"/api/v1/ops/audit-lifecycle/list": gin.H{
+			"get": adminPath("ops", "审计归档文件列表",
+				"已归档的审计文件与当前生效的留存天数、归档开关。", "",
+				adminEnvelope("审计归档清单", gin.H{
+					"type": "object",
+					"properties": gin.H{
+						"items":          gin.H{"type": "array", "items": gin.H{"$ref": "#/components/schemas/ArchiveFile"}},
+						"retention_days": gin.H{"type": "integer"},
+						"enabled":        gin.H{"type": "boolean"},
 					},
 				}), true),
 		},

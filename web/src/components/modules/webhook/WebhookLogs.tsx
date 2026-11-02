@@ -17,18 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DeliveryStatusBadge, EventBadge } from './badges';
 import { Pager } from './Pager';
-
-// LogView 投递日志的筛选条件 + 页码。
-// 合成一个状态而不是三个 useState: 「换筛选必须回到第 1 页」只能经由 setLogFilter 发生,
-// 分成三个 state 后迟早有人只改筛选忘了重置页码。
-export type LogView = { page: number; status: string; event: string };
-
-// setLogFilter 变更筛选时把页码重置回 1:
-// 停在第 3 页去查一个只有 1 页结果的状态/事件, 用户看到的是空列表, 会误以为「没有数据」。
-// 空串代表「全部」, 与 api 层 webhookLogsPath 的「空值不拼参数」约定一致。
-export function setLogFilter(view: LogView, patch: Partial<Pick<LogView, 'status' | 'event'>>): LogView {
-    return { ...view, ...patch, page: 1 };
-}
+import { setLogFilter, type LogView } from './logView';
 
 // WebhookLogs 投递日志: 状态/HTTP 码/脱敏错误摘要/尝试次数分页列表 + 状态/事件筛选 + 单条重放。
 // 只渲染投递元数据 —— 响应体(含 HTML)一概不读不渲染, 即使后端将来带回也不显示。

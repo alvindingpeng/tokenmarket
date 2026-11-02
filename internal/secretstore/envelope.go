@@ -78,6 +78,13 @@ func WebhookSecretBinding(webhookID uint64, userID uint) Binding {
 	return Binding{Table: "webhooks", Owner: fmt.Sprintf("webhook_id:%d;user_id:%d", webhookID, userID), Column: "secret_encrypted"}
 }
 
+// UserTOTPBinding 用户 TOTP 密钥列的归属绑定: 用户行主键与列名构成归属。
+// 用户 ID 由数据库生成且不随业务变更, 列名固定, 故绑定稳定; 把别的用户的密钥密文
+// 搬到本行, 解密前即被归属比对拦下。
+func UserTOTPBinding(userID uint) Binding {
+	return Binding{Table: "users", Owner: fmt.Sprintf("user_id:%d", userID), Column: "totp_secret_encrypted"}
+}
+
 // IsEnvelope 判断库内取到的值是否为信封格式。历史明文与空值都不是信封。
 func IsEnvelope(value string) bool {
 	return strings.HasPrefix(value, envelopePrefix)

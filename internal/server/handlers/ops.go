@@ -62,6 +62,17 @@ func init() {
 				Handle(listArchives),
 		).
 		AddRoute(
+			router.NewRoute("/audit-lifecycle/run", http.MethodPost).
+				Allow(model.RoleAdmin).
+				Use(middleware.RequireStepUp()).
+				Handle(runAuditLifecycle),
+		).
+		AddRoute(
+			router.NewRoute("/audit-lifecycle/list", http.MethodGet).
+				Allow(model.RoleAdmin).
+				Handle(listAuditArchives),
+		).
+		AddRoute(
 			router.NewRoute("/backup/run", http.MethodPost).
 				Allow(model.RoleAdmin).
 				Use(middleware.RequireStepUp()).
@@ -225,6 +236,41 @@ func listArchives(c *gin.Context) {
 		return
 	}
 	resp.Success(c, gin.H{"items": files, "retention_days": op.LogRetentionDays()})
+}
+
+// runAuditLifecycle 立即归档并清理超期审计记录; 与调用日志归档共用"失败必告警"的约定。
+func runAuditLifecycle(c *gin.Context) {
+	result, err := op.AuditLifecycleRun(context.Background())
+	if err != nil {
+		op.RaiseAlertFacts(c.Request.Context(), op.AlertFacts{
+			Kind:   "audit_archive_failed",
+			Reason: "manual audit archive failed",
+			Fields: []alert.Field{
+				{Label: "触发方式", Value: "运维页手动执行"},
+				{Label: "操作者", Value: operatorName(c)},
+				{Label: "错误", Value: err.Error()},
+				{Label: "影响", Value: "审计表继续膨胀, 合规归档未推进"},
+			},
+		})
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	audit(c, "audit.lifecycle", "", "archived="+strconv.Itoa(result.Archived)+" deleted="+strconv.FormatInt(result.Deleted, 10))
+	resp.Success(c, result)
+}
+
+// listAuditArchives 返回审计归档文件与当前留存配置。
+func listAuditArchives(c *gin.Context) {
+	files, err := op.AuditArchiveList()
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, gin.H{
+		"items":          files,
+		"retention_days": op.AuditRetentionDays(),
+		"enabled":        op.AuditArchiveEnabled(),
+	})
 }
 
 // runAutoBackup 立即执行一次备份。

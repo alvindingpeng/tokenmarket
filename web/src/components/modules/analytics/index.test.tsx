@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { QueryClient } from '@tanstack/react-query';
 import {
     userStatsModelsQueryOptions,
+    userStatsLatencyQueryOptions,
     userStatsOverviewQueryOptions,
     userStatsTrendQueryOptions,
     type UserStatsModel,
     type UserStatsOverview,
     type UserStatsTrend,
+    type UserStatsLatency,
 } from '@/api/user-stats';
 import { renderSSR } from '@/test/ssr';
 import en from '@/locales/en.json';
@@ -14,13 +16,48 @@ import zhHans from '@/locales/zh_hans.json';
 import zhHant from '@/locales/zh_hant.json';
 import { getDateRange } from './dates';
 import { AnalyticsPage } from './index';
+import { buildTrendChartData, hasSuccessSamples, isCoverageLimited, summarizeSuccess } from './success';
 
 // 页面状态回归(mock SSR): 加载 / 失败+重试 / 空态 / 有数据 四态必须各走各的分支。
 // 失败绝不能落回「零」——假零会被当真实统计读; 空态也不能拿假数据糊弄。
 
-const overviewData: UserStatsOverview = { total_requests: 1234, success_rate: 98.5, total_cost: 12.5, total_tokens: 456000 };
-const trendData: UserStatsTrend[] = [{ date: '2026-01-15', requests: 10, cost: 1, success_rate: 100 }];
-const modelsData: UserStatsModel[] = [{ model_name: 'gpt-4o', requests: 5, cost: 2, tokens: 1000 }];
+// shiftDate 按天平移 YYYY-MM-DD。
+// 覆盖起点必须相对「今天」算: 写死某天的话, 测试会随着日期流逝悄悄失效(查询区间一直在往前滚)。
+function shiftDate(date: string, days: number): string {
+    const [year, month, day] = date.split('-').map(Number);
+    const shifted = new Date(year, month - 1, day + days);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${shifted.getFullYear()}-${pad(shifted.getMonth() + 1)}-${pad(shifted.getDate())}`;
+}
+
+const monthRange = getDateRange('month');
+
+// 调用日志只留 7 天, 选"最近 30 天"时真实覆盖起点必然晚于查询起点 ——
+// fixture 就把覆盖起点设成区间第 5 天, 页面必须据此提示, 而不是假装覆盖整个 30 天。
+const coverageStart = shiftDate(monthRange.start_date as string, 4);
+
+const overviewData: UserStatsOverview = {
+    total_requests: 1234, success_rate: 98.5, total_cost: 12.5, total_tokens: 456000,
+    input_tokens: 100000, output_tokens: 56000, cache_read_tokens: 300000, cache_write_tokens: 0,
+    cache_hit_rate: 75,
+    // 请求口径: 9850/10000 = 98.5%, 与 success_rate 对得上; 取消单独计, 不进分母。
+    request_total: 10012, request_success: 9850, request_failed: 150, request_canceled: 12,
+    request_coverage_start: coverageStart, request_retention_days: 7,
+};
+const trendData: UserStatsTrend[] = [
+    // 有日志样本的一天: 成功率是真值。
+    { date: '2026-01-15', requests: 10, cost: 1, success_rate: 90, request_success: 9, request_failed: 1, request_canceled: 0 },
+    // 没有日志样本的一天(超出留存期): success_rate=0 只是哨兵值, 图上必须是断点而不是 0%。
+    { date: '2026-01-16', requests: 4, cost: 0.5, success_rate: 0, request_success: 0, request_failed: 0, request_canceled: 0 },
+];
+const modelsData: UserStatsModel[] = [{ model_name: 'gpt-4o', requests: 5, cost: 2, tokens: 1000, cache_read_tokens: 500, cache_write_tokens: 0, cache_hit_rate: 50 }];
+
+// latencyData 覆盖起点刻意设为 3 天前: 页面必须显示真实覆盖起点而不是假装覆盖整个区间。
+const latencyData: UserStatsLatency = {
+    sample_count: 42, avg_first_token_ms: 850, p95_first_token_ms: 2400,
+    avg_duration_ms: 6200, avg_upstream_ttfb_ms: 700,
+    coverage_start: '2026-01-12', retention_days: 7,
+};
 
 // keys 与组件取数用同一套查询定义; 日期范围是「运行当天」, 与渲染时刻同一天, 查询键一致。
 const keys = () => {
@@ -29,6 +66,7 @@ const keys = () => {
         overview: userStatsOverviewQueryOptions(range).queryKey,
         trend: userStatsTrendQueryOptions({ ...range, granularity: 'day' }).queryKey,
         models: userStatsModelsQueryOptions(range).queryKey,
+        latency: userStatsLatencyQueryOptions(range).queryKey,
     };
 };
 
@@ -54,7 +92,7 @@ function seedError(client: QueryClient, queryKey: readonly unknown[]) {
     });
 }
 
-const seedAll = (client: QueryClient, patch: Partial<Record<'overview' | 'trend' | 'models', 'error'>> = {}) => {
+const seedAll = (client: QueryClient, patch: Partial<Record<'overview' | 'trend' | 'models' | 'latency', 'error'>> = {}) => {
     const k = keys();
     if (patch.overview === 'error') seedError(client, k.overview);
     else client.setQueryData(k.overview, overviewData);
@@ -62,12 +100,17 @@ const seedAll = (client: QueryClient, patch: Partial<Record<'overview' | 'trend'
     else client.setQueryData(k.trend, trendData);
     if (patch.models === 'error') seedError(client, k.models);
     else client.setQueryData(k.models, modelsData);
+    if (patch.latency === 'error') seedError(client, k.latency);
+    else client.setQueryData(k.latency, latencyData);
 };
 
 describe('AnalyticsPage 页面状态(mock SSR)', () => {
     it('三请求都就绪时渲染真值, 不停在加载态', () => {
         const html = renderSSR(<AnalyticsPage />, (client) => seedAll(client));
         expect(html).toContain('Total Requests');
+        expect(html).toContain('456.0K');
+        expect(html).toContain('data-testid="analytics-scroll"');
+        expect(html).toContain('overflow-y-auto');
         expect(html).toContain('1,234'); // 概览真值
         expect(html).toContain('98.5'); // 成功率(SSR 会在文本节点间插注释, 不断言整串)
         expect(html).not.toContain('Loading...');
@@ -107,14 +150,14 @@ describe('AnalyticsPage 页面状态(mock SSR)', () => {
         const html = renderSSR(<AnalyticsPage />, (client) => {
             client.setQueryData(keys().trend, trendData);
         });
-        expect(html.match(/Loading.../g)).toHaveLength(2);
+        expect(html.match(/Loading.../g)).toHaveLength(3);
         expect(html).toContain('Request Trend');
         expect(html).not.toContain('Retry'); // 没失败就不报错
     });
 
     it('全部在加载时整页是加载态, 不是假零', () => {
         const html = renderSSR(<AnalyticsPage />, () => undefined);
-        expect(html.match(/Loading.../g)).toHaveLength(3);
+        expect(html.match(/Loading.../g)).toHaveLength(4);
         expect(html).not.toContain('Retry');
         expect(html).not.toMatch(/tabular-nums">0</);
     });
@@ -138,5 +181,131 @@ describe('analytics 三语键', () => {
             }
             expect({ name, custom: range.custom }).toEqual({ name, custom: undefined });
         }
+    });
+});
+
+describe('AnalyticsPage 新增数据维度', () => {
+    it('概览展示缓存命中率与词元构成四项', () => {
+        const html = renderSSR(<AnalyticsPage />, (client) => seedAll(client));
+        expect(html).toContain('data-testid="cache-hit-rate"');
+        expect(html).toContain('75.0'); // 命中率真值(SSR 在文本节点间插图注释, 不断言整串)
+        expect(html).toContain('data-testid="token-breakdown"');
+        expect(html).toContain('Cache read');
+        expect(html).toContain('Cache write');
+        expect(html).toContain('100.0K'); // 输入 100000
+    });
+
+    it('总调用量下面标注计费口径, 免得被拿去当成功率的分母', () => {
+        const html = renderSSR(<AnalyticsPage />, (client) => seedAll(client));
+        expect(html).toContain('data-testid="requests-scope"');
+        // 计费口径(只含产生用量的调用)与请求口径天然不等, 界面必须自己说清楚。
+        expect(html).toContain('only requests that produced usage');
+    });
+
+    it('延迟面板展示均值与 P95, 并标注真实覆盖起点', () => {
+        const html = renderSSR(<AnalyticsPage />, (client) => seedAll(client));
+        expect(html).toContain('data-testid="latency-panel"');
+        expect(html).toContain('850 ms');
+        expect(html).toContain('2.40 s'); // 2400ms
+        // 覆盖起点只到 3 天前: 必须显示真实起点, 不能假装覆盖整月。
+        expect(html).toContain('2026-01-12');
+        expect(html).toContain('7');
+    });
+
+    it('延迟请求失败时明确报错, 不把无数据渲染成 0ms', () => {
+        const html = renderSSR(<AnalyticsPage />, (client) => seedAll(client, { latency: 'error' }));
+        expect(html).toContain('Failed to load statistics');
+        expect(html).not.toContain('0 ms');
+    });
+
+    it('成功率显示真实请求口径的值, 并给出可对上的样本量', () => {
+        const html = renderSSR(<AnalyticsPage />, (client) => seedAll(client));
+        expect(html).toContain('data-testid="success-rate"');
+        // 98.5% 来自 9850/(9850+150); 小字里的分子分母必须与这里一致, 数字之间不能打架。
+        expect(html).toContain('98.5%');
+        expect(html).toContain('Success 9,850');
+        expect(html).toContain('Failed 150');
+        // 取消单独说明, 不进分母 —— 用户自己断开的请求不该被算成失败。
+        expect(html).toContain('12 canceled');
+    });
+
+    it('没有调用日志样本时成功率显示 —, 不显示 0.0%', () => {
+        // 区间内完全没有调用日志: 后端给的 success_rate=0 是哨兵值,
+        // 渲染成 0.0% 会被读成"全部请求失败", 那是彻头彻尾的假数据。
+        const html = renderSSR(<AnalyticsPage />, (client) => {
+            seedAll(client);
+            client.setQueryData(keys().overview, {
+                ...overviewData,
+                success_rate: 0,
+                request_total: 0, request_success: 0, request_failed: 0, request_canceled: 0,
+                request_coverage_start: '',
+            });
+        });
+        expect(html).toContain('data-testid="success-rate"');
+        expect(html).toContain('—');
+        expect(html).toContain('No call-log samples in this range');
+        expect(html).not.toContain('0.0%');
+        expect(html).not.toContain('data-testid="success-coverage"'); // 无样本就不必再说覆盖起点
+    });
+
+    it('调用日志只覆盖区间末段时, 明确提示"仅覆盖 X 起"', () => {
+        const html = renderSSR(<AnalyticsPage />, (client) => seedAll(client));
+        expect(html).toContain('data-testid="success-coverage"');
+        expect(html).toContain(coverageStart);
+        // 留存天数要说出来: 用户才知道为什么少了那几天, 而不是以为平台在藏数据。
+        expect(html).toContain('7');
+    });
+
+    it('覆盖率提示只在真的少了几天时出现: 区间本就在留存期内就不多嘴', () => {
+        const html = renderSSR(<AnalyticsPage />, (client) => {
+            seedAll(client);
+            // 覆盖起点等于查询起点 = 整个区间都有日志, 没有缺口可讲。
+            client.setQueryData(keys().overview, { ...overviewData, request_coverage_start: monthRange.start_date as string });
+        });
+        expect(html).not.toContain('data-testid="success-coverage"');
+        expect(html).toContain('98.5%'); // 但成功率照常显示
+    });
+
+    it('趋势图把没有日志样本的桶画成断点, 而不是成功率 0', () => {
+        const chart = buildTrendChartData(trendData);
+        expect(chart[0].success_rate).toBe(90);   // 有样本: 真值
+        expect(chart[1].success_rate).toBeNull(); // 无样本: 断点(配合 connectNulls={false} 不连线)
+
+        // "没取到"和"真的全失败"必须分得开: 前者是 null(断线), 后者是货真价实的 0。
+        const allFailed = buildTrendChartData([
+            { date: '2026-01-17', requests: 5, cost: 0.2, success_rate: 0, request_success: 0, request_failed: 5, request_canceled: 0 },
+        ]);
+        expect(allFailed[0].success_rate).toBe(0);
+
+        // 一个桶有样本就足以画线; 全都没有样本时折叠成一条 null 序列, 折线不成立。
+        expect(hasSuccessSamples(trendData)).toBe(true);
+        expect(hasSuccessSamples([trendData[1]])).toBe(false);
+
+        const html = renderSSR(<AnalyticsPage />, (client) => seedAll(client));
+        expect(html).toContain('data-testid="trend-chart"');
+    });
+
+    it('覆盖率判定与成功率摘要的口径边界', () => {
+        // 后端约定: 空串 = 区间内完全没有调用日志, 此时谈不上"覆盖起点"。
+        expect(isCoverageLimited('', monthRange.start_date)).toBe(false);
+        // 晚于查询起点 = 只覆盖末尾几天。
+        expect(isCoverageLimited('2030-01-01', '2030-01-01')).toBe(false);
+        expect(isCoverageLimited('2030-01-02', '2030-01-01')).toBe(true);
+        expect(isCoverageLimited('2029-12-31', '2030-01-01')).toBe(false);
+        // 分母为 0 必须给 "—"; 有样本时才给一位小数的百分比。
+        expect(summarizeSuccess({ ...overviewData, request_success: 0, request_failed: 0 }).value).toBe('—');
+        expect(summarizeSuccess({ ...overviewData, success_rate: 98.5, request_success: 9850, request_failed: 150 })).toEqual({ attempts: 10000, value: '98.5%' });
+    });
+
+    it('无延迟样本时走空态而不是显示极快的 0', () => {
+        const html = renderSSR(<AnalyticsPage />, (client) => {
+            const k = keys();
+            client.setQueryData(k.overview, overviewData);
+            client.setQueryData(k.trend, trendData);
+            client.setQueryData(k.models, modelsData);
+            client.setQueryData(k.latency, { ...latencyData, sample_count: 0, coverage_start: '' });
+        });
+        expect(html).toContain('No latency samples in this range');
+        expect(html).not.toContain('0 ms');
     });
 });

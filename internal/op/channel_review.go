@@ -107,7 +107,7 @@ func ChannelReviewSubmit(id int, note string, scope model.Scope, ctx context.Con
 		channel.ReviewedBy = scope.ID
 		channel.ReviewedAt = &now
 	}
-	channelCache.Set(id, channel)
+	setChannelCachePreservingQuota(channel)
 	return channel, nil
 }
 
@@ -158,7 +158,7 @@ func ChannelReviewApprove(id int, note string, reviewerID uint, scope model.Scop
 		channel.ObservationStart = fresh.ObservationStart
 		channel.ObservationUntil = fresh.ObservationUntil
 	}
-	channelCache.Set(id, channel)
+	setChannelCachePreservingQuota(channel)
 	return channel, nil
 }
 
@@ -194,7 +194,7 @@ func ChannelReviewReject(id int, note string, reviewerID uint, scope model.Scope
 	channel.ReviewNote = note
 	channel.ReviewedBy = reviewerID
 	channel.ReviewedAt = &now
-	channelCache.Set(id, channel)
+	setChannelCachePreservingQuota(channel)
 	return channel, nil
 }
 
@@ -266,7 +266,7 @@ func channelReviewMarkStale(ctx context.Context, actorID uint, channelID int) er
 	if channel, ok := channelCache.Get(channelID); ok {
 		channel.ReviewStatus = model.ChannelReviewStale
 		channel.ReviewedAt = &now
-		channelCache.Set(channelID, channel)
+		setChannelCachePreservingQuota(channel)
 	}
 	if err := AuditLogAdd(ctx, actorID, "channel.review_stale", fmt.Sprintf("channel#%d", channelID), "config fingerprint mismatch"); err != nil {
 		return fmt.Errorf("failed to write stale audit: %w", err)
@@ -287,7 +287,7 @@ func channelReviewSyncBaseline(ctx context.Context, channelID int) error {
 		return fmt.Errorf("failed to sync channel fingerprint: %w", err)
 	}
 	channel.ConfigFingerprint = fp
-	channelCache.Set(channelID, channel)
+	setChannelCachePreservingQuota(channel)
 	return nil
 }
 
@@ -332,7 +332,7 @@ func ChannelReviewBackfill(ctx context.Context) (int, error) {
 		channel.ReviewStatus = model.ChannelReviewApproved
 		channel.ConfigFingerprint = fp
 		channel.ReviewedAt = &now
-		channelCache.Set(channel.ID, channel)
+		setChannelCachePreservingQuota(channel)
 	}
 
 	detail := fmt.Sprintf("backfilled=%d", len(channels))

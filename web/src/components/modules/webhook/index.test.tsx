@@ -14,7 +14,8 @@ import en from '@/locales/en.json';
 import zhHans from '@/locales/zh_hans.json';
 import zhHant from '@/locales/zh_hant.json';
 import { WebhookForm } from './WebhookForm';
-import { setLogFilter, WebhookLogs } from './WebhookLogs';
+import { WebhookLogs } from './WebhookLogs';
+import { setLogFilter } from './logView';
 import { Webhooks } from './index';
 
 // 页面组件的 mock SSR 冒烟(与工单同款口径): 不起服务器, 用预置 query 缓存把组件

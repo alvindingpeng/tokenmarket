@@ -32,6 +32,9 @@ func openAPIAdminPaths() gin.H {
 // 说明: 清单后处理作用在合并后的整张路径表上, 本文件不改 schemas、也不改
 // openapi_admin_paths_ops.go —— 与其它 agent 的同文件改动天然错开。
 var stepUpProtectedRoutes = map[string]string{
+	"POST /api/v1/user/2fa/setup":              "生成待确认的 TOTP 密钥",
+	"POST /api/v1/user/2fa/enable":             "绑定认证器并吊销旧会话",
+	"POST /api/v1/user/2fa/disable":            "解绑认证器并吊销旧会话",
 	"POST /api/v1/user/manage/create":          "建号可指定角色与初始余额",
 	"POST /api/v1/user/manage/update":          "余额调整与账号状态变更",
 	"POST /api/v1/user/manage/reset-password":  "重置他人密码",
@@ -132,10 +135,13 @@ func openAPIAdminPathsAuth() gin.H {
 		// ---------------- 账号与登录态 ----------------
 		"/api/v1/user/login": gin.H{
 			"post": adminPathPublic("auth", "登录",
-				"用户名密码登录, 成功后用 Set-Cookie 下发 HttpOnly 会话 Cookie(auth), 后续管理面请求由浏览器自动携带。"+adminNewLine+adminNewLine+
+				"用户名密码登录；启用2FA时必须提供 totp_code(动态码或一次性恢复码)。密码正确但缺码返回401 message=two_factor_required；错码或重放返回401 message=invalid verification code；全部验证通过前不下发cookie、不重置失败限流。Cache-Control: no-store。成功后用 Set-Cookie 下发 HttpOnly 会话 Cookie(auth), 后续管理面请求由浏览器自动携带。"+adminNewLine+adminNewLine+
 					"防爆破: 按 IP 与账号两个维度独立限流, 任一超限返回 429; 开启维护模式时非管理员返回 503。",
 				"LoginRequest", adminItem("登录成功, data 为账号信息", "UserView")),
 		},
+		"/api/v1/user/2fa/setup":   gin.H{"post": adminPath("auth", "开始 TOTP 绑定", "返回 secret 和 otpauth_url；此时尚未启用。无主钥拒绝，不存明文。Cache-Control: no-store。账户所有 2FA 操作共享每 300 秒 10 次尝试限额，超限 429。", "", adminEnvelope("待确认密钥", object(gin.H{"secret": fieldString("base32 密钥，仅本次展示"), "otpauth_url": fieldString("认证器 URI")}, "secret", "otpauth_url")), false)},
+		"/api/v1/user/2fa/enable":  gin.H{"post": adminPath("auth", "确认 TOTP 绑定", "提交 code(6位动态码)；成功时仅一次返回 recovery_codes:string[]，所有旧会话包括当前会话失效，请重新登录。Cache-Control: no-store；超限 429。", "TOTPCodeRequest", adminEnvelope("绑定成功", object(gin.H{"recovery_codes": gin.H{"type": "array", "items": gin.H{"type": "string"}}}, "recovery_codes")), false)},
+		"/api/v1/user/2fa/disable": gin.H{"post": adminPath("auth", "解绑 TOTP", "code 可用动态码或一次性恢复码。成功清除密钥和恢复码，所有旧会话包括当前会话失效。Cache-Control: no-store；超限 429。", "TOTPCodeRequest", adminEnvelope("解绑成功", gin.H{"type": "string"}), false)},
 		"/api/v1/user/step-up": gin.H{
 			"post": adminPath("auth", "高危操作二次验证(step-up)",
 				"用当前账号的密码重新确认身份, 换一枚短期 step-up 凭证。凭证绑定 用户 + token_version + 当前登录会话: 改密、禁用、登出或换会话任一发生即失效, 5 分钟后过期。"+
@@ -231,7 +237,9 @@ func openAPIAdminPathsAuth() gin.H {
 		// ---------------- 渠道 ----------------
 		"/api/v1/channel/stats": gin.H{
 			"get": adminPath("channel", "渠道列表(含统计)",
-				"渠道概览: 名称、启停、发布状态、逐模型统计与累计用量。控制台渠道页只消费这一条查询, 完整配置在点开编辑时按 detail/{id} 单独取。"+adminNewLine+adminNewLine+
+				"渠道概览: 名称、启停、发布状态、额度暂停截止时间、逐模型统计与累计用量。控制台渠道页只消费这一条查询, 完整配置在点开编辑时按 detail/{id} 单独取。"+adminNewLine+adminNewLine+
+					"disabled_until 是渠道级的额度暂停截止时间(上游明确余额不足时自动写入), 与人工开关 enabled 是两回事: "+
+					"未暂停时不给出该字段; 需要区分「余额不足被暂停」与「人工关停」时看这两个字段, 提前恢复走 channel/breaker/reset 的 channel=true。"+adminNewLine+
 					"渠道商与管理员各自只看得到自有渠道, 管理员看到全站。没有单独的 list 接口 —— 这一条就是列表。", "",
 				adminArray("渠道统计列表", "ChannelStats"), true),
 		},
@@ -327,10 +335,12 @@ func openAPIAdminPathsAuth() gin.H {
 				"ChannelRepriceRequest", adminEnvelope("改价结果", ref("ChannelRepriceResult")), true),
 		},
 		"/api/v1/channel/breaker/reset": gin.H{
-			"post": adminPath("channel", "解除渠道熔断",
-				"按名称手动清零渠道凭据或渠道模型的错误计数并清掉熔断截止时间。"+adminNewLine+adminNewLine+
+			"post": adminPath("channel", "解除渠道熔断与额度暂停",
+				"手动恢复被自动隔离的渠道: 按名称清零渠道凭据或渠道模型的错误计数并清掉熔断截止时间, 或按 channel 解除整条渠道的额度暂停。"+adminNewLine+adminNewLine+
 					"自动熔断按时间自愈, 上游修好(换 Key, 补额度)后用它立刻恢复, 不必干等熔断到期。"+adminNewLine+
-					"key_names 与 model_names 至少要给一个, 两者都为空为 400; 返回实际解锁的条数。"+adminNewLine+
+					"key_names、model_names、channel 三者至少要给一个, 全为空为 400; 返回实际解锁的条数, 三种解除合并计数。"+adminNewLine+
+					"channel=true 只清渠道级暂停截止时间(上游余额不足触发的整渠道硬暂停), 不改人工开关 enabled, "+
+					"也不动凭据与模型各自的熔断状态 —— 那两处代表尚未修好的单项故障。本来没暂停或暂停已过期不算解锁, 不报错。"+adminNewLine+
 					"熔断的参数(阈值与时长)在系统设置的运维参数页配置。",
 				"ChannelBreakerResetRequest", adminEnvelope("解锁条数", gin.H{"type": "object", "properties": gin.H{"reset": gin.H{"type": "integer"}}}), true),
 		},

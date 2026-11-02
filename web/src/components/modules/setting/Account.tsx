@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Input } from '@/components/ui/input';
 import { useChangeUsername, useChangePassword, useAuth } from '@/api/user';
 import { toast } from 'sonner';
+import { SettingTOTP } from './TOTP';
 
 /** 密码输入框，附带显示/隐藏切换 */
 function PasswordInput({
@@ -211,6 +212,7 @@ export function SettingAccount() {
     };
 
     return (
+        <div className="space-y-4">
         <div className="rounded-3xl border border-border bg-card p-6 space-y-5 relative">
             <h2 className="text-lg font-bold text-card-foreground flex items-center gap-2">
                 <User className="h-5 w-5" />
@@ -279,6 +281,8 @@ export function SettingAccount() {
                     {t('account.logout.button')}
                 </button>
             </div>
+        </div>
+        <SettingTOTP />
         </div>
     );
 }

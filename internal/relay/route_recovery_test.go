@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -122,8 +123,62 @@ func TestRecordRouteSuccessClearsCooldown(t *testing.T) {
 	}
 }
 
-// TestRouteExplanationMatchesRouting 校验选路决策里记录的排除原因与真实选路一致:
-// 冷却中的成员记 cooldown, 冷却到期的成员不再是"看似可用却被跳过"。
+// TestRecoveredMemberIsNotReleasedWhileProbeInFlight verifies recovery single-flight.
+func TestRecoveredMemberIsNotReleasedWhileProbeInFlight(t *testing.T) {
+	const groupID = 915
+	defer setupRecoveryTest(t, groupID)()
+	top := model.GroupItem{ID: 1, ChannelID: 1, ChannelKeyID: 1, ChannelModelID: 1, ModelName: "top", Available: true, Priority: 1}
+	other := model.GroupItem{ID: 2, ChannelID: 2, ChannelKeyID: 2, ChannelModelID: 2, ModelName: "other", Available: true, Priority: 2}
+	group := model.Group{ID: groupID, Mode: model.GroupModeFailover, Items: []model.GroupItem{top, other}, RelayConfig: model.DefaultGroupRelayConfigForMode(model.GroupModeFailover)}
+	routeMu.Lock()
+	routes[groupID] = &RouteState{GroupID: groupID, Cooldowns: map[int]int64{top.ID: time.Now().Add(-time.Second).UnixMilli()}}
+	routeMu.Unlock()
+	if got := pickGroupItem(group); got.ID != top.ID {
+		t.Fatalf("first recovery probe=%d, want %d", got.ID, top.ID)
+	}
+	if got := pickGroupItem(group); got.ID != other.ID {
+		t.Fatalf("in-flight probe must not receive normal traffic, got %d", got.ID)
+	}
+}
+
+func TestAffinityDoesNotBypassRecoveryProbe(t *testing.T) {
+	const groupID = 917
+	defer setupRecoveryTest(t, groupID)()
+	top := model.GroupItem{ID: 1, Available: true, Priority: 1}
+	other := model.GroupItem{ID: 2, Available: true, Priority: 2}
+	group := model.Group{ID: groupID, Mode: model.GroupModeFailover, Items: []model.GroupItem{top, other}, RelayConfig: model.DefaultGroupRelayConfigForMode(model.GroupModeFailover)}
+	routeMu.Lock()
+	routes[groupID] = &RouteState{GroupID: groupID, CurrentItemID: top.ID, AffinityUntil: time.Now().Add(time.Minute).UnixMilli(), ProbeItemID: top.ID, Cooldowns: map[int]int64{top.ID: time.Now().Add(-time.Second).UnixMilli()}}
+	routeMu.Unlock()
+	if got := pickGroupItem(group); got.ID != other.ID {
+		t.Fatalf("affinity bypassed recovery isolation: got %d", got.ID)
+	}
+}
+
+func TestHasOtherEligibleConcurrentRouteUpdates(t *testing.T) {
+	const groupID = 916
+	defer setupRecoveryTest(t, groupID)()
+	item := model.GroupItem{ID: 1, ChannelID: 1, ChannelKeyID: 1, ChannelModelID: 1, Available: true}
+	other := model.GroupItem{ID: 2, ChannelID: 2, ChannelKeyID: 2, ChannelModelID: 2, Available: true}
+	group := model.Group{ID: groupID, Mode: model.GroupModeFailover, Items: []model.GroupItem{item, other}, RelayConfig: model.DefaultGroupRelayConfigForMode(model.GroupModeFailover)}
+	routeMu.Lock()
+	routes[groupID] = &RouteState{GroupID: groupID, Cooldowns: map[int]int64{}}
+	routeMu.Unlock()
+	var wg sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if i%2 == 0 {
+				_ = hasOtherEligible(group, item.ID)
+			} else {
+				recordRouteFailure(group, other.ID, group.RelayConfig.MemberMaxAttempts)
+			}
+		}(i)
+	}
+	wg.Wait()
+}
+
 func TestRouteExplanationMatchesRouting(t *testing.T) {
 	const groupID = 914
 	defer setupRecoveryTest(t, groupID)()
@@ -141,7 +196,7 @@ func TestRouteExplanationMatchesRouting(t *testing.T) {
 	routeMu.Unlock()
 
 	chosen := pickGroupItem(group)
-	decision := routeExplanation(group, chosen)
+	decision := routeExplanation(group, chosen, false)
 	reasons := map[int]string{}
 	for _, c := range decision.Candidates {
 		reasons[c.ItemID] = c.Reason
