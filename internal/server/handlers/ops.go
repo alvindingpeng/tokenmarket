@@ -119,6 +119,11 @@ func init() {
 				Handle(runAlertRedeliver),
 		).
 		AddRoute(
+			router.NewRoute("/alerts/:id/requeue", http.MethodPost).
+				Allow(model.RoleAdmin).
+				Handle(runAlertRequeue),
+		).
+		AddRoute(
 			router.NewRoute("/metrics/token", http.MethodGet).
 				Allow(model.RoleAdmin).
 				Use(middleware.RequireStepUp()).
@@ -492,10 +497,14 @@ func testAlertWebhook(c *gin.Context) {
 	resp.Success(c, gin.H{"ok": true})
 }
 
-// testAlertChannel 按指定渠道(telegram/email)发送一条测试告警, 验证凭据与连通性。
+// testAlertChannel 按指定渠道(telegram/email/feishu/dingtalk/wecom)发送一条测试告警, 验证凭据与连通性。
 func testAlertChannel(c *gin.Context) {
 	channel := strings.TrimSpace(c.Param("channel"))
-	if channel != "telegram" && channel != "email" {
+	// 白名单与 alert.SendOnce 支持的分支保持同步: 这里放行一个 SendOnce 不认的渠道,
+	// 管理员会看到 "unknown alert channel" 却以为是自己配错了。
+	switch channel {
+	case "telegram", "email", "feishu", "dingtalk", "wecom":
+	default:
 		resp.Error(c, http.StatusBadRequest, "unsupported alert channel")
 		return
 	}
@@ -510,6 +519,28 @@ func testAlertChannel(c *gin.Context) {
 		return
 	}
 	audit(c, "alert.test_"+channel, "", "")
+	resp.Success(c, gin.H{"ok": true})
+}
+
+// runAlertRequeue 手动把一条未送达告警重新排进补发队列。
+//
+// 存在理由: 自动补发有 48 小时窗口(可配), 窗口外的历史告警不会被自动重发。
+// 管理员若确认某条旧告警仍需要通知(当时群里没人看), 需要一条不用改数据库的放行路径,
+// 且这次放行要留审计记录 —— 直接 UPDATE 库既危险又不可追溯。
+func runAlertRequeue(c *gin.Context) {
+	id, err := strconv.ParseUint(strings.TrimSpace(c.Param("id")), 10, 64)
+	if err != nil || id == 0 {
+		resp.Error(c, http.StatusBadRequest, "invalid alert id")
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+	if err := op.AlertRequeue(ctx, id); err != nil {
+		// 400 而不是 500: "已送达的告警不能再排"是调用方的问题, 不是服务端故障。
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	audit(c, "ops.alert_requeue", strconv.FormatUint(id, 10), "")
 	resp.Success(c, gin.H{"ok": true})
 }
 

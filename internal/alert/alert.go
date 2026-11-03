@@ -84,6 +84,12 @@ func SendOnce(ctx context.Context, channel string, alert Alert) error {
 		return sendTelegram(ctx, alert)
 	case "email":
 		return sendEmail(ctx, alert)
+	case "feishu":
+		return sendFeishu(ctx, alert)
+	case "dingtalk":
+		return sendDingtalk(ctx, alert)
+	case "wecom":
+		return sendWecom(ctx, alert)
 	default:
 		return fmt.Errorf("unknown alert channel %q", channel)
 	}
@@ -121,6 +127,12 @@ func SendDetailed(ctx context.Context, alert Alert) (ok bool, err error) {
 			sendErr = sendTelegram(ctx, alert)
 		case "email":
 			sendErr = sendEmail(ctx, alert)
+		case "feishu":
+			sendErr = sendFeishu(ctx, alert)
+		case "dingtalk":
+			sendErr = sendDingtalk(ctx, alert)
+		case "wecom":
+			sendErr = sendWecom(ctx, alert)
 		default:
 			continue
 		}
@@ -355,4 +367,169 @@ func sendEmail(ctx context.Context, alert Alert) error {
 	auth := smtp.PlainAuth("", username, password, smtpHost)
 	addr := fmt.Sprintf("%s:%d", smtpHost, smtpPort)
 	return smtp.SendMail(addr, auth, from, recipients, msg)
+}
+
+// 国内团队群告警: 飞书 / 钉钉 / 企业微信。
+//
+// 三者都是"向群机器人地址 POST 一条 JSON", 与 webhook 的区别只在报文结构:
+// 飞书与企业微信接受富文本卡片, 钉钉的卡片需要加签(未配置 secret 时用纯文本)。
+// 这些渠道在国内团队里比 Telegram 常用, 而告警本身是给人看的 —— 送不到人眼前的告警等于没告警。
+//
+// 刻意不复用 alert_webhook_url: 一个团队可能同时开 Telegram 与飞书, 共用一条地址等于二选一。
+// 三个渠道各自独立开关, 任一成功即视为该告警已送达(与 SendDetailed 的总口径一致)。
+
+// groupText 群机器人正文: 标题 + 明细 + 时间, 纯文本(三者都支持, 不必逐个适配富文本语法)。
+// 与 telegramPlainText 同构, 但**不**做 Markdown 转义: 这些渠道按纯文本呈现,
+// 转义反斜杠反而会被原样显示出来。
+func groupText(a Alert) string {
+	stamp := a.Timestamp
+	if stamp.IsZero() {
+		stamp = time.Now()
+	}
+	text := a.renderTitle()
+	if body := a.renderMessage(); body != "" {
+		text += "\n" + body
+	}
+	return text + "\n" + stamp.Format("2006-01-02 15:04:05")
+}
+
+// postGroupWebhook 向群机器人地址 POST 一段 JSON, 返回响应体供调用方判定业务错误。
+//
+// 三个渠道的共同坑: HTTP 200 不等于成功。飞书/钉钉/企业微信在参数错误、签名失败、
+// 关键词不匹配时都返回 200 + {"code":非0}, 只看状态码会把"根本没发出去"记成送达,
+// 于是补发机制永远不会触发 —— 这正是 2026-11-02 那类静默失效的翻版。
+func postGroupWebhook(ctx context.Context, url string, payload any) ([]byte, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
+	if resp.StatusCode >= 400 {
+		return respBody, fmt.Errorf("group webhook returned status %d", resp.StatusCode)
+	}
+	return respBody, nil
+}
+
+// sendFeishu 发送飞书自定义机器人消息(文本形态)。
+// 飞书成功响应是 {"code":0} 或 {"StatusCode":0}(新旧两版字段并存), 两者都为 0 才算成功。
+func sendFeishu(ctx context.Context, alert Alert) error {
+	url, err := settingString(model.SettingKeyAlertFeishuWebhook)
+	if err != nil || url == "" {
+		return fmt.Errorf("feishu webhook not configured")
+	}
+	payload := map[string]any{
+		"msg_type": "text",
+		"content":  map[string]string{"text": groupText(alert)},
+	}
+	respBody, sendErr := postGroupWebhook(ctx, url, payload)
+	if sendErr != nil {
+		return sendErr
+	}
+	var result struct {
+		Code       int    `json:"code"`
+		Msg        string `json:"msg"`
+		StatusCode int    `json:"StatusCode"`
+		StatusMsg  string `json:"StatusMessage"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		// 解析不了就按原文报错: 说不出原因的成功不算成功。
+		return fmt.Errorf("feishu webhook returned unparsable body: %s", truncateForError(respBody))
+	}
+	if result.Code != 0 || result.StatusCode != 0 {
+		reason := result.Msg
+		if reason == "" {
+			reason = result.StatusMsg
+		}
+		return fmt.Errorf("feishu webhook rejected (code=%d): %s", firstNonZero(result.Code, result.StatusCode), reason)
+	}
+	return nil
+}
+
+// sendDingtalk 发送钉钉自定义机器人消息(文本形态)。
+// 钉钉的成功响应是 {"errcode":0}; 签名校验失败/关键词不匹配都会给非 0 errcode 但 HTTP 200。
+func sendDingtalk(ctx context.Context, alert Alert) error {
+	url, err := settingString(model.SettingKeyAlertDingtalkWebhook)
+	if err != nil || url == "" {
+		return fmt.Errorf("dingtalk webhook not configured")
+	}
+	payload := map[string]any{
+		"msgtype": "text",
+		"text":    map[string]string{"content": groupText(alert)},
+	}
+	respBody, sendErr := postGroupWebhook(ctx, url, payload)
+	if sendErr != nil {
+		return sendErr
+	}
+	var result struct {
+		ErrCode int    `json:"errcode"`
+		ErrMsg  string `json:"errmsg"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return fmt.Errorf("dingtalk webhook returned unparsable body: %s", truncateForError(respBody))
+	}
+	if result.ErrCode != 0 {
+		return fmt.Errorf("dingtalk webhook rejected (errcode=%d): %s", result.ErrCode, result.ErrMsg)
+	}
+	return nil
+}
+
+// sendWecom 发送企业微信群机器人消息(文本形态)。
+// 企业微信成功响应是 {"errcode":0,"errmsg":"ok"}。
+func sendWecom(ctx context.Context, alert Alert) error {
+	url, err := settingString(model.SettingKeyAlertWecomWebhook)
+	if err != nil || url == "" {
+		return fmt.Errorf("wecom webhook not configured")
+	}
+	payload := map[string]any{
+		"msgtype": "text",
+		"text":    map[string]string{"content": groupText(alert)},
+	}
+	respBody, sendErr := postGroupWebhook(ctx, url, payload)
+	if sendErr != nil {
+		return sendErr
+	}
+	var result struct {
+		ErrCode int    `json:"errcode"`
+		ErrMsg  string `json:"errmsg"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return fmt.Errorf("wecom webhook returned unparsable body: %s", truncateForError(respBody))
+	}
+	if result.ErrCode != 0 {
+		return fmt.Errorf("wecom webhook rejected (errcode=%d): %s", result.ErrCode, result.ErrMsg)
+	}
+	return nil
+}
+
+// truncateForError 把响应体截到可读长度, 避免把整页 HTML 塞进告警失败原因。
+func truncateForError(body []byte) string {
+	const maxLen = 200
+	text := strings.TrimSpace(string(body))
+	if len(text) > maxLen {
+		return text[:maxLen] + "..."
+	}
+	return text
+}
+
+// firstNonZero 取第一个非零值, 用于飞书两套字段并存时的错误码展示。
+func firstNonZero(values ...int) int {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
 }

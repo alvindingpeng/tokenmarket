@@ -18,7 +18,7 @@ import {
 import { toast } from 'sonner';
 import {
     useAlertDelivery, useArchives, useBackups, useBalanceFlow, useChannelAlerts, useChannelHealth,
-    useLatencyBreakdown, useOpsOverview, useReconcileList, useRunAlertRedeliver, useRunBackup, useRunHealthCheck, useRunLogLifecycle, useRunReconcile, useSetReconcileNote, useUndeliveredAlerts,
+    useLatencyBreakdown, useOpsOverview, useReconcileList, useRunAlertRedeliver, useRunBackup, useRunHealthCheck, useRunLogLifecycle, useRunReconcile, useRequeueAlert, useSetReconcileNote, useUndeliveredAlerts,
     type BalanceFlow, type ChannelAlert, type ChannelHealth, type LatencyRow, type ReconcileRow, type UndeliveredAlert,
 } from '@/api/ops';
 import { useRateUsageTop } from '@/api/ratelimit';
@@ -113,6 +113,11 @@ function OpsOverviewCards() {
         </div>
     );
 }
+
+// REDELIVER_MAX_ATTEMPTS 后端补发重试上限(alertRedeliverMaxAttempts)。
+// 前端用它区分"已放弃"(达到上限)与"超窗未补发"(窗口外的历史告警), 两态在界面上
+// 必须分开显示 —— 见 deliveryState。改动此值时需同步 internal/op/alert.go。
+const REDELIVER_MAX_ATTEMPTS = 8;
 
 const TABS = [
     { id: 'reconcile', icon: Scale },
@@ -503,6 +508,7 @@ function AlertsSection() {
     const delivery = useAlertDelivery();
     const undelivered = useUndeliveredAlerts(50);
     const redeliver = useRunAlertRedeliver();
+    const requeue = useRequeueAlert();
     const deliveryStats = delivery.data;
     // kindBadge 告警类型徽章。新增的熔断/任务/配额类型同样要有中文标签,
     // 否则管理员在列表里只看到裸英文 kind, 分不清是渠道挂了还是后台任务挂了。
@@ -553,19 +559,42 @@ function AlertsSection() {
     ];
     // 未送达列表: 只在真的有待补发/已放弃时才展开, 平时不占版面。
     // 已放弃的行排期为空(后端如此排序), 界面直接标"已放弃", 不让管理员以为还在重试。
+    // deliveryState 三态判定, 与后端 AlertDeliveryStatsGet 逐条对应:
+    //   有排期 = 待补发; 无排期且达上限 = 已放弃; 无排期且未达上限 = 超窗(落在补发窗口之外)。
+    // 界面必须能区分后两者: 都显示"已放弃"会让管理员以为系统试过并放弃了, 而超窗的那些
+    // 一次都没发过 —— 处置方式完全不同(前者要先修配置, 后者可以直接放行重发)。
+    const deliveryState = (row: UndeliveredAlert) => {
+        if (row.next_notify_at) return 'pending' as const;
+        return (row.notify_attempts ?? 0) >= REDELIVER_MAX_ATTEMPTS ? 'gaveUp' as const : 'expired' as const;
+    };
     const undeliveredColumns: Col<UndeliveredAlert>[] = [
         { key: 'subject', label: t('alerts.subject'), render: (row) => (
             <span className='block max-w-48 truncate' title={row.subject}>{row.subject || '-'}</span>
         ) },
         { key: 'kind', label: t('alerts.kind'), render: (row) => kindBadge(row.kind) },
         { key: 'attempts', label: t('delivery.attempts'), render: (row) => String(row.notify_attempts ?? 0) },
-        { key: 'next', label: t('delivery.nextAttempt'), render: (row) => (
-            row.next_notify_at ? formatTime(row.next_notify_at) : <span className='text-xs text-muted-foreground'>{t('delivery.givenUp')}</span>
-        ) },
+        { key: 'next', label: t('delivery.nextAttempt'), render: (row) => {
+            const state = deliveryState(row);
+            if (state === 'pending') return formatTime(row.next_notify_at as string);
+            return <span className='text-xs text-muted-foreground'>{state === 'gaveUp' ? t('delivery.givenUp') : t('delivery.expired')}</span>;
+        } },
         { key: 'error', label: t('delivery.lastError'), render: (row) => (
             <span className='block max-w-80 truncate text-xs text-muted-foreground' title={row.last_notify_error}>{row.last_notify_error || '-'}</span>
         ) },
         { key: 'created_at', label: t('alerts.time'), render: (row) => formatTime(row.created_at) },
+        // 手动放行: 只对"超窗"的行开放。已放弃的行要先修配置, 待补发的行按排期自己会发,
+        // 两者点了也是白发一次, 徒增困惑。
+        { key: 'action', label: '', render: (row) => (
+            deliveryState(row) === 'expired' ? (
+                <Button size='sm' variant='ghost' className='h-7 px-2 text-xs' disabled={requeue.isPending}
+                    onClick={() => requeue.mutate(row.id, {
+                        onSuccess: () => toast.success(t('delivery.requeued')),
+                        onError: (error) => toast.error(error instanceof Error ? error.message : t('delivery.requeueFailed')),
+                    })}>
+                    {t('delivery.requeue')}
+                </Button>
+            ) : null
+        ) },
     ];
     return (
         <div className='space-y-3'>
@@ -586,12 +615,29 @@ function AlertsSection() {
                     <RefreshButton onClick={() => void refetch()} busy={isRefetching} label={t('refresh')} />
                 </div>
             </div>
-            {deliveryStats && (deliveryStats.pending > 0 || deliveryStats.gave_up > 0) ? (
+            {deliveryStats && (deliveryStats.pending > 0 || deliveryStats.gave_up > 0 || deliveryStats.expired > 0) ? (
                 <div className='space-y-3 rounded-3xl border border-amber-500/40 bg-amber-500/10 p-4'>
                     <p className='text-sm font-medium text-amber-700 dark:text-amber-400'>
-                        {t('delivery.warning', { pending: deliveryStats.pending, gaveUp: deliveryStats.gave_up })}
+                        {t('delivery.warning', {
+                            pending: deliveryStats.pending,
+                            gaveUp: deliveryStats.gave_up,
+                            expired: deliveryStats.expired,
+                            window: deliveryStats.redeliver_window_hours,
+                        })}
                     </p>
-                    {deliveryStats.last_error ? (
+                    {deliveryStats.failure_reasons && deliveryStats.failure_reasons.length > 0 ? (
+                        <div className='space-y-1'>
+                            <p className='text-xs font-medium text-muted-foreground'>{t('delivery.reasonTitle')}</p>
+                            <ul className='space-y-0.5'>
+                                {deliveryStats.failure_reasons.map((item) => (
+                                    <li key={item.reason} className='flex items-start gap-2 text-xs text-muted-foreground'>
+                                        <span className='shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]'>{item.count}×</span>
+                                        <span className='break-all'>{item.reason}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    ) : deliveryStats.last_error ? (
                         <p className='text-xs text-muted-foreground'>{t('delivery.lastError')}: {deliveryStats.last_error}</p>
                     ) : null}
                     <OpsTable

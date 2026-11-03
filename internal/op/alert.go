@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -149,10 +151,38 @@ const (
 	alertRedeliverMaxDelay = 2 * time.Hour
 	// alertRedeliverBatch 单轮补发的最大条数, 避免积压时长时间占住任务协程。
 	alertRedeliverBatch = 50
+
 	// alertRedeliverMinAge 只补发超过该时长的失败记录: 留出即时重试窗口,
 	// 避免补发任务与首发协程抢同一条记录(同一条告警被外发两次)。
 	alertRedeliverMinAge = time.Minute
 )
+
+// alertRedeliverDefaultWindowHours 自动补发窗口的默认值(小时)。
+//
+// 为什么需要窗口: 补发机制上线时库里积压着几百条三周前的历史告警, 全部补发等于向 Telegram
+// 灌一堆失去上下文的旧消息, 把告警群刷成噪音 —— 真正需要人处理的只有最近这些。
+// 窗口因此是运维策略而不是常量: 存量大、刚上线、或从备份恢复时都要能调。
+const alertRedeliverDefaultWindowHours = 48
+
+// alertRedeliverWindow 返回当前生效的补发窗口; 负数按默认值处理, 0 表示不限窗口。
+func alertRedeliverWindow() time.Duration {
+	hours := SettingGetIntDefault(model.SettingKeyAlertRedeliverWindow, alertRedeliverDefaultWindowHours)
+	if hours < 0 {
+		hours = alertRedeliverDefaultWindowHours
+	}
+	if hours == 0 {
+		return 0 // 0 = 不限窗口
+	}
+	return time.Duration(hours) * time.Hour
+}
+
+// alertWithinWindow 判定一条告警是否还在补发窗口内。窗口为 0 表示不限, 一律放行。
+func alertWithinWindow(createdAt time.Time, window time.Duration) bool {
+	if window <= 0 {
+		return true
+	}
+	return createdAt.After(time.Now().Add(-window))
+}
 
 // nextAlertNotifyDelay 计算第 attempts 次失败后的补发退避时长。
 func nextAlertNotifyDelay(attempts int) time.Duration {
@@ -229,8 +259,15 @@ func AlertRedeliverPending(ctx context.Context) (sent int, gaveUp int, err error
 	// 只取"未送达 + 已排期 + 到点 + 未超上限"的记录。冷却 alertRedeliverMinAge 是为了
 	// 不与首发协程抢同一条: 首发失败后才写 next_notify_at, 而 next_notify_at 最小也在
 	// alertRedeliverBase 之后, 故正常路径不会重复外发。
-	if err := db.GetDB().WithContext(ctx).
-		Where("notified = ? AND next_notify_at IS NOT NULL AND next_notify_at <= ? AND COALESCE(notify_attempts, 0) < ?", false, time.Now(), alertRedeliverMaxAttempts).
+	// 窗口过滤: 超出补发窗口的历史告警即使被排了期也不再外发 —— 补发窗口的意义就是
+	// "只把还在语境里的告警补给人", 三周前的 down 现在发出去只会制造噪音。
+	// 已在队列里但超窗的行会被跳过(排期保留), 由管理面板的"不再补发"归类展示。
+	dueQuery := db.GetDB().WithContext(ctx).
+		Where("notified = ? AND next_notify_at IS NOT NULL AND next_notify_at <= ? AND COALESCE(notify_attempts, 0) < ?", false, time.Now(), alertRedeliverMaxAttempts)
+	if window := alertRedeliverWindow(); window > 0 {
+		dueQuery = dueQuery.Where("created_at >= ?", time.Now().Add(-window))
+	}
+	if err := dueQuery.
 		Order("next_notify_at ASC").Limit(alertRedeliverBatch).
 		Find(&rows).Error; err != nil {
 		return 0, 0, fmt.Errorf("load pending alerts: %w", err)
@@ -258,10 +295,19 @@ func AlertUndeliveredList(ctx context.Context, limit int) ([]model.ChannelAlert,
 		limit = 50
 	}
 	rows := []model.ChannelAlert{}
+	// 排序与看板三态对齐: 待补发(next_notify_at 非空)在前, 其次超窗未排期, 最后已放弃。
+	//
+	// 用 SELECT 里的派生列 rank 排序, 而不是在 ORDER BY 里写 CASE 表达式:
+	// GORM 的 Order 会把 CASE 里的 "?" 占位符当成字符串的一部分原样拼进 SQL,
+	// 表达式不生效却又看不出错(排序静默回落成插入顺序)。派生列没有占位符, 行为确定。
+	//
+	// 必须在 SQL 里排而不是取出 50 行再用 Go 排: limit 要作用在"最该看的那些行"上,
+	// 否则待补发的行会被几十条历史告警挤出视野。
 	if err := db.GetDB().WithContext(ctx).
+		Model(&model.ChannelAlert{}).
+		Select("channel_alerts.*, CASE WHEN next_notify_at IS NOT NULL THEN 0 WHEN COALESCE(notify_attempts, 0) >= ? THEN 2 ELSE 1 END AS rank", alertRedeliverMaxAttempts).
 		Where("notified = ?", false).
-		Order("next_notify_at IS NULL ASC"). // false(有排期) 排在 true(已放弃) 之前
-		Order("next_notify_at ASC").
+		Order("rank ASC, next_notify_at ASC, id DESC").
 		Limit(limit).Find(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -274,6 +320,14 @@ type AlertDeliveryStats struct {
 	Pending int64 `json:"pending"`
 	// GaveUp 达到重试上限后放弃的条数: 这些告警只存在于站内, 永远送不出去了。
 	GaveUp int64 `json:"gave_up"`
+	// Expired 未送达、未到重试上限, 但已超出补发窗口而不再自动补发的条数。
+	//
+	// 这一格是补出来的: 补发窗口上线前, "未送达且无排期且从未尝试" 的行既不算 Pending
+	// (要求有排期)、也不算 GaveUp(要求达到上限), 于是几百条历史告警在看板上完全不存在,
+	// 却在「未送达列表」里显示成"已放弃" —— 前后端口径自相矛盾。
+	Expired int64 `json:"expired"`
+	// RedeliverWindowHours 当前生效的补发窗口(小时), 0 表示不限窗口。
+	RedeliverWindowHours int `json:"redeliver_window_hours"`
 	// Failed24h 最近 24 小时外发失败的条数(含已补发成功的)。
 	Failed24h int64 `json:"failed_24h"`
 	// Delivered24h 最近 24 小时送达成功的条数。
@@ -282,6 +336,19 @@ type AlertDeliveryStats struct {
 	LastError string `json:"last_error"`
 	// LastErrorAt 最近一条失败发生的时间。
 	LastErrorAt *time.Time `json:"last_error_at,omitempty"`
+	// FailureReasons 最近 24 小时失败原因按出现次数排序的前几名。
+	//
+	// 只看"最后一条错误"没法判断是偶发还是系统性: 同一个原因反复出现才是要修的配置错误,
+	// 各不相同的错误往往只是上游抖动。聚合之后 "Telegram 又开始吞消息了" 这种复发一眼可见。
+	FailureReasons []AlertFailureReason `json:"failure_reasons"`
+}
+
+// AlertFailureReason 一种失败原因的出现次数。
+type AlertFailureReason struct {
+	// Reason 失败原因(已按渠道与首句归一, 避免把每次不同的状态码拆成多条)。
+	Reason string `json:"reason"`
+	// Count 该原因出现的次数。
+	Count int64 `json:"count"`
 }
 
 // AlertDeliveryStatsGet 汇总告警送达情况。无数据时各项为 0 而不是报错。
@@ -290,16 +357,32 @@ func AlertDeliveryStatsGet(ctx context.Context) (AlertDeliveryStats, error) {
 	conn := db.GetDB().WithContext(ctx)
 	since := time.Now().Add(-24 * time.Hour)
 
+	window := alertRedeliverWindow()
+	stats.RedeliverWindowHours = int(window / time.Hour)
+
 	if err := conn.Model(&model.ChannelAlert{}).
 		Where("notified = ? AND next_notify_at IS NOT NULL", false).
 		Count(&stats.Pending).Error; err != nil {
 		return stats, fmt.Errorf("count pending alerts: %w", err)
 	}
-	// 放弃 = 未送达 + 没有排期 + 尝试过(排除"从未尝试过外发"的历史脏数据)。
+	// 放弃 = 未送达 + 没有排期 + 已达重试上限。
 	if err := conn.Model(&model.ChannelAlert{}).
 		Where("notified = ? AND next_notify_at IS NULL AND COALESCE(notify_attempts, 0) >= ?", false, alertRedeliverMaxAttempts).
 		Count(&stats.GaveUp).Error; err != nil {
 		return stats, fmt.Errorf("count gave-up alerts: %w", err)
+	}
+	// 超窗 = 未送达 + 没有排期 + 未达上限, 但创建时间早于补发窗口。
+	// 三类(待补发/超窗/已放弃)必须覆盖全部"未送达且无排期"的行, 否则看板会漏账。
+	expiredQuery := conn.Model(&model.ChannelAlert{}).
+		Where("notified = ? AND next_notify_at IS NULL AND COALESCE(notify_attempts, 0) < ?", false, alertRedeliverMaxAttempts)
+	if window > 0 {
+		expiredQuery = expiredQuery.Where("created_at < ?", time.Now().Add(-window))
+	} else {
+		// 窗口关闭(0 = 不限)时不存在"超窗"这一类, 保持为 0 而不是把全部历史算进来。
+		expiredQuery = expiredQuery.Where("1 = 0")
+	}
+	if err := expiredQuery.Count(&stats.Expired).Error; err != nil {
+		return stats, fmt.Errorf("count expired alerts: %w", err)
 	}
 	if err := conn.Model(&model.ChannelAlert{}).
 		Where("notified = ? AND created_at >= ?", true, since).
@@ -316,6 +399,33 @@ func AlertDeliveryStatsGet(ctx context.Context) (AlertDeliveryStats, error) {
 		stats.LastError = last.LastNotifyError
 		stats.LastErrorAt = &last.CreatedAt
 	}
+
+	// 失败原因 Top N: 按 "渠道前缀 + 首句" 归一后计数。
+	//
+	// 不直接 GROUP BY last_notify_error: 同一种故障的文本里常带每次都变的数字
+	// (状态码、端口、字节偏移), 原文分组会把一个系统性问题拆成几十条各出现一次,
+	// 排序后什么也看不出来。归一后再聚合, "telegram: 400 can't parse entities"
+	// 才能汇聚成一个可处置的条目。
+	rows, err := conn.Model(&model.ChannelAlert{}).
+		Select("last_notify_error").
+		Where("last_notify_error <> '' AND created_at >= ?", since).
+		Limit(alertFailureReasonSampleLimit).Rows()
+	if err != nil {
+		return stats, fmt.Errorf("load failure reasons: %w", err)
+	}
+	defer rows.Close()
+	counts := map[string]int64{}
+	for rows.Next() {
+		var reason string
+		if scanErr := rows.Scan(&reason); scanErr != nil {
+			continue
+		}
+		counts[normalizeFailureReason(reason)]++
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return stats, fmt.Errorf("iterate failure reasons: %w", rowsErr)
+	}
+	stats.FailureReasons = topFailureReasons(counts, alertFailureReasonTopN)
 	return stats, nil
 }
 
@@ -609,4 +719,117 @@ func alertWebhookConfigured(rawURL string) bool {
 		return false
 	}
 	return strings.HasPrefix(rawURL, "http://") || strings.HasPrefix(rawURL, "https://")
+}
+
+// AlertRequeue 把一条"未送达但已不在补发队列"的告警重新排期, 供管理面板手动放行。
+//
+// 为什么需要它: 补发窗口(默认 48h)会把更早的历史告警挡在自动补发之外, 而窗口的取值
+// 是策略 —— 管理员可能确实想把某条旧告警补发出去(例如故障当时没人看群)。
+// 没有手动入口的话, 唯一办法是改 SQL, 那既危险又不可审计。
+//
+// 拒绝的情形都是"再发一次没有意义或会出错"的:
+//   - 已送达: 重发等于制造重复通知;
+//   - 已达重试上限: 说明是永久性配置错误(地址无效/凭据错误), 无条件再排一遍
+//     只会让它在下一轮再失败一次, 管理员应先修配置再放行 —— 因此这里允许放行,
+//     但把尝试计数清零, 让它重新获得完整的退避预算。
+func AlertRequeue(ctx context.Context, id uint64) error {
+	record := model.ChannelAlert{}
+	if err := db.GetDB().WithContext(ctx).
+		Select("id, notified, COALESCE(notify_attempts, 0) AS notify_attempts").
+		Where("id = ?", id).First(&record).Error; err != nil {
+		return fmt.Errorf("alert %d not found: %w", id, err)
+	}
+	if record.Notified {
+		return fmt.Errorf("alert %d already delivered", id)
+	}
+	// 清零尝试计数并重排: 窗口外的告警往往从未真正尝试过(是迁移回填时被挡下的),
+	// 保留旧计数会让它只剩很少的重试预算。
+	if err := db.GetDB().WithContext(ctx).Model(&model.ChannelAlert{}).Where("id = ?", id).Updates(map[string]any{
+		"notify_attempts":   0,
+		"next_notify_at":    time.Now(),
+		"last_notify_error": "",
+	}).Error; err != nil {
+		return fmt.Errorf("requeue alert %d: %w", id, err)
+	}
+	log.Infof("alert redeliver: alert %d requeued by admin", id)
+	return nil
+}
+
+// alertFailureReasonTopN 概览里展示的失败原因条数。
+const alertFailureReasonTopN = 5
+
+// alertFailureReasonSampleLimit 聚合时最多看多少条失败记录。
+// 概览是给管理员扫一眼的, 不是精确审计: 封顶避免告警风暴时把整表拉进内存。
+const alertFailureReasonSampleLimit = 2000
+
+// alertFailureReasonMaxLen 归一后的原因最大长度(字节)。
+const alertFailureReasonMaxLen = 120
+
+// normalizeFailureReason 把一个失败原因归一成"渠道前缀 + 首句"。
+//
+// 归一的目标是让同一类故障汇聚: "telegram: 400 ... byte offset 275" 与
+// "telegram: 400 ... byte offset 512" 应算同一条, 否则聚合结果全是 count=1 的噪音。
+// 只取首句而不是做更聪明的模式匹配: 猜测错误文本的语义容易归错类,
+// 而"谁在报错 + 报的是什么"这两点已经够定位问题。
+func normalizeFailureReason(raw string) string {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return ""
+	}
+	// 多行只留第一行: 后续行往往是 request/response 片段。
+	if idx := strings.IndexAny(text, "\r\n"); idx >= 0 {
+		text = strings.TrimSpace(text[:idx])
+	}
+	// 首句截止到句号或分号, 去掉后面的细节数字。
+	if idx := strings.IndexAny(text, ".。;；"); idx > 0 {
+		text = strings.TrimSpace(text[:idx+1])
+	}
+	// 截断过长文本, 避免把整段 HTML 变成一行"原因"。
+	if len(text) > alertFailureReasonMaxLen {
+		text = strings.TrimSpace(text[:alertFailureReasonMaxLen]) + "..."
+	}
+	return collapseVolatileNumbers(text)
+}
+
+var (
+	// firstNumberPattern 匹配第一个数字串, 通常就是 HTTP 状态码或业务错误码。
+	firstNumberPattern = regexp.MustCompile(`\d+`)
+	// anyNumberPattern 匹配任意数字串, 用于归一后续的易变数字。
+	anyNumberPattern = regexp.MustCompile(`\d+`)
+)
+
+// collapseVolatileNumbers 保留第一个数字(通常是状态码/错误码), 其余数字归一成 N。
+//
+// 保留第一个数字是刻意的: 400(报文/实体解析) 与 403(鉴权) 的处置完全不同,
+// 归一掉就把两种故障混成一条, 管理员看不出该改转义还是该换 token。
+// 后续的 byte offset 275 / 512、端口、重试轮数必须归一, 否则同一种故障
+// 会被拆成几十条各出现一次的条目。
+func collapseVolatileNumbers(text string) string {
+	loc := firstNumberPattern.FindStringIndex(text)
+	if loc == nil {
+		return text
+	}
+	return text[:loc[1]] + anyNumberPattern.ReplaceAllString(text[loc[1]:], "N")
+}
+
+// topFailureReasons 取计数最高的前 n 项, 次数相同时按文本排序保证输出稳定
+// (map 迭代顺序随机, 不排序会让同一份数据每次刷新都换顺序)。
+func topFailureReasons(counts map[string]int64, n int) []AlertFailureReason {
+	result := make([]AlertFailureReason, 0, len(counts))
+	for reason, count := range counts {
+		if reason == "" || count == 0 {
+			continue
+		}
+		result = append(result, AlertFailureReason{Reason: reason, Count: count})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Count != result[j].Count {
+			return result[i].Count > result[j].Count
+		}
+		return result[i].Reason < result[j].Reason
+	})
+	if len(result) > n {
+		result = result[:n]
+	}
+	return result
 }

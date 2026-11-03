@@ -1962,19 +1962,35 @@
             "metricsTokenCopied": "令牌已复制",
             "metricsTokenRotate": "重新生成",
             "metricsTokenRotated": "令牌已轮换, 旧令牌立即失效",
-            "backupRemoteHint": "WebDAV 推送副本与校验和; 地址凭据在 config.json backup.remote_*, 失败自动告警"
+            "backupRemoteHint": "WebDAV 推送副本与校验和; 地址凭据在 config.json backup.remote_*, 失败自动告警",
+            "alertChannelFeishu": "飞书",
+            "alertChannelDingtalk": "钉钉",
+            "alertChannelWecom": "企业微信",
+            "feishuWebhook": "飞书群机器人",
+            "feishuWebhookHint": "飞书群 → 设置 → 群机器人 → 自定义机器人, 复制 Webhook 地址",
+            "dingtalkWebhook": "钉钉群机器人",
+            "dingtalkWebhookHint": "钉钉群 → 群设置 → 智能群助手 → 添加机器人 → 自定义, 复制 Webhook 地址(未配置加签时用文本消息)",
+            "wecomWebhook": "企业微信群机器人",
+            "wecomWebhookHint": "企业微信群 → 右上角 → 群机器人 → 添加, 复制 Webhook 地址",
+            "redeliverWindow": "补发窗口",
+            "redeliverWindowHint": "外发失败的告警在此窗口内自动重试(小时); 超出的不再自动重发, 可在运营页手动放行。0 表示不限"
         },
         "delivery": {
-            "warning": "有 {pending} 条告警尚未送达, {gaveUp} 条已放弃重试",
+            "warning": "有 {pending} 条告警待补发, {gaveUp} 条已放弃重试, {expired} 条超出 {window} 小时补发窗口不再自动重发",
             "attempts": "尝试次数",
             "nextAttempt": "下次补发",
             "givenUp": "已放弃",
+            "expired": "超出补发窗口",
             "lastError": "最近失败原因",
             "noneUndelivered": "当前没有未送达的告警",
             "resend": "立即补发",
             "resending": "补发中…",
             "resent": "补发完成: 成功 {sent} 条, 放弃 {gaveUp} 条",
-            "resendFailed": "补发失败, 请查看服务端日志"
+            "resendFailed": "补发失败, 请查看服务端日志",
+            "requeue": "放行重发",
+            "requeued": "已重新排入补发队列",
+            "requeueFailed": "放行失败",
+            "reasonTitle": "最近 24 小时失败原因 (按出现次数)"
         }
     },
     "landing": {

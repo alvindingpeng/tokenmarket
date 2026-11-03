@@ -1,5 +1,36 @@
 # 更新说明
 
+## v1.5.12 — 2026-11-03
+
+### 飞书 / 钉钉 / 企业微信告警渠道
+
+- 新增三个国内团队群告警渠道，与既有 webhook/telegram/email 同列可选、可多选并存。三者共同形态是「向群机器人地址 POST 一条消息」，差别只在报文结构，因此统一走 `internal/alert` 的群机器人实现，正文用纯文本（不做 Markdown 转义——这些渠道按纯文本呈现，转义反斜杠反而会被原样显示出来）。
+- **关键防护**：三个渠道在参数错误、签名失败、关键词不匹配时都返回 **HTTP 200 + 业务错误码**（飞书 `code`/`StatusCode`、钉钉与企业微信 `errcode`）。只看状态码会把「根本没发出去」记成送达，补发机制永不触发——这正是 2026-11-02 静默丢告警的同类失效。实现里逐个解析业务码，非 0 一律判失败并把码带进原因字符串。
+- 设置页新增三行地址配置，每行带一键连通性测试；后端 `/ops/alerts/test/:channel` 白名单同步放开三个渠道，避免管理员看到「unknown alert channel」却以为是自己配错。
+- 新增设置键：`alert_feishu_webhook` / `alert_dingtalk_webhook` / `alert_wecom_webhook`。均可空，非空时必须是 http(s)（把 `alert_webhook_url` 原有的校验就地抽成 `validateOptionalHTTPURL` 复用）。
+
+### 补发看板三态口径修正
+
+- 修 v1.5.11 留下的口径 bug：补发窗口上线后，库里「未送达 + 无排期 + 从未尝试 + 超出窗口」的历史告警既不计入 `pending`（要求有排期），也不计入 `gave_up`（要求达到上限），在看板上完全不存在；但同一批行在「未送达列表」里却显示成「已放弃」——前后端互相打脸。
+- 新增 `expired` 统计与列表三态区分（待补发 / 超窗未补发 / 已放弃），界面按 `deliveryState()` 判定，与后端 `AlertDeliveryStatsGet` 逐条对应。三态合起来覆盖全部「未送达且无排期」的行，不再漏账。
+- 列表排序改由 SQL 派生列 `rank` 完成（待补发 0 / 超窗 1 / 已放弃 2）。此前用 GORM `Order("CASE ... ? ...")` 传参，占位符会被原样拼进 SQL —— 表达式不生效、排序静默回落成插入顺序，且看不出错。`TestAlertUndeliveredListOrdersBySchedule` 已锁住该行为。
+
+### 补发窗口可配 + 手动放行
+
+- 48 小时窗口从硬编码常量提升为设置项 `alert_redeliver_window_hours`（0 表示不限窗口），补发任务与统计口径遵守同一取值，从设置页即可调整。
+- 新增 `POST /ops/alerts/:id/requeue` 与列表「放行重发」按钮：把超窗的历史告警重新排入队列并清零尝试计数（重新给足重试预算）。已送达的拒绝重排（避免重复通知），并写审计。没有这条路径时唯一办法是直接改数据库——既危险又不可追溯。
+
+### 失败原因 Top N
+
+- 概览新增 `failure_reasons`：最近 24 小时失败原因按出现次数排序的前 5 条。只看「最后一条错误」无法区分偶发与系统性——同一原因反复出现才是要修的配置问题。
+- 归一策略经实测校准：**保留第一个数字**（通常是 HTTP/业务状态码，400 与 403 的处置完全不同，归一掉就把两种故障混成一条），其后所有数字归一成 `N`。若不归一会把「byte offset 275 / 512」这类同源故障拆成几十条各出现一次的噪音，聚合结果毫无用处。归一后按次数排序、次数相同按文本排序（map 迭代顺序随机，不排序会让每次刷新换顺序）。
+
+### 测试
+
+- 群机器人渠道 9 个用例全用真实 HTTP 假服务：验证 200+业务码非 0 必须判失败、飞书新旧两版字段（`code`/`StatusCode`）、未配置地址必须明确报错、正文不做 Markdown 转义。
+- 三态口径与窗口：`TestAlertDeliveryStatsCountsExpiredSeparately`、`…WindowZeroDisablesExpired`、`TestAlertRedeliverPendingSkipsExpired`、`TestAlertRequeue*`、`TestAlertWithinWindow`。
+- 失败原因聚合：`TestNormalizeFailureReason`（含截断、首行、首句）、`TestTopFailureReasons`（稳定排序、过滤零次）、`TestAlertDeliveryStatsAggregatesFailureReasons`（同源不同实例合并计数、超 24 小时不计入）。
+
 ## v1.5.11 — 2026-11-02
 
 ### 修复 v1.5.10 补发队列为空

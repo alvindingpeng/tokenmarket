@@ -239,10 +239,14 @@ export function useTestAlertWebhook() {
     });
 }
 
-// useTestAlertChannel 按指定渠道(telegram/email)发送测试告警, 验证凭据与连通性。
+// AlertTestChannel 可做连通性测试的渠道, 与后端 alert.SendOnce 的分支保持一致。
+// 群机器人渠道也支持一键测试: 否则管理员改完地址只能等下一次真实故障才知道配错了。
+export type AlertTestChannel = 'telegram' | 'email' | 'feishu' | 'dingtalk' | 'wecom';
+
+// useTestAlertChannel 按指定渠道发送测试告警, 验证凭据与连通性。
 export function useTestAlertChannel() {
     return useMutation({
-        mutationFn: (channel: 'telegram' | 'email') =>
+        mutationFn: (channel: AlertTestChannel) =>
             apiRequest<{ ok: boolean }>(`/api/v1/ops/alerts/test/${channel}`, { method: 'POST' }),
     });
 }
@@ -298,7 +302,16 @@ export function useRotateMetricsToken() {
 // 因 Telegram 实体解析 400 静默丢失, 管理员直到翻日志才发现。
 export type AlertDeliveryStats = {
     pending: number; gave_up: number; failed_24h: number; delivered_24h: number;
+    // expired 未送达、未达重试上限、但已超出补发窗口而不再自动补发的条数。
+    // 没有这一格时, 这类行在概览里一格都不算(既不是 pending 也不是 gave_up),
+    // 却在下方列表里显示成"已放弃" —— 看板与列表互相打脸。
+    expired: number;
+    // redeliver_window_hours 当前补发窗口(小时), 0 表示不限窗口。
+    redeliver_window_hours: number;
     last_error: string; last_error_at?: string | null;
+    // failure_reasons 最近 24 小时失败原因的前几名(按出现次数降序, 已归一)。
+    // 只看 last_error 无法区分偶发与系统性: 同一原因反复出现才是要修的配置问题。
+    failure_reasons?: { reason: string; count: number }[];
 };
 
 export function useAlertDelivery() {
@@ -330,6 +343,21 @@ export function useRunAlertRedeliver() {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: () => apiRequest<{ sent: number; gave_up: number }>('/api/v1/ops/alerts/redeliver', { method: 'POST', timeoutMs: 70000 }),
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: ['ops', 'alert-delivery'] });
+            void qc.invalidateQueries({ queryKey: ['ops', 'alerts-undelivered'] });
+            void qc.invalidateQueries({ queryKey: ['ops', 'alerts'] });
+        },
+    });
+}
+
+// useRequeueAlert 手动把一条未送达告警重新排进补发队列。
+// 自动补发受窗口限制(默认 48 小时), 更早的告警只能由管理员显式放行 —— 直接改数据库
+// 既危险又不可审计。
+export function useRequeueAlert() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (id: number) => apiRequest<{ ok: boolean }>(`/api/v1/ops/alerts/${id}/requeue`, { method: 'POST' }),
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: ['ops', 'alert-delivery'] });
             void qc.invalidateQueries({ queryKey: ['ops', 'alerts-undelivered'] });

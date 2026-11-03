@@ -1962,19 +1962,35 @@
             "metricsTokenCopied": "令牌已複製",
             "metricsTokenRotate": "重新生成",
             "metricsTokenRotated": "令牌已輪換, 舊令牌立即失效",
-            "backupRemoteHint": "WebDAV 推送副本與校驗和; 地址憑據在 config.json backup.remote_*, 失敗自動告警"
+            "backupRemoteHint": "WebDAV 推送副本與校驗和; 地址憑據在 config.json backup.remote_*, 失敗自動告警",
+            "alertChannelFeishu": "飛書",
+            "alertChannelDingtalk": "釘釘",
+            "alertChannelWecom": "企業微信",
+            "feishuWebhook": "飛書群機器人",
+            "feishuWebhookHint": "飛書群 → 設定 → 群機器人 → 自訂機器人, 複製 Webhook 位址",
+            "dingtalkWebhook": "釘釘群機器人",
+            "dingtalkWebhookHint": "釘釘群 → 群設定 → 智慧群助手 → 新增機器人 → 自訂, 複製 Webhook 位址(未設定加簽時用文字訊息)",
+            "wecomWebhook": "企業微信群機器人",
+            "wecomWebhookHint": "企業微信群 → 右上角 → 群機器人 → 新增, 複製 Webhook 位址",
+            "redeliverWindow": "補發視窗",
+            "redeliverWindowHint": "外送失敗的告警在此視窗內自動重試(小時); 超出的不再自動重發, 可在運營頁手動放行。0 表示不限"
         },
         "delivery": {
-            "warning": "有 {pending} 條告警尚未送達, {gaveUp} 條已放棄重試",
+            "warning": "有 {pending} 條告警待補發, {gaveUp} 條已放棄重試, {expired} 條超出 {window} 小時補發視窗不再自動重發",
             "attempts": "嘗試次數",
             "nextAttempt": "下次補發",
             "givenUp": "已放棄",
+            "expired": "超出補發視窗",
             "lastError": "最近失敗原因",
             "noneUndelivered": "目前沒有未送達的告警",
             "resend": "立即補發",
             "resending": "補發中…",
             "resent": "補發完成: 成功 {sent} 條, 放棄 {gaveUp} 條",
-            "resendFailed": "補發失敗, 請查看服務端日誌"
+            "resendFailed": "補發失敗, 請查看服務端日誌",
+            "requeue": "放行重發",
+            "requeued": "已重新排入補發佇列",
+            "requeueFailed": "放行失敗",
+            "reasonTitle": "最近 24 小時失敗原因 (按出現次數)"
         }
     },
     "landing": {

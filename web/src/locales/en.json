@@ -1962,19 +1962,35 @@
             "metricsTokenCopied": "Token copied",
             "metricsTokenRotate": "Regenerate",
             "metricsTokenRotated": "Token rotated; the old one no longer works",
-            "backupRemoteHint": "Push the backup and checksum to WebDAV; credentials live in config.json backup.remote_*, failures raise alerts"
+            "backupRemoteHint": "Push the backup and checksum to WebDAV; credentials live in config.json backup.remote_*, failures raise alerts",
+            "alertChannelFeishu": "Feishu",
+            "alertChannelDingtalk": "DingTalk",
+            "alertChannelWecom": "WeCom",
+            "feishuWebhook": "Feishu group bot",
+            "feishuWebhookHint": "Feishu group → Settings → Group bots → Custom bot, then copy the webhook URL",
+            "dingtalkWebhook": "DingTalk group bot",
+            "dingtalkWebhookHint": "DingTalk group → Settings → Smart assistant → Add bot → Custom, then copy the webhook URL (text messages are used when no secret is configured)",
+            "wecomWebhook": "WeCom group bot",
+            "wecomWebhookHint": "WeCom group → top-right → Group bots → Add, then copy the webhook URL",
+            "redeliverWindow": "Redelivery window",
+            "redeliverWindowHint": "Failed alerts are retried within this window (hours); older ones are not retried automatically and can be released manually on the ops page. 0 means no limit"
         },
         "delivery": {
-            "warning": "{pending} alerts have not been delivered, {gaveUp} gave up retrying",
+            "warning": "{pending} alerts pending redelivery, {gaveUp} gave up retrying, {expired} beyond the {window}h redelivery window",
             "attempts": "Attempts",
             "nextAttempt": "Next retry",
             "givenUp": "Gave up",
+            "expired": "Beyond window",
             "lastError": "Last error",
             "noneUndelivered": "No undelivered alerts",
             "resend": "Resend now",
             "resending": "Resending…",
             "resent": "Resend finished: {sent} delivered, {gaveUp} gave up",
-            "resendFailed": "Resend failed, check server logs"
+            "resendFailed": "Resend failed, check server logs",
+            "requeue": "Requeue",
+            "requeued": "Requeued for redelivery",
+            "requeueFailed": "Requeue failed",
+            "reasonTitle": "Failure reasons in the last 24h (by count)"
         }
     },
     "landing": {

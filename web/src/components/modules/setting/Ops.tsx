@@ -44,6 +44,10 @@ const OPS_KEYS = [
     SettingKey.AlertEmailPassword,
     SettingKey.AlertEmailFrom,
     SettingKey.AlertEmailTo,
+    SettingKey.AlertFeishuWebhook,
+    SettingKey.AlertDingtalkWebhook,
+    SettingKey.AlertWecomWebhook,
+    SettingKey.AlertRedeliverWindow,
     SettingKey.MetricsAuth,
 ] as const;
 
@@ -52,7 +56,18 @@ const CHANNEL_LABELS = {
     webhook: 'alertChannelWebhook',
     telegram: 'alertChannelTelegram',
     email: 'alertChannelEmail',
+    feishu: 'alertChannelFeishu',
+    dingtalk: 'alertChannelDingtalk',
+    wecom: 'alertChannelWecom',
 } as const;
+
+// GROUP_CHANNELS 需要"地址 + 测试按钮"的群机器人渠道: 它们是同一个形态
+// (向地址 POST 一条消息), 差别只在报文结构, 因此界面也按同一套行渲染。
+const GROUP_CHANNELS = [
+    { name: 'feishu', key: SettingKey.AlertFeishuWebhook, labelKey: 'feishuWebhook', hintKey: 'feishuWebhookHint', placeholder: 'https://open.feishu.cn/open-apis/bot/v2/hook/...' },
+    { name: 'dingtalk', key: SettingKey.AlertDingtalkWebhook, labelKey: 'dingtalkWebhook', hintKey: 'dingtalkWebhookHint', placeholder: 'https://oapi.dingtalk.com/robot/send?access_token=...' },
+    { name: 'wecom', key: SettingKey.AlertWecomWebhook, labelKey: 'wecomWebhook', hintKey: 'wecomWebhookHint', placeholder: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...' },
+] as const;
 
 // SettingOps 运营可靠性设置: 日志生命周期、自动备份、渠道健康与告警通知。
 export function SettingOps() {
@@ -65,7 +80,7 @@ export function SettingOps() {
     const testChannel = useTestAlertChannel();
 
     // runChannelTest 发送测试告警并就地反馈结果。
-    const runChannelTest = (channel: 'telegram' | 'email') => {
+    const runChannelTest = (channel: 'telegram' | 'email' | 'feishu' | 'dingtalk' | 'wecom') => {
         testChannel.mutate(channel, {
             onSuccess: () => toast.success(t('alertTestOk')),
             onError: (error) => toast.error(error instanceof Error ? error.message : t('alertTestFail')),
@@ -379,7 +394,7 @@ export function SettingOps() {
                     <p className='text-xs text-muted-foreground'>{t('alertChannelsHint')}</p>
                 </div>
                 <div className='flex items-center gap-2'>
-                    {(['webhook', 'telegram', 'email'] as const).map((name) => {
+                    {(['webhook', 'telegram', 'email', 'feishu', 'dingtalk', 'wecom'] as const).map((name) => {
                         const on = alertChannels.includes(name);
                         return (
                             <button key={name} type='button'
@@ -419,6 +434,37 @@ export function SettingOps() {
                         {testChannel.isPending ? t('alertTesting') : t('alertTest')}
                     </Button>
                 </div>
+            </div>
+
+            {GROUP_CHANNELS.map((group) => (
+                <div key={group.name} className={rowClass + ' ' + dividerClass}>
+                    <div className='min-w-0'>
+                        <Label className='text-sm font-medium'>{t(group.labelKey)}</Label>
+                        <p className='text-xs text-muted-foreground'>{t(group.hintKey)}</p>
+                    </div>
+                    <div className='flex w-full max-w-md items-center gap-2'>
+                        <Input className='h-9 w-full rounded-xl' placeholder={group.placeholder} autoComplete='off'
+                            value={values[group.key] ?? ''}
+                            onChange={(event) => setDraft((prev) => ({ ...prev, [group.key]: event.target.value }))}
+                            onBlur={(event) => save(group.key, event.target.value.trim())} />
+                        <Button type='button' variant='outline' size='sm' className='shrink-0 rounded-xl'
+                            disabled={testChannel.isPending || !(values[group.key] ?? '')}
+                            onClick={() => runChannelTest(group.name)}>
+                            {testChannel.isPending ? t('alertTesting') : t('alertTest')}
+                        </Button>
+                    </div>
+                </div>
+            ))}
+
+            <div className={rowClass + ' ' + dividerClass}>
+                <div className='min-w-0'>
+                    <Label className='text-sm font-medium'>{t('redeliverWindow')}</Label>
+                    <p className='text-xs text-muted-foreground'>{t('redeliverWindowHint')}</p>
+                </div>
+                <Input type='number' min={0} max={8760} className='h-9 w-32 rounded-xl' placeholder='48'
+                    value={values[SettingKey.AlertRedeliverWindow] ?? ''}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.AlertRedeliverWindow]: event.target.value }))}
+                    onBlur={(event) => saveNumber(SettingKey.AlertRedeliverWindow, event.target.value.trim(), 0, 8760, '48')} />
             </div>
 
             <div className={rowClass + ' ' + dividerClass}>

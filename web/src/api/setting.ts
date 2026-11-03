@@ -63,6 +63,10 @@ export const SettingKey = {
     AlertEmailPassword: 'alert_email_password', // SMTP 登录密码。
     AlertEmailFrom: 'alert_email_from', // 发件人地址。
     AlertEmailTo: 'alert_email_to', // 收件人地址(逗号分隔)。
+    AlertFeishuWebhook: 'alert_feishu_webhook', // 飞书群机器人地址, 留空表示未配置。
+    AlertDingtalkWebhook: 'alert_dingtalk_webhook', // 钉钉群机器人地址, 留空表示未配置。
+    AlertWecomWebhook: 'alert_wecom_webhook', // 企业微信群机器人地址, 留空表示未配置。
+    AlertRedeliverWindow: 'alert_redeliver_window_hours', // 自动补发窗口(小时), 0 表示不限窗口。
     MetricsAuth: 'metrics_auth', // 探针鉴权: bearer(默认需令牌) | off(显式开放)。
     BreakerKeyThreshold: 'breaker_key_threshold', // 凭据级熔断的错误次数阈值, 0 表示不按计数熔断, 默认 5。
     BreakerKeyMinutes: 'breaker_key_minutes', // 凭据级熔断时长(分钟), 默认 5。

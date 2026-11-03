@@ -131,6 +131,12 @@ const (
 	SettingKeyAlertEmailPassword    SettingKey = "alert_email_password"     // SMTP 登录密码。
 	SettingKeyAlertEmailFrom        SettingKey = "alert_email_from"         // 发件人地址。
 	SettingKeyAlertEmailTo          SettingKey = "alert_email_to"           // 收件人地址(逗号分隔)。
+	// 国内团队群告警: 三者都是"把消息 POST 到群机器人地址", 差别只在报文结构与签名方式。
+	// 不复用 alert_webhook_url: 一个团队可能同时开 Telegram 和飞书, 共用一条地址等于二选一。
+	SettingKeyAlertFeishuWebhook   SettingKey = "alert_feishu_webhook"         // 飞书自定义机器人地址。
+	SettingKeyAlertDingtalkWebhook SettingKey = "alert_dingtalk_webhook"       // 钉钉自定义机器人地址。
+	SettingKeyAlertWecomWebhook    SettingKey = "alert_wecom_webhook"          // 企业微信群机器人地址。
+	SettingKeyAlertRedeliverWindow SettingKey = "alert_redeliver_window_hours" // 自动补发窗口(小时), 超出窗口的历史告警不再自动补发, 默认 48。
 	// 探针鉴权: /metrics 默认要求 bearer 令牌; 仅在明确需要开放抓取时切成 off。
 	SettingKeyMetricsAuth  SettingKey = "metrics_auth"  // bearer | off; /healthz 恒不鉴权(存活探针)。
 	SettingKeyMetricsToken SettingKey = "metrics_token" // bearer 模式下的抓取令牌, 内部键不外露。
@@ -303,6 +309,10 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyAlertEmailPassword, Value: ""},       // SMTP 登录密码
 		{Key: SettingKeyAlertEmailFrom, Value: ""},           // 发件人地址
 		{Key: SettingKeyAlertEmailTo, Value: ""},             // 收件人地址(逗号分隔)
+		{Key: SettingKeyAlertFeishuWebhook, Value: ""},       // 飞书群机器人地址, 留空表示未配置
+		{Key: SettingKeyAlertDingtalkWebhook, Value: ""},     // 钉钉群机器人地址, 留空表示未配置
+		{Key: SettingKeyAlertWecomWebhook, Value: ""},        // 企业微信群机器人地址, 留空表示未配置
+		{Key: SettingKeyAlertRedeliverWindow, Value: "48"},   // 补发窗口 48 小时
 		{Key: SettingKeyMetricsAuth, Value: "bearer"},        // 探针默认要求 bearer 令牌; 已有显式 off 设置保持不变
 		{Key: SettingKeyMetricsToken, Value: ""},             // 令牌留空, 开启鉴权时自动生成
 		{Key: SettingKeyLoginMaxAttempts, Value: "5"},        // 连续 5 次失败即触发退避锁定
@@ -546,6 +556,17 @@ func (s *Setting) Validate() error {
 		SettingKeyAlertEmailPassword, SettingKeyAlertEmailFrom, SettingKeyAlertEmailTo:
 		// 字符串配置, 允许为空
 		return nil
+	case SettingKeyAlertFeishuWebhook, SettingKeyAlertDingtalkWebhook, SettingKeyAlertWecomWebhook:
+		// 群机器人地址: 允许为空(未配置即不启用该渠道), 但填了就必须是 http(s),
+		// 否则要等到下一次真实告警才发现地址根本发不出去。
+		return validateOptionalHTTPURL(s.Value)
+
+	case SettingKeyAlertRedeliverWindow:
+		// 0 表示不限窗口(全部历史告警都补发), 上限一年; 负数无意义。
+		if n, err := strconv.Atoi(s.Value); err != nil || n < 0 || n > 8760 {
+			return fmt.Errorf("alert redeliver window must be an integer between 0 and 8760 hours")
+		}
+		return nil
 	case SettingKeyBreakerKeyThreshold, SettingKeyBreakerModelThreshold:
 		// 0 关闭计数熔断(只剩立即熔断与冷却), 上限 100 次以免阈值形同虚设。
 		if n, err := strconv.Atoi(s.Value); err != nil || n < 0 || n > 100 {
@@ -604,17 +625,7 @@ func (s *Setting) Validate() error {
 	case SettingKeyMetricsToken:
 		return nil
 	case SettingKeyAlertWebhookURL:
-		if s.Value == "" {
-			return nil
-		}
-		// 只允许 http(s), 避免把种子协议交给容器内发起请求。
-		if !strings.HasPrefix(s.Value, "http://") && !strings.HasPrefix(s.Value, "https://") {
-			return fmt.Errorf("alert webhook url must start with http:// or https://")
-		}
-		if len(s.Value) > 500 {
-			return fmt.Errorf("alert webhook url is too long")
-		}
-		return nil
+		return validateOptionalHTTPURL(s.Value)
 	case SettingKeyLogMaskFields:
 		if len(s.Value) > 2000 {
 			return fmt.Errorf("%s must not exceed 2000 characters", s.Key)
@@ -673,5 +684,22 @@ func (s *Setting) Validate() error {
 		return nil
 	}
 
+	return nil
+}
+
+// validateOptionalHTTPURL 校验一个可空的 Webhook 类地址: 空串表示未配置(合法),
+// 非空则必须是 http/https 且不长于 500 字符。
+// 只允许 http(s) 是刻意的 —— 设置项的值由管理员填, 若放开 file:// 之类协议,
+// 服务端就成了一个可以读本地文件的请求发起方。
+func validateOptionalHTTPURL(value string) error {
+	if value == "" {
+		return nil
+	}
+	if !strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://") {
+		return fmt.Errorf("url must start with http:// or https://")
+	}
+	if len(value) > 500 {
+		return fmt.Errorf("url is too long")
+	}
 	return nil
 }
