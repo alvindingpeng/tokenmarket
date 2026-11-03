@@ -23,6 +23,43 @@
 **修法**: `setRoundTiming` 覆盖前回填 `timing.EgressID = r.roundEgressID`。
 回归测试 `TestEgressIDSurvivesTimingSnapshot` 复现原顺序(先选出口后登记快照), 已做变异校验。
 
+**上线验证(v1.5.16 于 15:18 部署)**: ch=34 在 15:18 之前的 **612 次尝试 egress_id 全为 0**;
+15:18 之后 **133 次连续尝试全部记为 egress_id=9**(该渠道唯一的 direct 出口)。
+归因链路就此打通 —— 出口耗时看板终于有数据(平均 13.7 s, 133/133 成功)。
+
+### A2. 停服硬关连接 → 每次部署掐断在途流式回答 (v1.5.16)
+
+**证据**: `server.Close()` 直接调 `httpSrv.Close()`, 立即断开所有连接、不等在途请求;
+`Shutdown()` 在全库从未被调用。部署走 `systemctl stop`(SIGTERM), 今天重启 4 次;
+线上 98.3% 是流式请求, 一条 SSE 流可挂几分钟。
+
+**影响**: 每次部署都打断正在生成的回答。症状是"回答突然中断", 而**服务端日志里没有任何错误**,
+所以一直没被发现。第一次带优雅关闭的部署(15:57)打出 `graceful shutdown timed out after 30s`,
+说明当时确有请求在途中 —— 换成旧版本就是几条被掐断的流。
+
+**修法**: `Close()` 改 `Shutdown(ctx)`, 上限 30 秒(远小于 systemd 的 90 秒 `TimeoutStopSec`);
+超时才记 WARN 并硬关。`TestCloseWaitsForInflightRequest` 用真实慢处理器 + 真实 `Close()` 断言响应完整,
+`TestCloseStopsAcceptingNewRequests` 断言停服后新连接被拒(优雅关闭不能退化成"一直开着")。
+
+### A3. 模型单价可存负数 → 调用反而加钱 (v1.5.17)
+
+**证据**: `LLMPrice.Cost` 是纯乘法再求和, 无下界钳制; 而 `createLLM`/`updateLLM` 只校验名称非空,
+媒体模型早有 `MediaPrice.Validate`、文本模型没有。前端 `parseFloat(x) || 0` 还会把 `abc` 静默变成 0。
+
+**影响**: 负价让费用为负, 即调用反而给用户加钱; 上游可据此无上限充值。
+
+**修法**: `LLMPrice.Validate`(拒 NaN/Inf、负值、超量级)在落库前拦截, 回 400 并记 WARN;
+前端改 `Number()` + 显式区间校验, `1.2.3` 不再被当成功。四个价格框加 `min="0"`。
+
+### A4. 前端失败静默 / 危险操作一击即发 / 英文残留中文 (v1.5.17)
+
+- 78/79 处 `useMutation` 无 hook 级 `onError`, 失败时界面什么都不说 → 已逐点补齐。
+- 四个列表页只看 `data` 不看 `isError`, 失败时列表为空、`VirtualizedGrid` 在 `rowCount === 0` 直接
+  `return null` → 整页纯空白(连"暂无数据"都没有) → 新增 `ListErrorState` 并接线。
+- 删除限流策略(误点即解除全局限流)、清空日志、提现通过/回滚 均为单击即执行 → 改就地两步确认。
+- `en.json` 计费四段 76 条值为中文(键位测试只检查"有值"不检查"是英文") → 全部翻译,
+  并加一条"英文不得含 CJK"的用例; `zh_hant` 同 76 条为简体未转换 → 已转。
+
 ---
 
 ## B. 待修: 有明确证据的缺陷
@@ -119,19 +156,19 @@
 
 ## C. 待评估: 稳健性与安全
 
-### C1. HTTP 服务未设任何超时, 且用 Close() 而非 Shutdown()
+### C1. HTTP 服务未设任何超时 (优雅关闭部分已在 v1.5.16 修掉)
 
-**证据**:
-- `internal/server/server.go` 只设了 `Addr` 与 `Handler`, 无 `ReadTimeout` / `WriteTimeout` /
-  `ReadHeaderTimeout` / `IdleTimeout`;
-- `server.Close()` 调 `httpSrv.Close()` —— **立即硬关所有连接**, 不等待在途请求;
-  `Shutdown()` 在全库**从未被调用**。
+**已修**: `Close()` 改为带 30 秒超时的 `Shutdown(ctx)`(见 A2)。
 
-**影响**: 部署时 `systemctl stop`(见 `swap_deploy.sh`)会立即切断所有在途 SSE 流。
-线上 98.3% 是流式请求, 每次部署都会打断正在生成的回答 —— 对用户表现为"回答突然中断"。
-今天重启 4 次。日常由 nginx 兜住慢连接, 故 C1 的前半段风险较低, 后半段是**每部署必发生**的。
+**仍待处理**: `internal/server/server.go` 只设了 `Addr` 与 `Handler`,
+无 `ReadTimeout` / `WriteTimeout` / `ReadHeaderTimeout` / `IdleTimeout`。
 
-**修法**: `Close()` 换成带超时的 `Shutdown(ctx)`(如 30 秒), 并设 `ReadHeaderTimeout`。代价: 小。
+**影响**: 慢连接会一直占着 goroutine 与文件描述符。日常由 nginx 兜住(它有 proxy_read_timeout),
+所以线上没出过事, 但这是"依赖上一层恰好也做了"的稳健性 —— 直连 8088 的路径没有任何保护。
+`ReadHeaderTimeout` 尤其值得设: 它挡的是 slowloris 式的半开连接。
+
+**修法**: 只加 `ReadHeaderTimeout` 与 `IdleTimeout`(如 10s / 120s), **不要**加 `WriteTimeout` ——
+流式回答可以挂几分钟, 写超时会直接把 SSE 掐断, 那正是 A2 刚修好的问题。代价: 小。
 
 ### C2. `channel_egresses.url` 明文入库, 且进备份
 
@@ -170,10 +207,13 @@ v1.5.14 已处理**回显与错误信息**两个泄漏面, 但**落库与备份*
 
 | 优先级 | 事项 | 理由 |
 |---|---|---|
-| ~~P0~~ | ~~A1 出口 ID 落库~~ | **已修 v1.5.16** |
-| P0 | C1 优雅关闭 | 每部署必发生, 用户可见(回答中断); 改动小 |
+| ~~P0~~ | ~~A1 出口 ID 落库~~ | **已修 v1.5.16**, 生产已验证 133/133 归因成功 |
+| ~~P0~~ | ~~A2 优雅关闭~~ | **已修 v1.5.16**, 首次部署即打出"等待超时"证明在途流被保住 |
+| ~~P0~~ | ~~A3 负价~~ | **已修 v1.5.17** |
+| ~~P0~~ | ~~A4 前端静默失败~~ | **已修 v1.5.17** |
 | P1 | B2 结算任务快照清理 | 唯一随业务量无界增长的 big-row 表; 改动小 |
 | P1 | B5 四条通知接线 | 通知中心已建好却无事件源, 用户不知情; 改动小 |
+| P2 | C1 剩余的超时设置 | 只剩 `ReadHeaderTimeout`/`IdleTimeout`; 千万别加 `WriteTimeout` |
 | P2 | B3 备份/归档清理 | 只随运维动作增长, 暂无压力 |
 | P2 | B1 出口成绩持久化 | 有重启学习窗口, 但影响限于冷启动几次请求 |
 | 外部 | B4 开 Cloudflare 橙云 | 只有运维能操作; 开了才会解锁国家维度与区域亲和 |
