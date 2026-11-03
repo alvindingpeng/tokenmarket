@@ -417,6 +417,20 @@ func listChannelGrant(c *gin.Context) {
 	resp.Success(c, op.ChannelGrantCandidates(scopeOf(c)))
 }
 
+// channelWriteErrorStatus 把渠道增删改的错误映射为 HTTP 状态码。
+//
+// 单独抽成函数是为了可测: 这张映射曾把"输入不合法"错判成 500, 而 500 会让管理员
+// 以为是服务端故障 —— 2026-11-03 出口代理地址被 SSRF 防护拒绝那次, 正是这个映射把
+// 排查方向带偏: 界面没有任何提示, 只能靠翻 nginx 访问日志里的状态码才定位到。
+//
+// 输入不合法回 400: 前端的 step-up 与错误提示都按状态码分流, 500 会被当成"服务挂了"。
+func channelWriteErrorStatus(err error) int {
+	if errors.Is(err, op.ErrInvalidInput) {
+		return http.StatusBadRequest
+	}
+	return http.StatusInternalServerError
+}
+
 func createChannel(c *gin.Context) {
 	var req model.ChannelDetail
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -425,7 +439,7 @@ func createChannel(c *gin.Context) {
 	}
 	channel, err := op.ChannelCreate(&req, scopeOf(c), c.Request.Context())
 	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
+		resp.Error(c, channelWriteErrorStatus(err), err.Error())
 		return
 	}
 	if err := addChannelModelPrices(channel.Models, c.Request.Context()); err != nil {
@@ -448,7 +462,7 @@ func updateChannel(c *gin.Context) {
 	}
 	channel, err := op.ChannelUpdate(&req, scopeOf(c), c.Request.Context())
 	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
+		resp.Error(c, channelWriteErrorStatus(err), err.Error())
 		return
 	}
 	if err := addChannelModelPrices(channel.Models, c.Request.Context()); err != nil {

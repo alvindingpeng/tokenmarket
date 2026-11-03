@@ -2,6 +2,7 @@ package op
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	mathrand "math/rand"
 	"sort"
@@ -25,6 +26,25 @@ var (
 	channelModelCache = cache.New[int, model.ChannelModel](16) // 渠道模型的进程内副本。
 	channelGrantCache = cache.New[int, model.ChannelGrant](16) // 渠道授权的进程内副本。
 )
+
+// ErrInvalidInput 标记"提交内容本身不合法"(而非服务端故障)的错误。
+//
+// 存在的理由: 渠道增删改此前把任何错误一律回 500 —— 于是"出口填了内网代理地址、被
+// SSRF 防护拦下"这类用户输入问题, 在网络面板、日志与监控里都表现为服务端故障,
+// 前端也无从按状态码分流提示。2026-11-03 线上实测: 出口地址被拒时前端收到 500。
+var ErrInvalidInput = errors.New("invalid input")
+
+// InvalidInputError 携带原始原因的不合法输入错误。
+// Error() 只返回原因本身, 让界面直接显示 "egress egress-1: upstream host ... is private",
+// 而不是多一层 "channel config is invalid: " 这样没有信息量的前缀。
+type InvalidInputError struct{ Reason error }
+
+func (e *InvalidInputError) Error() string { return e.Reason.Error() }
+
+func (e *InvalidInputError) Unwrap() error { return e.Reason }
+
+// Is 让 errors.Is(err, ErrInvalidInput) 成立, 与包内其他 sentinel 的判定方式一致。
+func (e *InvalidInputError) Is(target error) bool { return target == ErrInvalidInput }
 
 // channelModelCacheWriteMu 串行化 channelModelCache 的读-改-写: 统计累加(旧副本+统计后整体回写)
 // 与改价更新(新价格整体写入)并发时会互相顶掉对方的字段, 表现为"改完价格路由还按旧价走",
@@ -126,7 +146,9 @@ func ChannelStatsList(scope model.Scope) []model.ChannelStats {
 // 由此建一个带授权的渠道只需一趟请求。
 func ChannelCreate(detail *model.ChannelDetail, scope model.Scope, ctx context.Context) (*model.ChannelDetail, error) {
 	if err := normalizeChannelDetail(ctx, detail); err != nil {
-		return nil, err
+		// 含 SSRF 防护拒绝的地址: 归类为输入错误而不是服务端故障, 让调用方回 400
+		// 并把原因原样显示给管理员, 而不是显示一个无从下手的 500。
+		return nil, &InvalidInputError{Reason: err}
 	}
 
 	channel := model.Channel{UserID: scope.ID, ChannelConfig: detail.ChannelConfig,
@@ -187,7 +209,9 @@ func ChannelUpdate(detail *model.ChannelDetail, scope model.Scope, ctx context.C
 		return nil, fmt.Errorf("channel not found")
 	}
 	if err := normalizeChannelDetail(ctx, detail); err != nil {
-		return nil, err
+		// 含 SSRF 防护拒绝的地址: 归类为输入错误而不是服务端故障, 让调用方回 400
+		// 并把原因原样显示给管理员, 而不是显示一个无从下手的 500。
+		return nil, &InvalidInputError{Reason: err}
 	}
 
 	if err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -362,7 +386,9 @@ func normalizeChannelDetail(ctx context.Context, detail *model.ChannelDetail) er
 		// 出口 URL 允许 http/https/socks5/socks5h, 用 CheckProxyURL 与转发层口径一致。
 		if normalized.Kind != model.EgressKindDirect && normalized.URL != "" {
 			if err := netguard.CheckProxyURL(context.Background(), normalized.URL, AllowPrivateUpstream()); err != nil {
-				return fmt.Errorf("egress %s: %w", normalized.Name, err)
+				// 补一句"谁能放行": 出口地址是私网时, 管理员要么填错了地址, 要么确实需要
+				// 显式打开 allow_private_upstream。只回一句 "cannot save" 两条路都走不通。
+				return fmt.Errorf("egress %s: %w (refused to prevent SSRF; enable allow_private_upstream to permit internal addresses)", normalized.Name, err)
 			}
 		}
 		detail.Egresses[i] = normalized

@@ -123,13 +123,14 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
         event.preventDefault();
         if (!canSubmit) return;
         const detail = toChannelDetail(state, channel?.id ?? 0);
+        // 两条分支都必须把失败原因显示出来。更新分支此前没有 onError, 保存失败时界面毫无反应:
+        // 管理员只看到"点了没反应", 而真实原因(出口地址被 SSRF 防护拒绝)被静默丢掉,
+        // 线上只能靠翻 nginx 访问日志里的 500 才查得出来。
+        const onError = (error: Error) => toast.error(error.message);
         if (channel) {
-            updateChannel.mutate(detail, { onSuccess: () => setIsOpen(false) });
+            updateChannel.mutate(detail, { onSuccess: () => setIsOpen(false), onError });
         } else {
-            createChannel.mutate(detail, {
-                onSuccess: () => setIsOpen(false),
-                onError: (error) => toast.error(error.message),
-            });
+            createChannel.mutate(detail, { onSuccess: () => setIsOpen(false), onError });
         }
     };
 
