@@ -1,5 +1,25 @@
 # 更新说明
 
+## v1.5.16 — 2026-11-03
+
+### 出口 ID 从未落库: 按出口归因的统计永久为空
+
+- **线上证据**: `relay_request_attempts.egress_id` 全表 **5949 行全为 0**, 而同一时刻已有 7 个渠道配了出口且正在承载流量(其中 ch=34 当天 254 次成功调用)。「运维 → 延迟归因」按出口分组因此永远没有数据, 出口池择优完全不可观测 —— 配了几条线路, 看不出流量实际走了哪条。
+- **根因**: 轮次开始时 `setRoundEgress` 把出口 ID 写进 `r.roundTiming.EgressID`; 轮次结束后 `setRoundTiming(roundTiming.Snapshot())` **整体覆盖** `roundTiming`, 而 `rhttp.ConnTiming.Snapshot()` 只含 DNS/建连/TLS/首字节, 它根本不知道出口是什么 —— 于是 ID 被抹回 0。写入是对的, 覆盖是错的。
+- 修法: `setRoundTiming` 覆盖前回填 `timing.EgressID = r.roundEgressID`。回归测试 `TestEgressIDSurvivesTimingSnapshot` 复现原调用顺序(先选出口、后登记快照), 已做变异校验。
+
+### 停服改为优雅关闭: 部署不再掐断在途流式回答
+
+- **线上证据**: `internal/server/server.go` 的 `Close()` 直接调 `httpSrv.Close()` —— 立即硬关所有连接, 不等待在途请求; `Shutdown()` 在全库从未被调用。而部署换二进制走的 `systemctl stop` 会发 SIGTERM, 于是**每次部署都打断正在生成的回答**。今天重启 4 次。线上 98.3% 是流式请求, 一条 SSE 流可以挂几分钟。
+- 症状是"回答突然中断", 而**服务端日志里没有任何错误可查** —— 这是它一直没被发现的原因。
+- 现在 `Close()` 改为 `Shutdown(ctx)`, 上限 30 秒: 先停止接受新连接, 再等在途请求结束; 超时才记 WARN 并硬关(否则进程会被 systemd 的 `TimeoutStopSec` 杀掉, 线上为 90 秒, 留有充分余量)。
+- 测试 `TestCloseWaitsForInflightRequest` 用真实慢处理器 + 真实 `Close()` 断言请求收到完整响应; `TestCloseStopsAcceptingNewRequests` 断言停服后新连接确实被拒 —— 优雅关闭不能退化成"一直开着"。均已变异校验。
+
+### 新增《优化待办: 按证据排序》
+
+- `docs/optimization-backlog-2026-11-03.md`: 只记**已在生产或代码里核实过**的问题, 每条附证据与影响。与 `backlog-unimplemented.md`(记"有设计稿但没做")分工不同, 这份记"做了但没生效 / 没人清理 / 缺一条链路"。
+- 其中已核实的缺口包括: 出口成绩不持久化(重启即重新学习)、三张业务表从不清理(年增约 100 万行, 其中结算快照行均 773 字节且完成后不再被读取)、归档与部署备份从不清理(1.2 GB, 其中 996 MB 是历次部署留下的整库副本)、Cloudflare 橙云未开导致国家码链路整条空转(5584 行 `client_country` 全空)、四条通知链路未接线。
+- 也记了已核实**没问题**的项, 避免下次重复排查。
 ## v1.5.15 — 2026-11-03
 
 ### 渠道保存被拒时写入应用日志

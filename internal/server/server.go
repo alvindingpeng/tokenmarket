@@ -1,8 +1,10 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/conf"
 	_ "github.com/alvindingpeng/switchyard/internal/server/handlers"
@@ -66,6 +68,24 @@ func Start() error {
 	return nil
 }
 
+// shutdownGrace 等待在途请求结束的上限。
+//
+// 取值依据: 线上 98.3% 是流式请求, 一条 SSE 流可以挂几分钟; 而部署换二进制时
+// systemctl stop 会发 SIGTERM。用 Close() 会立即硬关所有连接, 每次部署都打断正在
+// 生成的回答。30 秒覆盖绝大多数流, 又不至于让部署长时间卡住。
+const shutdownGrace = 30 * time.Second
+
+// Close 优雅停服: 先停止接受新连接, 再等待在途请求结束或超时。
+//
+// 用 Shutdown 而不是 Close —— 后者直接断开所有连接(含正在传输的 SSE),
+// 用户看到的是"回答突然中断", 而服务端日志里没有任何错误可查。
 func Close() error {
-	return httpSrv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+	defer cancel()
+	if err := httpSrv.Shutdown(ctx); err != nil {
+		// 超时仍有请求未结束: 记下来再硬关, 否则进程会被 systemd 的 TimeoutStopSec 杀掉。
+		log.Warnf("graceful shutdown timed out after %s, forcing close: %v", shutdownGrace, err)
+		return httpSrv.Close()
+	}
+	return nil
 }

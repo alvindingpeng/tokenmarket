@@ -352,6 +352,11 @@ func (r *RequestState) SetReservation(reservationID uint64) {
 func (r *RequestState) setRoundTiming(timing model.UpstreamTiming) {
 	mu.Lock()
 	defer mu.Unlock()
+	// 快照只含连接阶段耗时, 不含出口(ConnTiming 根本不知道出口是什么)。
+	// 不在这里补回来的话, 轮次开始时 setRoundEgress 写进 roundTiming 的 EgressID
+	// 会被这次整体覆盖抹回 0 —— 线上 5949 行尝试记录的 egress_id 全是 0,
+	// 于是「按出口归因」的慢路径统计永远没有数据。
+	timing.EgressID = r.roundEgressID
 	r.roundTiming = timing
 }
 
@@ -557,7 +562,7 @@ func (r *RequestState) finishLocked(usage *llm.Usage) *billingLease {
 		}
 	}
 	// 计算用户实付与毛利。
-	r.UserCharge = r.Cost // 用户实付 = 计费金额（含加价）。
+	r.UserCharge = r.Cost                  // 用户实付 = 计费金额（含加价）。
 	r.Profit = r.UserCharge - r.SupplyCost // 毛利 = 用户实付 - 供货成本。
 
 	r.Duration = time.Since(r.StartedAt)
