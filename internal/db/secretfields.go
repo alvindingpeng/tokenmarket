@@ -20,11 +20,15 @@ import (
 const (
 	secretSettingTable    = "settings"
 	secretChannelKeyTable = "channel_keys"
+	secretEgressTable     = "channel_egresses"
 
 	secretSettingValueColumn = "value"
 	secretChannelKeyColumn   = "key"
 	// channel_keys 里带 serializer 的秘密列都要被 map 写入兜底覆盖; 少一列就有一列明文落库。
 	secretChannelKeyAPISecretColumn = "api_secret"
+
+	// channel_egresses.url 存的是 http://user:pass@host:port —— 代理凭据就在这一列里。
+	secretEgressURLColumn = "url"
 )
 
 // registerSecretFieldProtection 挂接 map 写入兜底回调; 在 InitDB 打开连接后调用一次。

@@ -433,7 +433,11 @@ func syncChannelEgresses(tx *gorm.DB, channelID int, requested []model.ChannelEg
 			if current.Kind != requestedEgress.Kind || current.URL != requestedEgress.URL ||
 				current.Region != requestedEgress.Region || current.Weight != requestedEgress.Weight ||
 				current.Enabled != requestedEgress.Enabled {
-				if err := tx.Model(&model.ChannelEgress{}).Where("id = ?", current.ID).
+				// 身份必须随 Model 一起给: url 走信封加密 —— map 写入绕过字段序列化器, 由 db 侧兜底回调封存,
+				// 而封存绑定是 (channel_id, name)。只传零值 Model 的话兜底回调推不出归属, 会 fail closed
+				// 拒绝写入, 保存出口就会整条失败。与 syncChannelKeys 的 identity 同口径。
+				identity := model.ChannelEgress{ID: current.ID, ChannelID: current.ChannelID, Name: current.Name}
+				if err := tx.Model(&identity).Where("id = ?", current.ID).
 					Updates(map[string]any{
 						"kind":    requestedEgress.Kind,
 						"url":     requestedEgress.URL,

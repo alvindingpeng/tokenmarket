@@ -64,17 +64,25 @@
 
 ## B. 待修: 有明确证据的缺陷
 
-### B1. 出口运行时成绩不持久化, 每次重启重新学习
+### ~~B1. 出口运行时成绩不持久化, 每次重启重新学习~~ (已修 v1.5.18)
 
-**证据**: `internal/relay/egress.go` 的 `egressStates` 是进程内 map, 全库无对应表;
-今天服务重启 **4 次**(每次部署一次)。
+**证据**(改动前): `internal/relay/egress.go` 的 `egressStates` 是进程内 map, 全库无对应表;
+当时服务每天重启数次(每次部署一次)。
 
-**影响**: 出口择优靠 EMA 成功率与等待时间。重启后所有出口回到"冷"状态,
-冷启动期按已观测出口的平均值参与, 即**头几次请求可能选到较差的那条**。
-部署越频繁, 这个窗口越常出现。
+**影响**(比原描述更严重): 不只是"头几次可能选到较差的"。冷出口按 `neutral`(已观测出口的平均值)
+参与打分, 而**全部出口都在冷态时 neutral = 0, 全部并列** —— 排序完全由 `weight` 决定。
+也就是说: 重启后第一批请求,**权重最高的那条线路被无条件优先选中, 无论它是否还通**。
+线上 7 个出口的 weight 全是 0, 并列时由遍历顺序决定, 选中的是谁基本是随机的。
 
-**修法**: 复用 `RouteSnapshotSave` 已有的落库通道(它已持久化成员指标), 给出口加一张快照表,
-退出时随 `FlushRoutePersist` 落库, 启动时恢复。代价: 中。
+**修法**: 新增 `egress_metrics` 表(EMA 成绩 + 冷却截止), 复用既有的脏标记 + 5 秒批量落库;
+`RestorePersist` 启动时恢复, 并清掉已删除出口的残留行。冷却也一并恢复。
+
+**实现要点(踩到的坑)**:
+- 顺序: 采样在 `egressMu` 内, 但 `markEgressDirty` 必须放到**放锁之后** —— 落库协程的取锁顺序是
+  `persistDirtyMu` → `egressMu`, 锁内再取 `persistDirtyMu` 会成环。
+- 写失败要重新标记脏, 否则这批成绩永远不会重试, 重启后又回到零样本。
+- 已过期的冷却不进状态, 否则每次落库都会把无意义的行写回库。
+- 清理残留行时 `len(existing) == 0` 要单独处理: gorm 不接受"NOT IN 空列表"的整表删除。
 
 ### B2. 三张业务表从不清理, 年增约 100 万行
 
@@ -100,6 +108,18 @@
 **修法**: `billing_settlement_tasks` 完成后清空 `snapshot` 或按保留期删除 completed 行;
 `balance_reservations` 已结算且超期(如 30 天)的行可删(账本 `balance_ledgers` 才是权威留痕);
 `rate_limit_usage_hourly` 按 30 天清理。代价: 小, 但要先确认没有对账流程依赖这些行。
+
+**`billing_settlement_tasks` 已完成 (v1.5.18)**, 其余两项仍待处理:
+
+- 清空动作放在"置 completed"的**同一个 UPDATE** 里, 不另起语句 —— 否则会开出"已终态但快照还在"
+  的中间态, 而 `BillingSettle` 里"判 `reservation.Settled`"与"读 snapshot"之间存在窗口。
+- 新增迁移 038 清理存量 completed 行。
+- **manual 行的快照必须保留**: 那是自动路径放弃判断后, 人工对账的唯一证据。
+- **行一条都不能删**: `BillingReleaseStale` 用 `NOT EXISTS (SELECT 1 FROM billing_settlement_tasks ...)`
+  判断"这笔预扣有没有结算意图", 删行会让等待结算的预扣被当成泄漏释放 —— 钱会退错。
+  所以这里只能清列, 不能按保留期删行。
+- 既有测试 `TestBillingRecoveryDurableFailureAndReplay` 断言"快照不得被改写", 与改动相反,
+  已改为两侧都断言(待执行时必须在, 完成后必须为空)。
 
 ### B3. 归档文件与部署备份从不清理
 
@@ -156,21 +176,27 @@
 
 ## C. 待评估: 稳健性与安全
 
-### C1. HTTP 服务未设任何超时 (优雅关闭部分已在 v1.5.16 修掉)
+### ~~C1. HTTP 服务未设任何超时~~ (已修 v1.5.18)
 
-**已修**: `Close()` 改为带 30 秒超时的 `Shutdown(ctx)`(见 A2)。
+**已修**: `Close()` 改为带 30 秒超时的 `Shutdown(ctx)`(见 A2);
+`ReadHeaderTimeout`(10s)与 `IdleTimeout`(120s)已设。
 
-**仍待处理**: `internal/server/server.go` 只设了 `Addr` 与 `Handler`,
-无 `ReadTimeout` / `WriteTimeout` / `ReadHeaderTimeout` / `IdleTimeout`。
+**刻意不设 `ReadTimeout` / `WriteTimeout`**, 这条比"设上"更重要:
+`WriteTimeout` 从读完请求头开始计时, 到点直接掐断连接。线上 98.3% 是流式请求,
+一条 SSE 流实测最长 156 秒 —— 设了写超时就等于把 A2 刚修好的"回答突然中断"换个触发条件重演。
+`ReadTimeout` 同理, 它把请求体读取也一起限时(转发接口上限 512 MiB, 慢速上传会被掐)。
+慢的上游等待由转发路径自己的上下文超时管, 那里能给出比"连接被断"更准确的错误。
 
-**影响**: 慢连接会一直占着 goroutine 与文件描述符。日常由 nginx 兜住(它有 proxy_read_timeout),
-所以线上没出过事, 但这是"依赖上一层恰好也做了"的稳健性 —— 直连 8088 的路径没有任何保护。
-`ReadHeaderTimeout` 尤其值得设: 它挡的是 slowloris 式的半开连接。
+测试里专门有一条 `TestApplyTimeoutsShapesServer` 断言这两个字段**必须为 0** ——
+加超时看起来总是更"稳健", 后来者补上时应该先看到测试失败, 再去读一遍那条注释。
 
-**修法**: 只加 `ReadHeaderTimeout` 与 `IdleTimeout`(如 10s / 120s), **不要**加 `WriteTimeout` ——
-流式回答可以挂几分钟, 写超时会直接把 SSE 掐断, 那正是 A2 刚修好的问题。代价: 小。
+**顺带修掉一个并发缺陷**: 为了让停服路径可注入测试实例, 暴露出包级 `httpSrv` 的结构性问题 ——
+`Close()` 在监听协程仍在读该结构体时就地改写它, `-race` 下报
+`net/http.(*conn).setState` 数据竞争。改为加锁的指针 + "整体替换"语义, `Close` 现在幂等可重入
+(重复调用、从未启动时调用都安全返回 nil)。生产里 `httpSrv` 只在启动时写一次, 所以线上没出过症状,
+但这是真实的竞争。
 
-### C2. `channel_egresses.url` 明文入库, 且进备份
+### ~~C2. `channel_egresses.url` 明文入库, 且进备份~~ (已修 v1.5.18)
 
 **证据**: 信封加密的覆盖范围(`internal/db/secretfields.go`)只有 `settings.value` 与
 `channel_keys.key/api_secret`; `channel_egresses.url` 不在其中, 库内可直接读出
@@ -179,8 +205,18 @@
 v1.5.14 已处理**回显与错误信息**两个泄漏面, 但**落库与备份**仍是明文
 (对比: `channel_keys.key` 是 `sysec$` 信封密文)。
 
-**修法**: 给 `channel_keys` 那套 serializer tag 复制一份到出口 URL。
-注意 AAD 绑定需要行归属(`channel_id`), 出口行有该列, 可行。代价: 中, 涉及迁移(存量明文重加密)。
+**已修 (v1.5.18)**: 复用 `channel_keys` 那套 serializer 机制 —— 模型 tag + codec +
+`secretstore.ChannelEgressBinding(channelID, name)`(列名 `url` 也进绑定)。
+存量明文由 `MigrateSecretRows` 的出口段在启动时封存, 统计新增 `egresses_encrypted`。
+
+**这里有一个只加 tag 修不好的坑**: `op.syncChannelEgresses` 用 `Updates(map)` 更新出口,
+而 gorm 的 map 写入**绕过字段序列化器**。只加 tag 的话, 保存出口时明文照旧写进库 ——
+模型层的加密形同虚设, 而且不会有任何报错。所以 db 侧的 map 写入兜底同步新增了
+`channel_egresses` 分支; 同时给那处 `Model()` 补上身份, 否则兜底回调推不出归属会 fail closed,
+保存出口整条失败(与 `syncChannelKeys` 的 `identity` 同口径)。
+
+**仍未覆盖**: 渠道级 `channel_proxy`、`base_url`、`custom_header`、`param_override` 仍是明文 ——
+它们与出口池是两套配置, 本次没有一起修。
 
 ### C3. 通知/告警无静默窗口
 
@@ -211,11 +247,12 @@ v1.5.14 已处理**回显与错误信息**两个泄漏面, 但**落库与备份*
 | ~~P0~~ | ~~A2 优雅关闭~~ | **已修 v1.5.16**, 首次部署即打出"等待超时"证明在途流被保住 |
 | ~~P0~~ | ~~A3 负价~~ | **已修 v1.5.17** |
 | ~~P0~~ | ~~A4 前端静默失败~~ | **已修 v1.5.17** |
-| P1 | B2 结算任务快照清理 | 唯一随业务量无界增长的 big-row 表; 改动小 |
-| P1 | B5 四条通知接线 | 通知中心已建好却无事件源, 用户不知情; 改动小 |
-| P2 | C1 剩余的超时设置 | 只剩 `ReadHeaderTimeout`/`IdleTimeout`; 千万别加 `WriteTimeout` |
+| ~~P1~~ | ~~C2 出口地址加密~~ | **已修 v1.5.18**; 全库最后一处明文凭据列 |
+| ~~P1~~ | ~~B2 结算任务快照~~ | **已修 v1.5.18**(清列, 不删行; manual 保留) |
+| ~~P1~~ | ~~B1 出口成绩持久化~~ | **已修 v1.5.18**; 原估"影响限于几次请求"偏轻, 实际是全权重定序 |
+| ~~P2~~ | ~~C1 剩余的超时设置~~ | **已修 v1.5.18**; 只设读头与空闲, 刻意不设读写超时 |
+| P1 | B5 四条通知接线 | 通知中心已建好却无事件源, 用户不知情; 改动小, 是剩下的最高价值项 |
+| P1 | B2 其余两表清理 | `balance_reservations` 已结算超期行、`rate_limit_usage_hourly` 30 天前 |
 | P2 | B3 备份/归档清理 | 只随运维动作增长, 暂无压力 |
-| P2 | B1 出口成绩持久化 | 有重启学习窗口, 但影响限于冷启动几次请求 |
 | 外部 | B4 开 Cloudflare 橙云 | 只有运维能操作; 开了才会解锁国家维度与区域亲和 |
-| P2 | C2 出口地址加密 | 需迁移, 风险中等, 收益是消除备份里的明文凭据 |
 | P3 | C3 告警静默窗口 | 新功能, 非缺陷 |

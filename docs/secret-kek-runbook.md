@@ -44,15 +44,15 @@ ExecStart=/opt/switchyard/bin/switchyard start --config /opt/switchyard/data/con
 - **原子**: 全部写入一个事务, 中途失败不留半加密状态;
 - **幂等**: 已加密行只验不改(顺带验证当前 key 能打开), 重复执行零写入, 信封字节不变;
 - **fail closed**: key 缺失/非法、或存量信封打不开(换过 key / 密文被搬移)→ 报错退出, 不写任何行;
-- **范围**: 信封迁移函数处理 `settings`(密钥类/内部设置项)与 `channel_keys`；但 `secret migrate` 命令先执行 `InitDB`，因此也执行 schema 迁移 022，将旧 `api_keys.api_key` 转为单向指纹并删除明文列。旧 Key 值继续可用于认证，但数据库不能再交给旧版二进制。SQLite 信封行写入与 API Key schema 迁移各自事务保护，并非覆盖整条命令的单一事务。
+- **范围**: 信封迁移函数处理 `settings`(密钥类/内部设置项)、`channel_keys`(key 与 api_secret)与 `channel_egresses.url`(代理地址里的 user:pass)；但 `secret migrate` 命令先执行 `InitDB`，因此也执行 schema 迁移 022，将旧 `api_keys.api_key` 转为单向指纹并删除明文列。旧 Key 值继续可用于认证，但数据库不能再交给旧版二进制。SQLite 信封行写入与 API Key schema 迁移各自事务保护，并非覆盖整条命令的单一事务。
 - **只读状态**: `secret status` 只支持 SQLite，通过 `mode=ro` 与 `query_only` 打开既有文件，不调用 `InitDB`、不做 schema 迁移、不创建库；其他数据库类型明确拒绝而非伪装只读。
 - `start` 每次启动自动执行同一迁移(先于任何写库)。不跑 migrate 也能上线, 但建议部署脚本显式跑一次拿统计。
 
 退出码: 成功 0; key 缺失/非法、迁移失败 1(日志里有明确错误行, systemd 可见)。
 
 日志输出(可 grep):
-- 成功: `secret migration done: settings_encrypted=N channel_keys_encrypted=N already_encrypted=N empty_skipped=N`
-- dry-run: `secret status (key ID <id>): would_encrypt=N already_encrypted=N empty_skipped=N`
+- 成功: `secret migration done: settings_encrypted=N channel_keys_encrypted=N egresses_encrypted=N already_encrypted=N empty_skipped=N`
+- dry-run: `secret status (key ID <id>): would_encrypt=N (settings=… channel_keys=… egresses=…) already_encrypted=N empty_skipped=N`
 
 ## 4. 部署序列(建议)
 
@@ -69,7 +69,9 @@ ExecStart=/opt/switchyard/bin/switchyard start --config /opt/switchyard/data/con
 
 ## 5. 当前覆盖范围(明确边界, 不夸大)
 
-**已落库加密(信封)**: settings.value 中的密钥类/内部设置项(共 11 键: github_token、alert_telegram_bot_token、alert_email_password、epay_key、alipay_private_key、stripe_secret_key、stripe_webhook、creem_api_key、creem_webhook、auth_secret、metrics_token)与 channel_keys.key(渠道上游凭据)。API Key(api_keys)是**单向哈希**, 与信封加密是两条线(哈希不可逆, 不在本迁移范围)。
+**已落库加密(信封)**: settings.value 中的密钥类/内部设置项(共 11 键: github_token、alert_telegram_bot_token、alert_email_password、epay_key、alipay_private_key、stripe_secret_key、stripe_webhook、creem_api_key、creem_webhook、auth_secret、metrics_token)、channel_keys.key 与 api_secret(渠道上游凭据)、channel_egresses.url(出口代理地址, 含 user:pass)。API Key(api_keys)是**单向哈希**, 与信封加密是两条线(哈希不可逆, 不在本迁移范围)。
+
+出口地址的密文绑定 `(channel_id, name)`: 改名或搬渠道都是删旧行建新行, 归属不会就地变化; 把别的出口的密文搬过来会在解密前被归属比对拦下。直连出口(kind=direct)的 url 恒为空, 不产生信封。
 
 **未覆盖 —— 已知残余风险(不要声称它们被加密)**:
 - 渠道 custom_header: 可能装 Authorization / 自定义凭据头, 明文落库;
@@ -77,9 +79,11 @@ ExecStart=/opt/switchyard/bin/switchyard start --config /opt/switchyard/data/con
 - 渠道 base_url: user:pass@host 形态的内嵌凭据明文落库;
 - 渠道 param_override: 可能夹带凭据参数, 明文落库。
 
+注: `channel_egresses.url` 已不在上述残余清单里; 但渠道级的 `channel_proxy`、`base_url` 仍是明文, 它们与出口池是两套配置。
+
 这些列当前只受数据库文件权限与备份封装保护(backup.passphrase 有值时备份文件是 OCTOBK1 加密封装; 裸库文件本身不加密)。若这些位置会放真凭据, 请按后续项扩展 serializer 覆盖, 或改为只放非敏感配置、凭据统一进 channel_keys。
 
-**启动验证(强保证)**: 每次 start 与 secret migrate 都会把 settings.value 与 channel_keys.key 里出现的**每一个信封**逐条用当前主密钥验开(包括落在非密钥行里的信封), 错误 KEK 在启动这一步就 exit 1 并打日志, 不必等有流量才发现。启动日志的可见凭证: secret at-rest verified: encrypted_rows=N newly_encrypted=M ...
+**启动验证(强保证)**: 每次 start 与 secret migrate 都会把 settings.value、channel_keys 的秘密列与 channel_egresses.url 里出现的**每一个信封**逐条用当前主密钥验开(包括落在非密钥行里的信封), 错误 KEK 在启动这一步就 exit 1 并打日志, 不必等有流量才发现。启动日志的可见凭证: secret at-rest verified: encrypted_rows=N newly_encrypted=M ...
 
 ## 6. 备份 / 恢复与换钥
 

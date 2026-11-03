@@ -119,8 +119,6 @@ func recordEgressSample(egressID, window int, waitMs int64, success bool) {
 		return
 	}
 	egressMu.Lock()
-	defer egressMu.Unlock()
-
 	state := egressStates[egressID]
 	if state == nil {
 		state = &egressState{}
@@ -130,6 +128,11 @@ func recordEgressSample(egressID, window int, waitMs int64, success bool) {
 	if success {
 		state.cooldownUntil = 0
 	}
+	egressMu.Unlock()
+
+	// 标记必须在放锁之后: 落库协程的取锁顺序是 persistDirtyMu -> egressMu,
+	// 在 egressMu 内再取 persistDirtyMu 会形成环。
+	markEgressDirty()
 }
 
 // coolEgress 让某个出口在一段时间内不被选中; seconds<=0 时忽略。
@@ -139,14 +142,15 @@ func coolEgress(egressID, seconds int) {
 		return
 	}
 	egressMu.Lock()
-	defer egressMu.Unlock()
-
 	state := egressStates[egressID]
 	if state == nil {
 		state = &egressState{}
 		egressStates[egressID] = state
 	}
 	state.cooldownUntil = time.Now().UnixMilli() + int64(seconds)*1000
+	egressMu.Unlock()
+
+	markEgressDirty()
 }
 
 // EgressRuntimeView 是出口健康看板使用的运行时快照。它不包含代理 URL 或凭据。
@@ -195,6 +199,57 @@ func egressCooling(egressID int) bool {
 
 	state := egressStates[egressID]
 	return state != nil && state.cooldownUntil > time.Now().UnixMilli()
+}
+
+// egressMetricRecords 导出全部出口状态的持久化快照, 供后台批量落库。
+// 样本与冷却都为空的条目(fail closed 留下的空壳)不落库。
+func egressMetricRecords() []model.EgressMetricRecord {
+	egressMu.Lock()
+	defer egressMu.Unlock()
+
+	records := make([]model.EgressMetricRecord, 0, len(egressStates))
+	for id, state := range egressStates {
+		if state.samples <= 0 && state.cooldownUntil == 0 {
+			continue
+		}
+		records = append(records, model.EgressMetricRecord{
+			EgressID:      id,
+			EmaWaitMs:     state.emaWaitMs,
+			EmaSuccess:    state.emaSuccess,
+			Samples:       state.samples,
+			CooldownUntil: state.cooldownUntil,
+		})
+	}
+	return records
+}
+
+// restoreEgressMetrics 启动时把出口成绩与冷却恢复进进程内状态。
+//
+// 没有这一步, 每次重启都会把全部出口打回"零样本": 它们按并列处理, 由权重定序 ——
+// 权重最高的那条哪怕早已不通, 也会在重启后的第一批请求里被优先选中, 用户吃 502。
+// 恢复之后, 选路从上一轮进程的认知继续, 而不是从一张白纸开始。
+//
+// 冷却一并恢复: 刚刚被判定不可用的线路不该因为一次重启就立刻重试。
+// 已过期的冷却不写进状态, 免得给早已恢复的出口留下无意义的行。
+func restoreEgressMetrics(records []model.EgressMetricRecord) {
+	egressMu.Lock()
+	defer egressMu.Unlock()
+
+	now := time.Now().UnixMilli()
+	for _, record := range records {
+		if record.Samples <= 0 && record.CooldownUntil <= now {
+			continue
+		}
+		egressStates[record.EgressID] = &egressState{
+			memberMetric: memberMetric{
+				emaWaitMs:  record.EmaWaitMs,
+				emaSuccess: record.EmaSuccess,
+				samples:    record.Samples,
+				updatedAt:  record.UpdatedAt.UnixMilli(),
+			},
+			cooldownUntil: record.CooldownUntil,
+		}
+	}
 }
 
 // resetEgressStates 丢弃全部出口状态, 供测试隔离使用。

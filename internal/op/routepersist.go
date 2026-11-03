@@ -87,6 +87,50 @@ func RouteMetricDelete(groupID, itemID int) error {
 	return db.GetDB().Where("group_id = ? AND item_id = ?", groupID, itemID).Delete(&model.RouteMetricRecord{}).Error
 }
 
+// EgressMetricsSave 保存全部出口指标与冷却, 覆盖语义(每个出口一行)。
+func EgressMetricsSave(records []model.EgressMetricRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+	database := db.GetDB()
+	now := time.Now()
+	for i := range records {
+		records[i].UpdatedAt = now
+		if err := database.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "egress_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"ema_wait_ms", "ema_success", "samples", "cooldown_until", "updated_at"}),
+		}).Create(&records[i]).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// EgressMetricsLoadAll 读取全部出口指标快照, 供启动恢复。
+func EgressMetricsLoadAll() ([]model.EgressMetricRecord, error) {
+	var records []model.EgressMetricRecord
+	err := db.GetDB().Find(&records).Error
+	return records, err
+}
+
+// EgressIDs 返回全部出口主键, 供清理已删除出口的残留成绩行。
+func EgressIDs() ([]int, error) {
+	ids := []int{}
+	err := db.GetDB().Model(&model.ChannelEgress{}).Pluck("id", &ids).Error
+	return ids, err
+}
+
+// EgressMetricsDeleteMissing 清掉已删除出口留下的残留行。
+// 出口被删后它的成绩再无意义, 留着还会让"有数据/无数据"的判断在界面上出现幽灵出口。
+func EgressMetricsDeleteMissing(existing []int) error {
+	if len(existing) == 0 {
+		// 一个出口都没有(全部删掉/全新库): 残留行一律清掉。
+		// 不能靠 "NOT IN 空列表", gorm 会因为没有 WHERE 条件拒绝整表删除。
+		return db.GetDB().Where("1 = 1").Delete(&model.EgressMetricRecord{}).Error
+	}
+	return db.GetDB().Where("egress_id NOT IN ?", existing).Delete(&model.EgressMetricRecord{}).Error
+}
+
 // RouteMetricDeleteByChannelModel 删除某渠道模型下全部成员的指标快照(运维重置用), 返回删除行数。
 func RouteMetricDeleteByChannelModel(channelModelID int) (int64, error) {
 	res := db.GetDB().Where("item_id IN (?)",

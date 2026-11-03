@@ -20,13 +20,59 @@ import (
 // 未初始化主密钥时仅历史明文透传; 信封解密一律拒绝, 避免误把密文用于转发;
 // 生产入口(cmd start 与 secret 命令)必须先初始化主密钥, 缺失/非法一律拒绝启动。
 const (
-	secretSettingSerializer    = "switchyard_secret_setting"
-	secretChannelKeySerializer = "switchyard_secret_channel_key"
+	secretSettingSerializer       = "switchyard_secret_setting"
+	secretChannelKeySerializer    = "switchyard_secret_channel_key"
+	secretChannelEgressSerializer = "switchyard_secret_channel_egress"
 )
 
 func init() {
 	schema.RegisterSerializer(secretSettingSerializer, settingSecretCodec{})
 	schema.RegisterSerializer(secretChannelKeySerializer, channelKeySecretCodec{})
+	schema.RegisterSerializer(secretChannelEgressSerializer, channelEgressSecretCodec{})
+}
+
+// channelEgressSecretCodec 处理 channel_egresses.url: 代理地址里的 user:pass 是凭据, 按秘密封存。
+//
+// 这张表此前是唯一明文落库的凭据列 —— 回显与错误信息已在 v1.5.14 掩码, 但库文件里
+// 仍是 http://user:pass@host:port 原文, 而自动备份是 VACUUM INTO 物理快照, 明文会被
+// 整份复制进每一份备份。channel_keys.key 早就走了信封, 出口地址没有理由例外。
+//
+// kind=direct 的出口 URL 恒为空, 空值不产生信封(封存策略对空串透传), 直连出口没有额外开销。
+// 归属绑定带 (channel_id, name): 改名或搬渠道都是删旧行建新行(见 op.syncChannelEgresses),
+// 归属不会就地变化; 把别的出口的地址密文搬到本行, 解密前即被归属比对拦下。
+type channelEgressSecretCodec struct{}
+
+func (channelEgressSecretCodec) Value(ctx context.Context, field *schema.Field, dst reflect.Value, fieldValue interface{}) (interface{}, error) {
+	row, ok := channelEgressRowOf(dst)
+	if !ok {
+		return nil, fmt.Errorf("channel egress write: unexpected row type %T", dst.Interface())
+	}
+	value, err := secretFieldString(fieldValue)
+	if err != nil {
+		return nil, fmt.Errorf("channel egress %d/%q: %w", row.ChannelID, row.Name, err)
+	}
+	return sealSecretValue(secretstore.ChannelEgressBinding(row.ChannelID, row.Name), value)
+}
+
+func (channelEgressSecretCodec) Scan(ctx context.Context, field *schema.Field, dst reflect.Value, dbValue interface{}) error {
+	stored, err := secretFieldString(dbValue)
+	if err != nil {
+		return fmt.Errorf("channel egress read: %w", err)
+	}
+	row, ok := channelEgressRowOf(dst)
+	if !ok {
+		return fmt.Errorf("channel egress read: unexpected row type %T", dst.Interface())
+	}
+	if secretstore.IsEnvelope(stored) && row.ChannelID == 0 {
+		// 归属列还没扫进来(或行本身缺归属)就无法校验密文归属, 拒绝解密而不是猜。
+		return fmt.Errorf("channel egress read: missing ownership identity (channel_id)")
+	}
+	value, err := openSecretValue(secretstore.ChannelEgressBinding(row.ChannelID, row.Name), stored)
+	if err != nil {
+		return fmt.Errorf("channel egress %d/%q: %w", row.ChannelID, row.Name, err)
+	}
+	field.ReflectValueOf(ctx, dst).SetString(value)
+	return nil
 }
 
 // settingSecretCodec 处理 settings.value: 密钥类设置项(IsSecretSetting/IsInternalSetting)加密封存。
@@ -108,6 +154,16 @@ func settingRowOf(dst reflect.Value) (Setting, bool) {
 		return Setting{}, false
 	}
 	row, ok := value.Interface().(Setting)
+	return row, ok
+}
+
+// channelEgressRowOf 从序列化器拿到的行值里取出 ChannelEgress(兼容值/指针)。
+func channelEgressRowOf(dst reflect.Value) (ChannelEgress, bool) {
+	value := reflect.Indirect(dst)
+	if !value.IsValid() || value.Type() != reflect.TypeOf(ChannelEgress{}) {
+		return ChannelEgress{}, false
+	}
+	row, ok := value.Interface().(ChannelEgress)
 	return row, ok
 }
 

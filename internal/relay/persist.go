@@ -186,6 +186,7 @@ var (
 	persistDirtyMu sync.Mutex
 	routeDirty     = make(map[int]bool)
 	metricDirty    = make(map[memberMetricKey]bool)
+	egressDirty    bool
 	persistOnce    sync.Once
 )
 
@@ -201,6 +202,15 @@ func markRouteDirty(groupID int) {
 func markMetricDirty(groupID, itemID int) {
 	persistDirtyMu.Lock()
 	metricDirty[memberMetricKey{groupID: groupID, itemID: itemID}] = true
+	persistDirtyMu.Unlock()
+	startPersistFlusher()
+}
+
+// markEgressDirty 标记出口成绩待落库。
+// 出口成绩没有分组维度, 整表一起覆盖写; 一次落库的成本与"哪些出口脏了"无关, 因此不做逐条标记。
+func markEgressDirty() {
+	persistDirtyMu.Lock()
+	egressDirty = true
 	persistDirtyMu.Unlock()
 	startPersistFlusher()
 }
@@ -232,7 +242,17 @@ func FlushRoutePersist() {
 	}
 	routeDirty = make(map[int]bool)
 	metricDirty = make(map[memberMetricKey]bool)
+	flushEgress := egressDirty
+	egressDirty = false
 	persistDirtyMu.Unlock()
+
+	if flushEgress {
+		if err := op.EgressMetricsSave(egressMetricRecords()); err != nil {
+			log.Warnf("egress metric persist failed: %v", err)
+			// 写失败要重排: 否则这批成绩永远不会重试, 重启后又回到零样本。
+			markEgressDirty()
+		}
+	}
 
 	for _, groupID := range groups {
 		routeMu.Lock()
@@ -310,6 +330,20 @@ func RestorePersist() error {
 		itemModels = map[int]int{}
 	}
 	restoreMemberMetrics(metrics, itemModels)
-	log.Infof("route state restored: %d groups, %d metrics", len(states), len(metrics))
+	// 出口成绩与冷却: 没有它, 重启后每个出口都是"零样本", 选路退化成按权重定序 ——
+	// 权重最高的线路哪怕早已不通, 也会在第一批请求里被优先选中。
+	egressMetrics, err := op.EgressMetricsLoadAll()
+	if err != nil {
+		log.Warnf("load egress metrics failed: %v", err)
+		egressMetrics = nil
+	}
+	restoreEgressMetrics(egressMetrics)
+	// 已经删掉的出口留下的成绩行: 留着会让"有没有数据"的判断出现幽灵出口, 顺手清掉。
+	if ids, err := op.EgressIDs(); err != nil {
+		log.Warnf("load egress ids failed: %v", err)
+	} else if err := op.EgressMetricsDeleteMissing(ids); err != nil {
+		log.Warnf("prune stale egress metrics failed: %v", err)
+	}
+	log.Infof("route state restored: %d groups, %d metrics, %d egresses", len(states), len(metrics), len(egressMetrics))
 	return nil
 }

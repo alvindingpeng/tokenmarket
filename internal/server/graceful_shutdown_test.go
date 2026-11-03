@@ -18,27 +18,16 @@ import (
 // 本测试直接驱动真实的 Close(): 起一个慢处理器, 请求在途时停服,
 // 断言请求正常收到完整响应。
 func TestCloseWaitsForInflightRequest(t *testing.T) {
-	// 找一个可用端口: 先监听再释放, 避免固定端口在 CI 上冲突。
-	probe, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("probe listen: %v", err)
-	}
-	addr := probe.Addr().String()
-	_ = probe.Close()
+	addr := freeAddr(t)
 
 	release := make(chan struct{})
 	started := make(chan struct{})
-	httpSrv.Addr = addr
-	httpSrv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := &http.Server{Addr: addr, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		close(started)
 		<-release // 模拟一条仍在传输的流式响应。
 		_, _ = fmt.Fprint(w, "complete")
-	})
-	t.Cleanup(func() { httpSrv = http.Server{} })
-
-	go func() { _ = httpSrv.ListenAndServe() }()
-	// 等监听就绪: ListenAndServe 是异步的, 直接发请求会 connection refused。
-	waitListening(t, addr)
+	})}
+	startServer(t, srv)
 
 	type result struct {
 		body string
@@ -90,21 +79,11 @@ func TestCloseWaitsForInflightRequest(t *testing.T) {
 
 // TestCloseStopsAcceptingNewRequests 停服后新连接必须被拒 —— 优雅关闭不能变成"一直开着"。
 func TestCloseStopsAcceptingNewRequests(t *testing.T) {
-	probe, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("probe listen: %v", err)
-	}
-	addr := probe.Addr().String()
-	_ = probe.Close()
-
-	httpSrv.Addr = addr
-	httpSrv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	addr := freeAddr(t)
+	srv := &http.Server{Addr: addr, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprint(w, "ok")
-	})
-	t.Cleanup(func() { httpSrv = http.Server{} })
-
-	go func() { _ = httpSrv.ListenAndServe() }()
-	waitListening(t, addr)
+	})}
+	startServer(t, srv)
 
 	if err := Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -112,6 +91,76 @@ func TestCloseStopsAcceptingNewRequests(t *testing.T) {
 	if _, err := http.Get("http://" + addr + "/after"); err == nil {
 		t.Fatal("停服后仍能建立新请求")
 	}
+}
+
+// TestCloseIsIdempotent 停服可重入: 重复调用、或从未启动时调用都必须安全返回 nil。
+//
+// 这不是洁癖: shutdown 钩子与部署脚本都会触达停服路径, 若第二次调用 panic,
+// 停服中途崩掉会把 systemd 拖到 TimeoutStopSec 才 SIGKILL。
+func TestCloseIsIdempotent(t *testing.T) {
+	addr := freeAddr(t)
+	srv := &http.Server{Addr: addr, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})}
+	startServer(t, srv)
+
+	if err := Close(); err != nil {
+		t.Fatalf("first Close: %v", err)
+	}
+	if err := Close(); err != nil {
+		t.Fatalf("second Close 必须安全返回 nil: %v", err)
+	}
+	// 从未启动的情况: 包级实例为 nil。
+	if err := Close(); err != nil {
+		t.Fatalf("Close 在没有服务实例时必须返回 nil: %v", err)
+	}
+}
+
+// TestCloseAfterGracefulStopReturnsNil 已经关过的实例再次 Close 仍返回 nil。
+func TestCloseAfterGracefulStopReturnsNil(t *testing.T) {
+	addr := freeAddr(t)
+	srv := &http.Server{Addr: addr, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})}
+	startServer(t, srv)
+	if err := Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if currentHTTPServer() != nil {
+		t.Fatal("关闭后包级实例未被清空, 下一次 Close 会重复操作同一个 server")
+	}
+}
+
+// freeAddr 取一个可用端口: 先监听再释放, 避免固定端口在 CI 上冲突。
+func freeAddr(t *testing.T) string {
+	t.Helper()
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("probe listen: %v", err)
+	}
+	addr := probe.Addr().String()
+	_ = probe.Close()
+	return addr
+}
+
+// startServer 把 srv 注册为当前服务实例并在后台监听, 等端口就绪后返回。
+//
+// 收尾先等监听协程真正退出再清空包级变量: ListenAndServe 期间一直读着 srv,
+// 提前改写会在 -race 下被判成数据竞争。
+func startServer(t *testing.T, srv *http.Server) {
+	t.Helper()
+	previous := setHTTPServer(srv)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = srv.ListenAndServe()
+	}()
+	t.Cleanup(func() {
+		_ = srv.Close() // 幂等: 已经 Shutdown 过也是空操作。
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("监听协程没有退出")
+		}
+		setHTTPServer(previous)
+	})
+	waitListening(t, srv.Addr)
 }
 
 // waitListening 轮询到端口可连为止, 避免用 sleep 猜时间。

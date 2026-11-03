@@ -39,6 +39,10 @@ func TestBillingRecoveryDurableFailureAndReplay(t *testing.T) {
 	if task.Status != model.BillingSettlementStatusRetry || task.Attempts != 1 {
 		t.Fatalf("bad task %+v", task)
 	}
+	// 待执行的任务必须留着快照: 它是"钱该按什么价格扣"的唯一依据, 重试要用它。
+	if original == "" {
+		t.Fatal("pending/retry 任务的 snapshot 被清空了, 重试将无从得知原始经济意图")
+	}
 	if err := BillingRelease(id); !errors.Is(err, ErrSettlementIntentPending) {
 		t.Fatalf("pending released: %v", err)
 	}
@@ -66,8 +70,13 @@ func TestBillingRecoveryDurableFailureAndReplay(t *testing.T) {
 	if err := db.GetDB().First(&task, task.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if task.Status != model.BillingSettlementStatusCompleted || task.Snapshot != original {
-		t.Fatalf("snapshot/status changed %+v", task)
+	// 结算成功后快照必须被清空: 它的每一个读者都以"任务尚未终态"为前提,
+	// 留着就是每行 773 字节的死字节, 而且会被每一份 VACUUM INTO 备份整份复制。
+	if task.Status != model.BillingSettlementStatusCompleted {
+		t.Fatalf("bad status after replay %+v", task)
+	}
+	if task.Snapshot != "" {
+		t.Fatalf("completed 任务的 snapshot 未清空, 仍占 %d 字节", len(task.Snapshot))
 	}
 	var applied model.BillingRecord
 	if err := db.GetDB().Where("request_id = ?", 7001).First(&applied).Error; err != nil {

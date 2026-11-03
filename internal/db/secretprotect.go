@@ -67,6 +67,8 @@ func protectSecretMapRow(tx *gorm.DB, row map[string]interface{}, isCreate bool)
 		return protectSettingMapRow(parsedSchema, tx.Statement.Model, row)
 	case secretChannelKeyTable:
 		return protectChannelKeyMapRow(parsedSchema, tx.Statement.Model, row, isCreate)
+	case secretEgressTable:
+		return protectEgressMapRow(parsedSchema, tx.Statement.Model, row)
 	default:
 		return nil
 	}
@@ -184,6 +186,61 @@ func protectChannelKeyMapRow(parsedSchema *schema.Schema, modelValue interface{}
 		}
 		row[write.mapKey] = sealed
 	}
+	return nil
+}
+
+// protectEgressMapRow channel_egresses.url 的 map 写入。
+//
+// 归属绑定需要 (channel_id, name)。map 里通常不会带这两列(更新只改 kind/url/region/weight/enabled),
+// 所以调用方必须把身份塞进 Model —— 见 op.syncChannelEgresses 里的 identity 行。
+// 拿不到归属就 fail closed: 封一封弱绑定的密文, 等于给"凭据被搬到别的出口"开了后门。
+func protectEgressMapRow(parsedSchema *schema.Schema, modelValue interface{}, row map[string]interface{}) error {
+	urlColumn := secretMapColumn(parsedSchema, row, secretEgressURLColumn)
+	if urlColumn == "" || row[urlColumn] == nil {
+		return nil
+	}
+	var (
+		channelID int
+		name      string
+	)
+	if column := secretMapColumn(parsedSchema, row, "channel_id"); column != "" {
+		if value, ok := secretMapInt(row[column]); ok {
+			channelID = value
+		}
+	}
+	if column := secretMapColumn(parsedSchema, row, "name"); column != "" {
+		if value, err := secretFieldString(row[column]); err == nil {
+			name = value
+		}
+	}
+	switch egress := modelValue.(type) {
+	case *model.ChannelEgress:
+		if channelID == 0 {
+			channelID = egress.ChannelID
+		}
+		if name == "" {
+			name = egress.Name
+		}
+	case model.ChannelEgress:
+		if channelID == 0 {
+			channelID = egress.ChannelID
+		}
+		if name == "" {
+			name = egress.Name
+		}
+	}
+	if channelID == 0 || name == "" {
+		return fmt.Errorf("refusing to write channel_egresses.url without (channel_id, name): the secret envelope binds to row ownership")
+	}
+	value, err := secretFieldString(row[urlColumn])
+	if err != nil {
+		return fmt.Errorf("channel egress %d/%q: %w", channelID, name, err)
+	}
+	sealed, err := sealSecretValue(secretstore.ChannelEgressBinding(channelID, name), value)
+	if err != nil {
+		return fmt.Errorf("channel egress %d/%q: %w", channelID, name, err)
+	}
+	row[urlColumn] = sealed
 	return nil
 }
 

@@ -75,8 +75,8 @@ fail closed: 主密钥缺失/非法、或存量信封打不开(主密钥配错),
 			log.Errorf("secret migration error: %v", err)
 			os.Exit(1)
 		}
-		log.Infof("secret migration done: settings_encrypted=%d channel_keys_encrypted=%d already_encrypted=%d empty_skipped=%d",
-			stats.SettingsEncrypted, stats.ChannelKeysEncrypted, stats.AlreadyEncrypted, stats.EmptySkipped)
+		log.Infof("secret migration done: settings_encrypted=%d channel_keys_encrypted=%d egresses_encrypted=%d already_encrypted=%d empty_skipped=%d",
+			stats.SettingsEncrypted, stats.ChannelKeysEncrypted, stats.EgressesEncrypted, stats.AlreadyEncrypted, stats.EmptySkipped)
 	},
 }
 
@@ -107,8 +107,8 @@ var secretStatusCmd = &cobra.Command{
 			log.Errorf("secret status error: %v", err)
 			os.Exit(1)
 		}
-		log.Infof("secret status (key ID %s): would_encrypt=%d already_encrypted=%d empty_skipped=%d",
-			secretstore.Active().KeyID(), stats.Total(), stats.AlreadyEncrypted, stats.EmptySkipped)
+		log.Infof("secret status (key ID %s): would_encrypt=%d (settings=%d channel_keys=%d egresses=%d) already_encrypted=%d empty_skipped=%d",
+			secretstore.Active().KeyID(), stats.Total(), stats.SettingsEncrypted, stats.ChannelKeysEncrypted, stats.EgressesEncrypted, stats.AlreadyEncrypted, stats.EmptySkipped)
 	},
 }
 

@@ -22,13 +22,14 @@ import (
 type SecretMigrationStats struct {
 	SettingsEncrypted    int `json:"settings_encrypted"`     // 本次加密的密钥类设置行。
 	ChannelKeysEncrypted int `json:"channel_keys_encrypted"` // 本次加密的渠道凭据秘密列(key / api_secret)。
+	EgressesEncrypted    int `json:"egresses_encrypted"`     // 本次加密的出口代理地址(channel_egresses.url)。
 	AlreadyEncrypted     int `json:"already_encrypted"`      // 已是信封并验开通过的行。
 	EmptySkipped         int `json:"empty_skipped"`          // 空值行: 无秘密可言, 保持空串。
 }
 
 // Total 返回本次实际加密的行数。
 func (s SecretMigrationStats) Total() int {
-	return s.SettingsEncrypted + s.ChannelKeysEncrypted
+	return s.SettingsEncrypted + s.ChannelKeysEncrypted + s.EgressesEncrypted
 }
 
 // MigrateSecretRows 迁移(或 dryRun 演练)存量明文凭据。主密钥未初始化直接报错。
@@ -118,11 +119,44 @@ func MigrateSecretRows(ctx context.Context, dryRun bool) (SecretMigrationStats, 
 		}
 	}
 
+	// 出口代理地址: 此前是唯一明文落库的凭据列(库文件与 VACUUM INTO 物理备份里都是
+	// http://user:pass@host:port 原文)。绑定与序列化器一致, 取 (channel_id, name)。
+	var egressRows []struct {
+		ID        int
+		ChannelID int
+		Name      string
+		URL       string
+	}
+	// 老库/只读巡检可能还没有这张表: 缺表不算错误, 照常继续(其余表照旧迁移)。
+	if conn.Migrator().HasTable("channel_egresses") {
+		if err := conn.Raw("SELECT id, channel_id, name, url FROM channel_egresses").Scan(&egressRows).Error; err != nil {
+			return stats, fmt.Errorf("read channel egresses for secret migration: %w", err)
+		}
+	}
+	type egressUpdate struct {
+		id    int
+		value string
+	}
+	egressUpdates := make([]egressUpdate, 0)
+	for _, row := range egressRows {
+		if row.ChannelID == 0 || row.Name == "" {
+			// 没有归属就没法绑 AAD: 与其写进弱绑定密文, 不如把问题摆出来。
+			return stats, fmt.Errorf("channel egress row %d has no (channel_id, name) ownership, refusing to migrate", row.ID)
+		}
+		sealed, encrypted, err := migrateSecretValue(store, secretstore.ChannelEgressBinding(row.ChannelID, row.Name), row.URL, &stats)
+		if err != nil {
+			return stats, fmt.Errorf("channel egress %d/%q: %w", row.ChannelID, row.Name, err)
+		}
+		if encrypted {
+			egressUpdates = append(egressUpdates, egressUpdate{id: row.ID, value: sealed})
+		}
+	}
+
 	// TOTP has no legacy plaintext format: validate every stored envelope before startup.
 	if err := validateUserTOTPSecrets(conn, store); err != nil {
 		return stats, err
 	}
-	if dryRun || (len(settingUpdates) == 0 && len(keyUpdates) == 0) {
+	if dryRun || (len(settingUpdates) == 0 && len(keyUpdates) == 0 && len(egressUpdates) == 0) {
 		return stats, nil
 	}
 	err = conn.Transaction(func(tx *gorm.DB) error {
@@ -133,6 +167,11 @@ func MigrateSecretRows(ctx context.Context, dryRun bool) (SecretMigrationStats, 
 		}
 		for _, update := range keyUpdates {
 			if err := tx.Exec("UPDATE channel_keys SET "+update.column+" = ? WHERE id = ?", update.value, update.id).Error; err != nil {
+				return err
+			}
+		}
+		for _, update := range egressUpdates {
+			if err := tx.Exec("UPDATE channel_egresses SET url = ? WHERE id = ?", update.value, update.id).Error; err != nil {
 				return err
 			}
 		}
@@ -165,6 +204,8 @@ func migrateSecretValue(store *secretstore.MasterKey, binding secretstore.Bindin
 	switch binding.Table {
 	case secretSettingTable:
 		stats.SettingsEncrypted++
+	case secretEgressTable:
+		stats.EgressesEncrypted++
 	default:
 		stats.ChannelKeysEncrypted++
 	}

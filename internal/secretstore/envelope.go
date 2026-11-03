@@ -71,6 +71,13 @@ func ChannelKeyColumnBinding(channelID int, name, column string) Binding {
 	return Binding{Table: "channel_keys", Owner: fmt.Sprintf("channel_id:%d;name:%s", channelID, name), Column: column}
 }
 
+// ChannelEgressBinding 出口代理地址的归属绑定: 渠道 ID 与出口名构成归属, 两者在业务上不随更新而变
+// (改名/搬渠道都是删旧行建新行, 见 op.syncChannelEgresses), 列名固定为 url。
+// 把别的出口的地址密文搬到本行, 解密前即被归属比对拦下 —— 出口地址里含代理凭据, 搬移等于换线路。
+func ChannelEgressBinding(channelID int, name string) Binding {
+	return Binding{Table: "channel_egresses", Owner: fmt.Sprintf("channel_id:%d;name:%s", channelID, name), Column: "url"}
+}
+
 // WebhookSecretBinding 出站订阅密钥列的归属绑定: 订阅行 ID 与归属用户构成归属,
 // 两者在业务上不可变(行 ID 由数据库生成, 用户归属创建后不变), 列名同样进绑定。
 // 把别的订阅的密钥密文搬到本行, 解密前即被归属比对拦下。

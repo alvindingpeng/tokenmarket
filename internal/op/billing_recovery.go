@@ -186,7 +186,11 @@ func billingRecoveryAttempt(ctx context.Context, id uint64) error {
 				status, message = model.BillingSettlementStatusCompleted, ""
 			}
 		}
-		result := db.GetDB().WithContext(ctx).Model(&task).Where("status IN ? AND attempts = ?", []string{model.BillingSettlementStatusPending, model.BillingSettlementStatusRetry}, task.Attempts).Updates(map[string]any{"status": status, "last_error": message})
+		updates := map[string]any{"status": status, "last_error": message}
+		for field, value := range billingSettlementTerminalFields(status) {
+			updates[field] = value
+		}
+		result := db.GetDB().WithContext(ctx).Model(&task).Where("status IN ? AND attempts = ?", []string{model.BillingSettlementStatusPending, model.BillingSettlementStatusRetry}, task.Attempts).Updates(updates)
 		if result.Error == nil && result.RowsAffected == 1 && status == model.BillingSettlementStatusManual {
 			RaiseAlert(ctx, 0, "系统", "billing_failed", fmt.Sprintf("settlement recovery exhausted: reservation=%d", task.ReservationID))
 		}
@@ -228,8 +232,12 @@ func billingRecoveryAttempt(ctx context.Context, id uint64) error {
 		next = time.Now().Add(billingSettlementBackoff(task.Attempts))
 	}
 	// A canceled worker must leave a retryable execution lease; do not use an unbounded detached database write.
+	updates := map[string]any{"status": status, "last_error": message, "next_attempt_at": next}
+	for field, value := range billingSettlementTerminalFields(status) {
+		updates[field] = value
+	}
 	update := db.GetDB().WithContext(ctx).Model(&model.BillingSettlementTask{}).Where("id = ? AND attempts = ? AND status = ?", id, task.Attempts, model.BillingSettlementStatusRetry).
-		Updates(map[string]any{"status": status, "last_error": message, "next_attempt_at": next})
+		Updates(updates)
 	if update.Error != nil {
 		return update.Error
 	}
@@ -269,6 +277,33 @@ func BillingRecoveryList(ctx context.Context, limit int) ([]model.BillingSettlem
 	tasks := []model.BillingSettlementTask{}
 	err := db.GetDB().WithContext(ctx).Omit("snapshot").Order("CASE WHEN status = 'manual' THEN 0 WHEN status = 'completed' THEN 2 ELSE 1 END").Order("updated_at DESC").Limit(limit).Find(&tasks).Error
 	return tasks, err
+}
+
+// billingSettlementTerminalFields 返回"转为该终态时要顺带写入的字段"。
+//
+// 目前只有一条: 结算成功后清空 snapshot。
+//
+// 为什么可以清: snapshot 是 773 字节的经济快照, 只在任务待执行时被读 —— 本文件里每一处
+// json.Unmarshal(task.Snapshot) 前面都有"status 必须是 pending/retry"的状态门(见 173 行、
+// 196 行的 CAS 条件), 而 BillingSettle 那条路径先判 reservation.Settled、终态直接短路,
+// 根本走不到读 snapshot。置 completed 意味着 billingSettleApply 已经成功、钱已经动完,
+// 权威留痕是 billing_records 与 balance_ledgers, 任务行里的这份副本再没有读者。
+//
+// 为什么必须清: 这张表每笔结算一行、completed 是绝大多数(线上 8824 行里只有少数非终态),
+// 每行 773 字节, 而且自动备份是 VACUUM INTO 物理快照 —— 留着的死字节会被每一份备份整份复制。
+//
+// 为什么不能分开写: 必须与 status 进同一个 UPDATE。先写 status 再清 snapshot 会开出一个
+// "已 completed 但快照还在"的中间态, 而 BillingSettle 里"判 settled"与"读 snapshot"之间存在窗口。
+//
+// 为什么 manual 不清: 那张快照是人工对账的唯一证据 —— 自动路径已经放弃判断, 人要看的就是它。
+//
+// 为什么只清列、不删行: BillingReleaseStale 靠 NOT EXISTS 判断"这笔预扣有没有结算意图",
+// 删掉任务行会让一笔仍在等待结算的预扣被当成可释放的泄漏。行本身必须留着。
+func billingSettlementTerminalFields(status string) map[string]any {
+	if status != model.BillingSettlementStatusCompleted {
+		return nil
+	}
+	return map[string]any{"snapshot": ""}
 }
 
 // billingSettlementBackoff 有界指数退避: base 起按尝试次数倍增, 封顶 max —— 重试间隔永不无界膨胀。

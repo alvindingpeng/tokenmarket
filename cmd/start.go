@@ -73,8 +73,8 @@ var startCmd = &cobra.Command{
 			// 每次启动都打一行全量验证结果: 库里每个信封都已用当前主密钥逐条验开,
 			// 错误 KEK 在这里就 fail closed(上一行 exit 1), 不必等有流量才发现;
 			// 这行日志就是"启动时已验证所有加密行"的可见凭证。
-			log.Infof("secret at-rest verified: encrypted_rows=%d newly_encrypted=%d (settings=%d channel_keys=%d) empty_skipped=%d",
-				stats.AlreadyEncrypted, stats.Total(), stats.SettingsEncrypted, stats.ChannelKeysEncrypted, stats.EmptySkipped)
+			log.Infof("secret at-rest verified: encrypted_rows=%d newly_encrypted=%d (settings=%d channel_keys=%d egresses=%d) empty_skipped=%d",
+				stats.AlreadyEncrypted, stats.Total(), stats.SettingsEncrypted, stats.ChannelKeysEncrypted, stats.EgressesEncrypted, stats.EmptySkipped)
 		}
 
 		if err := op.InitCache(); err != nil {
