@@ -82,8 +82,23 @@ func TestChannelEgressPublicAddressesAccepted(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s %s 应被接受: %v", tc.kind, tc.url, err)
 			}
-			if len(saved.Egresses) != 1 || saved.Egresses[0].URL != tc.url {
-				t.Fatalf("出口未原样落库: %+v", saved.Egresses)
+			if len(saved.Egresses) != 1 {
+				t.Fatalf("出口数量不对: %+v", saved.Egresses)
+			}
+			// 回读值内嵌凭据时要掩码(见 TestEgressURLCredentialsMaskedOnReadback),
+			// 无凭据的地址必须原样返回。
+			want := tc.url
+			if strings.Contains(tc.url, "@") {
+				if !strings.Contains(saved.Egresses[0].URL, egressMaskMark) {
+					t.Fatalf("带凭据的地址应掩码回显: %q", saved.Egresses[0].URL)
+				}
+				if strings.Contains(saved.Egresses[0].URL, "pa%40ss") {
+					t.Fatalf("回显泄漏了密码: %q", saved.Egresses[0].URL)
+				}
+				want = "" // 已单独断言
+			}
+			if want != "" && saved.Egresses[0].URL != want {
+				t.Fatalf("出口地址未原样返回: want %q got %q", want, saved.Egresses[0].URL)
 			}
 		})
 	}

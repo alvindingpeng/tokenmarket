@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	mathrand "math/rand"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -424,6 +425,11 @@ func syncChannelEgresses(tx *gorm.DB, channelID int, requested []model.ChannelEg
 	}
 	for _, requestedEgress := range requested {
 		if current, ok := existingByName[requestedEgress.Name]; ok {
+			// 掩码占位: 编辑表单把回显的掩码原样带回时保持库中原地址, 与 syncChannelKeys 同口径。
+			// 不识别的话, 每次只改权重或地区都会把真实代理地址覆盖成 "http://user:••••@host"。
+			if isMaskedEgressURL(requestedEgress.URL) {
+				requestedEgress.URL = current.URL
+			}
 			if current.Kind != requestedEgress.Kind || current.URL != requestedEgress.URL ||
 				current.Region != requestedEgress.Region || current.Weight != requestedEgress.Weight ||
 				current.Enabled != requestedEgress.Enabled {
@@ -1047,6 +1053,51 @@ func isMaskedChannelSecret(s string) bool {
 	return s != "" && strings.Contains(s, maskSecretMark)
 }
 
+// egressMaskMark 出口地址的掩码标记。
+// 用 ASCII 星号而不是凭据那套圆点: 圆点会被 url.String() 编码成 %E2%80%A2, 界面不可读。
+const egressMaskMark = "****"
+
+// isMaskedEgressURL 判断提交回来的出口地址是否为掩码占位。
+// 与凭据的 isMaskedChannelSecret 分开判定, 因为两者的掩码标记不同(圆点 vs 星号)。
+func isMaskedEgressURL(raw string) bool {
+	return raw != "" && strings.Contains(raw, egressMaskMark)
+}
+
+// maskEgressURL 掩码出口地址里内嵌的凭据, 保留 scheme/主机/端口与用户名。
+//
+// 回显出口地址此前是原样返回, 与紧邻的凭据处理(掩码)完全不一致:
+// 代理地址常用 http://user:pass@host:port 的形式, 明文回显意味着密码会经 API 进浏览器,
+// 被 XSS/会话劫持/抓包带走, 并在编辑页面上直接可见。
+//
+// 只掩密码而不是整条地址: 管理员需要看到自己配的是哪台机器、哪个端口、哪个账号,
+// 否则编辑表单等于不可读。这与 channel_keys 的掩码策略同源。
+func maskEgressURL(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.User == nil {
+		// 解析失败(null 之外的畸形地址): 无从区分哪段是凭据, 整条掩掉更好过漏出密码。
+		if err != nil {
+			return egressMaskMark
+		}
+		return raw
+	}
+	if _, hasPassword := parsed.User.Password(); !hasPassword {
+		// 只有用户名没有密码: 用户名本身不是秘密, 原样返回让编辑页可读。
+		return raw
+	}
+	// 手工拼回而不是交给 url.String(): 它会把掩码里的一切非字母数字百分号编码,
+	// 圆点变 %E2%80%A2、星号变 %2A, 编辑页上显示成一串转义码而非掩码。
+	// 只掩密码, scheme/用户名/主机/端口原样保留 —— 管理员需要认出自己配的是哪台机器哪个账号。
+	host := parsed.Host
+	if parsed.Opaque != "" {
+		host = parsed.Opaque
+	}
+	return parsed.Scheme + "://" + url.UserPassword(parsed.User.Username(), "").Username() +
+		":" + egressMaskMark + "@" + host
+}
+
 // channelDetail 把渠道缓存与其凭据, 模型和授权合并为编辑表单所需的完整配置。
 // 授权按名称给出而不给主键: 名称在渠道内唯一, 提交时也按名称引用, 读写同一种寻址界面才无需翻译。
 // 三个集合字段恒为数组, 空集合也给出, 免得各消费方各自兜底 null; Header 由写入侧保证已是数组。
@@ -1099,9 +1150,16 @@ func channelDetail(channel model.Channel) model.ChannelDetail {
 		return grants[i].KeyName < grants[j].KeyName
 	})
 	detail.Grants = grants
-	// 出口直接取缓存里那份: 它就是转发路径实际在用的配置, 编辑页看到与生效的必然是同一份。
+	// 出口取自缓存里那份(它就是转发路径实际在用的配置, 编辑页看到与生效的必然是同一份),
+	// 但内嵌凭据必须掩码回显: 代理地址的 user:pass 是秘密, 明文经 API 进浏览器会被
+	// XSS/会话劫持/抓包带走, 也会直接显示在编辑页上。
 	detail.Egresses = make([]model.ChannelEgress, 0, len(channel.Egresses))
-	detail.Egresses = append(detail.Egresses, channel.Egresses...)
+	for _, egress := range channel.Egresses {
+		if egress.URL != "" {
+			egress.URL = maskEgressURL(egress.URL)
+		}
+		detail.Egresses = append(detail.Egresses, egress)
+	}
 	return detail
 }
 

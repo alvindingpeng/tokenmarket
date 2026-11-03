@@ -12,6 +12,8 @@ import (
 	"net"
 	"net/url"
 	"time"
+
+	"github.com/alvindingpeng/switchyard/internal/utils/xstrings"
 )
 
 // dialTimeout 单次解析的超时: 防护本身不能成为新的挂起点。
@@ -105,7 +107,9 @@ func CheckHost(ctx context.Context, host string, allowPrivate bool) error {
 func CheckURL(ctx context.Context, rawURL string, allowPrivate bool) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return fmt.Errorf("invalid upstream url: %w", err)
+		// 上游地址允许内嵌凭据(https://user:pass@host): 解析错误会把原始地址整个带出来,
+		// 这条消息会回到浏览器, 因此剥掉凭据只留原因。
+		return fmt.Errorf("invalid upstream url %q: %w", xstrings.RedactURLCredentials(rawURL), xstrings.URLParseReason(err))
 	}
 	switch parsed.Scheme {
 	case "http", "https", "ws", "wss":
@@ -121,7 +125,7 @@ func CheckURL(ctx context.Context, rawURL string, allowPrivate bool) error {
 func CheckProxyURL(ctx context.Context, rawURL string, allowPrivate bool) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return fmt.Errorf("invalid proxy url: %w", err)
+		return fmt.Errorf("invalid proxy url %q: %w", xstrings.RedactURLCredentials(rawURL), xstrings.URLParseReason(err))
 	}
 	switch parsed.Scheme {
 	case "http", "https", "socks5", "socks5h":

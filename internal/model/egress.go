@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/alvindingpeng/switchyard/internal/utils/xstrings"
 )
 
 // EgressKind 是出口的接入方式。
@@ -60,7 +62,10 @@ func (e ChannelEgress) Normalize() (ChannelEgress, error) {
 	}
 	parsed, err := url.Parse(normalized.URL)
 	if err != nil {
-		return ChannelEgress{}, fmt.Errorf("egress %s has invalid url: %w", normalized.Name, err)
+		// 不能直接 %w 包住解析错误: url.Error 会把原始地址(含 user:pass)整个打出来,
+		// 而这条信息会经 HTTP 响应回到浏览器。剥掉凭据, 只留底层原因。
+		return ChannelEgress{}, fmt.Errorf("egress %s has invalid url %q: %w",
+			normalized.Name, xstrings.RedactURLCredentials(normalized.URL), xstrings.URLParseReason(err))
 	}
 	// 协议必须与接入方式一致: socks5 地址填成 http 会在拨号时才失败。
 	expected := []string{"http", "https"}
