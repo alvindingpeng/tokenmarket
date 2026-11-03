@@ -101,6 +101,10 @@ export function SettingSystem() {
         if (value === initialValue) return;
 
         setSetting.mutate({ key, value }, {
+            // 失败必须提示: 此前只有 onSuccess, 保存失败时输入框仍显示新值、后端却还是旧值,
+            // 而 initial 基准也没回滚 —— 界面与现实就此分叉, 管理员以为已生效。
+            // (不在此处回滚输入框: 用户可能只是网络抖动, 保留输入让他能重试。)
+            onError: (error) => toast.error(t('saveFailed'), { description: error.message }),
             onSuccess: () => {
                 toast.success(t('saved'));
                 if (key === SettingKey.ProxyURL) {

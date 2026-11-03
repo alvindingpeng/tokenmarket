@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { UserView } from '@/api/user';
-import { buildCreateUserRequest, buildUpdateUserRequest } from './payload';
+import { buildCreateUserRequest, buildUpdateUserRequest, passwordProblem } from './payload';
 
 // 表单"哪些字段该发"的规则逐条钉死: 多发的字段会污染审计, 少发的字段会让用户以为改成功。
 
@@ -82,5 +82,22 @@ describe('buildUpdateUserRequest', () => {
             });
             expect(request).not.toHaveProperty('balance');
         }
+    });
+});
+
+describe('passwordProblem', () => {
+    it('空串表示本次不设密码, 不算问题(编辑时留空=不改)', () => {
+        expect(passwordProblem('')).toBeNull();
+    });
+
+    it('短于后端下限要被拦下', () => {
+        // 后端 op/user.go 对创建/编辑/重置三处都强制 8 位; 前端此前只判非空,
+        // 于是填 6 位点提交必定被拒, 而且只看到英文原文。
+        expect(passwordProblem('1234567')).toBe('too_short');
+    });
+
+    it('刚好 8 位及格(闭区间, 与后端 len(p) < 8 一致)', () => {
+        expect(passwordProblem('12345678')).toBeNull();
+        expect(passwordProblem('a-much-longer-password')).toBeNull();
     });
 });

@@ -80,7 +80,8 @@
         "neverExpire": "Never",
         "daysLeft": "days left",
         "expired": "Expired",
-        "supportedModels": "Supported Models"
+        "supportedModels": "Supported Models",
+        "retry": "Retry"
     },
     "navbar": {
         "home": "Home",
@@ -146,7 +147,9 @@
             "success": "Copied",
             "failed": "Copy failed",
             "noContent": "Nothing to copy"
-        }
+        },
+        "loadFailed": "Failed to load",
+        "retry": "Retry"
     },
     "home": {
         "metric": {
@@ -486,7 +489,10 @@
             "clear": {
                 "label": "Clear History Logs",
                 "button": "Clear",
-                "clearing": "Clearing..."
+                "clearing": "Clearing...",
+                "hint": "This cannot be undone",
+                "confirm": "Confirm clear",
+                "cancel": "Cancel"
             },
             "clearSuccess": "Logs cleared",
             "clearFailed": "Failed to clear logs"
@@ -606,7 +612,8 @@
             "createFailed": "Create failed",
             "updated": "Updated successfully",
             "updateFailed": "Update failed",
-            "deleted": "Deleted successfully"
+            "deleted": "Deleted successfully",
+            "deleteFailed": "Failed to delete group"
         },
         "create": {
             "submit": "Create",
@@ -724,13 +731,16 @@
             "cacheWrite": "Cache Write",
             "cancel": "Cancel",
             "submit": "Create",
-            "submitting": "Creating..."
+            "submitting": "Creating...",
+            "priceInvalid": "Price must be a number greater than or equal to 0",
+            "priceTooLarge": "Price is too large; make sure the unit is per million tokens"
         },
         "toast": {
             "updated": "Model price updated",
             "updateFailed": "Update failed",
             "deleted": "Model deleted",
-            "deleteFailed": "Delete failed"
+            "deleteFailed": "Delete failed",
+            "createFailed": "Failed to create model"
         },
         "card": {
             "inputCache": "Input/Cache",
@@ -997,7 +1007,8 @@
             "breakerReset": "Breaker reset for {name}",
             "breakerAlreadyClear": "{name} is not tripped",
             "breakerBadge": "Tripped {time}",
-            "breakerTitle": "Tripped after {count} consecutive errors; trip #{trips} for this model, the duration doubles with each trip"
+            "breakerTitle": "Tripped after {count} consecutive errors; trip #{trips} for this model, the duration doubles with each trip",
+            "deleteFailed": "Failed to delete channel"
         },
         "form": {
             "stepPreset": "Start",
@@ -1361,95 +1372,98 @@
             }
         },
         "trade": {
-            "title": "交易详情",
-            "recordId": "计费明细编号",
-            "requestId": "调用请求编号",
-            "userCost": "用户支出",
-            "ownerRevenue": "渠道分成",
-            "platformRevenue": "平台毛利",
-            "status": "交易状态",
-            "requestContext": "调用上下文",
-            "requestStatus": "请求状态",
-            "clientIp": "客户端 IP",
-            "latency": "耗时",
-            "firstToken": "首字耗时",
-            "error": "错误信息",
-            "ledgerRecords": "关联余额流水",
-            "disputes": "申诉历史",
-            "disputeAction": "发起退款申诉",
-            "disputeReason": "申诉原因",
-            "disputeReasonPlaceholder": "请描述调用失败、异常扣费或用量不符的具体情况",
-            "submitDispute": "提交申诉",
-            "disputeSuccess": "申诉提交成功，请等待管理员审核",
-            "disputeFailed": "申诉提交失败",
-            "disputeExists": "已存在待审核申诉",
-            "close": "关闭"
+            "title": "Transaction detail",
+            "recordId": "Billing record ID",
+            "requestId": "Relay request ID",
+            "userCost": "User charge",
+            "ownerRevenue": "Channel share",
+            "platformRevenue": "Platform margin",
+            "status": "Transaction status",
+            "requestContext": "Request context",
+            "requestStatus": "Request status",
+            "clientIp": "Client IP",
+            "latency": "Latency",
+            "firstToken": "Time to first token",
+            "error": "Error",
+            "ledgerRecords": "Related ledger entries",
+            "disputes": "Dispute history",
+            "disputeAction": "File a refund dispute",
+            "disputeReason": "Dispute reason",
+            "disputeReasonPlaceholder": "Describe what went wrong: failed call, unexpected charge, or usage mismatch",
+            "submitDispute": "Submit dispute",
+            "disputeSuccess": "Dispute submitted; an administrator will review it",
+            "disputeFailed": "Failed to submit dispute",
+            "disputeExists": "A dispute is already pending review",
+            "close": "Close"
         },
         "dispute": {
-            "title": "交易申诉与退款",
-            "hint": "用户争议处理、审核及冲正退款",
-            "empty": "暂无申诉记录",
+            "title": "Disputes and refunds",
+            "hint": "Handle user disputes, review them, and reverse charges",
+            "empty": "No disputes",
             "status": {
-                "all": "全部申诉",
-                "pending": "待审核",
-                "approved": "已退款",
-                "rejected": "已驳回"
+                "all": "All disputes",
+                "pending": "Pending review",
+                "approved": "Refunded",
+                "rejected": "Rejected"
             },
             "column": {
-                "id": "申诉编号",
-                "recordId": "交易/请求",
-                "user": "申诉用户",
-                "amount": "申请退款金额",
-                "reason": "申诉原因",
-                "status": "状态",
-                "review": "审核说明",
-                "time": "时间",
-                "actions": "操作"
+                "id": "Dispute ID",
+                "recordId": "Transaction / request",
+                "user": "User",
+                "amount": "Refund requested",
+                "reason": "Reason",
+                "status": "Status",
+                "review": "Review note",
+                "time": "Time",
+                "actions": "Actions"
             },
-            "approve": "同意退款",
-            "reject": "驳回",
-            "reviewNote": "审核说明 / 驳回原因",
-            "reviewNotePlaceholder": "请输入核实说明或驳回理由",
-            "reviewSuccess": "审核处理成功",
-            "reviewFailed": "审核处理失败"
+            "approve": "Approve refund",
+            "reject": "Reject",
+            "reviewNote": "Review note / rejection reason",
+            "reviewNotePlaceholder": "Enter your findings or the reason for rejection",
+            "reviewSuccess": "Review saved",
+            "reviewFailed": "Review failed"
         },
         "settlement": {
-            "title": "渠道商日结算单",
-            "hint": "每日汇总渠道商供货应收、退款扣减与净收益",
-            "empty": "暂无结算单记录",
-            "generate": "生成/刷新今日结算单",
-            "generating": "结算单生成中...",
-            "generateSuccess": "结算单已生成并对账完毕",
+            "title": "Reseller daily settlements",
+            "hint": "Daily rollup of reseller charges, refund deductions, and net revenue",
+            "empty": "No settlements",
+            "generate": "Generate / refresh today’s settlement",
+            "generating": "Generating settlement...",
+            "generateSuccess": "Settlement generated and reconciled",
             "column": {
-                "statementNo": "结算单号",
-                "period": "账期",
-                "owner": "渠道商 ID",
-                "requests": "请求数",
-                "tokens": "总 Tokens",
-                "gross": "供货毛收入",
-                "refund": "退款冲正",
-                "net": "净结算金额",
-                "status": "对账状态"
-            }
+                "statementNo": "Statement no.",
+                "period": "Period",
+                "owner": "Reseller ID",
+                "requests": "Requests",
+                "tokens": "Total tokens",
+                "gross": "Gross revenue",
+                "refund": "Refund reversal",
+                "net": "Net settlement",
+                "status": "Reconciliation"
+            },
+            "generateFailed": "Failed to generate settlement",
+            "yesterday": "Yesterday",
+            "today": "Today"
         },
         "margin": {
-            "title": "经营毛利分析",
-            "hint": "平台实际 GMV、渠道供货成本与净毛利看板",
-            "userCost": "用户消费流水 (GMV)",
-            "ownerRevenue": "渠道供货成本",
-            "platformRevenue": "平台净毛利",
-            "marginRate": "综合毛利率",
-            "refundAmount": "累计退款冲正",
-            "rechargeAmount": "现金充值流入",
-            "trendTitle": "毛利每日趋势 (近 30 天)",
-            "empty": "暂无经营数据",
+            "title": "Margin analysis",
+            "hint": "Actual GMV, reseller supply cost, and net margin",
+            "userCost": "User spend (GMV)",
+            "ownerRevenue": "Reseller supply cost",
+            "platformRevenue": "Platform net margin",
+            "marginRate": "Blended margin rate",
+            "refundAmount": "Cumulative refunds",
+            "rechargeAmount": "Cash top-ups",
+            "trendTitle": "Daily margin trend (last 30 days)",
+            "empty": "No operating data",
             "column": {
-                "date": "日期",
-                "gmv": "用户消费",
-                "cost": "渠道成本",
-                "profit": "平台毛利",
-                "marginRate": "毛利率",
-                "requests": "请求数"
+                "date": "Date",
+                "gmv": "User spend",
+                "cost": "Channel cost",
+                "profit": "Platform margin",
+                "marginRate": "Margin rate",
+                "requests": "Requests"
             }
         }
     },
@@ -1531,7 +1545,8 @@
             "passwordReset": "Password reset",
             "resetFailed": "Failed to reset password",
             "deleted": "User deleted",
-            "deleteFailed": "Failed to delete user"
+            "deleteFailed": "Failed to delete user",
+            "passwordTooShort": "Password must be at least 8 characters"
         },
         "list": {
             "empty": "No users yet",
@@ -1693,6 +1708,15 @@
         "active": "Active requests",
         "quotaCard": {
             "title": "User quota usage: {user}"
+        },
+        "toast": {
+            "saved": "Policy saved",
+            "saveFailed": "Failed to save policy",
+            "deleted": "Policy deleted",
+            "deleteFailed": "Failed to delete policy",
+            "confirmDelete": "Confirm delete",
+            "cancel": "Cancel",
+            "deleteHint": "Deleting removes rate limiting for this scope immediately."
         }
     },
     "ops": {
@@ -2339,6 +2363,10 @@
         },
         "rollback": {
             "done": "Withdrawal #{id} rolled back to approved"
+        },
+        "confirm": {
+            "yes": "Confirm",
+            "no": "Cancel"
         }
     },
     "notification": {

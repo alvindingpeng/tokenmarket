@@ -9,6 +9,7 @@ import { Card } from './Card';
 import { ChannelForm } from './Form';
 import { ChannelReviewQueue } from './Review';
 import { VirtualizedGrid } from '@/components/common/VirtualizedGrid';
+import { ListErrorState } from '@/components/common/ListErrorState';
 
 // ChannelActions 向稳定顶栏提供渠道页面的搜索、视图选项和创建入口。
 export function ChannelActions() {
@@ -63,7 +64,7 @@ export function Channel() {
     const { role } = useAuth();
     const isAdmin = role === 'admin';
     const [view, setView] = useState<'channels' | 'review'>('channels');
-    const { data: statsData } = useChannelStats();
+    const { data: statsData, isError: statsError, refetch: refetchStats, isRefetching: statsRefetching } = useChannelStats();
     const searchTerm = usePageActionsStore((state) => state.searchTerms.channel || '');
     const layout = usePageActionsStore((state) => state.layouts.channel || 'grid');
     const sortOrder = usePageActionsStore((state) => state.sortOrders.channel === 'desc' ? 'desc' : 'asc');
@@ -113,6 +114,10 @@ export function Channel() {
             </div>
             {view === 'review' && isAdmin ? (
                 <ChannelReviewQueue />
+            ) : statsError ? (
+                // 失败时 statsData 是 undefined, 列表会变空, 而 VirtualizedGrid 在 rowCount === 0
+                // 时直接返回 null —— 整页纯空白, 用户会以为"渠道全丢了"。
+                <ListErrorState onRetry={() => void refetchStats()} retrying={statsRefetching} />
             ) : (
                 <VirtualizedGrid
                     items={visibleChannels}

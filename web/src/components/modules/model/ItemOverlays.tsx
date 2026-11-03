@@ -100,6 +100,7 @@ export function ModelEditOverlay({
                     <Input
                         type="number"
                         step="any"
+                        min="0"
                         value={editValues.input}
                         onChange={(e) => onChange({ ...editValues, input: e.target.value })}
                         className="h-9 text-sm rounded-xl"
@@ -110,6 +111,7 @@ export function ModelEditOverlay({
                     <Input
                         type="number"
                         step="any"
+                        min="0"
                         value={editValues.output}
                         onChange={(e) => onChange({ ...editValues, output: e.target.value })}
                         className="h-9 text-sm rounded-xl"
@@ -120,6 +122,7 @@ export function ModelEditOverlay({
                     <Input
                         type="number"
                         step="any"
+                        min="0"
                         value={editValues.cache_read}
                         onChange={(e) => onChange({ ...editValues, cache_read: e.target.value })}
                         className="h-9 text-sm rounded-xl"
@@ -130,6 +133,7 @@ export function ModelEditOverlay({
                     <Input
                         type="number"
                         step="any"
+                        min="0"
                         value={editValues.cache_write}
                         onChange={(e) => onChange({ ...editValues, cache_write: e.target.value })}
                         className="h-9 text-sm rounded-xl"

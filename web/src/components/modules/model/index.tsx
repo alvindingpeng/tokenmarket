@@ -7,6 +7,7 @@ import { PageActions, usePageActionsStore } from '@/components/common/PageAction
 import { ModelItem } from './Item';
 import { CreateDialogContent } from './Create';
 import { VirtualizedGrid } from '@/components/common/VirtualizedGrid';
+import { ListErrorState } from '@/components/common/ListErrorState';
 
 // ModelActions 向稳定顶栏提供模型页面的搜索、视图选项和创建入口。
 export function ModelActions() {
@@ -51,7 +52,7 @@ export function ModelActions() {
 
 // Model 渲染模型列表正文。
 export function Model() {
-    const { data: models } = useModelList();
+    const { data: models, isError: modelsError, refetch: refetchModels, isRefetching: modelsRefetching } = useModelList();
     const { data: scores } = useModelScores();
     const { data: capabilities } = useModelCapabilities();
     // 自动添加条件按模型名索引: 与评分/能力同一套归并口径, 卡片点开即能编辑该模型自己的条件。
@@ -95,6 +96,11 @@ export function Model() {
 
         return byName;
     }, [sortedModels, searchTerm, filter]);
+
+    if (modelsError) {
+        // 与渠道列表同一处理: 失败时列表为空, VirtualizedGrid 会渲染成空白页。
+        return <ListErrorState onRetry={() => void refetchModels()} retrying={modelsRefetching} />;
+    }
 
     return (
         <VirtualizedGrid

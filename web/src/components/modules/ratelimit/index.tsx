@@ -20,6 +20,7 @@ import { useUserList } from '@/api/usermanage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { toast } from 'sonner';
 
 const SCOPE_TYPES: RateScopeType[] = ['system', 'user', 'api_key', 'group', 'channel', 'channel_key', 'channel_model'];
 
@@ -36,6 +37,7 @@ export default function RateLimit() {
     const t = useTranslations('ratelimit');
     const [filterScope, setFilterScope] = useState('');
     const [editing, setEditing] = useState<RatePolicyInput | null>(null);
+    const [pendingDelete, setPendingDelete] = useState<number | null>(null);
     const [inspectScope, setInspectScope] = useState<{ type: RateScopeType; id: number; model: string }>({ type: 'system', id: 0, model: '' });
 
     const { data: policyData, isLoading, isError, refetch, isRefetching } = useRatePolicies();
@@ -100,9 +102,17 @@ export default function RateLimit() {
             concurrent: policy.concurrent ?? 0,
             enabled: policy.enabled,
         });
+    // 保存失败必须可见: 此前只有 onSuccess, 失败时表单停在编辑态、无红字无提示,
+    // 管理员会以为新策略已生效 —— 而限流策略改错/未生效是没有任何外部信号的。
     const save = () => {
         if (!editing) return;
-        savePolicy.mutate(editing, { onSuccess: () => setEditing(null) });
+        savePolicy.mutate(editing, {
+            onSuccess: () => {
+                setEditing(null);
+                toast.success(t('toast.saved'));
+            },
+            onError: (error) => toast.error(t('toast.saveFailed'), { description: error.message }),
+        });
     };
 
     return (
@@ -254,10 +264,37 @@ export default function RateLimit() {
  <td className="whitespace-nowrap px-4 py-2.5">{policy.enabled ? t('table.enabled') : t('table.disabled')}</td>
                             <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-muted-foreground">{formatTime(policy.updated_at)}</td>
                             <td className="whitespace-nowrap px-4 py-2.5">
-                                <div className="flex gap-1">
-                                    <Button variant="ghost" size="sm" onClick={() => startEdit(policy)} className="rounded-xl"><Pencil className="size-4" /></Button>
-                                    <Button variant="ghost" size="sm" onClick={() => deletePolicy.mutate(policy.id)} className="rounded-xl text-destructive"><Trash2 className="size-4" /></Button>
-                                </div>
+                                {pendingDelete === policy.id ? (
+                                    // 就地二次确认: 删除会立即解除该范围的限流, 是不可撤销的节流开关,
+                                    // 单击即执行太容易误触; 同时把后果写在按钮旁, 而不是只问"确定吗"。
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-xs text-muted-foreground">{t('deleteHint')}</span>
+                                        <Button
+                                            variant="destructive"
+                                            size="sm"
+                                            className="rounded-xl"
+                                            disabled={deletePolicy.isPending}
+                                            onClick={() => deletePolicy.mutate(policy.id, {
+                                                onSuccess: () => {
+                                                    setPendingDelete(null);
+                                                    toast.success(t('toast.deleted'));
+                                                },
+                                                onError: (error) => {
+                                                    setPendingDelete(null);
+                                                    toast.error(t('toast.deleteFailed'), { description: error.message });
+                                                },
+                                            })}
+                                        >
+                                            {t('confirmDelete')}
+                                        </Button>
+                                        <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setPendingDelete(null)}>{t('cancel')}</Button>
+                                    </div>
+                                ) : (
+                                    <div className="flex gap-1">
+                                        <Button variant="ghost" size="sm" onClick={() => startEdit(policy)} className="rounded-xl"><Pencil className="size-4" /></Button>
+                                        <Button variant="ghost" size="sm" onClick={() => setPendingDelete(policy.id)} className="rounded-xl text-destructive"><Trash2 className="size-4" /></Button>
+                                    </div>
+                                )}
                             </td>
                         </tr>)}</tbody>
                     </table>

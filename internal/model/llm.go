@@ -19,6 +19,42 @@ func (p LLMPrice) Cost(read, output, cacheRead, cacheWrite int64) float64 {
 		float64(cacheRead)*p.CacheRead + float64(cacheWrite)*p.CacheWrite) / 1_000_000
 }
 
+// MaxLLMPricePerMillion 单价的量级上限(每百万 token 的计价货币金额)。
+//
+// 取 100 万是因为它已经远超任何真实模型的单价(最贵的推理模型也在每百万 token
+// 几十到几百的量级), 但足以拦住把"每千 token 价"或"每次调用价"误填进单价框的情况 ——
+// 那类错误的量级差正好是 1000 倍, 按 token 计费后会放大成用户余额的瞬间清零。
+const MaxLLMPricePerMillion = 1_000_000.0
+
+// Validate 拒绝非有限或越界的文本模型单价, 在价格进入计费前拦下。
+//
+// 负价必须拦: LLMPrice.Cost 是纯乘法再求和, 没有下界钳制 —— 负的输入价会让
+// cost 变成负数, 于是"调用反而加钱"。上游若把负价当免费额度用, 就是无上限充值。
+// 与 MediaPrice.Validate 同一形状, 两处口径保持一致才能避免媒体模型有校验、
+// 文本模型没有的漏洞。
+func (p LLMPrice) Validate() error {
+	for _, item := range []struct {
+		field string
+		value float64
+	}{
+		{"input", p.Input},
+		{"output", p.Output},
+		{"cache_read", p.CacheRead},
+		{"cache_write", p.CacheWrite},
+	} {
+		if math.IsNaN(item.value) || math.IsInf(item.value, 0) {
+			return fmt.Errorf("model %s price must be a finite number", item.field)
+		}
+		if item.value < 0 {
+			return fmt.Errorf("model %s price must not be negative (got %g)", item.field, item.value)
+		}
+		if item.value > MaxLLMPricePerMillion {
+			return fmt.Errorf("model %s price %g exceeds the limit of %g per million tokens", item.field, item.value, MaxLLMPricePerMillion)
+		}
+	}
+	return nil
+}
+
 // Scale 按比例缩放四类单价, ratio=0.2 表示上浮 20%; 用户价 = 供货价 × (1 + ratio)。
 func (p LLMPrice) Scale(ratio float64) LLMPrice {
 	factor := 1 + ratio

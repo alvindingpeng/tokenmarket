@@ -1,5 +1,33 @@
 # 更新说明
 
+## v1.5.17 — 2026-11-03
+
+### 模型单价可存负数 —— 调用反而加钱
+
+- **问题**: `LLMPrice.Cost` 是纯乘法再求和(`(read*Input + output*Output + ...) / 1e6`), 没有任何下界钳制。一个负的单价会让费用变成负数, 即**调用反而给用户加钱**; 上游若把负价当免费额度用, 就是无上限充值。而创建/更新模型的接口只校验了名称非空, 媒体模型早有 `MediaPrice.Validate`, 文本模型没有 —— 两处口径不一致。
+- 修法: 新增 `LLMPrice.Validate`(拒绝 NaN/Inf、负值、以及超过 100 万每百万 token 的量级), 在 `createLLM` / `updateLLM` 落库前拦截, 返回 **400** 而不是 500 —— 这是输入问题, 用 500 会淹没真实故障信号。拒绝时写一条 WARN(`model create rejected: name=... reason=...`), 否则事后只能从访问日志看到"有人存失败", 想知道哪个字段越界得靠猜。
+- 前端同步: 新增 `lib/price-input.ts`。旧的 `parseFloat(x) || 0` 有两个坏毛病 —— `abc` 会**静默变成 0**(付费模型悄悄变免费), 而 `parseFloat('1.2.3')` 得到 1.2 并当成功。改用 `Number()` + 显式区间校验, `1.2.3` 现在会被拒。四个价格框都加了 `min="0"`。
+- 测试: `TestLLMPriceValidate*` (负值/非有限/量级/真实价格四组)、`TestCreateLLMRejectsNegativePrice`(断言 400 且**未落库**)、`TestUpdateLLMRejectsNegativePrice`(先建合法的再改成负的也要拦, 断言已有价格未被改动)、`TestCreateLLMAcceptsFreeModel`(全 0 是合法配置, 不能一并拦掉)、`price-input.test.ts` 7 例。均已变异校验。
+
+### 前端: 失败不再静默, 危险操作不再一击即发
+
+这些都不报错, 只是**什么都不说** —— 用户以为成功了。逐条都是读了代码确认的:
+
+- **储蓄型静默**: `mutationCache.onError` 只做认证代际隔离, 不弹提示; 全仓 79 个 `useMutation` 里 78 个没有 hook 级 `onError`, 全靠调用点自补。补齐了限流策略保存/删除、渠道删除、分组删除、新建模型、设置项保存(含代理地址/CORS/模型过滤)、申诉审核、结算单生成。
+- **空列表伪装成空数据**: `useChannelStats` / `useModelList` / `useGroupList` / `useNotificationList` 只解构 `data`, 不看 `isError`。请求失败 → 列表为空 → `VirtualizedGrid` 在 `rowCount === 0` 时直接 `return null` → **整页纯空白**, 连"暂无数据"都不会出现。新增 `ListErrorState`(带重试), 四个列表接上。
+- **首屏闪错误**: API Key 面板写成 `if (error || !data)`, 首帧 data 未到 → 每次进站都闪一遍"加载失败 + 退出登录"。加载态与错误态拆开, 并补上重试。
+- **原生 alert**: 计费页两处 `alert()` 换成 toast。申诉审核的 `alert(reviewFailed)` 把 `error.message` 整条丢掉 —— 而"余额不足 / 记录已结算 / 权限不足"决定管理员下一步怎么做。
+- **二次确认**: 删除限流策略(**误点即解除全局限流**)、清空日志(不可撤销)、提现通过/回滚(资金操作, 无撤销按钮) 此前都是单击即执行。改为就地两步确认, 并把后果写在按钮旁而不只是问"确定吗"。
+
+### 校验前后端对齐: 密码 8 位下限
+
+- 后端 `op/user.go` 对创建/编辑/重置三处都强制 `PasswordMinLen = 8`, 而前端 `canSubmit` 只判非空。管理员填 6 位点提交必被拒, 只看到英文原文 `password must be at least 8 characters`。前端补 `passwordProblem()`(与后端闭区间一致), 三处提交前拦截, 提示走本地化。
+
+### i18n: 英文与繁体里残留中文
+
+- `en.json` 的 `billing.trade/dispute/settlement/margin` 四段共 **76 条**值是中文 —— 英文用户打开计费页, 表头/空态/按钮全中文, 而键位一致性测试一路绿灯(它只检查"有值", 不检查"值是英文")。已全部译为英文, 并给 `locales.test.ts` 补了一条**英文文案不得含 CJK**的用例, 这类漏译以后会被拦在提交前。
+- `zh_hant.json` 同四段 76 条是简体未转换, 已转繁体。
+- 计费页 `SelectItem` 里硬编码的"昨日""今日"改走 `t()`。
 ## v1.5.16 — 2026-11-03
 
 ### 出口 ID 从未落库: 按出口归因的统计永久为空

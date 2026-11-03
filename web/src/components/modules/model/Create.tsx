@@ -8,6 +8,8 @@ import {
     useMorphingDialog,
 } from '@/components/ui/morphing-dialog';
 import { useTranslations } from 'use-intl';
+import { toast } from 'sonner';
+import { parseLLMPriceForm } from '@/lib/price-input';
 
 export function CreateDialogContent() {
     const { setIsOpen } = useMorphingDialog();
@@ -26,17 +28,24 @@ export function CreateDialogContent() {
         event.preventDefault();
         if (!formData.name.trim()) return;
 
+        // 价格先在本地校验再提交: 旧的 parseFloat(x) || 0 会把 "abc" 静默变成 0
+        // (付费模型悄悄变成免费), 负价则原样送上去被后端拒 —— 两种都没有任何提示。
+        const price = parseLLMPriceForm(formData);
+        if (!price.ok) {
+            toast.error(price.reason === 'too_large' ? t('priceTooLarge') : t('priceInvalid'));
+            return;
+        }
+
         createModel.mutate({
             name: formData.name.trim(),
-            input: parseFloat(formData.input) || 0,
-            output: parseFloat(formData.output) || 0,
-            cache_read: parseFloat(formData.cache_read) || 0,
-            cache_write: parseFloat(formData.cache_write) || 0,
+            ...price.fields,
         }, {
             onSuccess: () => {
                 setFormData({ name: '', input: '', output: '', cache_read: '', cache_write: '' });
                 setIsOpen(false);
-            }
+            },
+            // 此前只有 onSuccess: 重名或校验失败时弹窗毫无反应, 用户只能反复点提交。
+            onError: (error) => toast.error(t('toast.createFailed'), { description: error.message }),
         });
     };
 
@@ -61,6 +70,7 @@ export function CreateDialogContent() {
                                     id="model-input"
                                     type="number"
                                     step="any"
+                                    min="0"
                                     value={formData.input}
                                     onChange={(e) => setFormData({ ...formData, input: e.target.value })}
                                     className="rounded-xl"
@@ -72,6 +82,7 @@ export function CreateDialogContent() {
                                     id="model-output"
                                     type="number"
                                     step="any"
+                                    min="0"
                                     value={formData.output}
                                     onChange={(e) => setFormData({ ...formData, output: e.target.value })}
                                     className="rounded-xl"
@@ -83,6 +94,7 @@ export function CreateDialogContent() {
                                     id="model-cache-read"
                                     type="number"
                                     step="any"
+                                    min="0"
                                     value={formData.cache_read}
                                     onChange={(e) => setFormData({ ...formData, cache_read: e.target.value })}
                                     className="rounded-xl"
@@ -94,6 +106,7 @@ export function CreateDialogContent() {
                                     id="model-cache-write"
                                     type="number"
                                     step="any"
+                                    min="0"
                                     value={formData.cache_write}
                                     onChange={(e) => setFormData({ ...formData, cache_write: e.target.value })}
                                     className="rounded-xl"

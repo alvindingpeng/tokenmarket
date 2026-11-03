@@ -9,6 +9,7 @@ import { useGroupList } from '@/api/group';
 import { useModelAutoAddRules } from '@/api/model-rule';
 import { PageActions, usePageActionsStore } from '@/components/common/PageActions';
 import { VirtualizedGrid } from '@/components/common/VirtualizedGrid';
+import { ListErrorState } from '@/components/common/ListErrorState';
 
 // GroupActions 向稳定顶栏提供分组页面的搜索、视图选项和创建入口。
 export function GroupActions() {
@@ -64,7 +65,7 @@ export function GroupActions() {
 // Group 渲染分组列表正文。
 export function Group() {
     const t = useTranslations('group');
-    const { data: groups } = useGroupList(true, true);
+    const { data: groups, isError: groupsError, refetch: refetchGroups, isRefetching: groupsRefetching } = useGroupList(true, true);
     // 规则表在页面层取一次下发给每张卡片: 卡片数量多, 各自 useQuery 会白白多出几十个订阅。
     const { data: autoAddRules } = useModelAutoAddRules();
     const runtimeNow = useRuntimeClock(groups);
@@ -100,6 +101,9 @@ export function Group() {
             </p>
 
             <div className="min-h-0 flex-1">
+            {groupsError ? (
+                <ListErrorState onRetry={() => void refetchGroups()} retrying={groupsRefetching} />
+            ) : (
             <VirtualizedGrid
             items={visibleGroups}
             // 一行 2 卡: 分组卡片里带成员矩阵与运行态, 三列会把每张卡压到 400px 上下,
@@ -121,6 +125,7 @@ export function Group() {
                 );
             }}
             />
+            )}
             </div>
         </div>
     );

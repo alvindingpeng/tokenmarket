@@ -27,7 +27,8 @@ import {
     Languages,
     Zap,
     Layers,
-    Clock
+    Clock,
+    Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -35,7 +36,7 @@ import dayjs from 'dayjs';
 
 export function APIKeyDashboard() {
     const t = useTranslations('apiKeyDashboard');
-    const { data, error } = useAPIKeyDashboardStats();
+    const { data, error, isLoading, refetch, isRefetching } = useAPIKeyDashboardStats();
     const { logout } = useAuthStore();
     const { theme, setTheme } = useTheme();
     const { locale, setLocale } = useSettingStore();
@@ -56,14 +57,28 @@ export function APIKeyDashboard() {
         [copyToClipboard, t]
     );
 
+    // 加载态必须先于错误态判断: 此前写成 if (error || !data), 首帧 data 还没到,
+    // 于是每次进站都会闪一遍"加载失败 + 退出登录"。这对 API Key 用户是纯粹的惊吓。
+    if (isLoading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center">
+                <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            </div>
+        );
+    }
     if (error || !data) {
         return (
             <div className="min-h-screen flex items-center justify-center">
                 <div className="text-center space-y-4">
                     <p className="text-destructive font-medium">{t('error')}</p>
-                    <Button onClick={logout} variant="outline" className="rounded-xl">
-                        {t('logout')}
-                    </Button>
+                    <div className="flex items-center justify-center gap-2">
+                        <Button onClick={() => void refetch()} disabled={isRefetching} variant="outline" className="rounded-xl">
+                            {t('retry')}
+                        </Button>
+                        <Button onClick={logout} variant="outline" className="rounded-xl">
+                            {t('logout')}
+                        </Button>
+                    </div>
                 </div>
             </div>
         );

@@ -47,6 +47,18 @@ describe('locales', () => {
         }
     });
 
+    it('英文文案里不残留中文', () => {
+        // 键位一致只保证"有值", 不保证"值是英文"。计费页的 billing.trade / dispute /
+        // settlement / margin 四段曾有 76 条英文值仍是中文 —— 英文用户打开那一页,
+        // 表头、空态、按钮全是中文, 而键位测试一路绿灯。
+        const cjk = /[一-鿿]/;
+        // 末尾那个数组是 en(见上方 locales 定义), 别写成 [1] —— 那是 zh_hant。
+        const untranslated = [...locales[2][1].entries()]
+            .filter(([, value]) => cjk.test(value))
+            .map(([key]) => key);
+        expect(untranslated).toEqual([]);
+    });
+
     it('插值占位符在各语言中保持一致', () => {
         // 少写一个 {seconds} 之类的占位符不会报错, 只会在界面上少显示一个数字。
         const placeholders = (value: string) => (value.match(/\{\w+\}/g) ?? []).sort().join(',');

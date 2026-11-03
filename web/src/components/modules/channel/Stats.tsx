@@ -403,6 +403,9 @@ export function ChannelStats({ channel, onEdit }: {
                                         type="button"
                                         onClick={() => deleteChannel.mutate(channel.channel_id, {
                                             onSuccess: () => setIsOpen(false),
+                                            // 只有 onSuccess: 删除失败时弹窗不关、也没有任何提示,
+                                            // 用户只能反复点同一个按钮。删除是破坏性操作, 后果必须说清楚。
+                                            onError: (error) => toast.error(t('deleteFailed'), { description: error.message }),
                                         })}
                                         disabled={deleteChannel.isPending}
                                         aria-label={t('confirmDelete')}

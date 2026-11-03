@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from '
 import { Pencil, Trash2, ArrowDownToLine, ArrowUpFromLine, Gauge, MessageSquare, Filter } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslations } from 'use-intl';
+import { parseLLMPriceForm } from '@/lib/price-input';
 import { useUpdateModel, useDeleteModel, type LLMInfo, type ModelScore, type ModelCapability } from '@/api/model';
 import { getModelIcon } from '@/lib/model-icons';
 import { toast } from 'sonner';
@@ -102,12 +103,15 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
     };
 
     const handleSaveEdit = () => {
+        // 与创建同一口径: 负价会让 Cost 算出负费用, 非数字会被静默变成 0(变免费)。
+        const price = parseLLMPriceForm(editValues);
+        if (!price.ok) {
+            toast.error(price.reason === 'too_large' ? t('create.priceTooLarge') : t('create.priceInvalid'));
+            return;
+        }
         updateModel.mutate({
             name: model.name,
-            input: parseFloat(editValues.input) || 0,
-            output: parseFloat(editValues.output) || 0,
-            cache_read: parseFloat(editValues.cache_read) || 0,
-            cache_write: parseFloat(editValues.cache_write) || 0,
+            ...price.fields,
         }, {
             onSuccess: () => {
                 closeEdit();

@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { notificationNavigation, notificationTypeKey, useNotificationList, useNotificationMutations, type Notification } from '@/api/notification';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { ListErrorState } from '@/components/common/ListErrorState';
 import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/stores/app';
 import { useTicketFocusStore } from '@/components/modules/tickets/store';
@@ -17,7 +18,7 @@ export function NotificationCenter() {
     const [page, setPage] = useState(1);
     const pageSize = 20;
 
-    const { data, isLoading } = useNotificationList({
+    const { data, isLoading, isError, refetch, isRefetching } = useNotificationList({
         status: status === 'all' ? undefined : status,
         page,
         page_size: pageSize,
@@ -92,6 +93,14 @@ export function NotificationCenter() {
             {isLoading ? (
                 <Card>
                     <CardContent className="py-10 text-center text-sm text-muted-foreground">{t('loading')}</CardContent>
+                </Card>
+            ) : isError ? (
+                // 失败与"真的没有通知"此前看起来一模一样: 都落到 items.length === 0 的空态,
+                // 于是接口故障被伪装成"没有新通知", 用户不会去重试也不会怀疑服务。
+                <Card>
+                    <CardContent className="py-10">
+                        <ListErrorState onRetry={() => void refetch()} retrying={isRefetching} />
+                    </CardContent>
                 </Card>
             ) : items.length === 0 ? (
                 <Card>

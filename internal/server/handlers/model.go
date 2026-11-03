@@ -12,6 +12,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/alvindingpeng/switchyard/internal/server/router"
+	"github.com/charmbracelet/log"
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
 )
@@ -205,6 +206,13 @@ func createLLM(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
 		return
 	}
+	// 价格校验必须在落库前: 负价会被 LLMPrice.Cost 直接乘成负费用(调用反而加钱)。
+	// 媒体模型早有 Validate, 文本模型此前只查了名称。400 而不是 500 —— 这是输入问题。
+	if err := model.LLMPrice.Validate(); err != nil {
+		logModelWriteRejection("create", model.Name, err)
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := op.LLMCreate(model, c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -223,6 +231,11 @@ func updateLLM(c *gin.Context) {
 	model.Name = strings.ToLower(strings.TrimSpace(model.Name))
 	if model.Name == "" {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
+		return
+	}
+	if err := model.LLMPrice.Validate(); err != nil {
+		logModelWriteRejection("update", model.Name, err)
+		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := op.LLMUpdate(model, c.Request.Context()); err != nil {
@@ -350,4 +363,12 @@ func listModelScores(c *gin.Context) {
 	views := relay.ModelScoreViews()
 	briefs := op.ChannelModelBriefs(model.Scope{ID: userID, Role: role})
 	resp.Success(c, relay.ModelScoreBriefs(briefs, views))
+}
+
+// logModelWriteRejection 记录被拒的模型价格写入。
+//
+// 与渠道写入拒绝同一教训: 只回 400 不写日志, 事后从访问日志里只能看到"有人存失败",
+// 想知道是哪个模型、哪个字段越界就得靠猜。原因里不含任何凭据, 可以直接落日志。
+func logModelWriteRejection(action, name string, err error) {
+	log.Warnf("model %s rejected: name=%s reason=%v", action, name, err)
 }

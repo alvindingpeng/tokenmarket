@@ -80,7 +80,8 @@
         "neverExpire": "永不過期",
         "daysLeft": "天後到期",
         "expired": "已過期",
-        "supportedModels": "支援的模型"
+        "supportedModels": "支援的模型",
+        "retry": "重試"
     },
     "navbar": {
         "home": "主頁",
@@ -146,7 +147,9 @@
             "success": "複製成功",
             "failed": "複製失敗",
             "noContent": "無可複製內容"
-        }
+        },
+        "loadFailed": "載入失敗",
+        "retry": "重試"
     },
     "home": {
         "metric": {
@@ -486,7 +489,10 @@
             "clear": {
                 "label": "清空歷史日誌",
                 "button": "清空",
-                "clearing": "清空中..."
+                "clearing": "清空中...",
+                "hint": "清空後無法復原",
+                "confirm": "確認清空",
+                "cancel": "取消"
             },
             "clearSuccess": "日誌已清空",
             "clearFailed": "清空失敗"
@@ -606,7 +612,8 @@
             "createFailed": "建立失敗",
             "updated": "更新成功",
             "updateFailed": "更新失敗",
-            "deleted": "刪除成功"
+            "deleted": "刪除成功",
+            "deleteFailed": "刪除分組失敗"
         },
         "create": {
             "submit": "建立",
@@ -724,13 +731,16 @@
             "cacheWrite": "快取寫入",
             "cancel": "取消",
             "submit": "建立",
-            "submitting": "建立中..."
+            "submitting": "建立中...",
+            "priceInvalid": "價格必須是不小於 0 的數字",
+            "priceTooLarge": "價格過大, 請確認單位是「每百萬 token」"
         },
         "toast": {
             "updated": "模型價格已更新",
             "updateFailed": "更新失敗",
             "deleted": "模型已刪除",
-            "deleteFailed": "刪除失敗"
+            "deleteFailed": "刪除失敗",
+            "createFailed": "建立模型失敗"
         },
         "card": {
             "inputCache": "輸入/快取",
@@ -997,7 +1007,8 @@
             "breakerReset": "已解除 {name} 的熔斷",
             "breakerAlreadyClear": "{name} 當前沒有熔斷",
             "breakerBadge": "熔斷中 {time}",
-            "breakerTitle": "連續錯誤 {count} 次觸發熔斷; 這是第 {trips} 次, 時長按次數遞增, 到期自動恢復"
+            "breakerTitle": "連續錯誤 {count} 次觸發熔斷; 這是第 {trips} 次, 時長按次數遞增, 到期自動恢復",
+            "deleteFailed": "刪除管道失敗"
         },
         "form": {
             "stepPreset": "開始",
@@ -1361,95 +1372,98 @@
             }
         },
         "trade": {
-            "title": "交易详情",
-            "recordId": "计费明细编号",
-            "requestId": "调用请求编号",
-            "userCost": "用户支出",
-            "ownerRevenue": "渠道分成",
+            "title": "交易詳情",
+            "recordId": "計費明細編號",
+            "requestId": "呼叫請求編號",
+            "userCost": "使用者支出",
+            "ownerRevenue": "通路分成",
             "platformRevenue": "平台毛利",
-            "status": "交易状态",
-            "requestContext": "调用上下文",
-            "requestStatus": "请求状态",
-            "clientIp": "客户端 IP",
-            "latency": "耗时",
-            "firstToken": "首字耗时",
-            "error": "错误信息",
-            "ledgerRecords": "关联余额流水",
-            "disputes": "申诉历史",
-            "disputeAction": "发起退款申诉",
-            "disputeReason": "申诉原因",
-            "disputeReasonPlaceholder": "请描述调用失败、异常扣费或用量不符的具体情况",
-            "submitDispute": "提交申诉",
-            "disputeSuccess": "申诉提交成功，请等待管理员审核",
-            "disputeFailed": "申诉提交失败",
-            "disputeExists": "已存在待审核申诉",
-            "close": "关闭"
+            "status": "交易狀態",
+            "requestContext": "呼叫上下文",
+            "requestStatus": "請求狀態",
+            "clientIp": "用戶端 IP",
+            "latency": "耗時",
+            "firstToken": "首字耗時",
+            "error": "錯誤訊息",
+            "ledgerRecords": "關聯餘額流水",
+            "disputes": "申訴歷史",
+            "disputeAction": "發起退款申訴",
+            "disputeReason": "申訴原因",
+            "disputeReasonPlaceholder": "請描述呼叫失敗、異常扣費或用量不符的具體情況",
+            "submitDispute": "提交申訴",
+            "disputeSuccess": "申訴提交成功，請等待管理員審核",
+            "disputeFailed": "申訴提交失敗",
+            "disputeExists": "已存在待審核申訴",
+            "close": "關閉"
         },
         "dispute": {
-            "title": "交易申诉与退款",
-            "hint": "用户争议处理、审核及冲正退款",
-            "empty": "暂无申诉记录",
+            "title": "交易申訴與退款",
+            "hint": "使用者爭議處理、審核及沖正退款",
+            "empty": "暫無申訴記錄",
             "status": {
-                "all": "全部申诉",
-                "pending": "待审核",
+                "all": "全部申訴",
+                "pending": "待審核",
                 "approved": "已退款",
-                "rejected": "已驳回"
+                "rejected": "已駁回"
             },
             "column": {
-                "id": "申诉编号",
-                "recordId": "交易/请求",
-                "user": "申诉用户",
-                "amount": "申请退款金额",
-                "reason": "申诉原因",
-                "status": "状态",
-                "review": "审核说明",
-                "time": "时间",
+                "id": "申訴編號",
+                "recordId": "交易/請求",
+                "user": "申訴使用者",
+                "amount": "申請退款金額",
+                "reason": "申訴原因",
+                "status": "狀態",
+                "review": "審核說明",
+                "time": "時間",
                 "actions": "操作"
             },
             "approve": "同意退款",
-            "reject": "驳回",
-            "reviewNote": "审核说明 / 驳回原因",
-            "reviewNotePlaceholder": "请输入核实说明或驳回理由",
-            "reviewSuccess": "审核处理成功",
-            "reviewFailed": "审核处理失败"
+            "reject": "駁回",
+            "reviewNote": "審核說明 / 駁回原因",
+            "reviewNotePlaceholder": "請輸入核實說明或駁回理由",
+            "reviewSuccess": "審核處理成功",
+            "reviewFailed": "審核處理失敗"
         },
         "settlement": {
-            "title": "渠道商日结算单",
-            "hint": "每日汇总渠道商供货应收、退款扣减与净收益",
-            "empty": "暂无结算单记录",
-            "generate": "生成/刷新今日结算单",
-            "generating": "结算单生成中...",
-            "generateSuccess": "结算单已生成并对账完毕",
+            "title": "通路商日結算單",
+            "hint": "每日彙總通路商供貨應收、退款扣減與淨收益",
+            "empty": "暫無結算單記錄",
+            "generate": "產生/重新整理今日結算單",
+            "generating": "結算單產生中...",
+            "generateSuccess": "結算單已產生並對帳完畢",
             "column": {
-                "statementNo": "结算单号",
-                "period": "账期",
-                "owner": "渠道商 ID",
-                "requests": "请求数",
-                "tokens": "总 Tokens",
-                "gross": "供货毛收入",
-                "refund": "退款冲正",
-                "net": "净结算金额",
-                "status": "对账状态"
-            }
+                "statementNo": "結算單號",
+                "period": "帳期",
+                "owner": "通路商 ID",
+                "requests": "請求數",
+                "tokens": "總 Tokens",
+                "gross": "供貨毛收入",
+                "refund": "退款沖正",
+                "net": "淨結算金額",
+                "status": "對帳狀態"
+            },
+            "generateFailed": "結算單產生失敗",
+            "yesterday": "昨日",
+            "today": "今日"
         },
         "margin": {
-            "title": "经营毛利分析",
-            "hint": "平台实际 GMV、渠道供货成本与净毛利看板",
-            "userCost": "用户消费流水 (GMV)",
-            "ownerRevenue": "渠道供货成本",
-            "platformRevenue": "平台净毛利",
-            "marginRate": "综合毛利率",
-            "refundAmount": "累计退款冲正",
-            "rechargeAmount": "现金充值流入",
-            "trendTitle": "毛利每日趋势 (近 30 天)",
-            "empty": "暂无经营数据",
+            "title": "經營毛利分析",
+            "hint": "平台實際 GMV、通路供貨成本與淨毛利看板",
+            "userCost": "使用者消費流水 (GMV)",
+            "ownerRevenue": "通路供貨成本",
+            "platformRevenue": "平台淨毛利",
+            "marginRate": "綜合毛利率",
+            "refundAmount": "累計退款沖正",
+            "rechargeAmount": "現金儲值流入",
+            "trendTitle": "毛利每日趨勢 (近 30 天)",
+            "empty": "暫無經營資料",
             "column": {
                 "date": "日期",
-                "gmv": "用户消费",
-                "cost": "渠道成本",
+                "gmv": "使用者消費",
+                "cost": "通路成本",
                 "profit": "平台毛利",
                 "marginRate": "毛利率",
-                "requests": "请求数"
+                "requests": "請求數"
             }
         }
     },
@@ -1531,7 +1545,8 @@
             "passwordReset": "密碼已重設",
             "resetFailed": "重設密碼失敗",
             "deleted": "用戶已刪除",
-            "deleteFailed": "刪除用戶失敗"
+            "deleteFailed": "刪除用戶失敗",
+            "passwordTooShort": "密碼長度至少為 8 位"
         },
         "list": {
             "empty": "暫無用戶",
@@ -1693,6 +1708,15 @@
         "active": "目前活躍",
         "quotaCard": {
             "title": "使用者配額用量: {user}"
+        },
+        "toast": {
+            "saved": "策略已儲存",
+            "saveFailed": "策略儲存失敗",
+            "deleted": "策略已刪除",
+            "deleteFailed": "策略刪除失敗",
+            "confirmDelete": "確認刪除",
+            "cancel": "取消",
+            "deleteHint": "刪除後該範圍的限流立即解除, 不再有任何節流。"
         }
     },
     "ops": {
@@ -2339,6 +2363,10 @@
         },
         "rollback": {
             "done": "提現單 #{id} 已回滾到已通過"
+        },
+        "confirm": {
+            "yes": "確認執行",
+            "no": "取消"
         }
     },
     "notification": {

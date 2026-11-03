@@ -18,6 +18,21 @@ export type CreateUserInput = {
     tier: UserTier;
 };
 
+// PasswordMinLength 与后端 model.PasswordMinLen 对齐。
+// 后端在 op/user.go 里对创建、编辑、重置三处都强制这个下限, 而前端此前只判非空 ——
+// 管理员填 6 位点提交, 必定被后端拒, 看到的还是英文原文
+// "password must be at least 8 characters"。校验放在提交前, 提示才能是本地化的。
+export const PasswordMinLength = 8;
+
+export type PasswordProblem = 'too_short' | null;
+
+// passwordProblem 返回密码不合格的原因, 空串表示"本次不设密码"(创建时必填, 由调用方判)。
+export function passwordProblem(password: string): PasswordProblem {
+    if (password === '') return null;
+    if (password.length < PasswordMinLength) return 'too_short';
+    return null;
+}
+
 // buildCreateUserRequest 创建请求: 等级总是随请求下发(新用户必须有明确等级)。
 export function buildCreateUserRequest(input: CreateUserInput): UserManageRequest {
     return {

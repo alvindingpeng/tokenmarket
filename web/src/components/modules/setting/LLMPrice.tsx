@@ -45,6 +45,7 @@ export function SettingLLMPrice() {
         if (value === initialValue) return;
 
         setSetting.mutate({ key, value }, {
+            onError: (error) => toast.error(t('saveFailed'), { description: error.message }),
             onSuccess: () => {
                 toast.success(t('saved'));
                 initialUpdateInterval.current = value;

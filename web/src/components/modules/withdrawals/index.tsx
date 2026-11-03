@@ -24,6 +24,9 @@ export default function Withdrawals() {
     const [notes, setNotes] = useState<Record<number, string>>({});
     const [payingId, setPayingId] = useState(0);
     const [paidRef, setPaidRef] = useState('');
+    // 资金操作的二次确认: 通过=解冻转已通过(占用可提额度), 回滚=把已打款的单子退回已通过。
+    // 两者此前都是单击即执行, 而提现审核没有撤销按钮 —— 点错了只能手工改库。
+    const [confirming, setConfirming] = useState<{ id: number; kind: 'approve' | 'rollback' } | null>(null);
     const list = useWithdrawals(status, 0);
     const items = list.data?.items ?? [];
 
@@ -121,7 +124,14 @@ export default function Withdrawals() {
                                             {order.status === 'pending' ? (
                                                 <div className="flex flex-col gap-1.5">
                                                     <div className="flex gap-1.5">
-                                                        <Button size="sm" className="h-8 rounded-xl" onClick={() => handleReview(order, true)}>{t('action.approve')}</Button>
+                                                        {confirming?.id === order.id && confirming.kind === 'approve' ? (
+                                                            <>
+                                                                <Button size="sm" className="h-8 rounded-xl" onClick={() => { setConfirming(null); handleReview(order, true); }}>{t('confirm.yes')}</Button>
+                                                                <Button size="sm" variant="outline" className="h-8 rounded-xl" onClick={() => setConfirming(null)}>{t('confirm.no')}</Button>
+                                                            </>
+                                                        ) : (
+                                                            <Button size="sm" className="h-8 rounded-xl" onClick={() => setConfirming({ id: order.id, kind: 'approve' })}>{t('action.approve')}</Button>
+                                                        )}
                                                         <Button size="sm" variant="outline" className="h-8 rounded-xl" onClick={() => handleReview(order, false)}>{t('action.reject')}</Button>
                                                     </div>
                                                     <Input
@@ -152,7 +162,14 @@ export default function Withdrawals() {
                                             ) : order.status === 'paid' ? (
                                                 <div className="flex flex-col gap-1.5">
                                                     <span className="font-mono text-xs text-muted-foreground">{order.paid_ref}</span>
-                                                    <Button size="sm" variant="outline" className="h-8 rounded-xl" onClick={() => handleRollback(order)}>{t('action.rollback')}</Button>
+                                                    {confirming?.id === order.id && confirming.kind === 'rollback' ? (
+                                                        <div className="flex gap-1.5">
+                                                            <Button size="sm" className="h-8 rounded-xl" onClick={() => { setConfirming(null); handleRollback(order); }}>{t('confirm.yes')}</Button>
+                                                            <Button size="sm" variant="outline" className="h-8 rounded-xl" onClick={() => setConfirming(null)}>{t('confirm.no')}</Button>
+                                                        </div>
+                                                    ) : (
+                                                        <Button size="sm" variant="outline" className="h-8 rounded-xl" onClick={() => setConfirming({ id: order.id, kind: 'rollback' })}>{t('action.rollback')}</Button>
+                                                    )}
                                                 </div>
                                             ) : (
                                                 <span className="text-xs text-muted-foreground">{order.review_note || '-'}</span>

@@ -7,7 +7,7 @@ import type { Role, UserView } from '@/api/user';
 import { USER_TIERS, isUserTier, type UserTier } from '@/lib/user-tier';
 import { QuotaCard } from '@/components/modules/quota/QuotaCard';
 import { useQuotaUsageSelf } from '@/api/quota-usage';
-import { buildCreateUserRequest, buildUpdateUserRequest } from './payload';
+import { buildCreateUserRequest, buildUpdateUserRequest, passwordProblem } from './payload';
 import { formatDateOnly, formatUsd } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -92,6 +92,12 @@ function CreateDialogContent() {
     const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         if (!canSubmit || createUser.isPending) return;
+
+        // 后端强制 8 位下限, 前端此前只判非空: 填 6 位必被拒, 且只看到英文原文。
+        if (passwordProblem(password) === 'too_short') {
+            toast.error(t('toast.passwordTooShort'));
+            return;
+        }
 
         createUser.mutate(
             buildCreateUserRequest({ username, email, password, role, status, tier }),
@@ -256,6 +262,10 @@ function EditUserDialogContent({ user }: { user: UserView }) {
         if (!canSubmit || updateUser.isPending) return;
 
         // 请求体构造规则(留空=不改等)集中在本目录的 payload.ts, 便于单测。
+        if (passwordProblem(password) === 'too_short') {
+            toast.error(t('toast.passwordTooShort'));
+            return;
+        }
         const request = buildUpdateUserRequest({ user, username, email, password, role, status, balance, tier });
 
         updateUser.mutate(request, {
@@ -403,6 +413,11 @@ function ResetPasswordDialogContent({ user }: { user: UserView }) {
     const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         if (!canSubmit || resetPassword.isPending) return;
+
+        if (passwordProblem(password) === 'too_short') {
+            toast.error(t('toast.passwordTooShort'));
+            return;
+        }
 
         resetPassword.mutate({ id: user.id, password }, {
             onSuccess: () => {
