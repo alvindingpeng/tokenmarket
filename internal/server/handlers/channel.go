@@ -417,6 +417,17 @@ func listChannelGrant(c *gin.Context) {
 	resp.Success(c, op.ChannelGrantCandidates(scopeOf(c)))
 }
 
+// logChannelWriteRejection 把被拒绝的渠道提交写一条 WARN 日志。
+//
+// 存在的理由: 配置校验失败是正常返回路径, 既不写审计也不写日志 —— 于是"保存失败"在服务端
+// 完全不留痕, 只能靠 nginx 访问日志的状态码与响应体字节数反推原因。2026-11-03 排查出口
+// 保存失败时就卡在这里: 应用日志一条 ERROR 都没有, 只有猜测。
+//
+// 只记渠道 ID、被拒绝的字段类别与原因, 不记配置内容 —— 提交体里有上游凭据与代理密码。
+func logChannelWriteRejection(action string, channelID int, err error) {
+	log.Warnf("channel %s rejected: channel=%d reason=%s", action, channelID, err.Error())
+}
+
 // channelWriteErrorStatus 把渠道增删改的错误映射为 HTTP 状态码。
 //
 // 单独抽成函数是为了可测: 这张映射曾把"输入不合法"错判成 500, 而 500 会让管理员
@@ -439,6 +450,7 @@ func createChannel(c *gin.Context) {
 	}
 	channel, err := op.ChannelCreate(&req, scopeOf(c), c.Request.Context())
 	if err != nil {
+		logChannelWriteRejection("create", req.ID, err)
 		resp.Error(c, channelWriteErrorStatus(err), err.Error())
 		return
 	}
@@ -462,6 +474,7 @@ func updateChannel(c *gin.Context) {
 	}
 	channel, err := op.ChannelUpdate(&req, scopeOf(c), c.Request.Context())
 	if err != nil {
+		logChannelWriteRejection("update", req.ID, err)
 		resp.Error(c, channelWriteErrorStatus(err), err.Error())
 		return
 	}
