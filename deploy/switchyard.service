@@ -1,0 +1,23 @@
+# 从生产 /etc/systemd/system/switchyard.service 反向固化的副本。
+# Description 与生产逐字一致, 这样安装这个文件时 diff 只剩下面新增的两行启动限流。
+# 安装: install -m 0644 deploy/switchyard.service /etc/systemd/system/switchyard.service
+#       systemctl daemon-reload && systemctl enable --now switchyard
+# KEK 路径由 scripts/deploy-security-batch2.py 管理的 drop-in 提供, 不在此处设置。
+[Unit]
+Description=Switchyard (self-hosted LLM marshalling gateway)
+After=network.target
+# 确定性故障(如迁移报错)会无限重启; 实测曾重启 1192 次。
+# 限流后停在 failed 让监控看见; 300 秒内 10 次仍给瞬时抖动留出机会。
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/switchyard
+ExecStart=/opt/switchyard/bin/switchyard start --config /opt/switchyard/data/config.json
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
