@@ -44,8 +44,18 @@ func InitDB(dbType, dsn string, debug bool) error {
 		return err
 	}
 
-	sqlDB.SetMaxIdleConns(10)
-	sqlDB.SetMaxOpenConns(100)
+	// 连接池按方言分档。SQLite 只有一把写锁, 池子开得越大, 越容易让两个连接同时
+	// 进入"读后改写"的事务而互相把对方挤成 database is locked —— 池子上限不提高吞吐,
+	// 只放大锁冲突: 线上 30 天里 13 次 database is locked 全部出在结算任务上, 每一次都
+	// 靠重试救回来, 说明问题不是并发不够而是并发过多。8 个连接足够覆盖"若干转发协程
+	// 各写一条计费明细 + 一个定时任务"的实际并发度, 且全部写操作仍是短事务。
+	// MySQL/Postgres 是真并发数据库, 维持原有上限。
+	maxOpen, maxIdle := 100, 10
+	if dbType == "sqlite" {
+		maxOpen, maxIdle = 8, 8
+	}
+	sqlDB.SetMaxIdleConns(maxIdle)
+	sqlDB.SetMaxOpenConns(maxOpen)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 	sqlDB.SetConnMaxIdleTime(10 * time.Minute)
 
