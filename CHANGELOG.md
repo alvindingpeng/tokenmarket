@@ -1,5 +1,193 @@
 # 更新说明
 
+## v1.5.20 — 2026-11-04
+
+本次六项都属于同一类问题: **出事了但没人知道**。停服时后台任务被拦腰砍断、关机链上的错误不影响退出码、
+刷盘失败只有一行 Warnf、进程反复重启而每次都能通过存活探针、一个写在 DSN 里却从未生效过的
+`auto_vacuum`、以及一个只增不减的监控表 —— 每一个都不报错, 只是让运维在一段时间后失去判断依据。
+
+### 停服栅栏: 在途任务必须先排空, 再关数据库
+
+- **问题**: 停服钩子按注册逆序执行, 顺序是 `server.Close → FlushRoutePersist → SaveCache → db.Close`
+  (现在改成 `server.Close → task.StopAndWait+op.AlertDispatchDrain → FlushRoutePersist → SaveCache → db.Close`)。
+  `server.Close` 有 30 秒优雅窗口等 HTTP 请求排空, 但**后台任务完全不在这个窗口的覆盖范围内**:
+  `internal/task` 此前没有任何停机入口, `task.RUN()` 的结尾是 `select {}`(永久阻塞), 任务体是
+  独立的 `go entry.run()`。于是一个正在跑的 `settlement_daily`(内部是"先读后改写"的结算事务)
+  会在钩子链走到 `db.Close` 时被从中间切断。
+- **修法**: `task.StopAndWait(timeout)` —— 原子置停止标记、停掉所有 ticker、等待在途任务体返回;
+  所有任务体统一经由 `startRun` 起协程, 在同一把锁内完成"检查是否已停止"与"计数加一",
+  因此返回之后不可能再有新的任务体开始。`RUN()` 改为在停止信号上返回, 而不是永久阻塞。
+  另把 `op.AlertDispatchDrain()`(等全部在途告警外发与 notified 回填落库)接进这条链。
+- **实测**: 3 秒任务体 + `StopAndWait(10s)` → `drained=true` 且耗时 2.502 s(真的等了, 不是立即返回),
+  `in_flight=0`; 5 秒任务体 + `StopAndWait(1s)` → `drained=false`、耗时 1 s、`in_flight=1`。
+- **坦白**: 超时不会杀掉卡住的 goroutine(Go 做不到), 超时后仍如实报告 `false` 并让退出码非 0。
+  也就是说卡死的任务体仍可能与后续 `db.Close` 并发 —— 但这件事现在**可见**了, 而不是静默发生。
+
+### 关机钩子: 加超时, 并让失败影响退出码
+
+- **问题**: 改造前每个钩子报错只打一行日志、全部跑完无条件 `os.Exit(0)`, 且没有任何超时。
+  一个钩子卡住, 进程就停在 SIGTERM 里, 而 systemd 的 `TimeoutStopUSec` 是 1 min 30 s, 到点直接 SIGKILL ——
+  数据没落盘、退出码却是 0、systemd 认为这是一次干净停止。运维无从判断停服是否干净。
+- **修法**: 钩子带名字注册、逐个带超时执行(默认 35 s, `SWITCHYARD_SHUTDOWN_TIMEOUT_SECONDS` 可覆盖, 范围 1-600);
+  超时的钩子打 Error 并**继续**执行剩余钩子(不能因为一个卡住就丢掉后面的清理); 任一钩子失败或超时, 退出码为 1。
+  `Shutdown()` 改为返回状态而不是自己 `os.Exit` —— 自更新路径的 `restartExecutable` 在它之后紧跟
+  `syscall.Exec`, 若在那里退出, 新二进制就永远不会被拉起。
+- **实测**: 干净路径退出码 0 且日志含 `Shutdown completed successfully`; 报错钩子退出码 1;
+  把超时设成 1 s 时, 超时钩子被明确记录, 后续钩子照常执行, 最终退出码 1。
+
+### 路由状态刷盘失败不再只写日志
+
+- **问题**: 路由状态、成员冷却、成员指标、出口成绩都只在内存里, 靠每 5 秒一次的批量刷盘落库。
+  写失败时代码只打 `Warnf`。而这些状态丢失的表现是"渠道刚失败又被选到""熔断中的成员还在被选"
+  "出口成绩重启后回到零样本" —— 每一个都很难从现象反推回"写库失败"。
+  生产 60 天日志里这三条 Warnf 计数都是 0, 也就是说这是**潜在**缺陷; 但正因从未触发, 一旦触发没有任何线索。
+- **修法**: 按失败环节分别计连续轮数(出口成绩一个、每个分组的路由快照各一个, 混在一起会互相清零),
+  连续 3 轮(约 15 秒; 单轮失败多半是 SQLite 忙, 生产 30 天内 13 次 `database is locked` 全部自动恢复)
+  经告警出口发出 `route_persist_failed`, 恢复时补一条 `route_persist_recovered`。去重键只到"哪个环节",
+  不把连续次数拼进去, 否则每一次都成新告警。
+- **一处容易漏的配套改动**: 新增的这两个 kind 与 `watchdog_alert` 在告警链路里一共要登记**四处** ——
+  `internal/alert/alert.go` 的事件常量、`internal/alert/message.go` 的 `kindMetas`(决定级别与标题)、
+  前端徽章映射加中/英/繁三语文案、以及 OpenAPI 的 `kind` 枚举。少登记任何一处都不会报错、也不影响构建,
+  只表现为运维侧看到"未知告警"(灰色徽章或原始 kind 字符串)。`update_available` 就是这种半登记状态的先例。
+
+### 外部看门狗 + 启动时的日志巡检
+
+- **问题**: 2026-11-02 的实际故障形态是进程以约 1.3 秒一次的速度反复重启(迁移报错), **两小时内重启 1192 次**。
+  每一次启动都能短暂通过 `/healthz`, 所以站内探针与 `Restart=always` 都无法把这件事变成管理员看得见的信息。
+  探活必须移到进程之外。
+- **修法**: 新增 `deploy/switchyard-watchdog.{sh,service,timer}` —— systemd timer 每 60 秒探测一次 `/healthz`,
+  连续 3 次失败且距上次重启超过 10 分钟才重启服务, 每次探测追加一行
+  `<RFC3339 本地时间> <fail|ok|restart> <明细>` 到 `/opt/switchyard/data/watchdog-failures.log`。
+  服务侧新增 `internal/op/watchdog.go`, 在启动后与每 5 分钟从上次游标处**增量**读取该日志,
+  有新故障时发出 `watchdog_alert`。游标是日志旁边的 `<log>.cursor` 文件 —— 不放进设置表(不该出现在管理员
+  的设置列表里), 也不随备份走(带着别的机器的游标过来会静默漏掉本机的故障)。
+- **实测**: 用真实格式的 5 行日志喂扫描器 → `Failures=3, Restarts=1`, 首末失败时间与最近明细均正确;
+  再扫一次为 0(游标已推进); 追加 1 行后只读到那 1 行。端到端(隔离库 + 真告警出口): 落库一条
+  `kind=watchdog_alert` 的 `channel_alerts` 记录, 详情含看门狗日志/新失败次数/看门狗重启次数/首末时间/最近明细;
+  第二次运行不再重复落库。生产环境看门狗 timer 于 12:38:40 首次触发并写入第一行 `ok`,
+  日志内容为 `2026-11-04T12:38:40+08:00 ok http=200 db=ok version=v1.5.20`(无 CR, 与读取方契约一致),
+  12:39:40 再次触发(timer 确实在重复跑); 服务侧 12:42:16 打出
+  `watchdog log: 1 new line(s), 0 failure(s), 0 restart(s), no alert` —— 正常状态下不产生噪声告警。
+- **坦白**: 看门狗本身不告警(它没有告警通道, 且脚本始终 `exit 0` 以免 timer 被停), 它只负责记录与重启;
+  告警由服务下一次启动后来读。因此"服务再也起不来"这种最坏情况仍需外部监控。
+
+### 一次停机压实: DSN 里的 `auto_vacuum` 从未生效
+
+- **问题**: `internal/db/db.go` 的 DSN 里写着 `_pragma auto_vacuum(INCREMENTAL)`, 而生产库实测
+  `PRAGMA auto_vacuum` 是 **0 (NONE)** —— 这个 pragma 对**已有内容的库静默无效**。所以 v1.5.19 的迁移 038
+  就地清空了 `billing_settlement_tasks.snapshot`(约 9400 行的 JSON), 文件却一点没小: 那 9.3 MB 页
+  只是变成了空闲页, 而库不会归还它们。生产库 51.5 MB 里约有 14.3 MB 是这类死页。
+- **修法**: 新增 `switchyard db-maintenance`(唯一**允许**针对生产库运行的维护命令, 与
+  `verify-migration` 的隔离库约束恰好相反, 两者是各自独立的门): 默认只做 dry-run 报告,
+  必须显式 `--apply` 才动手; 执行前先 `BEGIN IMMEDIATE` 争一次写锁, 服务在跑时以
+  `SQLITE_BUSY` 非零退出并指引先 `systemctl stop switchyard`(不重试、不忙等掩盖它);
+  `PRAGMA wal_checkpoint(TRUNCATE)` → `PRAGMA auto_vacuum=INCREMENTAL` → `VACUUM` 三步**固定在同一条连接**上
+  (database/sql 是连接池, 普通 `Exec` 可能让 pragma 与 VACUUM 落到不同连接, auto_vacuum 会再次静默丢失),
+  完成后关闭句柄、重开文件读 `PRAGMA auto_vacuum` 自证等于 2, 否则报失败。
+- **为什么不做成迁移**: 迁移每次启动都跑, 而 VACUUM 需要独占锁与停机窗口。
+  **为什么不放进定时任务**: 同上 —— 它要求服务是停的。
+- **生产实测**(2026-11-04 12:37, 停机窗口内): dry-run 报 `reclaimed_bytes=6361088`(freelist 下界),
+  `--apply` 后 **55541760 → 40206336 字节, 回收 15335424 字节(约 14.6 MB, 27.6%)**, 耗时 **525 ms**,
+  `freelist=0`, `auto_vacuum` 由 **0 变 2**, `journal_mode` 仍是 `wal`, `integrity_check=ok`;
+  停机 1 分钟以内, 重启后 2 秒 `/healthz` 恢复 `status=ok`。十张关键表行数逐张比对无变化
+  (`billing_settlement_tasks` 10329→10331 是停机期间本来就有的增量)。
+  隔离库演练(先造出 1225 个空闲页)同一路径: 24760320 → 19767296 字节, 复跑一次回收 0 字节(幂等)。
+- **dry-run 的数字会偏小**: freelist 不含表内部碎片, 生产库 freelist 只有约 5.9 MB 而实际可回收 14.3 MB。
+  所以 JSON 里加了 `estimate` 字段区分 `freelist_lower_bound` 与 `measured` —— 不区分开, 运维会拿着偏小的
+  数字判断要不要停机。
+- **注意**: 在一个本来就没有空闲页的库上, 这次改动会让文件**略微变大**(实测 14721024 → 14741504, 即 5 页):
+  把 auto_vacuum 从 NONE 改成 INCREMENTAL 需要为每约 1024 页补一张 ptrmap 页。这是把"以后能回收"买下来的一次性成本。
+
+### 限流小时用量汇总加留存期(30 天), 并让 auto_vacuum 真正开始干活
+
+- **问题**: `rate_limit_usage_hourly` 是全库**唯一**既无条数上限、也无留存期的非财务表。
+  同类的 `channel_health_records` 有"每渠道最近 1000 条"的上限, 调用日志有 7 天留存 —— 只有它只增不减。
+- **修法**: 新增 `TaskRateLimitUsageRetention`(启动即跑 + 每 24 小时), 删除 30 天前的行。
+  限流用量只在监控页看最近窗口, 30 天足够定位。任务名登记进 `taskLabels`/`taskHints`, 连续失败 3 轮后告警。
+- **顺带补上一个只写了一半的机制**: 光把库设成 `auto_vacuum=INCREMENTAL` **不会**让文件变小 ——
+  该模式只是把释放的页记进 freelist 并维护 ptrmap, 真正还页给操作系统要有人执行 `incremental_vacuum`。
+  所以留存清理成功后按 freelist 数量做**有界**的 `incremental_vacuum` 循环(上限 4096 页 = 16 MiB/天,
+  400 MB 库 98005 个空闲页实测 0.11 ms/次、4096 次约 0.47 s)。**这个 pragma 的语义有个坑, 值得写下来**:
+  `PRAGMA incremental_vacuum(N)` **单次只归还 1 页**, N 决定不了回收量 —— 12250 个空闲页实测要调
+  12250 次才消化完(调 6 次只从 12267 页降到 12261 页)。写成"跑一次带个 N 就够"是错的,
+  而且错得不显眼: 文件只是慢慢不变小。
+  另外 `PRAGMA incremental_vacuum(?)` 会直接报 `near "?": syntax error`(SQLite 的 PRAGMA 参数只接受字面量),
+  所以这里用无参形式。
+- **实测**(两个隔离库各灌 6 万行再删): `auto_vacuum=2` 的库 freelist 1339 → **0**, 文件 6.25 MB → **0.76 MB**;
+  `auto_vacuum=0` 的库调用 1339 次 freelist 纹丝不动(1339 → 1339)、文件一字节不变。
+  这个对照说明: 在 auto_vacuum 还是 0 的库上做留存清理, 只是在文件里腾出永远不会被复用的空洞。
+  所以代码在"调了但一页没还回来"时会打一条明确的 Warn, 指向 `db-maintenance --apply`;
+  日志里报的是**实测归还页数**, 不是调用次数 —— 调用次数好看而文件不变才是最该避免的假信号。
+
+### 部署链路: 健康检查、自动回滚与启动限流
+
+- **`swap_deploy.sh`**: 改造前用 `systemctl start` + `sleep 6` + `systemctl is-active`, 然后 curl 两个**不存在**的
+  端点(`/health` 与 `/api/v1/status` 都是 404), 且**没有任何回滚**。现在: 只认 `/healthz` 并断言
+  `status=ok` 且 `db=ok`; 期望版本可作为第一个参数传入; 健康检查、systemd active 或版本断言任一失败,
+  自动恢复替换前的二进制、重启并复探, 最终以非零状态输出 `DEPLOY_ROLLED_BACK`。
+- **健康检查是有界重试, 不是单次探针**: 生产实测曾出现 `Started` 之后 **31 秒**二进制才打印第一行
+  (那天是机器重启), 另一次是约 2 秒 —— 单次 `sleep 1` 加一次 curl 恰好压在边界上, 会把一个完全正常的部署
+  回滚掉。现在按 `SWITCHYARD_HEALTH_RETRIES`(默认 20)与 `SWITCHYARD_HEALTH_INTERVAL`(默认 1 秒)重试完整断言。
+- **备份版本名**: 原脚本把 `switchyard version` 的整段输出与一个裸版本号正则比对, 而该子命令打印的是
+  5 行 `Key: value`(没有裸版本号行), 所以正则**永远不命中**, 备份名会降级成时间戳, 破坏
+  `switchyard.prev-vN` 的约定。现在只从 `Version:` 行提取。
+- **`systemctl start` 失败原来不会回滚**: `set -euo pipefail` 下, `start` 失败会把脚本直接带走 ——
+  新二进制留在原地、服务是停的, 却没有 `DEPLOY_ROLLED_BACK`, 也没有恢复旧版本。而 `StartLimitBurst`
+  触发时 unit 进入 failed, 走的正是这条路径(会停在 failed 而不是"起不来")。现在 start 失败也回滚。
+- **同名备份不再覆盖**: 备份名说的是"被替换下去的那个二进制"。用 `cp -f` 覆盖会让名字与内容不符
+  (回退后又部署同一版本就会遇到), 等真要用它回滚时才发现。现在同名时追加时间戳。
+- **dry-run 不再做健康检查**: dry-run 不替换二进制, 此刻响应 `/healthz` 的是**现行**进程,
+  拿它当"新二进制健康"的证据是假信号。
+- **回滚后的健康断言用错了版本**: 回滚按原样复用 `wait_for_health`, 而它带着 `EXPECTED_VERSION`
+  —— 那是"**新**版本号"。旧二进制当然不会报新版本号, 所以每一次**成功**的回滚都会再打印一行
+  `rollback health check failed`, 把"已经救回来了"说成"连回滚都没起来"。现在回滚时把期望版本换成
+  替换前从现行二进制读出的**旧**版本号(读不出来就只断言 `status`/`db`), 并在通过时打印实际版本。
+  本地沙盘(假 `systemctl` + 假 `/healthz`, 版本跟随当前二进制)三条分支实测:
+  新构建 `start` 失败 → `DEPLOY_ROLLED_BACK reason=start_failed` + `rollback health check passed (version=v1.5.19)`;
+  新构建起来但健康检查持续失败 → `reason=health_check_failed` + `rollback health check passed (version=v1.5.19)`;
+  一切正常 → `DEPLOY_OK version=v1.5.20`, 不回滚。三种情形下现行二进制都落在预期的那一个。
+
+- **另外记一笔实测结论**: `version_mismatch` 那个分支在 `EXPECTED_VERSION` 非空时**不可达** ——
+  `wait_for_health` 内部的 `probe_health` 已经断言过版本相等, 版本不符会先以 `health_check_failed` 退出。
+  保留它作为最后一道保险(调用方传空期望版本时才可能走到), 但不要指望在日志里看到这个原因。
+- **启动限流**: `deploy/switchyard.service` 补上 `StartLimitIntervalSec=300` / `StartLimitBurst=10`,
+  并在 2026-11-04 装到生产(`StartLimitIntervalUSec=5min`、`StartLimitBurst=10` 已在 `systemctl show` 里生效)。
+  这里要**更正一处此前的误判**: 我原先用「`"start request repeated too quickly"` 在 60 天日志里出现 0 次」
+  推断限流从未触发。在隔离 unit 上实测后发现这个字符串**只在手动 `systemctl start` 触发限流时才出现**;
+  由 `Restart=` 引起的重启循环触发限流时, unit 直接进入 `failed`, 一行这样的日志都没有。
+  指标用错了, 但结论仍然成立 —— 原因是算得出来的:
+  生产 unit 用的是 systemd 默认的 **10 秒 / 5 次**, 而 `RestartSec=5` 加约 1.5 秒启动工作在
+  1192 次那次故障里意味着**每 6.5 秒重启一次**(1192 次 / 2 小时 10 分), 10 秒窗口里连一次都放不满,
+  限流器根本没有机会计数 —— 所以它连轴转了两个多小时。
+- **实测矩阵**(生产机 systemd 257, 隔离 unit, 每项 `ExecStart=/bin/false` + `RestartSec=1`):
+  `Restart=always` + 300 秒/10 → 重启 **10** 次后进入 `failed`;
+  `Restart=on-failure` + 300 秒/10 → 同样 10 次后 `failed`;
+  `Restart=always` + 60 秒/5 → 5 次后 `failed`;
+  三种情形的 journal 里 `"start request repeated too quickly"` 计数都是 **0**, 印证上面那条更正。
+  这项改动把「无限重启」变成「最多 10 次、约 65 秒内止住」, 且停在 `failed` 让监控看得见。
+- **刻意没做的一项**: 加 `RestartPreventExitStatus=1`(实测能让进程第一次以 1 退出就停住, 不再重启)
+  会更彻底, 但本批同时把关机钩子失败也改成退出码 1 ——
+  两者相加会让「一次停服清理失败」被 systemd 判成「不要重启」, 服务从此停在停机状态。
+  宁可多重启 10 次、也不要把服务留在停着的状态。
+
+### 明确**没有**做的一项: 财务四表的按龄清理
+
+计划里还有"给 `billing_records` / `balance_ledgers` / `balance_reservations` / `billing_settlement_tasks`
+加留存期"。核查后**本次不做**, 理由是三条实测事实而不是偷懒:
+
+1. **现在删不到任何行**。生产库 2026-10-14 才建立, 按龄统计: `billing_settlement_tasks` 满 7 天的 3469 行,
+   满 30 天、90 天、180 天的都是 **0 行**。写一条当下命中 0 行、且要等半年才有数据的删除逻辑,
+   等于把最需要真实数据验证的部分推到未来。
+2. **它与迁移 038 明确记录的不变量冲突**。038 写的"不删任何行"是有原因的: `BillingReleaseStale`
+   用 `NOT EXISTS (SELECT 1 FROM billing_settlement_tasks WHERE reservation_id = ...)` 判断
+   "这笔预扣有没有结算意图", **任务行不存在**就等于"可以直接释放"。所以删任务行必须同时证明
+   "对应预扣已 settled 且不可能被再扫到" —— 这个证明能写, 但它是一个独立的变更主题, 不该混在本次。
+3. **真正吃掉这 9.3 MB 的不是行数, 是迁移 038 留下的死页**。删行不会让文件变小(除非配合 `incremental_vacuum`),
+   而本批的 `db-maintenance --apply` 直接把那 14.3 MB 还回来了, 且**一行财务数据都不删**。
+
+真正需要的是先让它长起来: 建议放到下一批, 连同 `settlement_retention_days` 设置键、
+"只删 completed 且对应预扣已 settled"的约束与一次真实数据验证一起做。
+
 ## v1.5.19 — 2026-11-03
 
 本次四项都不是新功能, 而是"算得太多、放得太宽、连得太多": 一个汇总统计把整年的明细搬进内存再累加,
