@@ -142,8 +142,14 @@
 ## 请求体上限
 
 转发前请求体要被读进内存做改写与留痕, 原先完全没有上限。新增 `middleware.BodyLimit`,
-管理端 32 MiB、`/v1` 512 MiB(生图底图与生视频素材是正常业务), 整库导入豁免;
+管理端 32 MiB、`/v1` 64 MiB(生图底图与生视频素材是正常业务), 整库导入豁免;
 `server.max_body_bytes` / `server.relay_max_body_bytes` 可调, 超限回 413 并记一条 WARN 日志。
+
+`/v1` 那一档取 64 MiB 而不是更大, 因为它要和**上游同值**: 正文交到 axonhub 的
+`httpclient.ReadHTTPRequest` 时, 那里对请求体的上限是写死的 64 MiB(`maxRequestBodySize`),
+超过即 `ErrRequestBodyTooLarge`。网关放行到 512 MiB 并不能让这些请求成功 —— 只会多读一遍内存、
+多为留痕拷一份 body, 然后在下一跳以"上游读取失败"的形状报错。真要放开, 必须同时改这里与上游库的常量。
+(生产实测: 66 MiB → 413 且上传 0 字节; 62 MiB → 通过上限检查。)
 
 ## 验证
 

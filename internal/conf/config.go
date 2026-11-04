@@ -12,9 +12,16 @@ import (
 // 请求体上限的缺省值: 网关会把请求体读进内存做改写与留痕, 不设上限时一个大 body
 // 就足以把内存吃穿; 正常文本补全请求远小于 32 MiB。生图底图与生视频素材是真正的
 // 例外, 故转发接口(/v1)单列一档而不是直接豁免。
+//
+// /v1 这一档取 64 MiB 而不是更大: 请求体读进来之后还要交给 axonhub 的
+// httpclient.ReadHTTPRequest, 它对请求体的上限写死为 64 MiB(maxRequestBodySize),
+// 超过即返回 ErrRequestBodyTooLarge。网关放行到 512 MiB 并不能让这些请求成功, 只会让它
+// 多读一遍内存、再多拷一份 body 用于留痕, 然后在下一跳以"上游读取失败"的形状报错 ——
+// 既救不活也说不清。两侧同值, 超限在入口处就得到 413 与一条明确的日志。真要放过
+// 64 MiB 以上的素材, 必须同时改这里与上游库的常量, 只改一侧没有意义。
 const (
 	DefaultMaxBodyBytes      int64 = 32 << 20
-	DefaultRelayMaxBodyBytes int64 = 512 << 20
+	DefaultRelayMaxBodyBytes int64 = 64 << 20
 )
 
 // MaxBodyBytes 返回管理端请求体上限; 配置为 0 或负数时回退缺省值。
@@ -41,7 +48,7 @@ type Server struct {
 	// 网关会把请求体读进内存做改写与留痕, 不设上限时一个大 body 就能把内存吃穿。
 	MaxBodyBytes int64 `mapstructure:"max_body_bytes"`
 	// RelayMaxBodyBytes 转发接口(/v1)的请求体上限; 生图底图与生视频素材需要更宽的一档,
-	// 但仍是上限而不是豁免。缺省 512 MiB。
+	// 但仍是上限而不是豁免。缺省 64 MiB, 与上游 axonhub httpclient 的读取上限同值。
 	RelayMaxBodyBytes int64 `mapstructure:"relay_max_body_bytes"`
 }
 

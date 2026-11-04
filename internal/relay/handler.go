@@ -99,7 +99,15 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			Model     string `json:"model"`  // 客户端请求的分组名称。
 			Streaming bool   `json:"stream"` // 客户端是否请求流式响应。
 		}
-		bodyForLog := string(raw.Body)
+		// 留痕正文按需生成: 只有"保存正文"开启时才做这份整份拷贝。关闭时
+		// persist.maskedBody 一律返回空串, 这个 string 从头到尾没有读者, 却是一次与请求体
+		// 等大的内存拷贝 —— /v1 的请求体上限是 64 MiB, 也就是每个大请求凭空多占一份。
+		// 更糟的是它会被请求状态持有到过期, 而状态缓存保留最近 maxBodyKeep 条正文。
+		// multipart 的摘要只有几百字节, 与开关无关照留。
+		//
+		// 必须在改写 raw.Body 之前取: 后续每轮都会把 model 换成上游真实模型名(见下方
+		// sjson.SetBytes 与 rewriteMultipartModel), 而日志页要看的是客户端发来的原文。
+		var bodyForLog string
 		isMultipart := strings.HasPrefix(strings.ToLower(raw.Headers.Get("Content-Type")), "multipart/form-data")
 		if isMultipart {
 			form, parseErr := parseMultipartForm(raw)
@@ -112,9 +120,14 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			bodyForLog = multipartBodySummary(form)
 			// 大图会落临时文件, 取完元数据即释放。
 			form.RemoveAll()
-		} else if err := json.Unmarshal(raw.Body, &metadata); err != nil {
-			rejectRequest(c, inbound, err)
-			return
+		} else {
+			if err := json.Unmarshal(raw.Body, &metadata); err != nil {
+				rejectRequest(c, inbound, err)
+				return
+			}
+			if op.ShouldStoreBody() {
+				bodyForLog = string(raw.Body)
+			}
 		}
 
 		// 生图支持流式: gpt-image-1 的 stream:true 下上游以 SSE 事件下发部分图与最终图
