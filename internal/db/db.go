@@ -148,6 +148,8 @@ func initSQLite(path string, config *gorm.Config) (*gorm.DB, error) {
 	params.Add("_pragma", "cache_size(10000)")
 	params.Add("_pragma", "busy_timeout(5000)")
 	params.Add("_pragma", "foreign_keys(ON)")
+	// auto_vacuum(INCREMENTAL) 只对空库/新建库有效; 对已有内容的库会静默无效(生产实测 auto_vacuum=0)。
+	// 存量库须停机后运行一次 switchyard db-maintenance --apply 才能落地; 落地后此 pragma 才真正生效。
 	params.Add("_pragma", "auto_vacuum(INCREMENTAL)")
 	params.Add("_pragma", "mmap_size(268435456)")
 	params.Add("_pragma", "locking_mode(NORMAL)")

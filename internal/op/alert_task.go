@@ -27,6 +27,7 @@ var taskLabels = map[string]string{
 	"channel_health":             "渠道健康探测",
 	"update_check":               "版本更新检查",
 	"video_job_cleanup":          "生视频任务清理",
+	"rate_limit_usage_retention": "限流用量留存清理",
 	"watchdog_alert":             "外部看门狗巡检",
 }
 

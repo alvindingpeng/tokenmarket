@@ -26,5 +26,6 @@ const (
 	TaskTicketAutoClose         = "ticket_auto_close"          // 工单自动关闭: resolved 停留满 3 天(按 resolved_at 计时)自动关闭。
 	TaskWebhookDispatch         = "webhook_dispatch"           // Webhook 投递 worker: 每数秒批量有界处理到期投递, 原子 lease 抢占。
 	TaskWebhookCleanup          = "webhook_cleanup"            // Webhook 队列/日志容量控制: 保留期清理 + 每订阅容量收敛。
+	TaskRateLimitUsageRetention = "rate_limit_usage_retention" // 清理超期的限流小时用量汇总。
 	TaskWatchdogAlert           = "watchdog_alert"             // 外部看门狗日志巡检。
 )

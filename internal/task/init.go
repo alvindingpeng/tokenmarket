@@ -183,6 +183,21 @@ func Init() {
 		},
 	})
 
+	// 限流用量监控只看最近窗口, 每日清理超过 30 天的小时汇总。
+	Define(Spec{
+		Name:       TaskRateLimitUsageRetention,
+		Interval:   fixedInterval(24 * time.Hour),
+		RunOnStart: true,
+		Fn: func() error {
+			deleted, err := op.RateLimitUsageRetentionRun(context.Background())
+			if err != nil {
+				return err
+			}
+			log.Infof("rate limit usage retention: deleted=%d", deleted)
+			return nil
+		},
+	})
+
 	// 外部看门狗日志巡检。RunOnStart 是关键: 看门狗重启服务后, 只有服务再起来才有人能读到停机窗口日志。
 	// 这是唯一能发现进程反复重启但每次都通过存活探针的入口(2026-11-02 两小时内重启 1192 次)。
 	Define(Spec{
