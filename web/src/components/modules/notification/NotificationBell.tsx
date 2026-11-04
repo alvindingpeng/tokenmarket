@@ -14,6 +14,7 @@ const NOTIFICATION_ICONS: Record<string, typeof Bell> = {
     balance_low: Bell,
     ratelimit_hit: Check,
     channel_down: Trash2,
+    channel_recovered: CheckCheck,
     channel_review: CheckCheck,
     withdrawal: Check,
     recharge: CheckCheck,

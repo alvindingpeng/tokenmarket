@@ -2391,6 +2391,7 @@
         "type_balance_low": "Low balance",
         "type_ratelimit_hit": "Rate limit hit",
         "type_channel_down": "Channel down",
+        "type_channel_recovered": "Channel recovered",
         "type_channel_review": "Channel review",
         "type_withdrawal": "Withdrawal",
         "type_recharge": "Top-up",

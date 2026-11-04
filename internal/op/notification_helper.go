@@ -40,18 +40,94 @@ func NotifyBalanceLow(ctx context.Context, userID uint, balance float64) error {
 
 // NotifyRateLimitHit 发送限流触发通知。
 func NotifyRateLimitHit(ctx context.Context, userID uint, scope, name string) error {
-	return NotificationCreate(ctx, userID, model.NotificationTypeRateLimitHit,
+	return NotifyRateLimitHitForScope(ctx, userID, scope, name, 0)
+}
+
+// NotifyRateLimitHitForScope 按具体限流实体去重; 同一用户多个 API Key 或渠道不会互相吞通知。
+func NotifyRateLimitHitForScope(ctx context.Context, userID uint, scope, name string, relatedID uint64) error {
+	dedupKey := fmt.Sprintf("%s:%d", scope, relatedID)
+	_, err := createNotificationDedupKey(ctx, userID, model.NotificationTypeRateLimitHit,
 		"限流触发",
 		fmt.Sprintf("您的 %s（%s）已触发限流，请稍后再试或调整限流配置。", scope, name),
-		"", 0)
+		dedupKey, relatedID)
+	return err
+}
+
+// rateLimitScopeLabel 返回用户可理解的限流归属。
+func rateLimitScopeLabel(scope string) string {
+	if scope == "api_key" {
+		return "API Key 级"
+	}
+	return "账户级"
+}
+
+// NotifyRateLimitHitAsync 为 429 拒绝发送去重通知; 不等待通知落库也不传递错误到主请求。
+func NotifyRateLimitHitAsync(userID uint, modelName string, scope string, relatedID uint64) {
+	if scope != "user" && scope != "api_key" {
+		return
+	}
+	if userID == 0 {
+		return
+	}
+	name := modelName
+	if name == "" {
+		name = "请求模型"
+	}
+	entityID := relatedID
+	if scope == "user" {
+		entityID = 0 // userID 已是所有者维度, 避免每个模型分别通知。
+	}
+	dedupKey := fmt.Sprintf("%s:%d", scope, entityID)
+	title := "限流触发"
+	content := fmt.Sprintf("您对模型 %s 的请求已触发%s限流，请稍后重试。", name, rateLimitScopeLabel(scope))
+	go func() {
+		notifyCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := createNotificationDedupKey(notifyCtx, userID, model.NotificationTypeRateLimitHit, title, content, dedupKey, entityID); err != nil {
+			log.Warnf("notification create failed: user=%d type=%s err=%v", userID, model.NotificationTypeRateLimitHit, err)
+		}
+	}()
 }
 
 // NotifyChannelDown 发送渠道故障通知。
 func NotifyChannelDown(ctx context.Context, userID uint, channelID int, channelName string) error {
-	return NotificationCreate(ctx, userID, model.NotificationTypeChannelDown,
-		"渠道故障",
-		fmt.Sprintf("渠道 %s 出现故障，系统已自动切换到其他可用渠道。", channelName),
-		"", uint64(channelID))
+	return NotifyChannelStatus(ctx, userID, channelID, channelName, false)
+}
+
+// NotifyChannelStatus 通知渠道所有者进入故障或恢复状态; 每次状态边沿使用独立去重类型。
+func NotifyChannelStatus(ctx context.Context, userID uint, channelID int, channelName string, recovered bool) error {
+	title := "渠道故障"
+	content := fmt.Sprintf("渠道 %s 出现故障，系统已自动切换到其他可用渠道。", channelName)
+	notifType := model.NotificationTypeChannelDown
+	if recovered {
+		title = "渠道已恢复"
+		content = fmt.Sprintf("渠道 %s 已恢复正常。", channelName)
+		notifType = model.NotificationTypeChannelRecovered
+	}
+	_, err := NotificationCreateDedup(ctx, userID, notifType, title, content, "", uint64(channelID))
+	return err
+}
+
+// NotifyChannelStatusAsync 非阻塞地发送渠道状态通知; 健康巡检不因站内通知失败而失败。
+func NotifyChannelStatusAsync(userID uint, channelID int, channelName string, recovered bool) {
+	if userID == 0 {
+		return
+	}
+	title := "渠道故障"
+	content := fmt.Sprintf("渠道 %s 出现故障。", channelName)
+	notifType := model.NotificationTypeChannelDown
+	if recovered {
+		title = "渠道已恢复"
+		content = fmt.Sprintf("渠道 %s 已恢复正常。", channelName)
+		notifType = model.NotificationTypeChannelRecovered
+	}
+	go func() {
+		notifyCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := NotificationCreateDedup(notifyCtx, userID, notifType, title, content, "", uint64(channelID)); err != nil {
+			log.Warnf("notification create failed: user=%d type=%s err=%v", userID, notifType, err)
+		}
+	}()
 }
 
 // NotifyChannelReview 发送渠道审核通知。

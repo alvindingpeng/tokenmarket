@@ -20,11 +20,19 @@ const notificationDedupWindow = time.Hour
 // NotificationCreateDedup 创建通知, 窗口内已有同类未读通知时跳过。
 // 返回是否真的写入了一条(被去重时为 false), 供调用方判断是否需要后续动作。
 func NotificationCreateDedup(ctx context.Context, userID uint, notifType model.NotificationType, title, content, link string, relatedID uint64) (bool, error) {
+	return createNotificationDedupKey(ctx, userID, notifType, title, content, link, relatedID)
+}
+
+// createNotificationDedupKey 附加限定link的精确去重; link为空时维持类型级全局去重语义。
+func createNotificationDedupKey(ctx context.Context, userID uint, notifType model.NotificationType, title, content, link string, relatedID uint64) (bool, error) {
 	var existing int64
-	err := db.GetDB().WithContext(ctx).Model(&model.Notification{}).
+	query := db.GetDB().WithContext(ctx).Model(&model.Notification{}).
 		Where("user_id = ? AND type = ? AND status = ? AND created_at >= ?",
-			userID, notifType, model.NotificationStatusUnread, time.Now().Add(-notificationDedupWindow)).
-		Count(&existing).Error
+			userID, notifType, model.NotificationStatusUnread, time.Now().Add(-notificationDedupWindow))
+	if link != "" {
+		query = query.Where("link = ?", link)
+	}
+	err := query.Count(&existing).Error
 	if err != nil {
 		return false, fmt.Errorf("failed to check notification dedup: %w", err)
 	}

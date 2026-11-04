@@ -21,7 +21,7 @@ describe('notificationNavigation', () => {
     it('其余通知类型暂不渲染跳转入口', () => {
         // 后端工单通知 link 恒为空串(见 op.NotifyTicket), 只有类型 + related_id 可用;
         // 其它类型没有稳定落地页, 一律 null, 不给用户点进去落空的入口。
-        const others: NotificationType[] = ['system', 'balance_low', 'ratelimit_hit', 'channel_down', 'channel_review', 'withdrawal', 'recharge', 'dispute'];
+        const others: NotificationType[] = ['system', 'balance_low', 'ratelimit_hit', 'channel_down', 'channel_recovered', 'channel_review', 'withdrawal', 'recharge', 'dispute'];
         for (const type of others) {
             expect(notificationNavigation(type, 1)).toBeNull();
         }
@@ -41,7 +41,7 @@ describe('notificationTypeKey', () => {
     it('每种通知类型都有对应文案键', () => {
         // 缺键在 use-intl 里是直接抛错(整页白屏), 用测试把「加类型忘补文案」拦下来。
         const keys = Object.keys(en.notification);
-        const types: NotificationType[] = ['system', 'balance_low', 'ratelimit_hit', 'channel_down', 'channel_review', 'withdrawal', 'recharge', 'dispute', 'ticket'];
+        const types: NotificationType[] = ['system', 'balance_low', 'ratelimit_hit', 'channel_down', 'channel_recovered', 'channel_review', 'withdrawal', 'recharge', 'dispute', 'ticket'];
         for (const type of types) {
             expect(keys).toContain(notificationTypeKey(type));
         }

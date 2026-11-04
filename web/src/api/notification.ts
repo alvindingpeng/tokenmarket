@@ -10,6 +10,7 @@ export type NotificationType =
     | 'balance_low'
     | 'ratelimit_hit'
     | 'channel_down'
+    | 'channel_recovered'
     | 'channel_review'
     | 'withdrawal'
     | 'recharge'

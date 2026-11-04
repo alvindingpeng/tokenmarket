@@ -8,15 +8,16 @@ import (
 type NotificationType string
 
 const (
-	NotificationTypeSystem         NotificationType = "system"          // 系统通知
-	NotificationTypeBalanceLow     NotificationType = "balance_low"     // 余额不足
-	NotificationTypeRateLimitHit   NotificationType = "ratelimit_hit"   // 限流触发
-	NotificationTypeChannelDown    NotificationType = "channel_down"    // 渠道故障
-	NotificationTypeChannelReview  NotificationType = "channel_review"  // 渠道审核
-	NotificationTypeWithdrawal     NotificationType = "withdrawal"      // 提现审核
-	NotificationTypeDispute        NotificationType = "dispute"         // 争议处理
-	NotificationTypeRecharge       NotificationType = "recharge"        // 充值成功
-	NotificationTypeTicket         NotificationType = "ticket"          // 工单回复
+	NotificationTypeSystem           NotificationType = "system"            // 系统通知
+	NotificationTypeBalanceLow       NotificationType = "balance_low"       // 余额不足
+	NotificationTypeRateLimitHit     NotificationType = "ratelimit_hit"     // 限流触发
+	NotificationTypeChannelDown      NotificationType = "channel_down"      // 渠道故障
+	NotificationTypeChannelRecovered NotificationType = "channel_recovered" // 渠道恢复
+	NotificationTypeChannelReview    NotificationType = "channel_review"    // 渠道审核
+	NotificationTypeWithdrawal       NotificationType = "withdrawal"        // 提现审核
+	NotificationTypeDispute          NotificationType = "dispute"           // 争议处理
+	NotificationTypeRecharge         NotificationType = "recharge"          // 充值成功
+	NotificationTypeTicket           NotificationType = "ticket"            // 工单回复
 )
 
 // NotificationStatus 通知状态

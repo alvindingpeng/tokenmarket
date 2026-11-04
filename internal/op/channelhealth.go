@@ -179,14 +179,16 @@ func evaluateAlerts(ctx context.Context, channel model.Channel, record model.Cha
 			Where("channel_id = ?", channel.ID).
 			Order("id DESC").First(&last).Error
 		if err == nil && (last.Kind == "down" || last.Kind == "degraded") {
-			RaiseAlertFacts(ctx, AlertFacts{
+			if RaiseAlertFacts(ctx, AlertFacts{
 				ChannelID: channel.ID,
 				Kind:      "recovered",
 				Reason:    "channel healthy again",
 				Fields: healthFields(channel, record, []alert.Field{
 					{Label: "此前告警", Value: alertKindLabel(last.Kind)},
 				}),
-			})
+			}) {
+				NotifyChannelStatusAsync(channel.UserID, channel.ID, channel.Name, true)
+			}
 		}
 		return
 	}
@@ -211,14 +213,16 @@ func evaluateAlerts(ctx context.Context, channel model.Channel, record model.Cha
 			return
 		}
 	}
-	RaiseAlertFacts(ctx, AlertFacts{
+	if RaiseAlertFacts(ctx, AlertFacts{
 		ChannelID: channel.ID,
 		Kind:      "down",
 		Reason:    fmt.Sprintf("%d consecutive failed probes", streak),
 		Fields: healthFields(channel, record, []alert.Field{
 			{Label: "连续失败", Value: fmt.Sprintf("%d 次", streak)},
 		}),
-	})
+	}) {
+		NotifyChannelStatusAsync(channel.UserID, channel.ID, channel.Name, false)
+	}
 }
 
 // healthFields 组装探测类告警的公共明细行, 末尾再接该告警特有的几行。

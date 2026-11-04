@@ -25,6 +25,9 @@ func TestReserveEnforcesRPM(t *testing.T) {
 	if decision.RetryAfter <= 0 || decision.RetryAfter > time.Duration(windowSeconds)*time.Second {
 		t.Fatalf("RetryAfter 应落在窗口剩余时间内, got %v", decision.RetryAfter)
 	}
+	if decision.BlockedScope != scope {
+		t.Fatalf("阻断范围=%+v, want %+v", decision.BlockedScope, scope)
+	}
 }
 
 func TestReserveEnforcesTPM(t *testing.T) {
@@ -49,8 +52,12 @@ func TestReserveAtomicAcrossScopes(t *testing.T) {
 	if decision := limiter.Reserve(scopes, 1, 1); !decision.Allowed {
 		t.Fatal("首次批量预留应放行")
 	}
-	if decision := limiter.Reserve(scopes, 1, 1); decision.Allowed {
+	decision := limiter.Reserve(scopes, 1, 1)
+	if decision.Allowed {
 		t.Fatal("api_key 触顶时整批应拒绝")
+	}
+	if decision.BlockedScope != (Scope{Kind: "api_key", ID: 2}) {
+		t.Fatalf("阻断范围=%+v, want api_key #2", decision.BlockedScope)
 	}
 	// 被拒批次不得扣减任何范围的额度: user 维度仍只有一次预留。
 	requests, _, _ := limiter.Usage(Scope{Kind: "user", ID: 1})

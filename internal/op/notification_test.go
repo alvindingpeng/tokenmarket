@@ -41,6 +41,15 @@ func TestNotificationCreateAndList(t *testing.T) {
 }
 
 // 用户之间必须互相看不见对方的通知: 越权读取是最容易被忽略的一类缺陷。
+func TestRateLimitScopeLabel(t *testing.T) {
+	if got := rateLimitScopeLabel("user"); got != "账户级" {
+		t.Fatalf("用户限流标签=%q, want 账户级", got)
+	}
+	if got := rateLimitScopeLabel("api_key"); got != "API Key 级" {
+		t.Fatalf("API Key限流标签=%q, want API Key 级", got)
+	}
+}
+
 func TestNotificationListIsScopedToUser(t *testing.T) {
 	notificationTestSetup(t)
 	ctx := context.Background()
@@ -173,6 +182,22 @@ func TestNotificationCreateDedup(t *testing.T) {
 	}
 	if !created {
 		t.Fatal("different type should not be deduped")
+	}
+
+	// 同一通知类型的不同限流实体使用不同去重键。
+	created, err = createNotificationDedupKey(ctx, userID, model.NotificationTypeRateLimitHit, "限流", "第二把Key", "api_key:99", 99)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created {
+		t.Fatal("different scope key should not be deduped")
+	}
+	created, err = createNotificationDedupKey(ctx, userID, model.NotificationTypeRateLimitHit, "限流", "再次命中", "api_key:99", 99)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created {
+		t.Fatal("same scope key should be deduped")
 	}
 }
 

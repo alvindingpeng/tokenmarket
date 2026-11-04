@@ -2391,6 +2391,7 @@
         "type_balance_low": "餘額不足",
         "type_ratelimit_hit": "限流觸發",
         "type_channel_down": "渠道故障",
+        "type_channel_recovered": "渠道已恢復",
         "type_channel_review": "渠道審核",
         "type_withdrawal": "提現通知",
         "type_recharge": "充值成功",

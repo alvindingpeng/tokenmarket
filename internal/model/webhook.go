@@ -39,6 +39,7 @@ var WebhookEvents = []string{
 	string(NotificationTypeBalanceLow),
 	string(NotificationTypeRateLimitHit),
 	string(NotificationTypeChannelDown),
+	string(NotificationTypeChannelRecovered),
 	string(NotificationTypeChannelReview),
 	string(NotificationTypeWithdrawal),
 	string(NotificationTypeDispute),

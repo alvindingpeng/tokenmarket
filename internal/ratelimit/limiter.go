@@ -30,6 +30,7 @@ type Decision struct {
 	RemainingRPM      int64        // -1 表示不限。
 	RemainingTPM      int64        // -1 表示不限。
 	ConcurrentBlocked bool         // 并发占满, 无固定窗口重试时间。
+	BlockedScope      Scope        // 被拒绝的最高优先级范围; 用于精确归因。
 	Reservation       *Reservation // 放行后必须用此票据结算或释放一次。
 }
 
@@ -159,16 +160,16 @@ func (l *Limiter) Reserve(scopes []Scope, estInput, estOutput int64) Decision {
 		limits := l.policy(scope)
 		b := l.bucketLocked(scope, window)
 		if b.forced {
-			return Decision{RetryAfter: windowEnd(window, now)}
+			return Decision{RetryAfter: windowEnd(window, now), BlockedScope: scope}
 		}
 		if limits.Concurrent > 0 && l.active[l.activeKey(scope)] >= limits.Concurrent {
-			return Decision{ConcurrentBlocked: true}
+			return Decision{ConcurrentBlocked: true, BlockedScope: scope}
 		}
 		if limits.RPM > 0 && b.requests+1 > limits.RPM {
-			return Decision{RetryAfter: windowEnd(window, now), RemainingTPM: remaining(limits.TPM, b.tokens)}
+			return Decision{RetryAfter: windowEnd(window, now), RemainingTPM: remaining(limits.TPM, b.tokens), BlockedScope: scope}
 		}
 		if limits.TPM > 0 && estimated > max(0, limits.TPM-b.tokens) {
-			return Decision{RetryAfter: windowEnd(window, now), RemainingRPM: remaining(limits.RPM, b.requests)}
+			return Decision{RetryAfter: windowEnd(window, now), RemainingRPM: remaining(limits.RPM, b.requests), BlockedScope: scope}
 		}
 		entries = append(entries, entry{b: b, limits: limits})
 	}

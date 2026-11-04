@@ -169,6 +169,8 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			op.RateUsageAdd(model.RateScopeSystem, 0, 0, 0, 0, 1)
 			op.RateUsageAdd(model.RateScopeUser, int(keyUserID), 0, 0, 0, 1)
 			op.RateUsageAdd(model.RateScopeAPIKey, c.GetInt("api_key_id"), 0, 0, 0, 1)
+			// 通知为最佳努力异步操作; 429 主响应不能被通知写库拖慢或改变。
+			op.NotifyRateLimitHitAsync(keyUserID, metadata.Model, userDecision.BlockedScope.Kind, uint64(userDecision.BlockedScope.ID))
 			rejectRateLimited(c, inbound, userDecision)
 			return
 		}
