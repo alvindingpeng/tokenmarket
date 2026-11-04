@@ -34,22 +34,25 @@ type Event string
 
 // 事件名与站内告警 kind 一一对应, 消费端可据此分流(例如只把 critical 转到值班群)。
 const (
-	EventChannelFailed        Event = "channel_failed"         // 渠道连续失败。
-	EventChannelRecovered     Event = "channel_recovered"      // 渠道恢复。
-	EventChannelDegraded      Event = "channel_degraded"       // 渠道延迟降级。
-	EventChannelKeyDisabled   Event = "channel_key_disabled"   // 渠道凭据被熔断。
-	EventChannelModelDisabled Event = "channel_model_disabled" // 渠道模型被熔断。
-	EventBalanceLow           Event = "balance_low"            // 余额不足。
-	EventQuotaExceeded        Event = "quota_exceeded"         // 配额超限。
-	EventBillingMismatch      Event = "billing_mismatch"       // 计费对账不平。
-	EventBillingFailed        Event = "billing_failed"         // 计费结算失败。
-	EventBackupFailed         Event = "backup_failed"          // 自动备份失败。
-	EventArchiveFailed        Event = "archive_failed"         // 日志归档失败。
-	EventTaskFailed           Event = "task_failed"            // 后台任务连续失败。
-	EventTaskRecovered        Event = "task_recovered"         // 后台任务恢复正常。
-	EventUpdateAvailable      Event = "update_available"       // 发现新版本。
-	EventTest                 Event = "test"                   // 告警通道连通性测试。
-	EventSystemAlert          Event = "system_alert"           // 未归类的系统告警。
+	EventChannelFailed         Event = "channel_failed"          // 渠道连续失败。
+	EventChannelRecovered      Event = "channel_recovered"       // 渠道恢复。
+	EventChannelDegraded       Event = "channel_degraded"        // 渠道延迟降级。
+	EventChannelKeyDisabled    Event = "channel_key_disabled"    // 渠道凭据被熔断。
+	EventChannelModelDisabled  Event = "channel_model_disabled"  // 渠道模型被熔断。
+	EventBalanceLow            Event = "balance_low"             // 余额不足。
+	EventQuotaExceeded         Event = "quota_exceeded"          // 配额超限。
+	EventBillingMismatch       Event = "billing_mismatch"        // 计费对账不平。
+	EventBillingFailed         Event = "billing_failed"          // 计费结算失败。
+	EventBackupFailed          Event = "backup_failed"           // 自动备份失败。
+	EventArchiveFailed         Event = "archive_failed"          // 日志归档失败。
+	EventWatchdogAlert         Event = "watchdog_alert"          // 外部看门狗报障(站内探针看不到的反复重启)。
+	EventRoutePersistFailed    Event = "route_persist_failed"    // 路由状态/出口成绩刷盘连续失败(重启后路由热状态回退)。
+	EventRoutePersistRecovered Event = "route_persist_recovered" // 上述刷盘恢复。
+	EventTaskFailed            Event = "task_failed"             // 后台任务连续失败。
+	EventTaskRecovered         Event = "task_recovered"          // 后台任务恢复正常。
+	EventUpdateAvailable       Event = "update_available"        // 发现新版本。
+	EventTest                  Event = "test"                    // 告警通道连通性测试。
+	EventSystemAlert           Event = "system_alert"            // 未归类的系统告警。
 )
 
 // Alert 表示一个待发送的告警。

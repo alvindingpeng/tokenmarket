@@ -1907,6 +1907,9 @@
             "kindTaskFailed": "任务失败",
             "kindTaskRecovered": "任务恢复",
             "kindUpdate": "新版本",
+            "kindWatchdog": "外部看门狗",
+            "kindRoutePersist": "路由状态落库失败",
+            "kindRoutePersistRecovered": "路由状态已恢复",
             "kindTest": "测试"
         },
         "settings": {

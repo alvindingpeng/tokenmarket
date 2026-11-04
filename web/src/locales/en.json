@@ -1907,6 +1907,9 @@
             "kindTaskFailed": "Task failed",
             "kindTaskRecovered": "Task recovered",
             "kindUpdate": "New release",
+            "kindWatchdog": "External watchdog",
+            "kindRoutePersist": "Route state persist failed",
+            "kindRoutePersistRecovered": "Route state recovered",
             "kindTest": "Test"
         },
         "settings": {

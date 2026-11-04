@@ -528,6 +528,10 @@ function AlertsSection() {
             task_failed: { label: t('alerts.kindTaskFailed'), className: 'bg-red-500/15 text-red-600 dark:text-red-400' },
             task_recovered: { label: t('alerts.kindTaskRecovered'), className: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
             update_available: { label: t('alerts.kindUpdate'), className: 'bg-sky-500/15 text-sky-600 dark:text-sky-400' },
+            // 看门狗与路由落库失败都是 critical: 前者是站内探针看不见的反复重启, 后者是路由热状态没有落盘。
+            watchdog_alert: { label: t('alerts.kindWatchdog'), className: 'bg-red-500/15 text-red-600 dark:text-red-400' },
+            route_persist_failed: { label: t('alerts.kindRoutePersist'), className: 'bg-red-500/15 text-red-600 dark:text-red-400' },
+            route_persist_recovered: { label: t('alerts.kindRoutePersistRecovered'), className: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
             test: { label: t('alerts.kindTest'), className: 'bg-muted text-muted-foreground' },
         };
         const item = map[kind] ?? { label: kind, className: 'bg-muted text-muted-foreground' };

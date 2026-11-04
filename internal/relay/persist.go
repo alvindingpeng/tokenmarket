@@ -251,6 +251,9 @@ func FlushRoutePersist() {
 			log.Warnf("egress metric persist failed: %v", err)
 			// 写失败要重排: 否则这批成绩永远不会重试, 重启后又回到零样本。
 			markEgressDirty()
+			routePersistSettle(egressFailKey, err)
+		} else {
+			routePersistSettle(egressFailKey, nil)
 		}
 	}
 
@@ -291,6 +294,9 @@ func FlushRoutePersist() {
 
 		if err := op.RouteSnapshotSave(state, cooldowns, metrics); err != nil {
 			log.Warnf("route snapshot persist failed for group %d: %v", groupID, err)
+			routePersistSettle(groupFailKey(groupID), err)
+		} else {
+			routePersistSettle(groupFailKey(groupID), nil)
 		}
 	}
 }

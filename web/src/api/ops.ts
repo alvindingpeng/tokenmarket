@@ -56,7 +56,9 @@ export type ChannelAlert = {
     kind: 'down' | 'recovered' | 'degraded' | 'key_disabled' | 'model_disabled'
         | 'mismatch' | 'billing_failed' | 'backup_failed' | 'archive_failed'
         | 'low_balance' | 'quota_exceeded' | 'task_failed' | 'task_recovered'
-        | 'update_available' | 'test';
+        | 'update_available' | 'watchdog_alert'
+        | 'route_persist_failed' | 'route_persist_recovered'
+        | 'test';
     reason: string;
     notified: boolean; created_at: string;
 };

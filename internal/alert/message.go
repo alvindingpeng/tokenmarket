@@ -27,21 +27,26 @@ type kindMeta struct {
 // 刻意保留 metaFor 的"查不到"分支: 新增一个 kind 却忘了在这里登记时,
 // 标题会显示原始 kind 而不是冒充"渠道降级" —— 后者正是改造前把备份失败报成渠道降级的成因。
 var kindMetas = map[string]kindMeta{
-	"down":             {Level: "critical", Title: "渠道故障"},
-	"recovered":        {Level: "info", Title: "渠道恢复"},
-	"degraded":         {Level: "warning", Title: "渠道延迟降级"},
-	"key_disabled":     {Level: "warning", Title: "渠道凭据熔断"},
-	"model_disabled":   {Level: "warning", Title: "渠道模型熔断"},
-	"low_balance":      {Level: "warning", Title: "余额不足"},
-	"quota_exceeded":   {Level: "warning", Title: "配额超限"},
-	"mismatch":         {Level: "critical", Title: "计费对账异常"},
-	"billing_failed":   {Level: "critical", Title: "计费结算失败"},
-	"backup_failed":    {Level: "critical", Title: "自动备份失败"},
-	"archive_failed":   {Level: "warning", Title: "日志归档失败"},
-	"task_failed":      {Level: "warning", Title: "后台任务失败"},
-	"task_recovered":   {Level: "info", Title: "后台任务恢复"},
-	"update_available": {Level: "info", Title: "发现新版本"},
-	"test":             {Level: "info", Title: "告警通道测试"},
+	"down":           {Level: "critical", Title: "渠道故障"},
+	"recovered":      {Level: "info", Title: "渠道恢复"},
+	"degraded":       {Level: "warning", Title: "渠道延迟降级"},
+	"key_disabled":   {Level: "warning", Title: "渠道凭据熔断"},
+	"model_disabled": {Level: "warning", Title: "渠道模型熔断"},
+	"low_balance":    {Level: "warning", Title: "余额不足"},
+	"quota_exceeded": {Level: "warning", Title: "配额超限"},
+	"mismatch":       {Level: "critical", Title: "计费对账异常"},
+	"billing_failed": {Level: "critical", Title: "计费结算失败"},
+	"backup_failed":  {Level: "critical", Title: "自动备份失败"},
+	"archive_failed": {Level: "warning", Title: "日志归档失败"},
+	// 外部看门狗: 站内探针看不到「进程反复重启」, 只有进程之外的探测器能把它变成告警。
+	"watchdog_alert": {Level: "critical", Title: "外部看门狗告警"},
+	// 路由状态只在内存里, 落库失败的表现是"刚失败的渠道又被选到""熔断成员还在被选", 很难反推回写库失败。
+	"route_persist_failed":    {Level: "critical", Title: "路由状态落库失败"},
+	"route_persist_recovered": {Level: "info", Title: "路由状态已恢复"},
+	"task_failed":             {Level: "warning", Title: "后台任务失败"},
+	"task_recovered":          {Level: "info", Title: "后台任务恢复"},
+	"update_available":        {Level: "info", Title: "发现新版本"},
+	"test":                    {Level: "info", Title: "告警通道测试"},
 }
 
 // metaFor 查表; 未登记的 kind 按 warning 处理并把 kind 本身当标题。

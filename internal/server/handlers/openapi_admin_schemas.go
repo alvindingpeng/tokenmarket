@@ -819,7 +819,8 @@ func openAPIAdminSchemas() gin.H {
 				"down", "recovered", "degraded", "key_disabled", "model_disabled",
 				"mismatch", "billing_failed", "backup_failed", "archive_failed",
 				"low_balance", "quota_exceeded", "task_failed", "task_recovered",
-				"update_available", "test",
+				"update_available", "watchdog_alert",
+				"route_persist_failed", "route_persist_recovered", "test",
 			}},
 			"reason": fieldString("触发原因(用于去重, 不含时间戳等易变值)"),
 			// 明细与外发通知取自同一批结构化字段: 延迟、错误、建议等逐行文本。

@@ -1907,6 +1907,9 @@
             "kindTaskFailed": "任務失敗",
             "kindTaskRecovered": "任務恢復",
             "kindUpdate": "新版本",
+            "kindWatchdog": "外部看門狗",
+            "kindRoutePersist": "路由狀態落庫失敗",
+            "kindRoutePersistRecovered": "路由狀態已恢復",
             "kindTest": "測試"
         },
         "settings": {

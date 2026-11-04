@@ -567,6 +567,12 @@ func determineAlertEvent(kind string) string {
 		return "backup_failed"
 	case "archive_failed":
 		return "archive_failed"
+	case "watchdog_alert":
+		return "watchdog_alert"
+	case "route_persist_failed":
+		return "route_persist_failed"
+	case "route_persist_recovered":
+		return "route_persist_recovered"
 	case "task_failed":
 		return "task_failed"
 	case "task_recovered":
