@@ -1,0 +1,6 @@
+[Unit]
+Description=Switchyard external health watchdog
+
+[Service]
+Type=oneshot
+ExecStart=/opt/switchyard/deploy/switchyard-watchdog.sh

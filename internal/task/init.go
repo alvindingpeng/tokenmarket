@@ -183,6 +183,19 @@ func Init() {
 		},
 	})
 
+	// 外部看门狗日志巡检。RunOnStart 是关键: 看门狗重启服务后, 只有服务再起来才有人能读到停机窗口日志。
+	// 这是唯一能发现进程反复重启但每次都通过存活探针的入口(2026-11-02 两小时内重启 1192 次)。
+	Define(Spec{
+		Name:       TaskWatchdogAlert,
+		Interval:   fixedInterval(5 * time.Minute),
+		RunOnStart: true,
+		Fn: func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			return op.WatchdogAlertRun(ctx)
+		},
+	})
+
 	// 生视频任务归属: 上游任务本身会过期, 归属记录超过保留期就没有查询价值, 定时清理避免表随调用量增长。
 	Define(Spec{
 		Name:       TaskVideoJobCleanup,
