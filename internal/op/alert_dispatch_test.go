@@ -117,10 +117,15 @@ func TestDetermineAlertEvent(t *testing.T) {
 		"billing_failed": "billing_failed",
 		"backup_failed":  "backup_failed",
 		"archive_failed": "archive_failed",
-		"task_failed":    "task_failed",
-		"task_recovered": "task_recovered",
-		"test":           "test",
-		"some_new_kind":  "system_alert",
+		// 外部看门狗与路由落库失败: 两个新出口都必须映射到 alert 包登记过的事件名,
+		// 否则外发 payload 会带一个消费端解释不了的值(旧 bug 的形状)。
+		"watchdog_alert":          "watchdog_alert",
+		"route_persist_failed":    "route_persist_failed",
+		"route_persist_recovered": "route_persist_recovered",
+		"task_failed":             "task_failed",
+		"task_recovered":          "task_recovered",
+		"test":                    "test",
+		"some_new_kind":           "system_alert",
 	}
 	for kind, want := range cases {
 		if got := determineAlertEvent(kind); got != want {
@@ -133,7 +138,9 @@ func TestDetermineAlertEvent(t *testing.T) {
 		alert.EventChannelFailed, alert.EventChannelRecovered, alert.EventChannelDegraded,
 		alert.EventChannelKeyDisabled, alert.EventChannelModelDisabled, alert.EventBalanceLow,
 		alert.EventQuotaExceeded, alert.EventBillingMismatch, alert.EventBillingFailed,
-		alert.EventBackupFailed, alert.EventArchiveFailed, alert.EventTaskFailed,
+		alert.EventBackupFailed, alert.EventArchiveFailed, alert.EventWatchdogAlert,
+		alert.EventRoutePersistFailed, alert.EventRoutePersistRecovered,
+		alert.EventTaskFailed,
 		alert.EventTaskRecovered, alert.EventUpdateAvailable, alert.EventTest, alert.EventSystemAlert,
 	} {
 		known[string(e)] = true
