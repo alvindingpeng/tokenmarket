@@ -630,6 +630,10 @@ func alertDispatchWait() {
 	alertDispatchPending.Wait()
 }
 
+// AlertDispatchDrain waits for in-flight outbound alerts and their notified DB updates.
+// It must run during shutdown before db.Close to avoid partially recorded deliveries.
+func AlertDispatchDrain() { alertDispatchWait() }
+
 // sendMultiChannelAlert 把告警交给注入的分发器; 分发器内部按 alert_channels 决定实际渠道。
 func sendMultiChannelAlert(ctx context.Context, out alert.Alert) bool {
 	return alertSendWith(AlertDispatcher, ctx, out)

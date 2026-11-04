@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/alert"
 	"github.com/alvindingpeng/switchyard/internal/conf"
@@ -62,7 +64,7 @@ var startCmd = &cobra.Command{
 			log.Errorf("database init error: %v", err)
 			os.Exit(1)
 		}
-		shutdown.Register(db.Close)
+		shutdown.Register("db.Close", db.Close)
 
 		// 既有明文原子幂等迁移: 存量明文凭据就地包进信封(重复启动零写入);
 		// 存量信封打不开(主密钥配错/keyID 不符)在这里 fail closed, 不带错误密钥继续跑。
@@ -81,7 +83,7 @@ var startCmd = &cobra.Command{
 			log.Errorf("cache init error: %v", err)
 			return
 		}
-		shutdown.Register(op.SaveCache)
+		shutdown.Register("op.SaveCache", op.SaveCache)
 
 		// 告警外发接线: op 负责站内告警落库, alert 负责按 alert_channels 分发到 webhook/telegram/email。
 		// alert 读设置要 op、op 发告警要 alert, 直接互相 import 会成环, 故两个方向都在这里注入。
@@ -146,12 +148,22 @@ var startCmd = &cobra.Command{
 			return
 		}
 		// 关闭钩子按注册逆序执行, 此处注册保证落库先于 db.Close。
-		shutdown.Register(func() error {
+		shutdown.Register("relay.FlushRoutePersist", func() error {
 			relay.FlushRoutePersist()
 			return nil
 		})
 
-		// JWT 全局密钥: 首次启动生成并持久化, 必须在 settings 缓存就绪后初始化。
+		// 注册在 server.Close 之前, 因逆序执行会位于 HTTP 排空之后、持久化和 db.Close 之前。
+		shutdown.Register("task.StopAndWait+op.AlertDispatchDrain", func() error {
+			drained := task.StopAndWait(30 * time.Second)
+			op.AlertDispatchDrain()
+			if !drained {
+				return fmt.Errorf("background tasks did not drain within 30 seconds (in_flight=%d)", task.InFlight())
+			}
+			return nil
+		})
+
+		// JWT 全局密钥: 首次启动生成并持久化, 必须在 settings 缓存就绪后初始化.
 		if err := auth.InitSecret(); err != nil {
 			log.Errorf("auth secret init error: %v", err)
 			return
@@ -161,7 +173,7 @@ var startCmd = &cobra.Command{
 			log.Errorf("server start error: %v", err)
 			return
 		}
-		shutdown.Register(server.Close)
+		shutdown.Register("server.Close", server.Close)
 
 		task.Init()
 		go task.RUN()

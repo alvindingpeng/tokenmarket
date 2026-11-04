@@ -2,6 +2,7 @@ package task
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -59,10 +60,14 @@ type taskEntry struct {
 }
 
 var (
-	tasks   = make(map[string]*taskEntry)
-	specs   = make(map[string]Spec)
-	tasksMu sync.Mutex
-	running bool // RUN 是否已执行: 决定 Define 自己起 goroutine 还是留给 RUN
+	tasks      = make(map[string]*taskEntry)
+	specs      = make(map[string]Spec)
+	tasksMu    sync.Mutex
+	running    bool // RUN 是否已执行: 决定 Define 自己起 goroutine 还是留给 RUN
+	stopped    atomic.Bool
+	stoppedCh  = make(chan struct{})
+	activeRuns sync.WaitGroup
+	inFlight   atomic.Int64
 )
 
 // Register 注册一个定时任务(固定间隔, 兼容旧调用)。
@@ -84,6 +89,11 @@ func Define(spec Spec) {
 	}
 	tasksMu.Lock()
 	specs[spec.Name] = spec
+	if stopped.Load() {
+		tasksMu.Unlock()
+		log.Warnf("task %s defined after scheduler stopped; ignoring", spec.Name)
+		return
+	}
 	entry := tasks[spec.Name]
 	if entry != nil {
 		entry.spec = spec
@@ -191,9 +201,65 @@ func Registered(name string) bool {
 	return ok
 }
 
+// StopAndWait marks the scheduler stopped, halts all tickers, and waits for in-flight bodies.
+// Once this returns (including on timeout), no new task body can begin.
+func StopAndWait(timeout time.Duration) bool {
+	tasksMu.Lock()
+	if !stopped.Load() {
+		stopped.Store(true)
+		close(stoppedCh)
+		for _, entry := range tasks {
+			entry.stop()
+		}
+	}
+	tasksMu.Unlock()
+	done := make(chan struct{})
+	go func() { activeRuns.Wait(); close(done) }()
+	if timeout <= 0 {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		return false
+	}
+}
+
+// InFlight reports the number of task bodies currently executing.
+func InFlight() int { return int(inFlight.Load()) }
+
+// startRun registers an in-flight body while holding the same gate used by StopAndWait.
+func startRun(entry *taskEntry) {
+	tasksMu.Lock()
+	if stopped.Load() {
+		tasksMu.Unlock()
+		return
+	}
+	activeRuns.Add(1)
+	inFlight.Add(1)
+	tasksMu.Unlock()
+	go func() {
+		defer activeRuns.Done()
+		defer inFlight.Add(-1)
+		entry.run()
+	}()
+}
+
 // RUN 启动所有注册的任务
 func RUN() {
 	tasksMu.Lock()
+	if stopped.Load() {
+		tasksMu.Unlock()
+		return
+	}
 	running = true
 	entries := make([]*taskEntry, 0, len(tasks))
 	for _, entry := range tasks {
@@ -205,13 +271,13 @@ func RUN() {
 		go runTask(entry)
 	}
 
-	// 阻塞主协程
-	select {}
+	// RUN runs in its own goroutine; shutdown.Listen remains responsible for process lifetime.
+	<-stoppedCh
 }
 
 func runTask(entry *taskEntry) {
 	if entry.spec.RunOnStart {
-		go entry.run()
+		startRun(entry)
 	}
 
 	entry.swapTicker(entry.interval)
@@ -224,7 +290,10 @@ func runTask(entry *taskEntry) {
 		}
 		select {
 		case <-ticker.C:
-			go entry.run()
+			startRun(entry)
+		case <-stoppedCh:
+			entry.stopTicker()
+			return
 		case newInterval := <-entry.updateCh:
 			if newInterval <= 0 {
 				entry.stopTicker()
