@@ -22,6 +22,7 @@ describe('SettingAudit 审计归档卡片(mock SSR)', () => {
                 seedSettings(client, {
                     [SettingKey.AuditRetentionDays]: '30',
                     [SettingKey.AuditArchiveEnabled]: 'false',
+                    [SettingKey.ArchiveRetentionDays]: '60',
                 });
                 client.setQueryData(['ops', 'audit-archives'], {
                     items: [{ name: 'audit-20260101.ndjson', size: 2048, mod_time: '2026-01-01T00:00:00Z' }],
@@ -36,6 +37,9 @@ describe('SettingAudit 审计归档卡片(mock SSR)', () => {
         expect(html).toContain('audit-20260101.ndjson'); // 归档文件
         expect(html).toContain('2.0 KB'); // 大小按人读格式
         expect(html).toContain('Archive now'); // 立即归档入口
+        // 归档文件留存与数据库留存是两个不同的键: 前者删早了补不回来, 必须能单独配置。
+        expect(html).toContain('Archive file retention (days)');
+        expect(html).toContain('value="60"');
     });
 
     it('无归档文件时渲染空态', () => {

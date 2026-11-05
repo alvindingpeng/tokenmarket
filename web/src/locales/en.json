@@ -250,6 +250,8 @@
             "retentionDaysHint": "Keep audit records for 1-3650 days, default 180. Longer than request logs because audit is compliance evidence.",
             "archiveEnabled": "Archive before cleanup",
             "archiveEnabledHint": "When on, expired audit records are written to NDJSON before deletion",
+            "archiveFileRetentionDays": "Archive file retention (days)",
+            "archiveFileRetentionDaysHint": "How long the NDJSON archive files themselves are kept, 1-3650 days, default 180. The most recent files are always kept.",
             "filesTitle": "Audit archive files",
             "filesHint": "Existing archives in the audit archive directory; read-only",
             "runNow": "Archive now",

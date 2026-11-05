@@ -250,6 +250,8 @@
             "retentionDaysHint": "稽核記錄保留 1-3650 天, 預設 180 天; 比呼叫日誌長, 因為稽核是合規證據。",
             "archiveEnabled": "清理前先歸檔",
             "archiveEnabledHint": "開啟後超期稽核記錄先寫入 NDJSON 再刪除",
+            "archiveFileRetentionDays": "歸檔檔案留存天數",
+            "archiveFileRetentionDaysHint": "NDJSON 歸檔檔案本身的保留天數, 1-3650 天, 預設 180; 最近幾份始終保留。",
             "filesTitle": "稽核歸檔檔案",
             "filesHint": "稽核歸檔目錄裡既有的歸檔檔案; 唯讀",
             "runNow": "立即歸檔",

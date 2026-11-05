@@ -250,6 +250,8 @@
             "retentionDaysHint": "审计记录保留 1-3650 天, 默认 180 天; 比调用日志长, 因为审计是合规证据。",
             "archiveEnabled": "清理前先归档",
             "archiveEnabledHint": "开启后超期审计记录先写入 NDJSON 再删除",
+            "archiveFileRetentionDays": "归档文件留存天数",
+            "archiveFileRetentionDaysHint": "NDJSON 归档文件本身的保留天数, 1-3650 天, 默认 180; 最近几份始终保留。",
             "filesTitle": "审计归档文件",
             "filesHint": "审计归档目录里已有的归档文件; 只读",
             "runNow": "立即归档",

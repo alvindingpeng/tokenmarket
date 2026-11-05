@@ -49,10 +49,12 @@ export function SettingAudit() {
     const saved = useMemo(() => {
         const days = settings?.find((item) => item.key === SettingKey.AuditRetentionDays)?.value ?? '';
         const enabled = settings?.find((item) => item.key === SettingKey.AuditArchiveEnabled)?.value ?? '';
-        return { days, enabled };
+        const fileDays = settings?.find((item) => item.key === SettingKey.ArchiveRetentionDays)?.value ?? '';
+        return { days, enabled, fileDays };
     }, [settings]);
     const [daysDraft, setDaysDraft] = useState<string | null>(null);
     const [enabledDraft, setEnabledDraft] = useState<string | null>(null);
+    const [fileDaysDraft, setFileDaysDraft] = useState<string | null>(null);
 
     // 显示优先级: 本地草稿 > 设置值 > 接口回显的生效值 > 后端默认 180。
     // 注意设置值是空串(键从未写入)时要继续往下回落 —— 空串不是 nullish,
@@ -66,6 +68,7 @@ export function SettingAudit() {
     const enabledValue = enabledDraft !== null
         ? enabledDraft === 'true'
         : (saved.enabled !== '' ? saved.enabled === 'true' : (archives.data?.enabled ?? true));
+    const fileDaysValue = fileDaysDraft ?? (saved.fileDays !== '' ? saved.fileDays : '180');
 
     // saveDays 失焦时夹取到 1-3650 再保存; 非法输入回落到后端默认 180。
     // 数字框必须 onChange 只写草稿、失焦才提交: 受控输入缺 onChange 时按键会被 React 回滚。
@@ -92,6 +95,22 @@ export function SettingAudit() {
             onSuccess: () => toast.success(tRoot('saved')),
             onError: (error) => {
                 setEnabledDraft(null);
+                toast.error(error instanceof Error ? error.message : tRoot('saveFailed'));
+            },
+        });
+    };
+
+    // saveFileDays 保存归档文件自身的留存天数: 归档是数据库清理后的离线副本,
+    // 删早了补不回来, 所以它和数据库留存天数分开配置(默认同为 180 天)。
+    const saveFileDays = (raw: string) => {
+        const parsed = Number.parseInt(raw, 10);
+        const normalized = Number.isFinite(parsed) ? String(Math.min(Math.max(parsed, 1), 3650)) : '180';
+        setFileDaysDraft(normalized);
+        if (saved.fileDays === normalized) return;
+        setSetting.mutate({ key: SettingKey.ArchiveRetentionDays, value: normalized }, {
+            onSuccess: () => toast.success(tRoot('saved')),
+            onError: (error) => {
+                setFileDaysDraft(saved.fileDays || null);
                 toast.error(error instanceof Error ? error.message : tRoot('saveFailed'));
             },
         });
@@ -137,6 +156,23 @@ export function SettingAudit() {
                     <p className="text-xs text-muted-foreground">{t('archiveEnabledHint')}</p>
                 </div>
                 <Switch checked={enabledValue} onCheckedChange={saveEnabled} aria-label={t('archiveEnabled')} />
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-3">
+                <div className="min-w-0">
+                    <Label htmlFor="archive-retention-days" className="text-sm font-medium">{t('archiveFileRetentionDays')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('archiveFileRetentionDaysHint')}</p>
+                </div>
+                <Input
+                    id="archive-retention-days"
+                    type="number"
+                    min={1}
+                    max={3650}
+                    className="h-9 w-28 rounded-xl"
+                    value={fileDaysValue}
+                    onChange={(event) => setFileDaysDraft(event.target.value)}
+                    onBlur={(event) => saveFileDays(event.target.value.trim())}
+                />
             </div>
 
             <div className="space-y-2 border-t border-border/60 pt-3">
