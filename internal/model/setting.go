@@ -108,6 +108,8 @@ const (
 	SettingKeyLogMaskFields       SettingKey = "log_mask_fields"       // 正文脱敏字段(逗号分隔的 JSON key)。
 	SettingKeyAuditRetentionDays  SettingKey = "audit_retention_days"  // 审计日志留存天数, 默认 180; 超期先归档再删除。
 	SettingKeyAuditArchiveEnabled SettingKey = "audit_archive_enabled" // 审计清理前是否先归档为 NDJSON, 默认 true。
+	// 归档文件自身的留存: 归档是数据库清理后的离线副本, 删早了补不回来, 因此独立成键。
+	SettingKeyArchiveRetentionDays SettingKey = "archive_retention_days" // 归档 NDJSON 文件留存天数, 默认 180。
 	// 用户等级配额: JSON 形如 {"free":{"rpm":60,"tpm":60000,"concurrent":2}, ...}。
 	// 只在用户/API Key 维度没有显式限流策略时兜底, 不会覆盖管理员为个别用户单独配的策略。
 	SettingKeyUserTierPolicies      SettingKey = "user_tier_policies"
@@ -285,6 +287,7 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyLogMaskFields, Value: ""},                                         // 默认不额外脱敏
 		{Key: SettingKeyAuditRetentionDays, Value: "180"},                                 // 审计留存 180 天(合规常见下限)
 		{Key: SettingKeyAuditArchiveEnabled, Value: "true"},                               // 清理前先归档, 避免删了才发现要查
+		{Key: SettingKeyArchiveRetentionDays, Value: "180"},                               // 归档文件留 180 天
 		{Key: SettingKeyUserTierPolicies, Value: DefaultUserTierPoliciesJSON},             // 默认四档配额
 		{Key: SettingKeyAutoBackupEnabled, Value: "true"},                                 // 默认开启自动备份
 		{Key: SettingKeyAutoBackupKeep, Value: "7"},                                       // 保留 7 份
@@ -519,6 +522,11 @@ func (s *Setting) Validate() error {
 	case SettingKeyLogArchiveEnabled, SettingKeyAuditArchiveEnabled, SettingKeyLogStoreBody, SettingKeyAutoBackupEnabled, SettingKeyHealthCheckEnabled, SettingKeyBackupEncrypt, SettingKeyBackupRemote:
 		if _, err := strconv.ParseBool(s.Value); err != nil {
 			return fmt.Errorf("%s must be a boolean", s.Key)
+		}
+		return nil
+	case SettingKeyArchiveRetentionDays:
+		if n, err := strconv.Atoi(s.Value); err != nil || n < 1 || n > 3650 {
+			return fmt.Errorf("archive retention days must be an integer between 1 and 3650")
 		}
 		return nil
 	case SettingKeyAuditRetentionDays:

@@ -143,6 +143,7 @@ func TestTaskNamesAndDefinitionsInSync(t *testing.T) {
 		TaskWebhookDispatch,
 		TaskWebhookCleanup,
 		TaskRateLimitUsageRetention,
+		TaskArchiveRetention,
 		TaskWatchdogAlert,
 	}
 

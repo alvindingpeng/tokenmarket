@@ -32,6 +32,7 @@ var settingTasks = map[model.SettingKey][]string{
 	model.SettingKeyAutoAddInterval:         {TaskChannelAutoAdd},
 	model.SettingKeyAuditRetentionDays:      {TaskAuditArchive},
 	model.SettingKeyAuditArchiveEnabled:     {TaskAuditArchive},
+	model.SettingKeyArchiveRetentionDays:    {TaskArchiveRetention},
 }
 
 // ApplySetting 重算某项设置影响到的全部任务周期。
@@ -194,6 +195,28 @@ func Init() {
 				return err
 			}
 			log.Infof("rate limit usage retention: deleted=%d", deleted)
+			return nil
+		},
+	})
+
+	// 归档文件留存: 数据库里的超期记录已经被归档后删除, 归档 NDJSON 自身也必须过期回收,
+	// 否则 data/archives 只增不减(与部署备份一起成为唯一随运维动作增长的目录)。
+	// 每天一次即可; 无论多老都保留最近几份, 长期停机后不会一次清空历史。
+	Define(Spec{
+		Name:       TaskArchiveRetention,
+		Interval:   fixedInterval(24 * time.Hour),
+		RunOnStart: true,
+		Fn: func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			result, err := op.ArchiveRetentionRun(ctx)
+			if err != nil {
+				return err
+			}
+			if result.Pruned > 0 {
+				log.Infof("archive retention: cutoff=%s kept=%d pruned=%d freed=%dB",
+					result.Cutoff.Format("2006-01-02"), result.Kept, result.Pruned, result.FreedB)
+			}
 			return nil
 		},
 	})

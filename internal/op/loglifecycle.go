@@ -125,16 +125,6 @@ func LogLifecycleRun(ctx context.Context) (ArchiveResult, error) {
 	archiveEnabled, err := SettingGetBool(model.SettingKeyLogArchiveEnabled)
 	result.Enabled = err == nil && archiveEnabled
 
-	// 正文在留存期满前保留: 留存期内仍可追溯原文, 满期后清空正文释放空间。
-	bodyCutoff := cutoff
-	bodyResult := db.GetDB().WithContext(ctx).Model(&model.RelayRequest{}).
-		Where("started_at < ? AND (request_body <> '' OR response_body <> '')", bodyCutoff).
-		Updates(map[string]interface{}{"request_body": "", "response_body": ""})
-	if bodyResult.Error != nil {
-		return result, fmt.Errorf("clear expired bodies: %w", bodyResult.Error)
-	}
-	result.BodyCleared = bodyResult.RowsAffected
-
 	if result.Enabled {
 		file, archived, err := archiveBefore(ctx, cutoff)
 		result.File, result.Archived = file, archived
@@ -157,6 +147,16 @@ func LogLifecycleRun(ctx context.Context) (ArchiveResult, error) {
 			return result, nil
 		}
 	}
+
+	// 正文只在归档成功(或归档关闭)之后清空: 先清后归档会让归档拿到空正文,
+	// 归档失败时正文又已经不可恢复 —— 顺序反了就等于把留存期内的证据先丢掉再报错。
+	bodyResult := db.GetDB().WithContext(ctx).Model(&model.RelayRequest{}).
+		Where("started_at < ? AND (request_body <> '' OR response_body <> '')", cutoff).
+		Updates(map[string]interface{}{"request_body": "", "response_body": ""})
+	if bodyResult.Error != nil {
+		return result, fmt.Errorf("clear expired bodies: %w", bodyResult.Error)
+	}
+	result.BodyCleared = bodyResult.RowsAffected
 
 	attempts := db.GetDB().WithContext(ctx).
 		Where("request_id IN (SELECT id FROM relay_requests WHERE started_at < ?)", cutoff).
@@ -205,13 +205,23 @@ func archiveBefore(ctx context.Context, cutoff time.Time) (string, int, error) {
 	if err != nil {
 		return "", 0, fmt.Errorf("open archive file: %w", err)
 	}
-	defer file.Close()
 	encoder := json.NewEncoder(file)
 	for _, row := range rows {
 		entry := map[string]any{"request": row, "attempts": attemptsByRequest[row.ID]}
 		if err := encoder.Encode(entry); err != nil {
+			file.Close()
 			return "", 0, fmt.Errorf("write archive entry: %w", err)
 		}
+	}
+	// 归档成功必须以"数据真的落盘"为准: json.Encoder 只写到用户态缓冲,
+	// 不 Sync 就返回成功的话, 后续删库把记录清掉但归档可能还在页缓存里,
+	// 掉电即同时失去两份。Close 的错误同样要报, 否则丢的是尾部缓冲。
+	if err := file.Sync(); err != nil {
+		file.Close()
+		return "", 0, fmt.Errorf("sync archive file: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return "", 0, fmt.Errorf("close archive file: %w", err)
 	}
 	return path, len(rows), nil
 }

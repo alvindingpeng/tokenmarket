@@ -213,12 +213,27 @@ func pruneBackups(keep int) int {
 	return pruned
 }
 
-// isBackupArtifact 判断是否为备份产物(明文 .db 或密文 .db.enc), .sha256 旁路文件不算。
+// backupArtifactPrefix 是本进程生成的备份文件名前缀, 后面紧跟 `YYYYMMDD-HHMMSS`。
+// 轮转和列表都只认这个名字: 目录里可能还有运维手工放进来的其他 .db(导入中间文件、
+// 恢复前的手工快照), 按扩展名判会把它们当成本服务的备份一起轮转删掉。
+const backupArtifactPrefix = "backup-"
+
+// isBackupArtifact 判断是否是本进程生成的备份产物(明文 .db 或密文 .db.enc)。
+// .sha256 旁路文件不算工件: 它必须跟着主体文件走, 不能单独参与保留计数。
 func isBackupArtifact(name string) bool {
-	if strings.HasSuffix(name, ".enc") {
-		return strings.HasSuffix(strings.TrimSuffix(name, ".enc"), ".db")
+	base := name
+	if strings.HasSuffix(base, ".enc") {
+		base = strings.TrimSuffix(base, ".enc")
 	}
-	return filepath.Ext(name) == ".db"
+	if filepath.Ext(base) != ".db" {
+		return false
+	}
+	stamp := strings.TrimSuffix(strings.TrimPrefix(base, backupArtifactPrefix), ".db")
+	if !strings.HasPrefix(base, backupArtifactPrefix) {
+		return false
+	}
+	_, err := time.Parse("20060102-150405", stamp)
+	return err == nil
 }
 
 // BackupVerifySQLite 导出版校验: 打开备份并确认关键表存在。
