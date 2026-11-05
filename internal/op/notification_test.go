@@ -201,6 +201,64 @@ func TestNotificationCreateDedup(t *testing.T) {
 	}
 }
 
+// 限流触顶通知是异步投递的: 断言它真的落库、按限流实体各自去重,
+// 且对不适用的 scope / 匿名调用直接跳过(不为不存在的人造通知)。
+func TestNotifyRateLimitHitAsyncDeliversPerScope(t *testing.T) {
+	notificationTestSetup(t)
+	const userID = uint(77)
+
+	// 异步投递, 用有界轮询等落库, 不引入固定长 sleep。
+	waitFor := func(pred func() bool) bool {
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			if pred() {
+				return true
+			}
+			if time.Now().After(deadline) {
+				return false
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	countByRelated := func(relatedID uint64) int64 {
+		var count int64
+		if err := db.GetDB().Model(&model.Notification{}).
+			Where("user_id = ? AND type = ? AND related_id = ?", userID, model.NotificationTypeRateLimitHit, relatedID).
+			Count(&count).Error; err != nil {
+			t.Fatalf("count notifications: %v", err)
+		}
+		return count
+	}
+
+	NotifyRateLimitHitAsync(userID, "gpt-4o", "api_key", 12)
+	if !waitFor(func() bool { return countByRelated(12) == 1 }) {
+		t.Fatalf("expected one api_key rate limit notification for related_id 12, got %d", countByRelated(12))
+	}
+
+	// 同一实体在去重窗口内重复触顶不叠加。
+	NotifyRateLimitHitAsync(userID, "gpt-4o", "api_key", 12)
+	if !waitFor(func() bool { return countByRelated(12) == 1 }) {
+		t.Fatalf("duplicate rate limit notification should be deduped, got %d", countByRelated(12))
+	}
+
+	// 账户级限流不按模型拆通知: 归属 id 固定为 0。
+	NotifyRateLimitHitAsync(userID, "gpt-4o", "user", uint64(userID))
+	if !waitFor(func() bool { return countByRelated(0) == 1 }) {
+		t.Fatalf("expected one account-level notification with related_id 0, got %d", countByRelated(0))
+	}
+
+	// 未定义的 scope 与匿名调用都不该产生通知。
+	NotifyRateLimitHitAsync(userID, "gpt-4o", "channel", 5)
+	NotifyRateLimitHitAsync(0, "gpt-4o", "api_key", 12)
+	var total int64
+	if err := db.GetDB().Model(&model.Notification{}).Where("user_id = ?", userID).Count(&total).Error; err != nil {
+		t.Fatal(err)
+	}
+	if total != 2 {
+		t.Fatalf("unknown scope must not notify; total=%d want 2", total)
+	}
+}
+
 // 用户读掉已有通知后, 窗口内应能再次提醒: 去重只挡"未读且同类"。
 func TestNotificationDedupResumesAfterRead(t *testing.T) {
 	notificationTestSetup(t)
