@@ -143,7 +143,8 @@ func DisputeList(ctx context.Context, filter DisputeQuery) ([]model.Dispute, int
 
 // DisputeReview 管理员审核申诉 (approve: 退款并冲正; reject: 驳回并留备注)
 func DisputeReview(ctx context.Context, disputeID uint64, approve bool, reviewNote string, reviewerID uint, reviewerName string) error {
-	return db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	var reviewed model.Dispute
+	err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var dispute model.Dispute
 		if err := tx.First(&dispute, disputeID).Error; err != nil {
 			return fmt.Errorf("dispute not found: %w", err)
@@ -159,7 +160,11 @@ func DisputeReview(ctx context.Context, disputeID uint64, approve bool, reviewNo
 			dispute.ReviewedBy = reviewerID
 			dispute.ReviewedAt = &now
 			dispute.UpdatedAt = now
-			return tx.Save(&dispute).Error
+			if err := tx.Save(&dispute).Error; err != nil {
+				return err
+			}
+			reviewed = dispute
+			return nil
 		}
 
 		// 批准退款: 必须原子执行 (1) 计费记录置 refunded (2) 返还用户余额与冲正流水 (3) 扣减发布者收入 (4) 更新申诉单
@@ -214,6 +219,19 @@ func DisputeReview(ctx context.Context, disputeID uint64, approve bool, reviewNo
 		dispute.ReviewedBy = reviewerID
 		dispute.ReviewedAt = &now
 		dispute.UpdatedAt = now
-		return tx.Save(&dispute).Error
+		if err := tx.Save(&dispute).Error; err != nil {
+			return err
+		}
+		reviewed = dispute
+		return nil
 	})
+	if err != nil {
+		return err
+	}
+	status := model.DisputeStatusRejected
+	if approve {
+		status = model.DisputeStatusApproved
+	}
+	NotifyDisputeAsync(reviewed.UserID, reviewed.ID, status)
+	return nil
 }

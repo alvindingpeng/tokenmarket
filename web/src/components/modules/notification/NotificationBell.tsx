@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'use-intl';
-import { Bell, Check, CheckCheck, ExternalLink, Trash2 } from 'lucide-react';
+import { Bell, Check, CheckCheck, ExternalLink, MessageSquareWarning, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { notificationNavigation, useNotificationList, useNotificationMutations, useNotificationUnreadCount, type Notification } from '@/api/notification';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -16,6 +16,7 @@ const NOTIFICATION_ICONS: Record<string, typeof Bell> = {
     channel_down: Trash2,
     channel_recovered: CheckCheck,
     channel_review: CheckCheck,
+    dispute: MessageSquareWarning,
     withdrawal: Check,
     recharge: CheckCheck,
 };

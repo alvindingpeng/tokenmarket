@@ -130,6 +130,20 @@ func NotifyChannelStatusAsync(userID uint, channelID int, channelName string, re
 	}()
 }
 
+// NotifyChannelReviewAsync 非阻塞地发送渠道审核结果通知。
+func NotifyChannelReviewAsync(userID uint, channelID int, channelName string, approved bool) {
+	if userID == 0 {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := NotifyChannelReview(ctx, userID, channelID, channelName, approved); err != nil {
+			log.Warnf("notification create failed: user=%d type=%s err=%v", userID, model.NotificationTypeChannelReview, err)
+		}
+	}()
+}
+
 // NotifyChannelReview 发送渠道审核通知。
 func NotifyChannelReview(ctx context.Context, userID uint, channelID int, channelName string, approved bool) error {
 	status := "已通过"
@@ -161,6 +175,20 @@ func NotifyWithdrawal(ctx context.Context, userID uint, withdrawalID uint, amoun
 	}
 	return NotificationCreate(ctx, userID, model.NotificationTypeWithdrawal,
 		title, content, "", uint64(withdrawalID))
+}
+
+// NotifyDisputeAsync 非阻塞地发送争议处理进度通知。
+func NotifyDisputeAsync(userID uint, disputeID uint64, status string) {
+	if userID == 0 {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := NotifyDispute(ctx, userID, disputeID, status); err != nil {
+			log.Warnf("notification create failed: user=%d type=%s err=%v", userID, model.NotificationTypeDispute, err)
+		}
+	}()
 }
 
 // NotifyDispute 发送争议处理进度通知。

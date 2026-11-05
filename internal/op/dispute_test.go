@@ -3,6 +3,7 @@ package op
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -84,6 +85,13 @@ func TestTradeDisputeAndSettlementLoop(t *testing.T) {
 	if dispute.Status != model.DisputeStatusPending || dispute.UserCost != 10.0 {
 		t.Fatalf("unexpected dispute: %+v", dispute)
 	}
+	var pendingNotifs int64
+	if err := db.GetDB().Model(&model.Notification{}).Where("user_id = ? AND type = ?", user1.ID, model.NotificationTypeDispute).Count(&pendingNotifs).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pendingNotifs != 0 {
+		t.Fatalf("creating a pending dispute should not send a decision notification: got %d", pendingNotifs)
+	}
 	// 重复申诉应被拒绝
 	_, err = DisputeCreate(ctx, user1.ID, record.ID, "重复申诉")
 	if err == nil {
@@ -94,6 +102,21 @@ func TestTradeDisputeAndSettlementLoop(t *testing.T) {
 	err = DisputeReview(ctx, dispute.ID, true, "核实属实同意退款", admin1.ID, admin1.Username)
 	if err != nil {
 		t.Fatalf("DisputeReview failed: %v", err)
+	}
+	var decisionNotif model.Notification
+	deadline := time.Now().Add(time.Second)
+	for {
+		err = db.GetDB().Where("user_id = ? AND type = ? AND related_id = ?", user1.ID, model.NotificationTypeDispute, dispute.ID).First(&decisionNotif).Error
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("expected dispute decision notification: %v", err)
+	}
+	if !strings.Contains(decisionNotif.Content, model.DisputeStatusApproved) {
+		t.Fatalf("notification content missing approved status: %q", decisionNotif.Content)
 	}
 
 	// 6. 验证冲正与资金不变量

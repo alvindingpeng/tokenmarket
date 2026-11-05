@@ -82,6 +82,7 @@ func approveChannelReview(c *gin.Context) {
 		return
 	}
 	audit(c, "channel.review_approve", fmt.Sprintf("channel#%d", channel.ID), fmt.Sprintf("note=%s", channel.ReviewNote))
+	op.NotifyChannelReviewAsync(channel.UserID, channel.ID, channel.Name, true)
 	resp.Success(c, gin.H{"id": channel.ID, "review_status": channel.ReviewStatus})
 }
 
@@ -99,5 +100,6 @@ func rejectChannelReview(c *gin.Context) {
 		return
 	}
 	audit(c, "channel.review_reject", fmt.Sprintf("channel#%d", channel.ID), fmt.Sprintf("note=%s", channel.ReviewNote))
+	op.NotifyChannelReviewAsync(channel.UserID, channel.ID, channel.Name, false)
 	resp.Success(c, gin.H{"id": channel.ID, "review_status": channel.ReviewStatus})
 }
