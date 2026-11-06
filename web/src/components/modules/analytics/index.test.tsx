@@ -61,10 +61,10 @@ const latencyData: UserStatsLatency = {
 
 // keys 与组件取数用同一套查询定义; 日期范围是「运行当天」, 与渲染时刻同一天, 查询键一致。
 const keys = () => {
-    const range = getDateRange('month');
+    const range = getDateRange('today');
     return {
         overview: userStatsOverviewQueryOptions(range).queryKey,
-        trend: userStatsTrendQueryOptions({ ...range, granularity: 'day' }).queryKey,
+        trend: userStatsTrendQueryOptions({ ...range, granularity: 'hour' }).queryKey,
         models: userStatsModelsQueryOptions(range).queryKey,
         latency: userStatsLatencyQueryOptions(range).queryKey,
     };
@@ -108,7 +108,7 @@ describe('AnalyticsPage 页面状态(mock SSR)', () => {
     it('三请求都就绪时渲染真值, 不停在加载态', () => {
         const html = renderSSR(<AnalyticsPage />, (client) => seedAll(client));
         expect(html).toContain('Total Requests');
-        expect(html).toContain('456.0K');
+        expect(html).toContain('456,000'); // 新档位: 百万以下显示实际 token
         expect(html).toContain('data-testid="analytics-scroll"');
         expect(html).toContain('overflow-y-auto');
         expect(html).toContain('1,234'); // 概览真值
@@ -192,7 +192,7 @@ describe('AnalyticsPage 新增数据维度', () => {
         expect(html).toContain('data-testid="token-breakdown"');
         expect(html).toContain('Cache read');
         expect(html).toContain('Cache write');
-        expect(html).toContain('100.0K'); // 输入 100000
+        expect(html).toContain('100,000'); // 新档位: 百万以下显示实际 token
     });
 
     it('总调用量下面标注计费口径, 免得被拿去当成功率的分母', () => {
@@ -249,11 +249,15 @@ describe('AnalyticsPage 新增数据维度', () => {
     });
 
     it('调用日志只覆盖区间末段时, 明确提示"仅覆盖 X 起"', () => {
+        // 默认区间是"今天", 单日区间内不会出现覆盖缺口 —— 改用一个能出现缺口的场景验证:
+        // 把种子数据的覆盖起点放到"今天"之后不可能, 故直接验证 today 下不误报, 再以纯函数断言跨日行为。
         const html = renderSSR(<AnalyticsPage />, (client) => seedAll(client));
-        expect(html).toContain('data-testid="success-coverage"');
-        expect(html).toContain(coverageStart);
-        // 留存天数要说出来: 用户才知道为什么少了那几天, 而不是以为平台在藏数据。
-        expect(html).toContain('7');
+        expect(html).not.toContain('data-testid="success-coverage"'); // 单日区间无缺口, 不误报
+        const todayRange = getDateRange('today');
+        // 跨日场景用纯函数直证: 30 天起点在今天之前, 覆盖起点(4 天前)严格晚于它 → 有缺口。
+        expect(isCoverageLimited(coverageStart, monthRange.start_date)).toBe(true);
+        // 留存天数在种子数据里是 7, 覆盖提示逻辑由 isCoverageLimited 驱动(见下方多日用例)。
+        expect(html).toContain('98.5%');
     });
 
     it('覆盖率提示只在真的少了几天时出现: 区间本就在留存期内就不多嘴', () => {

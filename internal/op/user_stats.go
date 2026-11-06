@@ -344,6 +344,9 @@ func statsBucketExprOn(dialect, granularity, column string) string {
 	switch dialect {
 	case "mysql":
 		switch granularity {
+		case "hour":
+			// 小时桶: 仅"今天"这种短区间使用; 跨天区间会产出同刻重复桶, 前端禁掉这个组合。
+			return "DATE_FORMAT(" + column + ", '%Y-%m-%d %H:00')"
 		case "week":
 			return "DATE_FORMAT(" + column + " - INTERVAL WEEKDAY(" + column + ") DAY, '%Y-%m-%d')"
 		case "month":
@@ -353,6 +356,8 @@ func statsBucketExprOn(dialect, granularity, column string) string {
 		}
 	case "postgres", "postgresql":
 		switch granularity {
+		case "hour":
+			return "TO_CHAR(DATE_TRUNC('hour', " + column + "), 'YYYY-MM-DD HH24:00')"
 		case "week":
 			return "TO_CHAR(DATE_TRUNC('week', " + column + "), 'YYYY-MM-DD')"
 		case "month":
@@ -362,6 +367,8 @@ func statsBucketExprOn(dialect, granularity, column string) string {
 		}
 	default: // sqlite
 		switch granularity {
+		case "hour":
+			return "STRFTIME('%Y-%m-%d %H:00', " + column + ")"
 		case "week":
 			return "DATE(SUBSTR(" + column + ", 1, 10), '-6 days', 'weekday 1')"
 		case "month":

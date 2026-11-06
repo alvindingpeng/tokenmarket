@@ -25,22 +25,26 @@ export function formatAmount(value: number | null | undefined): string {
     return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 4 });
 }
 
-// Decimal token counts, not byte sizes: KB = 10^12 tokens, MB = 10^15.
+// Token 档位: 实际 token / m(1e6) / b(1e9) / mb(1e12)。
+// 千位级不再缩 K —— "12,340 tokens" 比 "12.3K" 直读, K 档只会让相邻卡片数字口径不一致;
+// 百万以上才进 m 档, 与运维/统计侧"量级一眼可辨"的诉求一致。
 export function formatTokenCount(value: number | null | undefined): string {
     const count = Number.isFinite(value) ? Math.max(0, value ?? 0) : 0;
-    const units = ['', 'K', 'M', 'B', 'KB', 'MB'];
-    let scaled = count;
+    const units = ['', 'm', 'b', 'mb'] as const;
+    const thresholds = [1, 1e6, 1e9, 1e12] as const;
     let index = 0;
-    while (scaled >= 1000 && index < units.length - 1) {
-        scaled /= 1000;
+    while (index < units.length - 1 && count >= thresholds[index + 1]) {
         index++;
     }
-    // Promote rounded boundary values rather than displaying 1000.0K.
-    if (index > 0 && Number(scaled.toFixed(1)) >= 1000 && index < units.length - 1) {
-        scaled /= 1000;
-        index++;
+    if (index === 0) {
+        return Math.round(count).toLocaleString();
     }
-    return index === 0 ? String(Math.round(scaled)) : scaled.toFixed(1) + units[index];
+    const scaled = count / thresholds[index];
+    // Promote rounded boundary values rather than displaying 1000.0m.
+    if (Number(scaled.toFixed(1)) >= 1000 && index < units.length - 1) {
+        return (scaled / 1000).toFixed(1) + units[index + 1];
+    }
+    return scaled.toFixed(1) + units[index];
 }
 
 // formatUsd 美元金额展示: 固定两位小数并带货币符号。

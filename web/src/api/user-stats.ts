@@ -76,7 +76,7 @@ export type UserStatsLatency = {
 export type UserStatsQuery = {
     start_date?: string; // YYYY-MM-DD
     end_date?: string;   // YYYY-MM-DD
-    granularity?: 'day' | 'week' | 'month';
+    granularity?: 'hour' | 'day' | 'week' | 'month';
 };
 
 // buildQueryString 构造查询字符串。

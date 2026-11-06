@@ -2779,7 +2779,8 @@
         "granularity": {
             "day": "按天",
             "week": "按週",
-            "month": "按月"
+            "month": "按月",
+            "hour": "按小時"
         },
         "card": {
             "requests": "總呼叫量",

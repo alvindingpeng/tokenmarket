@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { formatTokenCount } from '@/lib/format';
 import {
     MorphingDialog,
     MorphingDialogContainer,
@@ -99,7 +100,7 @@ function OpsOverviewCards() {
     const cards = [
         { key: 'requests', label: t('requests'), value: data ? String(requests) : '-' },
         { key: 'successRate', label: t('successRate'), value: data ? successRate : '-' },
-        { key: 'tokens', label: t('tokens'), value: data ? String((data.input_tokens_24h + data.output_tokens_24h).toLocaleString()) : '-' },
+        { key: 'tokens', label: t('tokens'), value: data ? formatTokenCount(data.input_tokens_24h + data.output_tokens_24h) : '-' },
         { key: 'cost', label: t('cost'), value: data ? formatMoney(data.cost_24h) : '-' },
         { key: 'active', label: t('active'), value: data ? String(data.active_requests) : '-' },
         { key: 'channels', label: t('channels'), value: data ? `${data.channels_enabled}/${data.channels_total}` : '-' },

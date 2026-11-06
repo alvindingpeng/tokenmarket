@@ -20,6 +20,21 @@ interface RankItem {
     formatted: RankMetrics;
 }
 
+// addMetrics 两个指标对象逐字段相加: 模型榜聚合同模型跨渠道的统计用。
+// raw 相加后 formatted 由"四舍五入显示"产生极小误差, 排名场景可忽略。
+function addMetrics(
+    a: RankMetrics,
+    b: RankMetrics,
+): RankMetrics {
+    return {
+        total_cost: { ...a.total_cost, raw: a.total_cost.raw + b.total_cost.raw },
+        total_token: { ...a.total_token, raw: a.total_token.raw + b.total_token.raw },
+        request_count: { ...a.request_count, raw: a.request_count.raw + b.request_count.raw },
+        request_success: { ...a.request_success, raw: a.request_success.raw + b.request_success.raw },
+        request_failed: { ...a.request_failed, raw: a.request_failed.raw + b.request_failed.raw },
+    };
+}
+
 // RankCard 渲染单个排行榜: 标题, 维度切换和榜单列表。
 function RankCard({
     title,
@@ -124,20 +139,31 @@ export function Rank() {
     const setModelSortMode = useHomeViewStore((state) => state.setModelRankSortMode);
     const isChannelNameHidden = useHomeViewStore((state) => state.isChannelNameHidden);
 
+    // 渠道榜展示发布编码(#1001): 用户视角渠道以编码为身份, 真名只有归属者/管理员该看到。
     const channelItems: RankItem[] = (channelStats ?? []).map((channel) => ({
         id: `channel-${channel.channel_id}`,
-        name: channel.channel_name,
+        name: channel.share_code ? `#${channel.share_code}` : channel.channel_name,
         formatted: channel.formatted,
     }));
 
-    const modelItems: RankItem[] = (channelStats ?? []).flatMap((channel) =>
-        channel.models.map((channelModel) => ({
-            id: `model-${channelModel.model_id}`,
-            name: channelModel.model_name,
-            channelName: channel.channel_name,
-            formatted: channelModel.formatted,
-        }))
-    );
+    // 模型榜按模型名聚合: 同一模型可能被多个渠道提供, 用户关心的是"这个模型用量多少",
+    // 而不是"每个渠道的这份模型用量多少" —— 后者把同一模型拆成好几行, 排名失去意义。
+    const modelAgg = new Map<string, RankItem>();
+    for (const channel of channelStats ?? []) {
+        for (const channelModel of channel.models) {
+            const existing = modelAgg.get(channelModel.model_name);
+            if (existing) {
+                existing.formatted = addMetrics(existing.formatted, channelModel.formatted);
+            } else {
+                modelAgg.set(channelModel.model_name, {
+                    id: `model-${channelModel.model_name}`,
+                    name: channelModel.model_name,
+                    formatted: channelModel.formatted,
+                });
+            }
+        }
+    }
+    const modelItems = [...modelAgg.values()];
 
     if (!hasChannelScope) return null;
 

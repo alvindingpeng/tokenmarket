@@ -2779,7 +2779,8 @@
         "granularity": {
             "day": "Day",
             "week": "Week",
-            "month": "Month"
+            "month": "Month",
+            "hour": "Hourly"
         },
         "card": {
             "requests": "Total Requests",

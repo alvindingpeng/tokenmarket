@@ -2779,7 +2779,8 @@
         "granularity": {
             "day": "按天",
             "week": "按周",
-            "month": "按月"
+            "month": "按月",
+            "hour": "按小时"
         },
         "card": {
             "requests": "总调用量",

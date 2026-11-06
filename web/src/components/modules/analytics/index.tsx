@@ -77,12 +77,15 @@ function formatLatency(ms: number): string {
 // 更不会把失败渲染成全零的「正常统计」。
 export function AnalyticsPage() {
     const t = useTranslations('analytics');
-    const [preset, setPreset] = useState<Preset>('month');
-    const [granularity, setGranularity] = useState<'day' | 'week' | 'month'>('day');
+    // 默认"今天 + 按小时": 用户打开统计页想看的是"刚才到现在发生了什么", 30 天按天是次选动作。
+    const [preset, setPreset] = useState<Preset>('today');
+    const [granularity, setGranularity] = useState<'hour' | 'day' | 'week' | 'month'>('hour');
+    // 今天=小时, 近7/30天=按天: 周与月桶在单日区间只会产出空桶, 切范围时把粒度带到位, 省一次"图是空的"困惑。
+    const effectiveGranularity = preset === 'today' ? 'hour' : granularity === 'hour' ? 'day' : granularity;
 
     const dateRange = getDateRange(preset);
     const overview = useUserStatsOverview(dateRange);
-    const trend = useUserStatsTrend({ ...dateRange, granularity });
+    const trend = useUserStatsTrend({ ...dateRange, granularity: effectiveGranularity });
     const models = useUserStatsModels(dateRange);
     const latency = useUserStatsLatency(dateRange);
 
@@ -127,9 +130,11 @@ export function AnalyticsPage() {
                             ))}
                         </SelectContent>
                     </Select>
-                    <Select value={granularity} onValueChange={(v) => setGranularity(v as typeof granularity)}>
+                    {/* 今天按小时是既定组合, 粒度选择仅在多日范围有意义, 遂在此禁用整组切换。 */}
+                    <Select value={effectiveGranularity} onValueChange={(v) => setGranularity(v as typeof granularity)} disabled={preset === 'today'}>
                         <SelectTrigger className="w-28 rounded-xl"><SelectValue /></SelectTrigger>
                         <SelectContent>
+                            <SelectItem value="hour">{t('granularity.hour')}</SelectItem>
                             <SelectItem value="day">{t('granularity.day')}</SelectItem>
                             <SelectItem value="week">{t('granularity.week')}</SelectItem>
                             <SelectItem value="month">{t('granularity.month')}</SelectItem>
@@ -240,7 +245,9 @@ export function AnalyticsPage() {
                     <ResponsiveContainer width="100%" height={240}>
                         <LineChart data={trendChartData}>
                             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                            <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" />
+                            <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))"
+                            /* 小时桶标签太长(YYYY-MM-DD HH:00), 刻度只留 HH:00; 悬浮提示仍走全量标签。 */
+                            tickFormatter={(value: string) => (value.length === 16 ? value.slice(11) : value)} />
                             <YAxis yAxisId="left" tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" />
                             <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" />
                             {/* 成功率是百分比, 必须有自己的 0-100 右轴; 和费用共轴会把它压成贴底的一条直线。 */}
