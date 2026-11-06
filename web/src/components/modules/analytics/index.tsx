@@ -323,14 +323,16 @@ export function AnalyticsPage() {
                         <h3 className="mb-3 text-sm font-medium">{t('chart.modelCost')}</h3>
                         <ResponsiveContainer width="100%" height={240}>
                             <PieChart>
-                                <Pie data={modelData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                                <Pie data={modelData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80}
+                                    /* 金额统一 2 位小数: 默认标签印原始浮点值, 会露出 0.30000000000000004 这类尾差。 */
+                                    label={({ value }) => (typeof value === 'number' ? value.toFixed(2) : '')}>
                                     {modelData.map((_, index) => (
                                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                     ))}
                                 </Pie>
                                 <Tooltip
                                     contentStyle={chartTooltipStyle}
-                                    formatter={(value) => value != null ? formatAmount(value as number) : ''}
+                                    formatter={(value) => value != null ? (value as number).toFixed(2) : ''}
                                 />
                             </PieChart>
                         </ResponsiveContainer>
