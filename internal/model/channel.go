@@ -34,7 +34,10 @@ const (
 // 不带 binding 约束: 保存与探测都收这一份配置, 但两者的必填项不同 —— 探测发生在渠道尚未命名时,
 // 故必填校验分别由 normalizeChannelConfig 与 fetchUpstreamModels 按各自的需要给出。
 type ChannelConfig struct {
-	Name                      string         `json:"name" gorm:"uniqueIndex:idx_channel_owner_name;not null"`                                                // 渠道名称。
+	Name string `json:"name" gorm:"uniqueIndex:idx_channel_owner_name;not null"`
+	// MarkupRatio 渠道级上浮比例; <0 = 跟随全局 markup_ratio 设置。渠道商利润率差异大, 全局一刀切逼着
+	// 用"调供货价"表达利润策略, 那会污染多币种折算与参考价对齐; 覆盖后供货价保持原币报价原样。
+	MarkupRatio               float64        `json:"markup_ratio" gorm:"default:-1"`                                                                         // 渠道名称。
 	Dialect                   Dialect        `json:"dialect" gorm:"not null;default:generic"`                                                                // 上游方言, 决定出站转换器的厂商特化配置。
 	Enabled                   bool           `json:"enabled" gorm:"default:true"`                                                                            // 渠道是否可用。
 	BaseURL                   string         `json:"base_url"`                                                                                               // 上游地址, 各协议共用; [覆盖范围外] user:pass@host 形态的内嵌凭据当前不落库加密。

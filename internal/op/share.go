@@ -41,7 +41,7 @@ func ShareChannelDetail(code string) ([]ShareModel, *ShareQuality, error) {
 	if channelID == 0 {
 		return nil, nil, fmt.Errorf("share code not found")
 	}
-	markup := SettingGetFloat(model.SettingKeyMarkupRatio)
+	markup := ChannelMarkupFor(channelID)
 	models := make([]ShareModel, 0)
 	for _, channelModel := range channelModelCache.GetAll() {
 		if channelModel.ChannelID != channelID || !channelModel.Listed {

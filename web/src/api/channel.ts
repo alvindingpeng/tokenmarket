@@ -122,6 +122,8 @@ export type ChannelDetail = {
     channel_proxy: string;
     match_regex: string;
     model_auto_add: boolean; // 保存后自动探测上游模型并入渠道; 默认关, 只增不删、授权按位 OR。
+    /** 渠道级上浮比例; -1 = 跟随全局 markup_ratio。渠道商自己的利润决策, 不动供货价原币口径。 */
+    markup_ratio?: number;
 };
 
 // ChannelModelStats 是单个渠道模型的累计统计，自带名称与熔断状态。

@@ -353,7 +353,6 @@ func sortGroupItems(items []model.GroupItem) {
 // 可用性同此一次定稿: 渠道与凭据均启用且模型, 凭据均存在时可转发, 否则仍列出该成员但标记不可用,
 // 由此界面无需再按渠道列表回查, 也不会出现前后端各判一套的分歧。
 func groupSnapshot(group model.Group, scope model.Scope) model.Group {
-	markup := SettingGetFloat(model.SettingKeyMarkupRatio)
 	// 成员恒为数组: 读取侧承诺该字段不为 null, 空分组也要给出空数组。
 	items := make([]model.GroupItem, 0, len(group.Items))
 	for _, item := range group.Items {
@@ -381,10 +380,10 @@ func groupSnapshot(group model.Group, scope model.Scope) model.Group {
 		item.ModelName = channelModel.Name
 		item.KeyName = channelKey.Name
 		item.SupplyPrice = channelModel.SupplyPrice
-		item.UserPrice = channelModel.SupplyPrice.Scale(markup)
+		item.UserPrice = channelModel.SupplyPrice.Scale(ChannelMarkupFor(channel.ID))
 		// 媒体定价与形态; 文本模型上这两个字段为零值, 不影响现有 JSON 形状。
 		item.MediaSupply = channelModel.MediaSupply
-		item.UserMedia = channelModel.MediaSupply.Scale(markup)
+		item.UserMedia = channelModel.MediaSupply.Scale(ChannelMarkupFor(channel.ID))
 		item.Kind = channelModel.Kind
 		item.ChannelName = channel.Name
 		item.Available = channel.Enabled && !isCircuitBroken(channel.DisabledUntil) && channelKey.Enabled && !isCircuitBroken(channelKey.DisabledUntil) && !isCircuitBroken(channelModel.DisabledUntil)

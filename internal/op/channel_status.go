@@ -268,12 +268,11 @@ func channelStatusBuild(ctx context.Context, now time.Time) (PublicChannelStats,
 		return PublicChannelStats{}, err
 	}
 
-	markup := SettingGetFloat(model.SettingKeyMarkupRatio)
 	for _, target := range targets {
 		key := channelStatusKey{channelID: target.channelID, modelName: target.model.Name}
 		agg := aggs[key]
 		usage := tokens[key]
-		snapshot.Models = append(snapshot.Models, channelStatusModel(target, agg, usage, markup, now, from))
+		snapshot.Models = append(snapshot.Models, channelStatusModel(target, agg, usage, ChannelMarkupFor(target.channelID), now, from))
 	}
 	return snapshot, nil
 }

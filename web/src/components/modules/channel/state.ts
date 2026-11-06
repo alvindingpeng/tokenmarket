@@ -29,6 +29,7 @@ export type ChannelFormState = {
     param_override: string;
     match_regex: string;
     model_auto_add: boolean;
+    markup_ratio: string; // 表单里以字符串承载, 空串 = 跟随全局; 提交时解析。
 };
 
 // grantKey 生成授权在状态里的键; 分隔符取 \0, 模型名与凭据名都不会含它。
@@ -54,6 +55,7 @@ export const emptyFormState: ChannelFormState = {
     param_override: '',
     match_regex: '',
     model_auto_add: false,
+    markup_ratio: '',
 };
 
 // fromChannel 把渠道完整配置还原为表单状态; 授权读写都按名称, 直接建索引即可。
@@ -81,6 +83,7 @@ export function fromChannel(channel: ChannelDetail): ChannelFormState {
         param_override: channel.param_override,
         match_regex: channel.match_regex,
         model_auto_add: channel.model_auto_add,
+        markup_ratio: channel.markup_ratio !== undefined && channel.markup_ratio >= 0 ? String(channel.markup_ratio) : '',
     };
 }
 
@@ -101,6 +104,11 @@ export function toChannelConfig(state: ChannelFormState) {
         param_override: state.param_override.trim(),
         match_regex: state.match_regex.trim(),
         model_auto_add: state.model_auto_add,
+        // 空 = 跟随全局(-1); 非法输入按跟随全局处理, 后端对 >10 再做一次硬校验。
+        markup_ratio: (() => {
+            const parsed = Number(state.markup_ratio.trim());
+            return Number.isFinite(parsed) && parsed >= 0 ? parsed : -1;
+        })(),
     };
 }
 

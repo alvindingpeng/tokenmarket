@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import BillingRecovery from './BillingRecovery';
+import { UpstreamBillsSection } from './UpstreamBillsSection';
 import { useTranslations } from 'use-intl';
-import { Archive, DatabaseBackup, Gauge, HeartPulse, ListFilter, RefreshCw, Scale, ShieldAlert, StickyNote, Timer, Wallet } from 'lucide-react';
+import { FileSpreadsheet, Archive, DatabaseBackup, Gauge, HeartPulse, ListFilter, RefreshCw, Scale, ShieldAlert, StickyNote, Timer, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -123,6 +124,7 @@ const REDELIVER_MAX_ATTEMPTS = 8;
 
 const TABS = [
     { id: 'reconcile', icon: Scale },
+    { id: 'upstream', icon: FileSpreadsheet },
     { id: 'recovery', icon: RefreshCw },
     { id: 'flow', icon: Wallet },
     { id: 'backup', icon: DatabaseBackup },
@@ -161,6 +163,7 @@ export default function Ops() {
             </Tabs>
             <div className='min-h-0 flex-1 space-y-3 overflow-y-auto pb-4'>
                 {tab === 'reconcile' && <ReconcileSection />}
+                {tab === 'upstream' && <UpstreamBillsSection />}
                 {tab === 'recovery' && <BillingRecovery />}
                 {tab === 'flow' && <FlowSection />}
                 {tab === 'backup' && <BackupSection />}

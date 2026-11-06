@@ -1197,7 +1197,10 @@
                 "scopeFlagged": "仅已开启自动添加的渠道",
                 "scopeApproved": "全部已过审渠道"
             }
-        }
+        },
+        "markupRatio": "渠道上浮比例",
+        "markupRatioFollowGlobal": "跟随全局设置",
+        "markupRatioHint": "0 = 不加价; 0.2 = 20%; 留空跟随全局"
     },
     "share": {
         "shareCode": "共享编码",
@@ -1780,7 +1783,8 @@
             "health": "渠道健康",
             "alerts": "告警记录",
             "latency": "延迟归因",
-            "ratelimit": "限流 TOP"
+            "ratelimit": "限流 TOP",
+            "upstream": "上游对单"
         },
         "latency": {
             "desc": "首字节 = 建连(DNS/建连/TLS) + 上游等待。上游等待偏高说明该换上游渠道; 建连与 TLS 偏高说明该加出口或走边缘接入。建连列为 0 有三种情况: 复用了连接、上游用 http 明文、上游地址是 IP —— 看复用率与渠道地址区分, 不要一律读成「很快」。只统计拿到首字节的请求。",
@@ -2100,6 +2104,30 @@
             "inputInvalid": "请填写范围 ID 与正数上限",
             "userScope": "用户 #{id}",
             "keyScope": "Key #{id}"
+        },
+        "upstream": {
+            "pickChannel": "选择渠道",
+            "import": "导入 CSV",
+            "recompute": "重新对单",
+            "imported": "已导入 {count} 行",
+            "recomputed": "已重算 {count} 行",
+            "explained": "已保存",
+            "explain": "定性",
+            "notePlaceholder": "差异原因(如供应商折扣)",
+            "save": "保存",
+            "col": {
+                "model": "模型",
+                "bill": "账单成本",
+                "platform": "平台成本",
+                "diff": "差异",
+                "status": "状态"
+            },
+            "status": {
+                "pending": "待核对",
+                "matched": "已对平",
+                "mismatch": "有差异",
+                "explained": "已定性"
+            }
         }
     },
     "landing": {

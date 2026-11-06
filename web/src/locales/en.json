@@ -1197,7 +1197,10 @@
                 "scopeFlagged": "Channels with auto-add enabled",
                 "scopeApproved": "All approved channels"
             }
-        }
+        },
+        "markupRatio": "Channel markup ratio",
+        "markupRatioFollowGlobal": "Follow global setting",
+        "markupRatioHint": "0 = no markup; 0.2 = 20%; blank follows global"
     },
     "share": {
         "shareCode": "Share code",
@@ -1780,7 +1783,8 @@
             "health": "Channel Health",
             "alerts": "Alerts",
             "latency": "Latency",
-            "ratelimit": "Rate Limit TOP"
+            "ratelimit": "Rate Limit TOP",
+            "upstream": "Upstream Bills"
         },
         "latency": {
             "desc": "Time to first byte = connect (DNS/TCP/TLS) + upstream wait. High upstream wait means the channel itself is slow; high connect or TLS means your own egress or the edge hop is the problem. A zero under connect has three causes: the connection was reused, the upstream is plain http, or the upstream address is a bare IP; check the reused rate and the channel URL instead of reading it as fast. Only requests that produced a first byte are counted.",
@@ -2100,6 +2104,30 @@
             "inputInvalid": "Scope ID and a positive limit are required",
             "userScope": "User #{id}",
             "keyScope": "Key #{id}"
+        },
+        "upstream": {
+            "pickChannel": "Pick channel",
+            "import": "Import CSV",
+            "recompute": "Recompute",
+            "imported": "Imported {count} rows",
+            "recomputed": "Recomputed {count} rows",
+            "explained": "Saved",
+            "explain": "Explain",
+            "notePlaceholder": "Why does this differ?",
+            "save": "Save",
+            "col": {
+                "model": "Model",
+                "bill": "Bill",
+                "platform": "Platform",
+                "diff": "Diff",
+                "status": "Status"
+            },
+            "status": {
+                "pending": "Pending",
+                "matched": "Matched",
+                "mismatch": "Mismatch",
+                "explained": "Explained"
+            }
         }
     },
     "landing": {

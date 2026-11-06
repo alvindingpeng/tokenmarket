@@ -117,6 +117,7 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.AlertSilenceWindow{},
 		&model.SpendBudget{},
 		&model.FxRate{},
+		&model.UpstreamBill{},
 		&model.Dispute{},
 		&model.SettlementStatement{},
 		&model.SettlementRun{},

@@ -275,6 +275,17 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
                                 />
                             </div>
 
+                            <div className="space-y-1.5">
+                                <Label htmlFor="markup_ratio">{t('markupRatio')}</Label>
+                                <div className="flex items-center gap-2">
+                                    <Input id="markup_ratio" type="number" min={0} max={10} step="0.01"
+                                        placeholder={t('markupRatioFollowGlobal')}
+                                        value={state.markup_ratio}
+                                        onChange={(e) => setState({ ...state, markup_ratio: e.target.value })} />
+                                    <span className="text-xs text-muted-foreground">{t('markupRatioHint')}</span>
+                                </div>
+                            </div>
+
                             <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/30 px-3 py-2.5">
                                 <Switch
                                     checked={state.model_auto_add}

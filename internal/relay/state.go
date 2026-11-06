@@ -543,7 +543,7 @@ func (r *RequestState) finishLocked(usage *llm.Usage) *billingLease {
 	}
 	// 请求级统计(总览/统计/API Key)与日志费用都按用户端计费标准计算:
 	// 本轮落地渠道的供货价上浮后即渠道模型发布价, 与 settleBillingLocked 的结算完全同口径。
-	metrics := usageMetrics(r.targetSupplyPrice.Scale(op.SettingGetFloat(model.SettingKeyMarkupRatio)), usage)
+	metrics := usageMetrics(r.targetSupplyPrice.Scale(op.ChannelMarkupFor(r.targetChannelID)), usage)
 	r.Cost = metrics.InputCost + metrics.OutputCost
 	// 同时计算上游供货成本(不含加价), 用于成本追踪与利润分析。
 	supplyMetrics := usageMetrics(r.targetSupplyPrice, usage)
@@ -552,7 +552,7 @@ func (r *RequestState) finishLocked(usage *llm.Usage) *billingLease {
 	switch r.targetKind {
 	case model.MediaKindImage:
 		if images := mediaImageCount(r.responseBody); images > 0 {
-			userMediaCost := r.targetMediaSupply.Scale(op.SettingGetFloat(model.SettingKeyMarkupRatio)).CostImages(images, "")
+			userMediaCost := r.targetMediaSupply.Scale(op.ChannelMarkupFor(r.targetChannelID)).CostImages(images, "")
 			supplyMediaCost := r.targetMediaSupply.CostImages(images, "")
 			metrics.OutputCost += userMediaCost
 			r.Cost += userMediaCost
@@ -561,7 +561,7 @@ func (r *RequestState) finishLocked(usage *llm.Usage) *billingLease {
 	case model.MediaKindVideo:
 		if units := mediaVideoUnits(r.responseBody, r.requestedMedia); units.Videos > 0 {
 			r.recordVideoJob()
-			userMedia := r.targetMediaSupply.Scale(op.SettingGetFloat(model.SettingKeyMarkupRatio))
+			userMedia := r.targetMediaSupply.Scale(op.ChannelMarkupFor(r.targetChannelID))
 			userMediaCost := userMedia.CostVideos(units.Videos, units.Seconds, units.Resolution)
 			supplyMediaCost := r.targetMediaSupply.CostVideos(units.Videos, units.Seconds, units.Resolution)
 			metrics.OutputCost += userMediaCost
@@ -677,7 +677,7 @@ func (r *RequestState) settleBillingLocked(usage *llm.Usage) {
 	}
 	read, output, cacheRead, cacheWrite := usageBuckets(usage)
 	supply := r.targetSupplyPrice
-	markupRatio := op.SettingGetFloat(model.SettingKeyMarkupRatio)
+	markupRatio := op.ChannelMarkupFor(r.targetChannelID)
 	userPrice := supply.Scale(markupRatio)
 	userCost := userPrice.Cost(read, output, cacheRead, cacheWrite)
 	ownerRevenue := supply.Cost(read, output, cacheRead, cacheWrite)

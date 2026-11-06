@@ -218,8 +218,12 @@ func ChannelUpdate(detail *model.ChannelDetail, scope model.Scope, ctx context.C
 	if err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 逐列点名而不整行覆盖: 全量提交下 enabled 置假与被清空的可选字段都必须落库, 按零值跳过会写不进去;
 		// 而统计列由转发累加, 不在提交范围内, 整行覆盖会把它抹回提交时的旧值。
+		// 上浮覆盖值在白名单内: <0 视为跟随全局, 其余必须落在常识区间(0 = 不加价, 10 = 1000% 已到荒谬边界)。
+		if markup := detail.ChannelConfig.MarkupRatio; markup < ChannelMarkupFollowGlobal || markup > 10 {
+			return &InvalidInputError{Reason: fmt.Errorf("markup_ratio must be -1 (follow global) or between 0 and 10")}
+		}
 		if err := tx.Model(&model.Channel{}).Where("id = ?", detail.ID).
-			Select("name", "dialect", "enabled", "base_url",
+			Select("name", "dialect", "enabled", "base_url", "markup_ratio",
 				"openai_chat_completion_path", "openai_response_path", "openai_image_generation_path", "openai_image_edit_path", "anthropic_message_path",
 				"proxy", "channel_proxy", "custom_header", "param_override", "match_regex", "model_auto_add").
 			Updates(&model.Channel{ChannelConfig: detail.ChannelConfig}).Error; err != nil {
@@ -583,7 +587,7 @@ func ChannelGrantGet(id int) (model.ChannelGrant, error) {
 // 未上架模型只在归属者的渠道管理页存在; 渠道名以发布唯一编码展示, 凭据名除归属者外脱敏为空。
 // 可用性与 GroupList 补齐成员时同一口径: 渠道与凭据均启用即可用, 由此候选与已选成员不会各判一套。
 func ChannelGrantCandidates(scope model.Scope) []model.ChannelGrantCandidate {
-	markup := SettingGetFloat(model.SettingKeyMarkupRatio)
+	// 上浮按成员各自渠道的覆盖值逐个取: 候选跨渠道, 单一全局值会算错别人的利润口径。
 	candidates := make([]model.ChannelGrantCandidate, 0, channelGrantCache.Len())
 	for _, grant := range channelGrantCache.GetAll() {
 		channelModel, modelOK := channelModelCache.Get(grant.ChannelModelID)
@@ -612,7 +616,7 @@ func ChannelGrantCandidates(scope model.Scope) []model.ChannelGrantCandidate {
 			Available:   channel.Enabled && !isCircuitBroken(channel.DisabledUntil) && channelKey.Enabled && !isCircuitBroken(channelKey.DisabledUntil) && !isCircuitBroken(channelModel.DisabledUntil),
 			Listed:      channelModel.Listed,
 			SupplyPrice: channelModel.SupplyPrice,
-			UserPrice:   channelModel.SupplyPrice.Scale(markup),
+			UserPrice:   channelModel.SupplyPrice.Scale(ChannelMarkupFor(channel.ID)),
 		}
 		// 展示名定稿: 已发布渠道一律以发布唯一编码示人(含归属者与管理员), 上游名称不出分组管理;
 		// 未发布渠道只有归属者与管理员可见, 显示真名。凭据名仍按归属脱敏。
