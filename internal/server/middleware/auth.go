@@ -114,7 +114,10 @@ func APIKeyAuth() gin.HandlerFunc {
 			return
 		}
 		statsAPIKey := op.StatsAPIKeyGet(apiKeyObj.ID)
-		if apiKeyObj.MaxCost > 0 && apiKeyObj.MaxCost < statsAPIKey.StatsMetrics.OutputCost+statsAPIKey.StatsMetrics.InputCost {
+		memoryCost := statsAPIKey.StatsMetrics.OutputCost + statsAPIKey.StatsMetrics.InputCost
+		// max_cost 判定用有效口径: max(内存实时, billing_records 聚合兜底)。
+		// 只信内存会在崩溃丢缓存后让超支 Key 复活; 兜底聚合让数据库里已结算的账目不被遗忘。
+		if apiKeyObj.MaxCost > 0 && apiKeyObj.MaxCost < op.APIKeyCostEffective(c.Request.Context(), apiKeyObj.ID, memoryCost) {
 			resp.Error(c, http.StatusUnauthorized, "API key has reached the max cost")
 			c.Abort()
 			return

@@ -164,6 +164,9 @@ func billingSettleApply(ctx context.Context, reservationID uint64, record *model
 		if err := tx.Create(record).Error; err != nil {
 			return fmt.Errorf("failed to create billing record: %w", err)
 		}
+		// 新账目落库后失效 max_cost 兜底聚合缓存, 让下一次判定立即看到新结算额
+		// (否则 TTL 窗口内兜底还停在旧值, 判定只靠内存增量)。
+		apiKeyCostAggInvalidate(record.APIKeyID)
 		// 结算流水: 净变动 = 解冻的预估 - 实际费用, 冻结额回到预扣前。
 		return ledgerRecord(tx, model.BillingLedger{
 			UserID:       record.UserID,
