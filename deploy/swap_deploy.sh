@@ -111,6 +111,12 @@ if [[ "$DRY_RUN" == 1 ]]; then
 else
   run_service stop
   cp -f "$CURRENT_BIN" "$BACKUP_BIN"
+  # 二进制备份轮转: 每次部署产生一份 switchyard.prev-*(约 53MB), 不清理会随部署次数线性增长。
+  # 保留最近 10 份 —— 覆盖近两周的部署历史, 回滚窗口足够; 按修改时间取 newest 之外的部分删除。
+  # 只匹配 switchyard.prev-* 自己产生的前缀, 不碰运维手工放的其它文件。
+  ls -1t "$BIN_DIR"/switchyard.prev-* 2>/dev/null | tail -n +11 | while IFS= read -r old; do
+    rm -f -- "$old"
+  done
   chmod 755 "$NEW_BIN"
   mv -f "$NEW_BIN" "$CURRENT_BIN"
 fi
