@@ -73,6 +73,7 @@ function HeroSection({ onEnter }: { onEnter: () => void }) {
     const chips = [
         { icon: Radio, text: t('hero.chip1') },
         { icon: MessageSquareText, text: t('hero.chip2') },
+        { icon: Store, text: t('hero.chip4') },
         { icon: Languages, text: t('hero.chip3') },
     ];
     const subtitle =
@@ -166,8 +167,8 @@ function FeaturesSection() {
         { icon: Radio, title: t('features.gatewayTitle'), desc: t('features.gatewayDesc') },
         { icon: KeyRound, title: t('features.channelsTitle'), desc: t('features.channelsDesc') },
         { icon: FolderTree, title: t('features.groupsTitle'), desc: t('features.groupsDesc') },
+        { icon: Store, title: t('features.marketTitle'), desc: t('features.marketDesc') },
         { icon: Wallet, title: t('features.billingTitle'), desc: t('features.billingDesc') },
-        { icon: Video, title: t('features.mediaTitle'), desc: t('features.mediaDesc') },
         { icon: HeartPulse, title: t('features.opsTitle'), desc: t('features.opsDesc') },
         { icon: UserRound, title: t('features.accessTitle'), desc: t('features.accessDesc') },
         { icon: Sparkles, title: t('features.whiteLabelTitle'), desc: t('features.whiteLabelDesc') },
