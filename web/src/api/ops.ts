@@ -367,3 +367,67 @@ export function useRequeueAlert() {
         },
     });
 }
+// TaskStatus 与后端 task.TaskStatus 一一对应; 时间字段后端用 RFC3339, 零值序列化为 "0001-01-01T00:00:00Z"。
+// last_start 为零值即"启动后从未触发", 前端要据此显示"从未运行"而不是一个 2000 多年前的时间。
+export type TaskStatus = {
+    name: string;
+    scheduled: boolean;
+    interval_ns: number;
+    run_on_start: boolean;
+    running: boolean;
+    consecutive_failures: number;
+    last_start: string;
+    last_finish: string;
+    last_success: string;
+    last_duration_ns: number;
+    last_error?: string;
+};
+
+// useTaskStatus 轮询后台任务运行状态。纯只读接口, 慢轮询足够 —— 任务最小周期是分钟级。
+export function useTaskStatus() {
+    return useQuery({
+        queryKey: ['ops', 'tasks'],
+        queryFn: () => apiRequest<{ items: TaskStatus[] }>('/api/v1/ops/tasks').then(r => r.items),
+        refetchInterval: POLL_SLOW,
+    });
+}
+
+// AlertSilenceWindow 告警静默窗口: 计划内维护期间告警照常落库但不外发。
+export type AlertSilenceWindow = {
+    id: number;
+    start_at: string;
+    end_at: string;
+    kind: string; // 空串表示静默全部类型
+    note: string;
+    created_by: number;
+    created_at: string;
+};
+
+// useAlertSilence 窗口清单(含已过期的, 供回看)。
+export function useAlertSilence() {
+    return useQuery({
+        queryKey: ['ops', 'alert-silence'],
+        queryFn: () => apiRequest<{ items: AlertSilenceWindow[] }>('/api/v1/ops/silence/list').then(r => r.items),
+        refetchInterval: POLL_SLOW,
+    });
+}
+
+// useCreateAlertSilence 新建窗口。后端校验时长(最长 72h)与类型闭集, 失败直接 toast。
+export function useCreateAlertSilence() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (input: { start_at: string; end_at: string; kind?: string; note?: string }) =>
+            apiRequest<{ item: AlertSilenceWindow }>('/api/v1/ops/silence/create', { method: 'POST', body: JSON.stringify(input) }),
+        onSuccess: () => void qc.invalidateQueries({ queryKey: ['ops', 'alert-silence'] }),
+    });
+}
+
+// useDeleteAlertSilence 取消静默(幂等)。
+export function useDeleteAlertSilence() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (id: number) => apiRequest<{ ok: boolean }>('/api/v1/ops/silence/' + id, { method: 'DELETE' }),
+        onSuccess: () => void qc.invalidateQueries({ queryKey: ['ops', 'alert-silence'] }),
+    });
+}
+

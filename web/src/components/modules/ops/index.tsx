@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import BillingRecovery from './BillingRecovery';
 import { useTranslations } from 'use-intl';
-import { Archive, DatabaseBackup, Gauge, HeartPulse, ListFilter, RefreshCw, Scale, ShieldAlert, StickyNote, Wallet } from 'lucide-react';
+import { Archive, DatabaseBackup, Gauge, HeartPulse, ListFilter, RefreshCw, Scale, ShieldAlert, StickyNote, Timer, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,8 +18,9 @@ import {
 import { toast } from 'sonner';
 import {
     useAlertDelivery, useArchives, useBackups, useBalanceFlow, useChannelAlerts, useChannelHealth,
-    useLatencyBreakdown, useOpsOverview, useReconcileList, useRunAlertRedeliver, useRunBackup, useRunHealthCheck, useRunLogLifecycle, useRunReconcile, useRequeueAlert, useSetReconcileNote, useUndeliveredAlerts,
-    type BalanceFlow, type ChannelAlert, type ChannelHealth, type LatencyRow, type ReconcileRow, type UndeliveredAlert,
+    useAlertSilence, useCreateAlertSilence, useDeleteAlertSilence,
+    useLatencyBreakdown, useOpsOverview, useReconcileList, useRunAlertRedeliver, useRunBackup, useRunHealthCheck, useRunLogLifecycle, useRunReconcile, useRequeueAlert, useSetReconcileNote, useTaskStatus, useUndeliveredAlerts,
+    type AlertSilenceWindow, type BalanceFlow, type ChannelAlert, type ChannelHealth, type LatencyRow, type ReconcileRow, type TaskStatus, type UndeliveredAlert,
 } from '@/api/ops';
 import { useRateUsageTop } from '@/api/ratelimit';
 
@@ -127,6 +128,7 @@ const TABS = [
     { id: 'archive', icon: Archive },
     { id: 'health', icon: HeartPulse },
     { id: 'alerts', icon: ShieldAlert },
+    { id: 'tasks', icon: Timer },
     { id: 'latency', icon: Gauge },
     { id: 'ratelimit', icon: ListFilter },
 ] as const;
@@ -165,6 +167,7 @@ export default function Ops() {
                 {tab === 'alerts' && <AlertsSection />}
                 {tab === 'latency' && <LatencySection />}
                 {tab === 'ratelimit' && <RateLimitTopSection />}
+                {tab === 'tasks' && <TasksSection />}
             </div>
         </div>
     );
@@ -657,10 +660,116 @@ function AlertsSection() {
             ) : (
                 <OpsTable columns={columns} rows={data ?? []} empty={isLoading ? t('loading') : t('empty')} rowKey={(row) => String(row.id)} />
             )}
+            <SilenceWindowsSection />
         </div>
     );
 }
 
+// SilenceWindowsSection 告警静默窗口: 计划内维护期间告警照常落库但不外发。
+// 有截止时间, 到点自动恢复 —— 不做无期限开关, 忘了关的静默比吵闹更危险。
+function SilenceWindowsSection() {
+    const t = useTranslations('ops');
+    const { data, isLoading, refetch, isRefetching } = useAlertSilence();
+    const create = useCreateAlertSilence();
+    const remove = useDeleteAlertSilence();
+    const now = new Date();
+    const nowLocal = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const endDefault = new Date(now.getTime() + 60 * 60000 - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const [startAt, setStartAt] = useState(nowLocal);
+    const [endAt, setEndAt] = useState(endDefault);
+    const [kind, setKind] = useState('all');
+    const [note, setNote] = useState('');
+
+    const submit = () => {
+        if (!startAt || !endAt) {
+            toast.error(t('silence.timeRequired'));
+            return;
+        }
+        create.mutate(
+            { start_at: new Date(startAt).toISOString(), end_at: new Date(endAt).toISOString(), kind: kind === 'all' ? '' : kind, note },
+            {
+                onSuccess: () => { toast.success(t('silence.created')); setNote(''); void refetch(); },
+                onError: (error) => toast.error(error instanceof Error ? error.message : t('silence.createFailed')),
+            },
+        );
+    };
+
+    const windows = (data ?? []).slice(0, 20);
+    const nowMs = Date.now();
+    const columns: Col<AlertSilenceWindow>[] = [
+        { key: 'range', label: t('silence.range'), render: (row) => (
+            <span className='text-xs'>{formatTime(row.start_at)} ~ {formatTime(row.end_at)}</span>
+        ) },
+        { key: 'kind', label: t('silence.kind'), render: (row) => (
+            row.kind ? <Badge variant='outline' className='bg-muted text-muted-foreground'>{row.kind}</Badge>
+                : <Badge variant='outline' className='bg-amber-500/15 text-amber-700 dark:text-amber-400'>{t('silence.allKinds')}</Badge>
+        ) },
+        { key: 'state', label: t('silence.state'), render: (row) => {
+            const active = new Date(row.start_at).getTime() <= nowMs && nowMs < new Date(row.end_at).getTime();
+            return active
+                ? <Badge className='bg-amber-500/15 text-amber-700 dark:text-amber-400'>{t('silence.active')}</Badge>
+                : <Badge variant='outline' className='bg-muted text-muted-foreground'>{t('silence.past')}</Badge>;
+        } },
+        { key: 'note', label: t('silence.note'), render: (row) => (
+            <span className='block max-w-56 truncate text-xs text-muted-foreground' title={row.note}>{row.note || '-'}</span>
+        ) },
+        { key: 'action', label: '', render: (row) => {
+            const active = new Date(row.start_at).getTime() <= nowMs && nowMs < new Date(row.end_at).getTime();
+            if (!active) return null;
+            return (
+                <Button size='sm' variant='ghost' className='h-7 px-2 text-xs' disabled={remove.isPending}
+                    onClick={() => remove.mutate(row.id, {
+                        onSuccess: () => toast.success(t('silence.deleted')),
+                        onError: (error) => toast.error(error instanceof Error ? error.message : t('silence.deleteFailed')),
+                    })}>
+                    {t('silence.cancel')}
+                </Button>
+            );
+        } },
+    ];
+
+    return (
+        <div className='space-y-3 rounded-3xl border border-border bg-card p-4'>
+            <div className='flex flex-wrap items-center justify-between gap-3'>
+                <div>
+                    <p className='text-sm font-medium'>{t('silence.title')}</p>
+                    <p className='text-xs text-muted-foreground'>{t('silence.desc')}</p>
+                </div>
+                <RefreshButton onClick={() => void refetch()} busy={isRefetching} label={t('refresh')} />
+            </div>
+            <div className='flex flex-wrap items-end gap-2'>
+                <label className='flex flex-col gap-1 text-xs text-muted-foreground'>
+                    {t('silence.start')}
+                    <Input type='datetime-local' value={startAt} onChange={(e) => setStartAt(e.target.value)} className='h-9 w-48 rounded-xl' />
+                </label>
+                <label className='flex flex-col gap-1 text-xs text-muted-foreground'>
+                    {t('silence.end')}
+                    <Input type='datetime-local' value={endAt} onChange={(e) => setEndAt(e.target.value)} className='h-9 w-48 rounded-xl' />
+                </label>
+                <label className='flex flex-col gap-1 text-xs text-muted-foreground'>
+                    {t('silence.kind')}
+                    <Select value={kind} onValueChange={setKind}>
+                        <SelectTrigger className='h-9 w-52 rounded-xl'><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value='all'>{t('silence.allKinds')}</SelectItem>
+                            {['down', 'recovered', 'degraded', 'key_disabled', 'model_disabled', 'low_balance', 'quota_exceeded',
+                                'mismatch', 'billing_failed', 'backup_failed', 'archive_failed', 'watchdog_alert',
+                                'route_persist_failed', 'route_persist_recovered', 'task_failed', 'task_recovered'].map((k) => (
+                                <SelectItem key={k} value={k}>{k}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </label>
+                <label className='flex flex-col gap-1 text-xs text-muted-foreground'>
+                    {t('silence.note')}
+                    <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('silence.notePlaceholder')} className='h-9 w-56 rounded-xl' maxLength={200} />
+                </label>
+                <Button size='sm' disabled={create.isPending} onClick={submit}>{create.isPending ? t('silence.creating') : t('silence.create')}</Button>
+            </div>
+            <OpsTable columns={columns} rows={windows} empty={isLoading ? t('loading') : t('silence.none')} rowKey={(row) => String(row.id)} />
+        </div>
+    );
+}
 
 // RateLimitTopSection 限流 TOP 10 榜单: 展示最近 24 小时限流被拒次数最多的范围。
 function RateLimitTopSection() {
@@ -726,6 +835,75 @@ function RateLimitTopSection() {
                     empty={isLoading ? t('loading') : t('ratelimit.empty')}
                     rowKey={(row) => row.scope_type + '-' + row.scope_id} 
                 />
+            )}
+        </div>
+    );
+}
+
+// TasksSection 后台任务运行状态: 回答"上次何时跑的、成了没有、现在是否卡着"。
+// 纯只读展示 —— 这里没有任何操作入口, 管任务的去设置页改开关/周期, 出问题的看告警。
+function TasksSection() {
+    const t = useTranslations('ops');
+    const { data, error, isLoading, isRefetching, refetch } = useTaskStatus();
+    const tasks: TaskStatus[] = data ?? [];
+
+    // intervalLabel 周期人读格式; 未调度的任务显示关闭。
+    const intervalLabel = (task: TaskStatus) => {
+        if (!task.scheduled) return t('tasks.off');
+        const ms = task.interval_ns / 1e6;
+        if (ms >= 86400000 && ms % 86400000 === 0) return (ms / 86400000) + 'd';
+        if (ms >= 3600000 && ms % 3600000 === 0) return (ms / 3600000) + 'h';
+        if (ms >= 60000 && ms % 60000 === 0) return (ms / 60000) + 'm';
+        if (ms >= 1000) return (ms / 1000) + 's';
+        return ms + 'ms';
+    };
+
+    // ranAt 把运行时间转成人读; 零值(RFC3339 的 0001 年)表示从未发生。
+    const ranAt = (value: string) => {
+        if (!value || value.startsWith('0001-')) return t('tasks.never');
+        return formatTime(value);
+    };
+
+    const columns: Col<TaskStatus>[] = [
+        { key: 'name', label: t('tasks.name'), render: (row) => <span className='font-mono text-xs'>{row.name}</span> },
+        {
+            key: 'status',
+            label: t('tasks.status'),
+            render: (row) => row.running
+                ? <Badge className='bg-sky-500/15 text-sky-600 dark:text-sky-400'>{t('tasks.running')}</Badge>
+                : row.consecutive_failures > 0
+                    ? <Badge className='bg-red-500/15 text-red-600 dark:text-red-400'>{t('tasks.failing', { count: row.consecutive_failures })}</Badge>
+                    : row.scheduled
+                        ? <Badge className='bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'>{t('tasks.ok')}</Badge>
+                        : <Badge className='bg-zinc-500/15 text-zinc-600 dark:text-zinc-400'>{t('tasks.off')}</Badge>,
+        },
+        { key: 'interval', label: t('tasks.interval'), render: (row) => <span className='font-mono text-xs'>{intervalLabel(row)}</span> },
+        { key: 'lastSuccess', label: t('tasks.lastSuccess'), render: (row) => ranAt(row.last_success) },
+        { key: 'lastFinish', label: t('tasks.lastFinish'), render: (row) => ranAt(row.last_finish) },
+        {
+            key: 'lastDuration',
+            label: t('tasks.lastDuration'),
+            render: (row) => row.last_duration_ns > 0 ? (row.last_duration_ns / 1e9).toFixed(2) + 's' : '-',
+        },
+        {
+            key: 'lastError',
+            label: t('tasks.lastError'),
+            render: (row) => row.last_error
+                ? <span className='line-clamp-2 max-w-72 text-xs text-red-600 dark:text-red-400'>{row.last_error}</span>
+                : <span className='text-xs text-muted-foreground'>-</span>,
+        },
+    ];
+
+    return (
+        <div className='space-y-3'>
+            <div className='flex items-center justify-between'>
+                <p className='text-sm text-muted-foreground'>{t('tasks.desc')}</p>
+                <RefreshButton onClick={() => void refetch()} busy={isRefetching} label={t('refresh')} />
+            </div>
+            {error ? (
+                <div className='rounded-3xl border border-border bg-card p-10 text-center text-sm text-muted-foreground'>{t('loadFailed')}</div>
+            ) : (
+                <OpsTable columns={columns} rows={tasks} empty={isLoading ? t('loading') : t('empty')} rowKey={(row) => row.name} />
             )}
         </div>
     );

@@ -16,6 +16,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
 	"github.com/alvindingpeng/switchyard/internal/server/router"
+	"github.com/alvindingpeng/switchyard/internal/task"
 	"github.com/gin-gonic/gin"
 )
 
@@ -122,6 +123,28 @@ func init() {
 			router.NewRoute("/alerts/:id/requeue", http.MethodPost).
 				Allow(model.RoleAdmin).
 				Handle(runAlertRequeue),
+		).
+		AddRoute(
+			router.NewRoute("/tasks", http.MethodGet).
+				Allow(model.RoleAdmin).
+				Handle(listTaskStatus),
+		).
+		AddRoute(
+			router.NewRoute("/silence/list", http.MethodGet).
+				Allow(model.RoleAdmin).
+				Handle(listAlertSilence),
+		).
+		AddRoute(
+			router.NewRoute("/silence/create", http.MethodPost).
+				Allow(model.RoleAdmin).
+				Use(middleware.RequireStepUp()).
+				Handle(createAlertSilence),
+		).
+		AddRoute(
+			router.NewRoute("/silence/:id", http.MethodDelete).
+				Allow(model.RoleAdmin).
+				Use(middleware.RequireStepUp()).
+				Handle(deleteAlertSilence),
 		).
 		AddRoute(
 			router.NewRoute("/metrics/token", http.MethodGet).
@@ -541,6 +564,61 @@ func runAlertRequeue(c *gin.Context) {
 		return
 	}
 	audit(c, "ops.alert_requeue", strconv.FormatUint(id, 10), "")
+	resp.Success(c, gin.H{"ok": true})
+}
+
+// listTaskStatus 后台任务运行状态只读快照。
+// 纯内存读取不碰库, 无超时必要; 只读意味着这个接口即使被频繁轮询也无副作用。
+func listTaskStatus(c *gin.Context) {
+	resp.Success(c, gin.H{"items": task.Snapshot()})
+}
+
+// listAlertSilence 静默窗口清单(含已过期的, 供回看与清理)。
+func listAlertSilence(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	windows, err := op.AlertSilenceList(ctx)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, gin.H{"items": windows})
+}
+
+// createAlertSilence 新建静默窗口。
+// 管理操作必须留审计: 静默会让告警不进 Telegram/webhook, 事后要知道"谁在什么时候让告警闭嘴的"。
+func createAlertSilence(c *gin.Context) {
+	var input model.AlertSilenceWindowInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	uid, _ := middleware.CurrentUser(c)
+	window, err := op.AlertSilenceCreate(ctx, input, uid)
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	audit(c, "ops.alert_silence_create", fmt.Sprintf("%d", window.ID), input.Note)
+	resp.Success(c, gin.H{"item": window})
+}
+
+// deleteAlertSilence 取消静默(幂等: 删不存在的窗口也返回成功)。
+func deleteAlertSilence(c *gin.Context) {
+	id, err := strconv.ParseUint(strings.TrimSpace(c.Param("id")), 10, 64)
+	if err != nil || id == 0 {
+		resp.Error(c, http.StatusBadRequest, "invalid silence id")
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	if err := op.AlertSilenceDelete(ctx, uint(id)); err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	audit(c, "ops.alert_silence_delete", strconv.FormatUint(id, 10), "")
 	resp.Success(c, gin.H{"ok": true})
 }
 
