@@ -2,9 +2,9 @@ package model
 
 // UserStatsQuery 用户统计查询参数。
 type UserStatsQuery struct {
-	StartDate   string `form:"start_date" binding:"omitempty,datetime=2006-01-02"`   // 开始日期 YYYY-MM-DD
-	EndDate     string `form:"end_date" binding:"omitempty,datetime=2006-01-02"`     // 结束日期 YYYY-MM-DD
-	Granularity string `form:"granularity" binding:"omitempty,oneof=day week month"` // 粒度: day/week/month
+	StartDate   string `form:"start_date" binding:"omitempty,datetime=2006-01-02"`        // 开始日期 YYYY-MM-DD
+	EndDate     string `form:"end_date" binding:"omitempty,datetime=2006-01-02"`          // 结束日期 YYYY-MM-DD
+	Granularity string `form:"granularity" binding:"omitempty,oneof=hour day week month"` // 粒度: hour/day/week/month(hour 只用于单日区间)
 }
 
 // UserStatsOverview 用户调用概览: 时间区间内的聚合指标。

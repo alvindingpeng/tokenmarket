@@ -440,12 +440,16 @@ func TestUserStatsBucketExprDialects(t *testing.T) {
 		{"sqlite", "day", "DATE(SUBSTR(created_at, 1, 10))"},
 		{"sqlite", "week", "DATE(SUBSTR(created_at, 1, 10), '-6 days', 'weekday 1')"},
 		{"sqlite", "month", "DATE(SUBSTR(created_at, 1, 10), 'start of month')"},
+		// 小时桶: 只用于单日区间, 标签带 HH:00。
+		{"sqlite", "hour", "STRFTIME('%Y-%m-%d %H:00', created_at)"},
 		{"mysql", "day", "DATE_FORMAT(created_at, '%Y-%m-%d')"},
 		{"mysql", "week", "DATE_FORMAT(created_at - INTERVAL WEEKDAY(created_at) DAY, '%Y-%m-%d')"},
 		{"mysql", "month", "DATE_FORMAT(created_at, '%Y-%m-01')"},
+		{"mysql", "hour", "DATE_FORMAT(created_at, '%Y-%m-%d %H:00')"},
 		{"postgres", "day", "TO_CHAR(DATE_TRUNC('day', created_at), 'YYYY-MM-DD')"},
 		{"postgres", "week", "TO_CHAR(DATE_TRUNC('week', created_at), 'YYYY-MM-DD')"},
 		{"postgres", "month", "TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM-DD')"},
+		{"postgres", "hour", "TO_CHAR(DATE_TRUNC('hour', created_at), 'YYYY-MM-DD HH24:00')"},
 	}
 	for _, c := range cases {
 		if got := statsBucketExpr(c.dialect, c.granularity); got != c.want {

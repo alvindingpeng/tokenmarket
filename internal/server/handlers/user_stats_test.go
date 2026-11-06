@@ -83,6 +83,15 @@ func TestUserStatsRoutesAuthenticatedScope(t *testing.T) {
 		if w := ticketAPI(t, engine, "GET", path+"?start_date=not-a-date", token, ""); w.Code != 400 {
 			t.Fatalf("invalid date: %d", w.Code)
 		}
+		// 粒度白名单: hour 是本轮新增的合法值, 拼错必须 400 而不是静默回落到按天。
+		if part == "trend" {
+			if w := ticketAPI(t, engine, "GET", path+"?granularity=hour", token, ""); w.Code != 200 {
+				t.Fatalf("hour granularity: %d %s", w.Code, w.Body.String())
+			}
+			if w := ticketAPI(t, engine, "GET", path+"?granularity=minute", token, ""); w.Code != 400 {
+				t.Fatalf("invalid granularity should 400, got %d", w.Code)
+			}
+		}
 	}
 	w := ticketAPI(t, engine, "GET", "/api/v1/user-stats/models"+suffix, otherToken, "")
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "other-model") || strings.Contains(w.Body.String(), "own-model") {
