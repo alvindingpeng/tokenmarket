@@ -114,6 +114,8 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.EgressMetricRecord{}, // 出口成绩与冷却的持久快照; 重启后按它恢复, 不必从零重新学。
 		&model.VideoJob{},
 		&model.ChannelAlert{},
+		&model.AlertSilenceWindow{},
+		&model.SpendBudget{},
 		&model.Dispute{},
 		&model.SettlementStatement{},
 		&model.SettlementRun{},

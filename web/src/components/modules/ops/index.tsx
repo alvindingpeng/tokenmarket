@@ -19,8 +19,9 @@ import { toast } from 'sonner';
 import {
     useAlertDelivery, useArchives, useBackups, useBalanceFlow, useChannelAlerts, useChannelHealth,
     useAlertSilence, useCreateAlertSilence, useDeleteAlertSilence,
+    useBudgets, useCreateBudget, useDeleteBudget, useUpdateBudget,
     useLatencyBreakdown, useOpsOverview, useReconcileList, useRunAlertRedeliver, useRunBackup, useRunHealthCheck, useRunLogLifecycle, useRunReconcile, useRequeueAlert, useSetReconcileNote, useTaskStatus, useUndeliveredAlerts,
-    type AlertSilenceWindow, type BalanceFlow, type ChannelAlert, type ChannelHealth, type LatencyRow, type ReconcileRow, type TaskStatus, type UndeliveredAlert,
+    type AlertSilenceWindow, type BalanceFlow, type ChannelAlert, type ChannelHealth, type LatencyRow, type ReconcileRow, type SpendBudget, type TaskStatus, type UndeliveredAlert,
 } from '@/api/ops';
 import { useRateUsageTop } from '@/api/ratelimit';
 
@@ -129,6 +130,7 @@ const TABS = [
     { id: 'health', icon: HeartPulse },
     { id: 'alerts', icon: ShieldAlert },
     { id: 'tasks', icon: Timer },
+    { id: 'budgets', icon: Wallet },
     { id: 'latency', icon: Gauge },
     { id: 'ratelimit', icon: ListFilter },
 ] as const;
@@ -168,6 +170,7 @@ export default function Ops() {
                 {tab === 'latency' && <LatencySection />}
                 {tab === 'ratelimit' && <RateLimitTopSection />}
                 {tab === 'tasks' && <TasksSection />}
+                {tab === 'budgets' && <BudgetsSection />}
             </div>
         </div>
     );
@@ -771,7 +774,128 @@ function SilenceWindowsSection() {
     );
 }
 
-// RateLimitTopSection 限流 TOP 10 榜单: 展示最近 24 小时限流被拒次数最多的范围。
+// BudgetsSection 用户花费预算: 周期上限, warn/block 两档。
+// block 在请求预扣前拒绝, warn 只发去重通知 —— 预算应"接近"就提醒, 不是到 100% 才从失败请求里得知。
+function BudgetsSection() {
+    const t = useTranslations('ops');
+    const { data, isLoading, refetch, isRefetching } = useBudgets();
+    const create = useCreateBudget();
+    const update = useUpdateBudget();
+    const remove = useDeleteBudget();
+    const [scope, setScope] = useState('user');
+    const [scopeId, setScopeId] = useState('');
+    const [period, setPeriod] = useState('day');
+    const [action, setAction] = useState('warn');
+    const [limit, setLimit] = useState('');
+    const [warnRatio, setWarnRatio] = useState('80');
+
+    const submit = () => {
+        const id = Number(scopeId);
+        const amount = Number(limit);
+        const ratio = Number(warnRatio) || 80;
+        if (!id || !amount || amount <= 0) {
+            toast.error(t('budgets.inputInvalid'));
+            return;
+        }
+        create.mutate(
+            scope === 'user' ? { user_id: id, period, action, limit_amount: amount, warn_ratio: ratio }
+                : { api_key_id: id, period, action, limit_amount: amount, warn_ratio: ratio },
+            {
+                onSuccess: () => { toast.success(t('budgets.created')); setScopeId(''); setLimit(''); void refetch(); },
+                onError: (error) => toast.error(error instanceof Error ? error.message : t('budgets.createFailed')),
+            },
+        );
+    };
+
+    const scopeLabel = (row: SpendBudget) => (row.user_id > 0 ? t('budgets.userScope', { id: row.user_id }) : t('budgets.keyScope', { id: row.api_key_id }));
+    const columns: Col<SpendBudget>[] = [
+        { key: 'scope', label: t('budgets.scope'), render: (row) => <span className='text-sm'>{scopeLabel(row)}</span> },
+        { key: 'period', label: t('budgets.period'), render: (row) => (
+            <Badge variant='outline' className='bg-muted text-muted-foreground'>{row.period === 'month' ? t('budgets.month') : t('budgets.day')}</Badge>
+        ) },
+        { key: 'limit', label: t('budgets.limit'), render: (row) => <span className='font-mono text-xs'>{'$' + row.limit_amount.toFixed(2)}</span> },
+        { key: 'action', label: t('budgets.action'), render: (row) => (
+            <Badge variant='outline' className={row.action === 'block' ? 'bg-red-500/15 text-red-600 dark:text-red-400' : 'bg-amber-500/15 text-amber-700 dark:text-amber-400'}>
+                {row.action === 'block' ? t('budgets.block') : t('budgets.warn')}
+            </Badge>
+        ) },
+        { key: 'warn', label: t('budgets.warnRatio'), render: (row) => String(row.warn_ratio) + '%' },
+        { key: 'state', label: t('budgets.state'), render: (row) => (
+            <Badge variant='outline' className={row.enabled ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'bg-muted text-muted-foreground'}>
+                {row.enabled ? t('budgets.enabled') : t('budgets.disabled')}
+            </Badge>
+        ) },
+        { key: 'ops', label: '', render: (row) => (
+            <span className='flex gap-1'>
+                <Button size='sm' variant='ghost' className='h-7 px-2 text-xs'
+                    onClick={() => update.mutate({ id: row.id, period: row.period, action: row.action, limit_amount: row.limit_amount, warn_ratio: row.warn_ratio, enabled: !row.enabled },
+                        { onSuccess: () => void refetch(), onError: () => toast.error(t('budgets.updateFailed')) })}>
+                    {row.enabled ? t('budgets.disable') : t('budgets.enable')}
+                </Button>
+                <Button size='sm' variant='ghost' className='h-7 px-2 text-xs text-red-600 dark:text-red-400' disabled={remove.isPending}
+                    onClick={() => remove.mutate(row.id, {
+                        onSuccess: () => toast.success(t('budgets.deleted')),
+                        onError: (error) => toast.error(error instanceof Error ? error.message : t('budgets.deleteFailed')),
+                    })}>
+                    {t('budgets.delete')}
+                </Button>
+            </span>
+        ) },
+    ];
+
+    return (
+        <div className='space-y-3'>
+            <p className='text-sm text-muted-foreground'>{t('budgets.desc')}</p>
+            <div className='flex flex-wrap items-end gap-2'>
+                <label className='flex flex-col gap-1 text-xs text-muted-foreground'>
+                    {t('budgets.scope')}
+                    <Select value={scope} onValueChange={setScope}>
+                        <SelectTrigger className='h-9 w-32 rounded-xl'><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value='user'>{t('budgets.user')}</SelectItem>
+                            <SelectItem value='key'>{t('budgets.key')}</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </label>
+                <label className='flex flex-col gap-1 text-xs text-muted-foreground'>
+                    {scope === 'user' ? t('budgets.userId') : t('budgets.keyId')}
+                    <Input value={scopeId} onChange={(e) => setScopeId(e.target.value)} className='h-9 w-24 rounded-xl' inputMode='numeric' />
+                </label>
+                <label className='flex flex-col gap-1 text-xs text-muted-foreground'>
+                    {t('budgets.period')}
+                    <Select value={period} onValueChange={setPeriod}>
+                        <SelectTrigger className='h-9 w-28 rounded-xl'><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value='day'>{t('budgets.day')}</SelectItem>
+                            <SelectItem value='month'>{t('budgets.month')}</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </label>
+                <label className='flex flex-col gap-1 text-xs text-muted-foreground'>
+                    {t('budgets.action')}
+                    <Select value={action} onValueChange={setAction}>
+                        <SelectTrigger className='h-9 w-28 rounded-xl'><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value='warn'>{t('budgets.warn')}</SelectItem>
+                            <SelectItem value='block'>{t('budgets.block')}</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </label>
+                <label className='flex flex-col gap-1 text-xs text-muted-foreground'>
+                    {t('budgets.limit')}
+                    <Input value={limit} onChange={(e) => setLimit(e.target.value)} className='h-9 w-28 rounded-xl' inputMode='decimal' placeholder='10.00' />
+                </label>
+                <label className='flex flex-col gap-1 text-xs text-muted-foreground'>
+                    {t('budgets.warnRatio')}
+                    <Input value={warnRatio} onChange={(e) => setWarnRatio(e.target.value)} className='h-9 w-20 rounded-xl' inputMode='numeric' />
+                </label>
+                <Button size='sm' disabled={create.isPending} onClick={submit}>{create.isPending ? t('budgets.creating') : t('budgets.create')}</Button>
+            </div>
+            <OpsTable columns={columns} rows={data ?? []} empty={isLoading ? t('loading') : t('budgets.none')} rowKey={(row) => String(row.id)} />
+        </div>
+    );
+}
+
 function RateLimitTopSection() {
     const t = useTranslations('ops');
     const [hours, setHours] = useState('24');

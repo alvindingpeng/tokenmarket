@@ -997,6 +997,14 @@ func reserveBalance(request *RequestState, group model.Group) error {
 			return fmt.Errorf("failed to check quota: %w", err)
 		}
 	}
+	// 用户花费预算检查: 与配额同一位置(预扣前)。block 档超限直接拒绝;
+	// warn 档只在 op 内部发去重通知。查询失败按预算系统故障放行, 不误杀请求。
+	if err := op.CheckUserBudget(request.requestCtx, request.UserID, request.apiKeyID); err != nil {
+		if budgetErr, ok := err.(model.BudgetExceeded); ok {
+			return fmt.Errorf("budget exceeded: %s spent %.2f/%.2f", budgetErr.Scope, budgetErr.Current, budgetErr.Limit)
+		}
+		return fmt.Errorf("failed to check budget: %w", err)
+	}
 
 	reservationID, err := op.BillingReserve(request.UserID, request.ID, estimate)
 	if err != nil {

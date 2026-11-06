@@ -431,3 +431,51 @@ export function useDeleteAlertSilence() {
     });
 }
 
+// SpendBudget 用户/Key 级花费预算: 周期性上限, warn/block 两档。
+export type SpendBudget = {
+    id: number;
+    user_id: number;
+    api_key_id: number;
+    period: 'day' | 'month';
+    action: 'warn' | 'block';
+    limit_amount: number;
+    warn_ratio: number;
+    enabled: boolean;
+    created_at: string;
+    updated_at: string;
+};
+
+export function useBudgets() {
+    return useQuery({
+        queryKey: ['ops', 'budgets'],
+        queryFn: () => apiRequest<{ items: SpendBudget[] }>('/api/v1/budgets').then(r => r.items),
+        refetchInterval: POLL_SLOW,
+    });
+}
+
+export function useCreateBudget() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (input: { user_id?: number; api_key_id?: number; period: string; action: string; limit_amount: number; warn_ratio: number }) =>
+            apiRequest<{ item: SpendBudget }>('/api/v1/budgets', { method: 'POST', body: JSON.stringify(input) }),
+        onSuccess: () => void qc.invalidateQueries({ queryKey: ['ops', 'budgets'] }),
+    });
+}
+
+export function useUpdateBudget() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (input: { id: number; period: string; action: string; limit_amount: number; warn_ratio: number; enabled: boolean }) =>
+            apiRequest<{ item: SpendBudget }>('/api/v1/budgets/' + input.id, { method: 'PUT', body: JSON.stringify(input) }),
+        onSuccess: () => void qc.invalidateQueries({ queryKey: ['ops', 'budgets'] }),
+    });
+}
+
+export function useDeleteBudget() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (id: number) => apiRequest<{ ok: boolean }>('/api/v1/budgets/' + id, { method: 'DELETE' }),
+        onSuccess: () => void qc.invalidateQueries({ queryKey: ['ops', 'budgets'] }),
+    });
+}
+

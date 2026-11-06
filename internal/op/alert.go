@@ -95,6 +95,12 @@ func RaiseAlertFacts(ctx context.Context, facts AlertFacts) bool {
 	// 外发只走这一条路: 分发器按 alert_channels 决定渠道(默认含 webhook)。
 	// 这里不再单独发一次 webhook —— 否则 alert_channels 含 webhook 时同一条告警会外发两次。
 	outbound := outboundAlert(record, facts.Fields)
+	// 静默窗口: 计划内维护期间告警照常落库(上面 Create 已成功), 只跳过外发 ——
+	// 不打扰但记录保留, 运维页照常可见, 事后可按时间回看。
+	// 判定 DB 失败时按"不静默"处理: 静默是便利, 不能因它的故障吞掉告警外发。
+	if AlertSilenced(ctx, facts.Kind) {
+		return true
+	}
 	// 外发要在调用方返回之后继续, 故脱掉请求的取消信号(保留其中的值):
 	// 直接用请求 ctx 的话, HTTP 处理函数一返回 ctx 就被取消, 发送会半路失败。
 	sendCtx := context.WithoutCancel(ctx)
