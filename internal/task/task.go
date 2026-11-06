@@ -1,6 +1,7 @@
 package task
 
 import (
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -57,6 +58,15 @@ type taskEntry struct {
 	// 用于"恢复时补一条 recovered"而不是每轮都补。
 	failures int
 	alerted  bool
+
+	// 运行状态可见性: 运维面板只读展示, 由 run/markSuccess/markFailure 在持锁路径上写入。
+	// 只记事实不记推断: 没跑过就是零值, 前端据此显示"从未运行", 不造默认时间。
+	lastStart    time.Time // 最近一轮开始时刻; 与 running 同读可判断"正在跑"
+	running      bool
+	lastFinish   time.Time // 最近一轮结束时刻(成功失败都有)
+	lastSuccess  time.Time // 最近一次成功时刻
+	lastError    string    // 最近一轮失败原因, 成功后清空
+	lastDuration time.Duration
 }
 
 var (
@@ -348,7 +358,23 @@ func (entry *taskEntry) stop() {
 
 // run 执行一轮任务, 并把结果计入连续失败统计。
 func (entry *taskEntry) run() {
+	start := time.Now()
+	tasksMu.Lock()
+	entry.lastStart = start
+	entry.running = true
+	tasksMu.Unlock()
+
 	reason := runBody(entry.spec.Fn)
+
+	tasksMu.Lock()
+	entry.running = false
+	entry.lastFinish = time.Now()
+	entry.lastDuration = entry.lastFinish.Sub(start)
+	entry.lastError = reason
+	if reason == "" {
+		entry.lastSuccess = entry.lastFinish
+	}
+	tasksMu.Unlock()
 	if reason == "" {
 		entry.markSuccess()
 		return
@@ -425,4 +451,50 @@ func FailureCount(name string) int {
 		return entry.failures
 	}
 	return 0
+}
+
+// TaskStatus 单个任务的只读运行状态。
+// 面向运维面板: 回答"它上次什么时候跑的、成了没有、现在是否卡着"这三个最常问的问题。
+// spec 里的 Fn 不进快照(不可序列化也没必要), Interval 返回当前生效周期。
+type TaskStatus struct {
+	Name         string        `json:"name"`
+	Scheduled    bool          `json:"scheduled"`   // 当前是否在调度中(周期 <=0 的任务未装配, scheduled=false)
+	Interval     time.Duration `json:"interval_ns"` // 当前生效周期; 未调度时为 0
+	RunOnStart   bool          `json:"run_on_start"`
+	Running      bool          `json:"running"` // 有一轮正在执行
+	Consecutive  int           `json:"consecutive_failures"`
+	LastStart    time.Time     `json:"last_start"` // 零值 = 启动后从未触发
+	LastFinish   time.Time     `json:"last_finish"`
+	LastSuccess  time.Time     `json:"last_success"`
+	LastDuration time.Duration `json:"last_duration_ns"`
+	LastError    string        `json:"last_error,omitempty"`
+}
+
+// Snapshot 返回全部已定义任务(含未调度的)的运行状态, 名称有序保证输出稳定。
+// 只读: 用同一把 tasksMu, 与写路径互斥, 不会看到半更新的状态。
+func Snapshot() []TaskStatus {
+	tasksMu.Lock()
+	defer tasksMu.Unlock()
+	out := make([]TaskStatus, 0, len(specs))
+	for name, spec := range specs {
+		st := TaskStatus{
+			Name:       name,
+			Scheduled:  false,
+			RunOnStart: spec.RunOnStart,
+		}
+		if entry, ok := tasks[name]; ok {
+			st.Scheduled = true
+			st.Interval = entry.interval
+			st.Running = entry.running
+			st.Consecutive = entry.failures
+			st.LastStart = entry.lastStart
+			st.LastFinish = entry.lastFinish
+			st.LastSuccess = entry.lastSuccess
+			st.LastDuration = entry.lastDuration
+			st.LastError = entry.lastError
+		}
+		out = append(out, st)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
