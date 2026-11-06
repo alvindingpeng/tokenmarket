@@ -13,7 +13,7 @@ type RankMetrics = Pick<
 >;
 
 // 榜单中的一个条目, 渠道和模型共用。
-interface RankItem {
+export interface RankItem {
     id: string;
     name: string; // 渠道榜为渠道名, 模型榜为模型名。
     channelName?: string; // 仅模型榜有值; 有值则 name 是模型名, 模糊渠道名时只糊此项。
@@ -35,6 +35,12 @@ function addMetrics(
     };
 }
 
+// rankItems 按当前维度降序: 抽成纯函数便于回归 —— 排序错了在 UI 上只是行序不对, 肉眼难发现。
+export function rankItems(items: RankItem[], sortMode: MetricKey): RankItem[] {
+    const sortField = sortMode === 'cost' ? 'total_cost' : sortMode === 'count' ? 'request_count' : 'total_token';
+    return [...items].sort((a, b) => b.formatted[sortField].raw - a.formatted[sortField].raw);
+}
+
 // RankCard 渲染单个排行榜: 标题, 维度切换和榜单列表。
 function RankCard({
     title,
@@ -50,8 +56,9 @@ function RankCard({
     hideChannelName?: boolean;
 }) {
     const t = useTranslations('home.rank');
-    const sortField = sortMode === 'cost' ? 'total_cost' : sortMode === 'count' ? 'request_count' : 'total_token';
-    const ranked = [...items].sort((a, b) => b.formatted[sortField].raw - a.formatted[sortField].raw);
+    const ranked = rankItems(items, sortMode);
+    // 展示值与排序同字段: 排序按 raw, 展示取同字段的 formatted, 两者必须来自同一维度。
+    const displayField = sortMode === 'cost' ? 'total_cost' : sortMode === 'count' ? 'request_count' : 'total_token';
 
     return (
         <div className="rounded-3xl bg-card text-card-foreground border-border border pt-2 px-4">
@@ -111,9 +118,9 @@ function RankCard({
                                         </div>
                                     ) : (
                                         <span className="font-semibold text-base">
-                                            {item.formatted[sortField].formatted.value}
+                                            {item.formatted[displayField].formatted.value}
                                             <span className="text-xs text-muted-foreground">
-                                                {item.formatted[sortField].formatted.unit}
+                                                {item.formatted[displayField].formatted.unit}
                                             </span>
                                         </span>
                                     )}
