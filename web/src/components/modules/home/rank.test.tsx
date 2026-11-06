@@ -31,4 +31,8 @@ describe('rankItems 排序跟随维度', () => {
     it('按词元: gpt-a(900) 反超到第一', () => {
         expect(names('tokens')).toEqual(['gpt-a', 'gpt-b']);
     });
+    it('零调用模型排序稳定(不参与过滤, 过滤在聚合层)', () => {
+        const withIdle: RankItem[] = [...items, { id: 'model-idle', name: 'gpt-idle', formatted: mkMetrics(0, 0, 0) }];
+        expect(rankItems(withIdle, 'cost').map((i) => i.name)).toEqual(['gpt-b', 'gpt-a', 'gpt-idle']);
+    });
 });

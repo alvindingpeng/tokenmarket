@@ -170,7 +170,9 @@ export function Rank() {
             }
         }
     }
-    const modelItems = [...modelAgg.values()];
+    // 无调用记录的模型不进榜: 渠道同步进来的模型清单包含从未被调用的, 全零行只会稀释排名。
+    // 渠道榜不过滤 —— 渠道即使零调用也承载配置意义, 而模型榜是纯用量视角。
+    const modelItems = [...modelAgg.values()].filter((item) => item.formatted.request_count.raw > 0);
 
     if (!hasChannelScope) return null;
 
