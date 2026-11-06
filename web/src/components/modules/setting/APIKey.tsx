@@ -863,7 +863,7 @@ export function SettingAPIKey() {
     return (
         <APIKeyPanelBase
             idPrefix="apikey"
-            containerClassName="rounded-3xl border border-border bg-card p-6 space-y-5 relative"
+            containerClassName="w-full rounded-3xl border border-border bg-card p-6 space-y-5 relative"
             listClassName="space-y-2 h-36 overflow-y-auto"
             renderHeaderExtra={({ disabled }) => (
                 <MorphingDialog>
