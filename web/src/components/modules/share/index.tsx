@@ -497,7 +497,9 @@ function ShareCard({ channel }: { channel: ChannelStatsFormatted }) {
 
             <div className="rounded-2xl border border-border/70 bg-background/80 p-3">
                 <p className="text-xs text-muted-foreground">{t('shareCode')}</p>
-                {channel.shared && channel.share_code ? (
+                {/* 编码锁死: 未发布也显示编码 —— 编号是渠道终身身份, 统计/日志按它回查;
+                    分享链接与打开按钮仅已发布可见, 分享页按 Shared 把守, 未发布打开会 404。 */}
+                {channel.share_code ? (
                     <>
                         <div className="mt-1 flex items-center gap-2">
                             <code className="min-w-0 flex-1 truncate font-mono text-sm font-semibold">{'#' + channel.share_code}</code>

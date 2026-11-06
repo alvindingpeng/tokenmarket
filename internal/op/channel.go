@@ -671,9 +671,10 @@ func ChannelPublish(id int, shared bool, scope model.Scope, ctx context.Context)
 			channel.ShareCode = code
 		}
 	} else {
+		// 编码锁死: 取消发布只关共享开关, 不清编码 —— 编号是渠道的终身身份,
+		// 计费明细/日志按编码回查, 编号随发布状态变化会让历史记录失去锚点。
+		// 对外可见性由 Shared 开关把守(分享页按 Shared 查找), 保留编码不泄露任何内容。
 		updates["shared"] = false
-		updates["share_code"] = ""
-		channel.ShareCode = ""
 	}
 	if err := db.GetDB().WithContext(ctx).Model(&model.Channel{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return model.Channel{}, fmt.Errorf("failed to update channel share state: %w", err)
@@ -684,7 +685,7 @@ func ChannelPublish(id int, shared bool, scope model.Scope, ctx context.Context)
 }
 
 // 发布编码规则(v0.32.0): 4 位纯数字, 从 1001 起递增, 界面统一展示为 "#1001" 形式。
-// 号码只发不收: 取消发布清编码、再次发布拿新号, 已删除渠道的号码不回收 ——
+// 号码锁死: 渠道拿到编码后终身保留(取消发布不清、再次发布沿用原号), 已删除渠道的号码不回收 ——
 // 每个号码历史上只属于一个渠道, 计费明细/日志按编码回查不会张冠李戴。
 const (
 	shareCodeStart = 1001 // 起始号码, 用户要求从 1001 开始。
@@ -742,8 +743,10 @@ func parseShareCode(code string) (int, bool) {
 func ShareCodeBackfill(ctx context.Context) (int, error) {
 	shareCodeMu.Lock()
 	defer shareCodeMu.Unlock()
+	// 空编码也纳入: 早期"取消发布清编码"清掉的存量渠道要补发终身编码,
+	// 否则统计页对它们只能回退显示渠道名, 编号身份出现双轨。
 	var channels []model.Channel
-	if err := db.GetDB().WithContext(ctx).Where("share_code <> ?", "").Order("id").Find(&channels).Error; err != nil {
+	if err := db.GetDB().WithContext(ctx).Order("id").Find(&channels).Error; err != nil {
 		return 0, err
 	}
 	taken := make(map[string]bool, len(channels))
@@ -760,7 +763,7 @@ func ShareCodeBackfill(ctx context.Context) (int, error) {
 	updated := 0
 	for _, channel := range channels {
 		if _, ok := parseShareCode(channel.ShareCode); ok {
-			continue // 已是新规则编码, 保持稳定不重排。
+			continue // 已是合规编码, 保持稳定不重排(空串会落到补发分支)。
 		}
 		for taken[fmt.Sprintf("%04d", next)] {
 			next++

@@ -28,16 +28,21 @@ func TestShareCodeSequentialAllocation(t *testing.T) {
 	if c1.ShareCode != "1001" || c2.ShareCode != "1002" {
 		t.Fatalf("codes = %q, %q, want 1001, 1002", c1.ShareCode, c2.ShareCode)
 	}
-	// 取消发布清编码; 再次发布拿新号, 已发号码不回收(号只发不收)。
+	// 编码锁死: 取消发布保留编码, 再次发布沿用原号 —— 编号是渠道终身身份,
+	// 计费明细/日志按编码回查, 号码随发布状态漂移会让历史记录失去锚点。
 	if _, err := ChannelPublish(first.ID, false, admin, ctx); err != nil {
 		t.Fatal(err)
+	}
+	c1, _ = channelCache.Get(first.ID)
+	if c1.ShareCode != "1001" {
+		t.Fatalf("unpublish should keep code, got %q", c1.ShareCode)
 	}
 	if _, err := ChannelPublish(first.ID, true, admin, ctx); err != nil {
 		t.Fatal(err)
 	}
 	c1, _ = channelCache.Get(first.ID)
-	if c1.ShareCode != "1003" {
-		t.Fatalf("republish code = %q, want 1003", c1.ShareCode)
+	if c1.ShareCode != "1001" {
+		t.Fatalf("republish code = %q, want original 1001", c1.ShareCode)
 	}
 }
 
