@@ -133,3 +133,59 @@ func seedBilling(t *testing.T, userID uint, apiKeyID int, cost float64, status s
 		t.Fatalf("seed billing: %v", err)
 	}
 }
+
+// 用户侧预算: scope 锁定本人; 不能给自己建 key 级; 删除/更新碰不到别人的。
+func TestMyBudgetScopeIsolation(t *testing.T) {
+	budgetTestDB(t)
+	ctx := context.Background()
+
+	if _, err := MyBudgetCreate(ctx, 7, model.SpendBudget{
+		Period: model.BudgetPeriodMonth, Action: model.BudgetActionWarn, LimitAmount: 10, WarnRatio: 50,
+	}); err != nil {
+		t.Fatalf("create my budget: %v", err)
+	}
+	// key 级预算是管理员分配 Key 池的手段, 用户自建必须被拒。
+	if _, err := MyBudgetCreate(ctx, 7, model.SpendBudget{
+		APIKeyID: 3, Period: model.BudgetPeriodDay, Action: model.BudgetActionWarn, LimitAmount: 10, WarnRatio: 50,
+	}); err == nil {
+		t.Fatal("api_key budget must be rejected for self-service")
+	}
+
+	items, err := MyBudgetList(ctx, 7)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("list: %v items=%d", err, len(items))
+	}
+	// 用量视图: 无消费时 spent=0, window_end 是周期窗口上界。
+	if items[0].Spent != 0 || items[0].WindowEnd == "" {
+		t.Fatalf("view: spent=%v window_end=%q", items[0].Spent, items[0].WindowEnd)
+	}
+
+	seedBilling(t, 7, 0, 4, model.BillingStatusSettled, time.Now())
+	items, err = MyBudgetList(ctx, 7)
+	if err != nil {
+		t.Fatalf("list after spend: %v", err)
+	}
+	if items[0].Spent < 3.99 || items[0].Spent > 4.01 || items[0].RatioPct != 40 {
+		t.Fatalf("view after spend: spent=%v ratio=%d", items[0].Spent, items[0].RatioPct)
+	}
+
+	// 隔离: 用户 8 建一条, 用户 7 改不动删不掉。
+	if _, err := MyBudgetCreate(ctx, 8, model.SpendBudget{
+		Period: model.BudgetPeriodDay, Action: model.BudgetActionWarn, LimitAmount: 5, WarnRatio: 50,
+	}); err != nil {
+		t.Fatalf("create user8: %v", err)
+	}
+	if _, err := MyBudgetUpdate(ctx, 7, items[0].ID+1, model.BudgetPeriodDay, model.BudgetActionBlock, 99, 50, true); err == nil {
+		t.Fatal("user7 must not update user8 budget")
+	}
+	if err := MyBudgetDelete(ctx, 7, items[0].ID+1); err == nil {
+		t.Fatal("user7 must not delete user8 budget")
+	}
+	// 自己的正常路径。
+	if _, err := MyBudgetUpdate(ctx, 7, items[0].ID, model.BudgetPeriodMonth, model.BudgetActionWarn, 20, 60, false); err != nil {
+		t.Fatalf("self update: %v", err)
+	}
+	if err := MyBudgetDelete(ctx, 7, items[0].ID); err != nil {
+		t.Fatalf("self delete: %v", err)
+	}
+}

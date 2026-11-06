@@ -2320,6 +2320,28 @@
                 "disable": "Disable",
                 "delete": "Delete"
             }
+        },
+        "budget": {
+            "title": "Spend budget",
+            "desc": "Set a per-day or per-month spending cap for your account. \"warn\" notifies you near the limit; \"block\" stops new requests once the cap is reached.",
+            "period": "Period",
+            "day": "Daily",
+            "month": "Monthly",
+            "action": "On limit",
+            "warn": "Warn",
+            "block": "Block",
+            "limit": "Limit (USD)",
+            "warnRatio": "Warn at",
+            "create": "Create",
+            "created": "Budget created",
+            "createFailed": "Failed to create budget",
+            "updateFailed": "Failed to update budget",
+            "deleted": "Budget deleted",
+            "deleteFailed": "Failed to delete budget",
+            "none": "No budgets yet",
+            "inputInvalid": "A positive limit is required",
+            "enabled": "Enabled",
+            "disabled": "Disabled"
         }
     },
     "redemption": {

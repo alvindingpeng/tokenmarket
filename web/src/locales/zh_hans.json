@@ -2320,6 +2320,28 @@
                 "disable": "禁用",
                 "delete": "取消预警"
             }
+        },
+        "budget": {
+            "title": "花费预算",
+            "desc": "为账户设置每日/每月花费上限。\"警告\"在接近上限时通知你, \"拦截\"在达到上限后停止新请求。",
+            "period": "周期",
+            "day": "每日",
+            "month": "每月",
+            "action": "达限行为",
+            "warn": "警告",
+            "block": "拦截",
+            "limit": "上限(美元)",
+            "warnRatio": "警告比例",
+            "create": "创建",
+            "created": "预算已创建",
+            "createFailed": "创建预算失败",
+            "updateFailed": "更新预算失败",
+            "deleted": "预算已删除",
+            "deleteFailed": "删除预算失败",
+            "none": "暂无预算",
+            "inputInvalid": "请填写正数上限",
+            "enabled": "启用",
+            "disabled": "停用"
         }
     },
     "redemption": {

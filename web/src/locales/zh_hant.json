@@ -2320,6 +2320,28 @@
                 "disable": "停用",
                 "delete": "取消預警"
             }
+        },
+        "budget": {
+            "title": "花費預算",
+            "desc": "為帳戶設定每日/每月花費上限。\"警告\"在接近上限時通知你, \"攔截\"在達到上限後停止新請求。",
+            "period": "週期",
+            "day": "每日",
+            "month": "每月",
+            "action": "達限行為",
+            "warn": "警告",
+            "block": "攔截",
+            "limit": "上限(美元)",
+            "warnRatio": "警告比例",
+            "create": "建立",
+            "created": "預算已建立",
+            "createFailed": "建立預算失敗",
+            "updateFailed": "更新預算失敗",
+            "deleted": "預算已刪除",
+            "deleteFailed": "刪除預算失敗",
+            "none": "暫無預算",
+            "inputInvalid": "請填寫正數上限",
+            "enabled": "啟用",
+            "disabled": "停用"
         }
     },
     "redemption": {

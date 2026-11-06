@@ -182,3 +182,77 @@ func CheckUserBudget(ctx context.Context, userID uint, apiKeyID int) error {
 	}
 	return nil
 }
+
+// ===== 用户侧(self-service)预算 =====
+// 与管理员接口同表同校验, 差异只在 scope: 用户只能看到和操作自己的 user 级预算。
+// key 级预算是管理员分配全局 Key 池的手段, 不开放给用户自建(避免用户给自己扩容)。
+
+// MyBudgetView 用户视角的一条预算: 本体 + 当前周期已花费与比例, 前端直接渲染进度条。
+type MyBudgetView struct {
+	model.SpendBudget
+	Spent     float64 `json:"spent"`
+	Limit     float64 `json:"limit"`
+	RatioPct  int     `json:"ratio_pct"`
+	WindowEnd string  `json:"window_end"`
+}
+
+// MyBudgetList 本人预算清单(含禁用), 附实时用量。
+func MyBudgetList(ctx context.Context, userID uint) ([]MyBudgetView, error) {
+	var budgets []model.SpendBudget
+	if err := db.GetDB().WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("id DESC").Find(&budgets).Error; err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	views := make([]MyBudgetView, 0, len(budgets))
+	for _, b := range budgets {
+		view := MyBudgetView{SpendBudget: b, Limit: b.LimitAmount}
+		start, end := budgetPeriodWindow(now, b.Period)
+		spent, err := budgetSpentInWindow(ctx, b, start, end)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compute budget spend: %w", err)
+		}
+		view.Spent = spent
+		if b.LimitAmount > 0 {
+			view.RatioPct = int(spent * 100 / b.LimitAmount)
+		}
+		view.WindowEnd = end.Format(time.RFC3339)
+		views = append(views, view)
+	}
+	return views, nil
+}
+
+// MyBudgetCreate 用户自建预算: 强制 user 级 scope, 拒绝带 api_key_id。
+func MyBudgetCreate(ctx context.Context, userID uint, b model.SpendBudget) (model.SpendBudget, error) {
+	if b.APIKeyID != 0 {
+		return model.SpendBudget{}, errors.New("api_key budgets are managed by admins")
+	}
+	b.UserID = userID
+	return BudgetCreate(ctx, b)
+}
+
+// MyBudgetDelete 删除自己的预算: 必须是 user 级且归属本人, 否则当不存在。
+func MyBudgetDelete(ctx context.Context, userID uint, id uint) error {
+	res := db.GetDB().WithContext(ctx).
+		Where("id = ? AND user_id = ? AND user_id > 0", id, userID).
+		Delete(&model.SpendBudget{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return errors.New("budget not found")
+	}
+	return nil
+}
+
+// MyBudgetUpdate 改自己的预算(不改 scope 与归属)。
+func MyBudgetUpdate(ctx context.Context, userID uint, id uint, period, action string, limitAmount float64, warnRatio int, enabled bool) (model.SpendBudget, error) {
+	var b model.SpendBudget
+	if err := db.GetDB().WithContext(ctx).
+		Where("id = ? AND user_id = ? AND user_id > 0", id, userID).
+		First(&b).Error; err != nil {
+		return model.SpendBudget{}, errors.New("budget not found")
+	}
+	return BudgetUpdate(ctx, id, period, action, limitAmount, warnRatio, enabled)
+}
