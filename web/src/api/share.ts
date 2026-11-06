@@ -39,6 +39,8 @@ export type ChannelModelListing = {
     name: string;
     listed: boolean;
     supply_price: LLMPrice;
+    /** 供货价币种声明; 空 = USD(账面币种, 零折算)。结算按当日汇率快照折算入账。 */
+    price_currency?: string;
     media_supply?: MediaPrice;
     kind?: string;
 };

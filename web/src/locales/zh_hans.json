@@ -1280,6 +1280,14 @@
             "approved": "",
             "rejected": "审核被驳回, 请修改后重新提交审核。",
             "stale": "关键配置已变更, 需重新审核后才能发布。"
+        },
+        "column": {
+            "currency": "币种"
+        },
+        "currency": {
+            "usdHint": "USD 即账面币种, 零折算",
+            "convertHint": "该币种报价; 结算时按当日牌价 {rate}(采集日 {day})折算为 USD 入账",
+            "noRate": "暂无牌价: 汇率就绪前结算将按原价入账(不折算)"
         }
     },
     "billing": {
@@ -1345,7 +1353,8 @@
             "cacheRead": "缓存读",
             "cacheWrite": "缓存写",
             "images": "图",
-            "seconds": "秒"
+            "seconds": "秒",
+            "fxTip": "上游以 {currency} 报价; 按牌价 {rate}(采集日 {day})折算为 USD 入账"
         },
         "status": {
             "settled": "已结算",

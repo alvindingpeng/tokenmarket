@@ -289,7 +289,16 @@ function SpendingTable({ owner, onView }: { owner: boolean; onView: (id: number)
                                     <span className="text-right font-medium tabular-nums text-green-500">{formatMoney(record.owner_revenue)}</span>
                                 )}
                                 <span className="text-right font-mono text-[10px] tabular-nums text-muted-foreground">
-                                    <span className="block">{t('tokens.input')} {record.user_price.input}</span>
+                                    {/* 币种快照: 非 USD 报价的行要能看出"这个单价是原币口径还是折算后"。
+                                        currency 空 = 旧账单(机制上线前), 恒为 USD 口径, 不显示徽标。 */}
+                                    <span className="block">
+                                        {t('tokens.input')} {record.user_price.input}
+                                        {record.currency && record.currency !== 'USD' && (
+                                            <span className="ml-1 text-amber-600 dark:text-amber-400" title={t('fxTip', { currency: record.currency, rate: record.fx_rate ?? 1, day: record.fx_day ?? '' })}>
+                                                {record.currency}×{(record.fx_rate ?? 1).toFixed(4)}
+                                            </span>
+                                        )}
+                                    </span>
                                     <span className="block">{t('tokens.output')} {record.user_price.output}</span>
                                 </span>
                                 <span className="flex items-center justify-end gap-1">

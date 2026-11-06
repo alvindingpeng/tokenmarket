@@ -12,6 +12,7 @@ import {
     type ChannelModelListing,
     type ChannelRepriceResult,
 } from '@/api/share';
+import { useFxRates, type FxRateItem } from '@/api/fx';
 import { useModelList } from '@/api/model';
 import { useSettingList } from '@/api/setting';
 import { Button } from '@/components/ui/button';
@@ -286,13 +287,14 @@ function ListingRows({ channelID }: { channelID: number }) {
             {/* 列数多(上架勾选+模型名+四价+用户价+参考价), 容器窄于 40rem 时整体横向滚动而不是被裁掉后半段; 表头与行共享最小宽度, 滚动对齐一致。 */}
             <div className="min-h-0 flex-1 overflow-auto overscroll-contain md:max-h-80 md:flex-none">
             <div className="min-w-[40rem]">
-            <div className="grid grid-cols-[auto_1fr_repeat(4,minmax(0,4.5rem))_minmax(0,7rem)_auto] items-center gap-2 px-1 text-xs text-muted-foreground">
+            <div className="grid grid-cols-[auto_1fr_repeat(4,minmax(0,4.5rem))_minmax(0,6.5rem)_4.5rem_auto] items-center gap-2 px-1 text-xs text-muted-foreground">
                 <span>{t('column.listed')}</span>
                 <span>{t('column.model')}</span>
                 <span>{t('column.input')}</span>
                 <span>{t('column.output')}</span>
                 <span>{t('column.cacheRead')}</span>
                 <span>{t('column.cacheWrite')}</span>
+                <span>{t('column.currency')}</span>
                 <span>{t('column.userPrice')}</span>
                 <span>{t('column.fill')}</span>
             </div>
@@ -304,7 +306,7 @@ function ListingRows({ channelID }: { channelID: number }) {
                     const index = rows.findIndex((item) => item.name === row.name);
                     const flagged = row.listed && isUnpriced(row);
                     return (
-                    <div key={row.name} className={cn('grid grid-cols-[auto_1fr_repeat(4,minmax(0,4.5rem))_minmax(0,7rem)_auto] items-center gap-2 rounded-xl px-1 py-1.5 hover:bg-muted/50',
+                    <div key={row.name} className={cn('grid grid-cols-[auto_1fr_repeat(4,minmax(0,4.5rem))_minmax(0,6.5rem)_4.5rem_auto] items-center gap-2 rounded-xl px-1 py-1.5 hover:bg-muted/50',
                         flagged && 'bg-destructive/5')}>
                         <Switch
                             checked={row.listed}
@@ -327,6 +329,8 @@ function ListingRows({ channelID }: { channelID: number }) {
                                         media_supply: { ...row.media_supply, per_image: Number(e.target.value) || 0 },
                                     })}
                                 />
+                                <CurrencySelect value={row.price_currency} disabled={updateListings.isPending}
+                                    onChange={(v) => mutateRow(index, { price_currency: v })} />
                                 <span className="truncate text-xs tabular-nums text-muted-foreground" title={t('userPriceHint')}>
                                     {t('userPricePerImage', { value: formatMoney((row.media_supply?.per_image ?? 0) * (1 + markup)) })}
                                 </span>
@@ -391,6 +395,8 @@ function ListingRows({ channelID }: { channelID: number }) {
                                         })}
                                     />
                                 ))}
+                                <CurrencySelect value={row.price_currency} disabled={updateListings.isPending}
+                                    onChange={(v) => mutateRow(index, { price_currency: v })} />
                                 <span className="truncate text-xs tabular-nums text-muted-foreground" title={t('userPriceHint')}>
                                     {t('userPriceValue', {
                                         input: formatMoney(row.supply_price.input * (1 + markup)),
@@ -585,6 +591,39 @@ export default function Share() {
             {channels.map((channel) => (
                 <ShareCard key={channel.channel_id} channel={channel} />
             ))}
+        </div>
+    );
+}
+
+// PRICE_CURRENCIES 改价工作台的币种白名单, 与后端 model.ValidPriceCurrency 同步维护。
+const PRICE_CURRENCIES = ['USD', 'CNY', 'EUR', 'GBP', 'JPY', 'HKD', 'SGD'] as const;
+
+// CurrencySelect 行级币种选择: 空/USD 都按 USD 展示(账面币种零折算)。
+// 非 USD 时 title 给出按当前牌价的 USD 等值提示, 让渠道商在填价时就知道折算影响。
+function CurrencySelect({ value, disabled, onChange }: { value?: string; disabled?: boolean; onChange: (v: string) => void }) {
+    const t = useTranslations('share.currency');
+    const fx = useFxRates();
+    const current = value && value !== '' ? value : 'USD';
+    const rateFor = (quote: string): FxRateItem | undefined =>
+        (fx.data?.items ?? []).find((item) => item.to === quote);
+    const rate = rateFor(current);
+    const hint = current === 'USD'
+        ? t('usdHint')
+        : rate
+            ? t('convertHint', { day: rate.day, rate: rate.rate })
+            : t('noRate');
+    return (
+        <div className="min-w-0">
+            <Select value={current} onValueChange={onChange} disabled={disabled}>
+                <SelectTrigger className="h-8 w-full px-2 text-xs" title={hint}>
+                    <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                    {PRICE_CURRENCIES.map((currency) => (
+                        <SelectItem key={currency} value={currency}>{currency}</SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
         </div>
     );
 }

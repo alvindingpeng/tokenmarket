@@ -53,6 +53,10 @@ export type BillingRecord = {
     user_cost: number;
     owner_revenue: number;
     platform_revenue: number;
+    /** 供货价币种 + 结算汇率快照(1 原币折 USD); 旧行 currency 为空, 按 USD 解释。 */
+    currency?: string;
+    fx_rate?: number;
+    fx_day?: string;
     status: 'settled' | 'refunded';
     created_at: string;
 };

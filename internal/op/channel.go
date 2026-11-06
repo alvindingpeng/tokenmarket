@@ -798,11 +798,12 @@ const maxSupplyPricePerMillion = 1_000_000.0
 
 // ChannelModelListing 是一个渠道模型的上架配置提交形状。
 type ChannelModelListing struct {
-	Name        string           `json:"name"`                   // 渠道模型名称。
-	Listed      bool             `json:"listed"`                 // 是否上架。
-	SupplyPrice model.LLMPrice   `json:"supply_price"`           // 供货价(读/写/缓存读/缓存写); 未设置即 0。
-	MediaSupply model.MediaPrice `json:"media_supply,omitempty"` // 媒体供货价(每张/每秒/分档); 仅媒体形态模型使用。
-	Kind        model.MediaKind  `json:"kind,omitempty"`         // 模型媒体形态; 只读回显, 由授权协议位推导。
+	Name          string           `json:"name"`                     // 渠道模型名称。
+	Listed        bool             `json:"listed"`                   // 是否上架。
+	SupplyPrice   model.LLMPrice   `json:"supply_price"`             // 供货价(读/写/缓存读/缓存写); 未设置即 0。
+	PriceCurrency string           `json:"price_currency,omitempty"` // 供货价币种声明; 空 = USD(账面币种, 零折算)。
+	MediaSupply   model.MediaPrice `json:"media_supply,omitempty"`   // 媒体供货价(每张/每秒/分档); 仅媒体形态模型使用。
+	Kind          model.MediaKind  `json:"kind,omitempty"`           // 模型媒体形态; 只读回显, 由授权协议位推导。
 }
 
 // ChannelModelListingGet 返回渠道的模型上架配置, 供发布管理界面编辑。
@@ -817,11 +818,12 @@ func ChannelModelListingGet(id int, scope model.Scope) ([]ChannelModelListing, e
 			continue
 		}
 		listings = append(listings, ChannelModelListing{
-			Name:        channelModel.Name,
-			Listed:      channelModel.Listed,
-			SupplyPrice: channelModel.SupplyPrice,
-			MediaSupply: channelModel.MediaSupply,
-			Kind:        channelModel.Kind,
+			Name:          channelModel.Name,
+			Listed:        channelModel.Listed,
+			SupplyPrice:   channelModel.SupplyPrice,
+			PriceCurrency: model.NormalizeCurrency(channelModel.PriceCurrency),
+			MediaSupply:   channelModel.MediaSupply,
+			Kind:          channelModel.Kind,
 		})
 	}
 	sort.Slice(listings, func(i, j int) bool { return listings[i].Name < listings[j].Name })
@@ -864,6 +866,11 @@ func ChannelModelListingUpdate(id int, listings []ChannelModelListing, scope mod
 				return fmt.Errorf("%s supply price %g exceeds the %g per-million cap", pair.field, pair.value, maxSupplyPricePerMillion)
 			}
 		}
+		// 币种声明必须落在白名单内: 币种错了折算就是错价, 且没有牌价可依。
+		listing.PriceCurrency = model.NormalizeCurrency(listing.PriceCurrency)
+		if !model.ValidPriceCurrency(listing.PriceCurrency) {
+			return fmt.Errorf("model %s: unsupported price currency %q", listing.Name, listing.PriceCurrency)
+		}
 		media := listing.MediaSupply
 		if err := media.Validate(); err != nil {
 			return fmt.Errorf("model %s: %w", listing.Name, err)
@@ -877,12 +884,13 @@ func ChannelModelListingUpdate(id int, listings []ChannelModelListing, scope mod
 		}
 		// supply_price 走 JSON 序列化器, 必须用结构体更新: map 更新绕过序列化器会写入非法值。
 		if err := db.GetDB().WithContext(ctx).Model(&model.ChannelModel{}).Where("id = ?", channelModel.ID).
-			Select("listed", "supply_price", "media_supply").
-			Updates(model.ChannelModel{Listed: listing.Listed, SupplyPrice: price, MediaSupply: media}).Error; err != nil {
+			Select("listed", "supply_price", "price_currency", "media_supply").
+			Updates(model.ChannelModel{Listed: listing.Listed, SupplyPrice: price, PriceCurrency: listing.PriceCurrency, MediaSupply: media}).Error; err != nil {
 			return fmt.Errorf("failed to update channel model listing: %w", err)
 		}
 		channelModel.Listed = listing.Listed
 		channelModel.SupplyPrice = price
+		channelModel.PriceCurrency = listing.PriceCurrency
 		channelModel.MediaSupply = media
 		channelModelCacheWriteMu.Lock()
 		channelModelCache.Set(channelModel.ID, channelModel)

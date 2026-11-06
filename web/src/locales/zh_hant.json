@@ -1280,6 +1280,14 @@
             "approved": "",
             "rejected": "審核被駁回, 請修改後重新提交審核。",
             "stale": "關鍵配置已變更, 需重新審核後才能發佈。"
+        },
+        "column": {
+            "currency": "幣別"
+        },
+        "currency": {
+            "usdHint": "USD 即帳面幣別, 零折算",
+            "convertHint": "該幣別報價; 結算時按當日牌價 {rate}(採集日 {day})折算為 USD 入帳",
+            "noRate": "暫無牌價: 匯率就緒前結算將按原價入帳(不折算)"
         }
     },
     "billing": {
@@ -1345,7 +1353,8 @@
             "cacheRead": "快取讀",
             "cacheWrite": "快取寫",
             "images": "圖",
-            "seconds": "秒"
+            "seconds": "秒",
+            "fxTip": "上游以 {currency} 報價; 按牌價 {rate}(採集日 {day})折算為 USD 入帳"
         },
         "status": {
             "settled": "已結算",

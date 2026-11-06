@@ -1280,6 +1280,14 @@
             "approved": "",
             "rejected": "Review rejected; fix the issues and resubmit.",
             "stale": "Key configuration changed; re-approval is required before publishing."
+        },
+        "column": {
+            "currency": "Currency"
+        },
+        "currency": {
+            "usdHint": "USD = ledger currency, no conversion",
+            "convertHint": "Quoted in this currency; converted to USD at rate {rate} (price day {day}) at settlement",
+            "noRate": "No rate available yet: settlement will use unconverted price until rates load"
         }
     },
     "billing": {
@@ -1345,7 +1353,8 @@
             "cacheRead": "cr",
             "cacheWrite": "cw",
             "images": "img",
-            "seconds": "s"
+            "seconds": "s",
+            "fxTip": "Upstream quoted in {currency}; converted to USD at {rate} (price day {day})"
         },
         "status": {
             "settled": "Settled",

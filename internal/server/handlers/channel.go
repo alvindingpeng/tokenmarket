@@ -263,6 +263,13 @@ func diffListings(before []op.ChannelModelListing, after []op.ChannelModelListin
 				Detail: fmt.Sprintf("listed: %v -> %v", old.Listed, listing.Listed),
 			})
 		}
+		// 币种切换改变所有单价的含义(数字没变但计费折算变了), 必须留痕。
+		if model.NormalizeCurrency(old.PriceCurrency) != model.NormalizeCurrency(listing.PriceCurrency) {
+			changes = append(changes, listingChange{
+				Name:   listing.Name,
+				Detail: fmt.Sprintf("price_currency: %s -> %s", model.NormalizeCurrency(old.PriceCurrency), model.NormalizeCurrency(listing.PriceCurrency)),
+			})
+		}
 		fields := []struct {
 			name     string
 			oldValue float64
