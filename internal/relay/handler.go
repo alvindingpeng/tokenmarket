@@ -433,7 +433,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				cancelRoundCause(context.Canceled)
 			}
 			request.startRound(cancelRound, channel.Name+" · "+channelKey.Name, channelModel.Name, targetProtocol,
-				channel.ID, channel.UserID, channel.ShareCode, channelModel.SupplyPrice, item.ID)
+				channel.ID, channel.UserID, channel.ShareCode, channelModel.SupplyPrice, channelModel.PriceCurrency, item.ID)
 			request.setTargetKeyID(channelKey.ID)
 			// 媒体计费上下文: 仅媒体形态模型登记; 文本模型此项保持零值, settlement 走 token 路径不变。
 			// 选择上游时只在本组成员内挑选 kind=image 的成员, 故只要命中即可认定本轮用媒体计费。

@@ -92,8 +92,9 @@ type RequestState struct {
 	targetChannelID   int              // 最终轮次落地渠道 ID。
 	targetOwnerID     uint             // 最终轮次落地渠道的归属用户, 供货价收入计入该用户。
 	targetShareCode   string           // 最终轮次落地渠道的发布编码, 计费明细脱敏展示用。
-	targetSupplyPrice model.LLMPrice   // 最终轮次落地模型的供货价快照(token 模型)。
-	targetMediaSupply model.MediaPrice // 最终轮次落地模型的媒体供货价快照(图片/视频), text 模型为零值。
+	targetSupplyPrice model.LLMPrice   // 最终轮次落地模型的供货价快照(已折算为账面币种 USD; USD 报价零折算)。
+	targetMediaSupply model.MediaPrice // 最终轮次落地模型的媒体供货价快照(图片/视频), text 模型为零值(已折算)。
+	targetFx          FxSnapshot       // 折算依据快照: 币种/汇率/牌价日, 随结算写入 billing_records 供复核。
 	targetKind        model.MediaKind  // 最终轮次落地模型的媒体形态, 用于区分计费路径。
 	targetGrantID     int              // 最终轮次落地渠道授权 ID, 生视频任务据此落库归属供后续查询定位上游。
 	targetKeyID       int              // 最终轮次实际用于上游请求的渠道凭据 ID; 轮换选路下与授权绑定的凭据不同, 生视频任务据此落库创建凭据。
@@ -168,7 +169,12 @@ func newRequestState(ctx context.Context, modelName, reasoningEffort string, gro
 
 // startRound 记录本轮选中的目标并进入上游请求, cancel 供人工中止本轮, 返回递增的轮次序号。
 // 渠道归属与供货价随目标一并登记: 计费按最终轮次的落地渠道结算。
-func (r *RequestState) startRound(cancel context.CancelFunc, channelKeyName, modelName string, protocol model.Protocol, channelID int, ownerID uint, shareCode string, supplyPrice model.LLMPrice, itemID int) int {
+// startRound 登记最终轮次的计费目标。supplyPrice/currency 是渠道声明的原币供货价;
+// 这里立刻折算成账面币种(USD)存进 targetSupplyPrice, 后续结算/统计/日志一律用折算后的值,
+// 避免结算与展示两条路径各自折算产生口径漂移。折算依据(FxSnapshot)随结算写入账单。
+// 折算失败(无牌价)回退恒等快照并保持原价: 计费不能因牌价缺失而停, 但 FxSnapshot.Currency
+// 会原样落库, 对账可识别"未折算"的行。
+func (r *RequestState) startRound(cancel context.CancelFunc, channelKeyName, modelName string, protocol model.Protocol, channelID int, ownerID uint, shareCode string, supplyPrice model.LLMPrice, currency string, itemID int) int {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -183,7 +189,7 @@ func (r *RequestState) startRound(cancel context.CancelFunc, channelKeyName, mod
 	r.targetChannelID = channelID
 	r.targetOwnerID = ownerID
 	r.targetShareCode = shareCode
-	r.targetSupplyPrice = supplyPrice
+	r.targetSupplyPrice, r.targetFx = fxConvertSupplyPrice(supplyPrice, currency)
 	r.Sending = true
 	r.Error = ""
 	r.roundCancel = cancel
@@ -203,7 +209,9 @@ func (r *RequestState) setMediaTarget(kind model.MediaKind, media model.MediaPri
 	mu.Lock()
 	defer mu.Unlock()
 	r.targetKind = kind
-	r.targetMediaSupply = media
+	// 媒体供货价与 token 价同一币种声明(渠道模型的 price_currency), 用已折算好的 targetFx
+	// 保持两条路径的汇率一致 —— 同一次调用不允许 token 价和媒体价按两份牌价折算。
+	r.targetMediaSupply = fxConvertMediaPriceWith(media, r.targetFx)
 	r.targetGrantID = grantID
 }
 
@@ -686,6 +694,9 @@ func (r *RequestState) settleBillingLocked(usage *llm.Usage) {
 		SupplyPrice:     supply,
 		UserPrice:       userPrice,
 		MarkupRatio:     markupRatio,
+		Currency:        r.targetFx.Currency,
+		FxRate:          r.targetFx.Rate,
+		FxDay:           r.targetFx.Day,
 		PriceSource:     "channel_model",
 		InputToken:      read,
 		OutputToken:     output,

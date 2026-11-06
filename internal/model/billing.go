@@ -22,7 +22,13 @@ type BillingRecord struct {
 	SupplyPrice LLMPrice `json:"supply_price" gorm:"serializer:json"` // 供货价快照(读/写/缓存读/缓存写)。
 	UserPrice   LLMPrice `json:"user_price" gorm:"serializer:json"`   // 用户价快照(供货价上浮后)。
 	MarkupRatio float64  `json:"markup_ratio"`                        // 结算时的上浮比例快照, 供账单复核; 改价不影响历史解释。
-	PriceSource string   `json:"price_source" gorm:"size:32"`         // 价格口径: channel_model 表示渠道模型发布价。
+	// 币种快照: 渠道供货价的声明币种 + 结算时生效的汇率(1 原币折多少 USD)。
+	// 旧行为空 = USD 零折算(该机制上线前的所有账单, 读取侧按 USD 解释)。
+	// 汇率随行钉死而不查 fx_rates 回放: 汇率日后会变, 账单必须自带当时的答案。
+	Currency    string  `json:"currency" gorm:"size:8;default:''"`
+	FxRate      float64 `json:"fx_rate" gorm:"default:1"`
+	FxDay       string  `json:"fx_day" gorm:"size:16;default:''"` // 牌价采集日; unavailable = 采集失败按原价入账, 对账重点关注。
+	PriceSource string  `json:"price_source" gorm:"size:32"`      // 价格口径: channel_model 表示渠道模型发布价。
 
 	InputToken      int64 `json:"input_token"`
 	OutputToken     int64 `json:"output_token"`

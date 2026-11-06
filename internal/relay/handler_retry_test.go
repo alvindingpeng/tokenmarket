@@ -334,7 +334,7 @@ func TestFinalizeCanceledSuccessKeepsBodyAndBillsMedia(t *testing.T) {
 	request := newRequestState(ctx, "grp-cancel", "", 7, model.ProtocolOpenAIVideo,
 		`{"model":"grp-cancel","prompt":"p"}`, 0, user.ID, "127.0.0.1", "", 600)
 	// 一轮真实的上游尝试: 计费归属(渠道发布者)随 startRound 登记, 结算要给它记收入。
-	request.startRound(func() {}, "ch · k1", "up-model", model.ProtocolOpenAIVideo, 3, user.ID, "share-1", model.LLMPrice{Input: 1, Output: 1}, 5)
+	request.startRound(func() {}, "ch · k1", "up-model", model.ProtocolOpenAIVideo, 3, user.ID, "share-1", model.LLMPrice{Input: 1, Output: 1}, "", 5)
 	request.setMediaTarget(model.MediaKindVideo, model.MediaPrice{PerVideo: 1, PerSecond: 0.5}, 42)
 	request.setRequestedMedia(model.MediaUnits{Seconds: 4, Resolution: "720p"})
 	reservationID, err := op.BillingReserve(user.ID, request.ID, 5)
