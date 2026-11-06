@@ -29,6 +29,7 @@ var taskLabels = map[string]string{
 	"video_job_cleanup":          "生视频任务清理",
 	"rate_limit_usage_retention": "限流用量留存清理",
 	"watchdog_alert":             "外部看门狗巡检",
+	"fx_rate_update":             "汇率牌价采集",
 }
 
 // taskHints 任务持续失败的实际影响与处置建议: 管理员看完告警就知道该做什么, 而不是只会重启。
@@ -43,6 +44,7 @@ var taskHints = map[string]string{
 	"auto_backup":                "数据库没有新备份, 此刻故障将无恢复点",
 	"channel_health":             "渠道健康探测停摆, 故障渠道不会再被自动发现",
 	"update_check":               "无法获知新版本发布",
+	"fx_rate_update":             "非 USD 报价的折算将沿用旧牌价, 折算误差随停更天数放大",
 	"video_job_cleanup":          "过期生视频任务记录堆积",
 	"rate_limit_usage_retention": "限流用量过期数据未清理, 小时汇总表会持续增长",
 	"watchdog_alert":             "进程在探针之外反复重启或长时间不可用, 停机窗口内的请求全部失败",

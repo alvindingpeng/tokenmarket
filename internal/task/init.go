@@ -2,8 +2,10 @@ package task
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/alvindingpeng/switchyard/internal/alert"
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/price"
@@ -33,6 +35,8 @@ var settingTasks = map[model.SettingKey][]string{
 	model.SettingKeyAuditRetentionDays:      {TaskAuditArchive},
 	model.SettingKeyAuditArchiveEnabled:     {TaskAuditArchive},
 	model.SettingKeyArchiveRetentionDays:    {TaskArchiveRetention},
+	model.SettingKeyFxRateUpdateEnabled:     {TaskFxRateUpdate},
+	model.SettingKeyFxRateUpdateInterval:    {TaskFxRateUpdate},
 }
 
 // ApplySetting 重算某项设置影响到的全部任务周期。
@@ -217,6 +221,43 @@ func Init() {
 				log.Infof("archive retention: cutoff=%s kept=%d pruned=%d freed=%dB",
 					result.Cutoff.Format("2006-01-02"), result.Kept, result.Pruned, result.FreedB)
 			}
+			return nil
+		},
+	})
+
+	// 牌价采集: 结算折算的依据必须有人维护, 否则非 USD 报价只能沿用旧价且无人知晓陈旧程度。
+	// RunOnStart 让进程重启后立即补当天牌价(上一个进程可能恰好在采集前挂掉);
+	// 失败返回 error 让任务框架按失败计数, 连续失败走既有告警出口 —— 汇率陈旧是计费正确性问题,
+	// 不能只留一行日志。
+	Define(Spec{
+		Name:       TaskFxRateUpdate,
+		Interval:   hoursInterval(model.SettingKeyFxRateUpdateInterval, 24),
+		RunOnStart: true,
+		Fn: func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			written, err := op.FxRateRefresh(ctx)
+			if err != nil {
+				// 采集失败还要看存量牌价的日龄: 有旧价可用时告警但不中断计费;
+				// 连无旧价都没有(首次部署就没网)才按任务失败计, 让失败告警出口接管。
+				age, ageErr := op.FxRateStalenessCheck(ctx)
+				if ageErr != nil || age < 0 {
+					return err
+				}
+				if age > op.FxRateMaxAgeDays {
+					op.RaiseAlertFacts(ctx, op.AlertFacts{
+						Kind:    "fx_rate_stale",
+						Subject: op.FxRateSourceName(),
+						Reason:  fmt.Sprintf("牌价采集失败且快照已 %d 天未更新, 折算按旧价进行", age),
+						Fields: []alert.Field{
+							{Label: "来源", Value: op.FxRateSourceName()},
+							{Label: "快照日龄", Value: fmt.Sprintf("%d 天", age)},
+						},
+					})
+				}
+				return err
+			}
+			log.Infof("fx rate update: refreshed %d currencies from %s", written, op.FxRateSourceName())
 			return nil
 		},
 	})

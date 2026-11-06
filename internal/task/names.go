@@ -29,4 +29,5 @@ const (
 	TaskRateLimitUsageRetention = "rate_limit_usage_retention" // 清理超期的限流小时用量汇总。
 	TaskArchiveRetention        = "archive_retention"          // 清理超期的日志/审计归档 NDJSON 文件。
 	TaskWatchdogAlert           = "watchdog_alert"             // 外部看门狗日志巡检。
+	TaskFxRateUpdate            = "fx_rate_update"             // 采集牌价并落 fx_rates 快照(结算折算依据)。
 )

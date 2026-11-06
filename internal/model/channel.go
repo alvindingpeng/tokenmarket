@@ -126,14 +126,15 @@ type ChannelKey struct {
 
 // 渠道提供的单个上游模型。
 type ChannelModel struct {
-	ID           int        `json:"id" gorm:"primaryKey"`                                      // 渠道模型主键。
-	ChannelID    int        `json:"channel_id" gorm:"not null;index:idx_channel_model,unique"` // 所属渠道 ID。
-	Name         string     `json:"name" gorm:"not null;index:idx_channel_model,unique"`       // 上游模型名称。
-	Listed       bool       `json:"listed" gorm:"default:false"`                               // 是否上架: 已发布渠道中只有上架的模型对用户可见。
-	SupplyPrice  LLMPrice   `json:"supply_price" gorm:"serializer:json"`                       // 供货价(读/写/缓存读/缓存写, 每百万 token); 未设置即 0。
-	MediaSupply  MediaPrice `json:"media_supply" gorm:"serializer:json"`                       // 媒体供货价(每张 / 每秒 / 分档); 仅 kind=image|video 时使用, 老库迁移为零值。
-	Kind         MediaKind  `json:"kind,omitempty" gorm:"column:kind;default:''"`              // 模型媒体形态; 文本留空, image=P1 生图, video=P2 视频。
-	StatsMetrics            // 该模型自身的累计统计。
+	ID            int        `json:"id" gorm:"primaryKey"`                                      // 渠道模型主键。
+	ChannelID     int        `json:"channel_id" gorm:"not null;index:idx_channel_model,unique"` // 所属渠道 ID。
+	Name          string     `json:"name" gorm:"not null;index:idx_channel_model,unique"`       // 上游模型名称。
+	Listed        bool       `json:"listed" gorm:"default:false"`                               // 是否上架: 已发布渠道中只有上架的模型对用户可见。
+	SupplyPrice   LLMPrice   `json:"supply_price" gorm:"serializer:json"`                       // 供货价(读/写/缓存读/缓存写, 每百万 token); 未设置即 0。
+	PriceCurrency string     `json:"price_currency" gorm:"size:8;default:''"`                   // 供货价币种声明; 空 = USD(账面币种, 零折算)。结算时按汇率快照折算入账。
+	MediaSupply   MediaPrice `json:"media_supply" gorm:"serializer:json"`                       // 媒体供货价(每张 / 每秒 / 分档); 仅 kind=image|video 时使用, 老库迁移为零值。
+	Kind          MediaKind  `json:"kind,omitempty" gorm:"column:kind;default:''"`              // 模型媒体形态; 文本留空, image=P1 生图, video=P2 视频。
+	StatsMetrics             // 该模型自身的累计统计。
 	// 渠道模型级故障熔断: 区分于 Key 级熔断, 隔离同渠道其它模型与该模型的其它 Key。
 	ErrorCount    int        `json:"error_count" gorm:"default:0"`   // 累计错误次数。
 	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`        // 最后错误时间。

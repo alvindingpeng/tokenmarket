@@ -56,16 +56,18 @@ const (
 	SettingKeyMinBalance           SettingKey = "min_balance"                // 允许的最低余额, 0 表示不足即拒
 
 	// 充值与支付(D1 易支付首发, 网关参数全部后台可配, 商户信息后配即可用)。
-	SettingKeyEpayGatewayURL       SettingKey = "epay_gateway_url"       // 易支付网关地址, 如 https://pay.example.com; 留空表示支付未配置
-	SettingKeyEpayPID              SettingKey = "epay_pid"               // 商户 ID
-	SettingKeyEpayKey              SettingKey = "epay_key"               // 商户密钥(加密存储/掩码回显)
-	SettingKeyEpayPayTypes         SettingKey = "epay_pay_types"         // 限定支付方式(逗号分隔: alipay,wechat,qq), 留空用网关默认
-	SettingKeyRechargeNotifyBase   SettingKey = "recharge_notify_base"   // 对外回调基址(如 https://api.example.com), 留空按请求 Host 推断
-	SettingKeyRechargeRate         SettingKey = "recharge_rate"          // 汇率: 1 余额币种(USD) 折多少 CNY, 默认 7.0
-	SettingKeyRechargeMinCNY       SettingKey = "recharge_min_cny"       // 单笔最低充值金额(元), 默认 1
-	SettingKeyRechargeAmountTiers  SettingKey = "recharge_amount_tiers"  // 充值弹窗快捷金额(元, 逗号分隔), 留空不出快捷按钮
-	SettingKeyRechargeBonusEnabled SettingKey = "recharge_bonus_enabled" // 满赠开关(D6), 默认关
-	SettingKeyRechargeBonusRules   SettingKey = "recharge_bonus_rules"   // 满赠规则 "满X元送Y%" 紧凑格式: 100:5,500:10
+	SettingKeyEpayGatewayURL       SettingKey = "epay_gateway_url"        // 易支付网关地址, 如 https://pay.example.com; 留空表示支付未配置
+	SettingKeyEpayPID              SettingKey = "epay_pid"                // 商户 ID
+	SettingKeyEpayKey              SettingKey = "epay_key"                // 商户密钥(加密存储/掩码回显)
+	SettingKeyEpayPayTypes         SettingKey = "epay_pay_types"          // 限定支付方式(逗号分隔: alipay,wechat,qq), 留空用网关默认
+	SettingKeyRechargeNotifyBase   SettingKey = "recharge_notify_base"    // 对外回调基址(如 https://api.example.com), 留空按请求 Host 推断
+	SettingKeyRechargeRate         SettingKey = "recharge_rate"           // 充值汇率: 1 余额币种(USD) 折多少 CNY, 默认 7.0。仅充值/提现折算用, 不参与计费。
+	SettingKeyFxRateUpdateEnabled  SettingKey = "fx_rate_update_enabled"  // 是否周期采集牌价(结算折算依据); 关掉后沿用最近一次快照。
+	SettingKeyFxRateUpdateInterval SettingKey = "fx_rate_update_interval" // 牌价采集周期(小时), 默认 24。
+	SettingKeyRechargeMinCNY       SettingKey = "recharge_min_cny"        // 单笔最低充值金额(元), 默认 1
+	SettingKeyRechargeAmountTiers  SettingKey = "recharge_amount_tiers"   // 充值弹窗快捷金额(元, 逗号分隔), 留空不出快捷按钮
+	SettingKeyRechargeBonusEnabled SettingKey = "recharge_bonus_enabled"  // 满赠开关(D6), 默认关
+	SettingKeyRechargeBonusRules   SettingKey = "recharge_bonus_rules"    // 满赠规则 "满X元送Y%" 紧凑格式: 100:5,500:10
 	// 提现规则(P3): 全部可配; 金额为收益池口径(USD), 打款按申请时汇率快照折人民币分。
 	SettingKeyWithdrawalMinAmount        SettingKey = "withdrawal_min_amount"         // 单笔最低提现额, 默认 50
 	SettingKeyWithdrawalFeeRate          SettingKey = "withdrawal_fee_rate"           // 手续费率(0.01 = 1%), 默认 1%
@@ -247,6 +249,8 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyEpayPayTypes, Value: ""},                                          // 不限定支付方式
 		{Key: SettingKeyRechargeNotifyBase, Value: ""},                                    // 留空按请求 Host 推断回调地址
 		{Key: SettingKeyRechargeRate, Value: "7.0"},                                       // 1 USD = 7 CNY(D2)
+		{Key: SettingKeyFxRateUpdateEnabled, Value: "true"},                               // 默认开启: 折算依据必须有人维护
+		{Key: SettingKeyFxRateUpdateInterval, Value: "24"},                                // 每日一次, 与牌价源更新频率一致
 		{Key: SettingKeyRechargeMinCNY, Value: "1"},                                       // 单笔最低 1 元
 		{Key: SettingKeyRechargeAmountTiers, Value: "10,50,100,500"},                      // 弹窗快捷金额(元)
 		{Key: SettingKeyRechargeBonusEnabled, Value: "false"},                             // 满赠默认关(D6)
@@ -522,6 +526,16 @@ func (s *Setting) Validate() error {
 	case SettingKeyLogArchiveEnabled, SettingKeyAuditArchiveEnabled, SettingKeyLogStoreBody, SettingKeyAutoBackupEnabled, SettingKeyHealthCheckEnabled, SettingKeyBackupEncrypt, SettingKeyBackupRemote:
 		if _, err := strconv.ParseBool(s.Value); err != nil {
 			return fmt.Errorf("%s must be a boolean", s.Key)
+		}
+		return nil
+	case SettingKeyFxRateUpdateEnabled:
+		if _, err := strconv.ParseBool(s.Value); err != nil {
+			return fmt.Errorf("%s must be a boolean", s.Key)
+		}
+		return nil
+	case SettingKeyFxRateUpdateInterval:
+		if n, err := strconv.Atoi(s.Value); err != nil || n < 1 || n > 168 {
+			return fmt.Errorf("fx rate update interval must be an integer between 1 and 168 hours")
 		}
 		return nil
 	case SettingKeyArchiveRetentionDays:
