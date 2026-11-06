@@ -5,6 +5,7 @@ import { useAuthStore } from '@/api/user';
 import { useHomeViewStore, type MetricKey } from './store';
 import { MetricTabs } from './metric-tabs';
 import type { StatsMetricsFormatted } from '@/api/stats';
+import { formatCount, formatMoney } from '@/lib/utils';
 
 // 榜单只展示这几项, 渠道可直接复用 api/channel 已算好的 formatted。
 type RankMetrics = Pick<
@@ -21,17 +22,21 @@ export interface RankItem {
 }
 
 // addMetrics 两个指标对象逐字段相加: 模型榜聚合同模型跨渠道的统计用。
-// raw 相加后 formatted 由"四舍五入显示"产生极小误差, 排名场景可忽略。
-function addMetrics(
-    a: RankMetrics,
-    b: RankMetrics,
-): RankMetrics {
+// 相加后必须对总和重新格式化: 沿用第一个渠道的 formatted.value 会让"显示值"
+// 停在首渠道的量级(如 1.20$), 而排序按总和 raw(4.60$) —— 展示与排序肉眼可见地不一致。
+export function addMetrics(a: RankMetrics, b: RankMetrics): RankMetrics {
+    const sum = (x: RankMetrics[keyof RankMetrics], y: RankMetrics[keyof RankMetrics]) => x.raw + y.raw;
+    const cost = formatMoney(sum(a.total_cost, b.total_cost));
+    const token = formatCount(sum(a.total_token, b.total_token));
+    const count = formatCount(sum(a.request_count, b.request_count));
+    const success = formatCount(sum(a.request_success, b.request_success));
+    const failed = formatCount(sum(a.request_failed, b.request_failed));
     return {
-        total_cost: { ...a.total_cost, raw: a.total_cost.raw + b.total_cost.raw },
-        total_token: { ...a.total_token, raw: a.total_token.raw + b.total_token.raw },
-        request_count: { ...a.request_count, raw: a.request_count.raw + b.request_count.raw },
-        request_success: { ...a.request_success, raw: a.request_success.raw + b.request_success.raw },
-        request_failed: { ...a.request_failed, raw: a.request_failed.raw + b.request_failed.raw },
+        total_cost: cost,
+        total_token: token,
+        request_count: count,
+        request_success: success,
+        request_failed: failed,
     };
 }
 
