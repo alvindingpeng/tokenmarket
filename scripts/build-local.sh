@@ -32,6 +32,11 @@ echo "== 前端 (VITE_APP_VERSION=${VERSION})"
 (cd "${REPO_ROOT}/web" && VITE_APP_VERSION="${VERSION}" \
     VITE_GITHUB_REPO="${VITE_GITHUB_REPO:-https://github.com/alvindingpeng/tokenmarket}" pnpm run build)
 
+# vite 的 emptyOutDir 会把输出目录整个清空, 连 static/out/README.md 一起删掉。
+# 该文件是入库的占位: go:embed all:out 要求目录里至少有一个文件, 干净检出后不先构建
+# 前端就没法编译/测试。构建完立刻还原, 工作树才不会莫名其妙多出一条删除记录。
+git -C "${REPO_ROOT}" checkout -- static/out/README.md 2>/dev/null || true
+
 echo "== 后端 ${VERSION} (${COMMIT}) -> ${OUTPUT}"
 mkdir -p "$(dirname "${OUTPUT}")"
 (cd "${REPO_ROOT}" && "${GO_BIN:-go}" build -trimpath -tags=jsoniter -ldflags="${LDFLAGS}" -o "${OUTPUT}" .)
