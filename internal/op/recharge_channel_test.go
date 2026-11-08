@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -24,11 +23,13 @@ import (
 )
 
 // channelTestSetup 初始化隔离库 + 一套渠道配置; 返回用户与测试 RSA 私钥(签支付宝回调用)。
+//
+// 建库走 opTestDBSetup 而不是裸 db.InitDB: 充值结算会异步投递站内通知, 这些测试原先
+// 在下单后就返回, 迟到的通知 goroutine 撞上 t.TempDir 清理 —— 随机报
+// "directory not empty" 或 "disk I/O error (522)"。opTestDBSetup 在换库与收尾两处都先排空投递。
 func channelTestSetup(t *testing.T, username string) (model.User, *rsa.PrivateKey) {
 	t.Helper()
-	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "channel.db"), false); err != nil {
-		t.Fatalf("init db: %v", err)
-	}
+	opTestDBSetup(t, "channel.db")
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
