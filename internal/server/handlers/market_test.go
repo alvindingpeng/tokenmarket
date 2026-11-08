@@ -221,6 +221,34 @@ func TestMarketFilterByBrandNameKind(t *testing.T) {
 	}
 }
 
+// TestMarketMetricsSourceThreshold 锁定成绩口径的三档判定。
+//
+// 这一档是实测逼出来的: 生产上一个只有 1 次调用的模型以 43ms 排到了"延迟最优"第一位,
+// 而它恰好只成功过那一次。样本不足与无样本在展示上是同一件事(都不给数字), 但必须可区分 ——
+// 界面要能说清"还没跑几次"而不是"还没跑过", 排查时完全是两回事。
+func TestMarketMetricsSourceThreshold(t *testing.T) {
+	cases := []struct {
+		samples int
+		want    string
+	}{
+		{0, marketMetricsNone},
+		{-3, marketMetricsNone},
+		{1, marketMetricsInsufficient},
+		{marketMinSamples - 1, marketMetricsInsufficient},
+		{marketMinSamples, marketMetricsLive},
+		{marketMinSamples + 500, marketMetricsLive},
+	}
+	for _, c := range cases {
+		if got := marketMetricsSourceOf(c.samples); got != c.want {
+			t.Fatalf("samples=%d: source=%q, want %q", c.samples, got, c.want)
+		}
+	}
+	// 门槛必须与质量评级的样本下限同源: 两个阈值各改各的, 会让"广场可信"与"评级可信"分叉。
+	if marketMinSamples != int(model.QualityMinSamples) {
+		t.Fatalf("marketMinSamples=%d, want model.QualityMinSamples=%d", marketMinSamples, model.QualityMinSamples)
+	}
+}
+
 // TestMarketPriceSortPutsUnpricedLast 验证"零价不霸榜": 未定价的模型必须沉底,
 // 而不是以 0 元排成最便宜。
 func TestMarketPriceSortPutsUnpricedLast(t *testing.T) {

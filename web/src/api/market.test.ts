@@ -34,7 +34,8 @@ describe('挂牌价格口径', () => {
   });
   const listing = (over: Partial<MarketModel['channels'][number]>): MarketModel['channels'][number] => ({
     channel_grant_id: 1, channel_model_id: 1, channel_code: '#1', available: true,
-    user_price: { input: 0, output: 0, cache_read: 0, cache_write: 0 }, samples: 0, ...over,
+    user_price: { input: 0, output: 0, cache_read: 0, cache_write: 0 }, samples: 0,
+    metrics_source: 'none', ...over,
   });
 
   it('文本模型取 (input+output)/2', () => {
@@ -52,6 +53,17 @@ describe('挂牌价格口径', () => {
   });
   it('全部未定价时没有最低价(而不是 0 元)', () => {
     expect(cheapestListing(model([listing({})]))).toBeUndefined();
+  });
+it('成绩只在 live 口径下给数字: 样本不足与无样本都显示占位', () => {
+    // 三个口径的差别只有一处是可见的: 给不给数字。样本不足仍要报出样本数,
+    // 否则界面没法区分"还没跑几次"与"还没跑过"。
+    const live = listing({ samples: 40, metrics_source: 'live', success: 0.9, wait_ms: 120 });
+    const few = listing({ samples: 3, metrics_source: 'insufficient' });
+    const cold = listing({ samples: 0, metrics_source: 'none' });
+    expect(live.success).toBe(0.9);
+    expect(few.success).toBeUndefined();
+    expect(few.samples).toBe(3);
+    expect(cold.samples).toBe(0);
   });
   it('可用渠道计数不含停用与熔断', () => {
     const m = model([listing({}), listing({ channel_grant_id: 2, available: false })]);

@@ -64,7 +64,7 @@ export function MarketItem({ model, layout }: { model: MarketModel; layout: 'gri
                             {t('label.success')}{' '}
                             <MetricValue
                                 value={model.metrics_source === 'live' ? model.success : undefined}
-                                samples={model.samples}
+                                samples={model.metrics_source === 'live' ? model.samples : 0}
                                 format={(v) => (v * 100).toFixed(1) + '%'}
                             />
                         </span>
@@ -72,7 +72,7 @@ export function MarketItem({ model, layout }: { model: MarketModel; layout: 'gri
                             {t('label.latency')}{' '}
                             <MetricValue
                                 value={model.metrics_source === 'live' ? model.wait_ms : undefined}
-                                samples={model.samples}
+                                samples={model.metrics_source === 'live' ? model.samples : 0}
                                 format={(v) => formatLatency(v)}
                             />
                         </span>
@@ -95,9 +95,11 @@ export function MarketItem({ model, layout }: { model: MarketModel; layout: 'gri
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         {/* 把口径说清楚: 这些数字来自进程内滑动平均, 服务重启后会重新累计。 */}
                         <span className="text-[11px] text-muted-foreground">
-                            {model.metrics_source === 'none'
-                                ? t('note.noSamples')
-                                : t('note.liveMetrics', { count: model.samples })}
+                            {model.metrics_source === 'live'
+                                ? t('note.liveMetrics', { count: model.samples })
+                                : model.metrics_source === 'insufficient'
+                                    ? t('note.insufficient', { count: model.samples })
+                                    : t('note.noSamples')}
                         </span>
                         <AddToGroup model={model} />
                     </div>
@@ -122,16 +124,16 @@ function ChannelTable({ model }: { model: MarketModel }) {
                     <span className="text-muted-foreground">
                         {t('label.success')}{' '}
                         <MetricValue
-                            value={listing.samples > 0 ? listing.success : undefined}
-                            samples={listing.samples}
+                            value={listing.metrics_source === 'live' ? listing.success : undefined}
+                            samples={listing.metrics_source === 'live' ? listing.samples : 0}
                             format={(v) => (v * 100).toFixed(1) + '%'}
                         />
                     </span>
                     <span className="text-muted-foreground">
                         {t('label.latency')}{' '}
                         <MetricValue
-                            value={listing.samples > 0 ? listing.wait_ms : undefined}
-                            samples={listing.samples}
+                            value={listing.metrics_source === 'live' ? listing.wait_ms : undefined}
+                            samples={listing.metrics_source === 'live' ? listing.samples : 0}
                             format={(v) => formatLatency(v)}
                         />
                     </span>

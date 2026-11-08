@@ -753,7 +753,8 @@
       "convertedFrom": "原价 {currency} 已折算"
     },
     "badge": { "inGroups": "已在分组" },
-    "note": { "noSamples": "暂无调用样本, 重启后重新累计", "liveMetrics": "来自 {count} 次调用的进程内指标" },
+    "note": { "noSamples": "暂无调用样本, 重启后重新累计",
+    "insufficient": "有 {count} 次样本, 不足以判定(需 30 次)", "liveMetrics": "来自 {count} 次调用的进程内指标" },
     "per": { "input": "/ 入", "output": "/ 出", "image": "/ 张", "second": "/ 秒" },
     "action": { "addToGroup": "加入分组", "allGroupsJoined": "全部分组已包含" },
     "dialog": {

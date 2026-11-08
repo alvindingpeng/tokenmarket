@@ -30,6 +30,8 @@ export interface MarketChannelListing {
     wait_ms?: number;
     success?: number;
     samples: number;
+    // 逐行也给一份口径: 同一模型的不同渠道样本量能差两个数量级, 由前端各自判阈值必然与服务端分叉。
+    metrics_source: MarketMetricsSource;
 }
 
 /** 按小写模型名折叠后的一屏一行。 */
@@ -41,9 +43,14 @@ export interface MarketModel {
     wait_ms?: number;
     success?: number;
     samples: number;
-    // metrics_source 是界面分流的唯一依据: none 表示无样本, 必须显示占位而不是 100% 成功。
-    metrics_source: 'live' | 'none';
+    // metrics_source 是界面分流的唯一依据。三档而不是两档:
+    // live=样本够, 数字可信; insufficient=有样本但不足门槛, 仍显示 —; none=无样本。
+    // 只有 live 才给数字 —— 把"跑过 1 次"当成可用成绩, 与把"没数据"当成 100% 成功同源。
+    metrics_source: MarketMetricsSource;
 }
+
+/** MarketMetricsSource 是成绩口径标注, 与后端 handlers 的 marketMetrics* 常量一一对应。 */
+export type MarketMetricsSource = 'live' | 'insufficient' | 'none';
 
 export interface MarketCatalog {
     models: MarketModel[];

@@ -126,11 +126,11 @@
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
-| P1 只读挂牌表 | 口径单点(`internal/op/grant_view.go`)、`MarketCatalog`、品牌解析、`GET /api/v1/market/models`、前端 `market` 页 | **已实现, 未发版**(细化见设计稿 §10) |
+| P1 只读挂牌表 | 口径单点(`internal/op/grant_view.go`)、`MarketCatalog`、品牌解析、`GET /api/v1/market/models`、前端 `market` 页 | **v1.5.41 已发布**(细化见设计稿 §10) |
 | P2 加入自有模型配置 | 展开行内勾选自有分组, 按 `items` 整体替换追加成员 | **未实施**。广场卡片里已给出最小闭环(勾选分组与渠道 → `useUpdateGroup`), 但批量加入、幂等重排、跨页一致性验收都没做 |
-| P3 品牌人工覆盖 + 日级口径回落 + 质量带 | 品牌覆盖表、`stats_channel_model_dailies` 冷启动回落、`QualityGradeOf` 质量带 | **未实施**。P1 的品牌解析是「family → 名称关键词 → other」三段, 生产 46 个在售模型里仍有 11 个落到 `other`; 成功率/延迟在服务重启后清零且无日级回落 |
+| P3 品牌人工覆盖 + 日级口径回落 + 质量带 | 品牌覆盖表、`stats_channel_model_dailies` 冷启动回落、`QualityGradeOf` 质量带 | **未实施**。P1 的品牌解析是「family → 名称关键词 → other」三段, 生产 46 个在售模型里仍有 8 个落到 `other`; 成功率/延迟在服务重启后清零且无日级回落 |
 
-> P1 已实现但**尚未随版本发布**, 故仍留在本表 §1; 发版后请移到 §4 交付索引。
+> P1 已随 **v1.5.41** 发布(成绩口径门槛由 v1.5.42 修正), 详见 §4 交付索引; P2/P3 仍为规划稿。
 
 ---
 

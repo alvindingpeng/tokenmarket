@@ -37,20 +37,44 @@ const (
 	marketSortName    = "name"
 )
 
-// 指标来源标注: 界面必须据此决定"显示数字还是显示 —", 不许把没样本渲染成 100% 成功。
+// 指标来源标注: 界面必须据此决定"显示数字还是显示 —", 不许把没样本渲染成 100% 成功,
+// 也不许把小样本当成可信成绩。
 const (
-	marketMetricsLive = "live" // 来自 relay 进程内 EMA。
-	marketMetricsNone = "none" // 无样本(冷启动), 或进程重启后尚未恢复。
+	marketMetricsLive         = "live"         // 样本达到门槛, 数字可信。
+	marketMetricsInsufficient = "insufficient" // 有样本但不足门槛: 不给数字, 但仍报出样本数。
+	marketMetricsNone         = "none"         // 无样本(冷启动), 或进程重启后尚未恢复。
 )
+
+// marketMinSamples 是给出成绩数字的最低样本数, 与 model.QualityMinSamples 同值同源。
+//
+// 不设门槛的后果是真实的: 生产上一个只有 1 次调用的模型以 43ms 排到了"延迟最优"第一位,
+// 而它恰好只跑成功过一次。把"没跑几次"当成"跑得最快/最稳", 与把"没数据"当成 100% 成功
+// 是同一个错误的两种尺度 —— 都是把"未知"读成了结论。
+const marketMinSamples = int(model.QualityMinSamples)
+
+// marketMetricsSourceOf 把样本数翻译成口径标注。单点在此, 免得调用方各自判一个阈值。
+func marketMetricsSourceOf(samples int) string {
+	switch {
+	case samples <= 0:
+		return marketMetricsNone
+	case samples < marketMinSamples:
+		return marketMetricsInsufficient
+	default:
+		return marketMetricsLive
+	}
+}
 
 // marketChannelView 是一条挂牌行加上运行时指标。
 // 指标按渠道模型归并(relay 的指标就是按渠道模型统计的), 不是按授权 ——
 // 同一渠道模型的多个授权共用同一份成绩, 分开统计会把样本无谓地摊薄。
 type marketChannelView struct {
 	model.MarketChannel
-	WaitMs  float64 `json:"wait_ms,omitempty"` // 样本加权后的首响应耗时(毫秒)。
-	Success float64 `json:"success,omitempty"` // 样本加权后的成功率(0..1)。
+	WaitMs  float64 `json:"wait_ms,omitempty"` // 样本加权后的首响应耗时(毫秒); 样本不足时省略。
+	Success float64 `json:"success,omitempty"` // 样本加权后的成功率(0..1); 样本不足时省略。
 	Samples int     `json:"samples"`           // 观测样本数; 0 表示冷启动。
+	// MetricsSource 逐行也给一份: 同一模型的不同渠道样本量可以差两个数量级,
+	// 由前端各自赛一个"样本够不够"的阈值必然与服务端分叉。
+	MetricsSource string `json:"metrics_source"` // live|insufficient|none。
 }
 
 // marketModelView 是一个模型行加上归并后的模型级指标。
@@ -102,28 +126,37 @@ func listMarketModels(c *gin.Context) {
 		}
 		// 模型级指标按样本数加权归并: 与 relay.ModelScoreBriefs 的口径相同(样本加权),
 		// 不手写第二套算法, 否则同一个模型在模型页与广场会显示两个成功率。
+		// 先按原始指标做一次样本加权归并(与 relay.ModelScoreBriefs 同一口径), 再决定给不给数字:
+		// 归并口径与展示门槛是两件事, 混在一起会让模型级样本数与渠道级样本数之和不再对得上。
 		weight := 0.0
 		waitSum := 0.0
 		successSum := 0.0
 		for _, channel := range entry.Channels {
 			channelView := marketChannelView{MarketChannel: channel}
 			if metric, ok := views[channel.ChannelModelID]; ok && metric.Samples > 0 {
-				channelView.WaitMs = metric.WaitMs
-				channelView.Success = metric.Success
 				channelView.Samples = metric.Samples
+				channelView.MetricsSource = marketMetricsSourceOf(metric.Samples)
+				// 样本不足的渠道只报样本数, 不报数字: 让"有 1 次调用"看起来像一条可用成绩,
+				// 正是这一档存在的原因。
+				if channelView.MetricsSource == marketMetricsLive {
+					channelView.WaitMs = metric.WaitMs
+					channelView.Success = metric.Success
+				}
+				weight += float64(metric.Samples)
+				waitSum += metric.WaitMs * float64(metric.Samples)
+				successSum += metric.Success * float64(metric.Samples)
+			} else {
+				channelView.MetricsSource = marketMetricsNone
 			}
 			view.Channels = append(view.Channels, channelView)
-			if channelView.Samples > 0 {
-				weight += float64(channelView.Samples)
-				waitSum += channelView.WaitMs * float64(channelView.Samples)
-				successSum += channelView.Success * float64(channelView.Samples)
-			}
 			view.Samples += channelView.Samples
 		}
-		if weight > 0 {
+		// 模型级门槛按**合计**样本数, 与渠道级门限不同: 一个模型跨 8 个渠道各跑 5 次,
+		// 合计 40 次已经足够说明它整体稳不稳, 不该因为单个渠道样本少而把整行抹成"未知"。
+		view.MetricsSource = marketMetricsSourceOf(view.Samples)
+		if weight > 0 && view.MetricsSource == marketMetricsLive {
 			view.WaitMs = waitSum / weight
 			view.Success = successSum / weight
-			view.MetricsSource = marketMetricsLive
 		}
 		if !seenBrand[view.Brand] {
 			seenBrand[view.Brand] = true
@@ -243,9 +276,18 @@ func sortMarketModels(models []marketModelView, sortBy string) {
 		})
 	case marketSortSuccess:
 		sort.SliceStable(models, func(i, j int) bool {
-			// 样本数为 0 的模型置底, 且不与有样本的比较成功率。
-			if models[i].Samples == 0 || models[j].Samples == 0 {
-				return models[i].Samples > models[j].Samples
+			// 成绩不可信(无样本或样本不足)的模型一律置底, 且不与可信的比较 ——
+			// 否则一个只跑过一次的模型会凭"这一次成功了"排到第一屏。
+			li, lj := models[i].MetricsSource == marketMetricsLive, models[j].MetricsSource == marketMetricsLive
+			if li != lj {
+				return li
+			}
+			if !li {
+				// 都不可信时按样本数多者靠前: 样本多说明它至少"在被用", 比完全冷启动有信息量。
+				if models[i].Samples != models[j].Samples {
+					return models[i].Samples > models[j].Samples
+				}
+				return models[i].Name < models[j].Name
 			}
 			if models[i].Success != models[j].Success {
 				return models[i].Success > models[j].Success
@@ -254,8 +296,15 @@ func sortMarketModels(models []marketModelView, sortBy string) {
 		})
 	case marketSortLatency:
 		sort.SliceStable(models, func(i, j int) bool {
-			if models[i].Samples == 0 || models[j].Samples == 0 {
-				return models[i].Samples > models[j].Samples
+			li, lj := models[i].MetricsSource == marketMetricsLive, models[j].MetricsSource == marketMetricsLive
+			if li != lj {
+				return li
+			}
+			if !li {
+				if models[i].Samples != models[j].Samples {
+					return models[i].Samples > models[j].Samples
+				}
+				return models[i].Name < models[j].Name
 			}
 			if models[i].WaitMs != models[j].WaitMs {
 				return models[i].WaitMs < models[j].WaitMs

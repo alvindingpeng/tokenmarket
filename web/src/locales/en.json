@@ -753,7 +753,8 @@
       "convertedFrom": "Listed in {currency}, converted"
     },
     "badge": { "inGroups": "In a group" },
-    "note": { "noSamples": "No samples yet; counters restart with the process", "liveMetrics": "In-process metrics from {count} calls" },
+    "note": { "noSamples": "No samples yet; counters restart with the process",
+    "insufficient": "{count} samples, too few to judge (30 needed)", "liveMetrics": "In-process metrics from {count} calls" },
     "per": { "input": "/ in", "output": "/ out", "image": "/ image", "second": "/ sec" },
     "action": { "addToGroup": "Add to group", "allGroupsJoined": "In all groups" },
     "dialog": {

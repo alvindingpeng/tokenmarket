@@ -753,7 +753,8 @@
       "convertedFrom": "原價 {currency} 已折算"
     },
     "badge": { "inGroups": "已在分組" },
-    "note": { "noSamples": "暫無調用樣本, 重啟後重新累計", "liveMetrics": "來自 {count} 次調用的進程內指標" },
+    "note": { "noSamples": "暫無調用樣本, 重啟後重新累計",
+    "insufficient": "有 {count} 次樣本, 不足以判定(需 30 次)", "liveMetrics": "來自 {count} 次調用的進程內指標" },
     "per": { "input": "/ 入", "output": "/ 出", "image": "/ 張", "second": "/ 秒" },
     "action": { "addToGroup": "加入分組", "allGroupsJoined": "全部分組已包含" },
     "dialog": {
