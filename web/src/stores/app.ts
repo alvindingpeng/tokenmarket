@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { LucideIcon } from 'lucide-react';
-import { Home, Radio, Sparkles, FolderTree, Settings, Logs, Share2, Wallet, KeyRound, HeartPulse, Coins, Landmark, Bell, BarChart3, Ticket, Webhook } from 'lucide-react';
+import { Home, Store, Radio, Sparkles, FolderTree, Settings, Logs, Share2, Wallet, KeyRound, HeartPulse, Coins, Landmark, Bell, BarChart3, Ticket, Webhook } from 'lucide-react';
 import type { Role } from '@/api/user';
 
 // Page 是 Dock 一级导航的页面集合; 用户管理/审计记录/限流管理/兑换码已并入设置页二级菜单, 不再是独立页面。
-export type Page = 'home' | 'channel' | 'group' | 'model' | 'ops' | 'share' | 'wallet' | 'withdrawals' | 'billing' | 'apikey' | 'log' | 'notification' | 'webhook' | 'tickets' | 'analytics' | 'setting';
+export type Page = 'home' | 'market' | 'channel' | 'group' | 'model' | 'ops' | 'share' | 'wallet' | 'withdrawals' | 'billing' | 'apikey' | 'log' | 'notification' | 'webhook' | 'tickets' | 'analytics' | 'setting';
 
 // SettingSectionID 设置页二级菜单的分组标识; 分组定义见 components/modules/setting/sections.ts。
 // 管理后台能力(用户/审计/限流/兑换码)与配置分组共用同一层菜单。
@@ -15,8 +15,10 @@ export type SettingSectionID = 'personal' | 'users' | 'audit' | 'ratelimit' | 'r
 type NavItem = { id: Page; label: string; icon: LucideIcon };
 
 // NAV_ITEMS 是全部页面的固定导航定义，顺序即导航顺序；按角色裁剪见 navItemsFor。
+// market(模型广场)排在 home 之后: 语义是"先挑模型, 再进模型配置编排路由", 且它对全部角色可见。
 export const NAV_ITEMS: NavItem[] = [
     { id: 'home', label: 'Home', icon: Home },
+    { id: 'market', label: 'Market', icon: Store },
     { id: 'channel', label: 'Channel', icon: Radio },
     { id: 'group', label: 'Group', icon: FolderTree },
     { id: 'model', label: 'Model', icon: Sparkles },
@@ -36,9 +38,9 @@ export const NAV_ITEMS: NavItem[] = [
 
 // NAV_PAGES_BY_ROLE 按角色声明可见页面: 用户无渠道与管理后台, 渠道商多渠道与发布, 管理员全量。
 const NAV_PAGES_BY_ROLE: Record<string, Page[]> = {
-    admin: ['home', 'channel', 'group', 'model', 'ops', 'share', 'wallet', 'withdrawals', 'billing', 'apikey', 'log', 'notification', 'webhook', 'tickets', 'analytics', 'setting'],
-    reseller: ['home', 'channel', 'group', 'share', 'wallet', 'billing', 'apikey', 'log', 'notification', 'webhook', 'tickets', 'analytics', 'setting'],
-    user: ['home', 'group', 'wallet', 'billing', 'apikey', 'log', 'notification', 'webhook', 'tickets', 'analytics', 'setting'],
+    admin: ['home', 'market', 'channel', 'group', 'model', 'ops', 'share', 'wallet', 'withdrawals', 'billing', 'apikey', 'log', 'notification', 'webhook', 'tickets', 'analytics', 'setting'],
+    reseller: ['home', 'market', 'channel', 'group', 'share', 'wallet', 'billing', 'apikey', 'log', 'notification', 'webhook', 'tickets', 'analytics', 'setting'],
+    user: ['home', 'market', 'group', 'wallet', 'billing', 'apikey', 'log', 'notification', 'webhook', 'tickets', 'analytics', 'setting'],
 };
 
 // navItemsFor 返回角色可见的导航项，按 NAV_ITEMS 的全局顺序排列。

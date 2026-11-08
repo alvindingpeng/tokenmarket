@@ -587,56 +587,21 @@ func ChannelGrantGet(id int) (model.ChannelGrant, error) {
 // 未上架模型只在归属者的渠道管理页存在; 渠道名以发布唯一编码展示, 凭据名除归属者外脱敏为空。
 // 可用性与 GroupList 补齐成员时同一口径: 渠道与凭据均启用即可用, 由此候选与已选成员不会各判一套。
 func ChannelGrantCandidates(scope model.Scope) []model.ChannelGrantCandidate {
-	// 上浮按成员各自渠道的覆盖值逐个取: 候选跨渠道, 单一全局值会算错别人的利润口径。
 	candidates := make([]model.ChannelGrantCandidate, 0, channelGrantCache.Len())
 	for _, grant := range channelGrantCache.GetAll() {
-		channelModel, modelOK := channelModelCache.Get(grant.ChannelModelID)
-		channelKey, keyOK := channelKeyCache.Get(grant.ChannelKeyID)
-		if !modelOK || !keyOK {
+		parts, ok := grantPartsOf(grant)
+		if !ok {
 			continue
 		}
-		channel, channelOK := channelCache.Get(channelModel.ChannelID)
-		if !channelOK {
-			continue
-		}
-		owner := scope.Owns(channel.UserID)
 		// 供给侧隔离: 未发布渠道或未上架模型不出候选, 归属者与管理员也不例外。
 		// 过审闸口(P1): 进对外候选即被分组选走的新暴露, 额外要求 approved;
 		// draft/pending/rejected/stale 都不新增暴露, 已在分组里的存量成员不受影响。
-		if !channel.Shared || channel.ReviewStatus != model.ChannelReviewApproved || !channelModel.Listed {
+		if !parts.Channel.Shared || parts.Channel.ReviewStatus != model.ChannelReviewApproved || !parts.ChannelModel.Listed {
 			continue
 		}
-		// 多币种: 候选与分组成员同口径, 一律按 FxRateConvert 折算成账面币种 USD 再上浮,
-		// 使分组页看到的价格与实际选路/预扣的价格是同一个数, 不会出现"候选显示便宜、选中后按原币扣"。
-		// 牌价不可用时保守排除: 价格清零 + Available=false + FxMissing, 界面仍列出以便排查缺价。
-		supplyPrice, mediaSupply, priceCurrency, fxOK := ledgerModelPrices(context.Background(), channelModel.SupplyPrice, channelModel.MediaSupply, channelModel.PriceCurrency)
-		candidate := model.ChannelGrantCandidate{
-			ID:            grant.ID,
-			ChannelID:     channel.ID,
-			ChannelName:   channel.Name,
-			ModelName:     channelModel.Name,
-			KeyName:       channelKey.Name,
-			Protocols:     grant.Protocols,
-			Available:     fxOK && channel.Enabled && !isCircuitBroken(channel.DisabledUntil) && channelKey.Enabled && !isCircuitBroken(channelKey.DisabledUntil) && !isCircuitBroken(channelModel.DisabledUntil),
-			Listed:        channelModel.Listed,
-			SupplyPrice:   supplyPrice,
-			UserPrice:     supplyPrice.Scale(ChannelMarkupFor(channel.ID)),
-			MediaSupply:   mediaSupply,
-			UserMedia:     mediaSupply.Scale(ChannelMarkupFor(channel.ID)),
-			Kind:          channelModel.Kind,
-			PriceCurrency: priceCurrency,
-			FxMissing:     !fxOK,
-		}
-		// 展示名定稿: 已发布渠道一律以发布唯一编码示人(含归属者与管理员), 上游名称不出分组管理;
-		// 未发布渠道只有归属者与管理员可见, 显示真名。凭据名仍按归属脱敏。
-		if channel.Shared && channel.ShareCode != "" {
-			// 展示统一带 # 前缀(#1001 形式); 库内仍存纯数字, 链接/查询用裸编码。
-			candidate.ChannelName = "#" + channel.ShareCode
-		}
-		if !owner {
-			candidate.KeyName = ""
-		}
-		candidates = append(candidates, candidate)
+		// 价格折算、可用性判定、展示名与脱敏统一走 grantCandidateOf(见 grant_view.go):
+		// 分组页看到的价格与选路/预扣是同一个数, 不会出现"候选显示便宜、选中后按原币扣"。
+		candidates = append(candidates, grantCandidateOf(grant, parts, scope))
 	}
 	// 按渠道, 模型, 凭据三级定序: 分组页按这三级组织候选且不提供排序开关, 顺序须由此处定稿。
 	sort.Slice(candidates, func(i, j int) bool {

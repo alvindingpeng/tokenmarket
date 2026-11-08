@@ -20,12 +20,16 @@ interface PageActionOption {
     icon?: LucideIcon; // 操作选项左侧的可选图标。
 }
 
-type PageActionPage = 'channel' | 'group' | 'model';
+type PageActionPage = 'channel' | 'group' | 'model' | 'market';
 type PageActionLayout = 'grid' | 'list';
 type PageActionSortOrder = 'asc' | 'desc';
 type ChannelFilter = 'all' | 'enabled' | 'disabled';
 type GroupFilter = 'all' | 'with-members' | 'empty';
 type ModelFilter = 'all' | 'priced' | 'free';
+// 广场的排序维度: 每个维度自带唯一最优方向, 故这里只有"按什么排", 没有正序/倒序。
+type MarketSortBy = 'price' | 'success' | 'latency' | 'name';
+// 广场的形态筛选: 空串表示不限。
+type MarketKind = '' | 'text' | 'image' | 'video';
 
 interface PageActionsState {
     searchTerms: Partial<Record<PageActionPage, string>>; // 各列表页面当前的搜索内容。
@@ -34,12 +38,19 @@ interface PageActionsState {
     channelFilter: ChannelFilter; // 渠道页面的筛选条件。
     groupFilter: GroupFilter; // 分组页面的筛选条件。
     modelFilter: ModelFilter; // 模型页面的筛选条件。
+    marketSortBy: MarketSortBy; // 广场的排序维度(方向由维度自带, 不另设开关)。
+    marketKind: MarketKind; // 广场的形态筛选。
+    marketBrands: string[]; // 广场的品牌多选; 空数组表示不限。
     setSearchTerm: (page: PageActionPage, value: string) => void; // 更新指定页面的搜索内容。
     setLayout: (page: PageActionPage, value: PageActionLayout) => void; // 更新指定页面的布局。
     setSort: (page: PageActionPage, order: PageActionSortOrder) => void; // 更新指定页面的排序方向。
     setChannelFilter: (value: ChannelFilter) => void; // 更新渠道筛选条件。
     setGroupFilter: (value: GroupFilter) => void; // 更新分组筛选条件。
     setModelFilter: (value: ModelFilter) => void; // 更新模型筛选条件。
+    setMarketSortBy: (value: MarketSortBy) => void; // 更新广场排序维度。
+    setMarketKind: (value: MarketKind) => void; // 更新广场形态筛选。
+    toggleMarketBrand: (brand: string) => void; // 切换某个品牌的选中态。
+    clearMarketBrands: () => void; // 清空品牌多选。
 }
 
 // usePageActionsStore 保存稳定顶栏与页面正文共享的视图选项。
@@ -52,6 +63,9 @@ export const usePageActionsStore = create<PageActionsState>()(
             channelFilter: 'all',
             groupFilter: 'all',
             modelFilter: 'all',
+            marketSortBy: 'success',
+            marketKind: '',
+            marketBrands: [],
             setSearchTerm: (page, value) => set((state) => ({
                 searchTerms: { ...state.searchTerms, [page]: value },
             })),
@@ -64,6 +78,14 @@ export const usePageActionsStore = create<PageActionsState>()(
             setChannelFilter: (value) => set({ channelFilter: value }),
             setGroupFilter: (value) => set({ groupFilter: value }),
             setModelFilter: (value) => set({ modelFilter: value }),
+            setMarketSortBy: (value) => set({ marketSortBy: value }),
+            setMarketKind: (value) => set({ marketKind: value }),
+            toggleMarketBrand: (brand) => set((state) => ({
+                marketBrands: state.marketBrands.includes(brand)
+                    ? state.marketBrands.filter((item) => item !== brand)
+                    : [...state.marketBrands, brand],
+            })),
+            clearMarketBrands: () => set({ marketBrands: [] }),
         }),
         {
             name: 'page-actions-storage',
@@ -73,6 +95,9 @@ export const usePageActionsStore = create<PageActionsState>()(
                 channelFilter: state.channelFilter,
                 groupFilter: state.groupFilter,
                 modelFilter: state.modelFilter,
+                marketSortBy: state.marketSortBy,
+                marketKind: state.marketKind,
+                marketBrands: state.marketBrands,
             }),
         }
     )
@@ -89,6 +114,8 @@ interface PageActionsProps {
     filterOptions: PageActionOption[]; // 当前页面支持的筛选选项。
     filterValue: string; // 当前页面选中的筛选标识。
     onFilterChange: (value: string) => void; // 更新当前页面的筛选条件。
+    extraFilter?: ReactNode; // 单选筛选表达不了的多选条件(广场的品牌多选), 渲染在筛选组之后。
+    hideCreate?: boolean; // 只读页面(模型广场)没有创建入口, 隐藏加号而不是渲染一个点不开的按钮。
     children: ReactNode; // 当前页面提供的创建表单内容。
 }
 
@@ -104,6 +131,8 @@ export function PageActions({
     filterOptions,
     filterValue,
     onFilterChange,
+    extraFilter,
+    hideCreate = false,
     children,
 }: PageActionsProps) {
     const t = useTranslations('toolbar');
@@ -256,11 +285,14 @@ export function PageActions({
                                 ))}
                             </div>
                         </div>
+
+                        {extraFilter}
                     </div>
                 </PopoverContent>
             </Popover>
 
-            {/* 创建按钮 */}
+            {/* 创建按钮: 只读页面不渲染, 免得用户点开一个空弹层。 */}
+            {!hideCreate && (
             <MorphingDialog>
                 <MorphingDialogTrigger className={buttonVariants({ variant: 'ghost', size: 'icon', className: 'rounded-xl transition-none hover:bg-transparent text-muted-foreground hover:text-foreground' })}>
                     <Plus className="size-4 transition-colors duration-300" />
@@ -274,6 +306,7 @@ export function PageActions({
                     </MorphingDialogContent>
                 </MorphingDialogContainer>
             </MorphingDialog>
+            )}
         </div>
     );
 }

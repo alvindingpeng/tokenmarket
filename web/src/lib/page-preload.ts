@@ -3,6 +3,7 @@ import type { Page } from '@/stores/app';
 // pageImports 统一定义页面懒加载和导航预加载使用的模块入口。
 export const pageImports = {
     home: () => import('@/components/modules/home'),
+    market: () => import('@/components/modules/market'),
     channel: () => import('@/components/modules/channel'),
     group: () => import('@/components/modules/group'),
     model: () => import('@/components/modules/model'),

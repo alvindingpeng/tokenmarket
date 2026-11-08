@@ -85,6 +85,7 @@
   },
   "navbar": {
     "home": "Home",
+    "market": "Marketplace",
     "channel": "Channel",
     "group": "Model Config",
     "model": "Price",
@@ -723,6 +724,47 @@
       "open": "Auto-add conditions",
       "customized": "Customized"
     }
+  },
+  "market": {
+    "summary": "{models} models · {channels} channel listings",
+    "refreshNote": "Refreshes every 20s",
+    "empty": "No models match the current filters",
+    "noCreate": "The marketplace only lists published offerings. Add models from the channel page.",
+    "sort": { "success": "Success rate", "latency": "Latency", "price": "Price", "name": "Name" },
+    "kind": { "all": "All kinds", "text": "Text", "image": "Image", "video": "Video" },
+    "filter": { "brand": "Vendor", "clear": "Clear", "noBrand": "No vendors" },
+    "brand": {
+      "other": "Other", "openai": "OpenAI", "anthropic": "Anthropic", "google": "Google",
+      "deepseek": "DeepSeek", "xai": "xAI", "alibaba": "Alibaba Qwen", "zhipu": "Zhipu",
+      "minimax": "MiniMax", "moonshot": "Moonshot", "mistral": "Mistral", "meta": "Meta",
+      "xiaomi": "Xiaomi", "bytedance": "ByteDance", "tencent": "Tencent", "iflytek": "iFlytek",
+      "baidu": "Baidu", "stepfun": "StepFun", "nvidia": "NVIDIA", "cohere": "Cohere",
+      "perplexity": "Perplexity", "microsoft": "Microsoft", "kuaishou": "Kuaishou", "yi": "01.AI",
+      "internlm": "InternLM", "amazon": "Amazon", "vercel": "Vercel", "blackforest": "Black Forest Labs",
+      "runway": "Runway", "recraft": "Recraft", "ideogram": "Ideogram", "elevenlabs": "ElevenLabs"
+    },
+    "status": {
+      "available": "Available", "fx_missing": "FX missing", "disabled": "Channel disabled",
+      "key_disabled": "Key disabled", "breaker": "Circuit broken", "unpriced": "No price"
+    },
+    "label": {
+      "price": "Price", "channels": "{count} channels · {available} available", "success": "Success",
+      "latency": "Latency", "noAvailable": "No channel available", "details": "Show channels",
+      "convertedFrom": "Listed in {currency}, converted"
+    },
+    "badge": { "inGroups": "In a group" },
+    "note": { "noSamples": "No samples yet; counters restart with the process", "liveMetrics": "In-process metrics from {count} calls" },
+    "per": { "input": "/ in", "output": "/ out", "image": "/ image", "second": "/ sec" },
+    "action": { "addToGroup": "Add to group", "allGroupsJoined": "In all groups" },
+    "dialog": {
+      "title": "Add to a model config", "noGroup": "You have no model config yet. Create one on the group page first.",
+      "description": "Add the channels of {name} to one of your groups. Existing members keep their order.",
+      "pickGroup": "Pick a model config", "pickChannel": "Pick channels to add",
+      "groupMeta": "{count} members · {mode}", "alreadyIn": "Already in",
+      "confirm": "Add", "cancel": "Cancel",
+      "mode": { "manual": "Manual", "failover": "Failover", "price": "Lowest price", "latency": "Lowest latency", "success": "Highest success", "score": "Blended score", "random": "Random" }
+    },
+    "toast": { "added": "Added to {name} ({count} channels)", "addFailed": "Failed to add" }
   },
   "model": {
     "create": {

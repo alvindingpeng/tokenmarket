@@ -85,6 +85,7 @@
   },
   "navbar": {
     "home": "主頁",
+    "market": "模型廣場",
     "channel": "供應源",
     "group": "模型配置",
     "model": "價格",
@@ -723,6 +724,47 @@
       "open": "自動新增條件",
       "customized": "已單獨設定"
     }
+  },
+  "market": {
+    "summary": "共 {models} 個模型、{channels} 條渠道掛牌",
+    "refreshNote": "每 20 秒自動刷新",
+    "empty": "沒有符合條件的模型",
+    "noCreate": "模型廣場只展示已發佈的掛牌, 新增模型請到渠道路由頁。",
+    "sort": { "success": "成功率", "latency": "延遲", "price": "價格", "name": "名稱" },
+    "kind": { "all": "全部形態", "text": "文字", "image": "圖像", "video": "影片" },
+    "filter": { "brand": "廠商品牌", "clear": "清空", "noBrand": "暫無品牌" },
+    "brand": {
+      "other": "其他", "openai": "OpenAI", "anthropic": "Anthropic", "google": "Google",
+      "deepseek": "DeepSeek", "xai": "xAI", "alibaba": "阿里通義", "zhipu": "智譜",
+      "minimax": "MiniMax", "moonshot": "月之暗面", "mistral": "Mistral", "meta": "Meta",
+      "xiaomi": "小米", "bytedance": "字節跳動", "tencent": "騰訊", "iflytek": "訊飛",
+      "baidu": "百度", "stepfun": "階躍星辰", "nvidia": "NVIDIA", "cohere": "Cohere",
+      "perplexity": "Perplexity", "microsoft": "微軟", "kuaishou": "快手", "yi": "零一萬物",
+      "internlm": "書生", "amazon": "Amazon", "vercel": "Vercel", "blackforest": "Black Forest Labs",
+      "runway": "Runway", "recraft": "Recraft", "ideogram": "Ideogram", "elevenlabs": "ElevenLabs"
+    },
+    "status": {
+      "available": "可用", "fx_missing": "匯率缺失", "disabled": "渠道停用",
+      "key_disabled": "憑據停用", "breaker": "熔斷中", "unpriced": "未定價"
+    },
+    "label": {
+      "price": "價格", "channels": "{count} 條渠道 · {available} 條可用", "success": "成功率",
+      "latency": "延遲", "noAvailable": "暫無可用渠道", "details": "展開渠道明細",
+      "convertedFrom": "原價 {currency} 已折算"
+    },
+    "badge": { "inGroups": "已在分組" },
+    "note": { "noSamples": "暫無調用樣本, 重啟後重新累計", "liveMetrics": "來自 {count} 次調用的進程內指標" },
+    "per": { "input": "/ 入", "output": "/ 出", "image": "/ 張", "second": "/ 秒" },
+    "action": { "addToGroup": "加入分組", "allGroupsJoined": "全部分組已包含" },
+    "dialog": {
+      "title": "加入模型配置", "noGroup": "還沒有模型配置, 請先到分組頁新建一個。",
+      "description": "把 {name} 的渠道加進自有分組, 已有成員的順序不變。",
+      "pickGroup": "選擇模型配置", "pickChannel": "選擇要加入的渠道",
+      "groupMeta": "{count} 個成員 · {mode}", "alreadyIn": "已在其中",
+      "confirm": "加入", "cancel": "取消",
+      "mode": { "manual": "手動", "failover": "故障轉移", "price": "低價優先", "latency": "低延遲優先", "success": "成功率優先", "score": "綜合評分", "random": "隨機" }
+    },
+    "toast": { "added": "已加入 {name}({count} 個渠道)", "addFailed": "加入失敗" }
   },
   "model": {
     "create": {

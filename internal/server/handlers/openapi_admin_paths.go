@@ -471,6 +471,24 @@ func openAPIAdminPathsAuth() gin.H {
 				adminArray("模型评分", "ModelScore"), false),
 		},
 
+		// ---------------- 模型广场 ----------------
+		"/api/v1/market/models": gin.H{
+			"get": adminPath("market", "模型广场挂牌表",
+				"列出当前「已发布 + 已过审 + 已上架」且在售的模型, 按同名折叠成一屏一行, 每行下挂各渠道的挂牌: "+
+					"用户价(折算并上浮后, 与分组页和计费同口径)、渠道发布编码(#1001 形式)、运行状态与近期成绩。"+adminNewLine+
+					"运行状态取自供给侧事实(渠道/凭据/渠道模型是否启用、是否熔断、牌价是否可用), 成绩取自选路指标的进程内滑动平均;"+
+					"后者重启后清零, 故无样本时 samples=0 且 metrics_source=none, 界面须显示占位而不当成 100% 成功。"+adminNewLine+
+					"不返回上游渠道真名、凭据名与渠道归属, 也不返回供货价: 暴露面只比分组页的候选列表更小。"+adminNewLine+
+					"筛选与排序在服务端完成, 前端不重排; 每个排序维度只有唯一方向(价格升、成功率降、延迟升、名称升), 故无 order 参数。",
+				"", adminItem("广场挂牌表", "MarketCatalog"), false,
+				query("brand", "品牌键, 可重复或逗号分隔表示多选(并集); 空表示不限。取值来自响应的 brands 字段", "string", false, nil),
+				query("q", "模型名称关键词, 大小写不敏感子串", "string", false, nil),
+				query("kind", "形态筛选: text|image|video, 命中任一渠道行的形态即算匹配", "string", false, gin.H{"enum": []string{"text", "image", "video"}}),
+				query("only_available", "只要至少一条可用渠道; 置真时不可用的渠道行被裁掉, 一行不剩的模型整条不列", "boolean", false, nil),
+				query("sort", "排序维度; 省略按名称", "string", false, gin.H{"enum": []string{"price", "success", "latency", "name"}, "default": "name"}),
+			),
+		},
+
 		// ---------------- API Key ----------------
 		"/api/v1/apikey/list": gin.H{
 			"get": adminPath("apikey", "API Key 列表",

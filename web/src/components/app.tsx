@@ -21,6 +21,7 @@ import { pageImports } from '@/lib/page-preload';
 
 // 页面和顶栏操作共用 pageImports 中的懒加载模块。
 const Home = lazy(() => pageImports.home().then((module) => ({ default: module.Home })));
+const Market = lazy(() => pageImports.market().then((module) => ({ default: module.Market })));
 const Channel = lazy(() => pageImports.channel().then((module) => ({ default: module.Channel })));
 const Group = lazy(() => pageImports.group().then((module) => ({ default: module.Group })));
 const Model = lazy(() => pageImports.model().then((module) => ({ default: module.Model })));
@@ -37,6 +38,7 @@ const Tickets = lazy(() => pageImports.tickets().then((module) => ({ default: mo
 const Analytics = lazy(() => pageImports.analytics().then((module) => ({ default: module.AnalyticsPage })));
 const Setting = lazy(() => pageImports.setting().then((module) => ({ default: module.Setting })));
 const HomeActions = lazy(() => pageImports.home().then((module) => ({ default: module.HomeActions })));
+const MarketActions = lazy(() => pageImports.market().then((module) => ({ default: module.MarketActions })));
 const ChannelActions = lazy(() => pageImports.channel().then((module) => ({ default: module.ChannelActions })));
 const GroupActions = lazy(() => pageImports.group().then((module) => ({ default: module.GroupActions })));
 const ModelActions = lazy(() => pageImports.model().then((module) => ({ default: module.ModelActions })));
@@ -151,6 +153,7 @@ export function AppContainer() {
             actions={
                 <Suspense fallback={null}>
                     {visibleItem === 'home' && <HomeActions />}
+                    {visibleItem === 'market' && <MarketActions />}
                     {visibleItem === 'channel' && <ChannelActions />}
                     {visibleItem === 'group' && <GroupActions />}
                     {visibleItem === 'model' && <ModelActions />}
@@ -182,6 +185,7 @@ export function AppContainer() {
                             {/* 页面级错误边界: 单页渲染异常只废掉内容区, 导航与外壳仍然可用。 */}
                             <ErrorBoundary resetKey={visibleItem}>
                                 {visibleItem === 'home' && <Home />}
+                                {visibleItem === 'market' && <Market />}
                                 {visibleItem === 'ops' && <Ops />}
                                 {visibleItem === 'share' && <Share />}
                                 {visibleItem === 'wallet' && <Wallet />}
