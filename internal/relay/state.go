@@ -821,7 +821,7 @@ func mediaImageCount(body string) int64 {
 }
 
 // usageBuckets 把统一用量拆成读/写/缓存读/缓存写四个计费桶。
-// 输入总量含缓存命中部分, 未命中缓存的输入才按"读"计价; 口径与 usageMetrics 一致。
+// 输入总量含缓存命中部分, 未命中缓存的输入才按"读"计价; 费用口径与 usageMetrics 的计价一致。
 func usageBuckets(usage *llm.Usage) (read, output, cacheRead, cacheWrite int64) {
 	if usage == nil {
 		return 0, 0, 0, 0
@@ -838,6 +838,12 @@ func usageBuckets(usage *llm.Usage) (read, output, cacheRead, cacheWrite int64) 
 // usageMetrics 将统一用量按给定单价转换为 Token 与费用统计; 无用量时对应费用为零。
 // 单价由调用方决定: 请求级统计传用户价(渠道模型发布价), 渠道侧统计传供货价;
 // 不再查全局模型价, 保证所有费用口径都能与计费对上。
+//
+// 词元口径(与费用口径刻意不同): InputToken 记毛输入(prompt_tokens, 含缓存读/写),
+// OutputToken 记输出, 两者之和即上游账单的 total_tokens。统计结构只有输入/输出两个
+// 词元桶, 装不下 billing_records 里单独成桶的缓存读写; 若输入按计费的净"读"桶累计,
+// 首页"总词元"会大量漏记缓存命中的请求, 看起来"只统计了输入的一部分"。费用仍按
+// 净读/缓存读/缓存写/输出四桶计价, 与 settleBillingLocked 完全同口径。
 func usageMetrics(price model.LLMPrice, usage *llm.Usage) model.StatsMetrics {
 	if usage == nil {
 		return model.StatsMetrics{}
@@ -848,9 +854,10 @@ func usageMetrics(price model.LLMPrice, usage *llm.Usage) model.StatsMetrics {
 		cachedTokens = usage.PromptTokensDetails.CachedTokens
 		writeCachedTokens = usage.PromptTokensDetails.WriteCachedTokens
 	}
-	inputTokens := max(int64(0), usage.PromptTokens-cachedTokens-writeCachedTokens)
-	metrics.InputToken = inputTokens // 与 billing/usageBuckets 同口径: 只记净输入"读"桶, 不包含缓存命中部分。
-	metrics.InputCost = (float64(inputTokens)*price.Input + float64(cachedTokens)*price.CacheRead + float64(writeCachedTokens)*price.CacheWrite) / 1_000_000
+	// 统计展示用毛输入; 计费用净"读"桶(毛输入扣掉缓存读写)。
+	metrics.InputToken = max(int64(0), usage.PromptTokens)
+	netInputTokens := max(int64(0), usage.PromptTokens-cachedTokens-writeCachedTokens)
+	metrics.InputCost = (float64(netInputTokens)*price.Input + float64(cachedTokens)*price.CacheRead + float64(writeCachedTokens)*price.CacheWrite) / 1_000_000
 	metrics.OutputCost = float64(usage.CompletionTokens) * price.Output / 1_000_000
 	return metrics
 }

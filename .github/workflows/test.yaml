@@ -1,0 +1,66 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOFLAGS: -p=2
+
+jobs:
+  go-test:
+    name: Go tests (shard ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Vet
+        if: matrix.shard == 0
+        run: go vet ./internal/...
+      - name: Test shard
+        env:
+          SHARDS: 4
+          SHARD_INDEX: ${{ matrix.shard }}
+        run: scripts/test-go.sh
+
+  web-test:
+    name: Web typecheck and tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 'latest'
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: '11.10.0'
+          cache: true
+          cache_dependency_path: web/pnpm-lock.yaml
+      - name: Install dependencies
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        working-directory: web
+        run: pnpm exec tsc --noEmit
+      - name: Test
+        working-directory: web
+        run: pnpm exec vitest run

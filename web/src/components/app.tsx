@@ -5,12 +5,9 @@ import { useAuth } from '@/api/user';
 import {
     apiKeyDashboardStatsQueryOptions,
     apiKeyListQueryOptions,
-    channelStatsQueryOptions,
     groupListQueryOptions,
     modelListQueryOptions,
-    statsDailyQueryOptions,
-    statsHourlyQueryOptions,
-    statsTotalQueryOptions,
+    statsHomeQueryOptions,
 } from '@/api/queries';
 import { userManageListQueryOptions } from '@/api/usermanage';
 import { AppShell } from '@/components/app-shell';
@@ -101,11 +98,8 @@ export function AppContainer() {
             : [
                 queryClient.fetchQuery(apiKeyListQueryOptions),
                 queryClient.fetchQuery(groupListQueryOptions),
-                queryClient.fetchQuery(statsDailyQueryOptions),
-                queryClient.fetchQuery(statsHourlyQueryOptions),
-                queryClient.fetchQuery(statsTotalQueryOptions),
-                // 渠道统计只对有渠道视图的角色开放; 用户端接口拒绝, 不预取以免无谓报错。
-                ...(role !== 'user' ? [queryClient.fetchQuery(channelStatsQueryOptions)] : []),
+                // 首页所需的统计由聚合适配器一条取回; 渠道配置与其余页面各自按需加载。
+                queryClient.fetchQuery(statsHomeQueryOptions),
                 // 全局模型价表与用户管理属管理后台数据, 仅管理员预取。
                 ...(role === 'admin'
                     ? [queryClient.fetchQuery(modelListQueryOptions), queryClient.fetchQuery(userManageListQueryOptions)]

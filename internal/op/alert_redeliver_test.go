@@ -3,7 +3,6 @@ package op
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,9 +15,7 @@ import (
 // alertTestEnv 建独立库, 返回 context 与清理函数。
 func alertTestEnv(t *testing.T) context.Context {
 	t.Helper()
-	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "alert.db"), false); err != nil {
-		t.Fatalf("init db: %v", err)
-	}
+	opTestDBSetup(t, "alert.db")
 	// 播种默认设置: 补发窗口从设置表读, 不播种时把窗口改成 0 的用例写不进去
 	// (SettingSetString 报 setting not found), 窗口关闭这条路径就测不到。
 	for _, seed := range model.DefaultSettings() {

@@ -2,7 +2,7 @@ package op
 
 import (
 	"context"
-	"path/filepath"
+	"math"
 	"testing"
 	"time"
 
@@ -13,9 +13,7 @@ import (
 // withdrawalTestSetup 初始化隔离库: 建一个带收益池的渠道商与一个普通用户。
 func withdrawalTestSetup(t *testing.T, username string, revenue float64) (model.User, model.User) {
 	t.Helper()
-	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "withdraw.db"), false); err != nil {
-		t.Fatalf("init db: %v", err)
-	}
+	opTestDBSetup(t, "withdraw.db")
 	for key, value := range map[model.SettingKey]string{
 		model.SettingKeyRechargeRate:               "7.0",
 		model.SettingKeyWithdrawalMinAmount:        "50",
@@ -46,6 +44,7 @@ func withdrawalSpec(userID uint, role model.Role, amount float64) WithdrawSpec {
 	return WithdrawSpec{
 		UserID: userID, Role: role, Amount: amount,
 		Method: model.WithdrawMethodAlipay, AccountName: "张三", AccountNo: "6222021234567890",
+		PayoutCurrency: "CNY", // 默认存量口径; 显式传 USD 的行为在专门用例覆盖。
 	}
 }
 
@@ -62,6 +61,9 @@ func TestWithdrawApplyAndFreeze(t *testing.T) {
 	if order.Rate != 7 || order.ActualCents != 69300 {
 		t.Fatalf("rate=%v cents=%d, want 7 and 69300", order.Rate, order.ActualCents)
 	}
+	if order.Currency != "CNY" || order.RateDay != "" || order.RateSource != "static" || order.ActualCurrency != "" {
+		t.Fatalf("currency=%q day=%q source=%q actual=%q, want CNY/empty/static/empty", order.Currency, order.RateDay, order.RateSource, order.ActualCurrency)
+	}
 	summary, err := WithdrawSummaryGet(context.Background(), reseller.ID, model.RoleReseller)
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +74,7 @@ func TestWithdrawApplyAndFreeze(t *testing.T) {
 	if err := WithdrawReview(context.Background(), order.ID, true, "ok", 1, "admin"); err != nil {
 		t.Fatalf("review: %v", err)
 	}
-	if err := WithdrawMarkPaid(context.Background(), order.ID, "TX001", "admin"); err != nil {
+	if err := WithdrawMarkPaid(context.Background(), order.ID, "TX001", "", "admin"); err != nil {
 		t.Fatalf("mark paid: %v", err)
 	}
 	summary, _ = WithdrawSummaryGet(context.Background(), reseller.ID, model.RoleReseller)
@@ -157,7 +159,7 @@ func TestWithdrawRollbackRestoresPool(t *testing.T) {
 	if err := WithdrawReview(context.Background(), order.ID, true, "", 1, "admin"); err != nil {
 		t.Fatal(err)
 	}
-	if err := WithdrawMarkPaid(context.Background(), order.ID, "TX001", "admin"); err != nil {
+	if err := WithdrawMarkPaid(context.Background(), order.ID, "TX001", "", "admin"); err != nil {
 		t.Fatal(err)
 	}
 	if err := WithdrawRollback(context.Background(), order.ID, "admin"); err != nil {
@@ -321,5 +323,50 @@ func TestWithdrawMaskAccount(t *testing.T) {
 	}
 	if got := model.MaskAccount("1234"); got != "1234" {
 		t.Fatalf("short masked = %s", got)
+	}
+}
+
+// TestWithdrawApplyPersistsRateProvenance 提现单把汇率依据一并落库, 旧行为(CNY 静态价)不变。
+func TestWithdrawApplyPersistsRateProvenance(t *testing.T) {
+	reseller, _ := withdrawalTestSetup(t, "provenance", 100)
+	order, err := WithdrawApply(context.Background(), withdrawalSpec(reseller.ID, model.RoleReseller, 60))
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if order.Currency != "CNY" || order.Rate != 7 || order.RateDay != "" || order.RateSource != "static" {
+		t.Fatalf("currency=%q rate=%v day=%q source=%q, want CNY/7/empty/static", order.Currency, order.Rate, order.RateDay, order.RateSource)
+	}
+}
+
+// TestWithdrawApplyPayoutCurrencySnapshot 非默认到账币种按 FX 快照定格; 非法币种拒绝。
+func TestWithdrawApplyPayoutCurrencySnapshot(t *testing.T) {
+	// 与 withdrawalTestSetup 共用同一个测试库: fxRateTestDB 会另开库把用户行隔离丢掉。
+	reseller, _ := withdrawalTestSetup(t, "payout", 100)
+	FxRateCacheReset() // 清进程内快照, 让牌价读取走本测试库
+	day := time.Now().Format("20060102")
+	if err := db.GetDB().Create(&model.FxRate{From: "USD", To: "JPY", Day: day, Rate: 150, Source: "test"}).Error; err != nil {
+		t.Fatalf("seed fx: %v", err)
+	}
+	spec := withdrawalSpec(reseller.ID, model.RoleReseller, 60)
+	spec.PayoutCurrency = " jpy "
+	order, err := WithdrawApply(context.Background(), spec)
+	if err != nil {
+		t.Fatalf("apply jpy: %v", err)
+	}
+	if order.Currency != "JPY" || order.Rate != 150 || order.ActualCents != int64(math.Round(order.Actual*150*100)) {
+		t.Fatalf("currency=%q rate=%v cents=%v actual=%v, want JPY snapshot", order.Currency, order.Rate, order.ActualCents, order.Actual)
+	}
+	if order.RateDay != day || order.RateSource == "" || order.RateID == nil {
+		t.Fatalf("day=%q source=%q id=%v, want snapshot provenance pinned", order.RateDay, order.RateSource, order.RateID)
+	}
+	// RateID 必须精确指回当日 JPY 牌价行; source 是"最近一次成功刷新源", 不必等于行 source。
+	var seededRow model.FxRate
+	if err := db.GetDB().First(&seededRow, *order.RateID).Error; err != nil || seededRow.To != "JPY" || seededRow.Day != day {
+		t.Fatalf("rate id %v -> row(to=%s day=%s) err=%v, want seeded JPY row", *order.RateID, seededRow.To, seededRow.Day, err)
+	}
+	bad := withdrawalSpec(reseller.ID, model.RoleReseller, 60)
+	bad.PayoutCurrency = "BRL"
+	if _, err := WithdrawApply(context.Background(), bad); err == nil {
+		t.Fatal("unsupported payout currency must be rejected")
 	}
 }

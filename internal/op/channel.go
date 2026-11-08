@@ -606,17 +606,26 @@ func ChannelGrantCandidates(scope model.Scope) []model.ChannelGrantCandidate {
 		if !channel.Shared || channel.ReviewStatus != model.ChannelReviewApproved || !channelModel.Listed {
 			continue
 		}
+		// 多币种: 候选与分组成员同口径, 一律按 FxRateConvert 折算成账面币种 USD 再上浮,
+		// 使分组页看到的价格与实际选路/预扣的价格是同一个数, 不会出现"候选显示便宜、选中后按原币扣"。
+		// 牌价不可用时保守排除: 价格清零 + Available=false + FxMissing, 界面仍列出以便排查缺价。
+		supplyPrice, mediaSupply, priceCurrency, fxOK := ledgerModelPrices(context.Background(), channelModel.SupplyPrice, channelModel.MediaSupply, channelModel.PriceCurrency)
 		candidate := model.ChannelGrantCandidate{
-			ID:          grant.ID,
-			ChannelID:   channel.ID,
-			ChannelName: channel.Name,
-			ModelName:   channelModel.Name,
-			KeyName:     channelKey.Name,
-			Protocols:   grant.Protocols,
-			Available:   channel.Enabled && !isCircuitBroken(channel.DisabledUntil) && channelKey.Enabled && !isCircuitBroken(channelKey.DisabledUntil) && !isCircuitBroken(channelModel.DisabledUntil),
-			Listed:      channelModel.Listed,
-			SupplyPrice: channelModel.SupplyPrice,
-			UserPrice:   channelModel.SupplyPrice.Scale(ChannelMarkupFor(channel.ID)),
+			ID:            grant.ID,
+			ChannelID:     channel.ID,
+			ChannelName:   channel.Name,
+			ModelName:     channelModel.Name,
+			KeyName:       channelKey.Name,
+			Protocols:     grant.Protocols,
+			Available:     fxOK && channel.Enabled && !isCircuitBroken(channel.DisabledUntil) && channelKey.Enabled && !isCircuitBroken(channelKey.DisabledUntil) && !isCircuitBroken(channelModel.DisabledUntil),
+			Listed:        channelModel.Listed,
+			SupplyPrice:   supplyPrice,
+			UserPrice:     supplyPrice.Scale(ChannelMarkupFor(channel.ID)),
+			MediaSupply:   mediaSupply,
+			UserMedia:     mediaSupply.Scale(ChannelMarkupFor(channel.ID)),
+			Kind:          channelModel.Kind,
+			PriceCurrency: priceCurrency,
+			FxMissing:     !fxOK,
 		}
 		// 展示名定稿: 已发布渠道一律以发布唯一编码示人(含归属者与管理员), 上游名称不出分组管理;
 		// 未发布渠道只有归属者与管理员可见, 显示真名。凭据名仍按归属脱敏。

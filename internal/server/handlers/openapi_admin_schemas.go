@@ -10,6 +10,34 @@ import (
 // 字段说明取自源码注释的要点(单位、口径、0 值的含义), 这些正是文档比读源码更值钱的地方。
 func openAPIAdminSchemas() gin.H {
 	return gin.H{
+		// ---------- 汇率 ----------
+		"FxRate": object(gin.H{
+			"from":       fieldString("基准币种, 恒为账面币种 USD"),
+			"to":         fieldString("报价币种"),
+			"day":        fieldString("采集日 YYYYMMDD"),
+			"rate":       fieldNumber("number", "1 单位 USD 折多少报价币种"),
+			"source":     fieldString("牌价来源标识"),
+			"created_at": gin.H{"type": "string", "format": "date-time", "description": "落库时间"},
+		}, "from", "to", "day", "rate"),
+
+		"FxRevaluation": object(gin.H{
+			"month":          fieldString("月份 YYYY-MM"),
+			"fx_day_summary": object(gin.H{"count": fieldNumber("integer", "参与重估账单数"), "user_cost": fieldNumber("number", "账单原始快照用户支出(USD)"), "owner_revenue": fieldNumber("number", "账单原始快照供货收入(USD)")}, "count"),
+			"revalued":       object(gin.H{"user_cost": fieldNumber("number", "月末牌价重估用户支出"), "owner_revenue": fieldNumber("number", "月末牌价重估供货收入")}, "user_cost"),
+			"delta":          object(gin.H{"user_cost": fieldNumber("number", "重估值减账单快照值"), "owner_revenue": fieldNumber("number", "重估值减账单快照值")}, "user_cost"),
+			"excluded":       object(gin.H{"count": fieldNumber("integer", "fx_day=unavailable 或 USD 原生行, 不参与重估")}, "count"),
+		}, "month", "fx_day_summary", "revalued", "delta", "excluded"),
+		"BatchWithdrawalReview": object(gin.H{"ids": gin.H{"type": "array", "items": gin.H{"type": "integer", "format": "uint32"}}, "approve": gin.H{"type": "boolean"}, "note": fieldString("审核备注")}, "ids", "approve"),
+		"BatchWithdrawalPaid":   object(gin.H{"ids": gin.H{"type": "array", "items": gin.H{"type": "integer", "format": "uint32"}}, "paid_ref": fieldString("打款凭证"), "actual_currency": fieldString("可选实际打款币种")}, "ids", "paid_ref"),
+		"FxReconciliationBucket": object(gin.H{
+			"key":           fieldString("折算状态: ok=正常, stale=陈旧牌价, missing=采集缺失(fx_day=unavailable), usd_native=USD 原生未折算"),
+			"count":         fieldNumber("integer", "该状态计费记录笔数"),
+			"count_pct":     fieldNumber("number", "笔数占比(百分数, 两位小数)"),
+			"user_cost":     fieldNumber("number", "该状态用户支出合计(USD)"),
+			"owner_revenue": fieldNumber("number", "该状态供货收入合计(USD)"),
+			"amount_pct":    fieldNumber("number", "按用户支出金额的占比(百分数)"),
+		}, "key", "count"),
+
 		// ---------- 通用 ----------
 		"AdminEnvelopeError": object(gin.H{
 			"code":    fieldNumber("integer", "与 HTTP 状态码同值的业务码"),
@@ -459,7 +487,7 @@ func openAPIAdminSchemas() gin.H {
 
 		// ---------- 统计 ----------
 		"StatsMetrics": object(gin.H{
-			"input_token":     fieldNumber("integer", "累计输入 token"),
+			"input_token":     fieldNumber("integer", "累计输入 token(毛输入, 含缓存读/写); 总 token = 输入 + 输出"),
 			"output_token":    fieldNumber("integer", "累计输出 token"),
 			"input_cost":      fieldNumber("number", "累计输入成本"),
 			"output_cost":     fieldNumber("number", "累计输出成本"),
@@ -482,6 +510,53 @@ func openAPIAdminSchemas() gin.H {
 		"StatsAPIKey": withStatsFlatten(gin.H{
 			"api_key_id": fieldNumber("integer", "API Key 主键"),
 		}),
+
+		// 首页聚合响应: total/daily/hourly 与上列定义完全同形, 直接复用;
+		// 榜单另给一套精简结构, 只露排名与展示消费的五个合计项, 不含任何渠道配置。
+		"StatsHome": object(gin.H{
+			"total": refWithDesc("StatsTotal", "累计统计, 与 /api/v1/stats/total 完全同形"),
+			"daily": refWithDesc("StatsHomeDaily", "每日统计, 与 /api/v1/stats/daily 完全同形"),
+			"hourly": gin.H{"type": "array", "items": ref("StatsHourly"),
+				"description": "当日逐小时统计, 与 /api/v1/stats/hourly 完全同形"},
+			"channels": gin.H{"type": "array", "items": ref("StatsHomeChannel"),
+				"description": "排行榜数据; 普通用户无渠道归属, 恒为空数组"},
+		}, "total", "daily", "hourly", "channels"),
+
+		"StatsHomeDaily": object(gin.H{
+			"max_request_count": fieldNumber("integer", "最近 54 周每日请求量的最大值, 供前端定出图表纵轴上界"),
+			"items":             gin.H{"type": "array", "items": ref("StatsDaily"), "description": "每日原始统计, 按日期升序"},
+		}, "max_request_count", "items"),
+
+		"StatsHomeRankMetrics": object(gin.H{
+			"total_cost":      fieldNumber("number", "合计成本 = 输入成本 + 输出成本"),
+			"total_token":     fieldNumber("integer", "合计 token = 输入 token + 输出 token"),
+			"request_count":   fieldNumber("integer", "合计请求数 = 成功 + 失败"),
+			"request_success": fieldNumber("integer", "成功请求数"),
+			"request_failed":  fieldNumber("integer", "失败请求数"),
+		}, "total_cost", "total_token", "request_count", "request_success", "request_failed"),
+
+		"StatsHomeChannel": object(gin.H{
+			"id":              fieldNumber("integer", "渠道主键"),
+			"name":            fieldString("展示名: 已发布渠道为 #发布编码, 否则为渠道真名"),
+			"channelName":     fieldString("渠道真名; 非归属者的榜单不给真名, 该字段为空"),
+			"total_cost":      fieldNumber("number", "合计成本, 口径同 StatsHomeRankMetrics"),
+			"total_token":     fieldNumber("integer", "合计 token, 口径同上"),
+			"request_count":   fieldNumber("integer", "合计请求数, 口径同上"),
+			"request_success": fieldNumber("integer", "成功请求数"),
+			"request_failed":  fieldNumber("integer", "失败请求数"),
+			"models":          gin.H{"type": "array", "items": ref("StatsHomeModel"), "description": "该渠道各模型的精简统计, 恒为数组"},
+		}, "id", "name", "channelName", "total_cost", "total_token", "request_count", "request_success", "request_failed", "models"),
+
+		"StatsHomeModel": object(gin.H{
+			"id":              fieldNumber("integer", "渠道模型主键"),
+			"name":            fieldString("模型名; 同一模型可能出现在多个渠道下, 前端按名称聚合"),
+			"channelName":     fieldString("所属渠道的展示名"),
+			"total_cost":      fieldNumber("number", "合计成本, 口径同 StatsHomeRankMetrics"),
+			"total_token":     fieldNumber("integer", "合计 token, 口径同上"),
+			"request_count":   fieldNumber("integer", "合计请求数, 口径同上"),
+			"request_success": fieldNumber("integer", "成功请求数"),
+			"request_failed":  fieldNumber("integer", "失败请求数"),
+		}, "id", "name", "channelName", "total_cost", "total_token", "request_count", "request_success", "request_failed"),
 
 		"StatsChannelDaily": withStatsFlatten(gin.H{
 			"channel_id": fieldNumber("integer", ""),
@@ -855,6 +930,21 @@ func openAPIAdminSchemas() gin.H {
 			"id": fieldNumber("integer", "待删除的策略 ID, 必须大于 0"),
 		}, "id"),
 
+		// MetricsSnapshot 与 op.MetricsTotals 的 JSON 形状一致, 只在最外层多了 generated_at;
+		// 字段口径与 /metrics 的 Prometheus 文本逐项对应(见 internal/op/metrics.go)。
+		"MetricsSnapshot": object(gin.H{
+			"generated_at":       datetime("服务端组装快照的时刻(RFC3339, UTC); 前端只展示最后刷新时间, 权威时间仍以本地接收为准"),
+			"requests_by_status": gin.H{"type": "object", "additionalProperties": gin.H{"type": "integer"}, "description": "按 relay_requests.status 分组的请求数; 键是终态(success / failed / canceled), 不存在的状态不出现在结果里"},
+			"input_tokens":       fieldNumber("integer", "累计输入 token(毛输入, 含缓存读/写)"),
+			"output_tokens":      fieldNumber("integer", "累计输出 token"),
+			"cost":               fieldNumber("number", "累计用户侧计费成本(USD, 含加价)"),
+			"users":              fieldNumber("integer", "注册用户数"),
+			"balance":            fieldNumber("number", "全部用户可用余额合计(USD)"),
+			"channels":           fieldNumber("integer", "渠道总数"),
+			"channels_enabled":   fieldNumber("integer", "其中已启用的渠道数"),
+			"alerts_24h":         fieldNumber("integer", "近 24 小时产生的告警条数"),
+		}, "requests_by_status", "input_tokens", "output_tokens", "cost", "users", "balance", "channels", "channels_enabled", "alerts_24h"),
+
 		"MetricsResetRequest": object(gin.H{
 			"channel_model_id": fieldNumber("integer", "渠道模型 ID; 与 group_id+item_id 二选一, 清该渠道模型下全部成员观测"),
 			"group_id":         fieldNumber("integer", "分组 ID; 与 item_id 成对使用, 只清单个成员观测"),
@@ -1024,7 +1114,7 @@ func channelConfigProperties() gin.H {
 // 其余靠引用同一定义即可, 这里逐处给一遍以免消费方漏读单位。
 func statsMetricsProperties() gin.H {
 	return gin.H{
-		"input_token":     fieldNumber("integer", "累计输入 token"),
+		"input_token":     fieldNumber("integer", "累计输入 token(毛输入, 含缓存读/写); 总 token = 输入 + 输出"),
 		"output_token":    fieldNumber("integer", "累计输出 token"),
 		"input_cost":      fieldNumber("number", "累计输入成本"),
 		"output_cost":     fieldNumber("number", "累计输出成本"),

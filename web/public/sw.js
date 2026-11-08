@@ -1,5 +1,8 @@
-// 缓存策略或预缓存结构变化时递增版本，以便激活阶段清理旧缓存。
-const CACHE_VERSION = 'v4';
+// 缓存版本随发版自动变化: 注册地址由 serviceWorkerURL() 拼上 ?v=<应用版本>,
+// 这里读回它, 用同一串版本号构成缓存名。这样不必每次发版手工改这个文件 ——
+// 手工维护的常量一旦忘记递增, 旧的应用壳缓存就会跨版本存活, 用户看到的是上一版界面。
+// 读不到版本时(例如有人直接用不带查询串的地址注册)回退到一个显式标记。
+const CACHE_VERSION = new URL(self.location.href).searchParams.get('v') || 'v1';
 const BASE_PATH = new URL(self.registration.scope).pathname; // 当前应用所在目录，保留末尾斜杠。
 const CACHE_PREFIX = `switchyard-${encodeURIComponent(BASE_PATH)}-`; // 按应用目录隔离缓存及其清理范围。
 const CACHE_NAMES = {

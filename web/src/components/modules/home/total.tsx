@@ -11,12 +11,14 @@ import {
     FastForward
 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
-import { useStatsTotal } from '@/api/stats';
+import { useStatsHome } from '@/api/stats';
 import { AnimatedNumber } from '@/components/common/AnimatedNumber';
 
 // Total 展示累计的请求, 总量, 输入和输出四组指标卡片。
 export function Total() {
-    const { data: stats } = useStatsTotal();
+    // 首页所有区块共用同一条聚合查询, React Query 按 queryKey 去重, 首屏只发一次请求。
+    const { data } = useStatsHome();
+    const stats = data?.total;
     const t = useTranslations('home.total');
 
     const cards = [

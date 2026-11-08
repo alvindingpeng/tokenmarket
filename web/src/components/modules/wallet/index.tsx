@@ -19,12 +19,18 @@ import {
 import { useWalletLedger, useWalletSummary } from '@/api/wallet';
 import { useRedeem } from '@/api/redemption';
 import { createRecharge, useRechargeOrders, useRechargeQuote, useRechargeView, type PayForm } from '@/api/recharge';
+import { cashflowFxRate, CASHFLOW_CURRENCIES, formatFxSnapshotDay, useFxRates } from '@/api/fx';
+import { formatCashflowAmount } from '@/api/currency';
 import {
     applyWithdrawal,
     cancelWithdrawal,
     useWithdrawals,
     useWithdrawSummary,
+    withdrawalPayoutOf,
+    withdrawalSnapshotOf,
+    type Withdrawal,
 } from '@/api/withdrawal';
+import { quoteSnapshotOf } from '@/api/recharge';
 import { useAuthStore } from '@/api/user';
 import { formatAmount, formatDateTime } from '@/lib/format';
 import { BalanceAlertSettings } from './BalanceAlertSettings';
@@ -64,8 +70,12 @@ function RechargeDialogContent() {
     const [provider, setProvider] = useState('');
     const [method, setMethod] = useState('');
     const [submitting, setSubmitting] = useState(false);
+    // payCurrency 支付币种(可选): 空 = 跟随渠道默认(旧行为); 用户显式选择后随报价单带给服务端,
+    // 旧服务端忽略该字段仍按金额报价, 新服务端按所选币种回快照语义 —— 两种后端都不需要改调用方。
+    const [payCurrency, setPayCurrency] = useState('');
     const amountCents = Math.round(Number(amount) * 100) || 0;
-    const quote = useRechargeQuote(amountCents);
+    const quote = useRechargeQuote(amountCents, payCurrency || undefined);
+    const fxRates = useFxRates();
     const configured = view.data?.configured ?? false;
     // 只列已配置渠道; 默认选第一个可用的(未显式选择时)。
     const channels = (view.data?.channels ?? []).filter((channel) => channel.configured);
@@ -76,10 +86,14 @@ function RechargeDialogContent() {
         : ["alipay", "wechat", "qq"];
     const showMethod = (activeChannel?.id ?? 'epay') === 'epay';
     // 非人民币渠道按汇率快照折算渠道币种面额, 下单前先看到实付。
+    // FX 快照优先(带日/来源), 服务端静态汇率兜底; 两者都缺时显示 — 而不是猜数。
     const channelCurrency = activeChannel?.currency ?? 'CNY';
-    const foreignAmount = channelCurrency.toUpperCase() === 'CNY'
-        ? null
-        : amountCents / 100 / (view.data?.rate || 7);
+    const fxSnapshot = cashflowFxRate(fxRates.data?.items, channelCurrency, view.data?.rate);
+    const foreignAmount = fxSnapshot
+        ? amountCents / 100 / fxSnapshot.rate
+        : null;
+    // 用户显式选择支付币种时, 给出该币种对 USD 的折算口径(快照优先, 静态汇率兜底)。
+    const payFx = payCurrency ? cashflowFxRate(fxRates.data?.items, payCurrency, view.data?.rate) : undefined;
 
     // handlePay 下单后自动提交收银台表单; 失败留在弹窗内透出原因。
     const handlePay = async () => {
@@ -155,6 +169,23 @@ function RechargeDialogContent() {
                             </Select>
                         </div>
                     )}
+                    <div className="space-y-2">
+                        <Label htmlFor="recharge-currency">{t('recharge.currency')}</Label>
+                        <Select value={payCurrency || 'auto'} onValueChange={(value) => setPayCurrency(value === 'auto' ? '' : value)}>
+                            <SelectTrigger id="recharge-currency" className="rounded-xl"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="auto">{t('recharge.currencyAuto')}</SelectItem>
+                                {CASHFLOW_CURRENCIES.map((code) => (
+                                    <SelectItem key={code} value={code}>{code}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        {payCurrency && payFx && (
+                            <p className="text-xs text-muted-foreground">
+                                {t('recharge.fxTip', { rate: payFx.rate, day: formatFxSnapshotDay(payFx.day) || '-', source: payFx.source })}
+                            </p>
+                        )}
+                    </div>
                     <div className="rounded-2xl border border-border bg-muted/40 px-3 py-2 text-sm">
                         <div className="flex items-center justify-between">
                             <span className="text-muted-foreground">{t('recharge.credits')}</span>
@@ -168,8 +199,23 @@ function RechargeDialogContent() {
                         ) : null}
                         <div className="flex items-center justify-between text-xs text-muted-foreground">
                             <span>{t('recharge.rate')}</span>
-                            <span className="tabular-nums">{t('recharge.rateValue', { rate: view.data?.rate ?? 7 })}</span>
+                            <span className="tabular-nums">{t('recharge.rateValue', { rate: view.data?.rate ?? 7, currency: (view.data?.currency ?? 'CNY').toUpperCase() })}</span>
                         </div>
+                        {(() => {
+                            const snapshot = quoteSnapshotOf(quote.data);
+                            return snapshot ? (
+                                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                    <span>{t('recharge.snapshot')}</span>
+                                    <span className="tabular-nums">{t('recharge.snapshotValue', { day: formatFxSnapshotDay(snapshot.day) || '-', source: snapshot.source || '-' })}</span>
+                                </div>
+                            ) : null;
+                        })()}
+                        {quote.data?.source_amount !== undefined && (
+                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                <span>{t('recharge.sourceAmount')}</span>
+                                <span className="tabular-nums">{formatAmount(quote.data.source_amount)} {(quote.data.source_currency || quote.data.credited_currency || 'CNY').toUpperCase()}</span>
+                            </div>
+                        )}
                         {foreignAmount !== null && amountCents > 0 ? (
                             <div className="flex items-center justify-between text-xs">
                                 <span className="text-muted-foreground">{t('recharge.payForeign')}</span>
@@ -217,17 +263,21 @@ function WithdrawDialogContent({ onApplied }: { onApplied: () => void }) {
     const t = useTranslations('wallet');
     const { setIsOpen } = useMorphingDialog();
     const summary = useWithdrawSummary();
+    const fxRates = useFxRates();
     const [amount, setAmount] = useState('');
+    const [payoutCurrency, setPayoutCurrency] = useState('CNY');
     const [method, setMethod] = useState('alipay');
     const [accountName, setAccountName] = useState('');
     const [accountNo, setAccountNo] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const value = Number(amount) || 0;
     const rules = summary.data;
-    // 费用预览: fee = max(最低费, 金额×费率), 打款按申请时汇率折人民币。
+    // 费用预览: fee = max(最低费, 金额×费率), 打款按申请时汇率折算为所选币种。
+    // 打款币种只影响展示口径, 申请单本身仍按收益池 USD 记账, 不破坏旧接口兼容。
     const fee = rules ? Math.min(value, Math.max(rules.fee_min, value * rules.fee_rate)) : 0;
     const actual = value - fee;
-    const actualCNY = actual * (rules?.rate ?? 0);
+    const payoutFx = cashflowFxRate(fxRates.data?.items, payoutCurrency, rules?.rate);
+    const payoutAmount = payoutFx ? actual * payoutFx.rate : undefined;
     const canSubmit = (rules?.can_apply ?? false) && value > 0 && accountName.trim() !== '' && accountNo.trim() !== '' && !submitting;
 
     // handleApply 申请提现; 失败留在弹窗透出原因(低于最低/可提不足/限额)。
@@ -235,7 +285,7 @@ function WithdrawDialogContent({ onApplied }: { onApplied: () => void }) {
         if (!canSubmit) return;
         setSubmitting(true);
         try {
-            await applyWithdrawal({ amount: value, method, account_name: accountName.trim(), account_no: accountNo.trim() });
+            await applyWithdrawal({ amount: value, method, account_name: accountName.trim(), account_no: accountNo.trim(), payout_currency: payoutCurrency });
             toast.success(t('withdraw.applied'));
             onApplied();
             setIsOpen(false);
@@ -292,6 +342,22 @@ function WithdrawDialogContent({ onApplied }: { onApplied: () => void }) {
                             <Input id="withdraw-account" className="rounded-xl" value={accountNo} onChange={(event) => setAccountNo(event.target.value)} autoComplete="off" />
                         </div>
                     </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="withdraw-currency">{t('withdraw.payoutCurrency')}</Label>
+                        <Select value={payoutCurrency} onValueChange={setPayoutCurrency}>
+                            <SelectTrigger id="withdraw-currency" className="rounded-xl"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                {(rules?.supported_currencies?.length ? rules.supported_currencies : [...CASHFLOW_CURRENCIES]).map((code) => (
+                                    <SelectItem key={code} value={code}>{code.toUpperCase()}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        {payoutFx && (
+                            <p className="text-xs text-muted-foreground">
+                                {t('withdraw.fxSnapshot', { rate: payoutFx.rate, day: formatFxSnapshotDay(payoutFx.day) || '-', source: payoutFx.source })}
+                            </p>
+                        )}
+                    </div>
                     <div className="rounded-2xl border border-border bg-muted/40 px-3 py-2 text-sm">
                         <div className="flex items-center justify-between">
                             <span className="text-muted-foreground">{t('withdraw.fee')}</span>
@@ -299,7 +365,9 @@ function WithdrawDialogContent({ onApplied }: { onApplied: () => void }) {
                         </div>
                         <div className="flex items-center justify-between">
                             <span className="text-muted-foreground">{t('withdraw.actual')}</span>
-                            <span className="tabular-nums font-medium">{formatAmount(actual)} (≈¥{formatAmount(actualCNY)})</span>
+                            <span className="tabular-nums font-medium">
+                                {formatAmount(actual)} (≈{payoutAmount === undefined ? '—' : formatAmount(payoutAmount) + ' ' + payoutCurrency})
+                            </span>
                         </div>
                     </div>
                     <div className="flex justify-end gap-2">
@@ -333,6 +401,61 @@ function WithdrawButton({ onApplied }: { onApplied: () => void }) {
                 </MorphingDialogContent>
             </MorphingDialogContainer>
         </MorphingDialog>
+    );
+}
+
+// WithdrawalRow 提现单行: 打款额优先按服务端 payout_currency/payout_amount 展示到账币种;
+// 无新字段的历史旧行按旧口径(¥ + actual_cents)显示并附 legacy 提示。
+function WithdrawalRow({ order, onInvalidated }: { order: Withdrawal; onInvalidated: () => void }) {
+    const t = useTranslations('wallet');
+    const payout = withdrawalPayoutOf(order);
+    const snapshot = withdrawalSnapshotOf(order);
+    return (
+        <tr className="border-t border-border">
+            <td className="px-4 py-3 font-mono text-xs">#{order.id}</td>
+            <td className="px-4 py-3 tabular-nums">{formatAmount(order.amount)}</td>
+            <td className="px-4 py-3 tabular-nums">{formatAmount(order.fee)}</td>
+            <td className="px-4 py-3 tabular-nums font-medium">
+                {payout
+                    ? formatCashflowAmount(payout.amount, payout.currency) + ' ' + payout.currency.toUpperCase()
+                    : '¥' + formatCashflowAmount(order.actual_cents / 100, 'CNY')}
+                {(() => {
+                    const actual = (order.actual_currency ?? '').trim().toUpperCase();
+                    const requested = (order.payout_currency ?? snapshot?.currency ?? 'CNY').trim().toUpperCase();
+                    return actual && actual !== requested ? (
+                        <div className="text-xs text-muted-foreground">
+                            {t('withdraw.actualCurrency', { requested, actual })}
+                        </div>
+                    ) : null;
+                })()}
+                {payout && snapshot && (
+                    <span className="ml-1 text-xs text-muted-foreground">
+                        ({t('withdraw.snapshotShort', { day: formatFxSnapshotDay(snapshot.day) || '-', source: snapshot.source || '-' })})
+                    </span>
+                )}
+                {!payout && (
+                    <span className="ml-1 text-xs text-muted-foreground">({t('withdraw.legacy')})</span>
+                )}
+            </td>
+            <td className="px-4 py-3">{t('wstatus.' + order.status)}</td>
+            <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatDateTime(order.applied_at, '-')}</td>
+            <td className="px-4 py-3">
+                {order.status === 'pending' ? (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 rounded-xl"
+                        onClick={() => cancelWithdrawal(order.id).then(() => { toast.success(t('withdraw.cancelled')); onInvalidated(); }).catch((error) => toast.error(t('withdraw.failed'), { description: (error as Error).message }))}
+                    >
+                        {t('withdraw.cancelOrder')}
+                    </Button>
+                ) : order.status === 'paid' ? (
+                    <span className="text-xs text-muted-foreground">{order.paid_ref}</span>
+                ) : (
+                    <span className="text-xs text-muted-foreground">{order.review_note || '-'}</span>
+                )}
+            </td>
+        </tr>
     );
 }
 
@@ -524,7 +647,14 @@ export default function Wallet() {
                                     {orderItems.map((order) => (
                                         <tr key={order.id} className="border-t border-border">
                                             <td className="px-4 py-3 font-mono text-xs">{order.order_no}</td>
-                                            <td className="px-4 py-3 tabular-nums">{formatAmount(order.amount_cents / 100)} {order.currency}</td>
+                                            <td className="px-4 py-3 tabular-nums">
+                                                {formatAmount(order.amount_cents / 100)} {order.currency}
+                                                {order.snapshot_day && (
+                                                    <div className="text-xs text-muted-foreground">
+                                                        {t('orders.snapshotShort', { day: formatFxSnapshotDay(order.snapshot_day) || '-', source: order.rate_source || '-' })}
+                                                    </div>
+                                                )}
+                                            </td>
                                             <td className="px-4 py-3 tabular-nums">{formatAmount(order.credits + order.bonus)}</td>
                                             <td className="px-4 py-3">{t('status.' + order.status)}</td>
                                             <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatDateTime(order.paid_at ?? order.created_at, '-')}</td>
@@ -557,30 +687,7 @@ export default function Wallet() {
                                 </tr></thead>
                                 <tbody>
                                     {withdrawItems.map((order) => (
-                                        <tr key={order.id} className="border-t border-border">
-                                            <td className="px-4 py-3 font-mono text-xs">#{order.id}</td>
-                                            <td className="px-4 py-3 tabular-nums">{formatAmount(order.amount)}</td>
-                                            <td className="px-4 py-3 tabular-nums">{formatAmount(order.fee)}</td>
-                                            <td className="px-4 py-3 tabular-nums font-medium">¥{formatAmount(order.actual_cents / 100)}</td>
-                                            <td className="px-4 py-3">{t('wstatus.' + order.status)}</td>
-                                            <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatDateTime(order.applied_at, '-')}</td>
-                                            <td className="px-4 py-3">
-                                                {order.status === 'pending' ? (
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className="h-8 rounded-xl"
-                                                        onClick={() => cancelWithdrawal(order.id).then(() => { toast.success(t('withdraw.cancelled')); invalidateWithdraw(); }).catch((error) => toast.error(t('withdraw.failed'), { description: (error as Error).message }))}
-                                                    >
-                                                        {t('withdraw.cancelOrder')}
-                                                    </Button>
-                                                ) : order.status === 'paid' ? (
-                                                    <span className="text-xs text-muted-foreground">{order.paid_ref}</span>
-                                                ) : (
-                                                    <span className="text-xs text-muted-foreground">{order.review_note || '-'}</span>
-                                                )}
-                                            </td>
-                                        </tr>
+                                        <WithdrawalRow key={order.id} order={order} onInvalidated={invalidateWithdraw} />
                                     ))}
                                 </tbody>
                             </table>
@@ -591,3 +698,5 @@ export default function Wallet() {
         </div>
     );
 }
+
+

@@ -70,7 +70,9 @@ type PublicChannelModelStats struct {
 	ChannelCode    string               `json:"channel_code"`
 	ModelName      string               `json:"model_name"`
 	Kind           string               `json:"kind"`             // 媒体形态原样透传: 空串=文本, image=生图, video=生视频(契约见 docs/public-status.md §2)。
-	UserPrice      PublicLLMPrice       `json:"user_price"`       // 用户价 = 供货价 × (1 + markup_ratio), 与计费同口径。
+	PriceCurrency  string               `json:"price_currency"`   // 价格展示币种: 公开状态价格统一折算到账面币种 USD, 页面据此渲染单位。
+	FxMissing      bool                 `json:"fx_missing"`       // 报价币种牌价缺失: 价格未折算且已清零, 页面显示「暂缺」而不是错价。
+	UserPrice      PublicLLMPrice       `json:"user_price"`       // 用户价 = 折算到账面币种后 × (1 + markup_ratio), 与计费同口径。
 	OfficialPrice  *PublicLLMPrice      `json:"official_price"`   // 官方价目表价格; 表里没有该模型即 null。
 	PriceRatio     PublicPriceRatio     `json:"price_ratio"`      // 用户价 / 官方价, 分量各自可空。
 	UserMedia      PublicMediaPrice     `json:"user_media"`       // 媒体价目原样带单位输出, 不折算 token 比值。
@@ -349,14 +351,23 @@ func channelStatusLoadTokens(ctx context.Context, from, now time.Time, channelID
 // channelStatusModel 组装单个渠道模型的公开条目: 价格、指标、分桶状态一次定稿。
 func channelStatusModel(target channelStatusTarget, agg *channelStatusAgg, usage channelStatusTokenRow, markup float64, now, from time.Time) PublicChannelModelStats {
 	cm := target.model
-	userPrice := cm.UserPriceLLM(markup)
-	userMedia := cm.UserPriceMedia(markup)
+	// Public status prices use the same ledger USD conversion as routing and billing.
+	ledgerPrice, ledgerMedia, _, fxOK := ledgerModelPrices(context.Background(), cm.SupplyPrice, cm.MediaSupply, cm.PriceCurrency)
+	if !fxOK {
+		// 牌价缺失: 原币价绝不当 USD 展示(那是错价, CNY 报价会虚高约 7 倍)。
+		// 价格清零并由 FxMissing 标记, 页面显示「暂缺」, 不给出一个可信度为零的数字。
+		ledgerPrice, ledgerMedia = model.LLMPrice{}, model.MediaPrice{}
+	}
+	userPrice := ledgerPrice.Scale(markup)
+	userMedia := ledgerMedia.Scale(markup)
 
 	item := PublicChannelModelStats{
-		ChannelCode: target.channelCode,
-		ModelName:   cm.Name,
-		Kind:        string(cm.Kind), // 媒体形态原样透传: 空串=文本(见 Kind 字段注释)。
-		UserPrice:   channelStatusLLMPrice(userPrice),
+		ChannelCode:   target.channelCode,
+		ModelName:     cm.Name,
+		Kind:          string(cm.Kind),      // 媒体形态原样透传: 空串=文本(见 Kind 字段注释)。
+		PriceCurrency: model.LedgerCurrency, // 展示币种 = 账面币种: 价格已由 ledgerModelPrices 折算, 页面按此渲染单位而不是写死 $。
+		FxMissing:     !fxOK,                // 声明了非 USD 报价但牌价缺失: 价格不可信, 页面应显示「暂缺」。
+		UserPrice:     channelStatusLLMPrice(userPrice),
 		UserMedia: PublicMediaPrice{
 			PerImage:   userMedia.PerImage,
 			PerVideo:   userMedia.PerVideo,

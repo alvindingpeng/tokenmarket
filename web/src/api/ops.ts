@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { queryOptions, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from './client';
 import { POLL_SLOW } from '@/lib/polling';
 
@@ -58,6 +58,7 @@ export type ChannelAlert = {
         | 'low_balance' | 'quota_exceeded' | 'task_failed' | 'task_recovered'
         | 'update_available' | 'watchdog_alert'
         | 'route_persist_failed' | 'route_persist_recovered'
+        | 'fx_rate_refresh_failed'
         | 'test';
     reason: string;
     notified: boolean; created_at: string;
@@ -299,6 +300,38 @@ export function useRotateMetricsToken() {
         onSuccess: () => qc.invalidateQueries({ queryKey: ['ops', 'metrics-token'] }),
     });
 }
+// MetricsSnapshot 与后端 GET /api/v1/ops/metrics/snapshot 对齐, 也就是 op.MetricsTotals 的 JSON 形状
+// (外加服务端生成时间)。字段名必须逐字照抄后端: 多写或少写一个键不会报错, 只会让面板读到 undefined
+// 并把该格显示成占位符, 看上去像"库里没数据"。
+export type MetricsSnapshot = {
+    // generated_at 服务端组装快照的时刻(RFC3339 UTC)。面板展示的"最后刷新时间"用本地接收时刻,
+    // 这一格留作对时用: 客户端与服务器时钟偏差大时, 两个时间会明显对不上。
+    generated_at: string;
+    // requests_by_status 按 relay_requests.status 分组的累计请求数。
+    // 只有终态(success/failed/canceled)会出现在这里, 在途请求不在快照口径内。
+    requests_by_status: Record<string, number>;
+    input_tokens: number;
+    output_tokens: number;
+    cost: number;
+    users: number;
+    balance: number;
+    channels: number;
+    channels_enabled: number;
+    alerts_24h: number;
+};
+
+export const metricsSnapshotQueryOptions = queryOptions({
+    queryKey: ['ops', 'metrics-snapshot'] as const,
+    queryFn: () => apiRequest<MetricsSnapshot>('/api/v1/ops/metrics/snapshot'),
+    // 30 秒轮询: 累计指标变化慢, 与运维页其他只读面板同一档(POLL_SLOW)。
+    refetchInterval: POLL_SLOW,
+});
+
+// useMetricsSnapshot 只读累计指标快照, 30 秒自动刷新。
+export function useMetricsSnapshot() {
+    return useQuery(metricsSnapshotQueryOptions);
+}
+
 // AlertDeliveryStats 告警送达概览。
 // 存在的理由: 改造前"告警没发出去"在界面上完全看不见 —— 2026-11-02 有 260 条告警
 // 因 Telegram 实体解析 400 静默丢失, 管理员直到翻日志才发现。

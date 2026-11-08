@@ -55,6 +55,7 @@ export function ChannelProfitPanel({ channelId }: { channelId: number }) {
 
     return (
         <section data-share-exclude className="rounded-2xl border bg-card p-3">
+            <p className="mb-2 text-[11px] text-muted-foreground">{t('fxNote')}</p>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('title')}</h4>
                 <div className="flex flex-wrap items-center gap-1.5" data-share-exclude>

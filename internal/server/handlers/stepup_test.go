@@ -251,6 +251,10 @@ func TestStepUpProtectedRoutesThroughRealRouter(t *testing.T) {
 		{http.MethodDelete, "/api/v1/user/manage/delete/999999", ""},
 		{http.MethodPost, "/api/v1/withdrawal/review", "{}"},
 		{http.MethodPost, "/api/v1/withdrawal/mark-paid", "{}"},
+		{http.MethodPost, "/api/v1/withdrawal/batch-review", "{}"},
+		{http.MethodPost, "/api/v1/withdrawal/batch-paid", "{}"},
+		{http.MethodPost, "/api/v1/admin/withdrawal/batch-review", "{}"},
+		{http.MethodPost, "/api/v1/admin/withdrawal/batch-paid", "{}"},
 		{http.MethodPost, "/api/v1/withdrawal/rollback", "{}"},
 		{http.MethodPost, "/api/v1/setting/set", `{"key":"stepup_probe","value":"1"}`},
 		{http.MethodGet, "/api/v1/setting/export", ""},
@@ -258,6 +262,9 @@ func TestStepUpProtectedRoutesThroughRealRouter(t *testing.T) {
 		{http.MethodGet, "/api/v1/audit/export", ""},
 		{http.MethodGet, "/api/v1/log/export", ""},
 		{http.MethodGet, "/api/v1/stats/billing/records/export", ""},
+		// 资金单据导出与审计导出同一敏感级: 无 step-up 一律 428。
+		{http.MethodGet, "/api/v1/admin/recharge/export", ""},
+		{http.MethodGet, "/api/v1/admin/withdrawal/export", ""},
 		{http.MethodPost, "/api/v1/settlement/generate", `{"day":"20990101"}`},
 		{http.MethodPost, "/api/v1/ops/billing-recovery/run", "{}"},
 	}

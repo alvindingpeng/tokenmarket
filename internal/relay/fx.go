@@ -22,7 +22,8 @@ var USDIdentity = FxSnapshot{Currency: model.LedgerCurrency, Rate: 1, Day: ""}
 // fxConvertSupplyPrice 把原币供货价折算成账面币种(USD)。
 // 折算按单价逐项乘同一个汇率: 四类单价同币种, 线性折算与"折算后再计费"数学等价,
 // 但在单价上折一次, 之后所有 Cost()/Scale() 链路都无需再关心币种。
-// 牌价缺失时回退原价并把 Currency 原样带出 —— 对账凭 Currency != USD 识别未折算行。
+// 牌价缺失时清零并把 Currency 原样带出 —— 与选路/预扣一致，绝不把原币价格当 USD 使用。
+// 这样即使请求状态来自旧快照或测试直接进入结算，也不会出现按错误币种少扣费。
 func fxConvertSupplyPrice(price model.LLMPrice, currency string) (model.LLMPrice, FxSnapshot) {
 	currency = model.NormalizeCurrency(currency)
 	if currency == model.LedgerCurrency {
@@ -30,7 +31,7 @@ func fxConvertSupplyPrice(price model.LLMPrice, currency string) (model.LLMPrice
 	}
 	rate, day, err := op.FxRateLookup(context.Background(), currency, model.LedgerCurrency)
 	if err != nil {
-		return price, FxSnapshot{Currency: currency, Rate: 1, Day: "unavailable"}
+		return model.LLMPrice{}, FxSnapshot{Currency: currency, Rate: 0, Day: "unavailable"}
 	}
 	return model.LLMPrice{
 		Input:      price.Input * rate,
@@ -48,7 +49,7 @@ func fxConvertMediaPrice(price model.MediaPrice, currency string) model.MediaPri
 	}
 	rate, _, err := op.FxRateLookup(context.Background(), currency, model.LedgerCurrency)
 	if err != nil {
-		return price
+		return model.MediaPrice{}
 	}
 	converted := model.MediaPrice{PerImage: price.PerImage * rate, PerVideo: price.PerVideo * rate, PerSecond: price.PerSecond * rate}
 	if len(price.Resolution) > 0 {
@@ -64,6 +65,9 @@ func fxConvertMediaPrice(price model.MediaPrice, currency string) model.MediaPri
 func fxConvertMediaPriceWith(price model.MediaPrice, fx FxSnapshot) model.MediaPrice {
 	if fx.Currency == model.LedgerCurrency || (fx.Rate == 1 && fx.Day == "") {
 		return price
+	}
+	if fx.Day == "unavailable" || fx.Rate <= 0 {
+		return model.MediaPrice{}
 	}
 	rate := fx.Rate
 	converted := model.MediaPrice{PerImage: price.PerImage * rate, PerVideo: price.PerVideo * rate, PerSecond: price.PerSecond * rate}

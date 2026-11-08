@@ -79,21 +79,23 @@ func rechargeView(c *gin.Context) {
 	resp.Success(c, op.RechargeViewGet(c.Request.Context()))
 }
 
-// rechargeQuote 充值报价: 实付金额(分)换算入账余额与满赠。
+// rechargeQuote 充值报价: 实付金额(分)换算入账余额与满赠, 带汇率依据(day/source)。
+// currency 可选报价币种: 缺省 CNY(存量口径); 非法币种按 400 拒绝而不是静默回落。
 func rechargeQuote(c *gin.Context) {
 	var req struct {
-		AmountCents int64 `json:"amount_cents"`
+		AmountCents int64  `json:"amount_cents"`
+		Currency    string `json:"currency"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
-	credits, bonus, rate, err := op.RechargeQuote(c.Request.Context(), req.AmountCents)
+	credits, bonus, rate, day, source, _, err := op.RechargeQuoteDetail(c.Request.Context(), req.AmountCents, req.Currency)
 	if err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	resp.Success(c, gin.H{"credits": credits, "bonus": bonus, "rate": rate})
+	resp.Success(c, gin.H{"credits": credits, "bonus": bonus, "rate": rate, "quote_currency": model.NormalizeCurrency(req.Currency), "ledger_currency": model.LedgerCurrency, "rate_day": day, "rate_source": source})
 }
 
 // createRecharge 创建充值订单并返回收银台表单(前端自动提交跳转)。

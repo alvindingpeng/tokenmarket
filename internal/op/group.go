@@ -379,14 +379,24 @@ func groupSnapshot(group model.Group, scope model.Scope) model.Group {
 		item.ChannelModelID = grant.ChannelModelID
 		item.ModelName = channelModel.Name
 		item.KeyName = channelKey.Name
-		item.SupplyPrice = channelModel.SupplyPrice
-		item.UserPrice = channelModel.SupplyPrice.Scale(ChannelMarkupFor(channel.ID))
+		// 多币种: 渠道模型可按 CNY/EUR 等报价, 而分组成员价格是选路(价格优先/评分)与
+		// reserveBalance 预扣的唯一来源。这里统一折算成账面币种 USD(文本价与媒体价共用一份汇率),
+		// 之后才上浮成用户价 —— 否则一个 CNY 报价的成员会被当成比 USD 成员便宜约 7 倍,
+		// 既吃掉全部流量、又按约 1/7 的价格预扣与结算。
+		// 牌价不可用时保守排除: 原币价绝不当 USD 用(那是错价), 折成 0 又会让它免费霸榜,
+		// 因此价格清零并标记 FxMissing + Available=false, 选路跳过但界面仍列出并给出原因。
+		supplyPrice, mediaSupply, priceCurrency, fxOK := ledgerModelPrices(context.Background(), channelModel.SupplyPrice, channelModel.MediaSupply, channelModel.PriceCurrency)
+		item.PriceCurrency = priceCurrency
+		item.FxMissing = !fxOK
+		item.SupplyPrice = supplyPrice
+		item.UserPrice = supplyPrice.Scale(ChannelMarkupFor(channel.ID))
 		// 媒体定价与形态; 文本模型上这两个字段为零值, 不影响现有 JSON 形状。
-		item.MediaSupply = channelModel.MediaSupply
-		item.UserMedia = channelModel.MediaSupply.Scale(ChannelMarkupFor(channel.ID))
+		item.MediaSupply = mediaSupply
+		item.UserMedia = mediaSupply.Scale(ChannelMarkupFor(channel.ID))
 		item.Kind = channelModel.Kind
 		item.ChannelName = channel.Name
-		item.Available = channel.Enabled && !isCircuitBroken(channel.DisabledUntil) && channelKey.Enabled && !isCircuitBroken(channelKey.DisabledUntil) && !isCircuitBroken(channelModel.DisabledUntil)
+		// 牌价缺失时成员不可选路: 排除而不标记"可用"是保守口径, 保证不会用未折算的价格去预扣和结算。
+		item.Available = fxOK && channel.Enabled && !isCircuitBroken(channel.DisabledUntil) && channelKey.Enabled && !isCircuitBroken(channelKey.DisabledUntil) && !isCircuitBroken(channelModel.DisabledUntil)
 		// 展示名定稿: 已发布渠道一律显示发布唯一编码(#1001 形式), 上游名称不出分组管理; 凭据名按归属脱敏。
 		if channel.ShareCode != "" {
 			item.ChannelName = "#" + channel.ShareCode

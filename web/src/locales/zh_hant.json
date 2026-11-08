@@ -954,7 +954,8 @@
       "error": "利潤資料載入失敗",
       "retry": "重試",
       "empty": "該區間沒有已結算的計費記錄",
-      "forbidden": "僅管理員可檢視頻道利潤"
+      "forbidden": "僅管理員可檢視頻道利潤",
+      "fxNote": "金額按每筆已結算帳單記錄保存的匯率與牌價日統計；此檢視不會重新折算歷史帳單。"
     },
     "card": {
       "requestCount": "請求次數",
@@ -1257,7 +1258,10 @@
       "counts": "顯示 {shown} / {total} 個模型",
       "changed": "有 {count} 處改動待儲存",
       "zeroPriced": "{count} 個已上架模型未定價(如 {models}), 上架即按 0 計費, 請先定價",
-      "userPriceHint": "用戶價 = 供貨價 × (1 + 全域上浮比例), 用戶實際支付的單價",
+      "missingFx": "{count} 個已上架模型使用無牌價幣別(如 {models}): 結算時匯率不可用會按原幣口徑入帳, 請先換幣別或等匯率就緒",
+      "staleFx": "{count} 個已上架模型的牌價已偏舊(如 {models}): 結算仍按採集時的牌價折算, 若近期匯價波動明顯請重新核對價格",
+      "userPriceHint": "用戶價 = 供貨價按當日牌價折算成 USD 後 × (1 + 全域上浮比例), 與帳單一致; 原幣報價的輸入框仍填原幣",
+      "fxPreview": "按目前牌價(採集日 {day}) ≈ {usd} USD",
       "userPriceValue": "入 {input} / 出 {output}",
       "userPricePerImage": "{value} / 張",
       "perVideoLabel": "每條價",
@@ -1290,7 +1294,7 @@
     "currency": {
       "usdHint": "USD 即帳面幣別, 零折算",
       "convertHint": "該幣別報價; 結算時按當日牌價 {rate}(採集日 {day})折算為 USD 入帳",
-      "noRate": "暫無牌價: 匯率就緒前結算將按原價入帳(不折算)"
+      "noRate": "暫無牌價: 匯率就緒前結算將按原價入帳(不折算)", "staleRate": "牌價已超過 2 天未更新(採集日 {day}); 結算仍按此舊牌價折算, 建議聯繫管理員重新整理"
     }
   },
   "billing": {
@@ -1357,7 +1361,7 @@
       "cacheWrite": "快取寫",
       "images": "圖",
       "seconds": "秒",
-      "fxTip": "上游以 {currency} 報價; 按牌價 {rate}(採集日 {day})折算為 USD 入帳"
+      "fxTip": "上游以 {currency} 報價; 按牌價 {rate}(採集日 {day})折算為 USD 入帳", "fxDay": "牌價日 {day}", "originalAmount": "≈ {amount} {currency} (牌價日 {day})", "unconverted": "{currency} 行, 匯率採集失敗, 按原幣口徑入帳"
     },
     "status": {
       "settled": "已結算",
@@ -1784,7 +1788,11 @@
       "alerts": "告警記錄",
       "latency": "延遲歸因",
       "ratelimit": "限流 TOP",
-      "upstream": "上游對單"
+      "upstream": "上游對單",
+      "metrics": "指標觀測"
+    },
+    "fx": {
+      "description": "匯率快照與採集健康狀態。", "source": "來源", "snapshotDay": "快照日", "age": "日齡", "ageDays": "{count} 天", "stale": "已陳舊", "fresh": "正常", "refresh": "重新整理匯率", "refreshing": "重新整理中...", "refreshSuccess": "匯率已重新整理", "refreshFailed": "匯率重新整理失敗", "loading": "匯率狀態載入中...", "loadFailed": "匯率狀態載入失敗", "from": "基準貨幣", "to": "報價貨幣", "rate": "匯率", "day": "日期", "itemSource": "來源", "attempt": "最近嘗試", "lastSuccess": "最近成功", "failures": "失敗次數", "refreshSource": "刷新來源", "historyDesc": "歷史匯率快照查詢(唯讀)。變化百分比為相鄰兩天對比, 僅供參考, 不作為結算依據。", "change": "變化", "allCurrencies": "全部幣種", "startDate": "開始日期", "endDate": "結束日期", "reconDesc": "折算品質對帳: 所選時間窗內正常/陳舊/缺失牌價的折算筆數與金額佔比。", "recon_ok": "正常折算", "recon_stale": "陳舊牌價", "recon_missing": "缺失牌價", "recon_usd_native": "原生 USD(未走折算)", "reconDrill": "查看明細", "trend": "近 30 天牌價趨勢", "trendEmpty": "暫無足夠的 {currency} 快照繪製趨勢", "reconCountShare": "筆數佔比 {share}", "reconAmountShare": "金額佔比 {share}", "export.title": "訂單匯出", "export.rechargeOrders": "儲值訂單 CSV", "export.withdrawals": "提現單 CSV", "export.done": "已下載 {name}"
     },
     "latency": {
       "desc": "首字節 = 建連(DNS/建連/TLS) + 上游等待。上游等待偏高說明該換上游渠道; 建連與 TLS 偏高說明該加出口或走邊緣接入。建連列為 0 有三種情況: 復用了連接、上游用 http 明文、上游地址是 IP —— 看復用率與渠道地址區分, 不要一律讀成「很快」。只統計拿到首字節的請求。",
@@ -1925,6 +1933,7 @@
       "kindWatchdog": "外部看門狗",
       "kindRoutePersist": "路由狀態落庫失敗",
       "kindRoutePersistRecovered": "路由狀態已恢復",
+      "kindFxRefreshFailed": "匯率牌價採集連續失敗",
       "kindTest": "測試"
     },
     "settings": {
@@ -1941,6 +1950,24 @@
       "autoBackupHint": "定時 SQLite 一致性快照",
       "autoBackupKeep": "備份保留份數",
       "autoBackupInterval": "備份間隔(小時)",
+      "fxRates": "匯率",
+      "fxUpdateEnabled": "自動採集匯率",
+      "fxUpdateEnabledHint": "開啟後按固定週期自動更新 USD 基準牌價",
+      "fxUpdateInterval": "採集間隔(小時)",
+      "fxUpdateIntervalHint": "1-168 小時; 儲存後下個週期生效",
+      "fxUpdateEnabled": "自動採集匯率",
+      "fxUpdateEnabledHint": "開啟後按固定週期自動更新 USD 基準牌價",
+      "fxUpdateInterval": "採集間隔(小時)",
+      "fxUpdateIntervalHint": "1-168 小時; 儲存後下個週期生效",
+      "fxRatesHint": "目前 USD 基準快照與刷新狀態, 程序狀態重啟後重置",
+      "fxSnapshotAge": "快照年齡",
+      "fxLastAttempt": "最近嘗試",
+      "fxLastSuccess": "最近成功",
+      "fxLastFailure": "最近失敗",
+      "fxRefresh": "立即刷新",
+      "fxRefreshOk": "匯率已刷新",
+      "fxRefreshFailed": "匯率刷新失敗",
+      "fxStatusFailed": "無法載入匯率狀態",
       "healthCheck": "渠道健康探測",
       "healthCheckHint": "會向上游發起真實請求, 可能產生費用",
       "healthCheckInterval": "探測間隔(分鐘)",
@@ -2048,6 +2075,24 @@
       "lastError": "最近錯誤",
       "never": "從未運行",
       "desc": "後台任務的調度週期與最近運行情況(唯讀)。"
+    },
+    "metrics": {
+      "desc": "與 Prometheus 抓取同源的累計指標唯讀快照, 每 30 秒重新整理一次。計數是累計口徑而非視窗口徑: 顯示 0 表示從未記錄過, 不代表目前沒有流量。",
+      "lastRefresh": "最後重新整理",
+      "success": "成功",
+      "failed": "失敗",
+      "canceled": "已取消",
+      "inputTokens": "輸入 token",
+      "outputTokens": "輸出 token",
+      "cost": "計費成本",
+      "users": "使用者數",
+      "balance": "餘額合計",
+      "channels": "啟用/渠道總數",
+      "alerts": "24 小時告警",
+      "statusTitle": "依終態分列的請求數",
+      "status": "狀態",
+      "count": "請求數",
+      "statusEmpty": "尚無請求進入終態。"
     },
     "silence": {
       "title": "告警靜默窗口",
@@ -2271,6 +2316,9 @@
       "tier": "¥{amount}",
       "method": "支付方式",
       "methodAuto": "收銀台自選",
+      "currency": "支付幣別",
+      "currencyAuto": "跟隨渠道",
+      "fxTip": "按 {day} · {source} 牌價 1 USD ≈ {rate} 折算",
       "channel": "支付渠道",
       "payForeign": "渠道實付",
       "alipay": "支付寶",
@@ -2279,7 +2327,10 @@
       "credits": "預計到帳",
       "bonus": "滿贈送",
       "rate": "匯率",
-      "rateValue": "1 USD = {rate} CNY",
+      "rateValue": "1 USD = {rate} {currency}",
+      "snapshot": "匯率快照",
+      "snapshotValue": "{day} · {source}",
+      "sourceAmount": "原支付金額",
       "submit": "去支付",
       "cancel": "取消",
       "failed": "下單失敗",
@@ -2292,6 +2343,7 @@
       "no": "訂單號",
       "amount": "實付",
       "credits": "到帳",
+      "snapshotShort": "快照 {day} · {source}",
       "status": "狀態",
       "time": "時間"
     },
@@ -2313,6 +2365,11 @@
       "fee": "手續費",
       "feeHint": "手續費 = max(最低 {min}, 金額 × {rate}%); 僅渠道商收益可提",
       "actual": "預計到帳",
+      "payoutCurrency": "到帳幣別",
+      "fxSnapshot": "按 {day} · {source} 牌價 1 USD ≈ {rate} 折算",
+      "snapshotShort": "{day} · {source}",
+      "legacy": "舊單, 按當時人民幣口徑",
+      "actualCurrency": "申請 {requested} · 實際打款 {actual}",
       "submit": "申請提現",
       "applied": "提現申請已提交, 等待管理員審核",
       "cancelled": "提現申請已取消, 金額已解凍",
@@ -2497,7 +2554,10 @@
     "paid": {
       "done": "提現單 #{id} 已標記打款",
       "confirm": "確認打款",
-      "refPlaceholder": "打款憑證號(必填)"
+      "refPlaceholder": "打款憑證號(必填)",
+      "currencyKeep": "幣別不變(與申請一致)",
+      "requestedVsActual": "申請到帳幣別: {requested}",
+      "vsActual": "實際打款 {actual}(申請 {requested})"
     },
     "rollback": {
       "done": "提現單 #{id} 已回滾到已通過"

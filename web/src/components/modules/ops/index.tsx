@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import BillingRecovery from './BillingRecovery';
 import { UpstreamBillsSection } from './UpstreamBillsSection';
+import { MetricsSection } from './MetricsSection';
 import { useTranslations } from 'use-intl';
-import { FileSpreadsheet, Archive, DatabaseBackup, Gauge, HeartPulse, ListFilter, RefreshCw, Scale, ShieldAlert, StickyNote, Timer, Wallet } from 'lucide-react';
+import { FileSpreadsheet, Activity, Archive, DatabaseBackup, Gauge, HeartPulse, ListFilter, RefreshCw, Scale, ShieldAlert, StickyNote, Timer, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +19,7 @@ import {
     useMorphingDialog,
 } from '@/components/ui/morphing-dialog';
 import { toast } from 'sonner';
+import { downloadFile, isStepUpRequired } from '@/api/client';
 import {
     useAlertDelivery, useArchives, useBackups, useBalanceFlow, useChannelAlerts, useChannelHealth,
     useAlertSilence, useCreateAlertSilence, useDeleteAlertSilence,
@@ -26,6 +28,7 @@ import {
     type AlertSilenceWindow, type BalanceFlow, type ChannelAlert, type ChannelHealth, type LatencyRow, type ReconcileRow, type SpendBudget, type TaskStatus, type UndeliveredAlert,
 } from '@/api/ops';
 import { useRateUsageTop } from '@/api/ratelimit';
+import { useAdminFxRateStatus, useRefreshAdminFxRates, useAdminFxRateHistory, useAdminFxReconciliation, fxHistoryChangePct, fxReconciliationBucketOf, CASHFLOW_CURRENCIES, type AdminFxRateHistoryQuery } from '@/api/fx';
 
 // formatTime 把 RFC3339 时间转成本地展示, 无效值原样返回。
 function formatTime(value: string): string {
@@ -126,12 +129,14 @@ const REDELIVER_MAX_ATTEMPTS = 8;
 const TABS = [
     { id: 'reconcile', icon: Scale },
     { id: 'upstream', icon: FileSpreadsheet },
+    { id: 'fx', icon: Wallet },
     { id: 'recovery', icon: RefreshCw },
     { id: 'flow', icon: Wallet },
     { id: 'backup', icon: DatabaseBackup },
     { id: 'archive', icon: Archive },
     { id: 'health', icon: HeartPulse },
     { id: 'alerts', icon: ShieldAlert },
+    { id: 'metrics', icon: Activity },
     { id: 'tasks', icon: Timer },
     { id: 'budgets', icon: Wallet },
     { id: 'latency', icon: Gauge },
@@ -173,10 +178,226 @@ export default function Ops() {
                 {tab === 'alerts' && <AlertsSection />}
                 {tab === 'latency' && <LatencySection />}
                 {tab === 'ratelimit' && <RateLimitTopSection />}
+                {tab === 'metrics' && <MetricsSection />}
                 {tab === 'tasks' && <TasksSection />}
                 {tab === 'budgets' && <BudgetsSection />}
+                {tab === 'fx' && <><FxRatesSection /><FxHistorySection /><FxReconciliationSection /></>}
             </div>
         </div>
+    );
+}
+
+
+// FxRatesSection 汇率采集状态与当前快照，供管理员快速判断计费换算是否可用。
+function FxRatesSection() {
+    const t = useTranslations('ops.fx');
+    const query = useAdminFxRateStatus();
+    const refresh = useRefreshAdminFxRates();
+    const status = query.data;
+    const onRefresh = () => refresh.mutate(undefined, {
+        onSuccess: () => toast.success(t('refreshSuccess')),
+        onError: (error) => toast.error(error instanceof Error ? error.message : t('refreshFailed')),
+    });
+    return (
+        <section className='space-y-3'>
+            <div className='flex flex-wrap items-center justify-between gap-3'>
+                <div>
+                    <p className='text-sm text-muted-foreground'>{t('description')}</p>
+                    {status && <div className='mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground'>
+                        <span>{t('source')}: <strong className='text-card-foreground'>{status.source || '-'}</strong></span>
+                        <span>{t('snapshotDay')}: <strong className='font-mono text-card-foreground'>{status.day || '-'}</strong></span>
+                        <span>{t('age')}: <strong className='text-card-foreground'>{status.age_days < 0 ? '-' : t('ageDays', { count: status.age_days })}</strong></span>
+                        {status.refresh && <><span>{t('attempt')}: <strong className='font-mono text-card-foreground'>{status.refresh.LastAttemptAt ? formatTime(status.refresh.LastAttemptAt) : '-'}</strong></span><span>{t('lastSuccess')}: <strong className='font-mono text-card-foreground'>{status.refresh.LastSuccessAt ? formatTime(status.refresh.LastSuccessAt) : '-'}</strong></span>{status.refresh.Source && <span>{t('refreshSource')}: <strong className='text-card-foreground'>{status.refresh.Source}</strong></span>}{status.refresh.FailureCount > 0 && <span className='text-red-600'>{t('failures')}: {status.refresh.FailureCount}{status.refresh.LastError ? ` (${status.refresh.LastError})` : ''}</span>}</>}
+                        <Badge variant='outline' className={status.stale ? 'border-red-500/30 bg-red-500/10 text-red-600' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600'}>
+                            {status.stale ? t('stale') : t('fresh')}
+                        </Badge>
+                    </div>}
+                </div>
+                <Button variant='outline' size='sm' className='rounded-xl' onClick={onRefresh} disabled={refresh.isPending}>
+                    <RefreshCw className={'size-4' + (refresh.isPending ? ' animate-spin' : '')} />
+                    {refresh.isPending ? t('refreshing') : t('refresh')}
+                </Button>
+            </div>
+            {query.isError && <div role='alert' className='rounded-3xl border border-destructive bg-card p-6 text-sm text-destructive'>{t('loadFailed')}</div>}
+            {query.isPending ? <p role='status' className='rounded-3xl border border-border bg-card p-8 text-center text-sm text-muted-foreground'>{t('loading')}</p> : !query.isError && status && (
+                <div className='overflow-x-auto rounded-3xl border border-border bg-card'>
+                    <table className='w-full min-w-[560px] text-sm'>
+                        <thead><tr className='border-b border-border text-left text-xs text-muted-foreground'>
+                            <th className='px-4 py-3 font-medium'>{t('from')}</th><th className='px-4 py-3 font-medium'>{t('to')}</th><th className='px-4 py-3 text-right font-medium'>{t('rate')}</th><th className='px-4 py-3 font-medium'>{t('day')}</th><th className='px-4 py-3 font-medium'>{t('itemSource')}</th>
+                        </tr></thead>
+                        <tbody>{status.items.map((item) => <tr key={item.from + item.to} className='border-b border-border/60 last:border-0 hover:bg-muted/40'>
+                            <td className='px-4 py-2.5 font-mono'>{item.from}</td><td className='px-4 py-2.5 font-mono'>{item.to}</td><td className='px-4 py-2.5 text-right font-mono tabular-nums'>{Number(item.rate).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td><td className='px-4 py-2.5 font-mono text-xs'>{item.day || status.day || '-'}</td><td className='px-4 py-2.5 text-muted-foreground'>{item.source || status.source || '-'}</td>
+                        </tr>)}</tbody>
+                    </table>
+                </div>
+            )}
+        </section>
+    );
+}
+
+// FxHistorySection 汇率历史快照查询: 按日期区间与币种筛选, 展示逐日汇率与相邻变化百分比。
+// 只读展示, 不触发采集也不重算账单; 变化百分比是相邻两天对比, 不是任何结算依据。
+// FxTrendSparkline 轻量 SVG 折线: 不引图表库, 单币种近 N 天牌价。
+// hover 显示采集日+价: 用每个点自带 <title>(浏览器原生 tooltip), 零状态依赖。
+function FxTrendSparkline({ points }: { points: { day: string; rate: number }[] }) {
+    if (points.length < 2) return null;
+    const w = 720; const h = 120; const pad = 8;
+    const rates = points.map((p) => p.rate);
+    const min = Math.min(...rates); const max = Math.max(...rates);
+    const span = max - min || max || 1;
+    const xy = points.map((p, i) => ({
+        x: pad + (i / (points.length - 1)) * (w - pad * 2),
+        y: h - pad - ((p.rate - min) / span) * (h - pad * 2),
+        ...p,
+    }));
+    const line = xy.map((p) => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' ');
+    return (
+        <svg viewBox={'0 0 ' + w + ' ' + h} className='w-full' role='img'>
+            <polyline points={line} fill='none' stroke='currentColor' strokeWidth='1.5' className='text-primary' />
+            {xy.map((p) => (
+                <circle key={p.day} cx={p.x} cy={p.y} r='3' className='fill-primary'>
+                    <title>{p.day + ' · ' + p.rate}</title>
+                </circle>
+            ))}
+        </svg>
+    );
+}
+
+function FxHistorySection() {
+    const t = useTranslations('ops.fx');
+    const defaultRange = useMemo(() => {
+        const end = new Date();
+        const start = new Date(end);
+        start.setDate(start.getDate() - 29);
+        const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return { startDate: fmt(start), endDate: fmt(end) };
+    }, []);
+    const [query, setQuery] = useState<AdminFxRateHistoryQuery>(defaultRange);
+    const history = useAdminFxRateHistory(query);
+    const changes = useMemo(() => fxHistoryChangePct(history.data?.items ?? []), [history.data]);
+    // 趋势图币种: 默认 CNY, 独立于下方表格的筛选(表格还支持 all)。
+    const [trendCurrency, setTrendCurrency] = useState<string>('CNY');
+    const trendPoints = useMemo(() =>
+        (history.data?.items ?? []).filter((item) => item.to.toUpperCase() === trendCurrency.toUpperCase()).map((item) => ({ day: item.day, rate: item.rate })),
+    [history.data, trendCurrency]);
+    return (
+        <section className='space-y-3'>
+            <p className='text-sm text-muted-foreground'>{t('historyDesc')}</p>
+            <div className='flex flex-wrap items-center gap-2'>
+                <Input type='date' className='h-8 w-36 rounded-xl' aria-label={t('startDate')} value={query.startDate ?? ''} max={query.endDate || undefined} onChange={(e) => setQuery((c) => ({ ...c, startDate: e.target.value }))} />
+                <Input type='date' className='h-8 w-36 rounded-xl' aria-label={t('endDate')} value={query.endDate ?? ''} min={query.startDate || undefined} onChange={(e) => setQuery((c) => ({ ...c, endDate: e.target.value }))} />
+                <Select value={query.currency ?? 'all'} onValueChange={(v) => setQuery((c) => ({ ...c, currency: v === 'all' ? undefined : v }))}>
+                    <SelectTrigger className='h-8 w-28 rounded-xl'><SelectValue /></SelectTrigger>
+                    <SelectContent>{['all', ...CASHFLOW_CURRENCIES.filter((c) => c !== 'USD')].map((c) => <SelectItem key={c} value={c}>{c === 'all' ? t('allCurrencies') : c}</SelectItem>)}</SelectContent>
+                </Select>
+            </div>
+            <div className='rounded-3xl border border-border bg-card p-4'>
+                <div className='flex flex-wrap items-center justify-between gap-2'>
+                    <p className='text-sm font-medium text-card-foreground'>{t('trend')}</p>
+                    <Select value={trendCurrency} onValueChange={setTrendCurrency}>
+                        <SelectTrigger className='h-8 w-24 rounded-xl' aria-label={t('trend')}><SelectValue /></SelectTrigger>
+                        <SelectContent>{CASHFLOW_CURRENCIES.filter((c) => c !== 'USD').map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                    </Select>
+                </div>
+                {trendPoints.length >= 2
+                    ? <FxTrendSparkline points={trendPoints} />
+                    : <p className='py-6 text-center text-xs text-muted-foreground'>{t('trendEmpty', { currency: trendCurrency })}</p>}
+            </div>
+            {history.isError && <div role='alert' className='rounded-3xl border border-destructive bg-card p-6 text-sm text-destructive'>{t('loadFailed')}</div>}
+            {history.isPending ? <p role='status' className='rounded-3xl border border-border bg-card p-8 text-center text-sm text-muted-foreground'>{t('loading')}</p> : !history.isError && history.data && (
+                history.data.items.length === 0 ? <div className='rounded-3xl border border-border bg-card p-10 text-center text-sm text-muted-foreground'>{t('empty')}</div> : (
+                    <div className='overflow-x-auto rounded-3xl border border-border bg-card'>
+                        <table className='w-full min-w-[480px] text-sm'>
+                            <thead><tr className='border-b border-border text-left text-xs text-muted-foreground'>
+                                <th className='px-4 py-3 font-medium'>{t('day')}</th><th className='px-4 py-3 font-medium'>{t('to')}</th><th className='px-4 py-3 text-right font-medium'>{t('rate')}</th><th className='px-4 py-3 text-right font-medium'>{t('change')}</th><th className='px-4 py-3 font-medium'>{t('itemSource')}</th>
+                            </tr></thead>
+                            <tbody>{history.data.items.map((item, i) => {
+                                const change = changes[i];
+                                return <tr key={item.day + item.to} className='border-b border-border/60 last:border-0 hover:bg-muted/40'>
+                                    <td className='px-4 py-2.5 font-mono text-xs'>{item.day}</td>
+                                    <td className='px-4 py-2.5 font-mono'>{item.to}</td>
+                                    <td className='px-4 py-2.5 text-right font-mono tabular-nums'>{Number(item.rate).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
+                                    <td className={'px-4 py-2.5 text-right font-mono tabular-nums ' + (change === null ? 'text-muted-foreground' : change > 0 ? 'text-amber-600' : change < 0 ? 'text-emerald-600' : '')}>
+                                        {change === null ? '-' : (change > 0 ? '+' : '') + change.toFixed(2) + '%'}
+                                    </td>
+                                    <td className='px-4 py-2.5 text-muted-foreground'>{item.source || '-'}</td>
+                                </tr>;
+                            })}</tbody>
+                        </table>
+                    </div>
+                )
+            )}
+        </section>
+    );
+}
+
+// FxReconciliationSection 折算质量对账: 选日期窗(YYYY-MM-DD, 请求转 YYYYMMDD),
+// 展示正常/陈旧/缺失折算的笔数与金额占比。后端字段可选兜底, 缺数据按 0 计。
+function FxReconciliationSection() {
+    const t = useTranslations('ops.fx');
+    const defaultRange = useMemo(() => {
+        const end = new Date();
+        const start = new Date(end);
+        start.setDate(start.getDate() - 6);
+        const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return { start: fmt(start), end: fmt(end) };
+    }, []);
+    const [range, setRange] = useState({ from: defaultRange.start, to: defaultRange.end });
+    const report = useAdminFxReconciliation(range.from, range.to);
+    const data = report.data;
+    const buckets = useMemo(() => (['ok', 'stale', 'missing', 'usd_native'] as const).map((kind) => ({
+        kind,
+        ...fxReconciliationBucketOf(data, kind),
+    })), [data]);
+    const totalCount = buckets.reduce((sum, b) => sum + b.count, 0);
+    const totalAmount = buckets.reduce((sum, b) => sum + b.amount, 0);
+    const pct = (part: number, total: number) => (total > 0 ? ((part / total) * 100).toFixed(1) + '%' : '-');
+    const tone: Record<string, string> = {
+        ok: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+        stale: 'bg-amber-500/15 text-amber-700 dark:text-amber-400',
+        missing: 'bg-red-500/15 text-red-600 dark:text-red-400',
+        usd_native: 'bg-muted text-muted-foreground', // 中性灰: 未走折算, 不是异常而是口径说明。
+    };
+    // 下钻只做财务重点两桶: missing → fx_day=unavailable(当时无牌价), usd_native → fx_day=none(未走折算, 后端转空值过滤)。
+    // ok/stale 在报表里没有单一 fx_day 值, 不加下钻。
+    const drillFxDay: Partial<Record<(typeof buckets)[number]['kind'], string>> = {
+        missing: 'unavailable',
+        usd_native: 'none',
+    };
+    return (
+        <section className='space-y-3'>
+            <p className='text-sm text-muted-foreground'>{t('reconDesc')}</p>
+            <div className='flex flex-wrap items-center gap-2'>
+                <Input type='date' className='h-8 w-36 rounded-xl' aria-label={t('startDate')} value={range.from} max={range.to || undefined}
+                    onChange={(e) => setRange((c) => ({ ...c, from: e.target.value }))} />
+                <Input type='date' className='h-8 w-36 rounded-xl' aria-label={t('endDate')} value={range.to} min={range.from || undefined}
+                    onChange={(e) => setRange((c) => ({ ...c, to: e.target.value }))} />
+                <RefreshButton onClick={() => void report.refetch()} busy={report.isRefetching} label={t('refresh')} />
+            </div>
+            {report.isError && <div role='alert' className='rounded-3xl border border-destructive bg-card p-6 text-sm text-destructive'>{t('loadFailed')}</div>}
+            {report.isPending ? <p role='status' className='rounded-3xl border border-border bg-card p-8 text-center text-sm text-muted-foreground'>{t('loading')}</p> : !report.isError && (
+                <div className='grid gap-3 md:grid-cols-4'>
+                    {buckets.map((bucket) => {
+                        const fxDay = drillFxDay[bucket.kind];
+                        const drillHref = fxDay !== undefined ? '/billing?fx_day=' + encodeURIComponent(fxDay) : undefined;
+                        return (
+                        <div key={bucket.kind} className='rounded-3xl border border-border bg-card p-4'>
+                            <Badge variant='outline' className={tone[bucket.kind]}>{t('recon_' + bucket.kind)}</Badge>
+                            <p className='mt-2 text-2xl font-bold tabular-nums text-card-foreground'>{bucket.count}</p>
+                            <p className='text-xs text-muted-foreground'>{t('reconCountShare', { share: pct(bucket.count, totalCount) })}</p>
+                            <p className='mt-1 text-sm tabular-nums text-card-foreground'>{formatMoney(bucket.amount)} USD</p>
+                            <p className='text-xs text-muted-foreground'>{t('reconAmountShare', { share: pct(bucket.amount, totalAmount) })}</p>
+                            {drillHref && (
+                                <a className='mt-2 inline-block text-xs text-primary hover:underline' href={drillHref}>
+                                    {t('reconDrill')}
+                                </a>
+                            )}
+                        </div>
+                        );
+                    })}
+                </div>
+            )}
+        </section>
     );
 }
 
@@ -316,9 +537,30 @@ function ReconcileSection() {
 }
 
 // flowKindBadge 流水类型徽章。
+// CASHFLOW_EXPORTS 两个资金导出端点(后端确认路径, 均带 RequireStepUp):
+// 导出走 downloadFile(fetch+blob), 撞上 step-up 会弹密码确认并带凭证重发这一次;
+// 不用 window.open —— 那带不了 X-Step-Up-Token 头, 服务端只会回 403/412 或一段 JSON。
+const CASHFLOW_EXPORTS = {
+    recharge: { path: '/api/v1/admin/recharge/export', fallback: 'switchyard-recharge-orders.csv' },
+    withdrawal: { path: '/api/v1/admin/withdrawal/export', fallback: 'switchyard-withdrawals.csv' },
+} as const;
+
 function FlowSection() {
     const t = useTranslations('ops');
     const [userId, setUserId] = useState('');
+    // exporting 记录正在下载的目标: 按钮互斥防重复触发, 完成后回 null。
+    const [exporting, setExporting] = useState<'recharge' | 'withdrawal' | null>(null);
+    const runExport = (target: 'recharge' | 'withdrawal') => {
+        const spec = CASHFLOW_EXPORTS[target];
+        setExporting(target);
+        downloadFile(spec.path, spec.fallback, { timeoutMs: 60000 })
+            .then(() => toast.success(t('export.done', { name: spec.fallback })))
+            .catch((error) => {
+                // 用户在密码确认里点了取消 = 请求根本没发出去, 不必再报错。
+                if (!isStepUpRequired(error)) toast.error(error instanceof Error ? error.message : String(error));
+            })
+            .finally(() => setExporting(null));
+    };
     const parsedUserId = Number.parseInt(userId, 10);
     const { data, isLoading, isError, refetch, isRefetching } = useBalanceFlow(Number.isFinite(parsedUserId) && parsedUserId > 0 ? parsedUserId : undefined, 100);
     const kindLabel = (kind: string) => t('flow.kind' + kind.charAt(0).toUpperCase() + kind.slice(1));
@@ -340,6 +582,17 @@ function FlowSection() {
                         onChange={(event) => setUserId(event.target.value.replace(/[^0-9]/g, ''))} />
                     <RefreshButton onClick={() => void refetch()} busy={isRefetching} label={t('refresh')} />
                 </div>
+            </div>
+            <div className='flex flex-wrap items-center gap-2'>
+                <span className='text-xs text-muted-foreground'>{t('export.title')}:</span>
+                <Button size='sm' variant='outline' className='h-8 rounded-xl' disabled={exporting !== null}
+                    onClick={() => void runExport('recharge')}>
+                    {exporting === 'recharge' ? t('running') : t('export.rechargeOrders')}
+                </Button>
+                <Button size='sm' variant='outline' className='h-8 rounded-xl' disabled={exporting !== null}
+                    onClick={() => void runExport('withdrawal')}>
+                    {exporting === 'withdrawal' ? t('running') : t('export.withdrawals')}
+                </Button>
             </div>
             {isError ? (
                 <div className='rounded-3xl border border-border bg-card p-10 text-center text-sm text-muted-foreground'>{t('loadFailed')}</div>
@@ -542,6 +795,8 @@ function AlertsSection() {
             watchdog_alert: { label: t('alerts.kindWatchdog'), className: 'bg-red-500/15 text-red-600 dark:text-red-400' },
             route_persist_failed: { label: t('alerts.kindRoutePersist'), className: 'bg-red-500/15 text-red-600 dark:text-red-400' },
             route_persist_recovered: { label: t('alerts.kindRoutePersistRecovered'), className: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
+            // 汇率采集连续失败: 牌价停更会让原币报价的折算逐步变陈旧, 与计费正确性强相关, 用橙档提醒。
+            fx_rate_refresh_failed: { label: t('alerts.kindFxRefreshFailed'), className: 'bg-orange-500/15 text-orange-600 dark:text-orange-500' },
             test: { label: t('alerts.kindTest'), className: 'bg-muted text-muted-foreground' },
         };
         const item = map[kind] ?? { label: kind, className: 'bg-muted text-muted-foreground' };
@@ -702,7 +957,8 @@ function SilenceWindowsSection() {
     };
 
     const windows = (data ?? []).slice(0, 20);
-    const nowMs = Date.now();
+    // nowMs 用 state 固定: 渲染期调用 Date.now() 是不纯的(react-hooks/purity), 每次渲染漂移还会让"活跃"徽章闪动。
+    const [nowMs] = useState(() => Date.now());
     const columns: Col<AlertSilenceWindow>[] = [
         { key: 'range', label: t('silence.range'), render: (row) => (
             <span className='text-xs'>{formatTime(row.start_at)} ~ {formatTime(row.end_at)}</span>
@@ -761,7 +1017,7 @@ function SilenceWindowsSection() {
                             <SelectItem value='all'>{t('silence.allKinds')}</SelectItem>
                             {['down', 'recovered', 'degraded', 'key_disabled', 'model_disabled', 'low_balance', 'quota_exceeded',
                                 'mismatch', 'billing_failed', 'backup_failed', 'archive_failed', 'watchdog_alert',
-                                'route_persist_failed', 'route_persist_recovered', 'task_failed', 'task_recovered'].map((k) => (
+                                'route_persist_failed', 'route_persist_recovered', 'fx_rate_refresh_failed', 'task_failed', 'task_recovered'].map((k) => (
                                 <SelectItem key={k} value={k}>{k}</SelectItem>
                             ))}
                         </SelectContent>
@@ -782,7 +1038,7 @@ function SilenceWindowsSection() {
 // block 在请求预扣前拒绝, warn 只发去重通知 —— 预算应"接近"就提醒, 不是到 100% 才从失败请求里得知。
 function BudgetsSection() {
     const t = useTranslations('ops');
-    const { data, isLoading, refetch, isRefetching } = useBudgets();
+    const { data, isLoading, refetch } = useBudgets();
     const create = useCreateBudget();
     const update = useUpdateBudget();
     const remove = useDeleteBudget();

@@ -3,7 +3,6 @@ package op
 import (
 	"context"
 	"net/url"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -15,9 +14,8 @@ import (
 // rechargeTestSetup 初始化隔离测试库并配置一套测试用支付参数。
 func rechargeTestSetup(t *testing.T, username string) model.User {
 	t.Helper()
-	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "recharge.db"), false); err != nil {
-		t.Fatalf("init db: %v", err)
-	}
+	// 本 setup 原先完全不关库: 通知协程会与下一个用例的新库打架, 现在统一走 opTestDBSetup。
+	opTestDBSetup(t, "recharge.db")
 	for key, value := range map[model.SettingKey]string{
 		model.SettingKeyEpayGatewayURL:       "https://pay.example.com",
 		model.SettingKeyEpayPID:              "1001",
@@ -68,6 +66,17 @@ func TestRechargeQuoteAndBonus(t *testing.T) {
 	}
 	if bonus != 0 {
 		t.Fatalf("bonus=%v, want 0 with bonus disabled", bonus)
+	}
+	// 报价必须带汇率依据: CNY 走静态设置价, source=static 且无牌价日。
+	day, source, err2 := func() (string, string, error) {
+		_, _, _, d, src, _, err := RechargeQuoteDetail(context.Background(), 7000, "CNY")
+		return d, src, err
+	}()
+	if err2 != nil {
+		t.Fatalf("quote detail: %v", err2)
+	}
+	if day != "" || source != "static" {
+		t.Fatalf("rate_day=%q rate_source=%q, want empty day and static source", day, source)
 	}
 	if err := SettingUpsert(model.SettingKeyRechargeBonusEnabled, "true"); err != nil {
 		t.Fatal(err)
@@ -206,5 +215,46 @@ func TestRechargeCloseExpired(t *testing.T) {
 	balance, _ := redemptionTestBalance(t, user.ID)
 	if balance != 0 {
 		t.Fatalf("balance=%v, want 0", balance)
+	}
+}
+
+// TestRechargeQuoteUsesFxSnapshotForOtherCurrencies 非法币种在 Rate 层拒绝,
+// FX 快照币种返回带 day/source 的牌价, 缺牌价时报错而不是按 1 折算。
+func TestStaticRateProviderSupportsFxSnapshotCurrencies(t *testing.T) {
+	fxRateTestDB(t)
+	seedFxRate(t, "USD", "JPY", 150)
+	rate, day, source, _, err := StaticRateProvider{}.RateDetail(context.Background(), " jpy ")
+	if err != nil {
+		t.Fatalf("rate detail: %v", err)
+	}
+	if rate != 150 || day == "" {
+		t.Fatalf("rate=%v day=%q, want 150 with snapshot day", rate, day)
+	}
+	// 落库快照的 source 必须原样保留; Rate 层返回的是"最近一次成功刷新源", 不必与单行一致。
+	var seeded model.FxRate
+	if err := db.GetDB().Where("`to` = ?", "JPY").Order("day DESC").First(&seeded).Error; err != nil || seeded.Source != "test" {
+		t.Fatalf("seeded fx source=%q err=%v, want test", seeded.Source, err)
+	}
+	provider := StaticRateProvider{}
+	if _, _, _, _, brlErr := provider.RateDetail(context.Background(), "BRL"); brlErr == nil {
+		t.Fatal("unsupported currency must be rejected")
+	}
+	FxRateCacheReset()
+	// USD 恒等: rate=1, 不需要任何牌价。
+	rate, _, source, _, err = provider.RateDetail(context.Background(), "USD")
+	if err != nil || rate != 1 || source != "identity" {
+		t.Fatalf("usd identity: rate=%v source=%q err=%v", rate, source, err)
+	}
+}
+
+// TestRechargeOrderPersistsRateProvenance 下单时把汇率与依据一并定格, 回调不再重算。
+func TestRechargeOrderPersistsRateProvenance(t *testing.T) {
+	user := rechargeTestSetup(t, "provenance")
+	order, _, err := RechargeCreate(context.Background(), user.ID, 7000, "epay", "alipay", "https://api/n", "https://api/r")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if order.Rate != 7 || order.Currency != "CNY" || order.RateDay != "" || order.RateSource != "static" {
+		t.Fatalf("order rate=%v currency=%q day=%q source=%q, want 7/CNY/empty/static", order.Rate, order.Currency, order.RateDay, order.RateSource)
 	}
 }

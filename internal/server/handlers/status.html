@@ -247,9 +247,10 @@ button:not(.bucket), select, input { min-height:44px; }
       statusOk: '正常', statusWarn: '降级', statusBad: '异常', statusNone: '无样本',
       kindText: '文本', kindImage: '生图', kindVideo: '生视频',
       attempts: '尝试次数', successRate: '成功率', latency: '上游首字节均值（TTFB）', cacheReadRatio: '缓存读占比',
-      userPrice: '对客单价（USD / 1M tokens）', officialPrice: '官方参考价（USD / 1M tokens）', priceRatio: '对客 / 官方',
+      userPrice: '对客单价（{c} / 1M tokens）', officialPrice: '官方参考价（{c} / 1M tokens）', priceRatio: '对客 / 官方',
       priceInput: '输入', priceOutput: '输出', priceCacheRead: '缓存读', priceCacheWrite: '缓存写',
-      mediaPrice: '对客媒体价（USD）', mediaPerImage: '每张', mediaPerVideo: '每条起步价', mediaPerSecond: '每秒', mediaResolution: '分档',
+      mediaPrice: '对客媒体价（{c}）', mediaPerImage: '每张', mediaPerVideo: '每条起步价', mediaPerSecond: '每秒', mediaResolution: '分档',
+      fxMissing: '价格：{d}（该报价币种的牌价暂缺，未折算，不展示可能错价）',
       noOfficial: '官方参考价：{d}（本地未登记参考价，比价 N/A）',
       historyTitle: '近 {n} 分钟窗口', bucketTip: '{time} · {status} · 尝试 {attempts} · 成功率 {rate}',
       emptySearch: '没有匹配的模型', emptyData: '暂无公开数据', loading: '加载中…',
@@ -261,7 +262,7 @@ button:not(.bucket), select, input { min-height:44px; }
         '耗时为真实调用实测值（成功请求的 HTTP 首字节 TTFB，非首个生成 token 的 TTFT、非流式总时长），取窗口内成功尝试的平均耗时，单位毫秒，非合成拨测指标。',
         '缓存读占比只反映流量的缓存命中情况，<b>不是供应商质量评分</b>。',
         '官方参考价是本地登记的参考价格，不是实时核验的官方报价；缺少参考价或分母为 0 时比价显示 N/A（{d}）。',
-        '文本模型价格单位为 USD / 1M tokens；媒体模型按每张 / 每条起步价 / 每秒计价（USD），分档价按分辨率覆盖单价，<b>未登记参考价时不做官方比价</b>。',
+        '文本模型价格单位为折算后的账面币种 USD / 1M tokens；媒体模型按每张 / 每条起步价 / 每秒计价，分档价按分辨率覆盖单价。渠道可用 CNY / EUR 等原币报价，价格一律按当日牌价折算成 USD 后再上浮，因此本页与账单同一口径；<b>牌价缺失时价格显示「暂缺」而不是原币当美元</b>，<b>未登记参考价时不做官方比价</b>。',
         '页面只展示匿名渠道编码（#编码），不展示渠道名称、ID 或归属信息。',
         '空值一律显示 {d}，不以 0 充数。'
       ],
@@ -283,9 +284,10 @@ button:not(.bucket), select, input { min-height:44px; }
       statusOk: '正常', statusWarn: '降級', statusBad: '異常', statusNone: '無樣本',
       kindText: '文本', kindImage: '生圖', kindVideo: '生影片',
       attempts: '嘗試次數', successRate: '成功率', latency: '上游首位元組均值（TTFB）', cacheReadRatio: '快取讀佔比',
-      userPrice: '對客單價（USD / 1M tokens）', officialPrice: '官方參考價（USD / 1M tokens）', priceRatio: '對客 / 官方',
+      userPrice: '對客單價（{c} / 1M tokens）', officialPrice: '官方參考價（{c} / 1M tokens）', priceRatio: '對客 / 官方',
       priceInput: '輸入', priceOutput: '輸出', priceCacheRead: '快取讀', priceCacheWrite: '快取寫',
-      mediaPrice: '對客媒體價（USD）', mediaPerImage: '每張', mediaPerVideo: '每條起步價', mediaPerSecond: '每秒', mediaResolution: '分檔',
+      mediaPrice: '對客媒體價（{c}）', mediaPerImage: '每張', mediaPerVideo: '每條起步價', mediaPerSecond: '每秒', mediaResolution: '分檔',
+      fxMissing: '價格：{d}（該報價幣種的牌價暫缺，未折算，不展示可能錯價）',
       noOfficial: '官方參考價：{d}（本地未登記參考價，比價 N/A）',
       historyTitle: '近 {n} 分鐘視窗', bucketTip: '{time} · {status} · 嘗試 {attempts} · 成功率 {rate}',
       emptySearch: '沒有符合的模型', emptyData: '暫無公開資料', loading: '載入中…',
@@ -297,7 +299,7 @@ button:not(.bucket), select, input { min-height:44px; }
         '耗時為真實呼叫實測值（成功請求的 HTTP 首位元組 TTFB，非首 token TTFT、非串流總時長），取視窗內成功嘗試的平均耗時，單位毫秒，非合成撥測指標。',
         '快取讀佔比只反映流量的快取命中情況，<b>不是供應商品質評分</b>。',
         '官方參考價是本地登記的參考價格，不是即時核驗的官方報價；缺少參考價或分母為 0 時比價顯示 N/A（{d}）。',
-        '文本模型價格單位為 USD / 1M tokens；媒體模型按每張 / 每條起步價 / 每秒計價（USD），分檔價按解析度覆蓋單價，<b>未登記參考價時不做官方比價</b>。',
+        '文本模型價格單位為折算後的帳面幣種 USD / 1M tokens；媒體模型按每張 / 每條起步價 / 每秒計價，分檔價按解析度覆蓋單價。渠道可用 CNY / EUR 等原幣報價，價格一律按當日牌價折算成 USD 後再上浮，因此本頁與帳單同一口徑；<b>牌價缺失時價格顯示「暫缺」而不是原幣當美元</b>，<b>未登記參考價時不做官方比價</b>。',
         '頁面只顯示匿名渠道編碼（#編碼），不顯示渠道名稱、ID 或歸屬資訊。',
         '空值一律顯示 {d}，不以 0 充數。'
       ],
@@ -319,9 +321,10 @@ button:not(.bucket), select, input { min-height:44px; }
       statusOk: 'Operational', statusWarn: 'Degraded', statusBad: 'Down', statusNone: 'No samples',
       kindText: 'Text', kindImage: 'Image', kindVideo: 'Video',
       attempts: 'Attempts', successRate: 'Success rate', latency: 'Upstream TTFB (mean)', cacheReadRatio: 'Cache read ratio',
-      userPrice: 'User price (USD / 1M tokens)', officialPrice: 'Official reference (USD / 1M tokens)', priceRatio: 'User / official',
+      userPrice: 'User price ({c} / 1M tokens)', officialPrice: 'Official reference ({c} / 1M tokens)', priceRatio: 'User / official',
       priceInput: 'Input', priceOutput: 'Output', priceCacheRead: 'Cache read', priceCacheWrite: 'Cache write',
-      mediaPrice: 'User media price (USD)', mediaPerImage: 'Per image', mediaPerVideo: 'Per video (base)', mediaPerSecond: 'Per second', mediaResolution: 'Tier',
+      mediaPrice: 'User media price ({c})', mediaPerImage: 'Per image', mediaPerVideo: 'Per video (base)', mediaPerSecond: 'Per second', mediaResolution: 'Tier',
+      fxMissing: 'Price: {d} (no FX rate for the quoted currency yet — not converted, so no possibly-wrong figure is shown)',
       noOfficial: 'Official reference: {d} (not registered locally, ratio N/A)',
       historyTitle: 'Last {n} minutes', bucketTip: '{time} · {status} · attempts {attempts} · success {rate}',
       emptySearch: 'No matching models', emptyData: 'No public data yet', loading: 'Loading…',
@@ -333,7 +336,7 @@ button:not(.bucket), select, input { min-height:44px; }
         'Time is measured on real calls (HTTP time to first byte (TTFB), not first generated token TTFT or total streaming duration), averaged over successful attempts in the window — never a synthetic probe.',
         'Cache read ratio reflects traffic cache hits only — <b>it is not a provider quality score</b>.',
         'Official prices are locally registered references, not freshly certified quotes; when a reference is missing or the denominator is zero the ratio shows N/A ({d}).',
-        'Text models are priced in USD / 1M tokens; media models are priced per image / per video base / per second (USD), with tier prices overriding the unit price by resolution, and <b>no official comparison is claimed without a registered reference</b>.',
+        'Text models are priced per 1M tokens in the settled ledger currency, USD; media models are priced per image / per video base / per second, with tier prices overriding the unit price by resolution. Channels may quote in CNY / EUR etc., and every price is converted to USD at the daily FX rate before markup, so this page matches your invoices; <b>when a rate is missing the price shows as unavailable instead of treating the quoted currency as USD</b>, and <b>no official comparison is claimed without a registered reference</b>.',
         'Only anonymous channel codes (#code) are shown — no channel names, IDs, or ownership.',
         'Missing values always render as {d}, never a fabricated zero.'
       ],
@@ -577,30 +580,45 @@ button:not(.bucket), select, input { min-height:44px; }
     if (k === 'video') return t('kindVideo');
     return '';
   }
+  // priceCurrency 条目自带的展示币种: 后端已把价格折算成该币种, 页面不再写死 $ / USD。
+  function priceCurrency(m) {
+    var c = m && m.price_currency;
+    return c === undefined || c === null || c === '' ? 'USD' : String(c);
+  }
   function buildPrices(card, m) {
     var kind = String(m.kind === undefined || m.kind === null ? '' : m.kind).toLowerCase();
+    var cur = priceCurrency(m);
     var media = m.user_media && typeof m.user_media === 'object' ? m.user_media : null;
     var isMedia = kind === 'image' || kind === 'video';
 
     if (isMedia) {
-      card.appendChild(el('div', 'block-title', t('mediaPrice')));
+      card.appendChild(el('div', 'block-title', fill(t('mediaPrice'), { c: cur })));
       var grid = el('div', 'metrics');
-      if (media) {
-        if (isNum(media.per_image) && media.per_image !== 0) grid.appendChild(priceRow(t('mediaPerImage'), fmtPrice(media.per_image) + ' USD'));
-        if (isNum(media.per_video) && media.per_video !== 0) grid.appendChild(priceRow(t('mediaPerVideo'), fmtPrice(media.per_video) + ' USD'));
-        if (isNum(media.per_second) && media.per_second !== 0) grid.appendChild(priceRow(t('mediaPerSecond'), fmtPrice(media.per_second) + ' USD'));
+      // 牌价缺失时后端把价格清零并标记 fx_missing: 直接说「暂缺」, 不把 0 当成免费价展示。
+      if (m.fx_missing) {
+        grid.appendChild(priceRow(t('mediaPrice'), fill(t('fxMissing'), { d: EMDASH })));
+      } else if (media) {
+        if (isNum(media.per_image) && media.per_image !== 0) grid.appendChild(priceRow(t('mediaPerImage'), fmtPrice(media.per_image) + ' ' + cur));
+        if (isNum(media.per_video) && media.per_video !== 0) grid.appendChild(priceRow(t('mediaPerVideo'), fmtPrice(media.per_video) + ' ' + cur));
+        if (isNum(media.per_second) && media.per_second !== 0) grid.appendChild(priceRow(t('mediaPerSecond'), fmtPrice(media.per_second) + ' ' + cur));
         if (media.resolution && typeof media.resolution === 'object') {
           Object.keys(media.resolution).forEach(function (key) {
-            grid.appendChild(priceRow(t('mediaResolution') + ' ' + key, fmtPrice(media.resolution[key]) + ' USD'));
+            grid.appendChild(priceRow(t('mediaResolution') + ' ' + key, fmtPrice(media.resolution[key]) + ' ' + cur));
           });
         }
       }
-      if (!grid.firstChild) grid.appendChild(priceRow(t('mediaPrice'), EMDASH));
+      if (!grid.firstChild) grid.appendChild(priceRow(fill(t('mediaPrice'), { c: cur }), EMDASH));
       card.appendChild(grid);
     } else {
-      card.appendChild(el('div', 'block-title', t('userPrice')));
+      card.appendChild(el('div', 'block-title', fill(t('userPrice'), { c: cur })));
       var p = m.user_price && typeof m.user_price === 'object' ? m.user_price : {};
       var pg = el('div', 'metrics');
+      if (m.fx_missing) {
+        pg.appendChild(priceRow(t('userPrice'), fill(t('fxMissing'), { d: EMDASH })));
+        card.appendChild(pg);
+        card.appendChild(el('div', 'muted-line', fill(t('noOfficial'), { d: EMDASH })));
+        return;
+      }
       pg.appendChild(priceRow(t('priceInput'), fmtPrice(p.input)));
       pg.appendChild(priceRow(t('priceOutput'), fmtPrice(p.output)));
       pg.appendChild(priceRow(t('priceCacheRead'), fmtPrice(p.cache_read)));
@@ -618,7 +636,7 @@ button:not(.bucket), select, input { min-height:44px; }
       card.appendChild(el('div', 'muted-line', fill(t('noOfficial'), { d: EMDASH })));
       return;
     }
-    card.appendChild(el('div', 'block-title', t('officialPrice')));
+    card.appendChild(el('div', 'block-title', fill(t('officialPrice'), { c: cur })));
     var og = el('div', 'metrics');
     var ratioTitle = el('div', 'block-title', t('priceRatio'));
     var rg = el('div', 'metrics');
@@ -716,8 +734,10 @@ button:not(.bucket), select, input { min-height:44px; }
     var table = el('table', 'list');
     var thead = el('thead');
     var headRow = el('tr');
+    // 价格列的币种写进表头: 后端统一折算到 price_currency, 不在每个单元格里重复单位。
+    var cur = items.length ? priceCurrency(items[0]) : 'USD';
     [t('colChannel'), t('colModel'), t('colStatus'), t('colAttempts'), t('colSuccess'),
-     t('colLatency'), t('colCacheRead'), t('colInput'), t('colOutput'),
+     t('colLatency'), t('colCacheRead'), t('colInput') + ' (' + cur + ')', t('colOutput') + ' (' + cur + ')',
      fill(t('historyTitle'), { n: Math.round(windowSeconds / 60) })].forEach(function (label) {
       headRow.appendChild(el('th', null, label));
     });
@@ -741,8 +761,9 @@ button:not(.bucket), select, input { min-height:44px; }
       tr.appendChild(el('td', 'num', fmtMs(m.latency_ms)));
       tr.appendChild(el('td', 'num', fmtPercent(m.cache_read_ratio)));
       var p = m.user_price && typeof m.user_price === 'object' ? m.user_price : {};
-      tr.appendChild(el('td', 'num', fmtPrice(p.input)));
-      tr.appendChild(el('td', 'num', fmtPrice(p.output)));
+      // 牌价缺失的价格不可信: 表格里与卡片同口径显示 —, 而不是 0。
+      tr.appendChild(el('td', 'num', m.fx_missing ? EMDASH : fmtPrice(p.input)));
+      tr.appendChild(el('td', 'num', m.fx_missing ? EMDASH : fmtPrice(p.output)));
       var tdBar = el('td', null);
       tdBar.appendChild(buildBar(m, true));
       tr.appendChild(tdBar);

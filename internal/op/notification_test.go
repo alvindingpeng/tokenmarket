@@ -2,7 +2,6 @@ package op
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,10 +12,7 @@ import (
 // notificationTestSetup 初始化独立的内存 SQLite, 避免测试之间互相污染。
 func notificationTestSetup(t *testing.T) {
 	t.Helper()
-	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "notification.db"), false); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	opTestDBSetup(t, "notification.db")
 }
 
 func TestNotificationCreateAndList(t *testing.T) {

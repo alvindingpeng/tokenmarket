@@ -14,6 +14,9 @@ export type PayChannel = {
 export type RechargeView = {
     configured: boolean;
     rate: number;
+    currency?: string;
+    snapshot_day?: string;
+    rate_source?: string;
     min_cny: number;
     amount_tiers: number[];
     bonus_enabled: boolean;
@@ -41,12 +44,49 @@ export type RechargeOrder = {
     created_at: string;
     expired_at: string;
     paid_at: string | null;
+    source_currency?: string;
+    source_amount?: number;
+    credited_currency?: string;
+    snapshot_day?: string;
+    rate_source?: string;
 };
 
 // PayForm 收银台跳转: fields 非空走表单自动 POST, 否则直接跳 redirect_url。
 export type PayForm = { action: string; fields: Record<string, string>; redirect_url: string };
 
-export type RechargeQuote = { credits: number; bonus: number; rate: number };
+// RechargeQuote 新字段均可选: 旧服务端仍只回 credits/bonus/rate, 新服务端可回传当次快照及原始/到账语义。
+// quote_currency/rate_day/rate_source 是 Lead 确认的后端可选快照字段名(与 snapshot_day/rate_source 兼容并存)。
+export type RechargeQuote = {
+    credits: number;
+    bonus: number;
+    rate: number;
+    currency?: string;
+    quote_currency?: string;
+    source_currency?: string;
+    source_amount?: number;
+    credited_currency?: string;
+    snapshot_day?: string;
+    rate_day?: string;
+    rate_source?: string;
+};
+
+// 快照元数据归一: 后端新旧字段名(rate_day|snapshot_day / quote_currency|currency)都接受, 取先出现的。
+export function quoteSnapshotOf(
+    quote: Pick<RechargeQuote, 'rate_day' | 'snapshot_day' | 'quote_currency' | 'currency' | 'rate_source'> | undefined
+): { day: string; source: string; currency: string } | undefined {
+    if (!quote) return undefined;
+    const day = quote.rate_day ?? quote.snapshot_day ?? '';
+    const currency = quote.quote_currency ?? quote.currency ?? '';
+    if (!day && !currency && !quote.rate_source) return undefined;
+    return { day, source: quote.rate_source ?? '', currency };
+}
+
+export type RechargeQuoteRequest = { amount_cents: number; currency?: string };
+
+// rechargeQuoteRequestBody 旧接口仍收到 amount_cents; currency 仅作为兼容扩展字段传递。
+export function rechargeQuoteRequestBody(amountCents: number, currency?: string): RechargeQuoteRequest {
+    return { amount_cents: amountCents, ...(currency ? { currency } : {}) };
+}
 
 // useRechargeView 充值配置视图(是否已配置/汇率/快捷金额/满赠开关)。
 export function useRechargeView() {
@@ -57,14 +97,16 @@ export function useRechargeView() {
 }
 
 // useRechargeQuote 按实付金额(分)实时报价; amountCents<=0 时不发请求。
-export function useRechargeQuote(amountCents: number) {
+// currency 可选: 用户选择的支付币种。旧服务端忽略未知字段仍按 amount_cents 报价,
+// 新服务端可据此返回同币种快照语义 —— 两种情况下调用方都不需要改。
+export function useRechargeQuote(amountCents: number, currency?: string) {
     return useQuery({
-        queryKey: ['recharge', 'quote', amountCents],
+        queryKey: ['recharge', 'quote', amountCents, currency ?? ''],
         enabled: amountCents > 0,
         queryFn: () =>
             apiRequest<RechargeQuote>('/api/v1/recharge/quote', {
                 method: 'POST',
-                body: { amount_cents: amountCents },
+                body: rechargeQuoteRequestBody(amountCents, currency),
             }),
     });
 }

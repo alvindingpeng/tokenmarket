@@ -1,7 +1,7 @@
 import { Fragment, useId, useMemo } from 'react';
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { useTranslations } from 'use-intl';
-import { useStatsDaily, useStatsHourly, type StatsMetricsFormatted } from '@/api/stats';
+import { useStatsHome, type StatsMetricsFormatted } from '@/api/stats';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { AnimatedNumber } from '@/components/common/AnimatedNumber';
 import { formatCount, formatMoney } from '@/lib/utils';
@@ -17,8 +17,10 @@ interface ChartPoint {
 
 // StatsChart 展示选定指标在选定周期内的趋势, 并汇总该周期的请求, 金额和词元。
 export function StatsChart() {
-    const { data: statsDaily } = useStatsDaily();
-    const { data: statsHourly } = useStatsHourly();
+    // 首页共用同一条聚合查询: 每日与小时两种粒度都取自同一次响应。
+    const { data } = useStatsHome();
+    const statsDaily = data?.daily.items;
+    const statsHourly = data?.hourly;
     const t = useTranslations('home.chart');
     const tMetric = useTranslations('home.metric');
     // 订阅主题: 切换时 :root 上 --chart-* 的取值会变, 需重渲染以重新取色。

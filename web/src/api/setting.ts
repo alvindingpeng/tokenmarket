@@ -20,6 +20,8 @@ export const SettingKey = {
     RegisterUserEnabled: 'register_user_enabled',
     RegisterResellerEnabled: 'register_reseller_enabled',
     RegisterApprovalRequired: 'register_approval_required',
+    FxRateUpdateEnabled: 'fx_rate_update_enabled',
+    FxRateUpdateInterval: 'fx_rate_update_interval',
     MinBalance: 'min_balance', // 余额下限, 低于该值拒绝新请求。
     BalanceReserveOutputCap: 'balance_reserve_output_cap', // 预扣估算用的单请求输出 token 上限。
     BalanceReserveImages: 'balance_reserve_images', // 生图预扣保守张数(无 n 时按此冻结), 默认 4。

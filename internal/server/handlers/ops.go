@@ -164,6 +164,11 @@ func init() {
 				Handle(resetRouteMetrics),
 		).
 		AddRoute(
+			router.NewRoute("/metrics/snapshot", http.MethodGet).
+				Allow(model.RoleAdmin).
+				Handle(metricsSnapshot),
+		).
+		AddRoute(
 			router.NewRoute("/alerts/test-webhook", http.MethodPost).
 				Allow(model.RoleAdmin).
 				Handle(testAlertWebhook),
@@ -373,6 +378,29 @@ func runChannelHealth(c *gin.Context) {
 // 规则本身通过 /api/v1/setting/set 修改, 这里只做只读回显, 避免出现第三套配置入口。
 func listAlertRules(c *gin.Context) {
 	resp.Success(c, gin.H{"items": op.AlertRules()})
+}
+
+// metricsSnapshot 返回 /metrics 抓取口径的累计指标快照, 管理员只读。
+//
+// 与 /metrics 同源: 这里直接复用 op.CollectMetrics(), 不另起一套统计口径 ——
+// 运维页看到的数字必须和 Prometheus 抓到的一致, 否则排查时两边对不上。
+// 差别只有通道: /metrics 是 Bearer 鉴权的 Prometheus 文本(给抓取端),
+// 这里走会话鉴权的 JSON(给控制台面板)。只读, 无副作用, 因此不需要 step-up。
+func metricsSnapshot(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	totals := op.CollectMetrics()
+	resp.Success(c, gin.H{
+		"generated_at":       time.Now().UTC().Format(time.RFC3339),
+		"requests_by_status": totals.RequestsByStatus,
+		"input_tokens":       totals.InputTokens,
+		"output_tokens":      totals.OutputTokens,
+		"cost":               totals.Cost,
+		"users":              totals.Users,
+		"balance":            totals.Balance,
+		"channels":           totals.Channels,
+		"channels_enabled":   totals.ChannelsEnabled,
+		"alerts_24h":         totals.Alerts24h,
+	})
 }
 
 // getMetricsToken 回显当前抓取令牌, 管理员专用。

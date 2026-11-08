@@ -619,8 +619,8 @@ func TestChannelStatusPrivacyAllowlistDTOShape(t *testing.T) {
 		t.Fatalf("顶层字段 = %v, want %v", got, wantTop)
 	}
 	wantModel := []string{
-		"attempts", "cache_read_ratio", "channel_code", "history", "kind", "latency_ms",
-		"model_name", "official_price", "price_ratio", "status", "success_rate",
+		"attempts", "cache_read_ratio", "channel_code", "fx_missing", "history", "kind", "latency_ms",
+		"model_name", "official_price", "price_currency", "price_ratio", "status", "success_rate",
 		"user_media", "user_price",
 	}
 	if got := channelStatusSortedKeys(channelStatusJSONKeys(t, snapshot.Models[0])); !reflect.DeepEqual(got, wantModel) {
@@ -700,5 +700,57 @@ func TestChannelStatusSnapshotCache(t *testing.T) {
 	}
 	if got := channelStatusMustFind(t, third, "3001", "m-cache").Attempts; got != 2 {
 		t.Fatalf("过期后 attempts = %d, want 2", got)
+	}
+}
+
+// TestChannelStatusPricesConvertToLedger 公开状态页的价格必须与选路/计费同一口径(账面 USD):
+// 原币(CNY)报价要先折算再上浮, 条目带 price_currency 供页面渲染单位;
+// 牌价缺失时不得把原币当 USD 展示, 而是清零并标记 fx_missing。
+func TestChannelStatusPricesConvertToLedger(t *testing.T) {
+	ctx := channelStatusTestEnv(t)
+	t.Cleanup(FxRateCacheReset)
+	// 牌价口径: 1 USD = 7.2 CNY; 上浮比例由 channelStatusTestEnv 钉死为 0.2。
+	seedFxRate(t, "USD", "CNY", 7.2)
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+
+	channel := channelStatusSeedChannel(t, "5001", "fx-channel", nil)
+	channelStatusSeedModel(t, channel.ID, "m-cny", model.MediaKindText, model.LLMPrice{Input: 72, Output: 144}, func(cm *model.ChannelModel) {
+		cm.PriceCurrency = "CNY"
+	})
+	channelStatusSeedModel(t, channel.ID, "m-gbp", model.MediaKindText, model.LLMPrice{Input: 10, Output: 20}, func(cm *model.ChannelModel) {
+		cm.PriceCurrency = "GBP" // 未采集牌价: 折算不可用。
+	})
+	channelStatusReload(t, ctx)
+
+	snapshot, err := channelStatusBuild(ctx, now)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+
+	// 72 CNY / 7.2 = 10 USD, ×1.2 = 12; 144 CNY / 7.2 = 20, ×1.2 = 24。
+	cny := channelStatusMustFind(t, snapshot, "5001", "m-cny")
+	if cny.PriceCurrency != model.LedgerCurrency {
+		t.Fatalf("price_currency = %q, want %q(价格已是账面币种)", cny.PriceCurrency, model.LedgerCurrency)
+	}
+	if cny.FxMissing {
+		t.Fatal("有牌价却标记 fx_missing")
+	}
+	if cny.UserPrice.Input < 12-1e-9 || cny.UserPrice.Input > 12+1e-9 {
+		t.Fatalf("user_price.input = %v, want 12(72 CNY 折算后上浮)", cny.UserPrice.Input)
+	}
+	if cny.UserPrice.Output < 24-1e-9 || cny.UserPrice.Output > 24+1e-9 {
+		t.Fatalf("user_price.output = %v, want 24", cny.UserPrice.Output)
+	}
+
+	// 缺牌价: 原币价绝不当 USD 用, 价格清零 + fx_missing。
+	gbp := channelStatusMustFind(t, snapshot, "5001", "m-gbp")
+	if !gbp.FxMissing {
+		t.Fatal("缺牌价未标记 fx_missing")
+	}
+	if gbp.UserPrice.Input != 0 || gbp.UserPrice.Output != 0 {
+		t.Fatalf("缺牌价价格未清零: %+v", gbp.UserPrice)
+	}
+	if gbp.PriceCurrency != model.LedgerCurrency {
+		t.Fatalf("缺牌价 price_currency = %q, want %q", gbp.PriceCurrency, model.LedgerCurrency)
 	}
 }

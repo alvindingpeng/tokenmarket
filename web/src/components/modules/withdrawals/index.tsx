@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { CASHFLOW_CURRENCIES } from '@/api/fx';
 import { useTranslations } from 'use-intl';
 import { Landmark, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
@@ -13,6 +14,7 @@ import {
     type Withdrawal,
 } from '@/api/withdrawal';
 import { formatAmount, formatDateTime } from '@/lib/format';
+import { formatCashflowAmount } from '@/api/currency';
 
 // STATUSES 状态筛选项; 空串表示全部。
 const STATUSES = ['', 'pending', 'approved', 'paid', 'rejected', 'cancelled'];
@@ -24,6 +26,8 @@ export default function Withdrawals() {
     const [notes, setNotes] = useState<Record<number, string>>({});
     const [payingId, setPayingId] = useState(0);
     const [paidRef, setPaidRef] = useState('');
+    // actualCurrency 实际打款币种: 与申请到账币种不同的场景(手工换汇)需要显式登记; 空 = 不另记。
+    const [actualCurrency, setActualCurrency] = useState('');
     // 资金操作的二次确认: 通过=解冻转已通过(占用可提额度), 回滚=把已打款的单子退回已通过。
     // 两者此前都是单击即执行, 而提现审核没有撤销按钮 —— 点错了只能手工改库。
     const [confirming, setConfirming] = useState<{ id: number; kind: 'approve' | 'rollback' } | null>(null);
@@ -42,11 +46,12 @@ export default function Withdrawals() {
 
     // handlePay 打款登记: 凭证号必填, 标记后资金出池。
     const handlePay = (order: Withdrawal) => {
-        markWithdrawalPaid(order.id, paidRef.trim())
+        markWithdrawalPaid(order.id, paidRef.trim(), actualCurrency)
             .then(() => {
                 toast.success(t('paid.done', { id: order.id }));
                 setPayingId(0);
                 setPaidRef('');
+                setActualCurrency('');
                 void list.refetch();
             })
             .catch((error) => toast.error(t('actionFailed'), { description: (error as Error).message }));
@@ -116,7 +121,16 @@ export default function Withdrawals() {
                                         </td>
                                         <td className="px-4 py-3 tabular-nums">{formatAmount(order.amount)}</td>
                                         <td className="px-4 py-3 tabular-nums">{formatAmount(order.fee)}</td>
-                                        <td className="px-4 py-3 tabular-nums font-medium">¥{formatAmount(order.actual_cents / 100)}</td>
+                                        <td className="px-4 py-3 tabular-nums font-medium">
+                                            {order.payout_currency
+                                                ? formatCashflowAmount(order.payout_amount ?? order.actual_cents / 100, order.payout_currency) + ' ' + order.payout_currency.toUpperCase()
+                                                : '¥' + formatCashflowAmount(order.actual_cents / 100, 'CNY')}
+                                            {order.actual_currency && (
+                                                <div className="text-xs text-muted-foreground">
+                                                    {t('paid.vsActual', { requested: (order.payout_currency ?? 'CNY').toUpperCase(), actual: order.actual_currency.toUpperCase() })}
+                                                </div>
+                                            )}
+                                        </td>
                                         <td className="px-4 py-3 font-mono text-xs">{order.account_no}</td>
                                         <td className="px-4 py-3">{t('status.' + order.status)}</td>
                                         <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatDateTime(order.applied_at, '-')}</td>
@@ -151,13 +165,25 @@ export default function Withdrawals() {
                                                             onChange={(event) => setPaidRef(event.target.value)}
                                                             autoFocus
                                                         />
+                                                        <Select value={actualCurrency || 'keep'} onValueChange={(v) => setActualCurrency(v === 'keep' ? '' : v)}>
+                                                            <SelectTrigger className="h-8 w-40 rounded-xl text-xs"><SelectValue /></SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="keep">{t('paid.currencyKeep')}</SelectItem>
+                                                                {CASHFLOW_CURRENCIES.map((code) => (
+                                                                    <SelectItem key={code} value={code}>{code}</SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                        {order.payout_currency && (
+                                                            <p className="text-xs text-muted-foreground">{t('paid.requestedVsActual', { requested: order.payout_currency.toUpperCase() })}</p>
+                                                        )}
                                                         <div className="flex gap-1.5">
                                                             <Button size="sm" className="h-8 rounded-xl" disabled={paidRef.trim() === ''} onClick={() => handlePay(order)}>{t('paid.confirm')}</Button>
-                                                            <Button size="sm" variant="outline" className="h-8 rounded-xl" onClick={() => { setPayingId(0); setPaidRef(''); }}>{t('action.cancel')}</Button>
+                                                            <Button size="sm" variant="outline" className="h-8 rounded-xl" onClick={() => { setPayingId(0); setPaidRef(''); setActualCurrency(''); }}>{t('action.cancel')}</Button>
                                                         </div>
                                                     </div>
                                                 ) : (
-                                                    <Button size="sm" variant="outline" className="h-8 rounded-xl" onClick={() => { setPayingId(order.id); setPaidRef(''); }}>{t('action.markPaid')}</Button>
+                                                    <Button size="sm" variant="outline" className="h-8 rounded-xl" onClick={() => { setPayingId(order.id); setPaidRef(''); setActualCurrency(''); }}>{t('action.markPaid')}</Button>
                                                 )
                                             ) : order.status === 'paid' ? (
                                                 <div className="flex flex-col gap-1.5">

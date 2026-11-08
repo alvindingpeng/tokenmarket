@@ -1,7 +1,6 @@
 package op
 
 import (
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,9 +11,7 @@ import (
 // breakerTestSetup 初始化隔离测试库, 并把熔断参数调成"每次错误都熔断"以便观察时长递增。
 func breakerTestSetup(t *testing.T) {
 	t.Helper()
-	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "breaker.db"), false); err != nil {
-		t.Fatalf("init db: %v", err)
-	}
+	opTestDBSetup(t, "breaker.db")
 	for key, value := range map[model.SettingKey]string{
 		model.SettingKeyBreakerKeyThreshold:   "1",
 		model.SettingKeyBreakerKeyMinutes:     "5",

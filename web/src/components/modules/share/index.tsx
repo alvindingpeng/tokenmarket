@@ -12,7 +12,8 @@ import {
     type ChannelModelListing,
     type ChannelRepriceResult,
 } from '@/api/share';
-import { useFxRates, type FxRateItem } from '@/api/fx';
+import { useFxRates, formatFxSnapshotDay, type FxRateItem } from '@/api/fx';
+import { fxRiskOf } from '@/lib/fxRisk';
 import { useModelList } from '@/api/model';
 import { useSettingList } from '@/api/setting';
 import { Button } from '@/components/ui/button';
@@ -20,7 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { formatPlainMoney } from '@/lib/money';
-import { markupOf } from '@/lib/pricing';
+import { markupOf, userPriceInLedger, fxRateIsStale } from '@/lib/pricing';
 import { cn } from '@/lib/utils';
 import {
     MorphingDialog,
@@ -57,12 +58,42 @@ function ListingRows({ channelID }: { channelID: number }) {
     const { data, isLoading } = useChannelListings(channelID);
     const updateListings = useUpdateChannelListings();
     const { data: settings } = useSettingList();
+    const { data: fxRates } = useFxRates();
     const markup = useMemo(() => markupOf(settings), [settings]);
     // 草稿是本弹窗内可编辑的一份完整清单, 保存时整份提交; 未改动的行也提交, 后端按名称对齐。
     const [draft, setDraft] = useState<ChannelModelListing[] | null>(null);
     const [keyword, setKeyword] = useState('');
     const [filter, setFilter] = useState<'all' | 'listed' | 'unlisted' | 'unpriced'>('all');
-    const rows = draft ?? data ?? EMPTY_LISTINGS;
+    const rows: ChannelModelListing[] = draft ?? data ?? EMPTY_LISTINGS;
+    // 用户价按「原币 → 账面 USD 折算后再上浮」显示, 与后端计费/账单同一口径。
+    // 缺牌价时显示 — 而不是回退 1: 那会把 CNY 报价当美元, 差出约 7 倍。
+    const userPriceText = (value: number, currency?: string): string => {
+        const userPrice = userPriceInLedger(value, currency, fxRates?.items, markup);
+        return userPrice === undefined ? '—' : formatMoney(userPrice);
+    };
+    // fxPreviewText 改价汇率影响预览: 非USD币种行显示“按当前牌价(采集日 X) ≈ $Y”。
+    const fxPreviewText = (input: number, output: number, currency?: string): string | null => {
+        const code = (currency ?? '').trim().toUpperCase();
+        if (code === '' || code === 'USD') return null;
+        const item = (fxRates?.items ?? []).find((entry) => entry.to.toUpperCase() === code);
+        if (!item || !(item.rate > 0)) return null;
+        return t('price.fxPreview', { day: formatFxSnapshotDay(item.day) || '—', usd: formatMoney(input / item.rate) + ' / $' + formatMoney(output / item.rate) });
+    };
+    // riskFor 评估某行报价币种的汇率风险: 缺牌价(missing)拦保存, 陈旧(stale)显著警告。
+    const riskFor = (currency?: string): ReturnType<typeof fxRiskOf> => fxRiskOf(fxRates?.items, currency);
+    // missingFxListed 是「已上架 + 非 USD 报价 + 无牌价」的行: 这种价格结算时无法折算,
+    // 后端会按缺价处理(该渠道不参与计费), 必须在保存前拦住。
+    const missingFxListed = useMemo(
+        () => rows.filter((row) => row.listed && riskFor(row.price_currency).level === 'missing').map((row) => row.name),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [rows, fxRates]
+    );
+    // fxStaleListed 是「已上架 + 非 USD 报价 + 牌价偏旧」的行: 折算可用但可能过时, 只警告不拦。
+    const fxStaleListed = useMemo(
+        () => rows.filter((row) => row.listed && riskFor(row.price_currency).level === 'stale').map((row) => row.name),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [rows, fxRates]
+    );
     // 参考价来自全局价格表(models.dev 自动同步 + 管理员维护), 用于上架定价快速预填。
     const { data: refModels } = useModelList();
     const refPrices = useMemo(() => {
@@ -332,7 +363,7 @@ function ListingRows({ channelID }: { channelID: number }) {
                                 <CurrencySelect value={row.price_currency} disabled={updateListings.isPending}
                                     onChange={(v) => mutateRow(index, { price_currency: v })} />
                                 <span className="truncate text-xs tabular-nums text-muted-foreground" title={t('userPriceHint')}>
-                                    {t('userPricePerImage', { value: formatMoney((row.media_supply?.per_image ?? 0) * (1 + markup)) })}
+                                    {t('userPricePerImage', { value: userPriceText(row.media_supply?.per_image ?? 0, row.price_currency) })}
                                 </span>
                             </>
                         ) : row.kind === 'video' ? (
@@ -372,10 +403,10 @@ function ListingRows({ channelID }: { channelID: number }) {
                                 </div>
                                 <span className="min-w-0 text-xs tabular-nums text-muted-foreground" title={t('userPriceHint')}>
                                     <span className="block truncate">
-                                        {t('userPricePerVideo', { value: formatMoney((row.media_supply?.per_video ?? 0) * (1 + markup)) })}
+                                        {t('userPricePerVideo', { value: userPriceText(row.media_supply?.per_video ?? 0, row.price_currency) })}
                                     </span>
                                     <span className="block truncate">
-                                        {t('userPricePerSecond', { value: formatMoney((row.media_supply?.per_second ?? 0) * (1 + markup)) })}
+                                        {t('userPricePerSecond', { value: userPriceText(row.media_supply?.per_second ?? 0, row.price_currency) })}
                                     </span>
                                 </span>
                             </>
@@ -399,10 +430,14 @@ function ListingRows({ channelID }: { channelID: number }) {
                                     onChange={(v) => mutateRow(index, { price_currency: v })} />
                                 <span className="truncate text-xs tabular-nums text-muted-foreground" title={t('userPriceHint')}>
                                     {t('userPriceValue', {
-                                        input: formatMoney(row.supply_price.input * (1 + markup)),
-                                        output: formatMoney(row.supply_price.output * (1 + markup)),
+                                        input: userPriceText(row.supply_price.input, row.price_currency),
+                                        output: userPriceText(row.supply_price.output, row.price_currency),
                                     })}
                                 </span>
+                                {(() => {
+                                    const preview = fxPreviewText(row.supply_price.input, row.supply_price.output, row.price_currency);
+                                    return preview ? <span className="col-span-4 block truncate text-[10px] text-muted-foreground" title={preview}>{preview}</span> : null;
+                                })()}
                             </>
                         )}
                         <Button
@@ -434,12 +469,22 @@ function ListingRows({ channelID }: { channelID: number }) {
                     {t('zeroPriced', { count: zeroPricedListed.length, models: zeroPricedListed.slice(0, 3).join(', ') })}
                 </p>
             )}
+            {missingFxListed.length > 0 && (
+                <p className="text-xs text-destructive">
+                    {t('missingFx', { count: missingFxListed.length, models: missingFxListed.slice(0, 3).join(', ') })}
+                </p>
+            )}
+            {fxStaleListed.length > 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                    {t('staleFx', { count: fxStaleListed.length, models: fxStaleListed.slice(0, 3).join(', ') })}
+                </p>
+            )}
             <div className="flex items-center justify-end gap-2">
                 {changedCount > 0 && (
                     <span className="text-xs text-muted-foreground">{t('changed', { count: changedCount })}</span>
                 )}
                 <Button onClick={handleSave}
-                    disabled={updateListings.isPending || draft === null || changedCount === 0 || zeroPricedListed.length > 0}>
+                    disabled={updateListings.isPending || draft === null || changedCount === 0 || zeroPricedListed.length > 0 || missingFxListed.length > 0}>
                     {t('save')}
                 </Button>
             </div>
@@ -598,7 +643,7 @@ export default function Share() {
 }
 
 // PRICE_CURRENCIES 改价工作台的币种白名单, 与后端 model.ValidPriceCurrency 同步维护。
-const PRICE_CURRENCIES = ['USD', 'CNY', 'EUR', 'GBP', 'JPY', 'HKD', 'SGD'] as const;
+const PRICE_CURRENCIES = ['USD', 'CNY', 'EUR', 'GBP', 'JPY', 'HKD', 'SGD', 'AUD', 'CAD', 'KRW', 'CHF', 'THB'] as const;
 
 // CurrencySelect 行级币种选择: 空/USD 都按 USD 展示(账面币种零折算)。
 // 非 USD 时 title 给出按当前牌价的 USD 等值提示, 让渠道商在填价时就知道折算影响。
@@ -609,20 +654,26 @@ function CurrencySelect({ value, disabled, onChange }: { value?: string; disable
     const rateFor = (quote: string): FxRateItem | undefined =>
         (fx.data?.items ?? []).find((item) => item.to === quote);
     const rate = rateFor(current);
+    // 快照日龄: 采集是小时级, 超过 2 天视为陈旧(与后端 FxRateMaxAgeDays 一致)。
+    // 单次变动超阈值(25%)由后端刷新拒绝落库保证, 前端不需要也不能替代检测历史变动。
+    const stale = rate ? fxRateIsStale(rate.day) : false;
+    const risk = current !== 'USD' && (!rate || stale);
     const hint = current === 'USD'
         ? t('usdHint')
-        : rate
-            ? t('convertHint', { day: rate.day, rate: rate.rate })
-            : t('noRate');
+        : !rate
+            ? t('noRate')
+            : stale
+                ? t('staleRate', { day: rate.day })
+                : t('convertHint', { day: rate.day, rate: rate.rate });
     return (
         <div className="min-w-0">
             <Select value={current} onValueChange={onChange} disabled={disabled}>
-                <SelectTrigger className="h-8 w-full px-2 text-xs" title={hint}>
+                <SelectTrigger className={cn('h-8 w-full px-2 text-xs', risk && 'text-amber-600 dark:text-amber-400')} title={hint}>
                     <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                     {PRICE_CURRENCIES.map((currency) => (
-                        <SelectItem key={currency} value={currency}>{currency}</SelectItem>
+                        <SelectItem key={currency} value={currency}>{currency}{currency !== 'USD' && !rateFor(currency) ? ' ⚠' : ''}</SelectItem>
                     ))}
                 </SelectContent>
             </Select>

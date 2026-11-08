@@ -20,25 +20,103 @@ import (
 // rechargeOrderTTL 待支付订单的存活时间, 超时自动关闭。
 const rechargeOrderTTL = 30 * time.Minute
 
+// 充值/提现汇率的来源标识: fx_source_static 是管理员设置的固定牌价(CNY 存量口径),
+// fx_source_identity 是账面币种恒等(rate=1, 无折算); FX 快照路径直接记牌价源名。
+const (
+	fxSourceStatic   = "static"
+	fxSourceIdentity = "identity"
+)
+
 // RateProvider 汇率来源(D2 预留远程牌价采集): 1 余额币种(USD) 折多少目标币种。
 // v1 只有静态实现, 后续接央行/支付渠道牌价时换实现即可, 订单与入账不动。
 type RateProvider interface {
 	Rate(ctx context.Context, target string) (float64, error)
 }
 
-// StaticRateProvider 读设置 recharge_rate 的静态汇率。
+// StaticRateProvider 充值/提现的汇率提供者: CNY 读设置 recharge_rate(存量口径),
+// 其它 FX 币种读 FX 牌价快照(FxRateLookup, 与结算折算同一份牌价)。
 type StaticRateProvider struct{}
 
-// Rate 返回 1 USD 折多少 target 币种; 目前只支持 CNY。
-func (StaticRateProvider) Rate(_ context.Context, target string) (float64, error) {
-	if !strings.EqualFold(target, "CNY") {
-		return 0, fmt.Errorf("unsupported currency: %s", target)
+// Rate 返回 1 USD 折多少 target 币种(兼容 RateProvider 接口的旧签名)。
+func (StaticRateProvider) Rate(ctx context.Context, target string) (float64, error) {
+	rate, _, _, _, err := StaticRateProvider{}.RateDetail(ctx, target)
+	return rate, err
+}
+
+// RateDetail 返回汇率及依据: (rate, day, source, id)。
+// CNY 先试存量静态设置 recharge_rate(表单类渠道按面值收 CNY, 打款口径换了会直接改变
+// 管理员要打的人民币分, 保守不动; source 记 "static", day/id 为空表示无牌价行),
+// 设置缺失或非法(<=0)时回退 FX 快照的 CNY 牌价; FX 快照也没有才报错 —— 保证下单永远有价可依。
+// 其它 FX 币种直接复用 FxRateLookup 的牌价快照: 与结算折算同源同日, 汇总展示只认一份牌价。
+// 牌价缺失时返回错误(可用性优先), 由调用方决定降级 —— 绝不静默按 0 或 1 折算。
+func (StaticRateProvider) RateDetail(ctx context.Context, target string) (rate float64, day string, source string, id *uint64, err error) {
+	switch model.NormalizeCurrency(target) {
+	case "CNY":
+		if static := SettingGetFloat(model.SettingKeyRechargeRate); static > 0 {
+			return static, "", fxSourceStatic, nil, nil
+		}
+	case model.LedgerCurrency:
+		return 1, "", fxSourceIdentity, nil, nil
 	}
-	rate := SettingGetFloat(model.SettingKeyRechargeRate)
-	if rate <= 0 {
-		rate = 7.0
+	rate, day, err = FxRateLookup(ctx, model.LedgerCurrency, target)
+	if err != nil {
+		return 0, "", "", nil, err
 	}
-	return rate, nil
+	// 牌价行 ID: 快照可能来自内存缓存, 按唯一键回查库拿行 ID 供单据钉住来源;
+	// 查不到(刚刷新尚未落库的极端并发)按 NULL 处理, 不因审计字段失败拒绝下单。
+	var row model.FxRate
+	if lookErr := db.GetDB().WithContext(ctx).
+		Where("`from` = ? AND `to` = ? AND `day` = ?", model.LedgerCurrency, model.NormalizeCurrency(target), day).
+		Take(&row).Error; lookErr == nil {
+		rowID := row.ID
+		id = &rowID
+	}
+	return rate, day, FxRateSourceName(), id, nil
+}
+
+// RateDetailWithID 同 RateDetail, 另返回所依据的 fx_rates 行 ID(静态价/恒等为 nil):
+// 充值/提现下单把它钉进单据, 复核时能精确还原当时用的哪一行牌价。
+func (StaticRateProvider) RateDetailWithID(ctx context.Context, target string) (rate float64, day, source string, id *uint64, err error) {
+	rate, day, source, id, err = StaticRateProvider{}.RateDetail(ctx, target)
+	return rate, day, source, id, err
+}
+
+// RateDetailCompat 兼容旧四元组调用方(不带 rate id)。
+func (StaticRateProvider) RateDetailCompat(ctx context.Context, target string) (rate float64, day, source string, err error) {
+	rate, day, source, _, err = StaticRateProvider{}.RateDetail(ctx, target)
+	return rate, day, source, err
+}
+
+// Convert 把 amount 从 from 币种折算成 to 币种, 返回折算结果与所依据的牌价快照
+// (rate=1 from 折多少 to, day=采集日, source=来源, id=fx_rates 行 ID)。asOf 保留参数位:
+// 当前一律按最新快照折算, 历史单据以自身持久化的 rate/rate_day/rate_id 为准, 不重算。
+// from=to 恒等折算(rate=1, 无牌价行)。牌价缺失返回错误, 绝不静默按 0 或 1 折算。
+func Convert(ctx context.Context, from, to string, amount float64, asOf ...time.Time) (converted, rate float64, day, source string, id *uint64, err error) {
+	fromN, toN := model.NormalizeCurrency(from), model.NormalizeCurrency(to)
+	if fromN == toN {
+		return amount, 1, "", fxSourceIdentity, nil, nil
+	}
+	// FxRateLookup 给出的是 1 USD 折 quote; 任意两币按倒数交叉:
+	// 1 from = usdToTo/usdToFrom 单位 to, 与结算折算完全同一口径。
+	usdToFrom, dayF, srcF, idF, err := StaticRateProvider{}.RateDetailWithID(ctx, fromN)
+	if err != nil {
+		return 0, 0, "", "", nil, fmt.Errorf("fx rate %s unavailable: %w", fromN, err)
+	}
+	usdToTo, dayT, _, idT, err := StaticRateProvider{}.RateDetailWithID(ctx, toN)
+	if err != nil {
+		return 0, 0, "", "", nil, fmt.Errorf("fx rate %s unavailable: %w", toN, err)
+	}
+	if usdToFrom <= 0 || usdToTo <= 0 {
+		return 0, 0, "", "", nil, fmt.Errorf("fx rate must be positive: %s=%v %s=%v", fromN, usdToFrom, toN, usdToTo)
+	}
+	rate = usdToTo / usdToFrom
+	day, source, id = dayF, srcF, idF
+	if toN == model.LedgerCurrency {
+		id = idF
+	} else if dayT > dayF || (dayT != "" && dayF == "") {
+		day, id = dayT, idT
+	}
+	return amount * rate, rate, day, source, id, nil
 }
 
 // epayConfig 从后台设置读取易支付参数; 商户信息后配即可用。
@@ -131,6 +209,8 @@ type PayChannel struct {
 type RechargeView struct {
 	Configured   bool         `json:"configured"`
 	Rate         float64      `json:"rate"`
+	RateDay      string       `json:"rate_day,omitempty"`    // 汇率牌价日(YYYYMMDD); CNY 静态价为空
+	RateSource   string       `json:"rate_source,omitempty"` // static=设置价, identity=恒等, 其余=牌价源名
 	MinCNY       float64      `json:"min_cny"`
 	AmountTiers  []float64    `json:"amount_tiers"`
 	BonusEnabled bool         `json:"bonus_enabled"`
@@ -160,7 +240,7 @@ func channelViews() []PayChannel {
 
 // RechargeView 返回充值配置视图。
 func RechargeViewGet(ctx context.Context) RechargeView {
-	rate, _ := StaticRateProvider{}.Rate(ctx, "CNY")
+	rate, day, source, _, _ := StaticRateProvider{}.RateDetail(ctx, "CNY")
 	minCNY := SettingGetFloat(model.SettingKeyRechargeMinCNY)
 	tiers, _ := model.ParseAmountTiers(mustSettingString(model.SettingKeyRechargeAmountTiers))
 	bonusOn, _ := strconv.ParseBool(mustSettingString(model.SettingKeyRechargeBonusEnabled))
@@ -174,6 +254,8 @@ func RechargeViewGet(ctx context.Context) RechargeView {
 	return RechargeView{
 		Configured:   configured,
 		Rate:         rate,
+		RateDay:      day,
+		RateSource:   source,
 		MinCNY:       minCNY,
 		AmountTiers:  tiers,
 		BonusEnabled: bonusOn,
@@ -188,24 +270,37 @@ func mustSettingString(key model.SettingKey) string {
 	return value
 }
 
-// RechargeQuote 充值报价: 实付金额(分)换算入账余额与满赠(D6 开关+规则)。
-func RechargeQuote(ctx context.Context, amountCents int64) (credits, bonus, rate float64, err error) {
+// RechargeQuoteDetail 充值报价(带汇率依据): 实付金额(分)换算入账余额与满赠(D6 开关+规则)。
+// 返回所用汇率、牌价日、来源与 fx_rates 行 ID: 前端展示"按哪天的牌价折算",
+// 下单原样落库, 回调只核金额不重算 credits(Creem 固定档位同样以单上 credits 为准)。
+// quoteCurrency 为空按 CNY(存量口径): 报价币种只影响换算与单据快照, 不改变入账 USD 语义。
+func RechargeQuoteDetail(ctx context.Context, amountCents int64, quoteCurrency string) (credits, bonus, rate float64, day, source string, id *uint64, err error) {
 	if amountCents <= 0 {
-		return 0, 0, 0, fmt.Errorf("amount must be positive")
+		return 0, 0, 0, "", "", nil, fmt.Errorf("amount must be positive")
 	}
-	rate, err = StaticRateProvider{}.Rate(ctx, "CNY")
+	quote := model.NormalizeCurrency(quoteCurrency)
+	if quote != "CNY" && !model.ValidPriceCurrency(quote) {
+		return 0, 0, 0, "", "", nil, fmt.Errorf("unsupported quote currency: %s", quoteCurrency)
+	}
+	rate, day, source, id, err = StaticRateProvider{}.RateDetail(ctx, quote)
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, 0, 0, "", "", nil, err
 	}
-	amountCNY := float64(amountCents) / 100
-	credits = amountCNY / rate
+	amountQuote := float64(amountCents) / 100
+	credits = amountQuote / rate
 	if bonusOn, _ := strconv.ParseBool(mustSettingString(model.SettingKeyRechargeBonusEnabled)); bonusOn {
 		rules, parseErr := model.ParseBonusRules(mustSettingString(model.SettingKeyRechargeBonusRules))
 		if parseErr == nil {
-			bonus = credits * model.MatchBonusRule(rules, amountCNY) / 100
+			bonus = credits * model.MatchBonusRule(rules, amountQuote) / 100
 		}
 	}
-	return credits, bonus, rate, nil
+	return credits, bonus, rate, day, source, id, nil
+}
+
+// RechargeQuote 充值报价(旧签名, CNY 口径): 实付金额(分)换算入账余额与满赠。
+func RechargeQuote(ctx context.Context, amountCents int64) (credits, bonus, rate float64, err error) {
+	credits, bonus, rate, _, _, _, err = RechargeQuoteDetail(ctx, amountCents, "CNY")
+	return credits, bonus, rate, err
 }
 
 // rechargeOrderNo 生成业务单号: yyyymmddHHMMSS + 6 位随机, 唯一索引兜底。
@@ -216,24 +311,25 @@ func rechargeOrderNo() string {
 }
 
 // channelPayAmount 计算渠道实付额(渠道币种分): CNY 渠道按面值,
-// 其他币种按汇率快照换算(目前支持 USD, 与余额币种同源)。
-func channelPayAmount(ctx context.Context, gateway pay.PaymentGateway, amountCents int64) (int64, string, error) {
+// 其他币种按订单币种汇率换算(与下单快照同一份牌价, 面额永远与快照同源)。
+func channelPayAmount(ctx context.Context, gateway pay.PaymentGateway, orderCurrency string, amountCents int64) (int64, string, error) {
 	currency := strings.ToUpper(strings.TrimSpace(gateway.ChargeCurrency()))
 	if currency == "" || currency == "CNY" {
 		return amountCents, "CNY", nil
 	}
-	if currency != "USD" {
+	if !model.ValidPriceCurrency(currency) {
 		return 0, "", fmt.Errorf("unsupported charge currency: %s", currency)
 	}
-	rate, err := StaticRateProvider{}.Rate(ctx, "CNY")
-	if err != nil || rate <= 0 {
-		return 0, "", fmt.Errorf("rate is unavailable")
+	converted, _, _, _, _, err := Convert(ctx, orderCurrency, currency, float64(amountCents)/100)
+	if err != nil {
+		return 0, "", fmt.Errorf("rate is unavailable: %w", err)
 	}
-	return int64(math.Round(float64(amountCents) / 100 / rate * 100)), currency, nil
+	return int64(math.Round(converted * 100)), currency, nil
 }
 
 // RechargeCreate 创建充值订单并返回收银台跳转; 未配置支付或金额不合规直接拒绝。
-// amountCents 是 CNY 分基准(展示与入账口径), 渠道实付额按渠道币种另记。
+// amountCents 是 CNY 分基准(存量兼容口径): 报价按 CNY 静态价折算入账,
+// 渠道实付额按渠道币种另记; 下单即锁定汇率快照(rate/rate_day/rate_source/rate_id), 回调不重算。
 func RechargeCreate(ctx context.Context, userID uint, amountCents int64, provider, method, notifyURL, returnURL string) (*model.RechargeOrder, *pay.Form, error) {
 	gateway, err := gatewayFor(provider)
 	if err != nil {
@@ -247,15 +343,15 @@ func RechargeCreate(ctx context.Context, userID uint, amountCents int64, provide
 	if amountCents < int64(minCNY*100) {
 		return nil, nil, fmt.Errorf("amount is below the minimum recharge amount")
 	}
-	payCents, payCurrency, err := channelPayAmount(ctx, gateway, amountCents)
+	payCents, payCurrency, err := channelPayAmount(ctx, gateway, "CNY", amountCents)
 	if err != nil {
 		return nil, nil, err
 	}
-	credits, bonus, _, err := RechargeQuote(ctx, amountCents)
+	credits, bonus, rate, rateDay, rateSource, rateID, err := RechargeQuoteDetail(ctx, amountCents, "CNY")
 	if err != nil {
 		return nil, nil, err
 	}
-	// Creem 是商品化档位: 入账以档位配置为准, 金额只作档位匹配。
+	// Creem 是商品化档位: 入账以档位配置为准, 金额只作档位匹配; 快照仍按下单时的 CNY 价落库。
 	if provider == pay.ProviderCreem {
 		creem := pay.NewCreem(creemConfig())
 		product, ok := creem.ProductFor(amountCents)
@@ -274,6 +370,10 @@ func RechargeCreate(ctx context.Context, userID uint, amountCents int64, provide
 		Currency:    "CNY",
 		PayCents:    payCents,
 		PayCurrency: payCurrency,
+		Rate:        rate,
+		RateDay:     rateDay,
+		RateSource:  rateSource,
+		RateID:      rateID,
 		Credits:     credits,
 		Bonus:       bonus,
 		Subject:     "余额充值",
@@ -427,6 +527,60 @@ func RechargeList(ctx context.Context, userID uint, limit int) ([]model.Recharge
 		return nil, fmt.Errorf("failed to list recharge orders: %w", err)
 	}
 	return orders, nil
+}
+
+// RechargeExportQuery 管理端导出筛选: 全部字段可选, 零值表示不过滤。
+type RechargeExportQuery struct {
+	UserID uint
+	Status string
+	From   time.Time // created_at >= from
+	To     time.Time // created_at < to
+}
+
+// RechargeExport 导出查询: 与列表同口径但无 200 上限(调用方负责上限), created_at 倒序。
+func RechargeExport(ctx context.Context, query RechargeExportQuery, limit int) ([]model.RechargeOrder, error) {
+	if err := RechargeCloseExpired(ctx); err != nil {
+		return nil, err
+	}
+	statement := db.GetDB().WithContext(ctx).Model(&model.RechargeOrder{})
+	if query.UserID != 0 {
+		statement = statement.Where("user_id = ?", query.UserID)
+	}
+	if status := strings.ToLower(strings.TrimSpace(query.Status)); status != "" {
+		statement = statement.Where("status = ?", status)
+	}
+	if !query.From.IsZero() {
+		statement = statement.Where("created_at >= ?", query.From)
+	}
+	if !query.To.IsZero() {
+		statement = statement.Where("created_at < ?", query.To)
+	}
+	orders := []model.RechargeOrder{}
+	if err := statement.Order("id DESC").Limit(limit).Find(&orders).Error; err != nil {
+		return nil, fmt.Errorf("failed to export recharge orders: %w", err)
+	}
+	return orders, nil
+}
+
+// RechargeExportCount 同条件的命中总数(导出截断提示用)。
+func RechargeExportCount(ctx context.Context, query RechargeExportQuery, total *int64) error {
+	statement := db.GetDB().WithContext(ctx).Model(&model.RechargeOrder{})
+	if query.UserID != 0 {
+		statement = statement.Where("user_id = ?", query.UserID)
+	}
+	if status := strings.ToLower(strings.TrimSpace(query.Status)); status != "" {
+		statement = statement.Where("status = ?", status)
+	}
+	if !query.From.IsZero() {
+		statement = statement.Where("created_at >= ?", query.From)
+	}
+	if !query.To.IsZero() {
+		statement = statement.Where("created_at < ?", query.To)
+	}
+	if err := statement.Count(total).Error; err != nil {
+		return fmt.Errorf("failed to count recharge export: %w", err)
+	}
+	return nil
 }
 
 // RechargeManualComplete 人工补单: 第三方已扣款但回调丢失时由管理员补入账。

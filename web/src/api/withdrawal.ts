@@ -8,6 +8,12 @@ export type WithdrawSummary = {
     withdrawn: number;
     revenue: number;
     rate: number;
+    currency?: string;
+    quote_currency?: string;
+    rate_day?: string;
+    snapshot_day?: string;
+    rate_source?: string;
+    supported_currencies?: string[]; // 后端确认字段: 可选到账币种白名单(大写代码); 缺省时前端用 CASHFLOW_CURRENCIES。
     fee_rate: number;
     fee_min: number;
     min_amount: number;
@@ -34,7 +40,31 @@ export type Withdrawal = {
     paid_ref: string;
     paid_at: string | null;
     applied_at: string;
+    source_currency?: string;
+    source_amount?: number;
+    quote_currency?: string;
+    rate_day?: string;
+    currency?: string; // 兼容字段: 后端两条命名并存(currency=quote_currency), 归一在 withdrawalSnapshotOf。
+    payout_currency?: string;
+    payout_amount?: number;
+    actual_currency?: string; // 实际打款币种(mark-paid 时管理员登记), 与申请币种不同时展示端提示。
+    snapshot_day?: string;
+    rate_source?: string;
 };
+
+// 提现单快照归一: 后端新增 rate_day/quote_currency/payout_* 可选字段(Lead 确认), 旧行没有这些字段。
+// isLegacyWithdrawal 判定历史旧行: 无 payout_currency 也无快照元数据 → 按旧口径展示 legacy 提示。
+export type WithdrawalSnapshot = { day: string; source: string; currency: string };
+export function withdrawalSnapshotOf(item: Withdrawal): WithdrawalSnapshot | undefined {
+    const day = item.rate_day ?? item.snapshot_day ?? '';
+    const currency = item.quote_currency ?? item.currency ?? '';
+    if (!day && !currency && !item.rate_source) return undefined;
+    return { day, source: item.rate_source ?? '', currency };
+}
+export function withdrawalPayoutOf(item: Withdrawal): { currency: string; amount: number } | undefined {
+    if (!item.payout_currency) return undefined;
+    return { currency: item.payout_currency, amount: item.payout_amount ?? item.actual_cents / 100 };
+}
 
 // useWithdrawSummary 提现口径(可提/冻结/已提 + 规则)。
 export function useWithdrawSummary() {
@@ -59,11 +89,13 @@ export function useWithdrawals(status: string, userId: number, enabled = true) {
 }
 
 // applyWithdrawal 提现申请: 收益池条件冻结后建单。
+// payout_currency 可选: 用户选择到账币种时随申请提交, 旧服务端忽略未知字段不受影响。
 export function applyWithdrawal(input: {
     amount: number;
     method: string;
     account_name: string;
     account_no: string;
+    payout_currency?: string;
 }) {
     return apiRequest<{ order: Withdrawal }>('/api/v1/withdrawal/apply', { method: 'POST', body: input });
 }
@@ -82,10 +114,12 @@ export function reviewWithdrawal(id: number, approve: boolean, note: string) {
 }
 
 // markWithdrawalPaid 管理员打款: approved → paid, 凭证必填。
-export function markWithdrawalPaid(id: number, paidRef: string) {
+// actual_currency 可选: 实际打款币种与申请币种不同时登记, 展示端据此区分两套口径。
+export function markWithdrawalPaid(id: number, paidRef: string, actualCurrency?: string) {
+    const currency = (actualCurrency ?? '').trim().toUpperCase();
     return apiRequest<{ id: number }>('/api/v1/withdrawal/mark-paid', {
         method: 'POST',
-        body: { id, paid_ref: paidRef },
+        body: { id, paid_ref: paidRef, ...(currency ? { actual_currency: currency } : {}) },
     });
 }
 

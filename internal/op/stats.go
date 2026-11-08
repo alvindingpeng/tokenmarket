@@ -21,8 +21,19 @@ var statsDailyCacheLock sync.RWMutex
 var statsTotalCache model.StatsTotal
 var statsTotalCacheLock sync.RWMutex
 
-var statsHourlyCache [24]model.StatsHourly
+// 按 (日期, 小时) 存桶: 每天各留 24 行, 跨天不再互相覆盖, 小时曲线可回看、可与日统计对账。
+// 内存里只装今天的桶 —— 历史日期不再更新, 装进来没有收益, 查询直接走库。
+type hourlyKey struct {
+	date string
+	hour int
+}
+
+var statsHourlyCache = make(map[hourlyKey]model.StatsHourly)
 var statsHourlyCacheLock sync.RWMutex
+
+// hourlyCacheDate 记录内存里装的是哪一天, 跨天时整份换掉而不是逐日堆积。
+// 只在持锁时读写。
+var hourlyCacheDate string
 
 var channelStatsNeedUpdate = make(map[int]struct{}) // 等待持久化的渠道 ID。
 var channelStatsNeedUpdateLock sync.Mutex           // 保护渠道统计累加和待写集合。
@@ -84,7 +95,10 @@ func StatsSaveDB(ctx context.Context) error {
 	statsDailyCacheLock.RUnlock()
 
 	statsHourlyCacheLock.RLock()
-	hourlyAll := statsHourlyCache
+	hourlyAll := make(map[hourlyKey]model.StatsHourly, len(statsHourlyCache))
+	for key, bucket := range statsHourlyCache {
+		hourlyAll[key] = bucket
+	}
 	statsHourlyCacheLock.RUnlock()
 
 	channelIDs := drainDirtySet(&channelStatsNeedUpdateLock, channelStatsNeedUpdate)
@@ -192,7 +206,7 @@ func persistStatsSnapshots(
 	ctx context.Context,
 	totalSnap model.StatsTotal,
 	dailySnap model.StatsDaily,
-	hourlyAll [24]model.StatsHourly,
+	hourlyAll map[hourlyKey]model.StatsHourly,
 	channelIDs []int,
 	modelIDs []int,
 	keyIDs []int,
@@ -207,16 +221,15 @@ func persistStatsSnapshots(
 		return result.Error
 	}
 
-	todayDate := time.Now().Format("20060102")
-	hourlyStats := make([]model.StatsHourly, 0, 24)
-	for hour := 0; hour < 24; hour++ {
-		if hourlyAll[hour].Date == todayDate {
-			hourlyStats = append(hourlyStats, hourlyAll[hour])
-		}
+	hourlyStats := make([]model.StatsHourly, 0, len(hourlyAll))
+	for _, bucket := range hourlyAll {
+		hourlyStats = append(hourlyStats, bucket)
 	}
 	if len(hourlyStats) > 0 {
+		// 冲突列必须与复合主键一致, 否则 SQLite/Postgres 会报
+		// "ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint"。
 		if result := dbConn.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "hour"}},
+			Columns:   []clause.Column{{Name: "date"}, {Name: "hour"}},
 			UpdateAll: true,
 		}).Create(&hourlyStats); result.Error != nil {
 			return result.Error
@@ -284,7 +297,10 @@ func statsSaveDBWithDailyOverride(ctx context.Context, dailyOverride model.Stats
 	}
 
 	statsHourlyCacheLock.RLock()
-	hourlyAll := statsHourlyCache
+	hourlyAll := make(map[hourlyKey]model.StatsHourly, len(statsHourlyCache))
+	for key, bucket := range statsHourlyCache {
+		hourlyAll[key] = bucket
+	}
 	statsHourlyCacheLock.RUnlock()
 
 	channelIDs := drainDirtySet(&channelStatsNeedUpdateLock, channelStatsNeedUpdate)
@@ -335,14 +351,17 @@ func StatsHourlyUpdate(metrics model.StatsMetrics) error {
 	statsHourlyCacheLock.Lock()
 	defer statsHourlyCacheLock.Unlock()
 
-	if statsHourlyCache[nowHour].Date != todayDate {
-		statsHourlyCache[nowHour] = model.StatsHourly{
-			Hour: nowHour,
-			Date: todayDate,
-		}
+	// 跨天时整份换掉: 昨天的桶不会再更新, 留着只会让内存随运行天数增长。
+	if hourlyCacheDate != todayDate {
+		clear(statsHourlyCache)
+		hourlyCacheDate = todayDate
 	}
-
-	statsHourlyCache[nowHour].StatsMetrics.Add(metrics)
+	key := hourlyKey{date: todayDate, hour: nowHour}
+	bucket := statsHourlyCache[key]
+	bucket.Hour = nowHour
+	bucket.Date = todayDate
+	bucket.StatsMetrics.Add(metrics)
+	statsHourlyCache[key] = bucket
 	return nil
 }
 
@@ -523,27 +542,43 @@ func StatsAPIKeyList() []model.StatsAPIKey {
 	return apiKeys
 }
 
-func StatsHourlyGet() []model.StatsHourly {
+// StatsHourlyGet 返回今天 0 点到当前小时的逐小时统计, 缺失的小时补零。
+// 从内存缓存拼出骨架后, 缺的桶再从库里补: 缓存只装本次进程运行时写过的桶,
+// 刚重启时全是空的, 若只信缓存就会把已经落库的小时统计报成 0。
+func StatsHourlyGet(ctx context.Context) []model.StatsHourly {
 	now := time.Now()
 	currentHour := now.Hour()
-	todayDate := time.Now().Format("20060102")
+	todayDate := now.Format("20060102")
 
 	statsHourlyCacheLock.RLock()
-	defer statsHourlyCacheLock.RUnlock()
-
-	result := make([]model.StatsHourly, 0, currentHour+1)
-
-	for hour := 0; hour <= currentHour; hour++ {
-		if statsHourlyCache[hour].Date == todayDate {
-			result = append(result, statsHourlyCache[hour])
-		} else {
-			result = append(result, model.StatsHourly{
-				Hour: hour,
-				Date: todayDate,
-			})
+	byHour := make(map[int]model.StatsHourly, currentHour+1)
+	for key, bucket := range statsHourlyCache {
+		if key.date == todayDate {
+			byHour[key.hour] = bucket
 		}
 	}
+	statsHourlyCacheLock.RUnlock()
 
+	var persisted []model.StatsHourly
+	if err := db.GetDB().WithContext(ctx).Where("date = ?", todayDate).Find(&persisted).Error; err != nil {
+		log.Errorf("get hourly stats: %v", err)
+	}
+	for _, bucket := range persisted {
+		// 缓存优先: 缓存里的值是最新的累加结果, 库里的快照可能落后一个落库周期。
+		if _, ok := byHour[bucket.Hour]; ok {
+			continue
+		}
+		byHour[bucket.Hour] = bucket
+	}
+
+	result := make([]model.StatsHourly, 0, currentHour+1)
+	for hour := 0; hour <= currentHour; hour++ {
+		bucket, ok := byHour[hour]
+		if !ok {
+			bucket = model.StatsHourly{Hour: hour, Date: todayDate}
+		}
+		result = append(result, bucket)
+	}
 	return result
 }
 
@@ -582,8 +617,9 @@ func statsRefreshCache(ctx context.Context) error {
 		loadedTotal.ID = 1
 	}
 
+	// 只装今天的桶: 内存里按 (日期, 小时) 存, 历史日期不再更新, 装进来没有收益。
 	var loadedHourly []model.StatsHourly
-	result = dbConn.Find(&loadedHourly)
+	result = dbConn.Where("date = ?", today).Find(&loadedHourly)
 	if result.Error != nil {
 		return fmt.Errorf("failed to get hourly stats: %v", result.Error)
 	}
@@ -612,10 +648,11 @@ func statsRefreshCache(ctx context.Context) error {
 	}
 
 	statsHourlyCacheLock.Lock()
-	statsHourlyCache = [24]model.StatsHourly{}
+	clear(statsHourlyCache)
+	hourlyCacheDate = today
 	for _, v := range loadedHourly {
 		if v.Hour >= 0 && v.Hour < 24 {
-			statsHourlyCache[v.Hour] = v
+			statsHourlyCache[hourlyKey{date: v.Date, hour: v.Hour}] = v
 		}
 	}
 	statsHourlyCacheLock.Unlock()

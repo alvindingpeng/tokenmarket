@@ -84,6 +84,8 @@ export type BillingFilter = {
     from?: string;
     to?: string;
     user_id?: number;
+    // fx_day 折算质量下钻: 精确采集日(YYYYMMDD) / unavailable(当时无牌价) / none(未走折算, 后端转空值过滤)。
+    fx_day?: string;
 };
 
 // billingQuery 把筛选条件与分页参数序列化为查询串, 列表与导出共用。
@@ -95,6 +97,7 @@ function billingQuery(filter: BillingFilter, limit: number, offset: number): str
     if (filter.from) query.set('from', filter.from);
     if (filter.to) query.set('to', filter.to);
     if (filter.user_id) query.set('user_id', String(filter.user_id));
+    if (filter.fx_day) query.set('fx_day', filter.fx_day);
     return query.toString();
 }
 

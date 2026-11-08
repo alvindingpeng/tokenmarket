@@ -15,25 +15,32 @@ import (
 // WithdrawSummary 提现口径: 可提 = 成熟收益 - 累计已提 - 提现中冻结。
 // 成熟收益 = 冷却期外且未退款的累计收益; 冷却关闭时等于 TotalRevenue(池子已净扣退款)。
 type WithdrawSummary struct {
-	Available float64 `json:"available"` // 可提余额(收益池口径)
-	Frozen    float64 `json:"frozen"`    // 提现中冻结
-	Withdrawn float64 `json:"withdrawn"` // 累计已提
-	Revenue   float64 `json:"revenue"`   // 累计收益
-	Rate      float64 `json:"rate"`      // 汇率快照: 1 USD = ? CNY
-	FeeRate   float64 `json:"fee_rate"`
-	FeeMin    float64 `json:"fee_min"`
-	MinAmount float64 `json:"min_amount"`
-	CanApply  bool    `json:"can_apply"` // 角色是否允许提现(D4: 仅渠道商/管理员)
+	Available  float64 `json:"available"`   // 可提余额(收益池口径)
+	Frozen     float64 `json:"frozen"`      // 提现中冻结
+	Withdrawn  float64 `json:"withdrawn"`   // 累计已提
+	Revenue    float64 `json:"revenue"`     // 累计收益
+	Rate       float64 `json:"rate"`        // 汇率快照: 1 USD = ? CNY
+	Currency   string  `json:"currency"`    // rate 的目标币种; 恒为 CNY(存量口径)
+	RateDay    string  `json:"rate_day"`    // 牌价采集日 YYYYMMDD; CNY 静态价为空
+	RateSource string  `json:"rate_source"` // static=设置价, identity=恒等, 其余=牌价源名
+	FeeRate    float64 `json:"fee_rate"`
+	FeeMin     float64 `json:"fee_min"`
+	MinAmount  float64 `json:"min_amount"`
+	CanApply   bool    `json:"can_apply"` // 角色是否允许提现(D4: 仅渠道商/管理员)
+	// SupportedCurrencies 可选的到账币种白名单(CNY 在首): 前端据此渲染 payout 下拉, 空表示仅 CNY。
+	// 字段名与前端 supported_currencies 对齐(复数), 一次到位避免双命名兼容。
+	SupportedCurrencies []string `json:"supported_currencies,omitempty"`
 }
 
 // WithdrawSpec 提现申请参数。
 type WithdrawSpec struct {
-	UserID      uint
-	Role        model.Role
-	Amount      float64
-	Method      string
-	AccountName string
-	AccountNo   string
+	UserID         uint
+	Role           model.Role
+	Amount         float64
+	Method         string
+	AccountName    string
+	AccountNo      string
+	PayoutCurrency string // 到账币种(可选); 空=CNY 存量口径, 非法币种直接拒绝
 }
 
 // withdrawRules 提现规则(全部 settings 可配)。
@@ -119,17 +126,21 @@ func WithdrawSummaryGet(ctx context.Context, userID uint, role model.Role) (*Wit
 	if available < 0 {
 		available = 0
 	}
-	rate, _ := StaticRateProvider{}.Rate(ctx, "CNY")
+	rate, rateDay, rateSource, _, _ := StaticRateProvider{}.RateDetail(ctx, "CNY")
 	return &WithdrawSummary{
-		Available: available,
-		Frozen:    user.WithdrawFrozen,
-		Withdrawn: user.TotalWithdrawn,
-		Revenue:   user.TotalRevenue,
-		Rate:      rate,
-		FeeRate:   rules.feeRate,
-		FeeMin:    rules.feeMin,
-		MinAmount: rules.minAmount,
-		CanApply:  canWithdraw(role),
+		Available:           available,
+		Frozen:              user.WithdrawFrozen,
+		Withdrawn:           user.TotalWithdrawn,
+		Revenue:             user.TotalRevenue,
+		Rate:                rate,
+		Currency:            "CNY",
+		RateDay:             rateDay,
+		RateSource:          rateSource,
+		FeeRate:             rules.feeRate,
+		FeeMin:              rules.feeMin,
+		MinAmount:           rules.minAmount,
+		CanApply:            canWithdraw(role),
+		SupportedCurrencies: model.SupportedPayoutCurrencies(),
 	}, nil
 }
 
@@ -159,7 +170,15 @@ func WithdrawApply(ctx context.Context, spec WithdrawSpec) (*model.Withdrawal, e
 	if actual <= 0 {
 		return nil, fmt.Errorf("amount is too small to cover the fee")
 	}
-	rate, err := StaticRateProvider{}.Rate(ctx, "CNY")
+	// 到账币种: 空=CNY(存量口径); 非白名单币种直接拒绝, 绝不把未知代码静默折算。
+	payout := model.NormalizeCurrency(spec.PayoutCurrency)
+	if payout == "" {
+		payout = "CNY"
+	}
+	if !model.ValidPriceCurrency(payout) {
+		return nil, fmt.Errorf("unsupported payout currency: %s", spec.PayoutCurrency)
+	}
+	rate, rateDay, rateSource, rateID, err := StaticRateProvider{}.RateDetail(ctx, payout)
 	if err != nil {
 		return nil, err
 	}
@@ -196,12 +215,17 @@ func WithdrawApply(ctx context.Context, spec WithdrawSpec) (*model.Withdrawal, e
 		}
 	}
 	order := &model.Withdrawal{
-		UserID:      spec.UserID,
-		Amount:      spec.Amount,
-		Fee:         fee,
-		Actual:      actual,
-		Rate:        rate,
+		UserID: spec.UserID,
+		Amount: spec.Amount,
+		Fee:    fee,
+		Actual: actual,
+		Rate:   rate,
+		// 打款指令按到账币种最小单位定格: 审批/打款只读此快照, 不再重算。
 		ActualCents: int64(math.Round(actual * rate * 100)),
+		Currency:    payout,
+		RateDay:     rateDay,
+		RateSource:  rateSource,
+		RateID:      rateID,
 		Method:      method,
 		AccountName: accountName,
 		AccountNo:   accountNo,
@@ -357,10 +381,19 @@ func withdrawUnfreeze(ctx context.Context, id uint, fromStatus, toStatus model.W
 
 // WithdrawMarkPaid 管理员打款: approved → paid, 冻结转累计已提(资金出池)。
 // Balance 与可提都不变(可提 = 收益 - 已提 - 冻结, 两项同减)。
-func WithdrawMarkPaid(ctx context.Context, id uint, paidRef string, actorName string) error {
+// actualCurrency 可选: 管理员实际换了币种打款时改写单上 ActualCurrency(空=按单据 Currency 打款,
+// 不改判); 非白名单币种直接拒绝。只改快照记录, 不重算金额 —— 打款额以 paidRef 凭证为准。
+func WithdrawMarkPaid(ctx context.Context, id uint, paidRef, actualCurrency, actorName string) error {
 	paidRef = strings.TrimSpace(paidRef)
 	if paidRef == "" {
 		return fmt.Errorf("payment reference is required")
+	}
+	payout := ""
+	if actualCurrency = strings.ToUpper(strings.TrimSpace(actualCurrency)); actualCurrency != "" {
+		if !model.ValidPriceCurrency(actualCurrency) {
+			return fmt.Errorf("unsupported actual currency: %s", actualCurrency)
+		}
+		payout = actualCurrency
 	}
 	var order model.Withdrawal
 	err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -368,9 +401,13 @@ func WithdrawMarkPaid(ctx context.Context, id uint, paidRef string, actorName st
 			return fmt.Errorf("withdrawal not found")
 		}
 		now := time.Now()
+		updates := map[string]any{"status": model.WithdrawStatusPaid, "paid_ref": paidRef, "paid_at": now}
+		if payout != "" {
+			updates["actual_currency"] = payout
+		}
 		result := tx.Model(&model.Withdrawal{}).
 			Where("id = ? AND status = ?", id, model.WithdrawStatusApproved).
-			Updates(map[string]any{"status": model.WithdrawStatusPaid, "paid_ref": paidRef, "paid_at": now})
+			Updates(updates)
 		if result.Error != nil {
 			return fmt.Errorf("failed to mark paid: %w", result.Error)
 		}
@@ -393,7 +430,16 @@ func WithdrawMarkPaid(ctx context.Context, id uint, paidRef string, actorName st
 			Amount:       0,
 			BalanceAfter: balanceOf(tx, order.UserID),
 			ActorName:    actorName,
-			Note:         fmt.Sprintf("提现单 #%d 打款 ¥%.2f 凭证 %s", order.ID, float64(order.ActualCents)/100, paidRef),
+			Note: fmt.Sprintf("提现单 #%d 打款 %s%.2f 凭证 %s", order.ID,
+				func() string {
+					if order.ActualCurrency != "" {
+						return order.ActualCurrency + " "
+					}
+					if order.Currency != "" && order.Currency != "CNY" {
+						return order.Currency + " "
+					}
+					return "¥"
+				}(), float64(order.ActualCents)/100, paidRef),
 		})
 	})
 	if err != nil {
@@ -449,6 +495,58 @@ func WithdrawRollback(ctx context.Context, id uint, actorName string) error {
 type WithdrawView struct {
 	model.Withdrawal
 	Username string `json:"username"`
+}
+
+// WithdrawExportQuery 管理端导出筛选: 全部字段可选, 零值表示不过滤。
+type WithdrawExportQuery struct {
+	UserID uint
+	Status string
+	From   time.Time // applied_at >= from
+	To     time.Time // applied_at < to
+}
+
+// WithdrawExport 导出查询: 与列表同口径但无 200 上限(调用方负责上限), id 倒序;
+// Username 由调用方按需联查(导出场景直接写 user_id 列即可)。
+func WithdrawExport(ctx context.Context, query WithdrawExportQuery, limit int) ([]model.Withdrawal, error) {
+	statement := db.GetDB().WithContext(ctx).Model(&model.Withdrawal{})
+	if query.UserID != 0 {
+		statement = statement.Where("user_id = ?", query.UserID)
+	}
+	if status := strings.ToLower(strings.TrimSpace(query.Status)); status != "" {
+		statement = statement.Where("status = ?", status)
+	}
+	if !query.From.IsZero() {
+		statement = statement.Where("applied_at >= ?", query.From)
+	}
+	if !query.To.IsZero() {
+		statement = statement.Where("applied_at < ?", query.To)
+	}
+	orders := []model.Withdrawal{}
+	if err := statement.Order("id DESC").Limit(limit).Find(&orders).Error; err != nil {
+		return nil, fmt.Errorf("failed to export withdrawals: %w", err)
+	}
+	return orders, nil
+}
+
+// WithdrawExportCount 同条件的命中总数(导出截断提示用)。
+func WithdrawExportCount(ctx context.Context, query WithdrawExportQuery, total *int64) error {
+	statement := db.GetDB().WithContext(ctx).Model(&model.Withdrawal{})
+	if query.UserID != 0 {
+		statement = statement.Where("user_id = ?", query.UserID)
+	}
+	if status := strings.ToLower(strings.TrimSpace(query.Status)); status != "" {
+		statement = statement.Where("status = ?", status)
+	}
+	if !query.From.IsZero() {
+		statement = statement.Where("applied_at >= ?", query.From)
+	}
+	if !query.To.IsZero() {
+		statement = statement.Where("applied_at < ?", query.To)
+	}
+	if err := statement.Count(total).Error; err != nil {
+		return fmt.Errorf("failed to count withdrawal export: %w", err)
+	}
+	return nil
 }
 
 // WithdrawList 提现单列表: userID 非零查指定用户, 为零查全部(管理员); status 为空不过滤。

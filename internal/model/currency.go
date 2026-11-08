@@ -18,10 +18,16 @@ const LedgerCurrency = "USD"
 // 只收主流结算币种, 防自由文本: 币种错了折算就是错价, 白名单比正则可靠。
 func ValidPriceCurrency(code string) bool {
 	switch strings.ToUpper(strings.TrimSpace(code)) {
-	case "USD", "CNY", "EUR", "GBP", "JPY", "HKD", "SGD":
+	case "USD", "CNY", "EUR", "GBP", "JPY", "HKD", "SGD", "AUD", "CAD", "KRW", "CHF", "THB":
 		return true
 	}
 	return false
+}
+
+// SupportedPayoutCurrencies 提现到账币种白名单: CNY 在首(存量默认), 其余按 ValidPriceCurrency
+// 稳定排序(不含账面币种 USD —— 收益池是 USD 口径, 打款换币由 mark-paid 的 actual_currency 承担)。
+func SupportedPayoutCurrencies() []string {
+	return []string{"CNY", "EUR", "GBP", "JPY", "HKD", "SGD", "AUD", "CAD", "KRW", "CHF", "THB"}
 }
 
 // NormalizeCurrency 币种代码归一: 大写、去空白。空串按 USD(存量数据与默认)。
@@ -31,6 +37,25 @@ func NormalizeCurrency(code string) string {
 		return LedgerCurrency
 	}
 	return c
+}
+
+// CurrencyZeroDecimal 无小数币种判定: JPY/KRW 法定流通没有小数单位。
+// 存储层仍统一按最小可分(×100)落库(ActualCents 等列不动), 这是展示层口径:
+// 格式化时零小数币种 toFixed(0)+千分位, 避免 ¥12,345.67 这种不存在的金额。
+func CurrencyZeroDecimal(code string) bool {
+	switch NormalizeCurrency(code) {
+	case "JPY", "KRW":
+		return true
+	}
+	return false
+}
+
+// CurrencyMinorUnits 币种的最小展示单位小数位: 零小数币种 0, 其余 2。
+func CurrencyMinorUnits(code string) int {
+	if CurrencyZeroDecimal(code) {
+		return 0
+	}
+	return 2
 }
 
 // FxRate 是一条汇率快照: 1 单位 From 币种折多少 To 币种。

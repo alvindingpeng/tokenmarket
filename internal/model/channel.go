@@ -250,16 +250,21 @@ type ChannelReviewItem struct {
 // 分组页只需按渠道分组列出可选授权并判断可用性, 由此无需再拉整份渠道列表:
 // 那里带着统计, 路径, 代理与凭据明文, 与选取成员无关。
 type ChannelGrantCandidate struct {
-	ID          int      `json:"id"`           // 授权主键, 分组成员按它引用。
-	ChannelID   int      `json:"channel_id"`   // 授权所属渠道 ID。
-	ChannelName string   `json:"channel_name"` // 展示名: 已发布渠道一律显示发布唯一编码, 未发布渠道显示真名。
-	ModelName   string   `json:"model_name"`   // 授权引用的上游模型名称。
-	KeyName     string   `json:"key_name"`     // 授权引用的凭据名称; 非归属者视角为空(脱敏)。
-	Protocols   Protocol `json:"protocols"`    // 授权支持的协议位掩码。
-	Available   bool     `json:"available"`    // 渠道与凭据均启用且模型, 凭据均存在时为真。
-	Listed      bool     `json:"listed"`       // 模型是否上架; 非归属者只能看到上架模型。
-	SupplyPrice LLMPrice `json:"supply_price"` // 供货价(四类), 未设置即 0。
-	UserPrice   LLMPrice `json:"user_price"`   // 用户价(供货价上浮后), 展示与计费同口径。
+	ID            int        `json:"id"`                       // 授权主键, 分组成员按它引用。
+	ChannelID     int        `json:"channel_id"`               // 授权所属渠道 ID。
+	ChannelName   string     `json:"channel_name"`             // 展示名: 已发布渠道一律显示发布唯一编码, 未发布渠道显示真名。
+	ModelName     string     `json:"model_name"`               // 授权引用的上游模型名称。
+	KeyName       string     `json:"key_name"`                 // 授权引用的凭据名称; 非归属者视角为空(脱敏)。
+	Protocols     Protocol   `json:"protocols"`                // 授权支持的协议位掩码。
+	Available     bool       `json:"available"`                // 渠道与凭据均启用且模型, 凭据均存在时为真。
+	Listed        bool       `json:"listed"`                   // 模型是否上架; 非归属者只能看到上架模型。
+	SupplyPrice   LLMPrice   `json:"supply_price"`             // 供货价(四类, 已折算为账面币种 USD), 未设置即 0。
+	UserPrice     LLMPrice   `json:"user_price"`               // 用户价(折算后上浮), 展示与计费同口径。
+	MediaSupply   MediaPrice `json:"media_supply,omitempty"`   // 媒体供货价(已折算为 USD); 文本模型为零值。
+	UserMedia     MediaPrice `json:"user_media,omitempty"`     // 媒体用户价(折算后上浮)。
+	Kind          MediaKind  `json:"kind,omitempty"`           // 模型媒体形态, 文本留空。
+	PriceCurrency string     `json:"price_currency,omitempty"` // 渠道报价币种; 空或 USD 表示零折算。
+	FxMissing     bool       `json:"fx_missing,omitempty"`     // 声明了非 USD 报价但牌价不可用: 价格未折算, 候选按不可用处理。
 }
 
 // 追加到上游请求的单个 Header。

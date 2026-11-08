@@ -954,7 +954,8 @@
       "error": "Failed to load profit data",
       "retry": "Retry",
       "empty": "No settled billing records in this range",
-      "forbidden": "Only administrators can view channel profit"
+      "forbidden": "Only administrators can view channel profit",
+      "fxNote": "Amounts use each settled billing record’s stored FX rate and price day. This view does not reprice historical bills."
     },
     "card": {
       "requestCount": "Requests",
@@ -1257,7 +1258,10 @@
       "counts": "Showing {shown} / {total} models",
       "changed": "{count} unsaved changes",
       "zeroPriced": "{count} listed models have no price (e.g. {models}); listing bills them at 0 — set a price first",
-      "userPriceHint": "User price = supply price × (1 + global markup); this is what the user actually pays",
+      "missingFx": "{count} listed models use a currency with no FX rate (e.g. {models}): settlement would record them in the original currency without conversion — switch currency or wait for rates",
+      "staleFx": "{count} listed models rely on an aged FX rate (e.g. {models}): settlement still converts at the recorded rate — recheck prices if FX has moved sharply",
+      "userPriceHint": "User price = supply price converted to USD at the daily FX rate, then × (1 + global markup); this matches the invoice. Currency-select rows still take the original currency",
+      "fxPreview": "Current rate (snapshot {day}) ≈ {usd} USD",
       "userPriceValue": "in {input} / out {output}",
       "userPricePerImage": "{value} / image",
       "perVideoLabel": "Per video",
@@ -1290,7 +1294,7 @@
     "currency": {
       "usdHint": "USD = ledger currency, no conversion",
       "convertHint": "Quoted in this currency; converted to USD at rate {rate} (price day {day}) at settlement",
-      "noRate": "No rate available yet: settlement will use unconverted price until rates load"
+      "noRate": "No rate available yet: settlement will use unconverted price until rates load", "staleRate": "Rate is over 2 days old (price day {day}); settlement still uses this old rate — ask an admin to refresh"
     }
   },
   "billing": {
@@ -1357,7 +1361,7 @@
       "cacheWrite": "cw",
       "images": "img",
       "seconds": "s",
-      "fxTip": "Upstream quoted in {currency}; converted to USD at {rate} (price day {day})"
+      "fxTip": "Upstream quoted in {currency}; converted to USD at {rate} (price day {day})", "fxDay": "price day {day}", "originalAmount": "≈ {amount} {currency} (price day {day})", "unconverted": "{currency} row; FX unavailable at settlement, recorded in original currency"
     },
     "status": {
       "settled": "Settled",
@@ -1784,7 +1788,11 @@
       "alerts": "Alerts",
       "latency": "Latency",
       "ratelimit": "Rate Limit TOP",
-      "upstream": "Upstream Bills"
+      "upstream": "Upstream Bills",
+      "metrics": "Metrics"
+    },
+    "fx": {
+      "description": "FX snapshot and collection health.", "source": "Source", "snapshotDay": "Snapshot day", "age": "Age", "ageDays": "{count} days", "stale": "Stale", "fresh": "Fresh", "refresh": "Refresh rates", "refreshing": "Refreshing...", "refreshSuccess": "Rates refreshed", "refreshFailed": "Rate refresh failed", "loading": "Loading FX status...", "loadFailed": "Failed to load FX status", "from": "Base", "to": "Quote", "rate": "Rate", "day": "Day", "itemSource": "Source", "attempt": "Last attempt", "lastSuccess": "Last success", "failures": "Failures", "refreshSource": "Refresh source", "historyDesc": "Historical FX snapshot query (read-only). Change percentage compares adjacent days for reference only; it is never a settlement basis.", "change": "Change", "allCurrencies": "All currencies", "startDate": "Start date", "endDate": "End date", "reconDesc": "Conversion quality reconciliation: counts and amount shares of OK / stale / missing FX conversions in the selected window.", "recon_ok": "OK conversions", "recon_stale": "Stale rates", "recon_missing": "Missing rates", "recon_usd_native": "Native USD (no FX conversion)", "reconDrill": "View details", "trend": "30-day rate trend", "trendEmpty": "Not enough {currency} snapshots for a trend yet.", "reconCountShare": "{share} of conversions", "reconAmountShare": "{share} of amount", "export.title": "Order export", "export.rechargeOrders": "Recharge orders CSV", "export.withdrawals": "Withdrawals CSV", "export.done": "Downloaded {name}"
     },
     "latency": {
       "desc": "Time to first byte = connect (DNS/TCP/TLS) + upstream wait. High upstream wait means the channel itself is slow; high connect or TLS means your own egress or the edge hop is the problem. A zero under connect has three causes: the connection was reused, the upstream is plain http, or the upstream address is a bare IP; check the reused rate and the channel URL instead of reading it as fast. Only requests that produced a first byte are counted.",
@@ -1925,6 +1933,7 @@
       "kindWatchdog": "External watchdog",
       "kindRoutePersist": "Route state persist failed",
       "kindRoutePersistRecovered": "Route state recovered",
+      "kindFxRefreshFailed": "FX rate refresh failing repeatedly",
       "kindTest": "Test"
     },
     "settings": {
@@ -1941,6 +1950,24 @@
       "autoBackupHint": "Scheduled consistent SQLite snapshots",
       "autoBackupKeep": "Backups to keep",
       "autoBackupInterval": "Backup interval (hours)",
+      "fxRates": "FX rates",
+      "fxUpdateEnabled": "Auto FX collection",
+      "fxUpdateEnabledHint": "Refresh the USD-based rate snapshot on a fixed schedule when enabled",
+      "fxUpdateInterval": "Collection interval (hours)",
+      "fxUpdateIntervalHint": "1-168 hours; takes effect from the next cycle after saving",
+      "fxUpdateEnabled": "Auto FX collection",
+      "fxUpdateEnabledHint": "Refresh the USD-based rate snapshot on a fixed schedule when enabled",
+      "fxUpdateInterval": "Collection interval (hours)",
+      "fxUpdateIntervalHint": "1-168 hours; takes effect from the next cycle after saving",
+      "fxRatesHint": "Current USD-based snapshot and refresh health (process counters reset on restart)",
+      "fxSnapshotAge": "Snapshot age",
+      "fxLastAttempt": "Last attempt",
+      "fxLastSuccess": "Last success",
+      "fxLastFailure": "Last failure",
+      "fxRefresh": "Refresh now",
+      "fxRefreshOk": "FX rates refreshed",
+      "fxRefreshFailed": "FX refresh failed",
+      "fxStatusFailed": "Unable to load FX status",
       "healthCheck": "Channel health probe",
       "healthCheckHint": "Sends real requests upstream, may incur cost",
       "healthCheckInterval": "Probe interval (minutes)",
@@ -2048,6 +2075,24 @@
       "lastError": "Last error",
       "never": "Never ran",
       "desc": "Read-only snapshot of background task schedules and recent runs."
+    },
+    "metrics": {
+      "desc": "Read-only snapshot of the same totals Prometheus scrapes, refreshed every 30 seconds. Counts are cumulative, not windowed: a zero means nothing has ever been recorded, not that traffic stopped.",
+      "lastRefresh": "Last refreshed",
+      "success": "Success",
+      "failed": "Failed",
+      "canceled": "Canceled",
+      "inputTokens": "Input tokens",
+      "outputTokens": "Output tokens",
+      "cost": "Billed cost",
+      "users": "Users",
+      "balance": "Total balance",
+      "channels": "Channels enabled/total",
+      "alerts": "24h alerts",
+      "statusTitle": "Requests by terminal status",
+      "status": "Status",
+      "count": "Count",
+      "statusEmpty": "No request has reached a terminal status yet."
     },
     "silence": {
       "title": "Silence windows",
@@ -2271,6 +2316,9 @@
       "tier": "¥{amount}",
       "method": "Payment method",
       "methodAuto": "Choose at cashier",
+      "currency": "Pay currency",
+      "currencyAuto": "Channel default",
+      "fxTip": "Converted at the {day} · {source} snapshot: 1 USD ≈ {rate}",
       "channel": "Payment channel",
       "payForeign": "Charged",
       "alipay": "Alipay",
@@ -2279,7 +2327,10 @@
       "credits": "Credits to receive",
       "bonus": "Bonus",
       "rate": "Rate",
-      "rateValue": "1 USD = {rate} CNY",
+      "rateValue": "1 USD = {rate} {currency}",
+      "snapshot": "FX snapshot",
+      "snapshotValue": "{day} · {source}",
+      "sourceAmount": "Original amount",
       "submit": "Pay now",
       "cancel": "Cancel",
       "failed": "Failed to create order",
@@ -2292,6 +2343,7 @@
       "no": "Order no",
       "amount": "Paid",
       "credits": "Credited",
+      "snapshotShort": "snapshot {day} · {source}",
       "status": "Status",
       "time": "Time"
     },
@@ -2313,6 +2365,11 @@
       "fee": "Fee",
       "feeHint": "Fee = max(min {min}, amount x {rate}%); reseller revenue only",
       "actual": "You receive",
+      "payoutCurrency": "Payout currency",
+      "fxSnapshot": "Converted at 1 USD ≈ {rate} ({day} · {source})",
+      "snapshotShort": "{day} · {source}",
+      "legacy": "Legacy order, recorded in CNY",
+      "actualCurrency": "Requested {requested} · paid in {actual}",
       "submit": "Apply",
       "applied": "Withdrawal applied; waiting for admin review",
       "cancelled": "Withdrawal cancelled and unfrozen",
@@ -2497,7 +2554,10 @@
     "paid": {
       "done": "Withdrawal #{id} marked paid",
       "confirm": "Confirm payout",
-      "refPlaceholder": "Payout reference (required)"
+      "refPlaceholder": "Payout reference (required)",
+      "currencyKeep": "Keep currency (same as request)",
+      "requestedVsActual": "Requested payout currency: {requested}",
+      "vsActual": "Actually paid in {actual} (requested {requested})"
     },
     "rollback": {
       "done": "Withdrawal #{id} rolled back to approved"

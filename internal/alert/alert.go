@@ -53,6 +53,7 @@ const (
 	EventUpdateAvailable       Event = "update_available"        // 发现新版本。
 	EventTest                  Event = "test"                    // 告警通道连通性测试。
 	EventSystemAlert           Event = "system_alert"            // 未归类的系统告警。
+	EventFxRateRefreshFailed   Event = "fx_rate_refresh_failed"  // 牌价源连续采集失败(快照停留在旧日)。
 )
 
 // Alert 表示一个待发送的告警。

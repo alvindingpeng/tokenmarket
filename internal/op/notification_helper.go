@@ -3,11 +3,45 @@ package op
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/charmbracelet/log"
 )
+
+// notifyDispatchPending 跟踪在途的异步通知投递 goroutine。
+//
+// 通知是后台"锦上添花"的写库动作, 但测试与关库不能对它视而不见: internal/op 的测试共享包级
+// 全局 db, setup 会把 db 指向新临时库。若上一个用例的 goroutine 还在写, 它会落到新库
+// (通知串台) 或已关闭的旧库 (disk I/O error 1802/522), 还可能让 t.TempDir 清理时报
+// "directory not empty"。记账规则抄 alert.go 的 alertDispatchPending: Add 必须在 go 之前,
+// Done 在协程收尾 —— 若在协程内 Add, 等待方可能在协程起步前就返回, 同步就失效了。
+var notifyDispatchPending sync.WaitGroup
+
+// NotificationDispatchDrain 等待全部在途的异步通知投递跑完并落库。
+// 返回后本包不再有通知协程读写 db: 测试 setup 在 InitDB 前调用它避免跨用例串库,
+// cleanup 在 db.Close() 前调用它避免迟到协程写已关闭的库。
+// 同时覆盖工单通知(ticketNotifyWG): 工单投递也走后台协程, 属于同一类在途工作。
+func NotificationDispatchDrain() {
+	// 告警分发器也可能在其后台协程里触发通知; 先等它把通知任务提交完,
+	// 再等通知和工单投递, 否则仅等待本地通知计数仍会漏掉告警链路的迟到写库。
+	alertDispatchWait()
+	notifyDispatchPending.Wait()
+	ticketNotifyWG.Wait()
+}
+
+// notifyDispatchGo 执行一次记账式异步投递。用独立 context: 调用方的 ctx 可能随请求结束而取消,
+// 那时通知就再也发不出去了。错误由 run 自己记日志 —— 通知失败不该反过来判定业务失败。
+func notifyDispatchGo(run func(ctx context.Context)) {
+	notifyDispatchPending.Add(1)
+	go func() {
+		defer notifyDispatchPending.Done()
+		notifyCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		run(notifyCtx)
+	}()
+}
 
 // notifyAsync 异步投递站内通知。
 //
@@ -20,14 +54,11 @@ func notifyAsync(ctx context.Context, userID uint, notifType model.NotificationT
 	if userID == 0 {
 		return
 	}
-	go func() {
-		// 用独立 context: 调用方的 ctx 可能已经随请求结束而取消, 那时通知就再也发不出去了。
-		notifyCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+	notifyDispatchGo(func(notifyCtx context.Context) {
 		if _, err := NotificationCreateDedup(notifyCtx, userID, notifType, title, content, link, relatedID); err != nil {
 			log.Warnf("notification create failed: user=%d type=%s err=%v", userID, notifType, err)
 		}
-	}()
+	})
 }
 
 // NotifyBalanceLow 发送余额不足通知。
@@ -80,13 +111,11 @@ func NotifyRateLimitHitAsync(userID uint, modelName string, scope string, relate
 	dedupKey := fmt.Sprintf("%s:%d", scope, entityID)
 	title := "限流触发"
 	content := fmt.Sprintf("您对模型 %s 的请求已触发%s限流，请稍后重试。", name, rateLimitScopeLabel(scope))
-	go func() {
-		notifyCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+	notifyDispatchGo(func(notifyCtx context.Context) {
 		if _, err := createNotificationDedupKey(notifyCtx, userID, model.NotificationTypeRateLimitHit, title, content, dedupKey, entityID); err != nil {
 			log.Warnf("notification create failed: user=%d type=%s err=%v", userID, model.NotificationTypeRateLimitHit, err)
 		}
-	}()
+	})
 }
 
 // NotifyChannelDown 发送渠道故障通知。
@@ -121,13 +150,11 @@ func NotifyChannelStatusAsync(userID uint, channelID int, channelName string, re
 		content = fmt.Sprintf("渠道 %s 已恢复正常。", channelName)
 		notifType = model.NotificationTypeChannelRecovered
 	}
-	go func() {
-		notifyCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+	notifyDispatchGo(func(notifyCtx context.Context) {
 		if _, err := NotificationCreateDedup(notifyCtx, userID, notifType, title, content, "", uint64(channelID)); err != nil {
 			log.Warnf("notification create failed: user=%d type=%s err=%v", userID, notifType, err)
 		}
-	}()
+	})
 }
 
 // NotifyChannelReviewAsync 非阻塞地发送渠道审核结果通知。
@@ -135,13 +162,11 @@ func NotifyChannelReviewAsync(userID uint, channelID int, channelName string, ap
 	if userID == 0 {
 		return
 	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+	notifyDispatchGo(func(ctx context.Context) {
 		if err := NotifyChannelReview(ctx, userID, channelID, channelName, approved); err != nil {
 			log.Warnf("notification create failed: user=%d type=%s err=%v", userID, model.NotificationTypeChannelReview, err)
 		}
-	}()
+	})
 }
 
 // NotifyChannelReview 发送渠道审核通知。
@@ -182,13 +207,11 @@ func NotifyDisputeAsync(userID uint, disputeID uint64, status string) {
 	if userID == 0 {
 		return
 	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+	notifyDispatchGo(func(ctx context.Context) {
 		if err := NotifyDispute(ctx, userID, disputeID, status); err != nil {
 			log.Warnf("notification create failed: user=%d type=%s err=%v", userID, model.NotificationTypeDispute, err)
 		}
-	}()
+	})
 }
 
 // NotifyDispute 发送争议处理进度通知。

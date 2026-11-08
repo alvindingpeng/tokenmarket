@@ -82,7 +82,7 @@ footer { margin-top: 34px; color: var(--muted); font-size: 12px; display: flex; 
   </div>
   <div id="content"></div>
   <div class="note">
-    <b>计费口径:</b> 单价为对客价(供货价按平台上浮比例折算), 与账单一致;
+    <b>计费口径:</b> 单价为对客价(供货价先按当日牌价折算成账面币种 USD, 再按平台上浮比例折算), 与账单一致; 渠道可用 CNY / EUR 等原币报价, 页面一律按折算后的 USD 展示, <b>牌价缺失时显示暂缺</b>, 不把原币当美元;
     <b>缓存读/缓存写</b>按上游命中的缓存 token 计量; 媒体模型按张或按秒计量。
     实际调用以平台分配的模型名为准, 本页仅展示可供给的模型与价格。
   </div>
@@ -108,6 +108,11 @@ footer { margin-top: 34px; color: var(--muted); font-size: 12px; display: flex; 
     if (text !== undefined) node.textContent = text;
     return node;
   }
+  // 价格币种由后端给出(价格已折算到账面币种 USD): 页面不再写死「元」, 也不猜渠道原币。
+  function curOf(model) {
+    var c = model && model.price_currency;
+    return c === undefined || c === null || c === '' ? 'USD' : String(c);
+  }
   function priceItems(model) {
     if (model.kind === 'image' || model.kind === 'video') {
       var rows = [];
@@ -127,6 +132,14 @@ footer { margin-top: 34px; color: var(--muted); font-size: 12px; display: flex; 
       ['缓存读', fmt(p.cache_read)],
       ['缓存写', fmt(p.cache_write)],
     ];
+  }
+  // unitText 卡片底部的单位说明; 缺牌价时明说暂缺, 不给出可能与账单不符的数字。
+  function unitText(model) {
+    if (model.fx_missing) return '单价: 暂缺(该报价币种的牌价未采集, 未折算)';
+    var cur = curOf(model);
+    return (model.kind === 'image' || model.kind === 'video')
+      ? '单价: ' + cur + '/张 · ' + cur + '/秒'
+      : '单价: ' + cur + ' / m(百万 token)';
   }
 
   function render() {
@@ -152,14 +165,21 @@ footer { margin-top: 34px; color: var(--muted); font-size: 12px; display: flex; 
         if (model.kind) head.appendChild(el('span', 'kind', model.kind));
         card.appendChild(head);
         var prices = el('div', 'prices');
-        priceItems(model).forEach(function (pair) {
-          var row = el('div', 'price-item');
-          row.appendChild(el('span', 'k', pair[0]));
-          row.appendChild(el('span', 'v', pair[1]));
-          prices.appendChild(row);
-        });
+        if (model.fx_missing) {
+          var missing = el('div', 'price-item');
+          missing.appendChild(el('span', 'k', '单价'));
+          missing.appendChild(el('span', 'v', '—'));
+          prices.appendChild(missing);
+        } else {
+          priceItems(model).forEach(function (pair) {
+            var row = el('div', 'price-item');
+            row.appendChild(el('span', 'k', pair[0]));
+            row.appendChild(el('span', 'v', pair[1]));
+            prices.appendChild(row);
+          });
+        }
         card.appendChild(prices);
-        card.appendChild(el('div', 'unit', (model.kind === 'image' || model.kind === 'video') ? '单价: 元/张 · 元/秒' : '单价: 元 / m(百万 token)'));
+        card.appendChild(el('div', 'unit', unitText(model)));
         grid.appendChild(card);
       });
       content.appendChild(grid);
@@ -167,7 +187,9 @@ footer { margin-top: 34px; color: var(--muted); font-size: 12px; display: flex; 
       var table = el('table', 'list');
       var thead = el('thead');
       var headRow = el('tr');
-      ['模型', '读', '写', '缓存读', '缓存写'].forEach(function (label) {
+      // 价格列的币种写进表头(后端统一折算到 price_currency), 单元格里就不再重复单位。
+      var tableCur = curOf(items[0]);
+      ['模型', '读 (' + tableCur + ')', '写 (' + tableCur + ')', '缓存读 (' + tableCur + ')', '缓存写 (' + tableCur + ')'].forEach(function (label) {
         headRow.appendChild(el('th', null, label));
       });
       thead.appendChild(headRow);
@@ -176,6 +198,11 @@ footer { margin-top: 34px; color: var(--muted); font-size: 12px; display: flex; 
       items.forEach(function (model) {
         var tr = el('tr');
         tr.appendChild(el('td', 'name', model.name));
+        if (model.fx_missing) {
+          ['读', '写', '缓存读', '缓存写'].forEach(function () { tr.appendChild(el('td', 'num', '—')); });
+          tbody.appendChild(tr);
+          return;
+        }
         priceItems(model).forEach(function (pair) {
           tr.appendChild(el('td', 'num', pair[1]));
         });

@@ -1,7 +1,6 @@
 package op
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/alvindingpeng/switchyard/internal/db"
@@ -12,9 +11,7 @@ import (
 // 全表扫描(SELECT *)扫进 Go int 是否报错。
 // 这决定了读路径是否必须写 COALESCE —— 若这里报错, 任何一次列表查询都会 500。
 func TestChannelAlertScanToleratesNullAttempts(t *testing.T) {
-	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "nullscan.db"), false); err != nil {
-		t.Fatalf("init db: %v", err)
-	}
+	opTestDBSetup(t, "nullscan.db")
 	conn := db.GetDB()
 	// 模拟存量行: 该列为 NULL。
 	if err := conn.Exec("INSERT INTO channel_alerts (channel_id, kind, reason, notified, created_at, notify_attempts) VALUES (1, 'down', 'x', 0, datetime('now'), NULL)").Error; err != nil {

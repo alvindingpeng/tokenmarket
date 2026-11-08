@@ -2,7 +2,6 @@ package op
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,10 +15,7 @@ import (
 // 与 alertSubjectTestDB 不同, 这里必须走 db.InitDB: RaiseAlertFacts 直接读 db.GetDB(), 自建连接注入不进去。
 func raiseTestDB(t *testing.T) {
 	t.Helper()
-	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "raise.db"), false); err != nil {
-		t.Fatalf("init db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	opTestDBSetup(t, "raise.db")
 }
 
 // captureAlertDispatcher 把外发接到测试通道上并返回接收端。

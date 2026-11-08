@@ -15,13 +15,16 @@ func TestFxConvertUSDIdentity(t *testing.T) {
 	}
 }
 
-// 牌价缺失时回退原价且 Currency 原样带出(对账按 Currency != USD 识别未折算行),
-// 绝不允许按 rate=0 折算把账单清零。
-func TestFxConvertMissingRateFallsBack(t *testing.T) {
+// 牌价缺失时必须清零并标记不可用: 选路与预扣也会排除该成员，避免把原币当 USD 少扣费。
+func TestFxConvertMissingRateIsUnavailable(t *testing.T) {
 	price := model.LLMPrice{Input: 3}
 	converted, fx := fxConvertSupplyPrice(price, "CNY")
-	if converted.Input != 3 || fx.Currency != "CNY" || fx.Day != "unavailable" || fx.Rate != 1 {
-		t.Fatalf("fallback: %+v fx=%+v", converted, fx)
+	if converted.Input != 0 || converted.Output != 0 || converted.CacheRead != 0 || converted.CacheWrite != 0 || fx.Currency != "CNY" || fx.Day != "unavailable" || fx.Rate != 0 {
+		t.Fatalf("missing rate: %+v fx=%+v", converted, fx)
+	}
+	media := fxConvertMediaPrice(model.MediaPrice{PerImage: 2}, "CNY")
+	if media.PerImage != 0 || media.PerVideo != 0 || media.PerSecond != 0 || len(media.Resolution) != 0 {
+		t.Fatalf("missing media rate: %+v", media)
 	}
 }
 

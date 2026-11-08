@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addMetrics, rankItems, type RankItem } from './rank';
+import { addMetrics, rankItems, type RankItem } from './rankMetrics';
 
 // 榜单排序回归: 顺序必须跟随当前维度(金额/次数/词元)。
 // fixture 刻意让三个维度的第一名不同: gpt-b 赢金额和次数, gpt-a 赢词元 ——

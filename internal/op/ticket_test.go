@@ -3,7 +3,6 @@ package op
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -16,15 +15,7 @@ import (
 // ticketTestEnv 临时 sqlite 库 + 两名普通用户、两名在职管理员、一名停用管理员。
 func ticketTestEnv(t *testing.T) (user1, user2, admin1, admin2 model.User) {
 	t.Helper()
-	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "ticket-op.db"), false); err != nil {
-		t.Fatalf("init db: %v", err)
-	}
-	t.Cleanup(func() {
-		// 先排空在途的异步通知再关库: 迟到的 goroutine 要么落进本库, 要么明确失败,
-		// 不能带着悬念落进下一个用例的库。
-		ticketNotifyWG.Wait()
-		_ = db.Close()
-	})
+	opTestDBSetup(t, "ticket-op.db")
 	mk := func(name string, role model.Role, status model.UserStatus) model.User {
 		u := model.User{Username: name, Role: role, Status: status}
 		if err := db.GetDB().Create(&u).Error; err != nil {
@@ -56,8 +47,11 @@ func waitTicketNotifs(t *testing.T, userID uint, ticketID uint64, want int) {
 	}
 }
 
-// settleTicketNotifs 通知异步投递的静默期: 负向断言(不该出现的通知)前先等一拍。
-func settleTicketNotifs() { time.Sleep(300 * time.Millisecond) }
+// settleTicketNotifs 负向断言(不该出现的通知)前的静默期。
+//
+// 这里原先固定睡 300ms, 既慢又不严密: 睡醒了不代表在途投递已经落库, 机器一慢就会漏判。
+// 改成排空在途投递: 返回时通知一定已经写进本库, 之后 "某人不该收到通知" 的断言才是确定的。
+func settleTicketNotifs() { NotificationDispatchDrain() }
 
 // ticketUserByName 按用户名取用户, 供断言不进返回值的测试账号(如停用管理员)。
 func ticketUserByName(t *testing.T, name string) model.User {

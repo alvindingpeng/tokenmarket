@@ -1,9 +1,9 @@
 package op
 
 import (
+	"context"
 	"errors"
 	"math"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -16,10 +16,7 @@ import (
 // 用户缓存是进程级单例, 一并清掉, 防止上一个测试的同 ID 旧副本串台。
 func billingTestSetup(t *testing.T, username string, balance float64) (payer, owner model.User) {
 	t.Helper()
-	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "billing.db"), false); err != nil {
-		t.Fatalf("init db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	opTestDBSetup(t, "billing.db")
 	userCache.Clear()
 	userNameIndex.Clear()
 	payer = model.User{Username: username, Password: "secret", Role: model.RoleUser, Status: model.StatusActive, Balance: balance}
@@ -633,5 +630,39 @@ func TestBillingSameUsageComparison(t *testing.T) {
 	foreign.OwnerID = owner.ID + 1
 	if billingSameUsage(base, foreign) {
 		t.Fatal("收款人不同应判为另一笔结算")
+	}
+}
+
+// TestBillingSearchFxDayFilter 对账下钻: fx_day 支持 YYYYMMDD 精确匹配与 unavailable 特殊值;
+// 空条件不过滤。账单直接落库绕开结算路径(fx_day 是结算时钉进来的快照)。
+func TestBillingSearchFxDayFilter(t *testing.T) {
+	payer, owner := billingTestSetup(t, "fxday-filter", 100)
+	rows := []model.BillingRecord{
+		{RequestID: 1, UserID: payer.ID, OwnerID: owner.ID, ModelName: "m", UserCost: 1, OwnerRevenue: 0.2, FxRate: 7.2, FxDay: "20261101"},
+		{RequestID: 2, UserID: payer.ID, OwnerID: owner.ID, ModelName: "m", UserCost: 2, OwnerRevenue: 0.4, FxRate: 0, FxDay: "unavailable"},
+		{RequestID: 3, UserID: payer.ID, OwnerID: owner.ID, ModelName: "m", UserCost: 3, OwnerRevenue: 0.6, FxRate: 7.3, FxDay: "20261102"},
+	}
+	if err := db.GetDB().Create(&rows).Error; err != nil {
+		t.Fatalf("seed billing: %v", err)
+	}
+	cases := []struct {
+		fxDay string
+		want  int
+	}{
+		{"", 3},
+		{"20261101", 1},
+		{" 20261101 ", 1}, // 归一空白后精确匹配
+		{"unavailable", 1},
+		{"UNAVAILABLE", 1}, // 大小写归一
+		{"20261201", 0},
+	}
+	for _, tc := range cases {
+		records, total, err := BillingSearch(context.Background(), BillingQuery{UserID: payer.ID, FxDay: tc.fxDay, Limit: 50})
+		if err != nil {
+			t.Fatalf("search fx_day=%q: %v", tc.fxDay, err)
+		}
+		if total != int64(tc.want) || len(records) != tc.want {
+			t.Fatalf("fx_day=%q: total=%d len=%d, want %d", tc.fxDay, total, len(records), tc.want)
+		}
 	}
 }

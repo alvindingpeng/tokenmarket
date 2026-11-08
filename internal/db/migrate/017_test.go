@@ -19,10 +19,15 @@ func openMigrateTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// upsertHourly 复刻 StatsSaveDB 的落库写法: 按 hour 冲突覆盖。
+// upsertHourly 复刻 StatsSaveDB 的落库写法: 按 (date, hour) 复合主键冲突覆盖。
+// 主键改复合之后, 冲突列必须与主键完全一致, 只写 hour 会被 SQLite 判成
+// "ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint"。
 func upsertHourly(t *testing.T, db *gorm.DB, rows ...model.StatsHourly) {
 	t.Helper()
-	if err := db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "hour"}}, UpdateAll: true}).Create(&rows).Error; err != nil {
+	if err := db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "date"}, {Name: "hour"}},
+		UpdateAll: true,
+	}).Create(&rows).Error; err != nil {
 		t.Fatalf("upsert hourly: %v", err)
 	}
 }
@@ -80,7 +85,7 @@ func TestStatsHourlyModelDropsAutoIncrement(t *testing.T) {
 		t.Fatalf("midnight bucket must update in place, got %d rows", n)
 	}
 	var midnight model.StatsHourly
-	if err := db.Where("hour = 0").First(&midnight).Error; err != nil {
+	if err := db.Where("date = ? AND hour = 0", "20261010").First(&midnight).Error; err != nil {
 		t.Fatalf("load midnight row: %v", err)
 	}
 	if midnight.InputToken != 1004 {
@@ -139,8 +144,13 @@ func TestRepairHourlyStatsRows(t *testing.T) {
 	}
 
 	// 修复后再走一次落库路径: 午夜桶必须原地更新, 不再产生脏行。
+	// 升级路径里 AutoMigrate 之后还要跑迁移 44 把主键换成 (date, hour):
+	// AutoMigrate 不会改主键, 只按新模型落库会撞 "ON CONFLICT 未匹配主键"。
 	if err := db.AutoMigrate(&model.StatsHourly{}); err != nil {
 		t.Fatalf("automigrate after repair: %v", err)
+	}
+	if err := Migration044_HourlyStatsCompositeKey(db); err != nil {
+		t.Fatalf("rebuild hourly primary key: %v", err)
 	}
 	for i := 0; i < 3; i++ {
 		upsertHourly(t, db, model.StatsHourly{Hour: 0, Date: "20261011", StatsMetrics: model.StatsMetrics{InputToken: int64(5000 + i)}})
@@ -149,7 +159,7 @@ func TestRepairHourlyStatsRows(t *testing.T) {
 		t.Fatalf("out-of-range rows reappeared: %d", n)
 	}
 	var midnight model.StatsHourly
-	if err := db.Where("hour = 0").First(&midnight).Error; err != nil {
+	if err := db.Where("date = ? AND hour = 0", "20261011").First(&midnight).Error; err != nil {
 		t.Fatalf("load midnight: %v", err)
 	}
 	if midnight.InputToken != 5002 || midnight.Date != "20261011" {
@@ -186,7 +196,7 @@ func TestRepairHourlyStatsRowsIdempotentAndEmpty(t *testing.T) {
 		t.Fatalf("repair not idempotent: %d then %d rows", first, second)
 	}
 	var midnight model.StatsHourly
-	if err := db.Where("hour = 0").First(&midnight).Error; err != nil {
+	if err := db.Where("date = ? AND hour = 0", "20261010").First(&midnight).Error; err != nil {
 		t.Fatalf("midnight row should be recovered: %v", err)
 	}
 	if midnight.InputToken != 1200 {

@@ -3,7 +3,7 @@ import type { APIKey, APIKeyStatsResponse } from './apikey';
 import type { ChannelStats } from './channel';
 import type { Group } from './group';
 import type { LLMInfo } from './model';
-import type { StatsDailyResponse, StatsHourly, StatsTotal } from './stats';
+import type { StatsDailyResponse, StatsHome, StatsHourly, StatsTotal } from './stats';
 import { apiRequest } from './client';
 
 // apiKeyDashboardStatsQueryOptions 供页面查询和启动预取共享 API Key 统计定义。
@@ -53,4 +53,12 @@ export const statsHourlyQueryOptions = queryOptions({
 export const statsTotalQueryOptions = queryOptions({
     queryKey: ['stats', 'total'],
     queryFn: () => apiRequest<StatsTotal>('/api/v1/stats/total'),
+});
+
+// statsHomeQueryOptions 供首页与启动预取共享聚合统计定义。
+// 首页此前要打 total/daily/hourly 与渠道统计四条, 各组件各查一次; 这一条把首屏所需的数据一次取回,
+// 榜单直接用响应里的裁剪结构, 不再拉整份渠道配置。其余页面各自的查询保持原样。
+export const statsHomeQueryOptions = queryOptions({
+    queryKey: ['stats', 'home'],
+    queryFn: () => apiRequest<StatsHome>('/api/v1/stats/home'),
 });

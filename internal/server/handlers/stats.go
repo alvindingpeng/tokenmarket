@@ -25,6 +25,45 @@ type statsDailyResponse struct {
 	Items           []model.StatsDaily `json:"items"`             // 每日原始统计数据。
 }
 
+// statsHomeRankMetrics 榜单所需的精简累计指标, 只保留排名与展示用到的五个合计值。
+// 合计项在后端算好: 前端 formatStatsMetrics 的口径(总词元=输入+输出, 金额=输入成本+输出成本,
+// 请求数=成功+失败)在这里定稿, 榜单不必为了求和多带七个原始字段。
+type statsHomeRankMetrics struct {
+	TotalCost      float64 `json:"total_cost"`      // 合计成本 = 输入成本 + 输出成本。
+	TotalToken     int64   `json:"total_token"`     // 合计词元 = 输入词元 + 输出词元。
+	RequestCount   int64   `json:"request_count"`   // 合计请求数 = 成功 + 失败。
+	RequestSuccess int64   `json:"request_success"` // 成功请求数。
+	RequestFailed  int64   `json:"request_failed"`  // 失败请求数。
+}
+
+// statsHomeModelStats 榜单里的单个渠道模型, 只带展示与聚合所需的最小字段。
+type statsHomeModelStats struct {
+	ID          int    `json:"id"`          // 渠道模型主键, 供榜单做行 key。
+	Name        string `json:"name"`        // 模型名; 同模型可跨渠道出现, 前端按名称聚合成一行。
+	ChannelName string `json:"channelName"` // 所属渠道的展示名, 与渠道项同名(已发布为 #编码)。
+	statsHomeRankMetrics
+}
+
+// statsHomeChannelStats 榜单里的单个渠道: 名称与精简统计, 外加该渠道各模型的精简统计。
+// 用户侧榜单只消费这一份, 不再拉 /api/v1/channel/stats 的整份渠道配置。
+type statsHomeChannelStats struct {
+	ID          int    `json:"id"`          // 渠道主键, 供榜单做行 key。
+	Name        string `json:"name"`        // 展示名: 已发布渠道给 #编码, 否则真名, 与渠道页榜单保持一致。
+	ChannelName string `json:"channelName"` // 真实渠道名; 只有归属者/管理员看得到, 用户侧榜单永远为空。
+	statsHomeRankMetrics
+	Models []statsHomeModelStats `json:"models"` // 该渠道各模型的精简统计, 恒为数组。
+}
+
+// statsHomeResponse 首页首屏的聚合响应: 累计量, 每日, 每小时与榜单一次给全。
+// 字段名与首页各组件原本各自的接口一一对应, 前端换成一次查询后展示口径不变:
+// daily 复用 /stats/daily 的响应形状(含 max_request_count), hourly 复用 /stats/hourly 的原始行。
+type statsHomeResponse struct {
+	Total    model.StatsTotal        `json:"total"`    // 累计统计, 对应 /stats/total。
+	Daily    statsDailyResponse      `json:"daily"`    // 每日统计与热力图上限, 对应 /stats/daily。
+	Hourly   []model.StatsHourly     `json:"hourly"`   // 当日逐小时统计, 对应 /stats/hourly。
+	Channels []statsHomeChannelStats `json:"channels"` // 榜单数据; 普通用户无渠道归属, 为空数组。
+}
+
 func init() {
 	router.NewGroupRouter("/api/v1/stats").
 		Use(middleware.Auth()).
@@ -39,6 +78,11 @@ func init() {
 		AddRoute(
 			router.NewRoute("/total", http.MethodGet).
 				Handle(getStatsTotal),
+		).
+		// 首页首屏聚合: 一次往返给出 total/daily/hourly 与精简榜单, 替代原先的四条独立查询。
+		AddRoute(
+			router.NewRoute("/home", http.MethodGet).
+				Handle(getStatsHome),
 		).
 		AddRoute(
 			router.NewRoute("/apikey", http.MethodGet).
@@ -78,21 +122,23 @@ func isViewerAdmin(c *gin.Context) bool {
 func userBillableStats(c *gin.Context) (daily []model.StatsDaily, hourly []model.StatsHourly, total model.StatsTotal, err error) {
 	userID, _ := middleware.CurrentUser(c)
 	since := time.Now().AddDate(-1, 0, 0)
+	billable := func(row op.BillingAggregate) model.StatsMetrics {
+		return model.StatsMetrics{
+			// 毛输入 + 输出即总词元(计费明细没有独立净读桶): 与管理员侧 usageMetrics 同口径,
+			// 缓存读写字段丢弃会让非管理员的"总词元"漏记缓存命中的请求。
+			InputToken:     row.InputToken + row.CacheReadToken + row.CacheWriteToken,
+			OutputToken:    row.OutputToken,
+			InputCost:      row.UserCost,
+			RequestSuccess: row.RequestCount,
+		}
+	}
 	dailyRows, err := op.BillingDaily(c.Request.Context(), "user", userID, since)
 	if err != nil {
 		return nil, nil, total, err
 	}
 	daily = make([]model.StatsDaily, 0, len(dailyRows))
 	for _, row := range dailyRows {
-		daily = append(daily, model.StatsDaily{
-			Date: row.Date,
-			StatsMetrics: model.StatsMetrics{
-				InputToken:     row.InputToken,
-				OutputToken:    row.OutputToken,
-				InputCost:      row.UserCost,
-				RequestSuccess: row.RequestCount,
-			},
-		})
+		daily = append(daily, model.StatsDaily{Date: row.Date, StatsMetrics: billable(row)})
 	}
 	hourlyRows, err := op.BillingHourly(c.Request.Context(), "user", userID, since)
 	if err != nil {
@@ -100,50 +146,57 @@ func userBillableStats(c *gin.Context) (daily []model.StatsDaily, hourly []model
 	}
 	hourly = make([]model.StatsHourly, 0, 24)
 	for hour, row := range hourlyRows {
-		hourly = append(hourly, model.StatsHourly{
-			Hour: hour,
-			Date: time.Now().Format("20060102"),
-			StatsMetrics: model.StatsMetrics{
-				InputToken:     row.InputToken,
-				OutputToken:    row.OutputToken,
-				InputCost:      row.UserCost,
-				RequestSuccess: row.RequestCount,
-			},
-		})
+		hourly = append(hourly, model.StatsHourly{Hour: hour, Date: time.Now().Format("20060102"), StatsMetrics: billable(row)})
 	}
 	totalRow, err := op.BillingTotal(c.Request.Context(), "user", userID)
 	if err != nil {
 		return nil, nil, total, err
 	}
-	total = model.StatsTotal{StatsMetrics: model.StatsMetrics{
-		InputToken:     totalRow.InputToken,
-		OutputToken:    totalRow.OutputToken,
-		InputCost:      totalRow.UserCost,
-		RequestSuccess: totalRow.RequestCount,
-	}}
+	total = model.StatsTotal{StatsMetrics: billable(totalRow)}
 	return daily, hourly, total, nil
 }
 
-func getStatsDaily(c *gin.Context) {
+// viewerDailyStats 按访问者身份取每日统计: 管理员读全站长期表, 其余读本人在一年窗口内的计费明细。
+// /stats/daily 与 /stats/home 共用这一份口径, 免得两处各写一遍而慢慢漂移。
+func viewerDailyStats(c *gin.Context) ([]model.StatsDaily, error) {
 	now := time.Now()
-	var statsDaily []model.StatsDaily
 	if isViewerAdmin(c) {
 		since := now.AddDate(0, 0, -(int(now.Weekday()) + 53*7)).Format("20060102")
-		var err error
-		statsDaily, err = op.StatsGetDaily(c.Request.Context(), since)
-		if err != nil {
-			resp.Error(c, http.StatusInternalServerError, err.Error())
-			return
-		}
-	} else {
-		daily, _, _, err := userBillableStats(c)
-		if err != nil {
-			resp.Error(c, http.StatusInternalServerError, err.Error())
-			return
-		}
-		statsDaily = daily
+		return op.StatsGetDaily(c.Request.Context(), since)
 	}
+	daily, _, _, err := userBillableStats(c)
+	if err != nil {
+		return nil, err
+	}
+	return daily, nil
+}
 
+// viewerHourlyStats 按访问者身份取当日逐小时统计, 口径同 viewerDailyStats。
+func viewerHourlyStats(c *gin.Context) ([]model.StatsHourly, error) {
+	if isViewerAdmin(c) {
+		return op.StatsHourlyGet(c.Request.Context()), nil
+	}
+	_, hourly, _, err := userBillableStats(c)
+	if err != nil {
+		return nil, err
+	}
+	return hourly, nil
+}
+
+// viewerTotalStats 按访问者身份取累计统计, 口径同 viewerDailyStats。
+func viewerTotalStats(c *gin.Context) (model.StatsTotal, error) {
+	if isViewerAdmin(c) {
+		return op.StatsTotalGet(), nil
+	}
+	_, _, total, err := userBillableStats(c)
+	if err != nil {
+		return model.StatsTotal{}, err
+	}
+	return total, nil
+}
+
+// activityMax 返回热力图的请求量上界; 全量扫描 54 周日行只做一次, 24 小时内复用。
+func activityMax(now time.Time, statsDaily []model.StatsDaily) int64 {
 	activityMaxMu.Lock()
 	if activityMaxCalculatedAt.IsZero() || now.Sub(activityMaxCalculatedAt) >= 24*time.Hour {
 		maxRequestCount := int64(0)
@@ -158,19 +211,23 @@ func getStatsDaily(c *gin.Context) {
 	}
 	maxRequestCount := activityMaxRequestCount
 	activityMaxMu.Unlock()
+	return maxRequestCount
+}
 
+func getStatsDaily(c *gin.Context) {
+	statsDaily, err := viewerDailyStats(c)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
 	resp.Success(c, statsDailyResponse{
-		MaxRequestCount: maxRequestCount,
+		MaxRequestCount: activityMax(time.Now(), statsDaily),
 		Items:           statsDaily,
 	})
 }
 
 func getStatsHourly(c *gin.Context) {
-	if isViewerAdmin(c) {
-		resp.Success(c, op.StatsHourlyGet())
-		return
-	}
-	_, hourly, _, err := userBillableStats(c)
+	hourly, err := viewerHourlyStats(c)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -179,16 +236,94 @@ func getStatsHourly(c *gin.Context) {
 }
 
 func getStatsTotal(c *gin.Context) {
-	if isViewerAdmin(c) {
-		resp.Success(c, op.StatsTotalGet())
-		return
-	}
-	_, _, total, err := userBillableStats(c)
+	total, err := viewerTotalStats(c)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 	resp.Success(c, total)
+}
+
+// homeRankMetrics 把一份完整积累统计压成榜单需要的五个合计项, 口径与前端 formatStatsMetrics 一致。
+func homeRankMetrics(metrics model.StatsMetrics) statsHomeRankMetrics {
+	return statsHomeRankMetrics{
+		TotalCost:      metrics.InputCost + metrics.OutputCost,
+		TotalToken:     metrics.InputToken + metrics.OutputToken,
+		RequestCount:   metrics.RequestSuccess + metrics.RequestFailed,
+		RequestSuccess: metrics.RequestSuccess,
+		RequestFailed:  metrics.RequestFailed,
+	}
+}
+
+// homeChannelStats 把 op.ChannelStatsList 的结果投影成榜单用的精简结构。
+// 复用同一份数据来源(作用域过滤、发布编码与模型清单都在里面), 只丢掉榜单不消费的配置字段:
+// 首页因此不必再拉整份 /api/v1/channel/stats —— 那份带着路径、代理与全部模型配置。
+func homeChannelStats(scope model.Scope) []statsHomeChannelStats {
+	rows := op.ChannelStatsList(scope)
+	channels := make([]statsHomeChannelStats, 0, len(rows))
+	for _, row := range rows {
+		// 展示名与渠道页榜单同规则: 已发布渠道对外只给发布编码, 真名只有归属者/管理员可见。
+		name := row.ChannelName
+		if row.ShareCode != "" {
+			name = "#" + row.ShareCode
+		}
+		models := make([]statsHomeModelStats, 0, len(row.Models))
+		for _, channelModel := range row.Models {
+			models = append(models, statsHomeModelStats{
+				ID:                   channelModel.ModelID,
+				Name:                 channelModel.ModelName,
+				ChannelName:          name,
+				statsHomeRankMetrics: homeRankMetrics(channelModel.StatsMetrics),
+			})
+		}
+		channels = append(channels, statsHomeChannelStats{
+			ID:                   row.ChannelID,
+			Name:                 name,
+			ChannelName:          row.ChannelName,
+			statsHomeRankMetrics: homeRankMetrics(row.StatsMetrics),
+			Models:               models,
+		})
+	}
+	return channels
+}
+
+// getStatsHome 首页首屏的聚合接口: 累计, 每日, 每小时与排行榜一次返回。
+// 认证与作用域与 /api/v1/stats/* 完全一致(同一个 Auth 中间件与同一套身份口径), 只是把四次往返并成一次:
+// 首屏此前要打 total/daily/hourly/channel-stats 四条, 响应里还带着榜单用不到的整份渠道配置。
+func getStatsHome(c *gin.Context) {
+	now := time.Now()
+	admin := isViewerAdmin(c)
+	var daily []model.StatsDaily
+	var hourly []model.StatsHourly
+	var total model.StatsTotal
+	var err error
+	if admin {
+		// 管理员的三段分别来自日表与两个缓存快照, 与 /stats/daily、/stats/hourly、/stats/total 同源。
+		since := now.AddDate(0, 0, -(int(now.Weekday()) + 53*7)).Format("20060102")
+		daily, err = op.StatsGetDaily(c.Request.Context(), since)
+		hourly = op.StatsHourlyGet(c.Request.Context())
+		total = op.StatsTotalGet()
+	} else {
+		// 非管理员的三段本来就出自同一份计费明细, 只聚合一次: 分开取等于把同一次扫描做三遍。
+		daily, hourly, total, err = userBillableStats(c)
+	}
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// 榜单只对有渠道视图的角色有意义; 普通用户没有渠道归属, 直接给空数组而不是空跑一次缓存遍历。
+	scope := scopeOf(c)
+	channels := []statsHomeChannelStats{}
+	if admin || scope.Role == model.RoleReseller {
+		channels = homeChannelStats(scope)
+	}
+
+	resp.Success(c, statsHomeResponse{
+		Total:    total,
+		Daily:    statsDailyResponse{MaxRequestCount: activityMax(now, daily), Items: daily},
+		Hourly:   hourly,
+		Channels: channels,
+	})
 }
 
 // getStatsAPIKey 返回访问者自有的 API Key 统计(与密钥列表同口径, 严格按归属隔离)。
@@ -239,6 +374,7 @@ func billingFilterFromQuery(c *gin.Context) op.BillingQuery {
 		Channel:  c.Query("channel"),
 		Status:   c.Query("status"),
 		PriceSrc: c.Query("price_source"),
+		FxDay:    c.Query("fx_day"),
 	}
 	if role == model.RoleAdmin {
 		filter.UserID = 0
@@ -304,7 +440,7 @@ func exportBillingRecords(c *gin.Context) {
 		"channel_id", "owner_id", "share_code", "price_source",
 		"input_token", "output_token", "cache_read_token", "cache_write_token",
 		"user_price_input", "user_price_output", "supply_price_input", "supply_price_output",
-		"user_cost", "owner_revenue", "platform_revenue", "status",
+		"user_cost", "owner_revenue", "platform_revenue", "fx_day", "status",
 	})
 	for _, record := range records {
 		_ = writer.Write([]string{
@@ -330,6 +466,7 @@ func exportBillingRecords(c *gin.Context) {
 			strconv.FormatFloat(record.UserCost, 'f', 6, 64),
 			strconv.FormatFloat(record.OwnerRevenue, 'f', 6, 64),
 			strconv.FormatFloat(record.PlatformRevenue, 'f', 6, 64),
+			sanitizeCSVCell(record.FxDay),
 			sanitizeCSVCell(record.Status),
 		})
 	}

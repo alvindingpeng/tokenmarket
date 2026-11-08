@@ -954,7 +954,8 @@
       "error": "利润数据加载失败",
       "retry": "重试",
       "empty": "该区间没有已结算的计费记录",
-      "forbidden": "仅管理员可查看渠道利润"
+      "forbidden": "仅管理员可查看渠道利润",
+      "fxNote": "金额按每条已结算账单记录保存的汇率与牌价日统计；此视图不会重新折算历史账单。"
     },
     "card": {
       "requestCount": "请求次数",
@@ -1257,7 +1258,10 @@
       "counts": "显示 {shown} / {total} 个模型",
       "changed": "有 {count} 处改动待保存",
       "zeroPriced": "{count} 个已上架模型未定价(如 {models}), 上架即按 0 计费, 请先定价",
-      "userPriceHint": "用户价 = 供货价 × (1 + 全局上浮比例), 用户实际支付的单价",
+      "missingFx": "{count} 个已上架模型使用无牌价币种(如 {models}): 结算时汇率不可用会按原币口径入账, 请先换币种或等汇率就绪",
+      "staleFx": "{count} 个已上架模型的牌价已偏旧(如 {models}): 结算仍按采集时的牌价折算, 若近期汇价波动明显请重新核对价格",
+      "userPriceHint": "用户价 = 供货价按当日牌价折算成 USD 后 × (1 + 全局上浮比例), 与账单一致; 原币报价的输入框仍填原币",
+      "fxPreview": "按当前牌价(采集日 {day}) ≈ {usd} USD",
       "userPriceValue": "入 {input} / 出 {output}",
       "userPricePerImage": "{value} / 张",
       "perVideoLabel": "每条价",
@@ -1290,7 +1294,7 @@
     "currency": {
       "usdHint": "USD 即账面币种, 零折算",
       "convertHint": "该币种报价; 结算时按当日牌价 {rate}(采集日 {day})折算为 USD 入账",
-      "noRate": "暂无牌价: 汇率就绪前结算将按原价入账(不折算)"
+      "noRate": "暂无牌价: 汇率就绪前结算将按原价入账(不折算)", "staleRate": "牌价已超过 2 天未更新(采集日 {day}); 结算仍按此旧牌价折算, 建议联系管理员刷新"
     }
   },
   "billing": {
@@ -1357,7 +1361,7 @@
       "cacheWrite": "缓存写",
       "images": "图",
       "seconds": "秒",
-      "fxTip": "上游以 {currency} 报价; 按牌价 {rate}(采集日 {day})折算为 USD 入账"
+      "fxTip": "上游以 {currency} 报价; 按牌价 {rate}(采集日 {day})折算为 USD 入账", "fxDay": "牌价日 {day}", "originalAmount": "≈ {amount} {currency} (牌价日 {day})", "unconverted": "{currency} 行, 汇率采集失败, 按原币口径入账"
     },
     "status": {
       "settled": "已结算",
@@ -1784,7 +1788,11 @@
       "alerts": "告警记录",
       "latency": "延迟归因",
       "ratelimit": "限流 TOP",
-      "upstream": "上游对单"
+      "upstream": "上游对单",
+      "metrics": "指标观测"
+    },
+    "fx": {
+      "description": "汇率快照与采集健康状态。", "source": "来源", "snapshotDay": "快照日", "age": "日龄", "ageDays": "{count} 天", "stale": "已陈旧", "fresh": "正常", "refresh": "刷新汇率", "refreshing": "刷新中...", "refreshSuccess": "汇率已刷新", "refreshFailed": "汇率刷新失败", "loading": "汇率状态加载中...", "loadFailed": "汇率状态加载失败", "from": "基准币种", "to": "报价币种", "rate": "汇率", "day": "日期", "itemSource": "来源", "attempt": "最近尝试", "lastSuccess": "最近成功", "failures": "失败次数", "refreshSource": "刷新来源", "historyDesc": "历史汇率快照查询(只读)。变化百分比为相邻两天对比, 仅供参考, 不作为结算依据。", "change": "变化", "allCurrencies": "全部币种", "startDate": "开始日期", "endDate": "结束日期", "reconDesc": "折算质量对账: 所选时间窗内正常/陈旧/缺失牌价的折算笔数与金额占比。", "recon_ok": "正常折算", "recon_stale": "陈旧牌价", "recon_missing": "缺失牌价", "recon_usd_native": "原生 USD(未走折算)", "reconDrill": "查看明细", "trend": "近 30 天牌价趋势", "trendEmpty": "暂无足够的 {currency} 快照绘制趋势", "reconCountShare": "笔数占比 {share}", "reconAmountShare": "金额占比 {share}", "export.title": "订单导出", "export.rechargeOrders": "充值订单 CSV", "export.withdrawals": "提现单 CSV", "export.done": "已下载 {name}"
     },
     "latency": {
       "desc": "首字节 = 建连(DNS/建连/TLS) + 上游等待。上游等待偏高说明该换上游渠道; 建连与 TLS 偏高说明该加出口或走边缘接入。建连列为 0 有三种情况: 复用了连接、上游用 http 明文、上游地址是 IP —— 看复用率与渠道地址区分, 不要一律读成「很快」。只统计拿到首字节的请求。",
@@ -1925,6 +1933,7 @@
       "kindWatchdog": "外部看门狗",
       "kindRoutePersist": "路由状态落库失败",
       "kindRoutePersistRecovered": "路由状态已恢复",
+      "kindFxRefreshFailed": "汇率牌价采集连续失败",
       "kindTest": "测试"
     },
     "settings": {
@@ -1941,6 +1950,20 @@
       "autoBackupHint": "定时 SQLite 一致性快照",
       "autoBackupKeep": "备份保留份数",
       "autoBackupInterval": "备份间隔(小时)",
+      "fxRates": "汇率",
+      "fxUpdateEnabled": "自动采集汇率",
+      "fxUpdateEnabledHint": "开启后按固定周期自动刷新 USD 基准牌价",
+      "fxUpdateInterval": "采集间隔(小时)",
+      "fxUpdateIntervalHint": "1-168 小时; 保存后下个周期生效",
+      "fxRatesHint": "当前 USD 基准快照与刷新状态, 进程状态重启后重置",
+      "fxSnapshotAge": "快照年龄",
+      "fxLastAttempt": "最近尝试",
+      "fxLastSuccess": "最近成功",
+      "fxLastFailure": "最近失败",
+      "fxRefresh": "立即刷新",
+      "fxRefreshOk": "汇率已刷新",
+      "fxRefreshFailed": "汇率刷新失败",
+      "fxStatusFailed": "无法加载汇率状态",
       "healthCheck": "渠道健康探测",
       "healthCheckHint": "会向上游发起真实请求, 可能产生费用",
       "healthCheckInterval": "探测间隔(分钟)",
@@ -2048,6 +2071,24 @@
       "lastError": "最近错误",
       "never": "从未运行",
       "desc": "后台任务的调度周期与最近运行情况(只读)。"
+    },
+    "metrics": {
+      "desc": "与 Prometheus 抓取同源的累计指标只读快照, 每 30 秒刷新一次。计数是累计口径而非窗口口径: 显示 0 表示从未记录过, 不代表当前没有流量。",
+      "lastRefresh": "最后刷新",
+      "success": "成功",
+      "failed": "失败",
+      "canceled": "已取消",
+      "inputTokens": "输入 token",
+      "outputTokens": "输出 token",
+      "cost": "计费成本",
+      "users": "用户数",
+      "balance": "余额合计",
+      "channels": "启用/渠道总数",
+      "alerts": "24 小时告警",
+      "statusTitle": "按终态分列的请求数",
+      "status": "状态",
+      "count": "请求数",
+      "statusEmpty": "暂无请求进入终态。"
     },
     "silence": {
       "title": "告警静默窗口",
@@ -2271,6 +2312,9 @@
       "tier": "¥{amount}",
       "method": "支付方式",
       "methodAuto": "收银台自选",
+      "currency": "支付币种",
+      "currencyAuto": "跟随渠道",
+      "fxTip": "按 {day} · {source} 牌价 1 USD ≈ {rate} 折算",
       "channel": "支付渠道",
       "payForeign": "渠道实付",
       "alipay": "支付宝",
@@ -2279,7 +2323,10 @@
       "credits": "预计到账",
       "bonus": "满赠送",
       "rate": "汇率",
-      "rateValue": "1 USD = {rate} CNY",
+      "rateValue": "1 USD = {rate} {currency}",
+      "snapshot": "汇率快照",
+      "snapshotValue": "{day} · {source}",
+      "sourceAmount": "原支付金额",
       "submit": "去支付",
       "cancel": "取消",
       "failed": "下单失败",
@@ -2292,6 +2339,7 @@
       "no": "订单号",
       "amount": "实付",
       "credits": "到账",
+      "snapshotShort": "快照 {day} · {source}",
       "status": "状态",
       "time": "时间"
     },
@@ -2313,6 +2361,11 @@
       "fee": "手续费",
       "feeHint": "手续费 = max(最低 {min}, 金额 × {rate}%); 仅渠道商收益可提",
       "actual": "预计到账",
+      "payoutCurrency": "到账币种",
+      "fxSnapshot": "按 {day} · {source} 牌价 1 USD ≈ {rate} 折算",
+      "snapshotShort": "{day} · {source}",
+      "legacy": "旧单, 按当时人民币口径",
+      "actualCurrency": "申请 {requested} · 实际打款 {actual}",
       "submit": "申请提现",
       "applied": "提现申请已提交, 等待管理员审核",
       "cancelled": "提现申请已取消, 金额已解冻",
@@ -2497,7 +2550,10 @@
     "paid": {
       "done": "提现单 #{id} 已标记打款",
       "confirm": "确认打款",
-      "refPlaceholder": "打款凭证号(必填)"
+      "refPlaceholder": "打款凭证号(必填)",
+      "currencyKeep": "币种不变(与申请一致)",
+      "requestedVsActual": "申请到账币种: {requested}",
+      "vsActual": "实际打款 {actual}(申请 {requested})"
     },
     "rollback": {
       "done": "提现单 #{id} 已回滚到已通过"

@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useSettingList, useSetSetting, SettingKey } from '@/api/setting';
 import { useMetricsToken, useRotateMetricsToken, useTestAlertChannel, useTestAlertWebhook } from '@/api/ops';
+import { useAdminFxRateStatus, useRefreshAdminFxRates } from '@/api/fx';
+import { RefreshCw } from 'lucide-react';
 import { Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -49,6 +51,8 @@ const OPS_KEYS = [
     SettingKey.AlertWecomWebhook,
     SettingKey.AlertRedeliverWindow,
     SettingKey.MetricsAuth,
+    SettingKey.FxRateUpdateEnabled,
+    SettingKey.FxRateUpdateInterval,
 ] as const;
 
 // CHANNEL_LABELS 告警渠道展示名与 i18n key 的对应。
@@ -77,6 +81,8 @@ export function SettingOps() {
     const setSetting = useSetSetting();
 
     const testWebhook = useTestAlertWebhook();
+    const fxStatus = useAdminFxRateStatus();
+    const refreshFx = useRefreshAdminFxRates();
     const testChannel = useTestAlertChannel();
 
     // runChannelTest 发送测试告警并就地反馈结果。
@@ -160,6 +166,53 @@ export function SettingOps() {
                 <HeartPulse className='size-5' />
                 {t('title')}
             </h2>
+
+            <section className={rowClass + ' items-start border-b border-border/60'}>
+                <div className='min-w-0 flex-1 space-y-2'>
+                    <div>
+                        <Label className='text-sm font-medium'>{t('fxRates')}</Label>
+                        <p className='text-xs text-muted-foreground'>{t('fxRatesHint')}</p>
+                    </div>
+                    {fxStatus.data && (
+                        <div className='space-y-1 text-xs text-muted-foreground'>
+                            <p>{t('fxSnapshotAge')}: {fxStatus.data.age_days < 0 ? '—' : `${fxStatus.data.age_days}d`}</p>
+                            <p>{t('fxLastAttempt')}: {fxStatus.data.refresh?.LastAttemptAt || '—'}</p>
+                            <p>{t('fxLastSuccess')}: {fxStatus.data.refresh?.LastSuccessAt || '—'}</p>
+                            <p>{t('fxLastFailure')}: {fxStatus.data.refresh?.LastFailureAt || '—'} ({fxStatus.data.refresh?.FailureCount ?? 0})</p>
+                            {fxStatus.data.refresh?.LastError && <p className='text-destructive'>{fxStatus.data.refresh.LastError}</p>}
+                            <div className='flex flex-wrap gap-x-4 gap-y-1 pt-1'>
+                                {(fxStatus.data.items ?? []).map((item) => <span key={item.to} className='font-mono'>{item.to}: {Number(item.rate ?? 0).toFixed(6)}</span>)}
+                            </div>
+                        </div>
+                    )}
+                    {fxStatus.isError && <p className='text-xs text-destructive'>{fxStatus.error instanceof Error ? fxStatus.error.message : t('fxStatusFailed')}</p>}
+                </div>
+                <Button type='button' variant='outline' size='sm' className='shrink-0' disabled={refreshFx.isPending}
+                    onClick={() => refreshFx.mutate(undefined, { onSuccess: () => toast.success(t('fxRefreshOk')), onError: (error) => toast.error(error instanceof Error ? error.message : t('fxRefreshFailed')) })}>
+                    <RefreshCw className={cn('mr-2 size-4', refreshFx.isPending && 'animate-spin')} />
+                    {t('fxRefresh')}
+                </Button>
+            </section>
+
+            <div className={rowClass + ' ' + dividerClass}>
+                <div className='min-w-0'>
+                    <Label className='text-sm font-medium'>{t('fxUpdateEnabled')}</Label>
+                    <p className='text-xs text-muted-foreground'>{t('fxUpdateEnabledHint')}</p>
+                </div>
+                <Switch checked={boolValue(SettingKey.FxRateUpdateEnabled)}
+                    onCheckedChange={(checked) => { setDraft((prev) => ({ ...prev, [SettingKey.FxRateUpdateEnabled]: String(checked) })); save(SettingKey.FxRateUpdateEnabled, String(checked)); }} />
+            </div>
+
+            <div className={rowClass + ' ' + dividerClass}>
+                <div className='min-w-0'>
+                    <Label className='text-sm font-medium'>{t('fxUpdateInterval')}</Label>
+                    <p className='text-xs text-muted-foreground'>{t('fxUpdateIntervalHint')}</p>
+                </div>
+                <Input type='number' min={1} max={168} className='h-9 w-28 rounded-xl'
+                    value={values[SettingKey.FxRateUpdateInterval] ?? ''}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, [SettingKey.FxRateUpdateInterval]: event.target.value }))}
+                    onBlur={(event) => saveNumber(SettingKey.FxRateUpdateInterval, event.target.value.trim(), 1, 168, '1')} />
+            </div>
 
             <div className={rowClass}>
                 <div className='min-w-0'>

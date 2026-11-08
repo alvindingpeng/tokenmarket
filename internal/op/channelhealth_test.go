@@ -3,7 +3,6 @@ package op
 import (
 	"context"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -45,9 +44,7 @@ func TestHealthProbeRequestUsesCachedKeyAuthWithoutLeakingKey(t *testing.T) {
 // channelHealthNotificationTestDB 给状态边沿测试提供独立的通知、渠道和告警表。
 func channelHealthNotificationTestDB(t *testing.T) {
 	t.Helper()
-	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "channel-health-notification.db"), false); err != nil {
-		t.Fatalf("init db: %v", err)
-	}
+	opTestDBSetup(t, "channel-health-notification.db")
 	db.GetDB().Config.DisableForeignKeyConstraintWhenMigrating = true
 	if err := db.GetDB().AutoMigrate(&model.Channel{}, &model.ChannelHealthRecord{}, &model.ChannelAlert{}, &model.Notification{}, &model.Webhook{}, &model.WebhookDelivery{}); err != nil {
 		t.Fatalf("migrate channel health notification tables: %v", err)
@@ -99,7 +96,7 @@ func TestEvaluateAlertsNotifiesOwnerOnNewDownAndRecoveryTransitions(t *testing.T
 	record := model.ChannelHealthRecord{ChannelID: channel.ID, Healthy: false, Error: "connection refused", CheckedAt: time.Now()}
 	evaluateAlerts(context.Background(), channel, record, false)
 	alertDispatchWait()
-	time.Sleep(30 * time.Millisecond) // 等待告警派发器触发的站内通知异步落库。
+	NotificationDispatchDrain() // 告警派发器触发的站内通知也必须落库后才能断言条数: 排空而非睡 30ms。
 	var notifications []model.Notification
 	if err := db.GetDB().Where("user_id = ?", channel.UserID).Find(&notifications).Error; err != nil {
 		t.Fatal(err)
@@ -121,7 +118,7 @@ func TestEvaluateAlertsNotifiesOwnerOnNewDownAndRecoveryTransitions(t *testing.T
 	}
 	evaluateAlerts(context.Background(), channel, model.ChannelHealthRecord{ChannelID: channel.ID, Healthy: true, StatusCode: 200, CheckedAt: time.Now()}, false)
 	alertDispatchWait()
-	time.Sleep(30 * time.Millisecond) // 等待恢复通知异步落库。
+	NotificationDispatchDrain() // 恢复通知同样排空后再断言, 替代原来的固定 30ms。
 	if err := db.GetDB().Where("user_id = ?", channel.UserID).Find(&notifications).Error; err != nil {
 		t.Fatal(err)
 	}

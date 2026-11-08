@@ -172,13 +172,14 @@ function Pager({ page, total, onChange, label }: { page: number; total: number; 
 // SpendingTable 渲染计费明细表: 模型/渠道/状态/时间筛选 + 分页 + CSV 导出; 收入列只在渠道商/管理员视图展示。
 function SpendingTable({ owner, onView }: { owner: boolean; onView: (id: number) => void }) {
     const t = useTranslations('billing');
+    const drillFxDay = useMemo(() => new URLSearchParams(window.location.search).get('fx_day') ?? undefined, []);
     const [page, setPage] = useState(1);
     const [draftModel, setDraftModel] = useState('');
     const [draftChannel, setDraftChannel] = useState('');
     const [status, setStatus] = useState('');
     const [from, setFrom] = useState('');
     const [to, setTo] = useState('');
-    const [filter, setFilter] = useState<BillingFilter>({});
+    const [filter, setFilter] = useState<BillingFilter>(() => ({ fx_day: drillFxDay }));
     const { data, isLoading, isError } = useBillingRecords(filter, PAGE_SIZE, (page - 1) * PAGE_SIZE);
     const records = data?.items ?? [];
     const total = data?.total ?? 0;
@@ -192,6 +193,7 @@ function SpendingTable({ owner, onView }: { owner: boolean; onView: (id: number)
             status: status || undefined,
             from: from ? new Date(from).toISOString() : undefined,
             to: to ? new Date(to + 'T23:59:59').toISOString() : undefined,
+            fx_day: drillFxDay,
         });
     };
 
@@ -284,7 +286,21 @@ function SpendingTable({ owner, onView }: { owner: boolean; onView: (id: number)
                                     ]} />
                                 </div>
 
-                                <span className="text-right font-medium tabular-nums text-red-500">{formatMoney(record.user_cost)}</span>
+                                <span className="text-right font-medium tabular-nums text-red-500">
+                                    {formatMoney(record.user_cost)}
+                                    {/* 结算口径钉在行内快照: 原币金额与 USD 金额并存, 汇率日/汇率随账单落库, 不回查 fx 表。
+                                        fx_day=unavailable 或 rate=0 表示当时采集失败, 按原币口径入账, 必须显式提示而不是伪装成 USD。 */}
+                                    {record.currency && record.currency !== 'USD' && record.fx_rate && record.fx_rate > 0 && record.fx_day && record.fx_day !== 'unavailable' && (
+                                        <span className="block text-[10px] font-normal text-muted-foreground">
+                                            {t('originalAmount', { amount: formatMoney(record.user_cost / record.fx_rate), currency: record.currency, day: record.fx_day })}
+                                        </span>
+                                    )}
+                                    {record.currency && record.currency !== 'USD' && (!record.fx_rate || record.fx_rate <= 0 || !record.fx_day || record.fx_day === 'unavailable') && (
+                                        <span className="block text-[10px] font-normal text-amber-600 dark:text-amber-400">
+                                            {t('unconverted', { currency: record.currency })}
+                                        </span>
+                                    )}
+                                </span>
                                 {owner && (
                                     <span className="text-right font-medium tabular-nums text-green-500">{formatMoney(record.owner_revenue)}</span>
                                 )}
@@ -294,12 +310,15 @@ function SpendingTable({ owner, onView }: { owner: boolean; onView: (id: number)
                                     <span className="block">
                                         {t('tokens.input')} {record.user_price.input}
                                         {record.currency && record.currency !== 'USD' && (
-                                            <span className="ml-1 text-amber-600 dark:text-amber-400" title={t('fxTip', { currency: record.currency, rate: record.fx_rate ?? 1, day: record.fx_day ?? '' })}>
-                                                {record.currency}×{(record.fx_rate ?? 1).toFixed(4)}
+                                            <span className={cn('ml-1', record.fx_rate && record.fx_rate > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-destructive')} title={record.fx_rate && record.fx_rate > 0 ? t('fxTip', { currency: record.currency, rate: record.fx_rate, day: record.fx_day ?? '' }) : t('unconverted', { currency: record.currency })}>
+                                                {record.currency}{record.fx_rate && record.fx_rate > 0 ? `×${record.fx_rate.toFixed(4)}` : '⚠' }
                                             </span>
                                         )}
                                     </span>
                                     <span className="block">{t('tokens.output')} {record.user_price.output}</span>
+                                    {record.currency && record.currency !== 'USD' && record.fx_rate && record.fx_rate > 0 && record.fx_day && record.fx_day !== 'unavailable' && (
+                                        <span className="block text-[10px] text-muted-foreground">{t('fxDay', { day: record.fx_day })}</span>
+                                    )}
                                 </span>
                                 <span className="flex items-center justify-end gap-1">
                                     <Badge variant="outline" className={cn('px-1.5 py-0 text-[10px] font-medium', record.status === 'settled' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'border-orange-500/30 bg-orange-500/10 text-orange-600 dark:text-orange-400')}>{t('status.' + record.status)}</Badge>

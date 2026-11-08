@@ -2,7 +2,6 @@ package op
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,10 +11,7 @@ import (
 )
 
 func TestTradeDisputeAndSettlementLoop(t *testing.T) {
-	tempDir := t.TempDir()
-	if err := db.InitDB("sqlite", filepath.Join(tempDir, "trade.db"), false); err != nil {
-		t.Fatalf("init db: %v", err)
-	}
+	opTestDBSetup(t, "trade.db")
 
 	ctx := context.Background()
 	// 1. 建立测试用户: user1 (买家, 余额 100), owner1 (渠道商, 余额 0, 收入 0), admin1

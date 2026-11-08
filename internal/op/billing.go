@@ -428,9 +428,9 @@ func BillingHourly(ctx context.Context, kind string, id uint, since time.Time) (
 // 其中 gorm 按整行结构体逐字段反射填充就占掉大头; 同库同条件只取 8 列的裸 SQL 是 12.34 ms。
 // 换成下面这条聚合后应用层实测 17.48 ms。
 //
-// 方言: 只用 SUM/COUNT, 三种数据库通用(日期函数才有方言差异, 故 BillingDaily/Hourly
-// 仍保留 Go 侧分组)。零行时 SUM 返回 NULL 而非 0, 必须 COALESCE 兜底, 否则扫描 NULL
-// 到 float64 会报错。
+// 方言: 只用 SUM/COUNT, 三种数据库通用(日期函数才有方言差异, 故 BillingDaily/Monthly
+// 的日期桶走 billingBucketExpr 的方言分支; BillingHourly 仍保留 Go 侧分桶)。零行时 SUM
+// 返回 NULL 而非 0, 必须 COALESCE 兜底, 否则扫描 NULL 到 float64 会报错。
 //
 // 精度: SQLite 的 SUM 对浮点做补偿求和(Kahan-Babuska-Neumaier), 累加顺序也与 Go 侧
 // 逐行相加不同, 故末位可能有 1e-13 量级差异。金额展示到 6 位小数, 该量级不可见;
@@ -467,6 +467,7 @@ type BillingQuery struct {
 	APIKeyID int       // 指定 API Key。
 	Status   string    // settled | refunded。
 	PriceSrc string    // 价格口径, 如 channel_model。
+	FxDay    string    // 折算采集日: YYYYMMDD 精确匹配; 特殊值 unavailable 匹配 fx_day=unavailable(采集失败按原价入账); 空表示不限。
 	From     time.Time // 起始时间(含)。
 	To       time.Time // 结束时间(含)。
 	Limit    int
@@ -509,6 +510,16 @@ func BillingSearch(ctx context.Context, filter BillingQuery) ([]model.BillingRec
 		if filter.PriceSrc != "" {
 			query = query.Where("price_source = ?", filter.PriceSrc)
 		}
+		if fxDay := strings.TrimSpace(filter.FxDay); fxDay != "" {
+			// 对账下钻: 特殊值 unavailable(大小写不敏感)筛采集缺失账单, 其余按采集日精确匹配。
+			if strings.EqualFold(fxDay, "unavailable") {
+				query = query.Where("fx_day = ?", "unavailable")
+			} else if strings.EqualFold(fxDay, "none") {
+				query = query.Where("COALESCE(fx_day, '') = ''")
+			} else {
+				query = query.Where("fx_day = ?", strings.ToUpper(fxDay))
+			}
+		}
 		if !filter.From.IsZero() {
 			query = query.Where("created_at >= ?", filter.From)
 		}
@@ -534,7 +545,8 @@ func BillingList(ctx context.Context, userID, ownerID uint, limit int) ([]model.
 	return records, err
 }
 
-// BillingAggregate 日粒度聚合, 按 created_at 归日; 供用户消费曲线与渠道商收入曲线使用。
+// BillingAggregate 按 created_at 归桶的聚合行(日粒度见 BillingDaily, 月粒度见 BillingMonthly);
+// 供用户消费曲线与渠道商收入曲线使用。Date 为本地挂钟日期 YYYYMMDD, 月桶取当月 1 日。
 type BillingAggregate struct {
 	Date            string  `json:"date"`
 	InputToken      int64   `json:"input_token"`
@@ -547,40 +559,65 @@ type BillingAggregate struct {
 	PlatformRevenue float64 `json:"platform_revenue"`
 }
 
-// BillingDaily 按日聚合计费明细; kind 取 "user" 或 "owner", id 为对应用户主键。
-// 聚合在 Go 侧完成: 三种数据库的日期函数方言不同, 而按天分组的数据量有限。
-func BillingDaily(ctx context.Context, kind string, id uint, since time.Time) ([]BillingAggregate, error) {
+// billingBucketExpr 逐方言构造把 created_at 归到**本地挂钟**日/月桶的 SQL 表达式, 结果统一为
+// YYYYMMDD(日桶即当天, 月桶取当月 1 日)。
+//
+// 为什么不能图省事直接用 DATE(created_at): SQLite 的 date 系列函数会先把带偏移的时间串归一到
+// UTC 再做日历运算, 2026-11-08 00:30+08:00 会被算成 11-07 —— 跨日错位。聚合的契约是旧实现的
+// record.CreatedAt.Format("20060102"), 即"按写入偏移看挂钟日期", 所以必须显式做本地化, 绝不能用
+// UTC 简化。这里复用 statsBucketExprOn 的方言桶口径(它已按各库的存储形态做本地化: SQLite 取
+// 写入串的日期前缀、不做时区换算, MySQL 按 DATETIME 本地挂钟, PG 按会话 TimeZone), 再去掉分隔符
+// 以沿用 BillingAggregate.Date 的 YYYYMMDD 契约。与趋势图共用同一套桶口径, 两张图才不会按不同
+// 日期切片。
+func billingBucketExpr(granularity string) string {
+	return "REPLACE(" + statsBucketExprOn(statsDialect(), granularity, "created_at") + ", '-', '')"
+}
+
+// billingAggregateByBucket 数据库侧按日期桶聚合; dateExpr 决定日/月粒度, 聚合字段与旧 Go 侧
+// 逐行累加严格同集(缓存读写两列不能漏, 消费页按四项求和)。
+//
+// 整行取回改成 GROUP BY: billing_records 一行 26 列, 曲线却只用得上 8 个数字, 旧写法把时间窗内
+// 全部明细搬进内存, 占用随历史线性增长(生产 23828 行已到必须换的体量)。
+//
+// 方言: SUM/COUNT 三库通用; 日期桶由 billingBucketExpr 方言化。零行时 SUM 返回 NULL, 必须
+// COALESCE 兜底, 否则扫描 NULL 到 float64 报错。空结果返回非 nil 的空切片, 调用方按 len 判断。
+// 精度: SQLite/MySQL 的浮点 SUM 与 Go 逐行相加的顺序不同(生产库副本实测末位差 ≤1.07e-14),
+// 金额展示 6 位小数不可见; 整数字段与行数逐桶完全相等。
+func billingAggregateByBucket(ctx context.Context, kind string, id uint, since time.Time, granularity string) ([]BillingAggregate, error) {
 	column := "user_id"
 	if kind == "owner" {
 		column = "owner_id"
 	}
-	records := []model.BillingRecord{}
-	if err := db.GetDB().WithContext(ctx).
+	dateExpr := billingBucketExpr(granularity)
+	rows := make([]BillingAggregate, 0)
+	if err := db.GetDB().WithContext(ctx).Model(&model.BillingRecord{}).
+		Select(dateExpr+" AS date,"+
+			" COALESCE(SUM(input_token), 0) AS input_token,"+
+			" COALESCE(SUM(output_token), 0) AS output_token,"+
+			" COALESCE(SUM(cache_read_token), 0) AS cache_read_token,"+
+			" COALESCE(SUM(cache_write_token), 0) AS cache_write_token,"+
+			" COUNT(*) AS request_count,"+
+			" COALESCE(SUM(user_cost), 0) AS user_cost,"+
+			" COALESCE(SUM(owner_revenue), 0) AS owner_revenue,"+
+			" COALESCE(SUM(platform_revenue), 0) AS platform_revenue").
 		Where(column+" = ? AND created_at >= ?", id, since).
-		Order("created_at").
-		Find(&records).Error; err != nil {
+		Group(dateExpr).
+		Order("date ASC").
+		Scan(&rows).Error; err != nil {
 		return nil, err
 	}
-	byDate := map[string]*BillingAggregate{}
-	order := make([]string, 0)
-	for _, record := range records {
-		date := record.CreatedAt.Format("20060102")
-		row, ok := byDate[date]
-		if !ok {
-			row = &BillingAggregate{Date: date}
-			byDate[date] = row
-			order = append(order, date)
-		}
-		row.InputToken += record.InputToken
-		row.OutputToken += record.OutputToken
-		row.RequestCount++
-		row.UserCost += record.UserCost
-		row.OwnerRevenue += record.OwnerRevenue
-		row.PlatformRevenue += record.PlatformRevenue
-	}
-	rows := make([]BillingAggregate, 0, len(order))
-	for _, date := range order {
-		rows = append(rows, *byDate[date])
-	}
 	return rows, nil
+}
+
+// BillingDaily 按日聚合计费明细; kind 取 "user" 或 "owner", id 为对应用户主键。
+// 输出按日期升序, Date 为 YYYYMMDD 的本地挂钟日期。
+func BillingDaily(ctx context.Context, kind string, id uint, since time.Time) ([]BillingAggregate, error) {
+	return billingAggregateByBucket(ctx, kind, id, since, "day")
+}
+
+// BillingMonthly 按"月"聚合计费明细, 口径与 BillingDaily 完全一致: 同一时间窗、同一组聚合字段、
+// 同一时区归一规则, 只是桶换成当月 1 日(YYYYMMDD, 如 20261101)。日期升序, 空结果为非 nil 空切片。
+// 月的边界同样按本地挂钟判定, 跨月的那笔请求不会因为 UTC 归一滑到上个月。
+func BillingMonthly(ctx context.Context, kind string, id uint, since time.Time) ([]BillingAggregate, error) {
+	return billingAggregateByBucket(ctx, kind, id, since, "month")
 }

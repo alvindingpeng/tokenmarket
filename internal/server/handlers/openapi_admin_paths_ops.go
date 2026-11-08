@@ -7,6 +7,76 @@ import (
 // openAPIAdminPathsOps 设置、日志、统计、运维、限流、审计、升级与站点配置。
 func openAPIAdminPathsOps() gin.H {
 	return gin.H{
+		"/api/v1/admin/fx/rates/status": gin.H{
+			"get": adminPath("fx", "汇率状态", "查看当前汇率快照、来源、日龄和支持币种。", "", adminEnvelope("汇率状态", gin.H{"type": "object"}), true),
+		},
+		"/api/v1/admin/fx/rates/history": gin.H{
+			"get": adminPath("fx", "汇率历史",
+				"只读查询 fx_rates 历史快照(账面币种 USD 为基准), 按采集日升序返回; 不触发采集, 也不重算任何账单。"+adminNewLine+
+					"日期参数为 YYYYMMDD, 默认最近 30 天, from/to 区间含首尾且最多 366 天; limit 取 1-500, 缺省 100; currency 取 USD 或支持报价币种(CNY/EUR/GBP/JPY/HKD/SGD), 省略表示全部。",
+				"", adminEnvelope("汇率历史", gin.H{
+					"type": "object",
+					"properties": gin.H{
+						"currency": gin.H{"type": "string", "description": "本次过滤的报价币种; 空串表示全部"},
+						"from":     gin.H{"type": "string", "example": "20261001", "description": "回显的起始采集日 YYYYMMDD"},
+						"to":       gin.H{"type": "string", "example": "20261030", "description": "回显的结束采集日 YYYYMMDD(含当天)"},
+						"limit":    gin.H{"type": "integer", "description": "本次生效的条数上限"},
+						"items":    gin.H{"type": "array", "items": gin.H{"$ref": "#/components/schemas/FxRate"}},
+					},
+				}), true,
+				query("currency", "报价币种(USD 或 CNY/EUR/GBP/JPY/HKD/SGD); 省略为全部", "string", false, gin.H{"example": "CNY"}),
+				query("from", "起始采集日 YYYYMMDD; 省略为最近 30 天窗口的起点", "string", false, gin.H{"example": "20261001"}),
+				query("to", "结束采集日 YYYYMMDD(含当天); 省略为今天", "string", false, gin.H{"example": "20261030"}),
+				intQuery("limit", "返回条数上限(1-500)", 100)),
+		},
+		"/api/v1/admin/fx/rates/refresh": gin.H{
+			"post": adminPath("fx", "刷新汇率", "从当前汇率源立即刷新汇率快照。", "", adminEnvelope("刷新结果", gin.H{"type": "object"}), true),
+		},
+		"/api/v1/admin/fx/reconciliation": gin.H{
+			"get": adminPath("fx", "FX 折算对账",
+				"按时间范围统计计费记录的折算质量: 正常(ok)/陈旧(stale, 用了早于当日的牌价)/缺失(missing, fx_day=unavailable, 采集失败按原价入账)/USD 原生(usd_native, 未走折算)四类的笔数、用户支出、供货收入与占比。"+adminNewLine+
+					"用于财务复核: 缺失桶占比升高说明采集断供期间的账单需要重点核对。",
+				"", adminEnvelope("折算对账", gin.H{
+					"type": "object",
+					"properties": gin.H{
+						"from":            gin.H{"type": "string", "example": "20261001"},
+						"to":              gin.H{"type": "string", "example": "20261030"},
+						"total_count":     gin.H{"type": "integer"},
+						"total_user_cost": gin.H{"type": "number"},
+						"buckets":         gin.H{"type": "array", "items": gin.H{"$ref": "#/components/schemas/FxReconciliationBucket"}},
+					},
+				}), true,
+				query("from", "起始日 YYYYMMDD; 省略为近 30 天", "string", false, gin.H{"example": "20261001"}),
+				query("to", "结束日 YYYYMMDD(含当天); 省略为今天", "string", false, gin.H{"example": "20261030"})),
+		},
+		"/api/v1/admin/fx/revaluation": gin.H{
+			"get": adminPath("fx", "月末 FX 重估", "按月汇总 fx_day 已钉死的账单折算金额, 与月末最后可用牌价重估后返回差额。fx_day=unavailable 与 USD 原生行不参与重估, 仅计入 excluded。", "", adminEnvelope("月末 FX 重估", gin.H{"$ref": "#/components/schemas/FxRevaluation"}), true,
+				query("month", "目标月份 YYYY-MM; 缺省上月", "string", false, gin.H{"example": "2026-10"})),
+		},
+		"/api/v1/admin/withdrawal/batch-review": gin.H{
+			"post": adminPath("cashflow", "批量审核提现", "逐单执行审核, 单笔失败不阻断后续并逐条回报; 管理员 step-up 必填。", "BatchWithdrawalReview", adminEnvelope("批量结果", gin.H{"type": "object"}), true),
+		},
+		"/api/v1/admin/withdrawal/batch-paid": gin.H{
+			"post": adminPath("cashflow", "批量确认打款", "逐单执行打款, 支持整批 paid_ref 与可选 actual_currency; 管理员 step-up 必填。", "BatchWithdrawalPaid", adminEnvelope("批量结果", gin.H{"type": "object"}), true),
+		},
+		"/api/v1/admin/recharge/export": gin.H{
+			"get": adminPath("cashflow", "导出充值订单",
+				"CSV 导出充值订单(含币种与汇率快照列), 上限 5000 行, 超出在文件尾写截断说明; 需要 step-up 二次确认。导出动作记审计。",
+				"", adminEnvelope("导出", gin.H{"type": "string"}), true,
+				query("user_id", "按用户过滤", "int", false, nil),
+				query("status", "按状态过滤(pending/paid/failed/expired/refunded)", "string", false, nil),
+				query("from", "起始日 YYYYMMDD(created_at)", "string", false, nil),
+				query("to", "结束日 YYYYMMDD(含当天)", "string", false, nil)),
+		},
+		"/api/v1/admin/withdrawal/export": gin.H{
+			"get": adminPath("cashflow", "导出提现单",
+				"CSV 导出提现单(含到账币种与汇率快照列), 上限 5000 行, 超出在文件尾写截断说明; 需要 step-up 二次确认。导出动作记审计。",
+				"", adminEnvelope("导出", gin.H{"type": "string"}), true,
+				query("user_id", "按用户过滤", "int", false, nil),
+				query("status", "按状态过滤(pending/approved/paid/rejected/cancelled)", "string", false, nil),
+				query("from", "起始日 YYYYMMDD(applied_at)", "string", false, nil),
+				query("to", "结束日 YYYYMMDD(含当天)", "string", false, nil)),
+		},
 		// ---------------- 配额用量 ----------------
 		"/api/v1/ops/quota-usage": gin.H{
 			"get": adminPath("ops", "用户配额用量",
@@ -125,6 +195,17 @@ func openAPIAdminPathsOps() gin.H {
 			"get": adminPath("stats", "按 API Key 用量",
 				"管理员拿全量, 普通用户自动过滤到自己名下的 Key。", "",
 				adminArray("Key 用量", "StatsAPIKey"), false),
+		},
+		"/api/v1/stats/home": gin.H{
+			"get": adminPath("stats", "首页首屏聚合统计",
+				"一次返回首页首屏需要的全部数据: 累计统计, 每日曲线与热力图上界, 当日逐小时曲线, 以及排行榜。"+
+					adminNewLine+adminNewLine+
+					"认证与作用域与同组其他 /stats/* 接口完全一致: 管理员看全站, 其余按本人在一年窗口内的计费明细聚合。"+
+					adminNewLine+adminNewLine+
+					"排行榜是裁剪后的最小结构(名称 + 五个合计项), 不含渠道配置; 普通用户没有渠道归属, channels 恒为空数组。"+
+					adminNewLine+adminNewLine+
+					"前端首屏由此只发一条请求, 替代此前的 total/daily/hourly/channel-stats 四条。", "",
+				adminItem("首页聚合统计", "StatsHome"), false),
 		},
 		"/api/v1/stats/billing": gin.H{
 			"get": adminPath("stats", "本人账单曲线",
@@ -305,6 +386,14 @@ func openAPIAdminPathsOps() gin.H {
 					"item_id":          fieldNumber("integer", "成员口径时的成员 ID"),
 					"cleared_members":  fieldNumber("integer", "渠道模型口径下清理的成员观测条数"),
 				}}), true),
+		},
+
+		"/api/v1/ops/metrics/snapshot": gin.H{
+			"get": adminPath("ops", "指标快照",
+				"只读回显 /metrics 抓取口径的累计指标: 按终态分列的请求数、输入/输出 token、累计计费成本、用户数与余额合计、渠道总数与启用数、24 小时告警数。"+adminNewLine+
+					"与 /metrics 同源(同一个 op.CollectMetrics 快照), 数值必然一致; 两者只差通道与鉴权方式 —— /metrics 是 Prometheus 文本 + Bearer 令牌(给抓取端), 这里是 JSON + 会话鉴权(给控制台)。"+adminNewLine+
+					"requests_by_status 按 relay_requests.status 分组, 只有终态(success / failed / canceled)落进这张表; 不返回在途请求数(那是在进程内存里, 见 /ops/overview 的 active_requests)。只读, 无副作用, 不产生审计。",
+				"", adminItem("指标快照", "MetricsSnapshot"), true),
 		},
 
 		"/api/v1/ops/auth-secret/rotate": gin.H{
@@ -499,6 +588,7 @@ func billingParams() []gin.H {
 		query("channel", "按渠道过滤", "string", false, nil),
 		query("status", "按结算状态过滤", "string", false, nil),
 		query("price_source", "按价格来源过滤", "string", false, nil),
+		query("fx_day", "按折算采集日过滤: YYYYMMDD 精确匹配; unavailable=采集缺失, none=USD 原生(空 fx_day); 对账下钻用", "string", false, gin.H{"example": "unavailable"}),
 		query("user_id", "指定用户(仅管理员生效)", "int", false, nil),
 		query("api_key_id", "指定 API Key", "int", false, nil),
 		query("from", "起始时间 RFC3339", "string", false, nil),

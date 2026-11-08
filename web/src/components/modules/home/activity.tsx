@@ -2,7 +2,7 @@ import { Fragment, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslations } from 'use-intl';
 import dayjs from 'dayjs';
-import { useStatsDaily, type StatsDailyFormatted } from '@/api/stats';
+import { useStatsHome, type StatsDailyFormatted } from '@/api/stats';
 
 // 热力图上的一天。
 interface ActivityDay {
@@ -12,7 +12,10 @@ interface ActivityDay {
 
 // Activity 以一年的日历热力图展示每日请求量, 悬浮某天时显示当日统计。
 export function Activity() {
-    const { data: stats, maxRequestCount } = useStatsDaily();
+    // 首页共用同一条聚合查询: 每日统计与热力图上界都取自 data.daily。
+    const { data } = useStatsHome();
+    const stats = data?.daily.items;
+    const maxRequestCount = data?.daily.max_request_count ?? 0;
     const t = useTranslations('home.activity');
     const scrollRef = useRef<HTMLDivElement>(null); // 横向滚动容器, 用于贴右和判断两端。
     // 悬浮提示的内容与位置; 关闭时先转为不可见再移除, 以走完淡出过渡。
