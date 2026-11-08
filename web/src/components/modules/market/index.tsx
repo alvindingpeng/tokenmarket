@@ -161,22 +161,28 @@ export function Market() {
     const models: MarketModel[] = data?.models ?? [];
 
     return (
+        // 滚动容器必须长在这里: 页面层是 absolute inset-0 + overflow-hidden(切页靠它, 外层不随内容长高),
+        // 正文自己不滚就整页锁死。用 VirtualizedGrid 的页面不用管(它自带 h-full overflow-y-auto),
+        // 而广场刻意不用虚拟化(卡片可展开), 所以这层要手写 —— 与 analytics/ratelimit 等报价页同一写法。
         <div className="flex h-full min-h-0 flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+            {/* 概览行定住不滚: 往下翻时还能看见本次结果的模型/挂牌条数。 */}
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                 <span>{t('summary', { models: models.length, channels: countChannels(models) })}</span>
                 <span>{t('refreshNote')}</span>
             </div>
-            {models.length === 0 ? (
-                <p className="py-16 text-center text-sm text-muted-foreground">{t('empty')}</p>
-            ) : (
-                // 不用 VirtualizedGrid: 广场卡片可以展开, 展开后行高变化会让虚拟化的测量失效
-                // (行高只在挂载时测一次), 结果是下一行盖住展开内容。几十行的直接渲染代价远小于这个坑。
-                <div className={cn('grid gap-4', layout === 'list' ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2')}>
-                    {models.map((model) => (
-                        <MarketItem key={model.name} model={model} layout={layout} />
-                    ))}
-                </div>
-            )}
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pb-24 pr-1 md:pb-4">
+                {models.length === 0 ? (
+                    <p className="py-16 text-center text-sm text-muted-foreground">{t('empty')}</p>
+                ) : (
+                    // 不用 VirtualizedGrid: 广场卡片可以展开, 展开后行高变化会让虚拟化的测量失效
+                    // (行高只在挂载时测一次), 结果是下一行盖住展开内容。几十行的直接渲染代价远小于这个坑。
+                    <div className={cn('grid gap-4', layout === 'list' ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2')}>
+                        {models.map((model) => (
+                            <MarketItem key={model.name} model={model} layout={layout} />
+                        ))}
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
