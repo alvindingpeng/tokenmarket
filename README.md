@@ -774,9 +774,14 @@ Semver here: a new user-visible capability bumps the **minor** version; fixes, s
 the **patch** version. At runtime the version appears in `switchyard version`, `/healthz`,
 `switchyard_build_info`, and the console's Settings → Info page.
 
-A `post-commit` hook keeps the repository in sync in real time: it pushes `HEAD` to `main` on GitHub, then — if
-the marker changed — tags, pushes the tag, and creates the Release from the matching CHANGELOG section
-(idempotent: it PATCHes rather than duplicating). Logs: `.git/auto-push.log`, `.git/publish-release.log`.
+A `post-commit` hook keeps the repository in sync in real time: it pushes `HEAD` to the **branch you committed
+on** — not a hard-coded `main`; commits here land on `master`, while GitHub's `main` diverged at v1.5.6 and never
+caught up — then, if the marker changed, tags, pushes the tag, and creates the Release from the matching CHANGELOG
+section (idempotent: it PATCHes rather than duplicating). Logs: `.git/auto-push.log`, `.git/publish-release.log`.
+
+> Note: GitHub's **default branch is still `main`** (the v1.5.6-era tree), so the repo landing page shows stale
+> code. Point the default branch at `master` in GitHub settings if you want it current. `main` is deliberately left
+> alone: it holds one commit `master` lacks (the v1.5.3–v1.5.6 batch), so the histories have diverged.
 
 > ⚠️ **Bump `main.go` before you commit**, not after. Committing without bumping makes the next release
 > attempt re-point an existing tag's release at a new commit while the tag stays behind.

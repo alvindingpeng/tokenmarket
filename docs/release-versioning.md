@@ -28,9 +28,16 @@
    把 `static/out` 打进二进制，顺序反了或只重建一边，二进制里就是旧前端。
 4. 部署 + 回归（本仓库部署见 `switchyard-mobile-deploy.py`，回归 `switchyard-e2e-billing.py`）。
 5. `git commit`。提交后 `post-commit` 钩子自动完成：
-   - `git push github HEAD:refs/heads/main`（实时推送，日志 `.git/auto-push.log`）
+   - `git push github HEAD:refs/heads/<当前分支>`（实时推送，日志 `.git/auto-push.log`）。
+     目标分支取自提交所在的分支，**不硬编码**：本仓库的提交落在 `master` 上，
+     而远端 `main` 自 v1.5.6 起已与 `master` 分叉未再跟进，硬编码 `main` 会让每次
+     自动推送都以 non-fast-forward 失败。分离头指针时回落到 `master`。
    - `scripts/publish-release.sh`：本地无 `vX.Y.Z` 标签则 `git tag -a` 并推送标签，
      再用 CHANGELOG 对应章节 POST/PATCH GitHub Release（日志 `.git/publish-release.log`）。
+
+> 注：GitHub 仓库的**默认分支仍是 `main`**（即 v1.5.6 时代的内容），所以仓库首页展示的不是最新代码。
+> 需要的话可在 GitHub 设置里把默认分支改成 `master`；`main` 分支本身未做删除或强制同步 ——
+> 它含有一个 `master` 上没有的提交（v1.5.3–v1.5.6 的整批落库），两边历史已分叉，贸然覆盖会丢东西。
 
 ## 版本号的运行时呈现
 

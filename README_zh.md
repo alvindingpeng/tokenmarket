@@ -711,9 +711,14 @@ gofmt -l internal/server/handlers/      # 必须不输出任何内容（只对 h
 本项目的语义化版本约定：新增用户可见能力 +**次版本号**；仅修复、样式、文案与文档 +**修订号**。
 运行时版本出现在 `switchyard version`、`/healthz`、`switchyard_build_info` 与界面的设置 → 信息页。
 
-一个 `post-commit` 钩子实时保持仓库同步：先把 `HEAD` 推到 GitHub 的 `main`，然后 —— 若标记变了
+一个 `post-commit` 钩子实时保持仓库同步：先把 `HEAD` 推到**你提交所在的分支** —— 不是硬编码的 `main`；
+本仓库的提交落在 `master` 上，而 GitHub 的 `main` 在 v1.5.6 处分叉后就没再跟进。然后 —— 若标记变了
 —— 打标签、推标签，并从对应的 CHANGELOG 小节创建 Release（幂等：用 PATCH 而非重复创建）。
 日志：`.git/auto-push.log`、`.git/publish-release.log`。
+
+> 注：GitHub 仓库的**默认分支仍是 `main`**（v1.5.6 时代的内容），所以仓库首页展示的是旧代码；
+> 想让它跟上的话，在 GitHub 设置里把默认分支指向 `master`。`main` 是**故意**保留不动的：
+> 它有一个 `master` 上没有的提交（v1.5.3–v1.5.6 整批落库），两边历史已分叉。
 
 > ⚠️ **在提交前改 `main.go`**，而不是提交后。不改版本号就提交，会让下次发布尝试把已有标签的 Release
 > 重指向一个新提交，而标签还停在后面。
