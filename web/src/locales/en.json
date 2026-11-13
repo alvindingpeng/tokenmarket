@@ -1118,7 +1118,9 @@
             "canary_unavailable": "Canary target unavailable, fell back",
             "upstream_rate_limited": "Upstream rate limited",
             "upstream_admitted": "Admitted by upstream",
-            "egress": "Egress"
+            "egress": "Egress",
+            "user_admitted": "Admitted by quota and rate limit",
+            "success": "Round completed successfully"
         },
         "mode": {
             "manual": "Manual",

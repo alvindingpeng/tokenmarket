@@ -48,3 +48,16 @@ describe('选路解释文案解析', () => {
         expect(routeEventText(t, 'waiting_for_upstream')).toContain('Waiting');
     });
 });
+// 词表与真实数据的一致性: 生产日志里出现过的 reason 必须都有文案, 否则界面会退回内部代号。
+// 这一条不是凑数 —— 第一次查生产数据时就发现 user_admitted 与 success 两个值没被收录,
+// 而它们在每一个成功请求里都会出现。
+describe('选路解释词表与生产数据一致', () => {
+    it('生产日志实际出现的 reason 都有文案', () => {
+        // 取值来自生产副本 relay_request_attempts / route_events 的实际样本。
+        const observed = ['request_received', 'user_admitted', 'strategy_score', 'upstream_admitted', 'success', 'strategy_price'];
+        for (const reason of observed) {
+            const text = routeEventText(t, reason);
+            expect(text, reason).not.toBe(reason);
+        }
+    });
+});

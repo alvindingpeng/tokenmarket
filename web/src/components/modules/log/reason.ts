@@ -20,7 +20,7 @@ const ROUTE_PHASE_KEYS = ['received', 'selection', 'waiting', 'admission', 'disp
 /** 路由事件的原因里, 有固定文案的那部分。 */
 const ROUTE_EVENT_KEYS = [
     'request_received', 'waiting_for_upstream', 'canary_unavailable',
-    'upstream_rate_limited', 'upstream_admitted',
+    'upstream_rate_limited', 'upstream_admitted', 'user_admitted', 'success',
 ] as const;
 
 const reasonSet: ReadonlySet<string> = new Set(ROUTE_REASON_KEYS);

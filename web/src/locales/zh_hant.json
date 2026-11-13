@@ -1118,7 +1118,9 @@
             "canary_unavailable": "灰度目標不可用, 已回退",
             "upstream_rate_limited": "上游限流",
             "upstream_admitted": "上游已准入",
-            "egress": "出口"
+            "egress": "出口",
+            "user_admitted": "通過配額與限流准入",
+            "success": "本輪成功完成"
         },
         "mode": {
             "manual": "人工指定",

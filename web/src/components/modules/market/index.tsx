@@ -225,7 +225,7 @@ export function Market() {
                                 compareSelected={selected}
                                 onToggleCompare={toggle}
                                 favorited={favoriteSet.has(model.name)}
-                                onToggleFavorite={(name, favorited) => toggleFavorite.mutate({ model: name, favorited })}
+                                onToggleFavorite={(name, favorite) => toggleFavorite.mutate({ model: name, favorite })}
                             />
                         ))}
                     </div>

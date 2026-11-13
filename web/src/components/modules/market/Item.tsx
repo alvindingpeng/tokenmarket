@@ -101,7 +101,7 @@ export function MarketItem({ model, layout, compareIndex, compareSelected, onTog
                 {onToggleFavorite && (
                     <button
                         type="button"
-                        onClick={() => onToggleFavorite(model.name, !favorited)}
+                        onClick={() => onToggleFavorite(model.name, Boolean(favorited))}
                         aria-pressed={Boolean(favorited)}
                         aria-label={favorited ? t('favorite.remove', { name: model.name }) : t('favorite.add', { name: model.name })}
                         className={cn(

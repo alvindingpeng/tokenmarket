@@ -6,6 +6,19 @@ import { apiRequest, queryClient } from './client';
 
 const FAVORITES_KEY = ['market', 'favorites'] as const;
 
+/**
+ * favoriteRequestOf 把「当前是否已收藏」映射成一次写操作。
+ *
+ * 抽成纯函数是因为这个映射反过一次, 而且反了之后界面上一切看起来都正常: 请求返回 200,
+ * 星标状态也没变 —— 因为「已收藏又去收藏」在服务端是幂等的。只有收藏数不变这一个线索。
+ * 把方向判定放在一处并直接测它, 比在组件里读代码更可靠。
+ */
+export function favoriteRequestOf(favorite: boolean): { method: 'POST' | 'DELETE'; removing: boolean } {
+    // 已收藏 → 这次点击是取消(DELETE); 未收藏 → 新增(POST)。
+    return favorite ? { method: 'DELETE', removing: true } : { method: 'POST', removing: false };
+}
+
+
 /** marketFavoritesQueryOptions 供卡片渲染星标与「只看收藏」筛选。 */
 export function marketFavoritesQueryOptions() {
     return {
@@ -24,15 +37,20 @@ export function useMarketFavorites() {
 /** useToggleMarketFavorite 收藏/取消收藏。 */
 export function useToggleMarketFavorite() {
     return useMutation({
-        mutationFn: ({ model, favorited }: { model: string; favorited: boolean }) =>
-            favorited
+        // favorited 是「当前是否已收藏」: 已收藏则这次点击是取消, 反之是新增。
+        // 调用方必须传点击前的状态而不是点击后的 —— 传反了会变成"已收藏还去收藏、未收藏却去取消",
+        // 而界面上看到的是一次成功请求与一个没变化的状态, 极难判断错在哪。
+        mutationFn: ({ model, favorite }: { model: string; favorite: boolean }) => {
+            const request = favoriteRequestOf(favorite);
+            return request.method === 'DELETE'
                 ? apiRequest<void>('/api/v1/market/favorites/' + encodeURIComponent(model), { method: 'DELETE' })
-                : apiRequest<void>('/api/v1/market/favorites', { method: 'POST', body: { model } }),
+                : apiRequest<void>('/api/v1/market/favorites', { method: 'POST', body: { model } });
+        },
         // 乐观更新: 星标必须立刻响应点击。等一轮网络往返再变色, 用户会以为没点上而再点一次。
-        onMutate: async ({ model, favorited }) => {
+        onMutate: async ({ model, favorite }) => {
             await queryClient.cancelQueries({ queryKey: FAVORITES_KEY });
             const previous = queryClient.getQueryData<string[]>(FAVORITES_KEY) ?? [];
-            const next = favorited ? previous.filter((name) => name !== model) : [...previous, model];
+            const next = favorite ? previous.filter((name) => name !== model) : [...previous, model];
             queryClient.setQueryData(FAVORITES_KEY, next);
             return { previous };
         },
