@@ -1409,7 +1409,37 @@
         },
         "markupRatio": "渠道加價比例",
         "markupRatioFollowGlobal": "跟隨全域設定",
-        "markupRatioHint": "0 = 不加價; 0.2 = 20%; 留空跟隨全域"
+        "markupRatioHint": "0 = 不加價; 0.2 = 20%; 留空跟隨全域",
+        "account": {
+            "open": "匯入帳號",
+            "title": "匯入上游帳號",
+            "hint": "貼上平台匯出的帳號 JSON。OAuth 帳號會自動續期; cookie 類帳號無法續期, 失效後必須重新匯入。",
+            "platform": "平台",
+            "name": "憑證名稱",
+            "namePlaceholder": "例如 codex-main",
+            "raw": "帳號 JSON",
+            "rawPlaceholder": "在此貼上帳號 JSON",
+            "rawHint": {
+                "codex": "支援平鋪物件(access_token/refresh_token/account_id), 也支援 CLI 匯出裡 tokens 封裝的形式。",
+                "kiro": "需要 camelCase 的 refreshToken、clientId 與 clientSecret。",
+                "gemini": "基於 Cookie: 需要 c_ses(可選 c_oses、csesidx、config_id)。",
+                "grok": "基於 Cookie: 需要 sso。sso-rw 不參與鑑權。",
+                "claude": "支援 access_token 與 refresh_token。"
+            },
+            "nameRequired": "請填寫憑證名稱",
+            "rawRequired": "請貼上帳號 JSON",
+            "imported": "帳號已匯入",
+            "resultTitle": "匯入結果",
+            "resultKind": "憑證類型: {kind}",
+            "resultEmail": "帳號: {email}",
+            "resultExpires": "權杖到期: {at}",
+            "resultRefreshed": "已重新整理權杖, 帳號可以立即使用",
+            "cookieWarning": "cookie 類帳號無法自動續期, 失效後將停止轉發, 需要重新匯入。",
+            "refreshNow": "立即重新整理",
+            "refreshed": "權杖已重新整理",
+            "submit": "匯入",
+            "cancel": "關閉"
+        }
     },
     "share": {
         "shareCode": "共享編碼",

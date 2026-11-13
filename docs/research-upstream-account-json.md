@@ -176,3 +176,76 @@
 - Claude Code 的确切端点与 client_id: 本地无实证, 联网检索不可用。
 - 上游对"同一账号多 IP/高并发"的判定阈值: 无公开数据, 只能靠实测踩。
 - Cookie 类凭据的稳定期: 无数据, 需上线后统计失效间隔来定验活频率。
+
+## 9. 实现落地记录(Codex 已接入)
+
+上面第 0-8 节是调研; 以下是**已上线代码**的对应实现与本机实测结果, 供接入其余平台时对照。
+
+### 9.1 代码落点
+
+| 职责 | 位置 | 说明 |
+|---|---|---|
+| 账号 JSON 解析 | `internal/model/account_json.go` | 平铺与 CLI `tokens` 封装两种形状都吃; 各平台各自字段名, 不做跨平台归一化 |
+| 令牌端点规格 | `internal/model/account_oauth.go` | 端点/client_id/请求体形态/响应字段名集中成表, 刷新逻辑只写一份 |
+| 刷新执行 | `internal/op/account_refresh.go` | 按凭据串行, 读旧值-刷新-回写在同一把锁内 |
+| 刷新调度 | `internal/op/account_refresh_run.go` + `task.Define` | 有界批次, 区分「可重试」与「账号已失效」 |
+| 导入 | `internal/op/account_import.go` | 先解析后落库; 落库后写缓存, 否则进程内不可见 |
+| 转发取令牌 | `internal/relay/token_provider.go` | 从账号 JSON 取 access_token, 不做任何 IO |
+| 接口 | `internal/server/handlers/channel_account.go` | `POST /api/v1/channel/account/import`, `POST /api/v1/channel/account/:id/refresh` |
+
+### 9.2 三处由架构约束决定的取舍
+
+1. **刷新绝不在转发路径上做**。`auth.APIKeyProvider.Get(ctx) string` 是同步且**不返回 error**
+   的接口, 而刷新是网络调用。塞进去等于给每个请求挂最长 20 秒等待, 且失败无处上报。
+   因此刷新只在定时任务里发生, 转发只读缓存。
+
+2. **整包账号 JSON 复用 `ChannelKey.Key` 列, 不新开表**。Key 列本就是「这把凭据的全部秘密」,
+   已走信封加密、绑定 `(channel_id, name)`、运行时读明文。账号 JSON 是它的另一种形态。
+   实测确认落库为密文(`sysec$1$...`), 令牌没有明文落库。
+
+3. **`refresh_token` 轮换必须原子回写**。上游每次刷新都会换新令牌, 旧值当场失效。回写用了
+   `map[string]any` 的 `Updates`, 绕过序列化器, 但**必须带 `Model` 身份**否则密文 codec 会
+   fail closed 拒写。写入失败单独成 `AccountRefreshPersistError` —— 这是「账号即将永久失效」
+   的信号, 不能被当成普通重试失败吞掉。
+
+### 9.3 本机实测结果(2026-11-14)
+
+用隔离实例(空库 + 自带 KEK)跑真实 HTTP 闭环, 结果:
+
+| 用例 | 结果 |
+|---|---|
+| 非法 JSON | 400 `账号 JSON 必须是 JSON 对象` |
+| 缺 refresh_token | 400 `codex: 缺少 refresh_token, 该账号无法自动续期` |
+| 合法账号导入 | 200, 落库 `account_kind=oauth`、`token_expires_at` 由 JWT `exp` 解析 |
+| 首刷失败 | 200 + `warning`, **账号仍落库**(部分成功语义) |
+| 落库形态 | `key` 列为信封密文, 令牌无明文 |
+| 详情接口 | 账号凭据与静态凭据同时返回, Key 已掩码 |
+
+**最重要的实测发现: 本机所在地区被 OpenAI 拒绝。** 真实刷新打到 `auth.openai.com` 返回:
+
+```
+403 {"error":{"code":"unsupported_country_region_territory",
+     "message":"Country, region, or territory not supported"}}
+```
+
+这不是代码缺陷 —— 但它意味着**在这台机器上无法验证 Codex 刷新的成功路径**。
+现网部署该功能前, 必须在一台 OpenAI 支持地区的出口上再验一次「刷新成功 + 轮换回写」。
+这也是测试用本地假令牌端点而非真实上游的直接原因。
+
+### 9.4 接入其余平台的注意事项
+
+- **Kiro**: 字段是 camelCase(`refreshToken`/`clientId`/`clientSecret`), 与 Codex 的 snake_case
+  不同。解析层**刻意不做跨平台归一化** —— 用错平台的字段名会明确报错, 而不是静默读到空值。
+  实测中解析层一度漏读 `accessToken`, 后果是转发拿到空 Bearer 全部 401 且无任何报错,
+  已修并加测试钉住。
+- **Gemini / Grok**: 是 Cookie 不是 OAuth。`AccountKind` 标成 `cookie`, 定时任务明确不碰它们。
+  失效后**无法自动恢复**, 只能人工重导 —— 界面必须说明, 否则使用者以为系统会一直维持。
+  「定时验证有效性」对它们只能是带 Cookie 打轻请求看状态码。
+- **Claude Code**: 与 Codex 同构, 但**端点与 client_id 仍未核实**(见第 8 节遗留问题),
+  接入前必须先确认。
+
+### 9.5 仍然遗留的验证缺口
+
+1. Codex 刷新**成功路径**未在本机验证(地区限制), 只验证了失败路径与落库/缓存链路。
+2. 真实 ChatGPT 账号的端到端转发未验证(同一地区限制)。
+3. 前端导入对话框只做了 `tsc` + 单元测试, 未做浏览器手工走查。

@@ -45,7 +45,10 @@ func buildOutbound(channel model.Channel, grant model.ChannelGrant, channelKey m
 		}
 	}
 
-	key := auth.NewStaticKeyProvider(channelKey.Key)
+	// 令牌来源: 静态凭据直接用 Key 列, 导入的账号凭据从 JSON 里取 access_token。
+	// 统一走 channelKeyTokenOf: 转发路径不触发刷新(刷新是网络调用, 而 auth.APIKeyProvider.Get
+	// 是同步且不返回 error 的), 令牌由定时任务提前刷好放在缓存里。
+	key := auth.NewStaticKeyProvider(channelKeyTokenOf(channelKey))
 	switch protocol {
 	case model.ProtocolOpenAIChatCompletion:
 		outbound, err := openai.NewOutboundTransformerWithConfig(&openai.Config{PlatformType: openai.PlatformOpenAI, BaseURL: channel.BaseURL, EndpointPath: channel.OpenAIChatCompletionPath, APIKeyProvider: key})

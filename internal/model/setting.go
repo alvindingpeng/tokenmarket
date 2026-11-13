@@ -158,6 +158,11 @@ const (
 	SettingKeyBreakerCoolAuthSeconds  SettingKey = "breaker_cool_auth_seconds" // 换路冷却: 鉴权/额度错误后该成员冷却秒数, 默认 60。
 	SettingKeyBreakerCoolSoftSeconds  SettingKey = "breaker_cool_soft_seconds" // 换路冷却: 过载/模型缺失等软错误后该成员冷却秒数, 默认 30。
 	SettingKeyBreakerDegradeThreshold SettingKey = "breaker_degrade_threshold" // 熔断降级告警阈值: 熔断次数达到此值时生成 degraded 告警, 默认 3。
+	// 上游账号(导入的 OAuth 账号 JSON)令牌刷新。
+	// 默认开启: 不刷新就等于账号会随令牌到期自然失效, 那让导入功能失去意义; 但周期可调,
+	// 因为每次刷新都是一次上游调用, 账号多时应当放慢。
+	SettingKeyAccountRefreshEnabled SettingKey = "account_refresh_enabled" // 是否自动刷新导入账号的令牌, 默认开。
+	SettingKeyAccountRefreshMinutes SettingKey = "account_refresh_minutes" // 刷新检查周期(分钟), 默认 5。
 
 	// 质量评分权重
 	SettingKeyQualityWeightSuccess SettingKey = "quality_weight_success" // 质量评分成功率权重(0-100), 默认 40。三个权重会自动归一化到总和 100。
@@ -333,6 +338,8 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyEgressRegionBonusMs, Value: "0"},     // 区域亲和默认关闭
 		{Key: SettingKeyBreakerCoolAuthSeconds, Value: "60"}, // 鉴权/额度成员冷却 60 秒
 		{Key: SettingKeyBreakerCoolSoftSeconds, Value: "30"}, // 过载/模型缺失成员冷却 30 秒
+		{Key: SettingKeyAccountRefreshEnabled, Value: "true"},  // 默认自动刷新
+		{Key: SettingKeyAccountRefreshMinutes, Value: "5"},     // 每 5 分钟检查一次到期账号
 		{Key: SettingKeyBreakerDegradeThreshold, Value: "3"}, // 熔断降级告警阈值: 累计3次即生成 degraded 告警
 
 		{Key: SettingKeyQualityWeightSuccess, Value: "40"}, // 质量评分成功率权重 40%

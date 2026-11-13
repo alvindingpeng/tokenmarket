@@ -117,6 +117,17 @@ type ChannelKeyConfig struct {
 	BreakerTrips  int        `json:"breaker_trips" gorm:"default:0"` // 自上次成功以来累计熔断次数; 熔断时长按它翻倍, 成功即清零。
 	ProbeCount    int        `json:"probe_count" gorm:"default:0"`   // 熔断恢复探测尝试次数; 超过上限则不再自动探测。
 	ProbeAt       *time.Time `json:"probe_at,omitempty"`             // 上次探测时间。
+	// 上游账号(导入的 OAuth 账号 JSON)。
+	//
+	// 为什么整包 JSON 放进已有的 Key 列而不是新开一张表: Key 列本来就是「这把凭据的全部秘密」,
+	// 已经走信封加密、绑定 (channel_id, name)、运行时读明文。账号 JSON 是它的另一种形态
+	// (里面含 access_token/refresh_token), 语义一致, 没必要为此再造一套密文与归属校验。
+	// AccountKind 只是告诉转发与定时任务「这包东西该怎么用」。
+	AccountKind     string     `json:"account_kind,omitempty" gorm:"size:16;not null;default:''"`     // 空=普通静态 Key; oauth/cookie=导入的账号。
+	AccountPlatform string     `json:"account_platform,omitempty" gorm:"size:16;not null;default:''"` // codex/kiro/gemini/grok/claude; 空表示非账号凭据。
+	AccountEmail    string     `json:"account_email,omitempty" gorm:"size:255;not null;default:''"`   // 展示用, 从 JSON 或 JWT claim 取。
+	TokenExpiresAt  *time.Time `json:"token_expires_at,omitempty"`                                    // 当前访问令牌的到期时间; 定时任务据此提前刷新。
+	TokenRefreshAt  *time.Time `json:"token_refresh_at,omitempty"`                                    // 最近一次刷新时间, 用于展示与排查。
 }
 
 // 渠道下的一份上游凭据; 不同凭据通常对应不同的额度与计费。

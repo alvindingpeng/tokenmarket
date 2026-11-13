@@ -30,4 +30,5 @@ const (
 	TaskArchiveRetention        = "archive_retention"          // 清理超期的日志/审计归档 NDJSON 文件。
 	TaskWatchdogAlert           = "watchdog_alert"             // 外部看门狗日志巡检。
 	TaskFxRateUpdate            = "fx_rate_update"             // 采集牌价并落 fx_rates 快照(结算折算依据)。
+	TaskAccountTokenRefresh     = "account_token_refresh"      // 刷新导入的上游账号令牌(仅 oauth 类; cookie 类无续期能力)。
 )

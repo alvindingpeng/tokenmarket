@@ -1409,7 +1409,37 @@
         },
         "markupRatio": "Channel markup ratio",
         "markupRatioFollowGlobal": "Follow global setting",
-        "markupRatioHint": "0 = no markup; 0.2 = 20%; blank follows global"
+        "markupRatioHint": "0 = no markup; 0.2 = 20%; blank follows global",
+        "account": {
+            "open": "Import account",
+            "title": "Import upstream account",
+            "hint": "Paste the account JSON exported by the platform. OAuth accounts refresh automatically; cookie accounts cannot be renewed and must be re-imported once they expire.",
+            "platform": "Platform",
+            "name": "Credential name",
+            "namePlaceholder": "e.g. codex-main",
+            "raw": "Account JSON",
+            "rawPlaceholder": "Paste the account JSON here",
+            "rawHint": {
+                "codex": "Accepts both a flat object (access_token, refresh_token, account_id) and the CLI export wrapped in tokens.",
+                "kiro": "Needs camelCase refreshToken, clientId and clientSecret.",
+                "gemini": "Cookie-based: needs c_ses (and optionally c_oses, csesidx, config_id).",
+                "grok": "Cookie-based: needs sso. sso-rw is not used for auth.",
+                "claude": "Accepts access_token and refresh_token."
+            },
+            "nameRequired": "Enter a credential name",
+            "rawRequired": "Paste the account JSON",
+            "imported": "Account imported",
+            "resultTitle": "Import result",
+            "resultKind": "Credential type: {kind}",
+            "resultEmail": "Account: {email}",
+            "resultExpires": "Token expires at: {at}",
+            "resultRefreshed": "Token refreshed; the account is ready to use",
+            "cookieWarning": "Cookie accounts cannot renew automatically. Once expired they stop forwarding until re-imported.",
+            "refreshNow": "Refresh now",
+            "refreshed": "Token refreshed",
+            "submit": "Import",
+            "cancel": "Close"
+        }
     },
     "share": {
         "shareCode": "Share code",

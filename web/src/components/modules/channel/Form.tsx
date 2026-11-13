@@ -38,7 +38,7 @@ export function ChannelForm({ channelId, onBack }: {
     onBack?: () => void; // 编辑态由统计视图切入, 给出返回入口; 新建态没有可返回的视图。
 }) {
     const t = useTranslations('channel.form');
-    const { data: detail, isPending, isError } = useChannelDetail(channelId);
+    const { data: detail, isPending, isError, refetch } = useChannelDetail(channelId);
 
     if (channelId === undefined) {
         return <ChannelFormFields />;
@@ -53,13 +53,18 @@ export function ChannelForm({ channelId, onBack }: {
             </div>
         );
     }
-    return <ChannelFormFields channel={detail} onBack={onBack} />;
+    return <ChannelFormFields channel={detail} onBack={onBack} onChannelRefetch={() => void refetch()} />;
 }
 
 // ChannelFormFields 承载表单本体; 初始状态在挂载时定稿, 故必须等配置到齐后才渲染。
 // 新建从模板步骤起, 编辑跳过模板直接进连接步骤; 步骤顺序即数据依赖顺序:
 // 模板给出地址与路径 -> 拉取需要地址与凭据 -> 授权引用凭据与模型。
-function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBack?: () => void }) {
+function ChannelFormFields({ channel, onBack, onChannelRefetch }: {
+    channel?: ChannelDetail;
+    onBack?: () => void;
+    // 导入账号后要重拉渠道详情: 导入的凭据直接落库, 不经过表单草稿, 不重拉则界面上看不到。
+    onChannelRefetch?: () => void;
+}) {
     const t = useTranslations('channel.form');
     const locale = useSettingStore((state) => state.locale);
     const { setIsOpen } = useMorphingDialog();
@@ -245,7 +250,14 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
                         </div>
                     )}
 
-                    {step === 'keys' && <FormKeys state={state} setState={setState} />}
+                    {step === 'keys' && (
+                        <FormKeys
+                            state={state}
+                            setState={setState}
+                            channelId={channel?.id}
+                            onAccountImported={onChannelRefetch}
+                        />
+                    )}
                     {step === 'egresses' && <FormEgresses state={state} setState={setState} />}
                     {step === 'grants' && <FormGrants state={state} setState={setState} />}
 

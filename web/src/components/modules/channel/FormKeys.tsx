@@ -6,6 +6,7 @@ import { Switch } from '@/components/ui/switch';
 import { IconButton } from '@/components/common/IconButton';
 import { useModelProbe } from './probe';
 import { grantKey, type ChannelFormState } from './state';
+import { AccountImport } from './AccountImport';
 
 // maskKey 显示凭据尾部, 其余以点替代; 过短的秘密连首尾都遮不住, 整条掩掉。
 function maskKey(key: string) {
@@ -19,9 +20,16 @@ const emptyDraft: KeyDraft = { name: '', key: '', app_id: '', api_secret: '', do
 
 // FormKeys 渠道凭据的增删改。
 // 凭据改名后其授权要跟着改名, 否则授权会指向已不存在的凭据; 删除凭据同时删掉它的全部授权。
-export function FormKeys({ state, setState }: {
+export function FormKeys({ state, setState, channelId, onAccountImported }: {
     state: ChannelFormState;
     setState: (next: ChannelFormState) => void;
+    // channelId 只在编辑已存在的渠道时有值。账号导入走独立接口(直接落库),
+    // 而本组件管理的是尚未提交的表单草稿 —— 两者语义不同, 所以导入入口只在
+    // 渠道已存在时给出: 新建渠道还没有凭据表可写, 此时导入必然失败。
+    channelId?: number;
+    // 导入成功后让父级重新拉渠道详情: 导入的凭据直接进了库, 不会出现在 state.keys 草稿里,
+    // 不重拉的话使用者会以为导入没生效。
+    onAccountImported?: () => void;
 }) {
     const t = useTranslations('channel.form');
     const { probe, pendingKey } = useModelProbe();
@@ -85,9 +93,15 @@ export function FormKeys({ state, setState }: {
         <div className="flex flex-col gap-3 h-full min-h-0">
             <div className="flex items-center justify-between shrink-0">
                 <span className="text-sm font-medium">{t('keys')} ({state.keys.length})</span>
-                <IconButton onClick={add} className="size-9" tip={t('keyAdd')}>
-                    <Plus className="size-4" />
-                </IconButton>
+                <div className="flex items-center gap-1">
+                    {/* 导入账号只在编辑已存在的渠道时出现: 新建渠道还没有可写的凭据表。 */}
+                    {channelId !== undefined && (
+                        <AccountImport channelId={channelId} onImported={onAccountImported} />
+                    )}
+                    <IconButton onClick={add} className="size-9" tip={t('keyAdd')}>
+                        <Plus className="size-4" />
+                    </IconButton>
+                </div>
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-2">

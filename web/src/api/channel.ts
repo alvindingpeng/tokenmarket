@@ -27,12 +27,20 @@ type CustomHeader = {
 // ChannelKey 是渠道下的一份上游凭据；名称在渠道内唯一，读写都按它引用。
 export type ChannelKey = {
     name: string;
-    key: string; // 上游访问凭据; 讯飞渠道用它承载 API Key。
+    key: string; // 上游访问凭据; 讯飞渠道用它承载 API Key; 导入的账号凭据则承载整包账号 JSON。
     // 讯飞星火专用字段(dialect=xunfei 才填写); 读侧可能缺省, 写侧恒带三项。
     app_id?: string;
     api_secret?: string;
     domain?: string;
     enabled: boolean;
+    // 导入的上游账号(见 model/account_json.go)。非账号凭据这些字段全空,
+    // 因此界面据 account_kind 决定"显示成普通 Key 还是显示成账号"。
+    account_kind?: '' | 'oauth' | 'cookie';
+    account_platform?: '' | 'codex' | 'kiro' | 'gemini' | 'grok' | 'claude';
+    account_email?: string;
+    // token_expires_at 是当前访问令牌的到期时间; cookie 类账号没有这个字段(它们无法续期)。
+    token_expires_at?: string;
+    token_refresh_at?: string;
 };
 
 // ChannelGrant 是渠道内的一条上游授权：指定模型使用指定凭据时支持的协议集合，也是转发的最小单位。
@@ -645,4 +653,57 @@ export function channelProfitQueryOptions(channelId: number, startDate: string, 
 // 仅管理员可用：非管理员请求会得到 403，面板据此展示无权限提示而不是空数据。
 export function useChannelProfit(channelId: number, startDate: string, endDate: string, enabled = true) {
     return useQuery({ ...channelProfitQueryOptions(channelId, startDate, endDate), enabled: enabled && channelId > 0 && Boolean(startDate) && Boolean(endDate) });
+}
+
+// ACCOUNT_IMPORT_TIMEOUT_MS 账号导入/刷新的请求超时。
+// 后端要在导入时立刻向平台令牌端点刷新一次, 20 秒是后端侧单次刷新超时, 这里留足余量。
+const ACCOUNT_IMPORT_TIMEOUT_MS = 30_000;
+
+// 导入的上游账号: 各平台接受的 JSON 字段形状见后端 model/account_json.go 的解析分支。
+// 这里只描述「界面要让使用者填什么」, 不做字段校验 —— 校验的真实来源是后端解析器,
+// 前端再复制一份规则必然漂移(而且往往漂移在「某个平台多认了一个别名」这种细节上)。
+export type AccountPlatform = 'codex' | 'kiro' | 'gemini' | 'grok' | 'claude';
+
+export type AccountImportPayload = {
+    channel_id: number;
+    platform: AccountPlatform;
+    name: string;
+    raw: string;
+    enabled?: boolean;
+    priority?: number;
+};
+
+export type AccountImportResult = {
+    channel_key_id: number;
+    name: string;
+    platform: string;
+    kind: 'oauth' | 'cookie';
+    email?: string;
+    expires_at?: string;
+    refreshed_now: boolean;
+    // auto_renewable=false(cookie 类): 账号失效后无法自动恢复, 只能人工重新导入。
+    // 界面必须显式说明, 否则使用者会以为「系统会一直帮我维持」。
+    auto_renewable: boolean;
+    // warning 表示「账号已导入但首次刷新失败」: 导入是成功的, 不是错误。
+    warning?: string;
+};
+
+export type AccountRefreshResult = { refreshed: boolean };
+
+// accountImport 导入一份账号 JSON 作为渠道凭据。
+// 超时放宽: 后端会在导入时立刻向平台令牌端点刷一次, 验证这份 JSON 到底能不能用。
+export function accountImport(payload: AccountImportPayload) {
+    return apiRequest<AccountImportResult>('/api/v1/channel/account/import', {
+        method: 'POST',
+        body: payload,
+        timeoutMs: ACCOUNT_IMPORT_TIMEOUT_MS,
+    });
+}
+
+// accountRefreshKey 手动刷新某个账号凭据, 用于导入后立刻验证可用性。
+export function accountRefreshKey(channelKeyId: number) {
+    return apiRequest<AccountRefreshResult>(`/api/v1/channel/account/${channelKeyId}/refresh`, {
+        method: 'POST',
+        timeoutMs: ACCOUNT_IMPORT_TIMEOUT_MS,
+    });
 }

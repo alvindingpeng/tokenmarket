@@ -37,6 +37,8 @@ var settingTasks = map[model.SettingKey][]string{
 	model.SettingKeyArchiveRetentionDays:    {TaskArchiveRetention},
 	model.SettingKeyFxRateUpdateEnabled:     {TaskFxRateUpdate},
 	model.SettingKeyFxRateUpdateInterval:    {TaskFxRateUpdate},
+	model.SettingKeyAccountRefreshEnabled:  {TaskAccountTokenRefresh},
+	model.SettingKeyAccountRefreshMinutes:  {TaskAccountTokenRefresh},
 }
 
 // ApplySetting 重算某项设置影响到的全部任务周期。
@@ -258,6 +260,32 @@ func Init() {
 				return err
 			}
 			log.Infof("fx rate update: refreshed %d currencies from %s", written, op.FxRateSourceName())
+			return nil
+		},
+	})
+
+	// 上游账号令牌刷新: 只处理 oauth 类账号(cookie 类没有续期能力, 由导入时的说明告知使用者)。
+	//
+	// 为什么必须是独立任务而不是在转发路径里顺手刷新: auth.APIKeyProvider.Get(ctx) 是同步且
+	// 不返回 error 的接口, 把一次网络调用塞进去等于给每个请求挂上最长 20 秒的等待, 且失败无处上报。
+	// 刷新在这里做, 转发只读缓存 —— 这也解释了为什么刷新失败必须能区分"可重试"与"账号已失效"。
+	//
+	// RunOnStart 取 false: 重启时集中刷新所有账号会在上游侧形成一阵异常流量, 等第一个周期更稳妥。
+	// 周期取分钟级而不是小时级: 令牌有效期通常是小时级, 提前量是 10 分钟, 5 分钟一轮足以覆盖。
+	Define(Spec{
+		Name:     TaskAccountTokenRefresh,
+		Interval: enabledMinutesInterval(model.SettingKeyAccountRefreshEnabled, model.SettingKeyAccountRefreshMinutes, 5),
+		Fn: func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			result, err := op.AccountRefreshRun(ctx, time.Now())
+			if err != nil {
+				return err
+			}
+			if result.Refreshed > 0 || result.Failed > 0 || result.Expired > 0 {
+				log.Infof("account token refresh: refreshed=%d failed=%d invalidated=%d",
+					result.Refreshed, result.Failed, result.Expired)
+			}
 			return nil
 		},
 	})

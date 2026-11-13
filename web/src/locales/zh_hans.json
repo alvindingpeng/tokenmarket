@@ -1409,7 +1409,37 @@
         },
         "markupRatio": "渠道上浮比例",
         "markupRatioFollowGlobal": "跟随全局设置",
-        "markupRatioHint": "0 = 不加价; 0.2 = 20%; 留空跟随全局"
+        "markupRatioHint": "0 = 不加价; 0.2 = 20%; 留空跟随全局",
+        "account": {
+            "open": "导入账号",
+            "title": "导入上游账号",
+            "hint": "粘贴平台导出的账号 JSON。OAuth 账号会自动续期; cookie 类账号无法续期, 失效后必须重新导入。",
+            "platform": "平台",
+            "name": "凭据名称",
+            "namePlaceholder": "例如 codex-main",
+            "raw": "账号 JSON",
+            "rawPlaceholder": "在此粘贴账号 JSON",
+            "rawHint": {
+                "codex": "支持平铺对象(access_token/refresh_token/account_id), 也支持 CLI 导出里 tokens 封装的形式。",
+                "kiro": "需要 camelCase 的 refreshToken、clientId 与 clientSecret。",
+                "gemini": "基于 Cookie: 需要 c_ses(可选 c_oses、csesidx、config_id)。",
+                "grok": "基于 Cookie: 需要 sso。sso-rw 不参与鉴权。",
+                "claude": "支持 access_token 与 refresh_token。"
+            },
+            "nameRequired": "请填写凭据名称",
+            "rawRequired": "请粘贴账号 JSON",
+            "imported": "账号已导入",
+            "resultTitle": "导入结果",
+            "resultKind": "凭据类型: {kind}",
+            "resultEmail": "账号: {email}",
+            "resultExpires": "令牌到期: {at}",
+            "resultRefreshed": "已刷新令牌, 账号可以立即使用",
+            "cookieWarning": "cookie 类账号无法自动续期, 失效后将停止转发, 需要重新导入。",
+            "refreshNow": "立即刷新",
+            "refreshed": "令牌已刷新",
+            "submit": "导入",
+            "cancel": "关闭"
+        }
     },
     "share": {
         "shareCode": "共享编码",

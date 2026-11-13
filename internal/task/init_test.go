@@ -146,6 +146,7 @@ func TestTaskNamesAndDefinitionsInSync(t *testing.T) {
 		TaskArchiveRetention,
 		TaskWatchdogAlert,
 		TaskFxRateUpdate,
+		TaskAccountTokenRefresh,
 	}
 
 	tasksMu.Lock()
