@@ -13,6 +13,7 @@ import {
     type MarketSort,
 } from '@/api/market';
 import { MarketItem } from './Item';
+import { useMarketFavorites, useToggleMarketFavorite } from '@/api/marketFavorite';
 import { CompareBar, MAX_COMPARE } from './Compare';
 import { brandLabel, type MarketTranslate } from './labels';
 
@@ -158,12 +159,20 @@ export function Market() {
 
     const query = useMemo(() => marketQueryOf(searchTerm, kind, brands, sortBy), [searchTerm, kind, brands, sortBy]);
     const { data, isError, refetch, isRefetching } = useMarketCatalog(query);
+    const { data: favorites = [] } = useMarketFavorites();
+    const toggleFavorite = useToggleMarketFavorite();
+    // 只看收藏: 本地开关, 不进服务端查询 —— 收藏集合本身很小(一个用户几十条),
+    // 让服务端多一个 favorites_only 参数只为过滤这点数据, 反而多一处需要同步的口径。
+    const [onlyFavorites, setOnlyFavorites] = useState(false);
 
     if (isError) {
         return <ListErrorState onRetry={() => void refetch()} retrying={isRefetching} />;
     }
 
-    const models: MarketModel[] = data?.models ?? [];
+    const allModels: MarketModel[] = data?.models ?? [];
+    const favoriteSet = useMemo(() => new Set(favorites), [favorites]);
+    // 先按收藏过滤再进对比: 对比下标基于过滤后的数组, 否则勾选会指到看不见的行。
+    const models = onlyFavorites ? allModels.filter((model) => favoriteSet.has(model.name)) : allModels;
 
     // toggle 按下标切换, 上限 4 个: 再多就无法并排阅读, 也超出人一次能比较的范围。
     const toggle = (index: number) => {
@@ -182,11 +191,27 @@ export function Market() {
             {/* 概览行定住不滚: 往下翻时还能看见本次结果的模型/挂牌条数。 */}
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                 <span>{t('summary', { models: models.length, channels: countChannels(models) })}</span>
-                <span>{t('refreshNote')}</span>
+                <div className="flex items-center gap-3">
+                    <label className="flex cursor-pointer items-center gap-1.5">
+                        <input
+                            type="checkbox"
+                            className="size-3.5 accent-amber-500"
+                            checked={onlyFavorites}
+                            onChange={(event) => setOnlyFavorites(event.target.checked)}
+                        />
+                        <span className={onlyFavorites ? 'text-amber-500' : undefined}>
+                            {t('favorite.only', { count: favorites.length })}
+                        </span>
+                    </label>
+                    <span>{t('refreshNote')}</span>
+                </div>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pb-24 pr-1 md:pb-4">
+                {/* 空态要分清"筛完没有"和"本来就没有": 只看收藏时给一句可操作的话, 否则用户会以为页面坏了。 */}
                 {models.length === 0 ? (
-                    <p className="py-16 text-center text-sm text-muted-foreground">{t('empty')}</p>
+                    <p className="py-16 text-center text-sm text-muted-foreground">
+                        {onlyFavorites && favorites.length > 0 ? t('favorite.empty') : t('empty')}
+                    </p>
                 ) : (
                     // 不用 VirtualizedGrid: 广场卡片可以展开, 展开后行高变化会让虚拟化的测量失效
                     // (行高只在挂载时测一次), 结果是下一行盖住展开内容。几十行的直接渲染代价远小于这个坑。
@@ -199,6 +224,8 @@ export function Market() {
                                 compareIndex={index}
                                 compareSelected={selected}
                                 onToggleCompare={toggle}
+                                favorited={favoriteSet.has(model.name)}
+                                onToggleFavorite={(name, favorited) => toggleFavorite.mutate({ model: name, favorited })}
                             />
                         ))}
                     </div>

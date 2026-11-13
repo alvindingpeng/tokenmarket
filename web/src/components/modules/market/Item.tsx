@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'use-intl';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Star } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getBrandIcon } from '@/lib/model-icons';
 import { formatLatency } from '@/lib/format';
@@ -20,13 +20,17 @@ const BAND_STYLES = [
 ];
 
 // MarketItem 渲染一条模型行: 折叠后的同名模型, 展开可看每条渠道编码与各自的价格/状态。
-export function MarketItem({ model, layout, compareIndex, compareSelected, onToggleCompare }: {
+export function MarketItem({ model, layout, compareIndex, compareSelected, onToggleCompare, favorited, onToggleFavorite }: {
     model: MarketModel;
     layout: 'grid' | 'list';
     // 对比勾选: 只有广场正文会传这三项。渠道/分组页复用本组件时不传, 就不会出现无处可去的勾选框。
     compareIndex?: number;
     compareSelected?: number[];
     onToggleCompare?: (index: number) => void;
+    // 收藏同理: 只在广场正文出现。传 favorited 而不是在组件内部自己查,
+    // 是为了让"收藏了但被别的标签页取消了"这种跨页状态由页面统一持有。
+    favorited?: boolean;
+    onToggleFavorite?: (model: string, favorited: boolean) => void;
 }) {
     const t = useTranslations('market');
     const [expanded, setExpanded] = useState(false);
@@ -94,6 +98,20 @@ export function MarketItem({ model, layout, compareIndex, compareSelected, onTog
                         </span>
                     </div>
                 </div>
+                {onToggleFavorite && (
+                    <button
+                        type="button"
+                        onClick={() => onToggleFavorite(model.name, !favorited)}
+                        aria-pressed={Boolean(favorited)}
+                        aria-label={favorited ? t('favorite.remove', { name: model.name }) : t('favorite.add', { name: model.name })}
+                        className={cn(
+                            'shrink-0 rounded-lg p-1.5 transition-colors',
+                            favorited ? 'text-amber-500' : 'text-muted-foreground hover:text-foreground'
+                        )}
+                    >
+                        <Star className={cn('size-4', favorited && 'fill-amber-500')} />
+                    </button>
+                )}
                 {compareIndex !== undefined && onToggleCompare && compareSelected && (
                     <CompareToggle
                         model={model}

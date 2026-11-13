@@ -28,6 +28,7 @@ import {
     MorphingDialogDescription,
     useMorphingDialog,
 } from '@/components/ui/morphing-dialog';
+import { routeEventText, routeModeText, routePhaseText, routeReasonText } from './reason';
 
 // formatTime 将后端 RFC3339 时间转换为本地时分秒。
 function formatTime(value: string) {
@@ -285,15 +286,15 @@ function LogDetail({ log, now, errorRounds }: { log: RelayLogOverview; now: numb
                                 </div>
                             ) : leftTab === 'timeline' ? (
                                 <div className="space-y-3 p-3 text-xs">
-                                    {(log.route_events ?? []).map((event,index) => <div key={index} className="flex gap-2 text-muted-foreground"><span>{formatTime(event.at)}</span><span>{t('eventPhase.' + event.phase)}</span><span>{event.reason.startsWith('strategy_') ? t('routeReason.' + event.reason) : t('eventReason.' + event.reason)}</span></div>)}
+                                    {(log.route_events ?? []).map((event,index) => <div key={index} className="flex gap-2 text-muted-foreground"><span>{formatTime(event.at)}</span><span>{routePhaseText(t, event.phase)}</span><span>{routeEventText(t, event.reason)}</span></div>)}
                                     {attempts.isLoading ? <Loader2 className="size-4 animate-spin" /> : attempts.isError ? <span>{t('detailUnavailable')}</span> : !attempts.data?.items.length ? <span>{t('timelineEmpty')}</span> : attempts.data.items.map((attempt) => {
                                         let decision: {mode?: string; reason?: string; candidates?: {item_id:number;channel_code:string;model:string;reason:string}[]} = {};
                                         try { decision = JSON.parse(attempt.decision || '{}'); } catch { /* Historical rows have no decision. */ }
                                         return <div key={attempt.id} className="rounded-xl border border-border p-3">
                                             <div className="flex justify-between gap-2"><b>#{attempt.round} · {attempt.channel_code ? '#' + attempt.channel_code : '-'} · {attempt.target_model}</b><span>{t('attemptStatus.' + attempt.status)}</span></div>
-                                            <div className="mt-1 text-muted-foreground">{formatTime(attempt.started_at)} · {attempt.duration_ms} ms · {decision.mode} · {decision.reason ? t('routeReason.' + decision.reason) : '-'}</div>
+                                            <div className="mt-1 text-muted-foreground">{formatTime(attempt.started_at)} · {attempt.duration_ms} ms · {routeModeText(t, decision.mode)} · {routeReasonText(t, decision.reason)}</div>
                                             {attempt.error && <p className="mt-1 whitespace-pre-wrap text-destructive">{attempt.error}</p>}
-                                            {decision.candidates?.map(candidate => <div key={candidate.item_id} className="mt-1 text-muted-foreground">{candidate.channel_code || '-'} / {candidate.model}: {t('routeReason.' + candidate.reason)}</div>)}
+                                            {decision.candidates?.map(candidate => <div key={candidate.item_id} className="mt-1 text-muted-foreground">{candidate.channel_code || '-'} / {candidate.model}: {routeReasonText(t, candidate.reason)}</div>)}
                                         </div>;
                                     })}
                                 </div>
