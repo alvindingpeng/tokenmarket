@@ -756,16 +756,32 @@
     "note": { "noSamples": "No samples yet; counters restart with the process",
     "insufficient": "{count} samples, too few to judge (30 needed)", "liveMetrics": "In-process metrics from {count} calls" },
     "per": { "input": "/ in", "output": "/ out", "image": "/ image", "second": "/ sec" },
-    "action": { "addToGroup": "Add to group", "allGroupsJoined": "In all groups" },
+    "action": { "addToGroup": "Add to a model config" },
     "dialog": {
-      "title": "Add to a model config", "noGroup": "You have no model config yet. Create one on the group page first.",
-      "description": "Add the channels of {name} to one of your groups. Existing members keep their order.",
+      "title": "Add to a model config", "noGroup": "You have no model config yet. Create one first, then come back to add this model.",
+      "description": "Add the channels of {name} to one or more model configs. New channels are appended to the end; existing members keep their order.",
       "pickGroup": "Pick a model config", "pickChannel": "Pick channels to add",
       "groupMeta": "{count} members · {mode}", "alreadyIn": "Already in",
+      "createGroup": "Create a model config",
+      "selectedGroups": "{count} selected",
+      "selectedChannels": "{count} channels selected",
+      "previewEmpty": "Pick at least one config and one channel to see what will be added.",
+      "previewRow": "+{count} channels · {skipped} already in",
+      "previewAllPresent": "All selected channels already in",
+      "confirmCount": "Add {count} channels",
+      "selectMissing": "Select all {count} not yet configured",
+      "clearGroups": "Clear",
       "confirm": "Add", "cancel": "Cancel",
       "mode": { "manual": "Manual", "failover": "Failover", "price": "Lowest price", "latency": "Lowest latency", "success": "Highest success", "score": "Blended score", "random": "Random" }
     },
-    "toast": { "added": "Added to {name} ({count} channels)", "addFailed": "Failed to add" }
+    "toast": {
+      "added": "Added {count} channels to {groups} model configs",
+      "addFailed": "Failed to add",
+      "addedPartial": "Added {count} channels · {skipped} already present",
+      "addedPartialHint": "Existing members were left untouched; duplicates are skipped.",
+      "alreadyPresent": "Nothing to add",
+      "alreadyPresentHint": "Every selected channel is already in the selected configs."
+    }
   },
   "model": {
     "create": {

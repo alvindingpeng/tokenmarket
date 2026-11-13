@@ -382,6 +382,17 @@ func openAPIAdminPathsAuth() gin.H {
 				"字段全部是指针语义: 只提交要变更的项, 未提交的保持原状。items 一旦提交即整体替换; active_item_id=0 表示取消手动指定成员。",
 				"GroupUpdateRequest", adminItem("更新后的分组", "GroupResponse"), false, pathID("分组 ID")),
 		},
+		"/api/v1/group/add-items": gin.H{
+			"post": adminPath("group", "追加分组成员",
+				"把一批渠道授权**追加**到若干分组末尾, 与 /update 的 items 整体替换是两条语义。"+adminNewLine+
+					"整体替换要求调用方先持有准确的当前集合, 而广场/分组页读到的是快照, 用户在弹层里停留期间另一个会话可能已改过同一个分组 —— "+
+					"此时按旧快照合并再提交会把对方刚加的成员整段盖掉, 且不报错。"+adminNewLine+
+					"本接口只声明\"要加哪些\", 由服务端在事务内读出当前集合再追加: 并发安全, 且幂等 —— 已存在的授权跳过而不报错,"+adminNewLine+
+					"既有成员的顺序与优先级一律不动(重排属于分组页的编辑动作, 不该被\"加一个模型\"顺手改掉)。"+adminNewLine+
+					"逐分组返回 added/skipped 与追加后的完整分组; 一次提交多个分组时, 用户能看清每个配置各加了几条。"+
+					adminNewLine+"准入与归属复用与 /update、/create 同一套校验: 授权须「已发布 + 已过审 + 已上架」, 分组须属于当前身份。",
+				"GroupAddItemsRequest", adminItem("逐分组的追加结果", "GroupAddItemsResult"), false),
+		},
 		"/api/v1/group/delete/{id}": gin.H{
 			"delete": adminPath("group", "删除分组",
 				"删除后客户端再用该模型名请求即 404。", "",

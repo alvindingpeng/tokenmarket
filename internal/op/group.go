@@ -303,6 +303,108 @@ func syncGroupItems(tx *gorm.DB, groupID int, requested []model.GroupItemInput) 
 	return nil
 }
 
+// GroupAddItems 把一批渠道授权**追加**到若干分组末尾, 不整体替换成员集合。
+//
+// 为什么必须单独有这条写路径: 广场"把模型加进配置"由前端用 GroupUpdate 的 items 整体替换来做,
+// 而整体替换要求调用方先持有准确的当前集合。广场的卡片数据来自 20 秒轮询的缓存, 用户在弹层里
+// 停留期间另一个会话(或另一个标签页)可能刚改过同一个分组 —— 此时前端算出的合并结果会漏掉那次
+// 新增, 提交后那条成员凭空消失, 且没有任何报错。改成后端"读出当前集合 → 追加 → 写回"后,
+// 并发写不再依赖调用方手里的旧快照, 两个会话各加各的, 结果都保留。
+//
+// 语义取舍:
+//   - 只追加不重排: 既有成员的顺序与优先级一律不动, 新成员按提交顺序接在末尾。
+//     重排属于分组页的编辑操作, 不该被"加一个模型"顺手改掉。
+//   - 已存在即跳过而非报错: 重复点击、两个标签页各提交一次都是正常操作, 报 409 只会让用户困惑。
+//   - 归属校验与准入校验复用同一套: 分组必须属于当前身份(管理员也改不了别人的分组),
+//     授权必须「已发布 + 已过审 + 已上架」, 与 GroupUpdate/GroupCreate 同一口径。
+//
+// 返回每个分组各自的 added/skipped 与追加后的完整分组, 供界面逐条展示结果。
+func GroupAddItems(req *model.GroupAddItemsRequest, scope model.Scope, ctx context.Context) ([]model.GroupAddItemsResult, error) {
+	// 先在事务外把准入校验做完: 授权不存在或不可售时直接失败, 不留下半写状态。
+	// 去重是必要的 —— 请求里重复给出同一个授权时, 追加两次会在事务里撞唯一索引。
+	grantIDs := make([]int, 0, len(req.ChannelGrantIDs))
+	seenGrant := make(map[int]bool, len(req.ChannelGrantIDs))
+	for _, grantID := range req.ChannelGrantIDs {
+		if seenGrant[grantID] {
+			continue
+		}
+		seenGrant[grantID] = true
+		if err := validateGroupItemAccess(grantID, scope); err != nil {
+			return nil, err
+		}
+		grantIDs = append(grantIDs, grantID)
+	}
+
+	// 目标分组同样去重: 重复提交同一分组会在结果里出现两条自相矛盾的行。
+	groupIDs := make([]int, 0, len(req.GroupIDs))
+	seenGroup := make(map[int]bool, len(req.GroupIDs))
+	for _, groupID := range req.GroupIDs {
+		if seenGroup[groupID] {
+			continue
+		}
+		seenGroup[groupID] = true
+		groupIDs = append(groupIDs, groupID)
+	}
+
+	results := make([]model.GroupAddItemsResult, 0, len(groupIDs))
+	updated := make([]model.Group, 0, len(groupIDs))
+	for _, groupID := range groupIDs {
+		oldGroup, ok := groupCache.Get(groupID)
+		if !ok || oldGroup.UserID != scope.ID {
+			return nil, fmt.Errorf("group not found")
+		}
+
+		result := model.GroupAddItemsResult{
+			GroupID: groupID,
+			Added:   make([]int, 0, len(grantIDs)),
+			Skipped: make([]int, 0, len(grantIDs)),
+		}
+		var group model.Group
+		err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// 在事务内重新读当前成员, 而不是用缓存里的 oldGroup.Items:
+			// 缓存与本事务之间可能已经插入过一次并发追加, 用缓存算差集会漏成员(即本函数要解决的 bug)。
+			var existing []model.GroupItem
+			if err := tx.Where("group_id = ?", groupID).Find(&existing).Error; err != nil {
+				return fmt.Errorf("failed to load group items: %w", err)
+			}
+			hasGrant := make(map[int]bool, len(existing))
+			maxPriority := 0
+			for _, item := range existing {
+				hasGrant[item.ChannelGrantID] = true
+				if item.Priority > maxPriority {
+					maxPriority = item.Priority
+				}
+			}
+			for _, grantID := range grantIDs {
+				if hasGrant[grantID] {
+					result.Skipped = append(result.Skipped, grantID)
+					continue
+				}
+				// 主键在自增: 同一事务内的两次 Create 各自拿到不同 ID, 无需客户端指定。
+				item := model.GroupItem{GroupID: groupID, ChannelGrantID: grantID, Priority: maxPriority + 1}
+				if err := tx.Create(&item).Error; err != nil {
+					return fmt.Errorf("failed to create group item: %w", err)
+				}
+				maxPriority++
+				hasGrant[grantID] = true
+				result.Added = append(result.Added, grantID)
+			}
+			return tx.Preload("Items").First(&group, groupID).Error
+		})
+		if err != nil {
+			// 多分组提交时前面几个分组可能已经写成功: 返回已完成的那些, 让界面能如实展示"部分成功",
+			// 而不是整体失败后让用户重复提交(虽然本函数幂等, 但重复点击终究是坏体验)。
+			return results, fmt.Errorf("failed to add group items: %w", err)
+		}
+		sortGroupItems(group.Items)
+		groupCache.Set(group.ID, group)
+		result.Group = groupSnapshot(group, scope)
+		results = append(results, result)
+		updated = append(updated, group)
+	}
+	return results, nil
+}
+
 // GroupDel 删除分组及其成员，成员删除不会影响被其他分组引用的渠道授权。
 func GroupDel(id int, scope model.Scope, ctx context.Context) error {
 	group, ok := groupCache.Get(id)

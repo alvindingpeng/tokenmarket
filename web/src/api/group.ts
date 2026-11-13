@@ -241,6 +241,40 @@ export function useCreateGroup() {
     });
 }
 
+// GroupAddItemsRequest 是"只追加成员"的请求: 一次把一个或多个授权追加到多个分组末尾。
+// 与 GroupUpdateRequest.items 的区别是语义: items 是整体替换, 调用方必须先持有准确的当前集合 ——
+// 广场/分组页手里的是快照, 用户在弹层停留期间别的会话可能已经改过同一个分组, 按旧快照合并再提交
+// 会把对方刚加的成员整段盖掉且不报错。本请求只声明"要加哪些", 由后端在事务内读当前集合再追加。
+export interface GroupAddItemsRequest {
+    group_ids: number[];
+    channel_grant_ids: number[];
+}
+
+// GroupAddItemsResult 是一个分组的追加结果: 新增了几条、跳过了(已存在)几条、追加后的完整分组。
+export interface GroupAddItemsResult {
+    group_id: number;
+    added: number[];
+    skipped: number[];
+    group: Group;
+}
+
+// useAddGroupItems 把授权原子追加进分组。
+// 幂等: 已存在的授权跳过而不报错, 因此重复点击与两个标签页各提交一次都是安全操作。
+export function useAddGroupItems() {
+    return useMutation({
+        mutationFn: (data: GroupAddItemsRequest) =>
+            apiRequest<GroupAddItemsResult[]>('/api/v1/group/add-items', { method: 'POST', body: data }),
+        // 后端逐个分组返回追加后的完整分组, 直接写回缓存即可: 与列表/详情两处读的是同一份数据,
+        // 不必再 invalidate 重拉(那样会白打一次接口, 且中间态会让界面闪一下)。
+        onSuccess: (results) => {
+            for (const result of results) writeGroupCache(result.group);
+            // 广场卡片的"已在某配置"角标取自服务端返回的 in_groups(随目录 20 秒轮询刷新)。
+            // 加入后立刻失效一次, 让角标跟上 —— 否则用户刚加完, 卡片仍显示"未加入", 只能靠等下轮轮询。
+            void queryClient.invalidateQueries({ queryKey: ['market', 'models'] });
+        },
+    });
+}
+
 // useUpdateGroup 更新分组配置、成员或当前成员，响应即变更后的完整分组。
 export function useUpdateGroup() {
     return useMutation({

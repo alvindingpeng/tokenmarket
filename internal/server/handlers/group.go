@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -43,6 +44,12 @@ func init() {
 		AddRoute(
 			router.NewRoute("/update/:id", http.MethodPost).
 				Handle(updateGroup),
+		).
+		AddRoute(
+			// 只追加成员: 与 /update 的 items 整体替换是两条语义, 不可互相替代 ——
+			// 整体替换要求调用方持有准确的当前集合, 广场那类"卡片数据来自轮询缓存"的入口做不到。
+			router.NewRoute("/add-items", http.MethodPost).
+				Handle(addGroupItems),
 		).
 		AddRoute(
 			router.NewRoute("/delete/:id", http.MethodDelete).
@@ -264,6 +271,44 @@ func updateGroup(c *gin.Context) {
 	response := groupResponse{Group: *group, Runtime: relay.RouteStateOf(*group)}
 	publishGroupEvent(groupEvent{Name: "changed", Data: response, ownerID: group.UserID})
 	resp.Success(c, response)
+}
+
+// addGroupItems 把一个或多个渠道授权追加到若干分组末尾, 不整体替换成员集合。
+// 幂等: 已存在的授权跳过而不是报错; 既有成员的顺序与优先级一律不动。
+// 结果逐个分组返回, 让界面能显示"每个配置各加了几条"。
+func addGroupItems(c *gin.Context) {
+	var req model.GroupAddItemsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	userID, role := middleware.CurrentUser(c)
+	scope := model.Scope{ID: userID, Role: role}
+	results, err := op.GroupAddItems(&req, scope, c.Request.Context())
+	if err != nil {
+		// 部分成功时 results 非空: 已完成的那些已经落库, 必须让调用方看见,
+		// 否则界面会报"全部失败"而库里其实已经加进去几个分组。
+		if len(results) > 0 {
+			c.JSON(http.StatusConflict, gin.H{
+				"code":    http.StatusConflict,
+				"message": err.Error(),
+				"data":    results,
+			})
+			return
+		}
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "not found") {
+			status = http.StatusNotFound
+		}
+		resp.Error(c, status, err.Error())
+		return
+	}
+	// 改的是成员集合, 每个分组都要推一次事件: 广场、分组页与日志详情共用同一条事件流。
+	for _, result := range results {
+		response := groupResponse{Group: result.Group, Runtime: relay.RouteStateOf(result.Group)}
+		publishGroupEvent(groupEvent{Name: "changed", Data: response, ownerID: result.Group.UserID})
+	}
+	resp.Success(c, results)
 }
 
 func deleteGroup(c *gin.Context) {

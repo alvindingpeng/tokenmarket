@@ -327,3 +327,25 @@ type GroupUpdateRequest struct {
 type GroupItemInput struct {
 	ChannelGrantID int `json:"channel_grant_id" binding:"required"` // 待引用的渠道授权 ID。
 }
+
+// GroupAddItemsRequest 是「只追加成员」的请求: 一次把一个或多个授权追加到多个分组末尾。
+//
+// 与 GroupUpdateRequest.Items 的区别是语义而非形状: Items 是**整体替换**(提交的是完整新集合),
+// 调用方必须先读到当前集合、在本地合并、再把合并结果提交回来 —— 并发下两个会话各自读、各自合并、
+// 后写的那份把先写的增量整段覆盖掉, 表现为"加进去的成员又不见了", 且库里没有任何痕迹可查。
+// 本请求只声明"要加哪些", 由后端在事务内读出当前集合再追加, 因此并发安全且天然幂等:
+// 已经在分组里的授权不重复添加, 也不改变既有成员的顺序与优先级。
+type GroupAddItemsRequest struct {
+	GroupIDs       []int `json:"group_ids" binding:"required,min=1"`               // 目标分组主键; 一次可提交多个, 逐个追加。
+	ChannelGrantIDs []int `json:"channel_grant_ids" binding:"required,min=1,dive,gt=0"` // 待追加的渠道授权主键; 顺序即追加顺序。
+}
+
+// GroupAddItemsResult 是只追加的结果: 每个分组各自新增与被跳过了多少条。
+// 逐个分组给结果而不是只给一个汇总数: 一次提交多个分组时, "哪些真加进去了"必须能逐条看清,
+// 否则界面只能笼统地说"部分成功", 用户无从判断该重试哪一个。
+type GroupAddItemsResult struct {
+	GroupID  int   `json:"group_id"`  // 目标分组主键。
+	Added    []int `json:"added"`     // 本次真正新增的授权主键, 按追加顺序。
+	Skipped  []int `json:"skipped"`   // 已在该分组中而跳过的授权主键(重复提交不该报错)。
+	Group    Group `json:"group"`     // 追加后的完整分组, 语义与 GroupUpdate 的响应一致。
+}

@@ -756,16 +756,32 @@
     "note": { "noSamples": "暂无调用样本, 重启后重新累计",
     "insufficient": "有 {count} 次样本, 不足以判定(需 30 次)", "liveMetrics": "来自 {count} 次调用的进程内指标" },
     "per": { "input": "/ 入", "output": "/ 出", "image": "/ 张", "second": "/ 秒" },
-    "action": { "addToGroup": "加入分组", "allGroupsJoined": "全部分组已包含" },
+    "action": { "addToGroup": "加入模型配置" },
     "dialog": {
-      "title": "加入模型配置", "noGroup": "还没有模型配置, 请先到分组页新建一个。",
-      "description": "把 {name} 的渠道加进自有分组, 已有成员的顺序不变。",
+      "title": "加入模型配置", "noGroup": "还没有模型配置, 先新建一个再回来加这个模型。",
+      "description": "把 {name} 的渠道加进一个或多个模型配置。新渠道追加到末尾, 已有成员顺序不变。",
       "pickGroup": "选择模型配置", "pickChannel": "选择要加入的渠道",
       "groupMeta": "{count} 个成员 · {mode}", "alreadyIn": "已在其中",
+      "createGroup": "去新建模型配置",
+      "selectedGroups": "已选 {count} 个",
+      "selectedChannels": "已选 {count} 个渠道",
+      "previewEmpty": "至少选一个配置和一个渠道, 才会显示本次会加多少条。",
+      "previewRow": "新增 {count} 个 · 已有 {skipped} 个",
+      "previewAllPresent": "所选渠道都已在其中",
+      "confirmCount": "加入 {count} 个渠道",
+      "selectMissing": "一键选上未配置的 {count} 个",
+      "clearGroups": "清空",
       "confirm": "加入", "cancel": "取消",
       "mode": { "manual": "手动", "failover": "故障转移", "price": "低价优先", "latency": "低延迟优先", "success": "成功率优先", "score": "综合评分", "random": "随机" }
     },
-    "toast": { "added": "已加入 {name}({count} 个渠道)", "addFailed": "加入失败" }
+    "toast": {
+      "added": "已加入 {groups} 个模型配置, 共 {count} 个渠道",
+      "addFailed": "加入失败",
+      "addedPartial": "已加入 {count} 个渠道 · {skipped} 个已在其中",
+      "addedPartialHint": "已有成员一律未改动, 重复的渠道直接跳过。",
+      "alreadyPresent": "无需新增",
+      "alreadyPresentHint": "所选渠道在该配置里都已经存在。"
+    }
   },
   "model": {
     "create": {

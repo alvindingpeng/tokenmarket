@@ -389,6 +389,18 @@ func openAPIAdminSchemas() gin.H {
 			"channel_grant_id": fieldNumber("integer", "待引用的渠道授权 ID, 取自 /api/v1/channel/grants"),
 		}, "channel_grant_id"),
 
+		"GroupAddItemsRequest": object(gin.H{
+			"group_ids":         gin.H{"type": "array", "description": "目标分组主键, 一次可提交多个, 逐个追加", "items": gin.H{"type": "integer"}},
+			"channel_grant_ids": gin.H{"type": "array", "description": "待追加的渠道授权主键, 顺序即追加顺序; 已存在的跳过, 重复项只算一次", "items": gin.H{"type": "integer"}},
+		}, "group_ids", "channel_grant_ids"),
+
+		"GroupAddItemsResult": object(gin.H{
+			"group_id": fieldNumber("integer", "目标分组主键"),
+			"added":    gin.H{"type": "array", "description": "本次真正新增的授权主键, 按追加顺序", "items": gin.H{"type": "integer"}},
+			"skipped":  gin.H{"type": "array", "description": "已在该分组中而跳过的授权主键: 重复提交不算失败", "items": gin.H{"type": "integer"}},
+			"group":    ref("GroupResponse"),
+		}, "group_id", "added", "skipped", "group"),
+
 		"GroupRelayConfig": object(gin.H{
 			"member_stream_idle_timeout_seconds":         fieldNumber("integer", "流式响应两帧之间的最大空闲秒数"),
 			"request_timeout_seconds":                    fieldNumber("integer", "整请求最大耗时秒数, 含重试与流式传输"),
