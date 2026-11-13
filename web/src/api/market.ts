@@ -32,6 +32,16 @@ export interface MarketChannelListing {
     samples: number;
     // 逐行也给一份口径: 同一模型的不同渠道样本量能差两个数量级, 由前端各自判阈值必然与服务端分叉。
     metrics_source: MarketMetricsSource;
+    // 质量区间: 近 7 天的成功率/延迟/可用率各自落成区间文案。
+    // 三个维度独立判定样本门槛, 故可能只出现其中一两个; 全不达标时整段省略。
+    quality_band?: MarketQualityBand;
+}
+
+/** 一条挂牌的质量区间。只给区间不给精确值(与分享页同一道脱敏防线)。 */
+export interface MarketQualityBand {
+    success?: string; // 如 "99.5%"+" / "99%+" / "95%+" / "<95%"
+    latency?: string; // 如 "<2s" / "2-5s" / ">5s"
+    uptime?: string;  // 如 "99.9%+" / "99%+" / "95%+" / "<95%"
 }
 
 /** 按小写模型名折叠后的一屏一行。 */
@@ -43,14 +53,28 @@ export interface MarketModel {
     wait_ms?: number;
     success?: number;
     samples: number;
-    // metrics_source 是界面分流的唯一依据。三档而不是两档:
-    // live=样本够, 数字可信; insufficient=有样本但不足门槛, 仍显示 —; none=无样本。
-    // 只有 live 才给数字 —— 把"跑过 1 次"当成可用成绩, 与把"没数据"当成 100% 成功同源。
+    // metrics_source 是界面分流的唯一依据。四档而不是两档:
+    // live=本次进程的样本够; daily=本进程没跑过, 数字来自近 7 天持久化统计;
+    // insufficient=有样本但不足门槛, 仍显示 —; none=无样本。
+    // 只有 live/daily 才给数字 —— 把"跑过 1 次"当成可用成绩, 与把"没数据"当成 100% 成功同源。
+    // daily 与 live 必须分开: 两者 WaitTime 口径不同源, 且"实时"与"近一周"是两种不同的承诺。
     metrics_source: MarketMetricsSource;
 }
 
 /** MarketMetricsSource 是成绩口径标注, 与后端 handlers 的 marketMetrics* 常量一一对应。 */
-export type MarketMetricsSource = 'live' | 'insufficient' | 'none';
+export type MarketMetricsSource = 'live' | 'daily' | 'insufficient' | 'none';
+
+/**
+ * hasNumericMetrics 判断这条记录的指标是否给出了数字。
+ *
+ * 单点在此而不在各组件里写 '=== 'live'': 'daily'(近 7 天回落)同样有达标样本、同样可比,
+ * 只是来源不同。每处各自判一次, 新增来源时必然漏改某一处 —— 那处就会静默退回—,
+ * 而界面上看不出是漏改还是真的没数据。
+ */
+export function hasNumericMetrics(source: MarketMetricsSource): boolean {
+    return source === 'live' || source === 'daily';
+}
+
 
 export interface MarketCatalog {
     models: MarketModel[];

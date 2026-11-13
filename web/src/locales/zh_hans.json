@@ -752,9 +752,35 @@
       "latency": "延迟", "noAvailable": "暂无可用渠道", "details": "展开渠道明细",
       "convertedFrom": "原价 {currency} 已折算"
     },
+    "cost": {
+        "title": "本次调用估算",
+        "preset": {
+            "chat": "聊天一轮",
+            "doc": "长文档",
+            "agent": "Agent 一次"
+        },
+        "volume": "输入 {input} / 输出 {output} tokens",
+        "inputLabel": "入",
+        "outputLabel": "出",
+        "mediaNotSupported": "按张或按秒计价, 不适用 token 估算",
+        "noPricedChannel": "没有已定价的渠道可供估算",
+        "disclaimer": "按标价估算, 实际计费以转发结算为准"
+    },
+    "compare": {
+        "selected": "已选 {count} 个",
+        "open": "开始对比",
+        "clear": "清空",
+        "remove": "移除 {name}",
+        "pick": "把 {name} 加入对比",
+        "title": "并排对比",
+        "dimension": "维度",
+        "sameVolume": "同一用量: 输入 2000 / 输出 500",
+        "quality": "质量区间"
+    },
     "badge": { "inGroups": "已在分组" },
     "note": { "noSamples": "暂无调用样本, 重启后重新累计",
-    "insufficient": "有 {count} 次样本, 不足以判定(需 30 次)", "liveMetrics": "来自 {count} 次调用的进程内指标" },
+    "insufficient": "有 {count} 次样本, 不足以判定(需 30 次)", "liveMetrics": "来自 {count} 次调用的进程内指标", "dailyMetrics": "来自近 7 天 {count} 次调用的统计" },
+    "dailyMetrics": "来自近 7 天 {count} 次调用的统计",
     "per": { "input": "/ 入", "output": "/ 出", "image": "/ 张", "second": "/ 秒" },
     "action": { "addToGroup": "加入模型配置" },
     "dialog": {

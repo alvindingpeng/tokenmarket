@@ -41,6 +41,7 @@ const (
 // 也不许把小样本当成可信成绩。
 const (
 	marketMetricsLive         = "live"         // 样本达到门槛, 数字可信。
+	marketMetricsDaily        = "daily"        // 本次进程无样本, 数字来自近 7 天的持久化统计。
 	marketMetricsInsufficient = "insufficient" // 有样本但不足门槛: 不给数字, 但仍报出样本数。
 	marketMetricsNone         = "none"         // 无样本(冷启动), 或进程重启后尚未恢复。
 )
@@ -64,6 +65,67 @@ func marketMetricsSourceOf(samples int) string {
 	}
 }
 
+// marketDailyFallbackDays 是日级回落取数的窗口。取 7 天与设计稿 §5.2 一致:
+// 更长会把两周前的状况算进"近期", 更短则周末低峰期容易被判成冷启动。
+const marketDailyFallbackDays = 7
+
+// marketMetricsSourceOfDaily 是日级回落专用的口径判定: 与 live 同门槛,
+// 但把"够不够样本"的结论标成 daily, 让界面能如实写出"来自近 7 天统计"。
+// 样本不足时仍退回 insufficient: 一周只跑了 3 次同样不该给出"近期成功率 66%"。
+func marketMetricsSourceOfDaily(samples int) string {
+	switch {
+	case samples <= 0:
+		return marketMetricsNone
+	case samples < marketMinSamples:
+		return marketMetricsInsufficient
+	default:
+		return marketMetricsDaily
+	}
+}
+
+// marketModelMetricsSource 汇总一个模型行的口径标注。
+//
+// 规则: 合计样本数不足 -> insufficient/none(与渠道级同源);
+// 达标时再看数字出处 —— 只要有一条渠道的数字来自本次进程(live), 整行就标 live;
+// 全部来自近 7 天持久化统计时才标 daily。
+//
+// 为什么必须区分: daily 与 live 的 WaitTime 语义不同源(前者是区间累计, 后者是逐次 EMA),
+// 界面承诺"实时"而数字其实来自历史统计, 是比显示 "—" 更容易误导的一种错误。
+func marketModelMetricsSource(channels []marketChannelView, samples int) string {
+	source := marketMetricsSourceOf(samples)
+	if source != marketMetricsLive {
+		return source
+	}
+	for _, channel := range channels {
+		if channel.MetricsSource == marketMetricsLive {
+			return marketMetricsLive
+		}
+	}
+	// 样本达标但没有一条是 live: 说明数字全部来自日级回落。
+	return marketMetricsDaily
+}
+
+// marketChannelModelIDs 收集本屏全部渠道模型主键, 供批量查询回落数据与质量快照。
+func marketChannelModelIDs(models []model.MarketModel) []int {
+	ids := make([]int, 0, len(models)*2)
+	for _, entry := range models {
+		for _, channel := range entry.Channels {
+			ids = append(ids, channel.ChannelModelID)
+		}
+	}
+	return op.RecentMetricsOrder(ids)
+}
+
+// marketQualityBandsOf 取本屏每个渠道近 7 天的质量区间。
+//
+// 数据源是 channel_quality_snapshots(日级固化), 时效门槛与 op.ShareQualityOf 一致(7 天内)。
+// 只回区间文案不出精确值: 理由见 marketQualityBand 的注释(面向所有登录用户, 与分享页同防线)。
+// 三个维度各自独立判定样本门槛 —— 探测次数不足时只省略可用率, 不把整段抹掉。
+func marketQualityBandsOf(models []model.MarketModel) map[int]op.MarketQualityBand {
+	ids := marketChannelModelIDs(models)
+	return op.MarketQualityBandsForChannelModels(ids, marketDailyFallbackDays)
+}
+
 // marketChannelView 是一条挂牌行加上运行时指标。
 // 指标按渠道模型归并(relay 的指标就是按渠道模型统计的), 不是按授权 ——
 // 同一渠道模型的多个授权共用同一份成绩, 分开统计会把样本无谓地摊薄。
@@ -74,7 +136,11 @@ type marketChannelView struct {
 	Samples int     `json:"samples"`           // 观测样本数; 0 表示冷启动。
 	// MetricsSource 逐行也给一份: 同一模型的不同渠道样本量可以差两个数量级,
 	// 由前端各自赛一个"样本够不够"的阈值必然与服务端分叉。
-	MetricsSource string `json:"metrics_source"` // live|insufficient|none。
+	MetricsSource string `json:"metrics_source"` // live|daily|insufficient|none。
+	// QualityBand 是本渠道近 7 天的质量区间, 复用 model.QualityBand* 的三段口径。
+	// 只给区间不给精确值: 广场面向全部登录用户, 精确成功率/延迟/请求量属于运营情报,
+	// 与分享页(ShareQualityOf)同一道脱敏防线。样本不达标时整段省略(omitempty), 不输出空壳。
+	QualityBand *op.MarketQualityBand `json:"quality_band,omitempty"`
 }
 
 // marketModelView 是一个模型行加上归并后的模型级指标。
@@ -115,6 +181,14 @@ func listMarketModels(c *gin.Context) {
 	views := marketScoreIndex(relay.ModelScoreViews())
 	now := time.Now()
 
+	// 日级回落与质量带都是"整表批量读", 不能放进逐行循环里 —— 那样一屏 48 行会打出上百次查询。
+	// 先把本屏涉及的渠道模型主键收齐, 两次查询带出全部素材。
+	channelModelIDs := marketChannelModelIDs(models)
+	// 近 7 天持久化成绩: 只在进程内没有样本的行上使用, 作为重启后的回落口径(见 op.ChannelModelRecentMetrics)。
+	recent := op.ChannelModelRecentMetrics(channelModelIDs, marketDailyFallbackDays)
+	// 质量区间: 每个渠道近 7 天的最新快照, 复用 ShareQualityOf 同一套时效门槛。
+	bands := marketQualityBandsOf(models)
+
 	out := make([]marketModelView, 0, len(models))
 	brands := make([]string, 0, 8)
 	seenBrand := make(map[string]bool, 8)
@@ -148,13 +222,43 @@ func listMarketModels(c *gin.Context) {
 			} else {
 				channelView.MetricsSource = marketMetricsNone
 			}
+			// 进程内没有样本时才回落: live 数字永远优先, 日级只是"重启后别显示 —"的兜底。
+			// 两者不可混算(WaitTime 语义不同源), 所以是整段换源而不是逐字段拼接。
+			if channelView.MetricsSource == marketMetricsNone {
+				if metrics, ok := recent[channel.ChannelModelID]; ok {
+					if samples, success, waitMs := op.RecentMetricsOf(metrics); samples > 0 {
+						channelView.Samples = samples
+						source := marketMetricsSourceOfDaily(samples)
+						channelView.MetricsSource = source
+						// 与 live 分支同一条规则: 只有样本达标才给数字。
+						// 回落这条路径最初漏了这一步: 一周只跑 7 次的模型带着 insufficient
+						// 标注却显示 42.8% —— 标注与数字自相矛盾。
+						if source == marketMetricsDaily {
+							channelView.WaitMs = waitMs
+							channelView.Success = success
+						}
+						weight += float64(samples)
+						waitSum += waitMs * float64(samples)
+						successSum += success * float64(samples)
+					}
+				}
+			}
+			// 质量带: 区间文案, 样本不达标时保持 nil(omitempty 整段省略, 不输出空壳)。
+			if band, ok := bands[channel.ChannelModelID]; ok {
+				channelView.QualityBand = &band
+			}
 			view.Channels = append(view.Channels, channelView)
 			view.Samples += channelView.Samples
 		}
 		// 模型级门槛按**合计**样本数, 与渠道级门限不同: 一个模型跨 8 个渠道各跑 5 次,
 		// 合计 40 次已经足够说明它整体稳不稳, 不该因为单个渠道样本少而把整行抹成"未知"。
-		view.MetricsSource = marketMetricsSourceOf(view.Samples)
-		if weight > 0 && view.MetricsSource == marketMetricsLive {
+		//
+		// 但"够不够样本"与"数字从哪来"是两件事: 一个模型的全部渠道都靠日级回落时, 合计样本数
+		// 照样能过门槛, 若只按样本数判口径就会把 daily 标成 live —— 界面于是声称这是一段
+		// "本次进程的实时成绩", 而进程其实一次都没跑过它。故口径要按成员出处汇总:
+		// 有任一渠道是 live 就仍算 live(那确实是本次进程测到的), 全部来自日级才标 daily。
+		view.MetricsSource = marketModelMetricsSource(view.Channels, view.Samples)
+		if weight > 0 && view.hasMetrics() {
 			view.WaitMs = waitSum / weight
 			view.Success = successSum / weight
 		}
@@ -278,7 +382,7 @@ func sortMarketModels(models []marketModelView, sortBy string) {
 		sort.SliceStable(models, func(i, j int) bool {
 			// 成绩不可信(无样本或样本不足)的模型一律置底, 且不与可信的比较 ——
 			// 否则一个只跑过一次的模型会凭"这一次成功了"排到第一屏。
-			li, lj := models[i].MetricsSource == marketMetricsLive, models[j].MetricsSource == marketMetricsLive
+			li, lj := models[i].hasMetrics(), models[j].hasMetrics()
 			if li != lj {
 				return li
 			}
@@ -296,7 +400,7 @@ func sortMarketModels(models []marketModelView, sortBy string) {
 		})
 	case marketSortLatency:
 		sort.SliceStable(models, func(i, j int) bool {
-			li, lj := models[i].MetricsSource == marketMetricsLive, models[j].MetricsSource == marketMetricsLive
+			li, lj := models[i].hasMetrics(), models[j].hasMetrics()
 			if li != lj {
 				return li
 			}
@@ -314,6 +418,15 @@ func sortMarketModels(models []marketModelView, sortBy string) {
 	default:
 		sort.SliceStable(models, func(i, j int) bool { return models[i].Name < models[j].Name })
 	}
+}
+
+// hasMetrics 判断这一行有没有可比较的成绩数字。
+//
+// 排序用"有没有数字"而不是"是不是 live": 日级回落(daily)的样本同样达标、同样可比,
+// 只是因为本进程没跑过而换了来源。若把 daily 一起置底, 重启后整屏模型会重新掉到最后,
+// 排序结果在运维动作前后凭空跳变, 而那与模型质量毫无关系。
+func (view marketModelView) hasMetrics() bool {
+	return view.MetricsSource == marketMetricsLive || view.MetricsSource == marketMetricsDaily
 }
 
 // marketMinPrice 返回模型下最便宜的那条可用渠道的用户价(混合口径)。

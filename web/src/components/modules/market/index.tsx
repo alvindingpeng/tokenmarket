@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslations } from 'use-intl';
 import { ArrowUpAZ, Tag, Timer, TrendingUp } from 'lucide-react';
 import { PageActions, usePageActionsStore } from '@/components/common/PageActions';
@@ -13,6 +13,7 @@ import {
     type MarketSort,
 } from '@/api/market';
 import { MarketItem } from './Item';
+import { CompareBar, MAX_COMPARE } from './Compare';
 import { brandLabel, type MarketTranslate } from './labels';
 
 // MarketActions 向稳定顶栏提供广场的搜索、排序、形态筛选、品牌多选和布局切换。
@@ -145,6 +146,10 @@ function marketQueryOf(searchTerm: string, kind: MarketKind, brands: string[], s
 /** Market 渲染广场正文。 */
 export function Market() {
     const t = useTranslations('market');
+    // 对比选择用模型名的下标而不是名字数组: 勾选状态要能在筛选/排序变化后仍然有效,
+    // 但重排后同一个模型的下标会变, 所以这里存的是"当前这一屏的全集下标", 并在渲染时
+    // 用当前列表反查。见 selectedModels 的注释。
+    const [selected, setSelected] = useState<number[]>([]);
     const searchTerm = usePageActionsStore((state) => state.searchTerms.market || '');
     const layout = usePageActionsStore((state) => state.layouts.market === 'list' ? 'list' : 'grid');
     const sortBy = usePageActionsStore((state) => state.marketSortBy);
@@ -159,6 +164,15 @@ export function Market() {
     }
 
     const models: MarketModel[] = data?.models ?? [];
+
+    // toggle 按下标切换, 上限 4 个: 再多就无法并排阅读, 也超出人一次能比较的范围。
+    const toggle = (index: number) => {
+        setSelected((current) => {
+            if (current.includes(index)) return current.filter((item) => item !== index);
+            if (current.length >= MAX_COMPARE) return current;
+            return [...current, index];
+        });
+    };
 
     return (
         // 滚动容器必须长在这里: 页面层是 absolute inset-0 + overflow-hidden(切页靠它, 外层不随内容长高),
@@ -177,12 +191,20 @@ export function Market() {
                     // 不用 VirtualizedGrid: 广场卡片可以展开, 展开后行高变化会让虚拟化的测量失效
                     // (行高只在挂载时测一次), 结果是下一行盖住展开内容。几十行的直接渲染代价远小于这个坑。
                     <div className={cn('grid gap-4', layout === 'list' ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2')}>
-                        {models.map((model) => (
-                            <MarketItem key={model.name} model={model} layout={layout} />
+                        {models.map((model, index) => (
+                            <MarketItem
+                                key={model.name}
+                                model={model}
+                                layout={layout}
+                                compareIndex={index}
+                                compareSelected={selected}
+                                onToggleCompare={toggle}
+                            />
                         ))}
                     </div>
                 )}
             </div>
+            <CompareBar models={models} selected={selected} onToggle={toggle} onClear={() => setSelected([])} />
         </div>
     );
 }

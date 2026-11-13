@@ -752,9 +752,35 @@
       "latency": "延遲", "noAvailable": "暫無可用渠道", "details": "展開渠道明細",
       "convertedFrom": "原價 {currency} 已折算"
     },
+    "cost": {
+        "title": "本次調用估算",
+        "preset": {
+            "chat": "聊天一輪",
+            "doc": "長文件",
+            "agent": "Agent 一次"
+        },
+        "volume": "輸入 {input} / 輸出 {output} tokens",
+        "inputLabel": "入",
+        "outputLabel": "出",
+        "mediaNotSupported": "按張或按秒計價, 不適用 token 估算",
+        "noPricedChannel": "沒有已定價的渠道可供估算",
+        "disclaimer": "按標價估算, 實際計費以轉發結算為準"
+    },
+    "compare": {
+        "selected": "已選 {count} 個",
+        "open": "開始對比",
+        "clear": "清空",
+        "remove": "移除 {name}",
+        "pick": "把 {name} 加入對比",
+        "title": "並排對比",
+        "dimension": "維度",
+        "sameVolume": "同一用量: 輸入 2000 / 輸出 500",
+        "quality": "質量區間"
+    },
     "badge": { "inGroups": "已在分組" },
     "note": { "noSamples": "暫無調用樣本, 重啟後重新累計",
-    "insufficient": "有 {count} 次樣本, 不足以判定(需 30 次)", "liveMetrics": "來自 {count} 次調用的進程內指標" },
+    "insufficient": "有 {count} 次樣本, 不足以判定(需 30 次)", "liveMetrics": "來自 {count} 次調用的進程內指標", "dailyMetrics": "來自近 7 天 {count} 次調用的統計" },
+    "dailyMetrics": "來自近 7 天 {count} 次調用的統計",
     "per": { "input": "/ 入", "output": "/ 出", "image": "/ 張", "second": "/ 秒" },
     "action": { "addToGroup": "加入模型配置" },
     "dialog": {

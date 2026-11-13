@@ -45,3 +45,32 @@ export function priceText(listing: MarketChannelListing, t: MarketTranslate): st
 export function metricsLive(samples: number, source?: string): boolean {
     return samples > 0 && source === 'live';
 }
+
+/**
+ * metricsNote 生成"这行数字从哪来"的口径说明。
+ *
+ * 抽成纯函数而不是写在 JSX 里: 这段文案是界面对用户的承诺(实时 / 近一周 / 没数据),
+ * 四档各说对一句话比渲染一个 DOM 节点更重要 —— 而它只在展开后可见, SSR 断言不到。
+ * 尤其 daily 与 live 必须分开措辞: 把近 7 天统计说成"实时", 比显示 — 更容易误导。
+ */
+export function metricsNote(
+    t: MarketTranslate,
+    source: string,
+    samples: number
+): string {
+    if (source === 'live') return t('note.liveMetrics', { count: samples });
+    if (source === 'daily') return t('note.dailyMetrics', { count: samples });
+    if (source === 'insufficient') return t('note.insufficient', { count: samples });
+    return t('note.noSamples');
+}
+
+/**
+ * qualityBandTexts 把质量带还原成待显示的区间文案数组, 顺序为 成功率 / 延迟 / 可用率。
+ *
+ * 三条各自独立(后端按维度分别判样本门槛), 故可能只出现一两条; 全空时返回空数组,
+ * 调用方据此整段不渲染 —— 不给一个空壳框架。
+ */
+export function qualityBandTexts(band?: { success?: string; latency?: string; uptime?: string }): string[] {
+    if (!band) return [];
+    return [band.success, band.latency, band.uptime].filter((text): text is string => Boolean(text));
+}

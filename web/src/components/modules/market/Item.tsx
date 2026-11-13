@@ -5,13 +5,29 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { getBrandIcon } from '@/lib/model-icons';
 import { formatLatency } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { availableCount, cheapestListing, type MarketModel } from '@/api/market';
+import { availableCount, cheapestListing, hasNumericMetrics, type MarketModel } from '@/api/market';
 import { AddToGroup } from './AddToGroup';
+import { CostEstimate } from './CostEstimate';
+import { CompareToggle } from './Compare';
 import { MetricValue, PriceValue, StatusBadge } from './shared';
-import { brandLabel, marketStatusOf, priceText } from './labels';
+import { brandLabel, marketStatusOf, metricsNote, priceText, qualityBandTexts } from './labels';
+
+// BAND_STYLES 是质量三条区间各自的配色, 顺序对应 成功率 / 延迟 / 可用率。
+const BAND_STYLES = [
+    'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    'bg-sky-500/10 text-sky-600 dark:text-sky-400',
+    'bg-violet-500/10 text-violet-600 dark:text-violet-400',
+];
 
 // MarketItem 渲染一条模型行: 折叠后的同名模型, 展开可看每条渠道编码与各自的价格/状态。
-export function MarketItem({ model, layout }: { model: MarketModel; layout: 'grid' | 'list' }) {
+export function MarketItem({ model, layout, compareIndex, compareSelected, onToggleCompare }: {
+    model: MarketModel;
+    layout: 'grid' | 'list';
+    // 对比勾选: 只有广场正文会传这三项。渠道/分组页复用本组件时不传, 就不会出现无处可去的勾选框。
+    compareIndex?: number;
+    compareSelected?: number[];
+    onToggleCompare?: (index: number) => void;
+}) {
     const t = useTranslations('market');
     const [expanded, setExpanded] = useState(false);
     const { Icon, className: iconClassName, color: brandColor } = useMemo(() => getBrandIcon(model.brand), [model.brand]);
@@ -63,21 +79,29 @@ export function MarketItem({ model, layout }: { model: MarketModel; layout: 'gri
                         <span className="inline-flex items-center gap-1">
                             {t('label.success')}{' '}
                             <MetricValue
-                                value={model.metrics_source === 'live' ? model.success : undefined}
-                                samples={model.metrics_source === 'live' ? model.samples : 0}
+                                value={hasNumericMetrics(model.metrics_source) ? model.success : undefined}
+                                samples={hasNumericMetrics(model.metrics_source) ? model.samples : 0}
                                 format={(v) => (v * 100).toFixed(1) + '%'}
                             />
                         </span>
                         <span className="inline-flex items-center gap-1">
                             {t('label.latency')}{' '}
                             <MetricValue
-                                value={model.metrics_source === 'live' ? model.wait_ms : undefined}
-                                samples={model.metrics_source === 'live' ? model.samples : 0}
+                                value={hasNumericMetrics(model.metrics_source) ? model.wait_ms : undefined}
+                                samples={hasNumericMetrics(model.metrics_source) ? model.samples : 0}
                                 format={(v) => formatLatency(v)}
                             />
                         </span>
                     </div>
                 </div>
+                {compareIndex !== undefined && onToggleCompare && compareSelected && (
+                    <CompareToggle
+                        model={model}
+                        index={compareIndex}
+                        selected={compareSelected}
+                        onToggle={onToggleCompare}
+                    />
+                )}
                 <button
                     type="button"
                     onClick={() => setExpanded((value) => !value)}
@@ -92,14 +116,11 @@ export function MarketItem({ model, layout }: { model: MarketModel; layout: 'gri
             {expanded && (
                 <div className={cn('mt-3 flex flex-col gap-3', layout === 'list' && 'border-t border-border pt-3')}>
                     <ChannelTable model={model} />
+                    <CostEstimate model={model} />
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         {/* 把口径说清楚: 这些数字来自进程内滑动平均, 服务重启后会重新累计。 */}
                         <span className="text-[11px] text-muted-foreground">
-                            {model.metrics_source === 'live'
-                                ? t('note.liveMetrics', { count: model.samples })
-                                : model.metrics_source === 'insufficient'
-                                    ? t('note.insufficient', { count: model.samples })
-                                    : t('note.noSamples')}
+                            {metricsNote(t, model.metrics_source, model.samples)}
                         </span>
                         <AddToGroup model={model} />
                     </div>
@@ -124,19 +145,33 @@ function ChannelTable({ model }: { model: MarketModel }) {
                     <span className="text-muted-foreground">
                         {t('label.success')}{' '}
                         <MetricValue
-                            value={listing.metrics_source === 'live' ? listing.success : undefined}
-                            samples={listing.metrics_source === 'live' ? listing.samples : 0}
+                            value={hasNumericMetrics(listing.metrics_source) ? listing.success : undefined}
+                            samples={hasNumericMetrics(listing.metrics_source) ? listing.samples : 0}
                             format={(v) => (v * 100).toFixed(1) + '%'}
                         />
                     </span>
                     <span className="text-muted-foreground">
                         {t('label.latency')}{' '}
                         <MetricValue
-                            value={listing.metrics_source === 'live' ? listing.wait_ms : undefined}
-                            samples={listing.metrics_source === 'live' ? listing.samples : 0}
+                            value={hasNumericMetrics(listing.metrics_source) ? listing.wait_ms : undefined}
+                            samples={hasNumericMetrics(listing.metrics_source) ? listing.samples : 0}
                             format={(v) => formatLatency(v)}
                         />
                     </span>
+                    {/* 质量区间: 近 7 天的成功率/延迟/可用率落成区间文案。
+                        只在样本达标时后端才会给这一段, 所以这里无需再判一次门槛 ——
+                        前端重复判阈值必然与服务端分叉。不给精确值是与分享页同一条脱敏防线。 */}
+                    {qualityBandTexts(listing.quality_band).map((text, index) => (
+                        <span
+                            key={text}
+                            className={cn(
+                                'rounded px-1.5 py-0.5 text-[10px]',
+                                BAND_STYLES[index % BAND_STYLES.length]
+                            )}
+                        >
+                            {text}
+                        </span>
+                    ))}
                     {listing.price_currency && listing.price_currency !== 'USD' && (
                         <span className="text-[10px] text-muted-foreground">
                             {t('label.convertedFrom', { currency: listing.price_currency })}

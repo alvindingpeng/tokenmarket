@@ -752,9 +752,35 @@
       "latency": "Latency", "noAvailable": "No channel available", "details": "Show channels",
       "convertedFrom": "Listed in {currency}, converted"
     },
+    "cost": {
+        "title": "Estimated cost",
+        "preset": {
+            "chat": "Chat turn",
+            "doc": "Long doc",
+            "agent": "Agent run"
+        },
+        "volume": "{input} in / {output} out tokens",
+        "inputLabel": "In",
+        "outputLabel": "Out",
+        "mediaNotSupported": "Priced per image or second; token estimate does not apply",
+        "noPricedChannel": "No priced channel to estimate from",
+        "disclaimer": "Estimate at list price; actual billing follows the relay settlement"
+    },
+    "compare": {
+        "selected": "{count} selected",
+        "open": "Compare",
+        "clear": "Clear",
+        "remove": "Remove {name}",
+        "pick": "Add {name} to comparison",
+        "title": "Side-by-side",
+        "dimension": "Dimension",
+        "sameVolume": "Same volume: 2000 in / 500 out",
+        "quality": "Quality band"
+    },
     "badge": { "inGroups": "In a group" },
     "note": { "noSamples": "No samples yet; counters restart with the process",
-    "insufficient": "{count} samples, too few to judge (30 needed)", "liveMetrics": "In-process metrics from {count} calls" },
+    "insufficient": "{count} samples, too few to judge (30 needed)", "liveMetrics": "In-process metrics from {count} calls", "dailyMetrics": "Daily metrics from {count} calls in the last 7 days" },
+    "dailyMetrics": "Daily metrics from {count} calls in the last 7 days",
     "per": { "input": "/ in", "output": "/ out", "image": "/ image", "second": "/ sec" },
     "action": { "addToGroup": "Add to a model config" },
     "dialog": {
