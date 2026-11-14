@@ -128,6 +128,65 @@ Gemini CLI 的 `oauth_creds.json` 是真实且有用的凭据, 但我们**吃不
 **我建议 G2**, 然后把 G1 作为独立立项 —— 它需要先核实 Gemini 的 OAuth 端点,
 那是和"A"完全不同量级的工作。
 
+---
+
+### 4.1 G1 已完成(2026-11)
+
+端点核实完毕, 全部取自 `npm pack @google/gemini-cli@0.68.0` 的二进制字符串:
+
+| 项 | 值 | 证据 |
+|---|---|---|
+| token 端点 | `https://oauth2.googleapis.com/token` | bundle 内 google-auth-library 常量 |
+| client_id / client_secret | **运行时配置**, 见下 | `var OAUTH_CLIENT_ID = ...` / `OAUTH_CLIENT_SECRET = ...` |
+| 请求体 | form-urlencoded + `grant_type=refresh_token` | 官方 Node 客户端的实际做法 |
+| 响应 | `access_token` / `expires_in` (snake_case) | 标准 Google OAuth 响应 |
+| 凭据文件 | `HOME_DIR/.gemini/oauth_creds.json` | 沙箱规则原文 |
+| 登录方式 | **会话内 /auth 斜杠命令** | 发行包内只定义了 mcp/extensions 等子命令, 无 auth/login |
+
+### 4.2 client 身份为什么改成运行时配置
+
+发行包里能提取到 Google 分配给 Gemini CLI 的 `client_id` 与 `client_secret`。
+第一版实现把它们写死进了代码 —— 随后 **GitHub push protection 直接拦下推送**,
+把两项都判成 secret。
+
+拦下这次之后重新想了一遍, 结论是**它本来就不该写死在仓库里**:
+
+- 那是 Google 给 Gemini CLI 这个**应用**的身份。能从公开包体里提出来, 不等于我们有权
+  以该应用的身份分发与使用 —— 写进代码等于把冒用行为固化, 让每个部署者都在做。
+- 部署者应当用自己注册的 Google OAuth 客户端: 自己的配额、自己的责任;
+  也避免所有部署挤在同一个 client 上被上游限流。
+
+所以改成读环境变量:
+
+| 变量 | 说明 |
+|---|---|
+| `SWITCHYARD_GEMINI_OAUTH_CLIENT_ID` | 部署自行注册的 Google OAuth client_id |
+| `SWITCHYARD_GEMINI_OAUTH_CLIENT_SECRET` | 同上, client_secret |
+
+未配置时 gemini 的 OAuth 刷新**明确失败并指出该配哪两个变量**, 而不是带着空 client
+去打上游 —— 后者会回 `invalid_client`, 被读成"账号坏了", 排查方向完全错。
+Cookie 形状的 gemini 账号不受影响, 无需任何配置。
+
+**副产品:** 包里有**两个** `apps.googleusercontent.com` 形态的 client, 另一个是
+google-auth-library 自带的 `CLOUD_SDK_CLIENT_ID`。两者长得几乎一样, 用错会得到
+`invalid_client`。这是核实阶段真实踩到的坑, 记在这里避免将来重犯。
+
+**真实端点验证**(用假 refresh_token 打真实端点做对照实验):
+
+| 请求 | 响应 | 结论 |
+|---|---|---|
+| 正确 id/secret + 假 refresh_token | `invalid_grant` | 端点、凭据、格式全部正确 |
+| 错误 client_secret | `invalid_client`: "client secret is invalid" | 证明 secret 必须正确 |
+| JSON 请求体 | 同样 `invalid_grant` | 端点其实也接受 JSON —— 选 form 是为跟随官方客户端 |
+
+**实现要点:** 解析层按"有没有 refresh_token"分流(而不是按平台名定死), 让同一平台下
+Cookie 与 OAuth 两种凭据共存; `expiry_date` 按**毫秒时间戳**解析(按字符串解析会恒为零,
+导致定时任务永不刷新、账号静默失效); `StoreAccessTokenField` 显式写成 snake_case
+(与 Claude 的 camelCase 相反); 前端预检同步放宽, 否则后端支持了、前端却把人拦在门外。
+
+**gemini 因此也进了 CLI 引导表** —— 但这张表的每一行对应的是"确实能用"的路径,
+不是"有这个 CLI"就算数: gemini 在 G2 阶段就是因为解析吃不下才被刻意留空的。
+
 ## 5. 落点清单(若按 G2)
 
 ### 5.1 前端

@@ -80,18 +80,20 @@ func TestAccountJSONParseKiroUsesCamelCase(t *testing.T) {
 	}
 }
 
-// Cookie 类平台没有 refresh_token: 这是协议的既有事实, 不是缺陷 ——
+// 纯 Cookie 平台没有 refresh_token: 这是协议的既有事实, 不是缺陷 ——
 // 解析层必须把 Kind 标成 cookie, 上层的定时任务据此改用"重放验活"而不是刷新。
+//
+// gemini 不在这一组里: 它同时有 Cookie 与 OAuth 两种形状(见 TestAccountJSONParseGeminiOAuth)。
 func TestAccountJSONParseCookiePlatformsHaveNoRefresh(t *testing.T) {
 	credential, err := AccountJSONParse(AccountPlatformGemini, []byte(`{"c_ses":"ses-value","csesidx":"idx"}`))
 	if err != nil {
-		t.Fatalf("parse gemini: %v", err)
+		t.Fatalf("parse gemini cookie: %v", err)
 	}
 	if credential.Kind != AccountKindCookie {
-		t.Fatalf("gemini kind = %q, want cookie", credential.Kind)
+		t.Fatalf("gemini(cookie 形状) kind = %q, want cookie", credential.Kind)
 	}
 	if credential.RefreshToken != "" {
-		t.Fatalf("gemini 不应有 refresh_token, got %q", credential.RefreshToken)
+		t.Fatalf("gemini(cookie 形状) 不应有 refresh_token, got %q", credential.RefreshToken)
 	}
 	if credential.Cookies["c_ses"] != "ses-value" {
 		t.Fatalf("c_ses = %q", credential.Cookies["c_ses"])
@@ -249,5 +251,50 @@ func TestAccountJSONParseKiroReadsAccessToken(t *testing.T) {
 	}
 	if credential.AccessToken != "kiro-at" {
 		t.Fatalf("kiro accessToken = %q, want kiro-at", credential.AccessToken)
+	}
+}
+
+// Gemini 有两种凭据形状, 必须按内容分流而不是按平台名定死。
+//
+// 这类缺陷的特征: 分流判错时不会"崩", 只会给出一个指向错误方向的报错 ——
+// CLI 用户贴了合法的 oauth_creds.json, 却被告知"缺少 c_ses"。
+func TestAccountJSONParseGeminiOAuth(t *testing.T) {
+	// 形状取自 Gemini CLI 官方发行包(0.68.0)的凭据处理代码:
+	//   {access_token, refresh_token, expiry_date}, expiry_date 是毫秒时间戳。
+	// 注意它**不是** CLIENT_ID/CLIENT_SECRET 自带的: client_secret 是全局常量,
+	// 因此解析层不该要求文件里有它(要求了就等于把 CLI 用户的合法文件判成非法)。
+	raw := `{"access_token":"at-value","refresh_token":"rt-value","expiry_date":1900000000000,"scope":"openid"}`
+	credential, err := AccountJSONParse(AccountPlatformGemini, []byte(raw))
+	if err != nil {
+		t.Fatalf("parse gemini oauth: %v", err)
+	}
+	if credential.Kind != AccountKindOAuth {
+		t.Fatalf("gemini(oauth 形状) kind = %q, want oauth", credential.Kind)
+	}
+	if credential.AccessToken != "at-value" || credential.RefreshToken != "rt-value" {
+		t.Fatalf("令牌读取错误: %+v", credential)
+	}
+
+	// expiry_date 必须被读成毫秒时间戳。
+	// 读不出来的后果是到期时间恒为零 -> 定时任务永不刷新 -> 账号到期即静默失效,
+	// 而这中间不会有任何一步报错。
+	want := time.Unix(0, 1900000000000*int64(time.Millisecond)).UTC()
+	if !credential.ExpiresAt.Equal(want) {
+		t.Fatalf("expires_at = %v, want %v", credential.ExpiresAt, want)
+	}
+
+	// 有 refresh_token 却缺 access_token: 这是残缺文件, 要明说缺的是哪一个。
+	if _, err := AccountJSONParse(AccountPlatformGemini, []byte(`{"refresh_token":"rt"}`)); err == nil {
+		t.Fatal("gemini 有 refresh_token 但缺 access_token 应当报错")
+	}
+
+	// Cookie 形状仍必须走 cookie 分支(上面的用例已覆盖), 这里再钉一次反向:
+	// 有 c_ses 但无 refresh_token 时, kind 绝不能是 oauth。
+	cookieOnly, err := AccountJSONParse(AccountPlatformGemini, []byte(`{"c_ses":"ses"}`))
+	if err != nil {
+		t.Fatalf("parse gemini cookie: %v", err)
+	}
+	if cookieOnly.Kind != AccountKindCookie {
+		t.Fatalf("gemini(仅 c_ses) kind = %q, want cookie", cookieOnly.Kind)
 	}
 }

@@ -60,6 +60,17 @@ func TestAccountRefreshPerPlatformRoundTrip(t *testing.T) {
 			wantNewAccess:  "new-a",
 			wantNewRefresh: "new-r",
 		},
+		{
+			// Gemini: 顶层 snake_case(与 Codex 同键名)但走 form 编码, 且请求体必须带
+			// client_id 与 client_secret —— 少了后者上游回 invalid_client。
+			// 凭据文件是 Gemini CLI 的 oauth_creds.json 形状。
+			platform:       model.AccountPlatformGemini,
+			importRaw:      `{"access_token":"old-a","refresh_token":"old-r","expiry_date":1700000000000}`,
+			payload:        map[string]any{"access_token": "new-a", "expires_in": 3599, "token_type": "Bearer"},
+			wantAuthType:   "application/x-www-form-urlencoded",
+			wantNewAccess:  "new-a",
+			wantNewRefresh: "old-r",
+		},
 	}
 
 	for _, testCase := range cases {
@@ -81,6 +92,13 @@ func TestAccountRefreshPerPlatformRoundTrip(t *testing.T) {
 				t.Fatalf("create key: %v", err)
 			}
 			channelKeyCache.Set(key.ID, key)
+
+			// gemini 的 OAuth 客户端身份来自部署配置(见 model/account_oauth.go 的说明),
+			// 测试里配一份假值, 才能验到"请求体确实带上了这两个字段"。
+			if testCase.platform == model.AccountPlatformGemini {
+				t.Setenv("SWITCHYARD_GEMINI_OAUTH_CLIENT_ID", "test-client-id")
+				t.Setenv("SWITCHYARD_GEMINI_OAUTH_CLIENT_SECRET", "test-client-secret")
+			}
 
 			seen := map[string]string{}
 			server := accountFakeTokenServer(t, http.StatusOK, testCase.payload, &seen)
@@ -143,6 +161,34 @@ func TestAccountRefreshPerPlatformRoundTrip(t *testing.T) {
 				// 反证: 不该在 claudeAiOauth 层里混进 snake_case。
 				if layer["access_token"] != nil || layer["refresh_token"] != nil {
 					t.Fatalf("claudeAiOauth 层混入了 snake_case 键: %s", stored.Key)
+				}
+			}
+			if testCase.platform == model.AccountPlatformGemini {
+				// 真实 Gemini CLI 的 oauth_creds.json 是**顶层** snake_case ——
+				// 不能像 Claude 那样包一层, 包了 CLI 就读不到, 而我们的解析层两种都容忍,
+				// 所以第 2 步的往返断言抓不到这个错。
+				var shape map[string]any
+				if err := json.Unmarshal([]byte(stored.Key), &shape); err != nil {
+					t.Fatalf("gemini 回写结果不是 JSON 对象: %v", err)
+				}
+				if shape["access_token"] == nil || shape["refresh_token"] == nil {
+					t.Fatalf("gemini 回写必须在顶层用 snake_case 键: %s", stored.Key)
+				}
+				// client_secret 是刷新请求的必需字段, 但它不该被回写进凭据文件:
+				// 那是全局常量, 写进每个账号的文件里既冗余又会让人误以为它是账号自带的。
+				if shape["client_secret"] != nil {
+					t.Fatalf("gemini 回写不该把全局 client_secret 塞进凭据文件: %s", stored.Key)
+				}
+			}
+			// 请求里必须真的带了 client_id 与 client_secret。
+			// 缺了它们上游回 invalid_client, 而错误只说是"客户端无效", 不会指向我们的规格表。
+			if testCase.platform == model.AccountPlatformGemini {
+				// 值必须来自配置, 不是某个写死的常量 —— 后者等于把别人的 client 身份固化进代码。
+				if got := seen["client_secret"]; got != "test-client-secret" {
+					t.Fatalf("gemini 请求 client_secret = %q, want 配置值 —— 缺失上游会回 invalid_client", got)
+				}
+				if got := seen["client_id"]; got != "test-client-id" {
+					t.Fatalf("gemini 请求 client_id = %q, want 配置值", got)
 				}
 			}
 		})

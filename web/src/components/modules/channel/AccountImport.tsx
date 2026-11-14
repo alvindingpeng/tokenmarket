@@ -71,7 +71,14 @@ export function validateAccountJSON(platform: AccountPlatform, raw: string): str
             break;
         }
         case 'gemini': {
-            if (!fields.c_ses) errors.push('缺少 c_ses');
+            // 两种形状: Gemini CLI 的 OAuth 令牌, 或 Web 端的 Cookie 会话。
+            // 这里的判断必须与后端 AccountJSONParse 的 gemini 分支一致 —— 前端说"不通过"
+            // 会让使用者根本提交不了, 于是后端刚支持的能力在界面上完全用不上。
+            if (fields.refresh_token) {
+                if (!fields.access_token) errors.push('有 refresh_token 但缺少 access_token');
+                break;
+            }
+            if (!fields.c_ses) errors.push('缺少 c_ses, 或改用 Gemini CLI 的 oauth_creds.json(含 refresh_token)');
             break;
         }
         case 'grok': {

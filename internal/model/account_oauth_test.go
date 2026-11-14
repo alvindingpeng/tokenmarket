@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -144,9 +145,13 @@ func TestAccountOAuthGuards(t *testing.T) {
 	if _, err := AccountOAuthSpecOf("unknown"); err == nil {
 		t.Fatal("未登记平台应当报错")
 	}
-	// Cookie 类平台没有 OAuth 规格 —— 这是正确行为: 它们根本不该走刷新。
-	if _, err := AccountOAuthSpecOf(AccountPlatformGemini); err == nil {
-		t.Fatal("gemini 不应有 OAuth 刷新规格")
+	// grok 是纯 Cookie 平台, 没有 OAuth 规格 —— 这是正确行为: 它根本不该走刷新。
+	//
+	// 这里原本断言的是 gemini, 后来 G1 给 gemini 补了 OAuth 支持(CLI 的 oauth_creds.json),
+	// 于是改指 grok。改的是"哪个平台是纯 cookie", 不是"要不要有这个断言":
+	// 没有这个反向断言, 将来给 grok 随手加一条 spec 也不会有任何测试说话。
+	if _, err := AccountOAuthSpecOf(AccountPlatformGrok); err == nil {
+		t.Fatal("grok 不应有 OAuth 刷新规格(未核实官方端点)")
 	}
 }
 
@@ -261,5 +266,131 @@ func TestAccountOAuthStoreFieldsFallBackToResponseNames(t *testing.T) {
 	}
 	if container != "" {
 		t.Fatalf("codex 不应有存储容器, got %q", container)
+	}
+}
+
+// Gemini 的刷新规格: 端点与字段名是固定的, client 身份来自部署配置。
+//
+// 这份断言的作用与 Claude 那份相同: 这些值写错**不会**报错, 只会换不到令牌 ——
+// 于是表现为"账号导入成功但永远刷新失败", 而错误信息只说是 invalid_client。
+//
+// client_id / client_secret 刻意不写死在代码里: 它们是 Google 分配给 Gemini CLI 的身份,
+// 我们从发行包提取得出来不代表有权分发与冒用。部署者应使用自己注册的 OAuth 客户端 ——
+// 自己的配额与责任, 也避免所有部署挤在同一个 client 上被上游限流。
+func TestAccountOAuthGeminiSpecMatchesOfficialClient(t *testing.T) {
+	// 配一份假值, 让 spec 能取到 client_id(真实值由部署注入)。
+	t.Setenv(geminiOAuthClientIDEnv, "test-client-id")
+	t.Setenv(geminiOAuthClientSecretEnv, "test-client-secret")
+	spec, err := AccountOAuthSpecOf(AccountPlatformGemini)
+	if err != nil {
+		t.Fatalf("gemini spec: %v", err)
+	}
+	if spec.TokenURL != "https://oauth2.googleapis.com/token" {
+		t.Fatalf("gemini token url = %q", spec.TokenURL)
+	}
+	if spec.ClientID != "test-client-id" {
+		t.Fatalf("gemini client id = %q, want 配置注入值", spec.ClientID)
+	}
+	// 用 form 是为了跟随官方 Node 客户端; 实测该端点也接受 JSON, 见规格表注释。
+	if spec.BodyFormat != accountBodyFormatForm {
+		t.Fatalf("gemini body format = %q, want form", spec.BodyFormat)
+	}
+	if spec.AccessTokenField != "access_token" || spec.RefreshTokenField != "refresh_token" {
+		t.Fatalf("gemini 响应字段名错误: %q / %q", spec.AccessTokenField, spec.RefreshTokenField)
+	}
+	// 凭据文件里的键名与响应同名(snake_case), 与 Claude 的 camelCase 相反。
+	if spec.StoreAccessTokenField != "access_token" || spec.StoreRefreshTokenField != "refresh_token" {
+		t.Fatalf("gemini 存储字段名错误: %q / %q", spec.StoreAccessTokenField, spec.StoreRefreshTokenField)
+	}
+
+	// client_id 来自运行时配置, 这里只验配置能被正确注入; 具体值由部署决定。
+	// 断言的是"注入了配置里的值"而不是"某个写死的常量" —— 后者会让测试变成
+	// 一份我们必须替用户保管的凭据副本。
+	if spec.ClientID == "" {
+		t.Fatal("gemini client id 未从配置注入")
+	}
+}
+
+// 未配置 OAuth 客户端时, gemini 的刷新必须**明确失败并指出该配哪个变量**。
+//
+// 不能让它带着空 client_id / client_secret 去发请求: 上游回 invalid_client,
+// 那条信息会被读成"账号坏了", 而真实原因是部署少配了两个环境变量。
+func TestAccountOAuthGeminiRequiresClientConfig(t *testing.T) {
+	t.Setenv(geminiOAuthClientIDEnv, "")
+	t.Setenv(geminiOAuthClientSecretEnv, "")
+	spec, err := AccountOAuthSpecOf(AccountPlatformGemini)
+	if err != nil {
+		t.Fatalf("gemini spec: %v", err)
+	}
+	_, _, err = AccountOAuthRefreshRequest(spec, AccountCredential{RefreshToken: "rt"})
+	if err == nil {
+		t.Fatal("未配置 OAuth 客户端时应当报错")
+	}
+	// 错误信息必须能让人直接照着配: 两个变量名都要出现。
+	clientIDEnv, clientSecretEnv := GeminiOAuthClientEnvNames()
+	if !strings.Contains(err.Error(), clientIDEnv) || !strings.Contains(err.Error(), clientSecretEnv) {
+		t.Fatalf("错误信息未提示所需环境变量: %v", err)
+	}
+	if GeminiOAuthClientConfigured() {
+		t.Fatal("未配置时 GeminiOAuthClientConfigured 应为 false")
+	}
+}
+
+// 配置齐全时, 请求体必须真的带上 client_id 与 client_secret。
+func TestAccountOAuthGeminiSendsClientCredentials(t *testing.T) {
+	t.Setenv(geminiOAuthClientIDEnv, "deploy-client-id")
+	t.Setenv(geminiOAuthClientSecretEnv, "deploy-client-secret")
+	if !GeminiOAuthClientConfigured() {
+		t.Fatal("配置齐全时 GeminiOAuthClientConfigured 应为 true")
+	}
+	spec, err := AccountOAuthSpecOf(AccountPlatformGemini)
+	if err != nil {
+		t.Fatalf("gemini spec: %v", err)
+	}
+	_, body, err := AccountOAuthRefreshRequest(spec, AccountCredential{RefreshToken: "rt-value"})
+	if err != nil {
+		t.Fatalf("构造 gemini 刷新请求: %v", err)
+	}
+	form, err := url.ParseQuery(string(body))
+	if err != nil {
+		t.Fatalf("解析 gemini 请求体: %v", err)
+	}
+	if form.Get("grant_type") != "refresh_token" || form.Get("refresh_token") != "rt-value" {
+		t.Fatalf("gemini 请求体缺少 grant_type/refresh_token: %s", string(body))
+	}
+	// 这两个字段缺任何一个, 上游都会回 invalid_client。
+	if form.Get("client_id") != "deploy-client-id" {
+		t.Fatalf("gemini 请求体 client_id = %q, want 配置值", form.Get("client_id"))
+	}
+	if form.Get("client_secret") != "deploy-client-secret" {
+		t.Fatalf("gemini 请求体 client_secret 未取配置值")
+	}
+}
+
+// Google 的刷新响应是标准 snake_case OAuth 响应, 解析后必须能续期。
+func TestAccountOAuthGeminiRefreshResponse(t *testing.T) {
+	spec, err := AccountOAuthSpecOf(AccountPlatformGemini)
+	if err != nil {
+		t.Fatalf("gemini spec: %v", err)
+	}
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	// 真实响应形状(Google token 端点): access_token + expires_in + 可能不带 refresh_token。
+	raw := []byte(`{"access_token":"new-at","expires_in":3599,"scope":"openid","token_type":"Bearer"}`)
+	result, err := AccountOAuthParseRefreshResponse(spec, AccountCredential{RefreshToken: "old-rt"}, raw, now)
+	if err != nil {
+		t.Fatalf("解析 gemini 刷新响应: %v", err)
+	}
+	if result.AccessToken != "new-at" {
+		t.Fatalf("access_token = %q", result.AccessToken)
+	}
+	// Google 通常不轮换 refresh_token: 此时必须沿用旧值, 否则下次刷新就没令牌了。
+	if result.RefreshToken != "old-rt" {
+		t.Fatalf("refresh_token = %q, want 沿用 old-rt", result.RefreshToken)
+	}
+	if result.RefreshTokenRotated {
+		t.Fatal("未轮换时 RefreshTokenRotated 应为 false")
+	}
+	if want := now.Add(3599 * time.Second); !result.ExpiresAt.Equal(want) {
+		t.Fatalf("expires_at = %v, want %v", result.ExpiresAt, want)
 	}
 }

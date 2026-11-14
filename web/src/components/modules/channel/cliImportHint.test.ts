@@ -36,8 +36,17 @@ describe('cliImportHint', () => {
         expect(cliImportHint('kiro')).toBeUndefined();
     });
 
-    it('gemini 没有引导(CLI 产出 OAuth 令牌, 我们吃 Cookie)', () => {
-        expect(cliImportHint('gemini')).toBeUndefined();
+    // gemini 原先在这里(解析层只吃 Cookie)。G1 补齐 OAuth 解析与刷新后它成了有效路径,
+    // 于是断言反过来: 必须有引导。这条变化本身就是 G1 的验收点之一。
+    it('gemini 给出 /auth 会话命令与 oauth_creds.json 路径', () => {
+        const hint = cliImportHint('gemini');
+        expect(hint).toBeDefined();
+        // Gemini CLI 没有 auth/login 子命令, 登录是在交互式会话里输入 /auth。
+        // 编一条 \`gemini auth login\` 会 command not found —— 所以类型必须是 prompt。
+        expect(hint!.command).toBe('/auth');
+        expect(hint!.commandKind).toBe('prompt');
+        // 二进制原文: (string-append (param "HOME_DIR") "/.gemini/oauth_creds.json")
+        expect(hint!.path).toBe('~/.gemini/oauth_creds.json');
     });
 
     it('grok 没有引导(未核实官方 CLI)', () => {
@@ -48,6 +57,13 @@ describe('cliImportHint', () => {
         // 两份清单漂移的后果是界面显示了引导、但数据层没有 —— 或反之。
         const actual = ALL.filter((p) => cliImportHint(p) !== undefined).sort();
         expect(actual).toEqual([...CLI_GUIDED_PLATFORMS].sort());
+    });
+
+    it('claude/codex 的命令是 shell 命令, gemini 的是会话内命令', () => {
+        // 这个区分必须逐平台钉住: 两者的输入位置不同, 界面上用的是不同措辞。
+        expect(cliImportHint('claude')!.commandKind).toBe('shell');
+        expect(cliImportHint('codex')!.commandKind).toBe('shell');
+        expect(cliImportHint('gemini')!.commandKind).toBe('prompt');
     });
 
     it('每个有引导的平台都带 Windows 路径', () => {

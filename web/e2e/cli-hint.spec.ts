@@ -46,9 +46,9 @@ test('导入对话框: 没有官方 CLI 的平台不显示引导', async ({ page
     await page.getByRole('button', { name: 'Channel' }).click();
     await page.getByRole('button', { name: /^(导入账号|Import account)$/ }).click();
 
-    // kiro 没有官方 CLI; gemini 的 CLI 产出 OAuth 令牌而我们吃 Cookie;
-    // grok 未核实。三个都不该出现引导。
-    for (const platform of ['kiro', 'gemini', 'grok']) {
+    // kiro 没有官方 CLI; grok 未核实。两个都不该出现引导。
+    // gemini 不在这里: G1 补齐 OAuth 解析后它有了有效路径(下一个用例正向验它)。
+    for (const platform of ['kiro', 'grok']) {
         await page.getByRole('button', { name: platform, exact: true }).click();
         await expect(page.getByText(CLI_HINT_TITLE)).toBeHidden();
     }
@@ -57,6 +57,22 @@ test('导入对话框: 没有官方 CLI 的平台不显示引导', async ({ page
     await page.getByRole('button', { name: 'codex', exact: true }).click();
     await expect(page.getByText(CLI_HINT_TITLE)).toBeVisible();
 });
+test('导入对话框: gemini 显示 /auth 会话命令(不是 shell 命令)', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Channel' }).click();
+    await page.getByRole('button', { name: /^(导入账号|Import account)$/ }).click();
+    await page.getByRole('button', { name: 'gemini', exact: true }).click();
+
+    await expect(page.getByText(CLI_HINT_TITLE)).toBeVisible();
+    // gemini 的登录入口是会话内斜杠命令, 不是 shell 命令 ——
+    // 界面措辞必须区分, 否则使用者会把 /auth 敲进终端并得到 command not found。
+    await expect(page.getByText('/auth', { exact: true })).toBeVisible();
+    // exact: 该路径也出现在下方 rawHint 的说明文字里, 不加 exact 会撞成 strict 违规。
+    await expect(page.getByText('~/.gemini/oauth_creds.json', { exact: true })).toBeVisible();
+    // 措辞必须是"启动 CLI 后输入", 不是"运行"。
+    await expect(page.getByText(/启动该 CLI|Start the CLI/)).toBeVisible();
+});
+
 // 本项目的 e2e 专治一类缺陷: 容器塌陷 -> overflow-hidden 裁剪 -> 内容看不见也滚不到。
 // CliHint 是弹层里新加的一块, 必须确认它真的在视口内可点可见, 而不是被裁掉。
 // 判据用 elementFromPoint 而不是 boundingBox: 后者在被裁剪时同样显示正常。

@@ -86,6 +86,17 @@ describe('validateAccountJSON', () => {
             expect(validateAccountJSON('gemini', JSON.stringify({ c_ses: 's' }))).toEqual([]);
         });
 
+        // Gemini 同时支持 Gemini CLI 的 OAuth 令牌 —— 预检必须允许它,
+        // 否则后端支持了、前端却把人拦在门外, 等于功能不存在。
+        it('gemini 的 OAuth 令牌通过', () => {
+            const raw = JSON.stringify({ access_token: 'at', refresh_token: 'rt', expiry_date: 1900000000000 });
+            expect(validateAccountJSON('gemini', raw)).toEqual([]);
+        });
+
+        it('gemini 有 refresh_token 但缺 access_token 报错', () => {
+            expect(validateAccountJSON('gemini', JSON.stringify({ refresh_token: 'rt' }))).toHaveLength(1);
+        });
+
         it('grok 缺 sso 报错', () => {
             const errors = validateAccountJSON('grok', JSON.stringify({ 'sso-rw': 'x' }));
             expect(errors).toHaveLength(1);
@@ -102,7 +113,9 @@ describe('validateAccountJSON', () => {
     it('平台选错时不会通过', () => {
         const codexRaw = JSON.stringify({ access_token: 'at', refresh_token: 'rt' });
         expect(validateAccountJSON('claude', codexRaw)).toEqual([]); // claude 也容忍 snake_case, 这是有意的
-        expect(validateAccountJSON('gemini', codexRaw)).toHaveLength(1); // gemini 要 c_ses
+        // gemini 现在两种形状都收: 纯 c_ses 是 Cookie, 带 refresh_token 是 CLI 的 OAuth 令牌。
+        // codexRaw 属于后一种, 所以这里必须通过 —— 这条断言变了, 是因为能力变了, 不是放宽了标准。
+        expect(validateAccountJSON('gemini', codexRaw)).toEqual([]);
         expect(validateAccountJSON('grok', codexRaw)).toHaveLength(1); // grok 要 sso
     });
 });

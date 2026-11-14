@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -107,6 +108,40 @@ var accountOAuthSpecs = map[string]AccountOAuthSpec{
 			}
 		},
 	},
+	AccountPlatformGemini: {
+		Platform: AccountPlatformGemini,
+		// 端点是固定的, 取自 Gemini CLI 官方发行包(0.68.0)的二进制字符串:
+		//   token 端点 = https://oauth2.googleapis.com/token
+		TokenURL: "https://oauth2.googleapis.com/token",
+		// ClientID / client_secret 走**运行时配置**而不是写死在这里, 原因有二:
+		//
+		// 1) 它们是 Google 分配给 Gemini CLI 这个应用的身份。我们从发行包里提取得出来,
+		//    但那不等于我们有权以该应用的身份分发与使用 —— 写死在公开仓库里等于把这套
+		//    身份固化进我们的代码, 让所有部署者都在冒用它。
+		// 2) 部署者应当用自己注册的 Google OAuth 客户端。自己的配额、自己的责任,
+		//    也避免所有人挤在同一个 client 上被上游限流。
+		//
+		// 未配置时 gemini 的 OAuth 刷新会明确失败并说明要配哪两个环境变量 ——
+		// 见 AccountOAuthRefreshRequest 的检查; 绝不用一个猜来的 client 静默去打上游。
+		//
+		// 用 form-urlencoded: 这是 Google 官方 Node 客户端(gemini-cli 内置的 google-auth-library)
+		// 的实际做法。实测该端点也接受 JSON 体(同样返回 invalid_grant),
+		// 选 form 是为跟随官方客户端的既有实现, 不是"否则会失败"。
+		BodyFormat: accountBodyFormatForm,
+		AccessTokenField:  "access_token",
+		RefreshTokenField: "refresh_token",
+		ExpiresInField:    "expires_in",
+		// 凭据文件(oauth_creds.json)里的键名**就是** snake_case 的同名字段,
+		// 与 Claude 的 camelCase 相反 —— 这处差异必须显式写出来, 否则回写会写到解析层读不到的位置。
+		StoreAccessTokenField:  "access_token",
+		StoreRefreshTokenField: "refresh_token",
+		// client_secret 由部署配置提供; 未配置时 refresh 直接报错而不是拿空值去换令牌。
+		ExtraFields: func(credential AccountCredential) map[string]string {
+			return map[string]string{
+				"client_secret": geminiOAuthClientSecret(),
+			}
+		},
+	},
 	AccountPlatformClaude: {
 		Platform: AccountPlatformClaude,
 		// 端点与 client_id 来自 Claude Code 官方发行包(2.1.325)里提取的常量,
@@ -143,6 +178,11 @@ func AccountOAuthSpecOf(platform string) (AccountOAuthSpec, error) {
 	if override, ok := accountOAuthTokenURLOverride[platform]; ok && override != "" {
 		spec.TokenURL = override
 	}
+	// Gemini 的 client 身份来自部署配置, 不在表里写死。在这里注入而不是在请求构造处判断:
+	// 规格表是"这个平台怎么刷新"的唯一来源, 让读 spec 的地方都能看到同一份值。
+	if platform == AccountPlatformGemini {
+		spec.ClientID = geminiOAuthClientID()
+	}
 	return spec, nil
 }
 
@@ -166,6 +206,17 @@ func AccountOAuthTokenURLOverrideSet(platform, tokenURL string) {
 func AccountOAuthRefreshRequest(spec AccountOAuthSpec, credential AccountCredential) (contentType string, body []byte, err error) {
 	if strings.TrimSpace(credential.RefreshToken) == "" {
 		return "", nil, fmt.Errorf("%s: refresh_token 为空, 无法刷新", spec.Platform)
+	}
+	// 客户端身份没配好时当场拦住, 且把该配哪两个变量直接写在错误里。
+	// 让它去发请求的话, 上游会回 invalid_client —— 那条信息会被读成"账号坏了",
+	// 而真实原因是部署少配了两个环境变量, 两者排查方向完全不同。
+	if spec.Platform == AccountPlatformGemini {
+		if spec.ClientID == "" || geminiOAuthClientSecret() == "" {
+			clientIDEnv, clientSecretEnv := GeminiOAuthClientEnvNames()
+			return "", nil, fmt.Errorf(
+				"%s: 未配置 OAuth 客户端, 请设置环境变量 %s 与 %s (需为本部署自行注册的 Google OAuth 客户端)",
+				spec.Platform, clientIDEnv, clientSecretEnv)
+		}
 	}
 	grantTypeField := spec.GrantTypeField
 	if grantTypeField == "" {
@@ -290,4 +341,40 @@ func accountTruncate(text string, limit int) string {
 		return text
 	}
 	return text[:limit] + "..."
+}
+// Gemini 的 OAuth 客户端凭据来自运行时配置, 不写死在仓库里。
+//
+// 为什么不用 Model 的 Setting 表: 这两项是部署级身份(谁在调用 Google 的接口),
+// 不是运行期可调的业务参数 —— 放在设置表里会被导出/备份/在管理端明文显示,
+// 而它理应像 KEK 一样只存在于部署环境。
+//
+// 为什么不是"随便填也能跑": 未配置时刷新必须明确失败。拿一个猜来的或空的 client
+// 去打真实端点, 得到的 invalid_client 会被解读成"账号坏了", 把排查引向错的方向。
+//
+// 命名与 KEK 那一族保持一致(SWITCHYARD_ 前缀), 便于用同一套 systemd drop-in 注入。
+const (
+	geminiOAuthClientIDEnv     = "SWITCHYARD_GEMINI_OAUTH_CLIENT_ID"
+	geminiOAuthClientSecretEnv = "SWITCHYARD_GEMINI_OAUTH_CLIENT_SECRET"
+)
+
+// geminiOAuthClientID 返回配置的 Gemini OAuth client_id。
+func geminiOAuthClientID() string {
+	return strings.TrimSpace(os.Getenv(geminiOAuthClientIDEnv))
+}
+
+// geminiOAuthClientSecret 返回配置的 client_secret。
+func geminiOAuthClientSecret() string {
+	return strings.TrimSpace(os.Getenv(geminiOAuthClientSecretEnv))
+}
+
+// GeminiOAuthClientConfigured 报告 Gemini 的 OAuth 客户端是否已配置。
+// 界面据此决定是否提示"可在设置里启用 Gemini CLI 导入": 没配就没有刷新能力,
+// 让使用者以为能用是更糟的体验。
+func GeminiOAuthClientConfigured() bool {
+	return geminiOAuthClientID() != "" && geminiOAuthClientSecret() != ""
+}
+
+// GeminiOAuthClientEnvNames 返回需要配置的两个环境变量名, 供错误信息与文档引用。
+func GeminiOAuthClientEnvNames() (clientID, clientSecret string) {
+	return geminiOAuthClientIDEnv, geminiOAuthClientSecretEnv
 }

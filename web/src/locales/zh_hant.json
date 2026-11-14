@@ -1423,7 +1423,7 @@
             "rawHint": {
                 "codex": "支援平鋪物件(access_token/refresh_token/account_id), 也支援 CLI 匯出裡 tokens 封裝的形式。",
                 "kiro": "需要 camelCase 的 refreshToken、clientId、clientSecret。權杖端點要求 camelCase 的請求欄位, 不要改名。",
-                "gemini": "基於 Cookie: 需要 c_ses(可選 c_oses、csesidx、config_id)。",
+                "gemini": "接受兩種形式。Gemini CLI 的 OAuth 權杖: access_token + refresh_token(+ expiry_date, 毫秒), 即 ~/.gemini/oauth_creds.json 的內容 —— 可自動續期。Cookie 會話: 需要 c_ses(可選 c_oses、csesidx、config_id) —— 無法續期, 失效後必須重新匯入。",
                 "grok": "基於 Cookie: 需要 sso。sso-rw 不參與鑑權。",
                 "claude": "Claude Code 憑證檔: 權杖在 claudeAiOauth 下, 鍵名是 camelCase 的 accessToken / refreshToken / expiresAt(毫秒)。也接受平鋪的 access_token + refresh_token。"
             },
@@ -1480,6 +1480,7 @@
             "cliHint": {
                 "title": "如何取得這份憑證",
                 "runOnYourMachine": "在你自己電腦上執行",
+                "runThenType": "在你自己電腦上啟動該 CLI, 然後輸入",
                 "openFile": "然後開啟檔案",
                 "windowsPath": "Windows 上是 {path}",
                 "pasteContent": "把該檔案的完整內容複製到下面的輸入框。",

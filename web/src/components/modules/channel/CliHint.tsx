@@ -14,7 +14,7 @@ import type { AccountPlatform } from '@/api/channel';
  * 为什么强调「在你自己的电脑上」: 我们的服务跑在服务器上, 浏览器里点授权后回调会打到
  * 服务器自己的 localhost, 那里没有也不该有监听者。不讲清这一点, 用户会以为这是个登录按钮。
  *
- * 只对有 CLI 引导的平台渲染。kiro/gemini/grok 返回 undefined, 这里直接不渲染任何东西 ——
+ * 只对有 CLI 引导的平台渲染。kiro/grok 返回 undefined, 这里直接不渲染任何东西 ——
  * 摆一块「暂无 CLI」的空框会被当成加载失败。
  */
 export function CliHint({ platform }: { platform: AccountPlatform }) {
@@ -51,7 +51,11 @@ export function CliHint({ platform }: { platform: AccountPlatform }) {
             <div className="font-medium text-foreground">{t('title')}</div>
             <div className="space-y-1">
                 <div>
-                    <span>1. {t('runOnYourMachine')}</span>
+                    {/* 措辞随 commandKind 变: '/auth' 是会话内斜杠命令, 当成终端命令敲会
+                        command not found; 而 'claude auth login' 敲进会话里同样没用。 */}
+                    <span>
+                        1. {hint.commandKind === 'prompt' ? t('runThenType') : t('runOnYourMachine')}
+                    </span>
                     <span className="mx-1 inline-flex items-center rounded bg-background px-1 py-0.5 font-mono text-[11px] text-foreground">
                         {hint.command}
                         <CopyButton value={hint.command} id="cmd" />

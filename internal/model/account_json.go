@@ -127,6 +127,34 @@ func AccountJSONParse(platform string, raw []byte) (*AccountCredential, error) {
 			return nil, fmt.Errorf("kiro: 缺少 clientId/clientSecret")
 		}
 	case AccountPlatformGemini:
+		// Gemini 有两种完全不同的凭据, 形状与用法都不同, 必须按内容分流:
+		//
+		//   OAuth 令牌  —— Gemini CLI 的 ~/.gemini/oauth_creds.json,
+		//                  {access_token, refresh_token, expiry_date}; 可自动续期。
+		//   Cookie 会话 —— Web 端抠出来的 c_ses 等会话串; 无 refresh 概念, 失效只能人工重导。
+		//
+		// 为什么不能只看平台名就定 kind: 同一个 "gemini" 平台下这两类都会出现。
+		// 一律当 cookie 的话, CLI 用户贴进来的合法 OAuth 文件会得到"缺少 c_ses" ——
+		// 报错还把人带偏, 他明明拿对了文件(这正是扩 G1 的直接原因)。
+		// 反之一律当 oauth, Web 用户会被要求一个不存在的 refresh_token。
+		// 按"有没有 refresh_token"分流是这个区分唯一可靠的判据。
+		if rt := accountJSONString(fields["refresh_token"]); rt != "" {
+			credential.Kind = AccountKindOAuth
+			credential.AccessToken = accountJSONString(fields["access_token"])
+			credential.RefreshToken = rt
+			credential.Email = accountJSONString(fields["email"])
+			if credential.AccessToken == "" {
+				return nil, fmt.Errorf("gemini: 提供了 refresh_token 但缺少 access_token (Gemini CLI 的 oauth_creds.json 应同时包含两者)")
+			}
+			// expiry_date 是**毫秒时间戳**(与 Claude Code 的 expiresAt 同型), 不是 RFC3339。
+			// 按字符串解析会永远失败, 到期时间恒为零 -> 定时任务永不刷新 -> 账号到期即静默失效。
+			if millis, ok := accountJSONNumberOf(fields["expiry_date"]); ok && millis > 0 {
+				credential.ExpiresAt = timeUnixMillis(millis)
+			} else {
+				credential.ExpiresAt = accountJWTExpiry(credential.AccessToken)
+			}
+			break
+		}
 		credential.Kind = AccountKindCookie
 		for _, key := range []string{"c_ses", "c_oses", "csesidx", "config_id"} {
 			if value := accountJSONString(fields[key]); value != "" {
@@ -134,7 +162,7 @@ func AccountJSONParse(platform string, raw []byte) (*AccountCredential, error) {
 			}
 		}
 		if credential.Cookies["c_ses"] == "" {
-			return nil, fmt.Errorf("gemini: 缺少 c_ses")
+			return nil, fmt.Errorf("gemini: 缺少 c_ses (Cookie 会话); 若使用 Gemini CLI, 请提供 ~/.gemini/oauth_creds.json 的内容")
 		}
 	case AccountPlatformGrok:
 		credential.Kind = AccountKindCookie

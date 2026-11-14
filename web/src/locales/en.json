@@ -1423,7 +1423,7 @@
             "rawHint": {
                 "codex": "Accepts both a flat object (access_token, refresh_token, account_id) and the CLI export wrapped in tokens.",
                 "kiro": "Needs camelCase refreshToken, clientId and clientSecret. The token endpoint expects camelCase request fields, so do not rename them.",
-                "gemini": "Cookie-based: needs c_ses (and optionally c_oses, csesidx, config_id).",
+                "gemini": "Two accepted forms. Gemini CLI OAuth token: access_token + refresh_token (+ expiry_date, milliseconds) from ~/.gemini/oauth_creds.json — this renews automatically. Cookie: needs c_ses (optionally c_oses, csesidx, config_id) — no refresh, so it must be re-imported when it expires.",
                 "grok": "Cookie-based: needs sso. sso-rw is not used for auth.",
                 "claude": "Claude Code credential file: the tokens live under claudeAiOauth as camelCase accessToken / refreshToken / expiresAt (milliseconds). A flat access_token + refresh_token object also works."
             },
@@ -1480,6 +1480,7 @@
             "cliHint": {
                 "title": "How to get this credential",
                 "runOnYourMachine": "On your own computer, run",
+                "runThenType": "Start the CLI on your computer, then type",
                 "openFile": "then open the file",
                 "windowsPath": "On Windows: {path}",
                 "pasteContent": "Copy the whole file content into the box below.",
