@@ -27,6 +27,10 @@ type AccountImportSpec struct {
 	Raw      string // 账号 JSON 原文
 	Enabled  bool
 	Priority int
+	// SkipRefresh 跳过导入后的首刷。批量导入用它: 逐条首刷会 N 次上游调用,
+	// 又慢又可能触发风控, 而批量的语义是快速录入 —— 验证留给账号页统一刷新。
+	// 单条导入不设(零值 false), 保持"导入即验证"的原语义。
+	SkipRefresh bool
 }
 
 // AccountImportResult 导入结果, 回给界面展示。
@@ -124,7 +128,7 @@ func AccountImport(ctx context.Context, channelID int, spec AccountImportSpec, n
 	// oauth 类若已有续期令牌, 导入时顺手刷一次:
 	// 这样导入的账号立刻就能用, 而不必等到下一个刷新周期; 也让"这份 JSON 到底能不能用"
 	// 当场就有答案, 而不是导入成功之后才发现跑不通。
-	if credential.Kind == model.AccountKindOAuth && credential.RefreshToken != "" {
+	if credential.Kind == model.AccountKindOAuth && credential.RefreshToken != "" && !spec.SkipRefresh {
 		if err := AccountRefresh(ctx, key.ID, now); err != nil {
 			// 刷新失败**不回滚导入**: 账号 JSON 本身可能是好的, 只是此刻上游不通或到期时间已过。
 			// 把失败如实带回去, 让使用者决定是重试还是先去查账号状态。

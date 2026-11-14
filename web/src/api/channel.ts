@@ -743,3 +743,42 @@ export function accountRefreshKey(channelKeyId: number) {
         timeoutMs: ACCOUNT_IMPORT_TIMEOUT_MS,
     });
 }
+
+// 批量导入相关类型
+export type AccountBatchItem = {
+    name: string;
+    raw: string;
+};
+
+export type AccountBatchResult = {
+    name: string;
+    ok: boolean;
+    channel_key_id?: number;
+    platform?: string;
+    kind?: string;
+    error?: string;
+};
+
+export type AccountBatchResponse = {
+    total: number;
+    succeeded: number;
+    failed: number;
+    results: AccountBatchResult[];
+};
+
+// accountImportBatch 批量导入多个账号到同一渠道。
+//
+// 后端刻意不做首刷: 逐条首刷会 N 次上游调用, 又慢又可能触发风控;
+// 批量的语义是快速录入, 验证留给账号页统一刷新。
+export function accountImportBatch(payload: {
+    channel_id: number;
+    platform: AccountPlatform;
+    items: AccountBatchItem[];
+    enabled?: boolean;
+}) {
+    return apiRequest<AccountBatchResponse>('/api/v1/channel/account/import-batch', {
+        method: 'POST',
+        body: payload,
+        timeoutMs: ACCOUNT_IMPORT_TIMEOUT_MS,
+    });
+}

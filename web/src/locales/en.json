@@ -1459,7 +1459,24 @@
             "targetChannel": "Target channel",
             "targetChannelPlaceholder": "Choose the channel to attach this account to",
             "targetChannelEmpty": "Create a channel first; an account must belong to one.",
-            "channelRequired": "Choose the target channel first"
+            "channelRequired": "Choose the target channel first",
+            "batchOpen": "Batch import accounts",
+            "batchTitle": "Batch import upstream accounts",
+            "batchHint": "Paste multiple account JSONs (one per line) or a JSON array. Each item can be a raw credential object or {name, raw}. OAuth accounts skip first refresh in batch mode; verify on the Accounts page.",
+            "batchPasteLabel": "Account JSONs ({count} items)",
+            "batchPlaceholder": "One JSON per line, or a JSON array",
+            "batchItem": "Item ",
+            "batchEmpty": "No accounts to import",
+            "batchHasErrors": "Some items have validation errors. Fix them before submitting.",
+            "batchValidationErrors": "{count} validation error(s)",
+            "batchEnabled": "Enable imported credentials",
+            "batchSubmit": "Batch import",
+            "batchSuccess": "{count} account(s) imported",
+            "batchPartial": "Imported {succeeded}, failed {failed}",
+            "batchResultTitle": "Batch import result",
+            "batchResultSucceeded": "Succeeded: {count}",
+            "batchResultFailed": "Failed: {count}",
+            "batchResultDetails": "Details"
         }
     },
     "share": {

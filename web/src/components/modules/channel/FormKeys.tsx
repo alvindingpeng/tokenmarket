@@ -7,6 +7,7 @@ import { IconButton } from '@/components/common/IconButton';
 import { useModelProbe } from './probe';
 import { grantKey, type ChannelFormState } from './state';
 import { AccountImport } from './AccountImport';
+import { AccountImportBatch } from './AccountImportBatch';
 import { AccountIdentity, AccountStateBadge } from './AccountBadge';
 
 // maskKey 显示凭据尾部, 其余以点替代; 过短的秘密连首尾都遮不住, 整条掩掉。
@@ -97,7 +98,10 @@ export function FormKeys({ state, setState, channelId, onAccountImported }: {
                 <div className="flex items-center gap-1">
                     {/* 导入账号只在编辑已存在的渠道时出现: 新建渠道还没有可写的凭据表。 */}
                     {channelId !== undefined && (
-                        <AccountImport channelId={channelId} onImported={onAccountImported} />
+                        <div className="flex items-center gap-1">
+                            <AccountImport channelId={channelId} onImported={onAccountImported} />
+                            <AccountImportBatch channelId={channelId} onImported={onAccountImported} />
+                        </div>
                     )}
                     <IconButton onClick={add} className="size-9" tip={t('keyAdd')}>
                         <Plus className="size-4" />

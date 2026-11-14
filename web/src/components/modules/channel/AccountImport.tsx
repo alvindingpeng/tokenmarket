@@ -28,6 +28,59 @@ import { accountImport, accountRefreshKey, type AccountImportResult, type Accoun
  * 后端没有「列出我支持哪些平台」的接口, 硬造一个只会多一份需要同步的清单。
  */
 
+
+// validateAccountJSON 本地预检账号 JSON。
+//
+// 与后端 model.AccountJSONParse 的解析分支保持一致: 同一份 JSON
+// 在这边能发现的缺字段, 就不必等后端返回 400 再告诉用户。
+// 返回空数组表示通过; 否则返回缺失/错误字段的文案列表。
+export function validateAccountJSON(platform: AccountPlatform, raw: string): string[] {
+    const errors: string[] = [];
+    if (!raw.trim()) {
+        errors.push('JSON 不能为空');
+        return errors;
+    }
+    let fields: any;
+    try {
+        fields = JSON.parse(raw);
+    } catch {
+        errors.push('不是合法的 JSON 对象');
+        return errors;
+    }
+    // 兼容 Codex CLI 导出的外层 tokens 封装
+    if (fields.tokens && typeof fields.tokens === 'object') {
+        fields = fields.tokens;
+    }
+
+    switch (platform) {
+        case 'codex': {
+            if (!fields.access_token) errors.push('缺少 access_token (CLI 导出应包含 tokens 字段)');
+            if (!fields.refresh_token) errors.push('缺少 refresh_token, 该账号无法自动续期');
+            break;
+        }
+        case 'claude': {
+            const nested = fields.claudeAiOauth ?? fields;
+            if (!nested.accessToken && !nested.access_token) errors.push('缺少 accessToken (Claude Code 凭据文件应为 claudeAiOauth.accessToken)');
+            if (!nested.refreshToken && !nested.refresh_token) errors.push('缺少 refreshToken, 该账号无法自动续期');
+            break;
+        }
+        case 'kiro': {
+            if (!fields.refreshToken) errors.push('缺少 refreshToken');
+            if (!fields.clientId || !fields.clientSecret) errors.push('缺少 clientId/clientSecret');
+            break;
+        }
+        case 'gemini': {
+            if (!fields.c_ses) errors.push('缺少 c_ses');
+            break;
+        }
+        case 'grok': {
+            if (!fields.sso) errors.push('缺少 sso');
+            break;
+        }
+    }
+    return errors;
+}
+
 export function AccountImport({ channelId, onImported, channels }: {
     // channelId 有值时是"渠道内导入": 目标固定, 不再让使用者选。
     // 无值时是"独立导入": 从渠道列表页或其它入口进来, 此时必须让他选目标渠道 ——
@@ -46,6 +99,9 @@ export function AccountImport({ channelId, onImported, channels }: {
     const [result, setResult] = useState<AccountImportResult | null>(null);
     // 独立导入模式下的目标渠道。默认取第一个: 只有一个渠道时省掉一次点击, 多个时也要让人看到这一栏。
     const [targetChannel, setTargetChannel] = useState<number | undefined>(channelId ?? channels?.[0]?.id);
+    // 本地预检结果: 用户在 Textarea 里贴 JSON 时即时跑, 不等后端。
+    // 这是第 6 项: 避免一轮 30 秒往返才发现 "缺 refresh_token"。
+    const [validateErrors, setValidateErrors] = useState<string[]>([]);
 
     const submit = async () => {
         if (!name.trim()) {
@@ -146,15 +202,29 @@ export function AccountImport({ channelId, onImported, channels }: {
                         </div>
                         <div className="space-y-1.5">
                             <Label htmlFor="account-raw">{t('raw')}</Label>
+                            {/* 失焦/变化时即时预检: 用户贴上 JSON 就能看到缺什么字段, 不必等后端。 */}
                             <Textarea
                                 id="account-raw"
                                 value={raw}
-                                onChange={(event) => setRaw(event.target.value)}
+                                onChange={(event) => {
+                                    const v = event.target.value;
+                                    setRaw(v);
+                                    setValidateErrors(validateAccountJSON(platform, v));
+                                }}
                                 placeholder={t('rawPlaceholder')}
                                 rows={8}
                                 className="font-mono text-xs"
                             />
                             <p className="text-xs text-muted-foreground">{t(`rawHint.${platform}`)}</p>
+                            {validateErrors.length > 0 && (
+                                <div className="mt-1 space-y-0.5">
+                                    {validateErrors.map((err, i) => (
+                                        <div key={i} className="text-xs text-destructive">
+                                            <span className="font-mono">✗</span> {err}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
 

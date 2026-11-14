@@ -70,7 +70,7 @@ test('账号页展示账号列表, 并把问题账号排在前面', async ({ pag
     // 这个缺陷在真实浏览器里出现过, 单测测不出来(它只在缺文案时才发生)。
     await expect(page.getByText('navbar.accounts')).toBeHidden();
     // 汇总条应显示四种状态计数, 且 cookie 那个账号让"需人工"不为零。
-    await expect(page.getByText('需人工')).toBeVisible();
+    await expect(page.getByText('需人工').first()).toBeVisible();
     await expect(page.getByRole('columnheader', { name: '账号' })).toBeVisible();
 
     // 两个账号都应在: claude(oauth) 与 gemini(cookie)。
@@ -110,5 +110,59 @@ test('Share 页卡片显示账号健康度摘要', async ({ page }) => {
     await expect(betaCard.getByText(/个账号|account\(s\)/)).toBeVisible();
     // cookie 类无法自动续期 -> 判据需人工, 绝不能被显示成正常。
     await expect(betaCard.getByText(/^(需人工|Manual)$/).first()).toBeVisible();
+});
+
+test('批量导入: 一次粘贴多个账号 JSON, 逐条预检并显示结果', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Channel' }).click();
+    await page.getByRole('button', { name: /批量导入账号/ }).click();
+
+    // 选个渠道
+    await page.locator('[role="combobox"]').first().click();
+    await page.getByRole('option', { name: 'alpha' }).click();
+
+    // 贴两个 codex 账号 JSON (一行一个)。名字带时间戳: 重复跑同一条用例会撞名(渠道内唯一),
+    // 而撞名是正确行为 —— 用例不该因此变红。
+    const stamp = Date.now();
+    const good = JSON.stringify({ name: 'line-a-' + stamp, access_token: 'at1', refresh_token: 'rt1' });
+    const bad = JSON.stringify({ name: 'line-b-' + stamp, access_token: 'at2' }); // 缺 refresh_token
+    await page.getByPlaceholder(/每行一个 JSON|One JSON per line/).fill(good + '\n' + bad);
+
+    // 预检应立刻出现: 第 2 条缺 refresh_token
+    await expect(page.getByText(/缺少 refresh_token/)).toBeVisible();
+    await expect(page.getByText(/1 处预检错误|validation error/)).toBeVisible();
+
+    // 修正第 2 条
+    const badFixed = JSON.stringify({ name: 'line-b-' + stamp, access_token: 'at2', refresh_token: 'rt2' });
+    await page.getByPlaceholder(/每行一个 JSON|One JSON per line/).fill(good + '\n' + badFixed);
+
+    // 预检错误消失, 提交
+    await expect(page.getByText(/缺少 refresh_token/)).not.toBeVisible();
+    await page.getByRole('button', { name: /批量导入$/ }).click();
+
+    // 结果应显示 2 条成功
+    await expect(page.getByText(/2 个账号|2 account/)).toBeVisible();
+    await expect(page.getByText(/成功: 2|Succeeded: 2/)).toBeVisible();
+});
+
+test('批量导入: JSON 数组格式也支持', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Channel' }).click();
+    await page.getByRole('button', { name: /批量导入账号/ }).click();
+    await page.locator('[role="combobox"]').first().click();
+    await page.getByRole('option', { name: 'beta' }).click();
+
+    // 贴 JSON 数组
+    const arr = JSON.stringify([
+        { name: 'arr-1-' + Date.now(), raw: { access_token: 'a1', refresh_token: 'r1' } },
+        { name: 'arr-2-' + Date.now(), raw: { access_token: 'a2', refresh_token: 'r2' } }
+    ]);
+    await page.getByPlaceholder(/每行一个 JSON|One JSON per line/).fill(arr);
+
+    // 预检通过, 提交
+    await expect(page.getByText(/缺少 refresh_token/)).not.toBeVisible();
+    await page.getByRole('button', { name: /批量导入$/ }).click();
+
+    await expect(page.getByText(/成功: 2|Succeeded: 2/)).toBeVisible();
 });
 

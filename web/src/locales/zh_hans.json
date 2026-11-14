@@ -1459,7 +1459,24 @@
             "targetChannel": "目标渠道",
             "targetChannelPlaceholder": "选择要把这个账号挂到哪个渠道",
             "targetChannelEmpty": "请先创建一个渠道 —— 账号必须属于某个渠道。",
-            "channelRequired": "请先选择目标渠道"
+            "channelRequired": "请先选择目标渠道",
+            "batchOpen": "批量导入账号",
+            "batchTitle": "批量导入上游账号",
+            "batchHint": "每行粘贴一个账号 JSON, 或直接粘贴 JSON 数组。每项可以是原始凭据对象, 也可以是 {name, raw} 形式。批量模式下 OAuth 账号跳过首刷; 导入后请在账号页统一验证。",
+            "batchPasteLabel": "账号 JSON 列表 (共 {count} 条)",
+            "batchPlaceholder": "每行一个 JSON, 或粘贴 JSON 数组",
+            "batchItem": "条目 ",
+            "batchEmpty": "没有要导入的账号",
+            "batchHasErrors": "有条目未通过预检, 请先修复后再提交。",
+            "batchValidationErrors": "共 {count} 处预检错误",
+            "batchEnabled": "导入后启用凭据",
+            "batchSubmit": "批量导入",
+            "batchSuccess": "成功导入 {count} 个账号",
+            "batchPartial": "成功 {succeeded} 个, 失败 {failed} 个",
+            "batchResultTitle": "批量导入结果",
+            "batchResultSucceeded": "成功: {count}",
+            "batchResultFailed": "失败: {count}",
+            "batchResultDetails": "明细"
         }
     },
     "share": {

@@ -41,6 +41,14 @@ func init() {
 				Handle(importChannelAccount),
 		).
 		AddRoute(
+			// 批量导入: 一次贴多个账号 JSON, 逐条落库, 一条失败不影响其他。
+			// 刻意不做首刷(见 op.AccountImportBatch): 逐条首刷会 N 次上游调用, 又慢又可能触发风控。
+			router.NewRoute("/import-batch", http.MethodPost).
+				Use(middleware.RequireJSON()).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(importChannelAccountBatch),
+		).
+		AddRoute(
 			router.NewRoute("/:id/refresh", http.MethodPost).
 				Allow(model.RoleAdmin, model.RoleReseller).
 				Handle(refreshChannelAccount),
@@ -165,4 +173,71 @@ func refreshChannelAccount(c *gin.Context) {
 func listChannelAccounts(c *gin.Context) {
 	userID, role := middleware.CurrentUser(c)
 	resp.Success(c, op.AccountList(model.Scope{ID: userID, Role: role}))
+}
+type importChannelAccountBatchRequest struct {
+	ChannelID int    `json:"channel_id"`
+	Platform  string `json:"platform"`
+	Items     []struct {
+		Name string `json:"name"`
+		Raw  string `json:"raw"`
+	} `json:"items"`
+	Enabled *bool `json:"enabled"`
+}
+
+// importChannelAccountBatch 批量导入多个账号到同一渠道。
+//
+// 返回逐条结果而不是只给一个汇总: 一批里字段齐全和缺字段的账号混在一起是常态,
+// 笼统说"部分失败"只会让使用者一条条猜。逐条带原因, 界面才能逐条展示。
+func importChannelAccountBatch(c *gin.Context) {
+	var request importChannelAccountBatchRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.Error(c, http.StatusBadRequest, "请求格式错误")
+		return
+	}
+	if len(request.Items) == 0 {
+		resp.Error(c, http.StatusBadRequest, "没有要导入的账号")
+		return
+	}
+	userID, role := middleware.CurrentUser(c)
+	channel, err := op.ChannelGet(request.ChannelID)
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, "渠道不存在")
+		return
+	}
+	if !(model.Scope{ID: userID, Role: role}).Owns(channel.UserID) {
+		resp.Error(c, http.StatusNotFound, "渠道不存在")
+		return
+	}
+
+	enabled := true
+	if request.Enabled != nil {
+		enabled = *request.Enabled
+	}
+	items := make([]op.AccountBatchItem, 0, len(request.Items))
+	for _, item := range request.Items {
+		items = append(items, op.AccountBatchItem{Name: item.Name, Raw: item.Raw})
+	}
+	results := op.AccountImportBatch(c.Request.Context(), channel.ID, request.Platform, items, enabled, time.Now())
+
+	succeeded := 0
+	body := make([]gin.H, 0, len(results))
+	for _, result := range results {
+		if result.OK {
+			succeeded++
+		}
+		body = append(body, gin.H{
+			"name":          result.Name,
+			"ok":            result.OK,
+			"channel_key_id": result.ChannelKeyID,
+			"platform":      result.Platform,
+			"kind":          result.Kind,
+			"error":         result.Error,
+		})
+	}
+	resp.Success(c, gin.H{
+		"total":     len(results),
+		"succeeded": succeeded,
+		"failed":    len(results) - succeeded,
+		"results":   body,
+	})
 }

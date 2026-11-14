@@ -1459,7 +1459,24 @@
             "targetChannel": "目標渠道",
             "targetChannelPlaceholder": "選擇要把這個帳號掛到哪個渠道",
             "targetChannelEmpty": "請先建立一個渠道 —— 帳號必須屬於某個渠道。",
-            "channelRequired": "請先選擇目標渠道"
+            "channelRequired": "請先選擇目標渠道",
+            "batchOpen": "批量匯入帳號",
+            "batchTitle": "批量匯入上游帳號",
+            "batchHint": "每行貼上一個帳號 JSON, 或直接貼上 JSON 陣列。每項可以是原始憑證物件, 也可以是 {name, raw} 形式。批量模式下 OAuth 帳號跳過首刷; 匯入後請在帳號頁統一驗證。",
+            "batchPasteLabel": "帳號 JSON 列表 (共 {count} 條)",
+            "batchPlaceholder": "每行一個 JSON, 或貼上 JSON 陣列",
+            "batchItem": "條目 ",
+            "batchEmpty": "沒有要匯入的帳號",
+            "batchHasErrors": "有條目未通過預檢, 請先修復後再提交。",
+            "batchValidationErrors": "共 {count} 處預檢錯誤",
+            "batchEnabled": "匯入後啟用憑證",
+            "batchSubmit": "批量匯入",
+            "batchSuccess": "成功匯入 {count} 個帳號",
+            "batchPartial": "成功 {succeeded} 個, 失敗 {failed} 個",
+            "batchResultTitle": "批量匯入結果",
+            "batchResultSucceeded": "成功: {count}",
+            "batchResultFailed": "失敗: {count}",
+            "batchResultDetails": "明細"
         }
     },
     "share": {
