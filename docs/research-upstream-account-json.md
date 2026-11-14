@@ -249,3 +249,102 @@
 1. Codex 刷新**成功路径**未在本机验证(地区限制), 只验证了失败路径与落库/缓存链路。
 2. 真实 ChatGPT 账号的端到端转发未验证(同一地区限制)。
 3. 前端导入对话框只做了 `tsc` + 单元测试, 未做浏览器手工走查。
+
+## 10. Kiro 与 Claude 接入记录
+
+## 10.1 Claude —— 端点与 client_id 已从官方二进制核实
+
+第 8 节遗留的「Claude Code 端点与 client_id 未核实」已解决。方法: 从 npm 取
+`@anthropic-ai/claude-code-linux-x64` (2.1.325) 的真实二进制, 用 `strings` 提取常量。
+这是**可复核的证据来源**, 不是猜测, 也不是二手文档:
+
+| 常量 | 值 |
+|---|---|
+| TOKEN_URL | `https://platform.claude.com/v1/oauth/token` |
+| CLIENT_ID (prod) | `9d1c250a-e61b-44d9-88ed-5944d1962f5e` |
+| DESIGN_CLIENT_ID | `59637612-477b-4836-a601-b0589eda7704` (设计功能用, 与刷新无关) |
+
+刷新请求(从二进制里的 `k_e` 函数提取, 不只靠字段名推断):
+
+```js
+// Content-Type: application/json
+{ grant_type: "refresh_token", refresh_token: <rt>, client_id: <CLIENT_ID>,
+  scope: scopes.join(" ") }
+```
+
+**关键的三层命名差异**(这是接入 Claude 最容易踩的坑):
+
+| 位置 | 命名 |
+|---|---|
+| 令牌端点**响应** | snake_case: `access_token` / `refresh_token` / `expires_in` |
+| 凭据**文件**存储 | camelCase: `claudeAiOauth.accessToken` / `.refreshToken` / `.expiresAt` |
+| 刷新**请求体** | snake_case: `grant_type` / `refresh_token` / `client_id` / `scope` |
+
+`expiresAt` 是**毫秒时间戳**而不是 RFC3339 字符串。按字符串解析会永远失败, 到期时间恒为零,
+定时任务于是永不刷新 —— 账号到期即静默失效, 且没有任何报错。
+
+## 10.2 Kiro —— 请求体全 camelCase, 且必须带 AWS SDK 头
+
+Kiro 的 OIDC 端点与 Codex/Claude 最不一样的两点:
+
+1. **连 grant_type 都是 camelCase**: 请求体是 `grantType` / `refreshToken` / `clientId` /
+   `clientSecret`, 而不是 `grant_type` / `refresh_token`。套用 Codex 的写法会得到一个
+   `unsupported_grant_type`, 看起来像账号坏了。
+2. **必须带 AWS SDK 系列头**(`User-Agent`、`x-amz-user-agent`、`amz-sdk-request`)。
+   该端点只面向 AWS 客户端, 少了这些头请求被拒且响应不说明原因。
+
+这两点都已实测验证: 用假令牌实测刷新, AWS 端点的响应是 `400 invalid_grant`
+(即请求被正常接收并解析), 而不是 `unsupported_grant_type` 或 `403`。
+
+## 10.3 本轮修掉的三个真实缺陷
+
+这三条都是测试先红、再修、再做变异校验确认测试真能抓到:
+
+| 缺陷 | 后果 | 修法 |
+|---|---|---|
+| Claude 复用 Codex 解析分支 | 从真实凭据文件里读不到任何令牌, 导入"成功"但转发空 Bearer 全 401 | 独立分支 + 读 `claudeAiOauth` 嵌套 |
+| 回写用响应字段名而非存储字段名 | 令牌换了但写到自己读不回的位置, 账号**静默失效** | 规格拆出 `StoreAccessTokenField`/`StoreRefreshTokenField`/`StoreContainer` |
+| cookie 账号被当 OAuth 解析 | gemini/grok 的会话串被解析成空串, "导入后完全不工作" | 只有 `AccountKindOAuth` 才解析 |
+
+另外两处顺带修掉的:
+
+| 缺陷 | 后果 |
+|---|---|---|
+| 首刷失败时跳过缓存写入 | 库里有行、详情看不见、转发选不中 —— 使用者以为账号丢了(顺序改为先落缓存再刷新) |
+| `/refresh` 挂在整个分组上的 `RequireJSON` | 调用方必须发空 body 才能刷新, 否则回 415(移到只挂在 `/import` 上) |
+
+## 10.4 又修掉一个先前就存在的偶发失败
+
+`TestMarketCatalogFoldsNamesAndGroups` 一直偶发失败(`6 次里 2 次`)。用 `git stash` 把本轮改动
+全部收起来后, **纯提交态上同样失败**, 确认与本轮工作无关。根因:
+
+[`internal/op/market.go`](../internal/op/market.go) 的 `InGroups` 只取"第一个到达的 grant"的分组归属。
+同一模型在不同渠道里大小写不一致(`minimax-m3` / `MiniMax-M3`)折叠成一屏一行后, 若先到的那个
+grant 不在任何分组里、而后到的在, 角标就丢了。而先后顺序取决于 map 遍历顺序 —— 于是偶发。
+改成折叠结束后把全部成员的归属并起来, 修复后 10 次连跑 0 失败。
+
+## 10.5 本轮的真实 HTTP 验证
+
+隔离实例 + 全新空库, 四个平台各导入一次, 结果:
+
+| 平台 | kind | auto_renewable | expires_at 来源 | 结果 |
+|---|---|---|---|---|
+| claude | oauth | 是 | 毫秒时间戳 1900000000000 → 2030-03-17 | 通过 |
+| kiro | oauth | 是 | 无(JSON 未带到期时间) | 通过, 首刷返回 `invalid_grant`(证明请求格式正确) |
+| gemini | cookie | **否** | 无 | 通过, 正确标记不可自动续期 |
+| codex(上轮) | oauth | 是 | JWT `exp` | 通过 |
+
+全部四条凭据在导入后**立即**出现在详情接口(不需重启), 落库均为 `sysec$1$` 信封密文;
+在数据库文件里搜四个令牌明文, **全部为 False**。
+
+`/refresh` 三条拒绝路径也验过: 静态凭据、cookie 平台、不存在的 id,
+分别回"不是可自动续期的账号"与"凭据不存在"。
+
+## 10.6 仍然遗留
+
+1. **Kiro 的刷新成功路径未验证**: AWS 端点接受了请求格式(返回 invalid_grant 而非格式错误),
+   但没有真实有效账号可测成功刷新。
+2. **Claude 的刷新成功路径未验证**: 真实端点返回 403 `Request not allowed`(假令牌)。
+   在支持地区的出口上用真实账号再验一次。
+3. **真实端到端转发未验证**: 无有效上游令牌, 转发层只做了单元级验证(令牌提取正确)。
+4. **前端未做浏览器手工走查**: 只做了 `tsc` + 单元测试。

@@ -1,4 +1,3 @@
-
 package relay
 
 import (
@@ -66,5 +65,43 @@ func TestChannelKeyTokenProviderGetIsPure(t *testing.T) {
 		if got := provider.Get(context.Background()); got != "tok" {
 			t.Fatalf("Get #%d = %q", i, got)
 		}
+	}
+}
+
+// Claude 的令牌在 claudeAiOauth 嵌套层里。转发取令牌必须能穿透这一层,
+// 否则导入"成功"、转发时带空 Bearer 全部 401 —— 与 Codex 早期那个缺陷同一形状。
+func TestChannelKeyTokenOfClaudeNested(t *testing.T) {
+	key := model.ChannelKey{ChannelKeyConfig: model.ChannelKeyConfig{
+		Key:             `{"claudeAiOauth":{"accessToken":"sk-ant-oat01-real","refreshToken":"rt","expiresAt":1900000000000}}`,
+		AccountKind:     model.AccountKindOAuth,
+		AccountPlatform: model.AccountPlatformClaude,
+	}}
+	if got := channelKeyTokenOf(key); got != "sk-ant-oat01-real" {
+		t.Fatalf("claude token = %q, want sk-ant-oat01-real", got)
+	}
+}
+
+// Kiro 的令牌是顶层 camelCase。
+func TestChannelKeyTokenOfKiro(t *testing.T) {
+	key := model.ChannelKey{ChannelKeyConfig: model.ChannelKeyConfig{
+		Key:             `{"accessToken":"kiro-at","refreshToken":"rt","clientId":"c","clientSecret":"s"}`,
+		AccountKind:     model.AccountKindOAuth,
+		AccountPlatform: model.AccountPlatformKiro,
+	}}
+	if got := channelKeyTokenOf(key); got != "kiro-at" {
+		t.Fatalf("kiro token = %q", got)
+	}
+}
+
+// cookie 类账号不是 OAuth: 它们的会话串要原样发出去(作为 Bearer 或按渠道自定义头),
+// 不能去解析 accessToken —— 那会得到空串, 表现为"cookie 账号导入后完全不工作"。
+func TestChannelKeyTokenOfCookieAccountPassesThrough(t *testing.T) {
+	key := model.ChannelKey{ChannelKeyConfig: model.ChannelKeyConfig{
+		Key:             "cookie-session-value",
+		AccountKind:     model.AccountKindCookie,
+		AccountPlatform: model.AccountPlatformGemini,
+	}}
+	if got := channelKeyTokenOf(key); got != "cookie-session-value" {
+		t.Fatalf("cookie token = %q, want 原样透传", got)
 	}
 }

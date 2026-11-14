@@ -1,4 +1,3 @@
-
 package op
 
 // 上游账号 JSON 的导入。
@@ -110,6 +109,18 @@ func AccountImport(ctx context.Context, channelID int, spec AccountImportSpec, n
 		ExpiresAt:    tokenExpiresAt,
 	}
 
+	// 先落缓存再刷新, 顺序不能反。
+	// 首刷失败是常态(上游不通/账号到期/地区限制), 而那条路径必须**提前返回 warning**;
+	// 若缓存写入放在刷新之后, 首刷一失败就永远走不到, 结果是: 库里有这一行、详情接口看不见、
+	// 转发也选不中 —— 使用者看到的是"导入成功但渠道里就是没有这个账号"。
+	// 转发路径读的是 channelKeyCache, 而 ChannelKeyLookup 只查缓存, 不回写就等于没导入。
+	var stored model.ChannelKey
+	if err := db.GetDB().WithContext(ctx).First(&stored, key.ID).Error; err != nil {
+		return result, fmt.Errorf("导入成功但读取凭据失败: %w", err)
+	}
+	channelKeyCache.Set(stored.ID, stored)
+	result.ExpiresAt = stored.TokenExpiresAt
+
 	// oauth 类若已有续期令牌, 导入时顺手刷一次:
 	// 这样导入的账号立刻就能用, 而不必等到下一个刷新周期; 也让"这份 JSON 到底能不能用"
 	// 当场就有答案, 而不是导入成功之后才发现跑不通。
@@ -117,19 +128,17 @@ func AccountImport(ctx context.Context, channelID int, spec AccountImportSpec, n
 		if err := AccountRefresh(ctx, key.ID, now); err != nil {
 			// 刷新失败**不回滚导入**: 账号 JSON 本身可能是好的, 只是此刻上游不通或到期时间已过。
 			// 把失败如实带回去, 让使用者决定是重试还是先去查账号状态。
+			// 注意缓存已经写过了, 所以这条凭据此刻在详情与转发里都是可见的(只是令牌还是旧的)。
 			return result, &AccountImportRefreshWarning{Err: err}
 		}
 		result.RefreshedNow = true
+		// 刷新成功会写入新令牌与新的到期时间, 重新读一次把最新值带回并刷新缓存。
+		var refreshed model.ChannelKey
+		if err := db.GetDB().WithContext(ctx).First(&refreshed, key.ID).Error; err == nil {
+			channelKeyCache.Set(refreshed.ID, refreshed)
+			result.ExpiresAt = refreshed.TokenExpiresAt
+		}
 	}
-	// 写入/刷新后都必须把这一行放进缓存: 转发路径读的是 channelKeyCache, 而 ChannelKeyLookup
-	// 也只查缓存 —— 不回写的话, 刚导入的凭据在进程内根本不可见, 要等下一次全量缓存重载
-	// (通常是重启或渠道变更)才生效, 使用者会以为"导入成功但就是不工作"。
-	var stored model.ChannelKey
-	if err := db.GetDB().WithContext(ctx).First(&stored, key.ID).Error; err != nil {
-		return result, fmt.Errorf("导入成功但读取凭据失败: %w", err)
-	}
-	channelKeyCache.Set(stored.ID, stored)
-	result.ExpiresAt = stored.TokenExpiresAt
 	return result, nil
 }
 

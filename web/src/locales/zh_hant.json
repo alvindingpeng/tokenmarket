@@ -1421,10 +1421,10 @@
             "rawPlaceholder": "在此貼上帳號 JSON",
             "rawHint": {
                 "codex": "支援平鋪物件(access_token/refresh_token/account_id), 也支援 CLI 匯出裡 tokens 封裝的形式。",
-                "kiro": "需要 camelCase 的 refreshToken、clientId 與 clientSecret。",
+                "kiro": "需要 camelCase 的 refreshToken、clientId、clientSecret。權杖端點要求 camelCase 的請求欄位, 不要改名。",
                 "gemini": "基於 Cookie: 需要 c_ses(可選 c_oses、csesidx、config_id)。",
                 "grok": "基於 Cookie: 需要 sso。sso-rw 不參與鑑權。",
-                "claude": "支援 access_token 與 refresh_token。"
+                "claude": "Claude Code 憑證檔: 權杖在 claudeAiOauth 下, 鍵名是 camelCase 的 accessToken / refreshToken / expiresAt(毫秒)。也接受平鋪的 access_token + refresh_token。"
             },
             "nameRequired": "請填寫憑證名稱",
             "rawRequired": "請貼上帳號 JSON",

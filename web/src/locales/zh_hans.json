@@ -1421,10 +1421,10 @@
             "rawPlaceholder": "在此粘贴账号 JSON",
             "rawHint": {
                 "codex": "支持平铺对象(access_token/refresh_token/account_id), 也支持 CLI 导出里 tokens 封装的形式。",
-                "kiro": "需要 camelCase 的 refreshToken、clientId 与 clientSecret。",
+                "kiro": "需要 camelCase 的 refreshToken、clientId、clientSecret。令牌端点要求 camelCase 的请求字段, 不要改名。",
                 "gemini": "基于 Cookie: 需要 c_ses(可选 c_oses、csesidx、config_id)。",
                 "grok": "基于 Cookie: 需要 sso。sso-rw 不参与鉴权。",
-                "claude": "支持 access_token 与 refresh_token。"
+                "claude": "Claude Code 凭据文件: 令牌在 claudeAiOauth 下, 键名是 camelCase 的 accessToken / refreshToken / expiresAt(毫秒)。也接受平铺的 access_token + refresh_token。"
             },
             "nameRequired": "请填写凭据名称",
             "rawRequired": "请粘贴账号 JSON",

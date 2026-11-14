@@ -41,12 +41,23 @@ func MarketCatalog(scope model.Scope) []model.MarketModel {
 				Name:     parts.ChannelModel.Name,
 				Brand:    MarketBrandOf(parts.ChannelModel.Name),
 				Channels: make([]model.MarketChannel, 0, 4),
-				InGroups: groupIDsByGrant[grant.ID],
+				// InGroups 先留空, 在折叠结束后统一汇总。
+				// 之前在这里直接取 groupIDsByGrant[grant.ID] 是个依赖遍历顺序的缺陷:
+				// 同一模型在不同渠道里可能大小写不一致(deepseek-v4.1-flash / DeepSeek-V4.1-Flash),
+				// 折叠成一屏一行后只保留了"第一个到达的 grant"的归属; 若那个 grant 恰好不在任何分组里,
+				// 而另一个在, 角标就丢了 —— 而哪个先到取决于 map 遍历顺序, 于是表现为偶发失败。
+				InGroups: []int{},
 			}
 			nameVotes[key] = make(map[string]int, 2)
 		}
 		byName[key].Channels = append(byName[key].Channels, channel)
 		nameVotes[key][parts.ChannelModel.Name]++
+		// 同一折叠行要把所有成员的归属并起来: 只要任一渠道的授权进了分组, 这个模型就"在分组里"。
+		for _, groupID := range groupIDsByGrant[grant.ID] {
+			if !containsInt(byName[key].InGroups, groupID) {
+				byName[key].InGroups = append(byName[key].InGroups, groupID)
+			}
+		}
 	}
 
 	out := make([]model.MarketModel, 0, len(byName))
@@ -141,6 +152,16 @@ func marketDisplayName(votes map[string]int, fallback string) string {
 //
 // 只含自有分组: 分组严格按用户私有(GroupList 按 scope.ID 过滤), 管理员也看不到别人的分组,
 // 因此这里的"已加入"角标对任何角色都只反映他自己的配置。未命中的授权不出现在 map 里(调用方拿 nil 切片)。
+// containsInt 报告集合里是否已有该值。折叠汇总分组角标时用它去重。
+func containsInt(values []int, target int) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
 func marketGroupsOf(scope model.Scope) map[int][]int {
 	groups := GroupList(scope)
 	out := make(map[int][]int, 0)

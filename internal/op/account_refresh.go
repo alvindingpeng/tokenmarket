@@ -1,4 +1,3 @@
-
 package op
 
 // 上游账号 OAuth 刷新的执行层。
@@ -125,6 +124,10 @@ func AccountRefresh(ctx context.Context, channelKeyID int, now time.Time) error 
 	}
 	request.Header.Set("Content-Type", contentType)
 	request.Header.Set("Accept", "application/json")
+	// 平台要求的固定头(Kiro 的 AWS SDK 系列头等): 少了它上游会拒, 且不说明原因。
+	for name, value := range model.AccountOAuthHeaders(spec) {
+		request.Header.Set(name, value)
+	}
 
 	response, err := client.Do(request)
 	if err != nil {
@@ -152,18 +155,32 @@ func AccountRefresh(ctx context.Context, channelKeyID int, now time.Time) error 
 	if err := json.Unmarshal([]byte(channelKey.Key), &updated); err != nil || updated == nil {
 		updated = map[string]any{}
 	}
-	// 键名一律取平台规格里的字段名, 不能写死 "refresh_token":
-	// Kiro 的字段是 camelCase 的 refreshToken, 写错键名不会报错, 但下一次刷新读不到它,
-	// 就变成"账号忽然失效" —— 症状与账号被封完全一样, 极难排查。
-	writeTokens := func(target map[string]any) {
-		target[spec.AccessTokenField] = result.AccessToken
-		target[spec.RefreshTokenField] = result.RefreshToken
+	// 回写的键名与层级必须与"解析层读的那一层"完全对齐, 否则会写出一个自己读不回来的文件:
+	// 令牌确实换到了, 但下次刷新读不到, 症状与账号被封一模一样。
+	//
+	// 三种形状:
+	//   顶层 snake_case        —— Codex 及令牌端点响应原文
+	//   {"tokens":{...}}       —— Codex CLI 导出
+	//   {"claudeAiOauth":{..}} —— Claude Code 凭据文件(camelCase)
+	accessField, refreshField, container := model.AccountOAuthStoreFields(spec)
+	writeTokensTo := func(target map[string]any) {
+		target[accessField] = result.AccessToken
+		target[refreshField] = result.RefreshToken
 	}
-	if inner, ok := updated["tokens"].(map[string]any); ok {
-		// CLI 导出形状: 写回也要写回原来那一层, 否则形状被改掉, 下次解析走另一条分支。
-		writeTokens(inner)
-	} else {
-		writeTokens(updated)
+	// 判定写回层级时按平台声明的 container 优先, 再回退到实际存在的 tokens 层:
+	// Claude 的 container 是 claudeAiOauth, 若那次导出的文件里没有该层则落到顶层。
+	switch {
+	case container != "":
+		layer, ok := updated[container].(map[string]any)
+		if !ok {
+			layer = map[string]any{}
+			updated[container] = layer
+		}
+		writeTokensTo(layer)
+	case hasMapAt(updated, "tokens"):
+		writeTokensTo(updated["tokens"].(map[string]any))
+	default:
+		writeTokensTo(updated)
 	}
 	encoded, err := json.Marshal(updated)
 	if err != nil {
@@ -176,7 +193,7 @@ func AccountRefresh(ctx context.Context, channelKeyID int, now time.Time) error 
 	identity := model.ChannelKey{ID: channelKey.ID, ChannelID: channelKey.ChannelID,
 		ChannelKeyConfig: model.ChannelKeyConfig{Name: channelKey.Name}}
 	updates := map[string]any{
-		"key":             string(encoded),
+		"key":              string(encoded),
 		"token_expires_at": result.ExpiresAt,
 		"token_refresh_at": refreshedAt,
 	}
@@ -238,6 +255,16 @@ func AccountRefreshesDue(now time.Time) []model.ChannelKey {
 		}
 	}
 	return due
+}
+
+// hasMapAt 报告 target[key] 是否为 JSON 对象, 避免在 switch 里重复写类型断言。
+func hasMapAt(target map[string]any, key string) bool {
+	value, ok := target[key]
+	if !ok {
+		return false
+	}
+	_, isMap := value.(map[string]any)
+	return isMap
 }
 
 func accountEmailOrExisting(credential model.AccountCredential, existing string) string {

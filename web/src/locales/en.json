@@ -1421,10 +1421,10 @@
             "rawPlaceholder": "Paste the account JSON here",
             "rawHint": {
                 "codex": "Accepts both a flat object (access_token, refresh_token, account_id) and the CLI export wrapped in tokens.",
-                "kiro": "Needs camelCase refreshToken, clientId and clientSecret.",
+                "kiro": "Needs camelCase refreshToken, clientId and clientSecret. The token endpoint expects camelCase request fields, so do not rename them.",
                 "gemini": "Cookie-based: needs c_ses (and optionally c_oses, csesidx, config_id).",
                 "grok": "Cookie-based: needs sso. sso-rw is not used for auth.",
-                "claude": "Accepts access_token and refresh_token."
+                "claude": "Claude Code credential file: the tokens live under claudeAiOauth as camelCase accessToken / refreshToken / expiresAt (milliseconds). A flat access_token + refresh_token object also works."
             },
             "nameRequired": "Enter a credential name",
             "rawRequired": "Paste the account JSON",

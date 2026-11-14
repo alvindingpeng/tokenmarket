@@ -1,4 +1,3 @@
-
 package model
 
 import (
@@ -173,7 +172,6 @@ func TestAccountCredentialNeedsRefreshBoundary(t *testing.T) {
 	}
 }
 
-
 // containsText 判断错误文本是否包含某段说明。
 func containsText(haystack, needle string) bool {
 	return strings.Contains(haystack, needle)
@@ -183,4 +181,73 @@ func containsText(haystack, needle string) bool {
 func base64URLOfJSON(t *testing.T, body string) string {
 	t.Helper()
 	return base64.RawURLEncoding.EncodeToString([]byte(body))
+}
+
+// Claude Code 的凭据文件把 OAuth 凭据放在 claudeAiOauth 下, 且字段是 camelCase:
+//   {"claudeAiOauth":{"accessToken":..,"refreshToken":..,"expiresAt":<毫秒>,...}}
+// 早先 Claude 复用了 Codex 的解析分支(只认顶层 snake_case), 结果是从真实凭据文件里
+// 读不到任何令牌 —— 而导入是"成功"的, 转发时才以空 Bearer 全部 401 暴露。
+
+const claudeNestedCredentials = `{"claudeAiOauth":{"accessToken":"sk-ant-oat-1","refreshToken":"rt-claude","expiresAt":1900000000000,"scopes":["user:inference"]}}`
+
+func TestAccountJSONParseClaudeNestedCredentials(t *testing.T) {
+	credential, err := AccountJSONParse(AccountPlatformClaude, []byte(claudeNestedCredentials))
+	if err != nil {
+		t.Fatalf("parse claude: %v", err)
+	}
+	if credential.Kind != AccountKindOAuth {
+		t.Fatalf("claude kind = %q, want oauth", credential.Kind)
+	}
+	if credential.AccessToken != "sk-ant-oat-1" {
+		t.Fatalf("access = %q (应从 claudeAiOauth.accessToken 读出)", credential.AccessToken)
+	}
+	if credential.RefreshToken != "rt-claude" {
+		t.Fatalf("refresh = %q", credential.RefreshToken)
+	}
+	// expiresAt 是毫秒时间戳, 不是 RFC3339 字符串。按字符串解析会永远失败,
+	// 于是到期时间恒为零值、定时任务永不刷新 —— 账号到期即静默失效。
+	want := time.Unix(0, 1900000000*int64(time.Second)).UTC()
+	if !credential.ExpiresAt.Equal(want) {
+		t.Fatalf("expires = %v, want %v (毫秒时间戳)", credential.ExpiresAt, want)
+	}
+}
+
+// 也容忍顶层 snake_case(令牌端点响应的形状), 因为有人直接导出的就是那个。
+func TestAccountJSONParseClaudeFlatShape(t *testing.T) {
+	raw := []byte(`{"access_token":"flat-1","refresh_token":"rt-flat","email":"u@example.com"}`)
+	credential, err := AccountJSONParse(AccountPlatformClaude, []byte(raw))
+	if err != nil {
+		t.Fatalf("parse claude flat: %v", err)
+	}
+	if credential.AccessToken != "flat-1" || credential.RefreshToken != "rt-flat" {
+		t.Fatalf("flat shape 读错: %+v", credential)
+	}
+	if credential.Email != "u@example.com" {
+		t.Fatalf("email = %q", credential.Email)
+	}
+}
+
+// Claude 缺令牌时的报错要指到真正的位置(claudeAiOauth.accessToken),
+// 否则使用者会去翻一个不存在的顶层字段。
+func TestAccountJSONParseClaudeMissingTokenPointsAtNestedPath(t *testing.T) {
+	_, err := AccountJSONParse(AccountPlatformClaude, []byte(`{"claudeAiOauth":{"refreshToken":"rt"}}`))
+	if err == nil {
+		t.Fatal("缺 accessToken 应当报错")
+	}
+	if !containsText(err.Error(), "claudeAiOauth.accessToken") {
+		t.Fatalf("错误应指明 claudeAiOauth.accessToken, got %v", err)
+	}
+}
+
+// Kiro 的 accessToken 曾经漏读 —— 后果是转发拿到空 Bearer 全部 401 且无任何报错。
+// 这条测试就是为那个缺陷留的。
+func TestAccountJSONParseKiroReadsAccessToken(t *testing.T) {
+	raw := []byte(`{"accessToken":"kiro-at","refreshToken":"rt","clientId":"cid","clientSecret":"sec"}`)
+	credential, err := AccountJSONParse(AccountPlatformKiro, raw)
+	if err != nil {
+		t.Fatalf("parse kiro: %v", err)
+	}
+	if credential.AccessToken != "kiro-at" {
+		t.Fatalf("kiro accessToken = %q, want kiro-at", credential.AccessToken)
+	}
 }

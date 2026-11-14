@@ -1,4 +1,3 @@
-
 package relay
 
 // 上游凭据的令牌提供者。
@@ -33,19 +32,21 @@ func (p channelKeyTokenProvider) Get(_ context.Context) string {
 
 // channelKeyTokenOf 从一条凭据取本轮使用的令牌。
 //
-// 账号凭据取 access_token; 非账号凭据原样返回 Key。
+// 只有 oauth 类账号才需要从 JSON 里解令牌; 其余一律原样返回 Key。
+//
+// 这一步不能只判 AccountKind != "": cookie 类账号(gemini/grok)的 Key 存的是会话串本身,
+// 根本不是 JSON。把它们也送去解析会拿到空串, 于是转发带一个空 Bearer ——
+// 症状是"cookie 账号导入后完全不工作", 而且没有任何报错指向这里。
+//
 // 这里不做"是否过期"的判断 —— 过期与否由定时任务负责刷新; 若它因故停摆, 这里返回过期令牌,
 // 上游回 401, 熔断机制会把这把凭据摘下来并告警。让失败走既有回路, 好过在这里静默兜底。
 func channelKeyTokenOf(channelKey model.ChannelKey) string {
-	if channelKey.AccountKind == "" {
+	if channelKey.AccountKind != model.AccountKindOAuth {
 		return channelKey.Key
 	}
 	credential, err := model.AccountJSONParse(channelKey.AccountPlatform, []byte(channelKey.Key))
 	if err != nil {
 		return ""
 	}
-	if credential.AccessToken != "" {
-		return credential.AccessToken
-	}
-	return ""
+	return credential.AccessToken
 }

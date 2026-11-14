@@ -1,4 +1,3 @@
-
 package handlers
 
 // 上游账号 JSON 的导入接口。
@@ -23,10 +22,13 @@ import (
 func init() {
 	router.NewGroupRouter("/api/v1/channel/account").
 		Use(middleware.Auth()).
-		Use(middleware.RequireJSON()).
 		AddRoute(
 			// 支持的平台与字段形状: 每种平台的具体键名见 model/account_json.go 的解析分支。
+			// RequireJSON 挂在这条路由而非整个分组: /import 收的是 JSON body,
+			// 而 /:id/refresh 的入参全在 URL 里, 不放宽会让它要求调用方发一个空 body,
+			// 否则回 415 —— 那种报错与"刷新失败"看起来毫不相干, 排查成本很高。
 			router.NewRoute("/import", http.MethodPost).
+				Use(middleware.RequireJSON()).
 				Allow(model.RoleAdmin, model.RoleReseller).
 				Handle(importChannelAccount),
 		).

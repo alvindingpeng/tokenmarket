@@ -1,4 +1,3 @@
-
 package model
 
 // 上游账号 JSON 的解析与规格(Codex 起步, 其余平台后续按同一套扩展)。
@@ -38,15 +37,15 @@ const (
 // 不直接复用 ChannelKeyConfig: 后者是落库与编辑表单的扁平结构, 与"一份导入的 JSON 说了什么"
 // 不是同一件事。解析先产出这个中间形态, 再由 op 侧写入凭据列, 两个边界各管一段。
 type AccountCredential struct {
-	Platform     string    // codex | kiro | gemini | grok | claude
-	Kind         string    // oauth | cookie
-	AccessToken  string    // oauth: 当前访问令牌
-	RefreshToken string    // oauth: 续期令牌; 每次刷新上游都会轮换它
-	ExpiresAt    time.Time // oauth: 到期时间; 零值表示未知(靠刷新失败或 401 才发现)
-	AccountID    string    // oauth: 上游账号标识(Codex 的 chatgpt_account_id)
-	ClientID     string    // kiro: OIDC client id; codex 用内置常量
-	ClientSecret string    // kiro: OIDC client secret
-	Email        string    // 展示用; 来自 JSON 或 JWT claim
+	Platform     string            // codex | kiro | gemini | grok | claude
+	Kind         string            // oauth | cookie
+	AccessToken  string            // oauth: 当前访问令牌
+	RefreshToken string            // oauth: 续期令牌; 每次刷新上游都会轮换它
+	ExpiresAt    time.Time         // oauth: 到期时间; 零值表示未知(靠刷新失败或 401 才发现)
+	AccountID    string            // oauth: 上游账号标识(Codex 的 chatgpt_account_id)
+	ClientID     string            // kiro: OIDC client id; codex 用内置常量
+	ClientSecret string            // kiro: OIDC client secret
+	Email        string            // 展示用; 来自 JSON 或 JWT claim
 	Cookies      map[string]string // cookie 类平台的会话值
 }
 
@@ -67,7 +66,7 @@ func AccountJSONParse(platform string, raw []byte) (*AccountCredential, error) {
 
 	credential := &AccountCredential{Platform: platform, Cookies: map[string]string{}}
 	switch platform {
-	case AccountPlatformCodex, AccountPlatformClaude:
+	case AccountPlatformCodex:
 		credential.Kind = AccountKindOAuth
 		credential.AccessToken = accountJSONString(fields["access_token"])
 		credential.RefreshToken = accountJSONString(fields["refresh_token"])
@@ -81,6 +80,35 @@ func AccountJSONParse(platform string, raw []byte) (*AccountCredential, error) {
 		}
 		if credential.RefreshToken == "" {
 			return nil, fmt.Errorf("%s: 缺少 refresh_token, 该账号无法自动续期", platform)
+		}
+	case AccountPlatformClaude:
+		credential.Kind = AccountKindOAuth
+		// Claude Code 把 OAuth 凭据放在 claudeAiOauth 下, 且字段是 camelCase:
+		//   {"claudeAiOauth":{"accessToken":..,"refreshToken":..,"expiresAt":..,"scopes":[..]}}
+		// 这与 Codex 的顶层 snake_case 完全不同 —— 早先让 Claude 复用 Codex 的分支,
+		// 结果是从 Claude 的凭据文件里读不到任何令牌(它压根没有顶层 access_token)。
+		// 同时容忍顶层 snake_case, 因为也有人导出的是令牌端点响应原文那种形状。
+		nested := fields
+		if inner, ok := fields["claudeAiOauth"].(map[string]any); ok {
+			nested = inner
+		}
+		credential.AccessToken = accountJSONFirstString(nested["accessToken"], nested["access_token"])
+		credential.RefreshToken = accountJSONFirstString(nested["refreshToken"], nested["refresh_token"])
+		credential.Email = accountJSONString(fields["email"])
+		// expiresAt 是毫秒时间戳(不是 RFC3339 字符串), 这是 Claude 凭据文件特有的形态:
+		// 按字符串解析会永远失败, 于是到期时间恒为零值, 定时任务永不刷新 —— 账号到期即静默失效。
+		if millis, ok := accountJSONNumberOf(nested["expiresAt"]); ok && millis > 0 {
+			credential.ExpiresAt = timeUnixMillis(millis)
+		} else if millis, ok := accountJSONNumberOf(nested["expires_at"]); ok && millis > 0 {
+			credential.ExpiresAt = timeUnixMillis(millis)
+		} else {
+			credential.ExpiresAt = accountJSONExpiry(nested["expired"], credential.AccessToken)
+		}
+		if credential.AccessToken == "" {
+			return nil, fmt.Errorf("claude: 缺少 accessToken (Claude Code 凭据文件应为 claudeAiOauth.accessToken)")
+		}
+		if credential.RefreshToken == "" {
+			return nil, fmt.Errorf("claude: 缺少 refreshToken, 该账号无法自动续期")
 		}
 	case AccountPlatformKiro:
 		credential.Kind = AccountKindOAuth
@@ -142,6 +170,30 @@ func AccountCredentialNeedsRefresh(credential AccountCredential, now time.Time, 
 	// 差这一秒的代价不是「晚一点刷新」, 而是这一轮转发必然拿过期令牌打上游、吃一个 401,
 	// 再走重试 —— 一次可避免的失败与一次多余的上游调用。
 	return !now.Add(lead).Before(credential.ExpiresAt)
+}
+
+// accountJSONFirstString 依次尝试多个键名, 返回第一个非空值。
+// 用于同一语义在不同导出形状里用了不同命名的场合(如 accessToken / access_token)。
+func accountJSONFirstString(values ...any) string {
+	for _, value := range values {
+		if text := accountJSONString(value); text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+// accountJSONNumberOf 把 JSON 数字收敛成 int64。encoding/json 默认解成 float64。
+func accountJSONNumberOf(value any) (int64, bool) {
+	if number, ok := value.(float64); ok {
+		return int64(number), true
+	}
+	return 0, false
+}
+
+// timeUnixMillis 把毫秒时间戳转成 time.Time。Claude 的 expiresAt 就是这一种。
+func timeUnixMillis(millis int64) time.Time {
+	return time.Unix(0, millis*int64(time.Millisecond)).UTC()
 }
 
 func accountJSONString(value any) string {

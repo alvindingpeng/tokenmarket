@@ -26,6 +26,13 @@ func accountFakeTokenServer(t *testing.T, status int, payload map[string]any, se
 		if seenRequest != nil {
 			_ = r.ParseForm()
 			captured := map[string]string{"content_type": r.Header.Get("Content-Type")}
+			// 平台要求的固定头也要捕获: Kiro 少了 x-amz-user-agent 会被 AWS 拒,
+			// 而那种失败在响应里看不出原因。
+			for _, name := range []string{"User-Agent", "x-amz-user-agent", "amz-sdk-request"} {
+				if value := r.Header.Get(name); value != "" {
+					captured["header:"+name] = value
+				}
+			}
 			for key := range r.Form {
 				captured[key] = r.Form.Get(key)
 			}
