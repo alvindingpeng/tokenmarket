@@ -1438,7 +1438,27 @@
             "refreshNow": "Refresh now",
             "refreshed": "Token refreshed",
             "submit": "Import",
-            "cancel": "Close"
+            "cancel": "Close",
+            "state": {
+                "healthy": "OK",
+                "expiring": "Expiring",
+                "manual": "Manual",
+                "invalid": "Invalid",
+                "hint": {
+                    "healthy": "Token is valid and refreshes automatically in the background.",
+                    "expiring": "The token expires soon; the background task will refresh it. You can also refresh now.",
+                    "invalid": "Refresh was rejected by the upstream. This usually means the account is revoked or expired, and it must be re-imported.",
+                    "manual": "Cookie-based account: it cannot renew automatically, so it stops forwarding once the session expires."
+                },
+                "remainingMinutes": "{count} min left",
+                "remainingHours": "{count} h left",
+                "remainingDays": "{count} days left",
+                "lastRefresh": "Last refreshed: {at}"
+            },
+            "targetChannel": "Target channel",
+            "targetChannelPlaceholder": "Choose the channel to attach this account to",
+            "targetChannelEmpty": "Create a channel first; an account must belong to one.",
+            "channelRequired": "Choose the target channel first"
         }
     },
     "share": {

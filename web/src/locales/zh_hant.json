@@ -1438,7 +1438,27 @@
             "refreshNow": "立即重新整理",
             "refreshed": "權杖已重新整理",
             "submit": "匯入",
-            "cancel": "關閉"
+            "cancel": "關閉",
+            "state": {
+                "healthy": "正常",
+                "expiring": "將到期",
+                "manual": "需人工",
+                "invalid": "已失效",
+                "hint": {
+                    "healthy": "權杖有效, 背景會自動續期。",
+                    "expiring": "權杖即將到期, 背景任務會續期; 也可以現在就手動重新整理。",
+                    "invalid": "上游拒絕了續期請求。通常表示帳號已被撤銷或過期, 需要重新匯入。",
+                    "manual": "Cookie 類帳號無法自動續期, 工作階段過期後就會停止轉發。"
+                },
+                "remainingMinutes": "剩 {count} 分鐘",
+                "remainingHours": "剩 {count} 小時",
+                "remainingDays": "剩 {count} 天",
+                "lastRefresh": "最近重新整理: {at}"
+            },
+            "targetChannel": "目標渠道",
+            "targetChannelPlaceholder": "選擇要把這個帳號掛到哪個渠道",
+            "targetChannelEmpty": "請先建立一個渠道 —— 帳號必須屬於某個渠道。",
+            "channelRequired": "請先選擇目標渠道"
         }
     },
     "share": {

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
     MorphingDialog,
     MorphingDialogClose,
@@ -26,13 +27,25 @@ import { accountImport, accountRefreshKey, type AccountImportResult, type Accoun
  * 平台列表写死在前端而不是从后端拉: 支持哪些平台由代码里的解析分支决定,
  * 后端没有「列出我支持哪些平台」的接口, 硬造一个只会多一份需要同步的清单。
  */
-export function AccountImport({ channelId, onImported }: { channelId: number; onImported?: () => void }) {
+
+export function AccountImport({ channelId, onImported, channels }: {
+    // channelId 有值时是"渠道内导入": 目标固定, 不再让使用者选。
+    // 无值时是"独立导入": 从渠道列表页或其它入口进来, 此时必须让他选目标渠道 ——
+    // 凭据在数据模型上必须属于某个渠道(ChannelKey.ChannelID 非空), 所以"先选渠道"
+    // 是绕不开的, 但至少不必先钻进某个渠道的编辑表单再回来。
+    channelId?: number;
+    onImported?: () => void;
+    // channels 只在独立导入模式下需要: 列出可选的目标渠道。
+    channels?: { id: number; name: string }[];
+}) {
     const t = useTranslations('channel.account');
     const [platform, setPlatform] = useState<AccountPlatform>('codex');
     const [name, setName] = useState('');
     const [raw, setRaw] = useState('');
     const [busy, setBusy] = useState(false);
     const [result, setResult] = useState<AccountImportResult | null>(null);
+    // 独立导入模式下的目标渠道。默认取第一个: 只有一个渠道时省掉一次点击, 多个时也要让人看到这一栏。
+    const [targetChannel, setTargetChannel] = useState<number | undefined>(channelId ?? channels?.[0]?.id);
 
     const submit = async () => {
         if (!name.trim()) {
@@ -45,7 +58,14 @@ export function AccountImport({ channelId, onImported }: { channelId: number; on
         }
         setBusy(true);
         try {
-            const imported = await accountImport({ channel_id: channelId, platform, name: name.trim(), raw });
+            // 目标渠道在两种模式下都必须是确定的: 拿不到就无法提交, 早在这里挡住比让后端返回一个
+        // 看不出原因的错误要好。
+        const target = channelId ?? targetChannel;
+        if (target === undefined) {
+            toast.error(t('channelRequired'));
+            return;
+        }
+        const imported = await accountImport({ channel_id: target, platform, name: name.trim(), raw });
             setResult(imported);
             // 带 warning 表示已导入但首次刷新失败: 用警告色而不是失败色, 因为数据确实落库了。
             if (imported.warning) toast.warning(imported.warning);
@@ -74,6 +94,30 @@ export function AccountImport({ channelId, onImported }: { channelId: number; on
                     </MorphingDialogDescription>
 
                     <div className="mt-4 space-y-3">
+                        {/* 目标渠道只在独立导入模式下出现: 渠道内导入时目标已经确定, 再摆一个不可改的
+                            下拉只会让人以为可以改。 */}
+                        {channelId === undefined && (
+                            <div className="space-y-1.5">
+                                <Label>{t('targetChannel')}</Label>
+                                <Select
+                                    value={targetChannel === undefined ? '' : String(targetChannel)}
+                                    onValueChange={(value) => setTargetChannel(Number(value))}
+                                    disabled={!channels || channels.length === 0}
+                                >
+                                    <SelectTrigger className="w-full">
+                                        <SelectValue placeholder={t('targetChannelPlaceholder')} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {(channels ?? []).map((item) => (
+                                            <SelectItem key={item.id} value={String(item.id)}>{item.name}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                {(!channels || channels.length === 0) && (
+                                    <p className="text-xs text-muted-foreground">{t('targetChannelEmpty')}</p>
+                                )}
+                            </div>
+                        )}
                         <div className="space-y-1.5">
                             <Label>{t('platform')}</Label>
                             <div className="flex flex-wrap gap-2">

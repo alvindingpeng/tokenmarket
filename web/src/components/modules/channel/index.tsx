@@ -8,6 +8,7 @@ import { MorphingDialogDescription } from '@/components/ui/morphing-dialog';
 import { Card } from './Card';
 import { ChannelForm } from './Form';
 import { ChannelReviewQueue } from './Review';
+import { AccountImport } from './AccountImport';
 import { VirtualizedGrid } from '@/components/common/VirtualizedGrid';
 import { ListErrorState } from '@/components/common/ListErrorState';
 
@@ -111,6 +112,15 @@ export function Channel() {
                         {label}
                     </button>
                 ))}
+                {/* 独立导入入口: 摆在 Tab 条右侧, 与"渠道列表/审核队列"同一视觉层级。
+                    放这里是因为它是跨渠道的操作 —— 放进某张渠道卡片, 会被误读成"这个账号属于那张卡片"。
+                    渠道列表本身来自 statsData, 直接拿来当目标渠道下拉的数据源, 不必另发一次请求。 */}
+                <div className="ml-auto">
+                    <AccountImport
+                        channels={(statsData ?? []).map((item) => ({ id: item.channel_id, name: item.channel_name }))}
+                        onImported={() => void refetchStats()}
+                    />
+                </div>
             </div>
             {view === 'review' && isAdmin ? (
                 <ChannelReviewQueue />

@@ -1,4 +1,4 @@
-import type { ChannelDetail } from '@/api/channel';
+import type { ChannelDetail, ChannelKey } from '@/api/channel';
 
 // ChannelFormState 是渠道表单的全部可编辑内容。
 // 全按名称组织而不存主键: 后端凭据与模型都按名称匹配增删改, 而新建渠道和新加模型时主键尚不存在。
@@ -13,12 +13,29 @@ export type ChannelFormState = {
     anthropic_message_path: string;
     keys: {
         name: string;
-        key: string; // 上游访问凭据; 讯飞渠道用它承载 API Key。
+        key: string; // 上游访问凭据; 讯飞渠道用它承载 API Key; 账号凭据承载整包账号 JSON。
         // 讯飞星火专用(dialect=xunfei 才填写); 读侧可能缺省, 归一为空串, 写侧恒带三项。
         app_id: string;
         api_secret: string;
         domain: string;
         enabled: boolean;
+        // 以下字段只用于界面展示, 提交时不带。
+        //
+        // 为什么留在表单状态里: 凭据列表要显示"这是哪个平台、到期没有", 而这份数据是
+        // 随渠道详情一起读回来的。若在 fromChannel 里丢掉, 列表就只能退回显示掩码 JSON ——
+        // 而账号凭据的掩码 JSON 是 '{"' 开头的一串随机字符, 认不出是哪个账号。
+        //
+        // 提交时为什么不带: 后端 syncChannelKeys 只按 key/app_id/api_secret/domain/enabled
+        // 五个字段比对与更新, 账号元数据列在中途不会被覆盖; 显式不带可以避免
+        // "把展示字段当编辑字段"的误读。
+        // 类型直接借 ChannelKey 的同名字段, 不再抄一份联合类型:
+        // 抄一份的代价是后端加了平台之后两处都要改, 而漏改的那处只在渲染时才暴露。
+        account_kind?: ChannelKey['account_kind'];
+        account_platform?: ChannelKey['account_platform'];
+        account_email?: string;
+        token_expires_at?: string;
+        token_refresh_at?: string;
+        disabled_until?: string | null;
     }[];
     // 出口池按名称组织, 与凭据一致: 后端同样按名称增删改, 新建渠道时主键尚不存在。
     egresses: { name: string; kind: ChannelDetail['egresses'][number]['kind']; url: string; region: string; weight: number; enabled: boolean }[];
@@ -70,9 +87,12 @@ export function fromChannel(channel: ChannelDetail): ChannelFormState {
         openai_response_path: channel.openai_response_path,
         anthropic_message_path: channel.anthropic_message_path,
         // 讯飞三项读侧可能缺省, 归一为空串: 表单里处处少判一次 undefined。
-        keys: channel.keys.map(({ name, key, enabled, app_id, api_secret, domain }) => ({
+        keys: channel.keys.map(({ name, key, enabled, app_id, api_secret, domain,
+            account_kind, account_platform, account_email, token_expires_at, token_refresh_at, disabled_until }) => ({
             name, key, enabled,
             app_id: app_id ?? '', api_secret: api_secret ?? '', domain: domain ?? '',
+            // 账号元数据原样带过来供列表展示(见 ChannelFormState.keys 的说明)。
+            account_kind, account_platform, account_email, token_expires_at, token_refresh_at, disabled_until,
         })),
         // 后端承诺 egresses 恒为数组; 老库没有出口时就是空数组。
         egresses: (channel.egresses ?? []).map(({ name, kind, url, region, weight, enabled }) => ({ name, kind, url, region, weight, enabled })),

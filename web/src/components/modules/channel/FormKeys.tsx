@@ -7,6 +7,7 @@ import { IconButton } from '@/components/common/IconButton';
 import { useModelProbe } from './probe';
 import { grantKey, type ChannelFormState } from './state';
 import { AccountImport } from './AccountImport';
+import { AccountIdentity, AccountStateBadge } from './AccountBadge';
 
 // maskKey 显示凭据尾部, 其余以点替代; 过短的秘密连首尾都遮不住, 整条掩掉。
 function maskKey(key: string) {
@@ -174,10 +175,17 @@ export function FormKeys({ state, setState, channelId, onAccountImported }: {
                                 </span>
                             </>
                         )}
-                        <span className="text-xs font-mono text-muted-foreground flex-1 truncate">
-                            {channelKey.key ? maskKey(channelKey.key) : t('keyEmpty')}
-                            {state.dialect === 'xunfei' && ` / ${channelKey.api_secret ? maskKey(channelKey.api_secret) : t('keyEmpty')}`}
-                        </span>
+                        {channelKey.account_kind ? (
+                            <>
+                                <span className="flex-1 min-w-0"><AccountIdentity channelKey={channelKey} /></span>
+                                <AccountStateBadge channelKey={channelKey} />
+                            </>
+                        ) : (
+                            <span className="text-xs font-mono text-muted-foreground flex-1 truncate">
+                                {channelKey.key ? maskKey(channelKey.key) : t('keyEmpty')}
+                                {state.dialect === 'xunfei' && ` / ${channelKey.api_secret ? maskKey(channelKey.api_secret) : t('keyEmpty')}`}
+                            </span>
+                        )}
                         {/* 只显示该凭据自己的授权数, 模型集合是渠道级共享的, 总数对每条凭据都一样, 摆出来会被误读成它已获取的模型数。 */}
                         <span className="text-xs text-muted-foreground tabular-nums">
                             {grantCount(channelKey.name)}

@@ -40,7 +40,15 @@ export type ChannelKey = {
     account_email?: string;
     // token_expires_at 是当前访问令牌的到期时间; cookie 类账号没有这个字段(它们无法续期)。
     token_expires_at?: string;
+    // token_refresh_at 是最近一次刷新成功的时间; 空表示从未刷新过。
     token_refresh_at?: string;
+    // disabled_until 是凭据级熔断的截止时间(后端 ChannelKeyConfig 一直带着它)。
+    // 账号界面靠它区分"到期时间还在未来但其实转发不出去"的那种状态。
+    disabled_until?: string | null;
+    // breaker_trips 是自上次成功以来累计熔断次数; 连续失败会翻倍熔断时长。
+    breaker_trips?: number;
+    // error_count 是熔断前的连续错误数(熔断触发时会清零), 不是累计错误总数。
+    error_count?: number;
 };
 
 // ChannelGrant 是渠道内的一条上游授权：指定模型使用指定凭据时支持的协议集合，也是转发的最小单位。
