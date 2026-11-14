@@ -3236,6 +3236,7 @@
             "expires": "Token expires",
             "lastRefresh": "Last refresh",
             "action": "Action"
-        }
+        },
+        "accountCount": "{count} account(s)"
     }
 }

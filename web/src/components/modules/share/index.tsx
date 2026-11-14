@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'use-intl';
 import { Copy, ExternalLink, Link2, PackageCheck, RefreshCw, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { useChannelStats, type ChannelStatsFormatted } from '@/api/channel';
+import { useChannelStats, type ChannelStatsFormatted, accountList, type AccountListEntry } from '@/api/channel';
 import {
     useApplyChannelReprice,
     useChannelListings,
@@ -15,6 +16,7 @@ import {
 import { useFxRates, formatFxSnapshotDay, type FxRateItem } from '@/api/fx';
 import { fxRiskOf } from '@/lib/fxRisk';
 import { useModelList } from '@/api/model';
+import { accountStateOfAccount, type AccountState } from '@/components/modules/channel/accountState';
 import { useSettingList } from '@/api/setting';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -493,7 +495,7 @@ function ListingRows({ channelID }: { channelID: number }) {
 }
 
 // ShareCard 单个渠道的发布卡片: 发布开关、唯一编码与上架定价入口。
-function ShareCard({ channel }: { channel: ChannelStatsFormatted }) {
+function ShareCard({ channel, accounts }: { channel: ChannelStatsFormatted; accounts?: AccountListEntry[] }) {
     const t = useTranslations('share');
     const publishChannel = usePublishChannel();
 
@@ -535,6 +537,9 @@ function ShareCard({ channel }: { channel: ChannelStatsFormatted }) {
                     disabled={publishChannel.isPending || (!channel.shared && publishBlocked)}
                 />
             </header>
+            {/* 账号健康度: 增强信息, 不是发布闸门。失效不自动阻断发布(那会引入新规则),
+                只让改价/上架的人一眼看见账号状态。无账号渠道(纯静态 Key)不显示。 */}
+            {accounts && accounts.length > 0 && <AccountHealthSummary accounts={accounts} />}
             {/* 未过审时开关禁用并解释原因; 已发布的渠道转 stale 不自动下线, 只挡重新发布。 */}
             {!channel.shared && publishBlocked && (
                 <p className="text-xs text-muted-foreground">{t('reviewGate.' + channel.review_status)}</p>
@@ -595,6 +600,46 @@ function ShareCard({ channel }: { channel: ChannelStatsFormatted }) {
     );
 }
 
+
+// AccountHealthSummary 一张渠道卡上的账号健康度摘要。
+//
+// 显示形式刻意不用图标: ShareCard 已有发布开关、编码、改价按钮等视觉元素,
+// 再堆图标会抢焦点。这里用文字 + 颜色, 只在有问题时上警告色 ——
+// 让运营在改价/上架时一眼看见"账号这块要不要管", 而不是又学一套图例。
+//
+// 为什么不用账号页那张大表: 那是管理面, 这里是发布面。运营在发布前
+// 只需要知道"这个渠道的账号整体健不健康", 不需要逐账号的到期时间与刷新历史。
+function AccountHealthSummary({ accounts }: { accounts: AccountListEntry[] }) {
+    const t = useTranslations('accounts');
+    const counts = useMemo(() => {
+        const initial: Record<AccountState, number> = { healthy: 0, expiring: 0, manual: 0, invalid: 0 };
+        for (const account of accounts) initial[accountStateOfAccount(account)] += 1;
+        return initial;
+    }, [accounts]);
+
+    // 全正常时也显示: 运营需要确认"账号这块没问题", 而不是看到空白去猜它有没有账号。
+    const states = (Object.keys(counts) as AccountState[]).filter((state) => counts[state] > 0);
+    const TONES: Record<AccountState, string> = {
+        healthy: 'text-emerald-600 dark:text-emerald-500',
+        expiring: 'text-amber-600 dark:text-amber-500',
+        manual: 'text-muted-foreground',
+        invalid: 'text-destructive',
+    };
+
+    return (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+            <span className="font-medium text-muted-foreground">{t('accountCount', { count: accounts.length })}</span>
+            {states.map((state) => (
+                <span key={state} className="inline-flex items-center gap-1">
+                    <span className={"size-1.5 rounded-full " + TONES[state].split(' ')[0]} />
+                    <span className="text-muted-foreground">{t('state.' + state)}</span>
+                    <span className="font-mono">{counts[state]}</span>
+                </span>
+            ))}
+        </div>
+    );
+}
+
 // shareCodeNumber 提取分享编码的数字部分用于排序; 空编码视为最大值排到最后。
 // 编码形如 "1001" / "abc-1002" / ""(未发布), 只取末尾数字, 无法解析时视为正无穷。
 function shareCodeNumber(code: string): number {
@@ -607,6 +652,23 @@ function shareCodeNumber(code: string): number {
 export default function Share() {
     const t = useTranslations('share');
     const { data: statsData, isLoading, isError } = useChannelStats();
+    // 账号健康度是增强信息: 拉取失败或为空时静默, 不影响页面主体(那是发布闸门的职责)。
+    // 与账号页共用 ['account-list'] queryKey, 缓存一份不重复拉。
+    const { data: accountData } = useQuery({
+        queryKey: ['account-list'],
+        queryFn: accountList,
+        staleTime: 60_000, // 定时任务是分钟级, 不必秒级刷新。
+    });
+    // 按渠道聚合, 每张卡只拿到自己的账号, 不必每张卡都扫全量。
+    const accountsByChannel = useMemo(() => {
+        const map = new Map<number, AccountListEntry[]>();
+        for (const account of accountData ?? []) {
+            const list = map.get(account.channel_id) ?? [];
+            list.push(account);
+            map.set(account.channel_id, list);
+        }
+        return map;
+    }, [accountData]);
 
     // channels 按固定次序稳定排序, 保证每次打开页面卡片顺序一致(此前依赖后端返回序, 结果随机):
     // 1) 已发布(shared)优先; 2) 启用(enabled)优先; 3) 分享编码数字升序; 4) 渠道名升序兜底。
@@ -636,7 +698,7 @@ export default function Share() {
         // 因此这一层必须自己滚, 否则内容超出视口后拖不动(手机上只能看到顶部一屏)。
         <div className="grid h-full grid-cols-1 content-start gap-4 overflow-y-auto overscroll-contain pb-24 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-3">
             {channels.map((channel) => (
-                <ShareCard key={channel.channel_id} channel={channel} />
+                <ShareCard key={channel.channel_id} channel={channel} accounts={accountsByChannel.get(channel.channel_id)} />
             ))}
         </div>
     );

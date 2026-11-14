@@ -3236,6 +3236,7 @@
             "expires": "權杖到期",
             "lastRefresh": "最近重新整理",
             "action": "操作"
-        }
+        },
+        "accountCount": "{count} 個帳號"
     }
 }

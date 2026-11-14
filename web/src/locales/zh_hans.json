@@ -3236,6 +3236,7 @@
             "expires": "令牌到期",
             "lastRefresh": "最近刷新",
             "action": "操作"
-        }
+        },
+        "accountCount": "{count} 个账号"
     }
 }

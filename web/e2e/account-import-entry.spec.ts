@@ -94,3 +94,21 @@ test('账号页的搜索能筛掉不匹配的行', async ({ page }) => {
     await expect(page.getByText('gemini-demo')).toBeVisible();
     await expect(page.getByText('claude-demo')).toBeHidden();
 });
+
+test('Share 页卡片显示账号健康度摘要', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: /^(Share|分享)$/ }).click();
+
+    // alpha 渠道有 claude oauth 账号(判据: 正常), beta 有 gemini cookie(判据: 需人工)。
+    // 健康度摘要必须渲染在卡片里 —— 这是第 5 项的核心: 改价/上架时一眼看见账号状态。
+    const alphaCard = page.locator('article').filter({ hasText: 'alpha' }).first();
+    await expect(alphaCard.getByText(/个账号|account\(s\)/)).toBeVisible();
+    // oauth 账号无到期时间 -> 判据正常。
+    await expect(alphaCard.getByText(/^(正常|OK)$/).first()).toBeVisible();
+
+    const betaCard = page.locator('article').filter({ hasText: 'beta' }).first();
+    await expect(betaCard.getByText(/个账号|account\(s\)/)).toBeVisible();
+    // cookie 类无法自动续期 -> 判据需人工, 绝不能被显示成正常。
+    await expect(betaCard.getByText(/^(需人工|Manual)$/).first()).toBeVisible();
+});
+
