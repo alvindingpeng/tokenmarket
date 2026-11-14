@@ -1476,7 +1476,17 @@
             "batchResultTitle": "Batch import result",
             "batchResultSucceeded": "Succeeded: {count}",
             "batchResultFailed": "Failed: {count}",
-            "batchResultDetails": "Details"
+            "batchResultDetails": "Details",
+            "cliHint": {
+                "title": "How to get this credential",
+                "runOnYourMachine": "On your own computer, run",
+                "openFile": "then open the file",
+                "windowsPath": "On Windows: {path}",
+                "pasteContent": "Copy the whole file content into the box below.",
+                "secretNote": "This file grants full access to the account. Treat it like a password and do not share it.",
+                "copy": "Copy",
+                "copyFailed": "Could not copy"
+            }
         }
     },
     "share": {

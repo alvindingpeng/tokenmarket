@@ -1476,7 +1476,17 @@
             "batchResultTitle": "批量匯入結果",
             "batchResultSucceeded": "成功: {count}",
             "batchResultFailed": "失敗: {count}",
-            "batchResultDetails": "明細"
+            "batchResultDetails": "明細",
+            "cliHint": {
+                "title": "如何取得這份憑證",
+                "runOnYourMachine": "在你自己電腦上執行",
+                "openFile": "然後開啟檔案",
+                "windowsPath": "Windows 上是 {path}",
+                "pasteContent": "把該檔案的完整內容複製到下面的輸入框。",
+                "secretNote": "該檔案等同於帳號的完整存取權限。請像對待密碼一樣對待它, 不要分享。",
+                "copy": "複製",
+                "copyFailed": "複製失敗"
+            }
         }
     },
     "share": {

@@ -17,6 +17,7 @@ import {
     MorphingDialogTrigger,
 } from '@/components/ui/morphing-dialog';
 import { accountImport, accountRefreshKey, type AccountImportResult, type AccountPlatform } from '@/api/channel';
+import { CliHint } from './CliHint';
 
 /**
  * AccountImport 导入上游账号 JSON 作为渠道凭据。
@@ -190,6 +191,9 @@ export function AccountImport({ channelId, onImported, channels }: {
                                     </Button>
                                 ))}
                             </div>
+                            {/* 选了有官方 CLI 的平台时, 告诉使用者去哪跑命令、文件在哪。
+                                无 CLI 引导的平台(kiro/gemini/grok)不渲染任何东西。 */}
+                            <CliHint platform={platform} />
                         </div>
                         <div className="space-y-1.5">
                             <Label htmlFor="account-name">{t('name')}</Label>

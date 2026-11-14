@@ -1476,7 +1476,17 @@
             "batchResultTitle": "批量导入结果",
             "batchResultSucceeded": "成功: {count}",
             "batchResultFailed": "失败: {count}",
-            "batchResultDetails": "明细"
+            "batchResultDetails": "明细",
+            "cliHint": {
+                "title": "如何获取这份凭据",
+                "runOnYourMachine": "在你自己电脑上运行",
+                "openFile": "然后打开文件",
+                "windowsPath": "Windows 上是 {path}",
+                "pasteContent": "把该文件的全部内容复制到下面的输入框。",
+                "secretNote": "该文件等同于账号的完整访问权限。请像对待密码一样对待它, 不要分享。",
+                "copy": "复制",
+                "copyFailed": "复制失败"
+            }
         }
     },
     "share": {
