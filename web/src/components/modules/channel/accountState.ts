@@ -1,4 +1,4 @@
-import type { ChannelKey } from '@/api/channel';
+import type { AccountListEntry, ChannelKey } from '@/api/channel';
 
 // 账号凭据的状态推导。
 //
@@ -18,6 +18,22 @@ export type AccountState = 'healthy' | 'expiring' | 'manual' | 'invalid';
 // 再判已失效, 最后才看时间。反过来的话, 一个已失效的账号只要到期时间还在未来,
 // 就会被显示成"正常" —— 那是最坏的一种误导。
 export function accountStateOf(key: ChannelKey, now: number = Date.now()): AccountState {
+    return stateOf({
+        account_kind: key.account_kind,
+        token_expires_at: key.token_expires_at,
+        disabled_until: key.disabled_until ?? undefined,
+    }, now);
+}
+
+// stateOf 是唯一的判据实现: 只依赖三个字段, 因此渠道凭据与账号列表条目都能走它。
+// 两个调用方各写一套的话必然漂移, 而漂移的表现是"渠道页说正常、账号页说失效"。
+type StateInput = {
+    account_kind?: '' | 'oauth' | 'cookie';
+    token_expires_at?: string | null;
+    disabled_until?: string | null;
+};
+
+function stateOf(key: StateInput, now: number): AccountState {
     // 非账号凭据不该调这个函数; 归到 manual 只是为了有个确定值, 调用方据 account_kind 分支。
     if (key.account_kind === 'cookie') {
         // cookie 类没有 refresh_token, 到期后无法自动恢复, 只能人工重导。
@@ -63,4 +79,16 @@ export function remainingOf(expiresAt: string | undefined, now: number = Date.no
     const hours = Math.floor(minutes / 60);
     if (hours < 48) return { hours };
     return { days: Math.floor(hours / 24) };
+}
+// accountStateOfAccount 是 accountStateOf 的账号列表版本。
+//
+// 为什么不让两个类型各写一套判断: 那两套必然漂移, 而漂移的后果是
+// "渠道页说正常、账号页说失效" —— 使用者会直接开始怀疑数据。
+// 这里把列表条目收敛成 ChannelKey 的子集形状, 判据仍然只有一处。
+export function accountStateOfAccount(account: AccountListEntry, now: number = Date.now()): AccountState {
+    return stateOf({
+        account_kind: account.kind,
+        token_expires_at: account.token_expires_at,
+        disabled_until: account.disabled_until,
+    }, now);
 }

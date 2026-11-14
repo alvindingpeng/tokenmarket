@@ -5,6 +5,7 @@ export const pageImports = {
     home: () => import('@/components/modules/home'),
     market: () => import('@/components/modules/market'),
     channel: () => import('@/components/modules/channel'),
+    accounts: () => import('@/components/modules/accounts'),
     group: () => import('@/components/modules/group'),
     model: () => import('@/components/modules/model'),
     ops: () => import('@/components/modules/ops'),

@@ -87,6 +87,7 @@
         "home": "主页",
         "market": "模型广场",
         "channel": "渠道",
+        "accounts": "上游账号",
         "group": "模型配置",
         "model": "价格",
         "log": "日志",
@@ -3206,6 +3207,35 @@
             "basic": "基础",
             "pro": "专业",
             "enterprise": "企业"
+        }
+    },
+    "accounts": {
+        "title": "上游账号",
+        "searchPlaceholder": "搜索渠道 / 凭据 / 平台",
+        "cookieTag": "cookie",
+        "disabled": "已停用",
+        "never": "未上报",
+        "neverRefreshed": "从未刷新",
+        "refreshNow": "立即刷新",
+        "refreshed": "令牌已刷新",
+        "empty": "还没有上游账号。去渠道页导入一个。",
+        "noMatch": "没有匹配的账号",
+        "remainingMinutes": "剩 {count} 分钟",
+        "remainingHours": "剩 {count} 小时",
+        "remainingDays": "剩 {count} 天",
+        "state": {
+            "healthy": "正常",
+            "expiring": "将到期",
+            "manual": "需人工",
+            "invalid": "已失效"
+        },
+        "table": {
+            "state": "状态",
+            "account": "账号",
+            "channel": "渠道",
+            "expires": "令牌到期",
+            "lastRefresh": "最近刷新",
+            "action": "操作"
         }
     }
 }

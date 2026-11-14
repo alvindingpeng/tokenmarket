@@ -87,6 +87,7 @@
         "home": "Home",
         "market": "Marketplace",
         "channel": "Channel",
+        "accounts": "Accounts",
         "group": "Model Config",
         "model": "Price",
         "log": "Log",
@@ -3206,6 +3207,35 @@
             "basic": "Basic",
             "pro": "Pro",
             "enterprise": "Enterprise"
+        }
+    },
+    "accounts": {
+        "title": "Upstream accounts",
+        "searchPlaceholder": "Search channel, credential or platform",
+        "cookieTag": "cookie",
+        "disabled": "disabled",
+        "never": "not reported",
+        "neverRefreshed": "never refreshed",
+        "refreshNow": "Refresh now",
+        "refreshed": "Token refreshed",
+        "empty": "No upstream accounts yet. Import one from the Channel page.",
+        "noMatch": "No account matches the search",
+        "remainingMinutes": "{count} min left",
+        "remainingHours": "{count} h left",
+        "remainingDays": "{count} days left",
+        "state": {
+            "healthy": "OK",
+            "expiring": "Expiring",
+            "manual": "Manual",
+            "invalid": "Invalid"
+        },
+        "table": {
+            "state": "State",
+            "account": "Account",
+            "channel": "Channel",
+            "expires": "Token expires",
+            "lastRefresh": "Last refresh",
+            "action": "Action"
         }
     }
 }

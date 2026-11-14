@@ -87,6 +87,7 @@
         "home": "主頁",
         "market": "模型廣場",
         "channel": "供應源",
+        "accounts": "上游帳號",
         "group": "模型配置",
         "model": "價格",
         "log": "日誌",
@@ -3206,6 +3207,35 @@
             "basic": "基礎",
             "pro": "專業",
             "enterprise": "企業"
+        }
+    },
+    "accounts": {
+        "title": "上游帳號",
+        "searchPlaceholder": "搜尋渠道 / 憑據 / 平台",
+        "cookieTag": "cookie",
+        "disabled": "已停用",
+        "never": "未回報",
+        "neverRefreshed": "從未重新整理",
+        "refreshNow": "立即重新整理",
+        "refreshed": "權杖已重新整理",
+        "empty": "還沒有上游帳號。去渠道頁匯入一個。",
+        "noMatch": "沒有符合的帳號",
+        "remainingMinutes": "剩 {count} 分鐘",
+        "remainingHours": "剩 {count} 小時",
+        "remainingDays": "剩 {count} 天",
+        "state": {
+            "healthy": "正常",
+            "expiring": "將到期",
+            "manual": "需人工",
+            "invalid": "已失效"
+        },
+        "table": {
+            "state": "狀態",
+            "account": "帳號",
+            "channel": "渠道",
+            "expires": "權杖到期",
+            "lastRefresh": "最近重新整理",
+            "action": "操作"
         }
     }
 }

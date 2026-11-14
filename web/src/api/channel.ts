@@ -708,6 +708,34 @@ export function accountImport(payload: AccountImportPayload) {
     });
 }
 
+// AccountListEntry 是账号管理面的一个条目。
+//
+// 注意它不含账号 JSON 本身(含 access_token/refresh_token): 后端刻意只返回展示所需字段,
+// 从结构上不给前端拿到明文的机会。界面若要"看账号内容", 只能去渠道凭据页。
+export type AccountListEntry = {
+    channel_key_id: number; // 用于"立即刷新"。
+    channel_id: number;
+    channel_name: string; // 账号归属的渠道, 列表里要显示。
+    name: string; // 凭据名, 渠道内唯一。
+    enabled: boolean; // 人工开关, 与熔断无关。
+    kind: 'oauth' | 'cookie';
+    platform: string;
+    email: string;
+    token_expires_at?: string | null;
+    token_refresh_at?: string | null;
+    disabled_until?: string | null;
+    breaker_trips: number;
+    last_error_at?: string | null;
+};
+
+// accountList 取当前作用域可见的全部上游账号。
+//
+// 后端按"最需要注意"排序(熔断 > 已过期 > cookie > 将到期 > 正常), 界面不再重排:
+// 两处排序逻辑必然漂移, 而漂移后使用者会看到前后矛盾的顺序。
+export function accountList() {
+    return apiRequest<AccountListEntry[]>('/api/v1/channel/account/list', { method: 'GET' });
+}
+
 // accountRefreshKey 手动刷新某个账号凭据, 用于导入后立刻验证可用性。
 export function accountRefreshKey(channelKeyId: number) {
     return apiRequest<AccountRefreshResult>(`/api/v1/channel/account/${channelKeyId}/refresh`, {

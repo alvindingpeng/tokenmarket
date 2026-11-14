@@ -23,6 +23,14 @@ func init() {
 	router.NewGroupRouter("/api/v1/channel/account").
 		Use(middleware.Auth()).
 		AddRoute(
+			// 账号管理面: 把所有渠道下的账号汇总成一张表。
+			// 放在渠道路由下而不是新开一组, 理由与 /import 相同 —— 账号就是渠道下的凭据,
+			// 归属与权限语义完全一致, 另起一组只会多一份需要同步的鉴权逻辑。
+			router.NewRoute("/list", http.MethodGet).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(listChannelAccounts),
+		).
+		AddRoute(
 			// 支持的平台与字段形状: 每种平台的具体键名见 model/account_json.go 的解析分支。
 			// RequireJSON 挂在这条路由而非整个分组: /import 收的是 JSON body,
 			// 而 /:id/refresh 的入参全在 URL 里, 不放宽会让它要求调用方发一个空 body,
@@ -147,4 +155,14 @@ func refreshChannelAccount(c *gin.Context) {
 		return
 	}
 	resp.Success(c, gin.H{"refreshed": true})
+}
+
+// listChannelAccounts 返回当前作用域可见的全部上游账号。
+//
+// 这是账号管理面的唯一数据来源: 导入之后账号散落在各个渠道的凭据列表里,
+// 而账号会自己到期、自己失效、自己在后台被刷新 —— 没有一张汇总表,
+// 使用者就只能一个一个渠道点进去看, 等于逼他们把"定时验证"当不存在。
+func listChannelAccounts(c *gin.Context) {
+	userID, role := middleware.CurrentUser(c)
+	resp.Success(c, op.AccountList(model.Scope{ID: userID, Role: role}))
 }

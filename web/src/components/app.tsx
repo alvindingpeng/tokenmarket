@@ -23,6 +23,7 @@ import { pageImports } from '@/lib/page-preload';
 const Home = lazy(() => pageImports.home().then((module) => ({ default: module.Home })));
 const Market = lazy(() => pageImports.market().then((module) => ({ default: module.Market })));
 const Channel = lazy(() => pageImports.channel().then((module) => ({ default: module.Channel })));
+const Accounts = lazy(() => pageImports.accounts().then((module) => ({ default: module.Accounts })));
 const Group = lazy(() => pageImports.group().then((module) => ({ default: module.Group })));
 const Model = lazy(() => pageImports.model().then((module) => ({ default: module.Model })));
 const Ops = lazy(() => pageImports.ops());
@@ -193,6 +194,7 @@ export function AppContainer() {
                                 {visibleItem === 'billing' && <Billing />}
                                 {visibleItem === 'apikey' && <Apikey />}
                                 {visibleItem === 'channel' && <Channel />}
+                                {visibleItem === 'accounts' && <Accounts />}
                                 {visibleItem === 'group' && <Group />}
                                 {visibleItem === 'model' && <Model />}
                                 {visibleItem === 'log' && <Log />}

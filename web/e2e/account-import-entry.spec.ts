@@ -24,13 +24,13 @@ test('渠道页 Tab 条上有独立的导入入口', async ({ page }) => {
 
     // 入口在 Tab 条右侧, 与"渠道列表/审核队列"同一视觉层级 —— 而不是藏在某张渠道卡片里。
     // 这条断言的意义: 用户不必先钻进某个渠道的编辑表单才能导入账号。
-    await expect(page.getByRole('button', { name: '导入账号' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^(导入账号|Import account)$/ })).toBeVisible();
 });
 
 test('独立导入对话框列出可选的目标渠道', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('button', { name: 'Channel' }).click();
-    await page.getByRole('button', { name: '导入账号' }).click();
+    await page.getByRole('button', { name: /^(导入账号|Import account)$/ }).click();
 
     await expect(page.getByText('导入上游账号')).toBeVisible();
 
@@ -46,7 +46,8 @@ test('cookie 类账号在凭据列表里标成"需人工"而不是"正常"', asy
     await page.getByRole('button', { name: 'Channel' }).click();
 
     // 进 beta 渠道(gemini cookie 账号挂在它上面)。
-    await page.getByText('beta', { exact: true }).first().click();
+    // 精确点卡片标题: getByText 会匹配到别处(例如下拉里的 option), 用 heading 定位到卡片本身。
+    await page.getByRole('heading', { name: 'beta', exact: true }).click();
     // 弹层默认显示统计(利润分析), 凭据列表在两层之下:
     // 先点"编辑"切到编辑视图(普通按钮, 不是 Radix Tab), 再点步骤条上的"凭据"。
     await page.getByRole('button', { name: '编辑' }).click();
@@ -57,4 +58,39 @@ test('cookie 类账号在凭据列表里标成"需人工"而不是"正常"', asy
     await expect(page.getByText('需人工').first()).toBeVisible();
     // 平台标识也应在(替代原来那串掩码 JSON)。
     await expect(page.getByText('gemini').first()).toBeVisible();
+});
+
+test('账号页展示账号列表, 并把问题账号排在前面', async ({ page }) => {
+    await page.goto('/');
+    // 导航里新增的 Accounts 项: 这是账号管理面的入口。
+    await page.getByRole('button', { name: /^(Accounts|上游账号)$/ }).click();
+
+    // 表格应有表头 —— 证明渲染的是列表而不是空态。
+    // 导航文案必须翻译过: 缺 navbar.accounts 时这里会渲染成裸 key。
+    // 这个缺陷在真实浏览器里出现过, 单测测不出来(它只在缺文案时才发生)。
+    await expect(page.getByText('navbar.accounts')).toBeHidden();
+    // 汇总条应显示四种状态计数, 且 cookie 那个账号让"需人工"不为零。
+    await expect(page.getByText('需人工')).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: '账号' })).toBeVisible();
+
+    // 两个账号都应在: claude(oauth) 与 gemini(cookie)。
+    await expect(page.getByText('claude-demo')).toBeVisible();
+    await expect(page.getByText('gemini-demo')).toBeVisible();
+
+    // cookie 类账号应被标成需人工: 它无法自动续期。
+    await expect(page.getByText('需人工').first()).toBeVisible();
+
+    // 归属渠道要显示: 账号散落在不同渠道里, 不显示渠道就无法判断它属于谁。
+    await expect(page.getByText('alpha').first()).toBeVisible();
+    await expect(page.getByText('beta').first()).toBeVisible();
+});
+
+test('账号页的搜索能筛掉不匹配的行', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: /^(Accounts|上游账号)$/ }).click();
+    await page.getByPlaceholder('搜索渠道 / 凭据 / 平台').fill('gemini');
+
+    // 搜 gemini 后 claude 那行应消失, gemini 留着。
+    await expect(page.getByText('gemini-demo')).toBeVisible();
+    await expect(page.getByText('claude-demo')).toBeHidden();
 });
