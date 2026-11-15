@@ -1,19 +1,10 @@
 import { useState } from 'react';
-import { ExternalLink, Loader2, LogIn } from 'lucide-react';
+import { ChevronDown, ExternalLink, Loader2, LogIn } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslations } from 'use-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-    MorphingDialog,
-    MorphingDialogClose,
-    MorphingDialogContainer,
-    MorphingDialogContent,
-    MorphingDialogDescription,
-    MorphingDialogTitle,
-    MorphingDialogTrigger,
-} from '@/components/ui/morphing-dialog';
 import { accountSignInBegin, accountSignInComplete, type SignInBegin } from '@/api/account-signin';
 import type { AccountPlatform } from '@/api/channel';
 
@@ -26,6 +17,12 @@ import type { AccountPlatform } from '@/api/channel';
  * 流程三步: 打开授权页 -> 用户授权 -> 把授权完成后的 code/地址贴回来。
  * 第三步之所以要用户动手, 是因为服务端收不到浏览器回调(服务在服务器, 浏览器在用户电脑),
  * 这不是实现上的偷懒, 而是这个部署形态下唯一可行的路径。
+ *
+ * **刻意做成内联展开面板, 不是第二个对话框。**
+ * 它被嵌在「导入账号」弹层里使用, 而那个弹层的关闭判定是 document 级的点击外部检测,
+ * 且其内容通过 portal 渲染到 body —— 于是这个面板里的每一次点击都在「外部」, 会把外层
+ * 弹层直接关掉, 表现为"刚点开就整窗消失"。同一页上再叠一层 portal 对话框无法避免这件事,
+ * 除非给每层都加上互斥的豁免逻辑; 那比一个面板复杂得多, 也更容易在下次改弹层时重新坏掉。
  */
 
 const SUPPORTED: AccountPlatform[] = ['claude', 'codex', 'gemini'];
@@ -34,10 +31,13 @@ export function AccountSignIn({
     channelId,
     onSuccess,
 }: {
-    channelId: number;
+    // 可为 undefined: 独立导入模式下用户还没选目标渠道时, 入口也要可见 ——
+    // 否则他根本不知道有这条路。此时展开面板只提示先选渠道, 不生成授权 URL。
+    channelId?: number;
     onSuccess?: () => void;
 }) {
     const t = useTranslations('channel.account.signIn');
+    const [expanded, setExpanded] = useState(false);
     const [platform, setPlatform] = useState<AccountPlatform>('claude');
     const [name, setName] = useState('');
     const [begin, setBegin] = useState<SignInBegin | null>(null);
@@ -54,7 +54,7 @@ export function AccountSignIn({
 
     // start 生成授权 URL 并打开新窗口。
     //
-    // 用 window.open 而不是在同页跳转: 授权页会离开本站, 同页跳转等于把用户带走了;
+    // 用 window.open 而不是同页跳转: 授权页会离开本站, 同页跳转等于把用户带走了;
     // 而贴 code 这一步还得回到本页面, 所以必须在同一个标签页里完成。
     const start = async () => {
         setStarting(true);
@@ -70,7 +70,7 @@ export function AccountSignIn({
     };
 
     const complete = async () => {
-        if (!begin) return;
+        if (!begin || channelId === undefined) return;
         const accountName = name.trim() || `${platform}-${new Date().toISOString().slice(0, 10)}`;
         setCompleting(true);
         try {
@@ -90,6 +90,7 @@ export function AccountSignIn({
             }
             onSuccess?.();
             reset();
+            setExpanded(false);
         } catch (error) {
             toast.error(error instanceof Error ? error.message : String(error));
         } finally {
@@ -98,22 +99,30 @@ export function AccountSignIn({
     };
 
     return (
-        <MorphingDialog>
-            <MorphingDialogTrigger className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm hover:bg-accent">
+        <div className="rounded-lg border bg-muted/20">
+            <button
+                type="button"
+                onClick={() => {
+                    setExpanded(!expanded);
+                    if (expanded) reset();
+                }}
+                className="flex w-full items-center gap-1.5 px-3 py-2 text-sm hover:bg-accent/50"
+            >
                 <LogIn className="h-3.5 w-3.5" />
                 {t('trigger')}
-            </MorphingDialogTrigger>
-            <MorphingDialogContainer>
-                <MorphingDialogContent className="relative w-[min(560px,92vw)] rounded-lg border bg-background p-5 shadow-lg">
-                    <MorphingDialogTitle className="text-base font-semibold">
-                        {t('title')}
-                    </MorphingDialogTitle>
-                    <MorphingDialogDescription className="mt-1 text-sm text-muted-foreground">
-                        {t('description')}
-                    </MorphingDialogDescription>
+                <ChevronDown
+                    className={`ml-auto h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`}
+                />
+            </button>
 
-                    {begin === null ? (
-                        <div className="mt-4 space-y-3">
+            {expanded && (
+                <div className="border-t p-3">
+                    {channelId === undefined ? (
+                        // 未选目标渠道: 只提示, 不生成授权 URL —— 授权后再报"渠道不存在"
+                        // 会让用户白跑一趟授权。
+                        <p className="text-sm text-muted-foreground">{t('needChannel')}</p>
+                    ) : begin === null ? (
+                        <div className="space-y-3">
                             <div className="space-y-1.5">
                                 <Label>{t('platform')}</Label>
                                 <div className="flex flex-wrap gap-2">
@@ -148,8 +157,8 @@ export function AccountSignIn({
                             </Button>
                         </div>
                     ) : (
-                        <div className="mt-4 space-y-3">
-                            <div className="rounded-md border bg-muted/40 p-3 text-sm">
+                        <div className="space-y-3">
+                            <div className="rounded-md border bg-background p-3 text-sm">
                                 <div className="font-medium">{t('step1')}</div>
                                 <a
                                     href={begin.authorize_url}
@@ -180,10 +189,8 @@ export function AccountSignIn({
                             </Button>
                         </div>
                     )}
-
-                    <MorphingDialogClose className="absolute right-3 top-3" />
-                </MorphingDialogContent>
-            </MorphingDialogContainer>
-        </MorphingDialog>
+                </div>
+            )}
+        </div>
     );
 }

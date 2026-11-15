@@ -1502,7 +1502,8 @@
                 "pastePlaceholder": "粘贴授权码或完整地址",
                 "complete": "完成登录并导入",
                 "success": "账号 {name} 已导入",
-                "clientNotice": "本次登录使用上游 CLI 自带的 OAuth 客户端, 授权页会显示成该 CLI 在申请权限。请使用一个可以承受损失的账号。"
+                "clientNotice": "本次登录使用上游 CLI 自带的 OAuth 客户端, 授权页会显示成该 CLI 在申请权限。请使用一个可以承受损失的账号。",
+                "needChannel": "请先在上面选择目标渠道"
             }
         }
     },

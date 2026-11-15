@@ -1502,7 +1502,8 @@
                 "pastePlaceholder": "Paste the code or the full address",
                 "complete": "Complete sign-in and import",
                 "success": "Account {name} imported",
-                "clientNotice": "This sign-in uses the vendor CLI's own OAuth client: the authorization page will show that CLI requesting access. Use an account you can afford to lose."
+                "clientNotice": "This sign-in uses the vendor CLI's own OAuth client: the authorization page will show that CLI requesting access. Use an account you can afford to lose.",
+                "needChannel": "Select the target channel above first"
             }
         }
     },

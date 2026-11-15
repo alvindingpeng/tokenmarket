@@ -161,14 +161,14 @@ export function AccountImport({ channelId, onImported, channels }: {
                     {/* 网页登录是「粘贴 JSON」之外的另一条入口, 不是替代:
                         手上已有凭据文件的人继续贴 JSON, 什么都没有的人点授权即可。
                         目标渠道沿用下面选定的那个, 两处不能各选一次。 */}
-                    {(channelId ?? targetChannel) !== undefined && (
-                        <div className="mt-3">
-                            <AccountSignIn
-                                channelId={(channelId ?? targetChannel) as number}
-                                onSuccess={() => setResult(null)}
-                            />
-                        </div>
-                    )}
+                    {/* 入口**始终**显示, 不藏在"选好渠道之后" —— 藏起来的话用户根本不知道
+                        还有这条路, 只会看到粘贴框然后放弃。未选渠道时由面板自己提示先选。 */}
+                    <div className="mt-3">
+                        <AccountSignIn
+                            channelId={channelId ?? targetChannel}
+                            onSuccess={() => setResult(null)}
+                        />
+                    </div>
 
                     <div className="mt-4 space-y-3">
                         {/* 目标渠道只在独立导入模式下出现: 渠道内导入时目标已经确定, 再摆一个不可改的
