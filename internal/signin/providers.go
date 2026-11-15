@@ -65,52 +65,53 @@ func ProviderOf(platform string) (Provider, error) {
 	switch platform {
 	case "claude":
 		return Provider{
-		Platform:     "claude",
-		AuthorizeURL: claudeAuthorizeURL,
-		TokenURL:     claudeTokenURL,
-		ClientID:     claudeClientID,
-		Scopes:       claudeScopes,
-		RedirectURI:  claudeRedirectURI,
-		BodyFormat:   "json",
-		// Claude 授权完停在回调页, 页面上把 code 显示出来让用户复制。
-		AuthStyle:         AuthStyleCode,
-		UserCodeHint:      "复制授权页显示的 code 粘贴到下方",
-		AccessTokenField:  "access_token",
-		RefreshTokenField: "refresh_token",
-		ExtraAuth: url.Values{
-			// Claude Code 的登录要带上这两个, 少了授权页不认为自己在给 CLI 授权。
-			"code":  {""},
-		},
-	}, nil
+			Platform:     "claude",
+			AuthorizeURL: claudeAuthorizeURL,
+			TokenURL:     claudeTokenURL,
+			ClientID:     claudeClientID,
+			Scopes:       claudeScopes,
+			RedirectURI:  claudeRedirectURI,
+			BodyFormat:   "json",
+			// Claude 授权完停在回调页, 页面上把 code 显示出来让用户复制。
+			AuthStyle:         AuthStyleCode,
+			UserCodeHint:      "复制授权页显示的 code 粘贴到下方",
+			AccessTokenField:  "access_token",
+			RefreshTokenField: "refresh_token",
+			ExtraAuth: url.Values{
+				// Claude Code 的登录要带上这两个, 少了授权页不认为自己在给 CLI 授权。
+				"code": {""},
+			},
+		}, nil
 	case "codex":
 		return Provider{
-		Platform:     "codex",
-		AuthorizeURL: codexAuthorizeURL,
-		TokenURL:     "https://auth.openai.com/oauth/token",
-		ClientID:     codexClientID,
-		RedirectURI:  codexRedirectURI,
-		BodyFormat:   "form",
-		AuthStyle:    AuthStyleRedirect,
-		UserCodeHint: "授权后浏览器会跳到一个打不开的地址(localhost:1455), 把地址栏里的完整地址复制粘贴到下方",
-		ExtraAuth: url.Values{
-			"id_token_add_organizations": {"true"},
-			"codex_cli_simplified_flow":  {"true"},
-			"originator":                 {"codex_cli_rs"},
-		},
-		AccessTokenField:  "access_token",
-		RefreshTokenField: "refresh_token",
-	}, nil
+			Platform:     "codex",
+			AuthorizeURL: codexAuthorizeURL,
+			TokenURL:     "https://auth.openai.com/oauth/token",
+			ClientID:     codexClientID,
+			RedirectURI:  codexRedirectURI,
+			BodyFormat:   "form",
+			AuthStyle:    AuthStyleRedirect,
+			UserCodeHint: "授权后浏览器会跳到一个打不开的地址(localhost:1455), 把地址栏里的完整地址复制粘贴到下方",
+			ExtraAuth: url.Values{
+				"id_token_add_organizations": {"true"},
+				"codex_cli_simplified_flow":  {"true"},
+				"originator":                 {"codex_cli_rs"},
+			},
+			AccessTokenField:  "access_token",
+			RefreshTokenField: "refresh_token",
+		}, nil
 	case "gemini":
 		clientID, clientSecret := model.GeminiOAuthClient()
-		// 没配就当场拒绝, 不能返回一个 client_id 为空的 Provider: 那样会生成一个
-		// client_id= 的空参数授权页, 用户点进去只会看到 Google 的报错, 而真实原因
-		// 是部署少配了两个环境变量 —— 两件事的排查方向完全不同。
+		// 现在内置了 Gemini CLI 的默认值, clientID/Secret 永远非空。
+		// 只有当用户在设置页显式清空覆盖值时才会出现空值(极不推荐), 此时按旧逻辑报错。
 		if clientID == "" || clientSecret == "" {
 			idEnv, secretEnv := model.GeminiOAuthClientEnvNames()
 			return Provider{}, fmt.Errorf(
-				"gemini: 未配置 OAuth 客户端, 请设置环境变量 %s 与 %s (需为本部署自行注册的 Google OAuth 客户端)",
+				"gemini: OAuth 客户端为空(可能因设置页显式清空), 请设置环境变量 %s 与 %s 或在设置页配置",
 				idEnv, secretEnv)
 		}
+		// 来源信息可供界面提示: 内置默认/环境变量/设置库覆盖
+		_ = model.GeminiOAuthClientSource()
 		return Provider{
 			Platform:     "gemini",
 			AuthorizeURL: googleAuthorizeURL,

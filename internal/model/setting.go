@@ -164,6 +164,11 @@ const (
 	SettingKeyAccountRefreshEnabled SettingKey = "account_refresh_enabled" // 是否自动刷新导入账号的令牌, 默认开。
 	SettingKeyAccountRefreshMinutes SettingKey = "account_refresh_minutes" // 刷新检查周期(分钟), 默认 5。
 
+	// Gemini OAuth 客户端: 内置 Gemini CLI 默认值(开箱可用), 设置页可覆盖。
+	// client_id 不是秘密; client_secret 是(需加密落库与占位回显)。
+	SettingKeyGeminiOAuthClientID     SettingKey = "gemini_oauth_client_id"
+	SettingKeyGeminiOAuthClientSecret SettingKey = "gemini_oauth_client_secret"
+
 	// 质量评分权重
 	SettingKeyQualityWeightSuccess SettingKey = "quality_weight_success" // 质量评分成功率权重(0-100), 默认 40。三个权重会自动归一化到总和 100。
 	SettingKeyQualityWeightLatency SettingKey = "quality_weight_latency" // 质量评分延迟权重(0-100), 默认 35。
@@ -194,7 +199,8 @@ func IsSecretSetting(key SettingKey) bool {
 		key == SettingKeyStripeSecretKey ||
 		key == SettingKeyStripeWebhook ||
 		key == SettingKeyCreemAPIKey ||
-		key == SettingKeyCreemWebhook
+		key == SettingKeyCreemWebhook ||
+		key == SettingKeyGeminiOAuthClientSecret
 }
 
 // SettingNeedsAtRestEncryption 是需要落库加密(信封加密)的设置键: 密钥类与内部键都是真秘密
@@ -312,40 +318,47 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyAlertDedupMinutes, Value: "10"}, // 去重窗口 10 分钟
 		{Key: SettingKeyAlertFailStreak, Value: "3"},    // 连续 3 次失败判宕机
 		// 告警渠道与投递凭据: 必须在默认值里播种, 否则设置键不会落库, 读取与写入都会以 "setting not found" 失败。
-		{Key: SettingKeyAlertChannels, Value: ""},            // 留空等同仅 webhook, 与后端回落一致
-		{Key: SettingKeyAlertTelegramBotToken, Value: ""},    // Telegram Bot Token, 留空表示未配置
-		{Key: SettingKeyAlertTelegramChatID, Value: ""},      // Telegram Chat ID, 留空表示未配置
-		{Key: SettingKeyAlertEmailSMTPHost, Value: ""},       // SMTP 服务器地址, 留空表示未配置
-		{Key: SettingKeyAlertEmailSMTPPort, Value: "587"},    // 默认 587(STARTTLS), 与发送端缺省一致
-		{Key: SettingKeyAlertEmailUsername, Value: ""},       // SMTP 登录账号
-		{Key: SettingKeyAlertEmailPassword, Value: ""},       // SMTP 登录密码
-		{Key: SettingKeyAlertEmailFrom, Value: ""},           // 发件人地址
-		{Key: SettingKeyAlertEmailTo, Value: ""},             // 收件人地址(逗号分隔)
-		{Key: SettingKeyAlertFeishuWebhook, Value: ""},       // 飞书群机器人地址, 留空表示未配置
-		{Key: SettingKeyAlertDingtalkWebhook, Value: ""},     // 钉钉群机器人地址, 留空表示未配置
-		{Key: SettingKeyAlertWecomWebhook, Value: ""},        // 企业微信群机器人地址, 留空表示未配置
-		{Key: SettingKeyAlertRedeliverWindow, Value: "48"},   // 补发窗口 48 小时
-		{Key: SettingKeyMetricsAuth, Value: "bearer"},        // 探针默认要求 bearer 令牌; 已有显式 off 设置保持不变
-		{Key: SettingKeyMetricsToken, Value: ""},             // 令牌留空, 开启鉴权时自动生成
-		{Key: SettingKeyLoginMaxAttempts, Value: "5"},        // 连续 5 次失败即触发退避锁定
-		{Key: SettingKeyLoginLockoutSeconds, Value: "900"},   // 锁定 15 分钟, 起效前每超一次翻倍
-		{Key: SettingKeyBreakerKeyThreshold, Value: "5"},     // 连续 5 次错误熔断该凭据
-		{Key: SettingKeyBreakerKeyMinutes, Value: "5"},       // 凭据熔断 5 分钟
-		{Key: SettingKeyBreakerKeyHardMinutes, Value: "30"},  // 鉴权/额度错误立即熔断 30 分钟
-		{Key: SettingKeyBreakerModelThreshold, Value: "5"},   // 连续 5 次错误熔断该渠道模型
-		{Key: SettingKeyBreakerModelMinutes, Value: "5"},     // 渠道模型熔断 5 分钟
-		{Key: SettingKeyBreakerMaxMinutes, Value: "60"},      // 连续熔断的时长上限 60 分钟
-		{Key: SettingKeyEgressRegionBonusMs, Value: "0"},     // 区域亲和默认关闭
-		{Key: SettingKeyBreakerCoolAuthSeconds, Value: "60"}, // 鉴权/额度成员冷却 60 秒
-		{Key: SettingKeyBreakerCoolSoftSeconds, Value: "30"}, // 过载/模型缺失成员冷却 30 秒
-		{Key: SettingKeyAccountRefreshEnabled, Value: "true"},  // 默认自动刷新
-		{Key: SettingKeyAccountRefreshMinutes, Value: "5"},     // 每 5 分钟检查一次到期账号
-		{Key: SettingKeyBreakerDegradeThreshold, Value: "3"}, // 熔断降级告警阈值: 累计3次即生成 degraded 告警
+		{Key: SettingKeyAlertChannels, Value: ""},             // 留空等同仅 webhook, 与后端回落一致
+		{Key: SettingKeyAlertTelegramBotToken, Value: ""},     // Telegram Bot Token, 留空表示未配置
+		{Key: SettingKeyAlertTelegramChatID, Value: ""},       // Telegram Chat ID, 留空表示未配置
+		{Key: SettingKeyAlertEmailSMTPHost, Value: ""},        // SMTP 服务器地址, 留空表示未配置
+		{Key: SettingKeyAlertEmailSMTPPort, Value: "587"},     // 默认 587(STARTTLS), 与发送端缺省一致
+		{Key: SettingKeyAlertEmailUsername, Value: ""},        // SMTP 登录账号
+		{Key: SettingKeyAlertEmailPassword, Value: ""},        // SMTP 登录密码
+		{Key: SettingKeyAlertEmailFrom, Value: ""},            // 发件人地址
+		{Key: SettingKeyAlertEmailTo, Value: ""},              // 收件人地址(逗号分隔)
+		{Key: SettingKeyAlertFeishuWebhook, Value: ""},        // 飞书群机器人地址, 留空表示未配置
+		{Key: SettingKeyAlertDingtalkWebhook, Value: ""},      // 钉钉群机器人地址, 留空表示未配置
+		{Key: SettingKeyAlertWecomWebhook, Value: ""},         // 企业微信群机器人地址, 留空表示未配置
+		{Key: SettingKeyAlertRedeliverWindow, Value: "48"},    // 补发窗口 48 小时
+		{Key: SettingKeyMetricsAuth, Value: "bearer"},         // 探针默认要求 bearer 令牌; 已有显式 off 设置保持不变
+		{Key: SettingKeyMetricsToken, Value: ""},              // 令牌留空, 开启鉴权时自动生成
+		{Key: SettingKeyLoginMaxAttempts, Value: "5"},         // 连续 5 次失败即触发退避锁定
+		{Key: SettingKeyLoginLockoutSeconds, Value: "900"},    // 锁定 15 分钟, 起效前每超一次翻倍
+		{Key: SettingKeyBreakerKeyThreshold, Value: "5"},      // 连续 5 次错误熔断该凭据
+		{Key: SettingKeyBreakerKeyMinutes, Value: "5"},        // 凭据熔断 5 分钟
+		{Key: SettingKeyBreakerKeyHardMinutes, Value: "30"},   // 鉴权/额度错误立即熔断 30 分钟
+		{Key: SettingKeyBreakerModelThreshold, Value: "5"},    // 连续 5 次错误熔断该渠道模型
+		{Key: SettingKeyBreakerModelMinutes, Value: "5"},      // 渠道模型熔断 5 分钟
+		{Key: SettingKeyBreakerMaxMinutes, Value: "60"},       // 连续熔断的时长上限 60 分钟
+		{Key: SettingKeyEgressRegionBonusMs, Value: "0"},      // 区域亲和默认关闭
+		{Key: SettingKeyBreakerCoolAuthSeconds, Value: "60"},  // 鉴权/额度成员冷却 60 秒
+		{Key: SettingKeyBreakerCoolSoftSeconds, Value: "30"},  // 过载/模型缺失成员冷却 30 秒
+		{Key: SettingKeyAccountRefreshEnabled, Value: "true"}, // 默认自动刷新
+		{Key: SettingKeyAccountRefreshMinutes, Value: "5"},    // 每 5 分钟检查一次到期账号
+		{Key: SettingKeyBreakerDegradeThreshold, Value: "3"},  // 熔断降级告警阈值: 累计3次即生成 degraded 告警
 
 		{Key: SettingKeyQualityWeightSuccess, Value: "40"}, // 质量评分成功率权重 40%
 		{Key: SettingKeyQualityWeightLatency, Value: "35"}, // 质量评分延迟权重 35%
 		{Key: SettingKeyQualityWeightUptime, Value: "25"},  // 质量评分可用性权重 25%
 
+		// Gemini OAuth 内置默认值(来自 Gemini CLI npm 包): 开箱可用, 设置页可覆盖。
+		// client_id 公开; client_secret 需加密落库(已进 IsSecretSetting/SettingNeedsAtRestEncryption)。
+		{Key: SettingKeyGeminiOAuthClientID, Value: "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"},
+		// secret 是公开 npm 包里**唯一**那个 GOCSPX- 字面量。别凭印象改它:
+		// 拿它打 https://oauth2.googleapis.com/token 应得 invalid_grant(证明这一对 client_id/secret 有效),
+		// 若得到 invalid_client 就说明 secret 写错了 —— 而这会让所有 Gemini 登录静默失败, 报错看起来像账号问题。
+		{Key: SettingKeyGeminiOAuthClientSecret, Value: "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"},
 	}
 }
 
@@ -709,6 +722,15 @@ func (s *Setting) Validate() error {
 		}
 		if parsedURL.Host == "" {
 			return fmt.Errorf("proxy URL must have a host")
+		}
+		return nil
+	case SettingKeyGeminiOAuthClientSecret:
+		// client_secret 必须非空且长度合理: GOCSPX- 前缀的 Google OAuth secret 通常 24+ 字符
+		if strings.TrimSpace(s.Value) == "" {
+			return fmt.Errorf("gemini oauth client secret must not be empty")
+		}
+		if len(s.Value) < 20 {
+			return fmt.Errorf("gemini oauth client secret is too short")
 		}
 		return nil
 	}

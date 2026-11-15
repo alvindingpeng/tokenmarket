@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -32,6 +33,23 @@ func TestSettingValidateFinite(t *testing.T) {
 		err := setting.Validate()
 		if (err != nil) != tc.wantErr {
 			t.Errorf("%s=%s error=%v wantErr=%v", tc.key, tc.value, err, tc.wantErr)
+		}
+	}
+
+	// Gemini client_secret 验证: 必须非空且长度足够
+	secretCases := []struct {
+		value   string
+		wantErr bool
+	}{
+		{"", true},
+		{"short", true},
+		{"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", false},
+	}
+	for _, tc := range secretCases {
+		setting := Setting{Key: SettingKeyGeminiOAuthClientSecret, Value: tc.value}
+		err := setting.Validate()
+		if (err != nil) != tc.wantErr {
+			t.Errorf("GeminiOAuthClientSecret=%s error=%v wantErr=%v", tc.value, err, tc.wantErr)
 		}
 	}
 }
@@ -129,5 +147,51 @@ func TestSecretSettingsAreMaskedNotHidden(t *testing.T) {
 	}
 	if TokenConfiguredMask == "" {
 		t.Error("占位符不能为空: 会把「已配置」误判成「未配置」")
+	}
+
+	// Gemini OAuth: client_secret 必须是 secret 类, client_id 必须不是
+	if !IsSecretSetting(SettingKeyGeminiOAuthClientSecret) {
+		t.Error("Gemini client_secret 必须标记为密钥类(加密落库/掩码回显)")
+	}
+	if IsSecretSetting(SettingKeyGeminiOAuthClientID) {
+		t.Error("Gemini client_id 不应是密钥类: 它是公开标识符")
+	}
+	if SettingNeedsAtRestEncryption(SettingKeyGeminiOAuthClientSecret) {
+		// 正确: client_secret 进了 IsSecretSetting -> SettingNeedsAtRestEncryption
+	} else {
+		t.Error("Gemini client_secret 必须进 SettingNeedsAtRestEncryption(信封加密落库)")
+	}
+	if SettingNeedsAtRestEncryption(SettingKeyGeminiOAuthClientID) {
+		t.Error("Gemini client_id 不应进 SettingNeedsAtRestEncryption(非秘密)")
+	}
+}
+
+// TestGeminiOAuthDefaultSettingsExact 钉住内置默认值:
+// 1) 从 DefaultSettings() 取出的值必须等于已知的正确值(来自 Gemini CLI npm 包)
+// 2) client_secret 必须以 GOCSPX- 开头且长度为 35(当前已知格式)
+// 这不能替代真实端点测试, 但能挡住"值被改成别的样子"的回归。
+func TestGeminiOAuthDefaultSettingsExact(t *testing.T) {
+	var clientID, clientSecret string
+	for _, s := range DefaultSettings() {
+		if s.Key == SettingKeyGeminiOAuthClientID {
+			clientID = s.Value
+		}
+		if s.Key == SettingKeyGeminiOAuthClientSecret {
+			clientSecret = s.Value
+		}
+	}
+	if clientID != "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com" {
+		t.Errorf("Gemini client_id 默认值错误: got %q", clientID)
+	}
+	const expectedSecret = "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"
+	if clientSecret != expectedSecret {
+		t.Errorf("Gemini client_secret 默认值错误: got %q want %q", clientSecret, expectedSecret)
+	}
+	if !strings.HasPrefix(clientSecret, "GOCSPX-") {
+		t.Errorf("client_secret 必须以 GOCSPX- 开头: got %q", clientSecret)
+	}
+	// 当前已知的 GOCSPX- secret 为 35 字符(含前缀)
+	if len(clientSecret) != 35 {
+		t.Errorf("client_secret 长度应为 35: got %d (%q)", len(clientSecret), clientSecret)
 	}
 }

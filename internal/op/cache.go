@@ -38,6 +38,9 @@ func InitCache() error {
 
 	// 注入质量权重读取函数（供 model.QualityGradeOf 跨包读取设置）。
 	model.QualityWeightGetter = SettingGetIntDefault
+	// 注入 Gemini OAuth 设置读取函数(供 model.geminiOAuthClientID/Secret 读取设置库)。
+	// 读取失败/为空时 model 层会回退到环境变量与内置默认值。
+	model.GeminiOAuthSettingGetter = SettingGetString
 
 	return nil
 }

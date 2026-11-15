@@ -101,6 +101,11 @@ export const SettingKey = {
     AutoAddBackground: 'channel_auto_add_background', // 后台复查开关, 默认 false。
     AutoAddInterval: 'channel_auto_add_interval', // 后台复查周期(小时), 默认 24。
     AutoAddScope: 'channel_auto_add_scope', // 复查范围: flagged(仅已开启自动添加) | approved(全部已过审)。
+
+    // Gemini OAuth 客户端配置: 留空则使用内置默认值(Gemini CLI 的 client_id/secret)。
+    // 填写自定义值会覆盖内置默认; client_secret 按加密存储并掩码回显。
+    GeminiOAuthClientID: 'gemini_oauth_client_id',
+    GeminiOAuthClientSecret: 'gemini_oauth_client_secret',
 } as const;
 
 /**

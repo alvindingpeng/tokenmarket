@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"strings"
 	"testing"
@@ -311,28 +312,210 @@ func TestAccountOAuthGeminiSpecMatchesOfficialClient(t *testing.T) {
 	}
 }
 
-// 未配置 OAuth 客户端时, gemini 的刷新必须**明确失败并指出该配哪个变量**。
+// TestGeminiOAuthClientPriority 验证取值优先级: DB(非默认) > 环境变量 > 内置默认。
 //
-// 不能让它带着空 client_id / client_secret 去发请求: 上游回 invalid_client,
-// 那条信息会被读成"账号坏了", 而真实原因是部署少配了两个环境变量。
-func TestAccountOAuthGeminiRequiresClientConfig(t *testing.T) {
+// 使用内部函数变量 GeminiOAuthSettingGetter 模拟 DB 读取。
+// 关键点: DB 值等于内置默认值时不算"用户覆盖", 会回退环境变量。
+func TestGeminiOAuthClientPriority(t *testing.T) {
+	originalGetter := GeminiOAuthSettingGetter
+	defer func() { GeminiOAuthSettingGetter = originalGetter }()
+
+	// 1) DB 存非默认值 -> 取 DB (用户在界面改过)
+	GeminiOAuthSettingGetter = func(key SettingKey) (string, error) {
+		switch key {
+		case SettingKeyGeminiOAuthClientID:
+			return "user-db-client-id", nil
+		case SettingKeyGeminiOAuthClientSecret:
+			return "user-db-client-secret", nil
+		default:
+			return "", fmt.Errorf("not found")
+		}
+	}
+	t.Setenv(geminiOAuthClientIDEnv, "env-client-id")
+	t.Setenv(geminiOAuthClientSecretEnv, "env-client-secret")
+	if got := geminiOAuthClientID(); got != "user-db-client-id" {
+		t.Errorf("DB 非默认值时应取 DB client_id: got %q", got)
+	}
+	if got := geminiOAuthClientSecret(); got != "user-db-client-secret" {
+		t.Errorf("DB 非默认值时应取 DB client_secret: got %q", got)
+	}
+	if src := GeminiOAuthClientSource(); src != "db" {
+		t.Errorf("来源应为 db: got %q", src)
+	}
+
+	// 2) DB 存默认值 + env 有值 -> 取 env (界面没改, env 生效)
+	GeminiOAuthSettingGetter = func(key SettingKey) (string, error) {
+		switch key {
+		case SettingKeyGeminiOAuthClientID:
+			return geminiBuiltinClientID, nil // 等于内置默认
+		case SettingKeyGeminiOAuthClientSecret:
+			return geminiBuiltinClientSecret, nil // 等于内置默认
+		default:
+			return "", fmt.Errorf("not found")
+		}
+	}
+	if got := geminiOAuthClientID(); got != "env-client-id" {
+		t.Errorf("DB 为默认值+env 有值时应取 env client_id: got %q", got)
+	}
+	if got := geminiOAuthClientSecret(); got != "env-client-secret" {
+		t.Errorf("DB 为默认值+env 有值时应取 env client_secret: got %q", got)
+	}
+	if src := GeminiOAuthClientSource(); src != "env" {
+		t.Errorf("来源应为 env: got %q", src)
+	}
+
+	// 3) DB 存默认值 + env 空 -> 取内置默认
 	t.Setenv(geminiOAuthClientIDEnv, "")
 	t.Setenv(geminiOAuthClientSecretEnv, "")
-	spec, err := AccountOAuthSpecOf(AccountPlatformGemini)
-	if err != nil {
-		t.Fatalf("gemini spec: %v", err)
+	if got := geminiOAuthClientID(); got != geminiBuiltinClientID {
+		t.Errorf("DB 默认值+env 空时应回退内置默认 client_id: got %q", got)
 	}
-	_, _, err = AccountOAuthRefreshRequest(spec, AccountCredential{RefreshToken: "rt"})
-	if err == nil {
-		t.Fatal("未配置 OAuth 客户端时应当报错")
+	if got := geminiOAuthClientSecret(); got != geminiBuiltinClientSecret {
+		t.Errorf("DB 默认值+env 空时应回退内置默认 client_secret: got %q", got)
 	}
-	// 错误信息必须能让人直接照着配: 两个变量名都要出现。
-	clientIDEnv, clientSecretEnv := GeminiOAuthClientEnvNames()
-	if !strings.Contains(err.Error(), clientIDEnv) || !strings.Contains(err.Error(), clientSecretEnv) {
-		t.Fatalf("错误信息未提示所需环境变量: %v", err)
+	if src := GeminiOAuthClientSource(); src != "builtin" {
+		t.Errorf("来源应为 builtin: got %q", src)
 	}
-	if GeminiOAuthClientConfigured() {
-		t.Fatal("未配置时 GeminiOAuthClientConfigured 应为 false")
+
+	// 4) DB getter 为 nil + env 有值 -> 取 env (无 DB 时 env 生效)
+	GeminiOAuthSettingGetter = nil
+	t.Setenv(geminiOAuthClientIDEnv, "env-only-id")
+	t.Setenv(geminiOAuthClientSecretEnv, "env-only-secret")
+	if got := geminiOAuthClientID(); got != "env-only-id" {
+		t.Errorf("无 DB+env 有值时应取 env client_id: got %q", got)
+	}
+	if got := geminiOAuthClientSecret(); got != "env-only-secret" {
+		t.Errorf("无 DB+env 有值时应取 env client_secret: got %q", got)
+	}
+	if src := GeminiOAuthClientSource(); src != "env" {
+		t.Errorf("来源应为 env: got %q", src)
+	}
+
+	// 5) DB getter 为 nil + env 空 -> 取内置默认
+	t.Setenv(geminiOAuthClientIDEnv, "")
+	t.Setenv(geminiOAuthClientSecretEnv, "")
+	if got := geminiOAuthClientID(); got != geminiBuiltinClientID {
+		t.Errorf("无 DB+env 空时应取内置默认 client_id: got %q", got)
+	}
+	if got := geminiOAuthClientSecret(); got != geminiBuiltinClientSecret {
+		t.Errorf("无 DB+env 空时应取内置默认 client_secret: got %q", got)
+	}
+	if src := GeminiOAuthClientSource(); src != "builtin" {
+		t.Errorf("来源应为 builtin: got %q", src)
+	}
+
+	// 6) DB getter 返回错误 -> 回退 env
+	GeminiOAuthSettingGetter = func(key SettingKey) (string, error) { return "", fmt.Errorf("db error") }
+	t.Setenv(geminiOAuthClientIDEnv, "error-fallback-id")
+	t.Setenv(geminiOAuthClientSecretEnv, "error-fallback-secret")
+	if got := geminiOAuthClientID(); got != "error-fallback-id" {
+		t.Errorf("DB 错误时应回退 env client_id: got %q", got)
+	}
+	if got := geminiOAuthClientSecret(); got != "error-fallback-secret" {
+		t.Errorf("DB 错误时应回退 env client_secret: got %q", got)
+	}
+}
+
+// TestGeminiOAuthClientSourceConsistency 验证 client_id 与 secret 来源一致:
+// 必须同源(要么都 DB, 要么都 env, 要么都 builtin), 防止混搭得到 invalid_client。
+//
+// 这条测试曾在旧实现下"记录缺陷"(只改一半 -> 得到混搭的一对)。那种行为现已修掉:
+// 混搭会在上游回 invalid_client, 而报错看起来像"账号坏了", 排查方向完全错。
+// 所以现在的断言是反过来的 —— **不混搭**, 整对回落到能用的一层。
+func TestGeminiOAuthClientSourceConsistency(t *testing.T) {
+	originalGetter := GeminiOAuthSettingGetter
+	defer func() { GeminiOAuthSettingGetter = originalGetter }()
+
+	// DB 只改了 client_id, secret 仍是内置默认; env 有一整套。
+	// 期望: 整对用 env, 而不是 id 用 DB + secret 用 env 拼出一对假凭据。
+	GeminiOAuthSettingGetter = func(key SettingKey) (string, error) {
+		if key == SettingKeyGeminiOAuthClientID {
+			return "user-db-id", nil
+		}
+		return geminiBuiltinClientSecret, nil
+	}
+	t.Setenv(geminiOAuthClientIDEnv, "env-id")
+	t.Setenv(geminiOAuthClientSecretEnv, "env-secret")
+
+	id, sec := GeminiOAuthClient()
+	if id != "env-id" || sec != "env-secret" {
+		t.Errorf("只配了半套时应整对回落到 env: got id=%q sec=%q", id, sec)
+	}
+
+	// 反向: env 只配了一半(client_id 有, secret 空) -> 不能采纳这一半, 整对回落内置默认。
+	GeminiOAuthSettingGetter = nil
+	t.Setenv(geminiOAuthClientIDEnv, "only-id")
+	t.Setenv(geminiOAuthClientSecretEnv, "")
+	id, sec = GeminiOAuthClient()
+	if id != geminiBuiltinClientID || sec != geminiBuiltinClientSecret {
+		t.Errorf("env 只配了一半时应整对回落到内置默认: got id=%q sec=%q", id, sec)
+	}
+}
+
+// TestGeminiOAuthClientSource 验证来源判断, 语义与 geminiOAuthClientPair 一致:
+// 整对成对判定, db(两个都非默认) > env(两个都非空) > builtin。
+//
+// 这条测试必须与取值逻辑同口径: 若两者判定不一致, 界面会显示"用的是你配的客户端"
+// 而实际用着内置默认 —— 这比不显示来源更糟。
+func TestGeminiOAuthClientSource(t *testing.T) {
+	originalGetter := GeminiOAuthSettingGetter
+	defer func() { GeminiOAuthSettingGetter = originalGetter }()
+
+	// 无任何配置 -> 内置默认
+	GeminiOAuthSettingGetter = nil
+	t.Setenv(geminiOAuthClientIDEnv, "")
+	t.Setenv(geminiOAuthClientSecretEnv, "")
+	if src := GeminiOAuthClientSource(); src != "builtin" {
+		t.Errorf("无配置时来源应为 builtin: got %q", src)
+	}
+
+	// 只有环境变量、且两个都配了 -> env
+	GeminiOAuthSettingGetter = func(key SettingKey) (string, error) { return "", fmt.Errorf("not found") }
+	t.Setenv(geminiOAuthClientIDEnv, "env-id")
+	t.Setenv(geminiOAuthClientSecretEnv, "env-secret")
+	if src := GeminiOAuthClientSource(); src != "env" {
+		t.Errorf("环境变量成对配置时来源应为 env: got %q", src)
+	}
+
+	// 环境变量只配一半 -> 不采纳, 仍算 builtin(避免混搭)
+	t.Setenv(geminiOAuthClientSecretEnv, "")
+	if src := GeminiOAuthClientSource(); src != "builtin" {
+		t.Errorf("环境变量只配一半时来源应为 builtin: got %q", src)
+	}
+	t.Setenv(geminiOAuthClientIDEnv, "")
+	t.Setenv(geminiOAuthClientSecretEnv, "")
+
+	// DB 成对非默认 -> db
+	GeminiOAuthSettingGetter = func(key SettingKey) (string, error) {
+		if key == SettingKeyGeminiOAuthClientID {
+			return "user-db-id", nil
+		}
+		return "user-db-secret", nil
+	}
+	if src := GeminiOAuthClientSource(); src != "db" {
+		t.Errorf("DB 成对非默认时来源应为 db: got %q", src)
+	}
+
+	// DB 只有默认值 -> 不算覆盖, 回退 builtin
+	GeminiOAuthSettingGetter = func(key SettingKey) (string, error) {
+		if key == SettingKeyGeminiOAuthClientID {
+			return geminiBuiltinClientID, nil
+		}
+		return geminiBuiltinClientSecret, nil
+	}
+	if src := GeminiOAuthClientSource(); src != "builtin" {
+		t.Errorf("DB 只有默认值时来源应为 builtin: got %q", src)
+	}
+
+	// DB 只改了 secret(id 仍是默认) -> 半套, 不采纳, 回退 builtin
+	GeminiOAuthSettingGetter = func(key SettingKey) (string, error) {
+		if key == SettingKeyGeminiOAuthClientSecret {
+			return "user-db-secret", nil
+		}
+		return geminiBuiltinClientID, nil
+	}
+	if src := GeminiOAuthClientSource(); src != "builtin" {
+		t.Errorf("DB 只改一半时来源应为 builtin: got %q", src)
 	}
 }
 

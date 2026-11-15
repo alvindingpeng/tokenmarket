@@ -553,6 +553,24 @@
             "placeholder": "留空即匿名访问",
             "hint": "可选。GitHub 对匿名调用限流 60 次/小时，填一个只读的 Personal Access Token 可提到 5000 次/小时，更新检查就不会取不到仓库版本。令牌只存在本机数据库，不会回显到页面。环境变量 SWITCHYARD_GITHUB_PAT 仍然可用且优先级更低。"
         },
+        "geminiOAuth": {
+            "title": "Gemini OAuth 客户端",
+            "desc": "留空则使用内置的 Gemini CLI OAuth 客户端（开箱即用，无需任何配置）。若填入自己的客户端，将覆盖内置默认值。",
+            "redirectHint": "重要提示：若使用自定义 OAuth 客户端，必须在 Google Cloud Console 的授权重定向 URI 中添加回调地址 http://127.0.0.1。Google 在用户完成登录后才校验重定向 URI；若未加入白名单，用户会在最后一步看到 redirect_uri_mismatch 错误。",
+            "clientId": {
+                "label": "客户端 ID",
+                "placeholder": "留空则使用内置默认值",
+                "hint": "来自 Google Cloud Console 的 OAuth 2.0 客户端 ID。留空则使用内置的 Gemini CLI 客户端。"
+            },
+            "clientSecret": {
+                "label": "客户端密钥",
+                "placeholder": "已配置，留空保持不变",
+                "hint": "来自 Google Cloud Console 的 OAuth 2.0 客户端密钥。加密存储。留空则使用内置默认值。",
+                "show": "显示密钥",
+                "hide": "隐藏密钥"
+            },
+            "pairHint": "client_id 与 client_secret 必须成对填写；只填一项不会被采用，系统会整对回落到内置默认值。"
+        },
         "updateCheckEnabled": {
             "label": "自动检查更新",
             "hint": "开启后按下方周期向 GitHub 查询本分支的 Release, 有新版本时在系统信息里提示并可一键升级。关闭不影响已展示的版本信息, 只是不再轮询。"
@@ -1503,6 +1521,7 @@
                 "complete": "完成登录并导入",
                 "success": "账号 {name} 已导入",
                 "clientNotice": "本次登录使用上游 CLI 自带的 OAuth 客户端, 授权页会显示成该 CLI 在申请权限。请使用一个可以承受损失的账号。",
+                "geminiNotice": "本次登录使用内置的 Gemini CLI OAuth 客户端：授权页将显示为 \"Gemini CLI\" 正在申请权限。可在设置中配置自己的客户端。",
                 "needChannel": "请先在上面选择目标渠道"
             }
         }

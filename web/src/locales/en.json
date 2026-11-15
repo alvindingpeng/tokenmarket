@@ -553,6 +553,24 @@
             "placeholder": "Leave empty for anonymous",
             "hint": "Optional. GitHub rate-limits anonymous calls to 60 per hour; a read-only personal access token raises that to 5000 so the update check never fails to read the repository version. The token is stored in this database only and is never sent back to the page. The SWITCHYARD_GITHUB_PAT environment variable still works and has lower priority."
         },
+        "geminiOAuth": {
+            "title": "Gemini OAuth client",
+            "desc": "Leave empty to use the built-in Gemini CLI OAuth client (open-box, works without any setup). If you fill in your own client, it will override the built-in one.",
+            "redirectHint": "Important: If you use your own OAuth client, you MUST add the redirect URI to its authorized redirect URIs in Google Cloud Console. The callback URL is http://127.0.0.1. Google validates the redirect URI AFTER the user signs in; if it is not whitelisted, the user will see redirect_uri_mismatch at the final step.",
+            "clientId": {
+                "label": "Client ID",
+                "placeholder": "Leave empty to use built-in default",
+                "hint": "The client ID from your Google Cloud OAuth 2.0 client. Leave empty to use the built-in Gemini CLI client."
+            },
+            "clientSecret": {
+                "label": "Client secret",
+                "placeholder": "Configured; leave empty to keep",
+                "hint": "The client secret from your Google Cloud OAuth 2.0 client. Stored encrypted. Leave empty to keep the built-in default.",
+                "show": "Show secret",
+                "hide": "Hide secret"
+            },
+            "pairHint": "client_id and client_secret must be set as a pair; setting only one will be ignored and the built-in defaults will be used instead."
+        },
         "updateCheckEnabled": {
             "label": "Automatic update check",
             "hint": "When enabled, the release for the current branch is polled from GitHub at the interval below; a newer version surfaces in System Info with one-click upgrade. Turning it off keeps the version readout but stops the polling."
@@ -1503,6 +1521,7 @@
                 "complete": "Complete sign-in and import",
                 "success": "Account {name} imported",
                 "clientNotice": "This sign-in uses the vendor CLI's own OAuth client: the authorization page will show that CLI requesting access. Use an account you can afford to lose.",
+                "geminiNotice": "This sign-in uses the built-in Gemini CLI OAuth client: the authorization page will show \"Gemini CLI\" requesting access. You can configure your own client in settings.",
                 "needChannel": "Select the target channel above first"
             }
         }

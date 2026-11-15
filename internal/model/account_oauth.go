@@ -15,6 +15,11 @@ import (
 	"time"
 )
 
+// GeminiOAuthSettingGetter 从设置库读取字符串值(由 op 包在启动时注入)。
+// model 包不能直接依赖 op/db(会形成导入循环), 故用函数变量注入。
+// 为 nil 时回退到环境变量与内置默认值。
+var GeminiOAuthSettingGetter func(SettingKey) (string, error)
+
 // AccountOAuthSpec 描述一个平台的令牌刷新方式。
 type AccountOAuthSpec struct {
 	Platform string
@@ -63,6 +68,15 @@ type AccountOAuthSpec struct {
 const (
 	accountBodyFormatForm = "form"
 	accountBodyFormatJSON = "json"
+)
+
+// geminiBuiltinClientID 是 Gemini CLI 的内置 client_id(来自 npm 包 @google/gemini-cli@0.68.0)。
+// geminiBuiltinClientSecret 是对应的 client_secret(包内唯一的 GOCSPX- 值)。
+// 这两个常量同时用于: 1) DefaultSettings() 的默认值(在 setting.go 里写死同值); 2) geminiOAuthClientID/Secret 的"是否为默认值"判定。
+// 修改时必须同步更新两处, 并在测试中钉住这对值。
+const (
+	geminiBuiltinClientID     = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
+	geminiBuiltinClientSecret = "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"
 )
 
 // accountOAuthSpecs 平台 -> 令牌端点规格。未登记的平台的 OAuth 刷新会明确失败, 而不是
@@ -127,7 +141,7 @@ var accountOAuthSpecs = map[string]AccountOAuthSpec{
 		// 用 form-urlencoded: 这是 Google 官方 Node 客户端(gemini-cli 内置的 google-auth-library)
 		// 的实际做法。实测该端点也接受 JSON 体(同样返回 invalid_grant),
 		// 选 form 是为跟随官方客户端的既有实现, 不是"否则会失败"。
-		BodyFormat: accountBodyFormatForm,
+		BodyFormat:        accountBodyFormatForm,
 		AccessTokenField:  "access_token",
 		RefreshTokenField: "refresh_token",
 		ExpiresInField:    "expires_in",
@@ -342,36 +356,91 @@ func accountTruncate(text string, limit int) string {
 	}
 	return text[:limit] + "..."
 }
-// Gemini 的 OAuth 客户端凭据来自运行时配置, 不写死在仓库里。
+
+// Gemini 的 OAuth 客户端凭据取值优先级: 设置库(DB) > 环境变量 > 内置默认(Gemini CLI)。
 //
-// 为什么不用 Model 的 Setting 表: 这两项是部署级身份(谁在调用 Google 的接口),
-// 不是运行期可调的业务参数 —— 放在设置表里会被导出/备份/在管理端明文显示,
-// 而它理应像 KEK 一样只存在于部署环境。
-//
-// 为什么不是"随便填也能跑": 未配置时刷新必须明确失败。拿一个猜来的或空的 client
-// 去打真实端点, 得到的 invalid_client 会被解读成"账号坏了", 把排查引向错的方向。
-//
-// 命名与 KEK 那一族保持一致(SWITCHYARD_ 前缀), 便于用同一套 systemd drop-in 注入。
+// 内置默认值(来自 Gemini CLI npm 包)让部署开箱可用; 用户可在设置页覆盖为自己的 client,
+// 也可用环境变量 SWITCHYARD_GEMINI_OAUTH_CLIENT_ID/SECRET 注入。
+// client_secret 是秘密: 进 IsSecretSetting() 与 SettingNeedsAtRestEncryption(), 落库加密、界面掩码。
+// 旧注释的"不写死在仓库"已不再适用: 现在内置默认值就是写在代码里的, 但可被配置层层覆盖。
 const (
 	geminiOAuthClientIDEnv     = "SWITCHYARD_GEMINI_OAUTH_CLIENT_ID"
 	geminiOAuthClientSecretEnv = "SWITCHYARD_GEMINI_OAUTH_CLIENT_SECRET"
 )
 
-// geminiOAuthClientID 返回配置的 Gemini OAuth client_id。
-func geminiOAuthClientID() string {
-	return strings.TrimSpace(os.Getenv(geminiOAuthClientIDEnv))
+// geminiOAuthClientPair 返回这一对 client_id/client_secret, **成对**从同一来源取。
+//
+// 为什么必须成对而不是各自判定: client_id 与 client_secret 是配对的, 混搭(例如 id 用 DB、
+// secret 用 env 或内置默认)会得到一对不匹配的凭据, 上游回 invalid_client —— 而这个错误
+// 看起来像"账号坏了", 排查方向完全错。宁可整对回落到下一层, 也不要拼出一对假凭据。
+//
+// 三层优先级: 设置库(DB, 值 != 内置默认才算用户真改过) > 环境变量(两个都非空才算配了)
+//
+//	> 内置默认(Gemini CLI)。
+//
+// "DB 值 != 内置默认"这个条件不是多余的: 启动时会用 DefaultSettings() 把内置默认值补齐进 DB,
+// 若把"DB 非空"当作用户覆盖, 环境变量层就永远不可达 —— 升级前按文档配了 env 的部署者
+// 会发现配置被静默忽略, 而界面上看不出区别。
+func geminiOAuthClientPair() (clientID, clientSecret string) {
+	// 1) 设置库(DB): 两个值都存在**且都不是内置默认值**时, 视为用户配置了自己的一对
+	if GeminiOAuthSettingGetter != nil {
+		id, errID := GeminiOAuthSettingGetter(SettingKeyGeminiOAuthClientID)
+		sec, errSec := GeminiOAuthSettingGetter(SettingKeyGeminiOAuthClientSecret)
+		id, sec = strings.TrimSpace(id), strings.TrimSpace(sec)
+		if errID == nil && errSec == nil && id != "" && sec != "" &&
+			id != geminiBuiltinClientID && sec != geminiBuiltinClientSecret {
+			return id, sec
+		}
+	}
+	// 2) 环境变量: 两个都非空才算配了 —— 只配一半同样是混搭, 不能采纳
+	envID := strings.TrimSpace(os.Getenv(geminiOAuthClientIDEnv))
+	envSec := strings.TrimSpace(os.Getenv(geminiOAuthClientSecretEnv))
+	if envID != "" && envSec != "" {
+		return envID, envSec
+	}
+	// 3) 内置默认值(Gemini CLI 的 client)
+	return geminiBuiltinClientID, geminiBuiltinClientSecret
 }
 
-// geminiOAuthClientSecret 返回配置的 client_secret。
+// geminiOAuthClientID 返回成对解析后的 client_id。
+func geminiOAuthClientID() string {
+	id, _ := geminiOAuthClientPair()
+	return id
+}
+
+// geminiOAuthClientSecret 返回成对解析后的 client_secret。
 func geminiOAuthClientSecret() string {
-	return strings.TrimSpace(os.Getenv(geminiOAuthClientSecretEnv))
+	_, sec := geminiOAuthClientPair()
+	return sec
 }
 
 // GeminiOAuthClientConfigured 报告 Gemini 的 OAuth 客户端是否已配置。
-// 界面据此决定是否提示"可在设置里启用 Gemini CLI 导入": 没配就没有刷新能力,
-// 让使用者以为能用是更糟的体验。
+// 现在内置了 Gemini CLI 的默认值, 所以永远为 true(开箱可用)。
+// 界面若需区分"用的是内置默认还是用户自己的", 请用 GeminiOAuthClientSource().
 func GeminiOAuthClientConfigured() bool {
-	return geminiOAuthClientID() != "" && geminiOAuthClientSecret() != ""
+	return true
+}
+
+// GeminiOAuthClientSource 说明 client_id/secret 的来源, 用于界面提示。
+// 返回值: "builtin"(内置默认)、"env"(环境变量)、"db"(设置库覆盖, 且值 != 内置默认)。
+// 注意: 仅当 DB 值 != 内置默认时才返回 "db", 否则回退 env/builtin。
+func GeminiOAuthClientSource() string {
+	// 判定必须与 geminiOAuthClientPair 完全一致, 否则界面会显示"用的是你配的客户端"
+	// 而实际用着内置默认 —— 这种不一致比不显示来源更糟。
+	if GeminiOAuthSettingGetter != nil {
+		id, errID := GeminiOAuthSettingGetter(SettingKeyGeminiOAuthClientID)
+		sec, errSec := GeminiOAuthSettingGetter(SettingKeyGeminiOAuthClientSecret)
+		id, sec = strings.TrimSpace(id), strings.TrimSpace(sec)
+		if errID == nil && errSec == nil && id != "" && sec != "" &&
+			id != geminiBuiltinClientID && sec != geminiBuiltinClientSecret {
+			return "db"
+		}
+	}
+	if strings.TrimSpace(os.Getenv(geminiOAuthClientIDEnv)) != "" &&
+		strings.TrimSpace(os.Getenv(geminiOAuthClientSecretEnv)) != "" {
+		return "env"
+	}
+	return "builtin"
 }
 
 // GeminiOAuthClientEnvNames 返回需要配置的两个环境变量名, 供错误信息与文档引用。

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'use-intl';
-import { Monitor, Globe, Clock, Shield, Filter, HelpCircle, SlidersHorizontal, X, RefreshCw } from 'lucide-react';
+import { Monitor, Globe, Clock, Shield, Filter, HelpCircle, SlidersHorizontal, X, RefreshCw, Key, Eye, EyeOff } from 'lucide-react';
 import Github from '@thesvg/react/github';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -25,6 +25,8 @@ export function SettingSystem() {
     const [modelFilter, setModelFilter] = useState('');
     const [scoreWeights, setScoreWeights] = useState({ price: '', latency: '', success: '' });
     const [githubToken, setGithubToken] = useState('');
+    const [geminiOAuthClientID, setGeminiOAuthClientID] = useState('');
+    const [geminiOAuthClientSecret, setGeminiOAuthClientSecret] = useState('');
     const [updateCheckEnabled, setUpdateCheckEnabled] = useState(true);
     const [updateCheckMinutes, setUpdateCheckMinutes] = useState('');
 
@@ -34,6 +36,8 @@ export function SettingSystem() {
     const initialModelFilter = useRef('');
     const initialScoreWeights = useRef({ price: '', latency: '', success: '' });
     const initialGithubToken = useRef('');
+    const initialGeminiOAuthClientID = useRef('');
+    const initialGeminiOAuthClientSecret = useRef('');
     const initialUpdateCheckEnabled = useRef('');
     const initialUpdateCheckMinutes = useRef('');
 
@@ -83,6 +87,21 @@ export function SettingSystem() {
                 initialGithubToken.current = value;
             }
 
+            // Gemini OAuth 客户端配置: 留空则使用内置默认值; 设置后覆盖默认。
+            // client_secret 后端加密存储, 回显时用占位符; 前端留空不改值。
+            const geminiId = settings.find(s => s.key === SettingKey.GeminiOAuthClientID);
+            if (geminiId) {
+                const value = geminiId.value === TOKEN_CONFIGURED ? '' : geminiId.value;
+                queueMicrotask(() => setGeminiOAuthClientID(value));
+                initialGeminiOAuthClientID.current = value;
+            }
+            const geminiSecret = settings.find(s => s.key === SettingKey.GeminiOAuthClientSecret);
+            if (geminiSecret) {
+                const value = geminiSecret.value === TOKEN_CONFIGURED ? '' : geminiSecret.value;
+                queueMicrotask(() => setGeminiOAuthClientSecret(value));
+                initialGeminiOAuthClientSecret.current = value;
+            }
+
             // 更新检查开关与周期: 与令牌同区管理, 保存后热应用到调度器(无需重启)。
             const enabled = settings.find(s => s.key === SettingKey.UpdateCheckEnabled);
             if (enabled) {
@@ -117,6 +136,10 @@ export function SettingSystem() {
                     initialModelFilter.current = value;
                 } else if (key === SettingKey.GithubToken) {
                     initialGithubToken.current = value;
+                } else if (key === SettingKey.GeminiOAuthClientID) {
+                    initialGeminiOAuthClientID.current = value;
+                } else if (key === SettingKey.GeminiOAuthClientSecret) {
+                    initialGeminiOAuthClientSecret.current = value;
                 } else if (key === SettingKey.UpdateCheckEnabled) {
                     initialUpdateCheckEnabled.current = value;
                 } else if (key === SettingKey.UpdateCheckMinutes) {
@@ -399,6 +422,72 @@ export function SettingSystem() {
                     autoComplete="off"
                     className="w-48 rounded-xl"
                 />
+            </div>
+
+            {/* Gemini OAuth 客户端配置 */}
+            <div className="space-y-3 rounded-2xl border border-border p-3">
+                <p className="text-sm font-medium text-card-foreground">{t('geminiOAuth.title')}</p>
+                <p className="text-xs text-muted-foreground">{t('geminiOAuth.desc')}</p>
+                <p className="text-xs text-amber-600 dark:text-amber-400">{t('geminiOAuth.redirectHint')}</p>
+
+                <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <Key className="h-5 w-5 text-muted-foreground" />
+                        <span className="text-sm font-medium">{t('geminiOAuth.clientId.label')}</span>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent side="top" sideOffset={10} align="center" className="max-w-72">
+                                {t('geminiOAuth.clientId.hint')}
+                            </TooltipContent>
+                        </Tooltip>
+                    </div>
+                    <Input
+                        value={geminiOAuthClientID}
+                        onChange={(e) => setGeminiOAuthClientID(e.target.value)}
+                        onBlur={() => handleSave(SettingKey.GeminiOAuthClientID, geminiOAuthClientID, initialGeminiOAuthClientID.current)}
+                        placeholder={t('geminiOAuth.clientId.placeholder')}
+                        autoComplete="off"
+                        className="w-72 rounded-xl"
+                    />
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <Key className="h-5 w-5 text-muted-foreground" />
+                        <span className="text-sm font-medium">{t('geminiOAuth.clientSecret.label')}</span>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent side="top" sideOffset={10} align="center" className="max-w-72">
+                                {t('geminiOAuth.clientSecret.hint')}
+                            </TooltipContent>
+                        </Tooltip>
+                    </div>
+                    <div className="relative">
+                        <Input
+                            type="password"
+                            value={geminiOAuthClientSecret}
+                            onChange={(e) => setGeminiOAuthClientSecret(e.target.value)}
+                            onBlur={() => handleSave(SettingKey.GeminiOAuthClientSecret, geminiOAuthClientSecret, initialGeminiOAuthClientSecret.current)}
+                            placeholder={t('geminiOAuth.clientSecret.placeholder')}
+                            autoComplete="new-password"
+                            className="w-72 rounded-xl pr-10"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => setGeminiOAuthClientSecret(geminiOAuthClientSecret === TOKEN_CONFIGURED ? '' : TOKEN_CONFIGURED)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                            aria-label={geminiOAuthClientSecret === TOKEN_CONFIGURED ? t('geminiOAuth.clientSecret.show') : t('geminiOAuth.clientSecret.hide')}
+                        >
+                            {geminiOAuthClientSecret === TOKEN_CONFIGURED ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+                        </button>
+                    </div>
+                </div>
+
+                {/* 成对提示: 后端成对采纳/回落, 单填一项不会生效 */}
+                <p className="text-xs text-amber-600 dark:text-amber-400">{t('geminiOAuth.pairHint')}</p>
             </div>
 
             {/* 更新检查开关: 关掉即停止向 GitHub 轮询版本; 站内版本信息仍照常显示当前版本。 */}

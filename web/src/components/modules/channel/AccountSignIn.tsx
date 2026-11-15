@@ -44,12 +44,17 @@ export function AccountSignIn({
     const [pasted, setPasted] = useState('');
     const [starting, setStarting] = useState(false);
     const [completing, setCompleting] = useState(false);
+    // 生成授权页失败时的原因。后端仍可能在用户把自己的 client 清空时报错,
+    // 这条错误必须如实显示在面板里 —— 只弹一下 toast 会被滚走/错过,
+    // 而用户看到的就是"点了没反应", 于是又跑去问为什么打不开。
+    const [startError, setStartError] = useState('');
 
     const reset = () => {
         setBegin(null);
         setPasted('');
         setStarting(false);
         setCompleting(false);
+        setStartError('');
     };
 
     // start 生成授权 URL 并打开新窗口。
@@ -58,12 +63,15 @@ export function AccountSignIn({
     // 而贴 code 这一步还得回到本页面, 所以必须在同一个标签页里完成。
     const start = async () => {
         setStarting(true);
+        setStartError('');
         try {
             const result = await accountSignInBegin(platform);
             setBegin(result);
             window.open(result.authorize_url, '_blank', 'noopener,noreferrer');
         } catch (error) {
-            toast.error(error instanceof Error ? error.message : String(error));
+            const msg = error instanceof Error ? error.message : String(error);
+            setStartError(msg);
+            toast.error(msg);
         } finally {
             setStarting(false);
         }
@@ -148,9 +156,20 @@ export function AccountSignIn({
                             </div>
                             {/* 合规说明必须在点授权之前可见, 而不是藏在文档里:
                                 授权页上显示的是上游 CLI 在申请权限, 用户有权在授权前就知道。 */}
-                            <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-900 dark:text-amber-200">
-                                {t('clientNotice')}
-                            </p>
+                            {platform === 'gemini' ? (
+                                <p className="rounded-md border border-blue-500/40 bg-blue-500/10 p-2.5 text-xs text-blue-900 dark:text-blue-200">
+                                    {t('geminiNotice')}
+                                </p>
+                            ) : (
+                                <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-900 dark:text-amber-200">
+                                    {t('clientNotice')}
+                                </p>
+                            )}
+                            {startError && (
+                                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-xs text-destructive dark:text-destructive-foreground">
+                                    {startError}
+                                </p>
+                            )}
                             <Button onClick={start} disabled={starting} className="w-full">
                                 {starting && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                                 {t('start')}
