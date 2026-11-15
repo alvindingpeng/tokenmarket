@@ -1312,7 +1312,12 @@
             "backToStats": "返回统计",
             "grantClearAll": "清空全部模型",
             "modelRemove": "移除模型",
-            "grantRemove": "移除该凭据的授权"
+            "grantRemove": "移除该凭据的授权",
+            "geminiProject": "GCP Project ID (可选)",
+            "geminiProjectPlaceholder": "留空则自动分配",
+            "geminiProjectHint": "可选覆盖。留空则由 Google 在 Antigravity 路径上自动分配项目。",
+            "geminiProxyHint": "直连被拦截的地区需配置代理：拉模型与转发均走渠道代理。",
+            "geminiCredentialHint": "该渠道需使用 Antigravity 授权的凭据。旧 Gemini CLI 凭据会 403 (缺少 scope)。"
         },
         "review": {
             "tabChannels": "渠道列表",
@@ -1522,7 +1527,8 @@
                 "success": "账号 {name} 已导入",
                 "clientNotice": "本次登录使用上游 CLI 自带的 OAuth 客户端, 授权页会显示成该 CLI 在申请权限。请使用一个可以承受损失的账号。",
                 "geminiNotice": "本次登录使用内置的 Gemini CLI OAuth 客户端：授权页将显示为 \"Gemini CLI\" 正在申请权限。可在设置中配置自己的客户端。",
-                "needChannel": "请先在上面选择目标渠道"
+                "needChannel": "请先在上面选择目标渠道",
+                "antigravityNotice": "以 Antigravity 应用的身份登录。需要部署方先配置环境变量 SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_ID 与 _CLIENT_SECRET（Antigravity 的 client 不内置）。它的凭据与 Gemini CLI 的**不通用**：Gemini CLI 的令牌缺少 cclog 与 experimentsandconfigs 两个 scope，用它拉模型或转发都会 403。另外 Google 已停用 Gemini CLI 的免费层（UNSUPPORTED_CLIENT），个人订阅账号只能走这个平台。"
             }
         }
     },

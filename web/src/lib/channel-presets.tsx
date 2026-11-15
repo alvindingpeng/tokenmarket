@@ -14,6 +14,7 @@ import IflytekIcon from '@thesvg/react/iflytekcloud';
 import XAIIcon from '@thesvg/react/xai-grok';
 import SiliconFlowIcon from '@thesvg/react/siliconcloud-siliconflow';
 import AzureIcon from '@thesvg/react/azure-azure-openai';
+import { Brain } from 'lucide-react';
 import type { Dialect } from '@/api/channel';
 import type { Locale } from '@/stores/setting';
 
@@ -207,5 +208,14 @@ export const CHANNEL_PRESETS: ChannelPreset[] = [
         dialect: 'generic',
         base_url: '',
         openai_chat_completion_path: '/openai/v1/chat/completions', openai_response_path: '/openai/v1/responses', anthropic_message_path: ANTH,
+    },
+    {
+        id: 'gemini-cli', label: 'Gemini CLI', Icon: Brain,
+        description: {
+            zh_hans: 'Gemini CLI 订阅渠道（Antigravity 路径），需配置代理与可选 GCP Project', zh_hant: 'Gemini CLI 訂閱渠道（Antigravity 路徑），需配置代理與可選 GCP Project', en: 'Gemini CLI subscription channel (Antigravity path), requires proxy and optional GCP Project',
+        },
+        dialect: 'gemini_cli',
+        base_url: 'https://daily-cloudcode-pa.googleapis.com',
+        openai_chat_completion_path: '/v1/chat/completions', openai_response_path: '/v1/responses', anthropic_message_path: '/v1/messages',
     },
 ];

@@ -17,7 +17,7 @@ export const Protocol = {
 
 // Dialect 是上游在标准协议之上的方言，决定出站转换器的厂商特化配置。
 // 地址与路径不属于方言范畴，由前端按服务商预填到渠道字段上。
-export type Dialect = 'generic' | 'xunfei';
+export type Dialect = 'generic' | 'xunfei' | 'gemini_cli';
 
 type CustomHeader = {
     header_key: string;
@@ -140,6 +140,8 @@ export type ChannelDetail = {
     model_auto_add: boolean; // 保存后自动探测上游模型并入渠道; 默认关, 只增不删、授权按位 OR。
     /** 渠道级上浮比例; -1 = 跟随全局 markup_ratio。渠道商自己的利润决策, 不动供货价原币口径。 */
     markup_ratio?: number;
+    /** GCP Project ID for gemini_cli dialect (optional, auto-assigned for personal accounts). */
+    gemini_project?: string;
 };
 
 // ChannelModelStats 是单个渠道模型的累计统计，自带名称与熔断状态。
@@ -670,7 +672,7 @@ const ACCOUNT_IMPORT_TIMEOUT_MS = 30_000;
 // 导入的上游账号: 各平台接受的 JSON 字段形状见后端 model/account_json.go 的解析分支。
 // 这里只描述「界面要让使用者填什么」, 不做字段校验 —— 校验的真实来源是后端解析器,
 // 前端再复制一份规则必然漂移(而且往往漂移在「某个平台多认了一个别名」这种细节上)。
-export type AccountPlatform = 'codex' | 'kiro' | 'gemini' | 'grok' | 'claude';
+export type AccountPlatform = 'codex' | 'kiro' | 'gemini' | 'grok' | 'claude' | 'antigravity';
 
 export type AccountImportPayload = {
     channel_id: number;

@@ -59,6 +59,13 @@ var googleScopes = []string{
 	"https://www.googleapis.com/auth/userinfo.profile",
 }
 
+// antigravityScopes 是固定的(与 client 无关, 是平台要求的权限), 在此转发一份别名,
+// 让下面的 case 分支读起来与本文件其它平台一致。
+//
+// client 凭据不在此缓存: 它来自环境变量, 而环境变量在测试里会被 t.Setenv 逐用例改变。
+// 缓存一次会让"配了 env 的用例"与"没配的用例"互相污染 —— 表现为测试顺序不同结果不同。
+var antigravityScopes = model.AntigravityOAuthScopes()
+
 // ProviderOf 取一个平台的登录参数。支持的平台与账号导入的平台列表一致 ——
 // 登录只是为了少让用户手贴 JSON, 产出的仍是一份该平台能用的凭据。
 func ProviderOf(platform string) (Provider, error) {
@@ -125,6 +132,45 @@ func ProviderOf(platform string) (Provider, error) {
 			UserCodeHint: "授权后浏览器会跳到一个打不开的地址(127.0.0.1), 把地址栏里的完整地址复制粘贴到下方",
 			// access_type=offline 是拿到 refresh_token 的前提; 少了它只能拿到一次性的
 			// access_token, 账号导入后无法自动续期, 表现为"能用一会儿然后静默失效"。
+			ExtraAuth: url.Values{
+				"access_type": {"offline"},
+				"prompt":      {"consent"},
+			},
+			AccessTokenField:  "access_token",
+			RefreshTokenField: "refresh_token",
+		}, nil
+	case model.AccountPlatformAntigravity:
+		// 与 gemini 同后端(Google Code Assist), 但**授权身份不同**。
+		//
+		// 为什么单列而不是复用 gemini: 实测(2026-11)用 gemini 的凭据请求 Antigravity 的
+		// 数据面(fetchAvailableModels / generateContent)一律 403 "The caller does not have permission"。
+		// tokeninfo 显示 gemini 的 token 缺 cclog 与 experimentsandconfigs, 而这两个 scope
+		// 只属于 Antigravity 的 client —— 凭据不能跨客户端复用。
+		//
+		// 另一条实测事实: Gemini CLI 的免费层(Code Assist for individuals)已被 Google 停用,
+		// onboardUser 返回 403 UNSUPPORTED_CLIENT(error_number 1013)并引导迁移到 Antigravity。
+		// 个人订阅账号因此只能走本平台。
+		// client 凭据来自部署配置, 不内置默认值(理由见 model.antigravityOAuthClientIDEnv 注释)。
+		// 未配置时明确报错并指出变量名 —— 返回一个空 client 的 Provider 会让界面出现
+		// "授权按钮亮着但一点就报 invalid_client"的死路。
+		clientID, clientSecret := model.AntigravityOAuthClient()
+		if clientID == "" || clientSecret == "" {
+			clientIDEnv, clientSecretEnv := model.AntigravityOAuthClientEnvNames()
+			return Provider{}, fmt.Errorf(
+				"antigravity: 未配置 OAuth 客户端, 请设置环境变量 %s 与 %s (Antigravity 的 client 不内置默认值)",
+				clientIDEnv, clientSecretEnv)
+		}
+		return Provider{
+			Platform:     model.AccountPlatformAntigravity,
+			AuthorizeURL: googleAuthorizeURL,
+			TokenURL:     googleTokenURL,
+			ClientID:     clientID,
+			ClientSecret: clientSecret,
+			Scopes:       antigravityScopes,
+			RedirectURI:  googleRedirectURI,
+			BodyFormat:   "form",
+			AuthStyle:    AuthStyleRedirect,
+			UserCodeHint: "授权后浏览器会跳到一个打不开的地址(127.0.0.1), 把地址栏里的完整地址复制粘贴到下方",
 			ExtraAuth: url.Values{
 				"access_type": {"offline"},
 				"prompt":      {"consent"},

@@ -31,6 +31,14 @@ const (
 	AccountPlatformGemini = "gemini"
 	AccountPlatformGrok   = "grok"
 	AccountPlatformClaude = "claude"
+	// AccountPlatformAntigravity 是 Google 的 Antigravity 客户端。
+	// 与 gemini 同为 Google Code Assist 后端, 但**授权身份不同**:
+	// gemini 用 Gemini CLI 的 client(scopes: cloud-platform + userinfo.*),
+	// antigravity 用自己的 client 并多申请 cclog 与 experimentsandconfigs。
+	// 两者不可互换 —— 2026-11 实测: 用 gemini 的凭据请求 Antigravity 的数据面
+	// (fetchAvailableModels / generateContent) 一律 403 "The caller does not have permission",
+	// 缺的正是那两个 scope。
+	AccountPlatformAntigravity = "antigravity"
 )
 
 // AccountCredential 统一后的账号凭据形态。
@@ -164,6 +172,25 @@ func AccountJSONParse(platform string, raw []byte) (*AccountCredential, error) {
 		if credential.Cookies["c_ses"] == "" {
 			return nil, fmt.Errorf("gemini: 缺少 c_ses (Cookie 会话); 若使用 Gemini CLI, 请提供 ~/.gemini/oauth_creds.json 的内容")
 		}
+	case AccountPlatformAntigravity:
+		// Antigravity 形状同 Gemini CLI OAuth(有 refresh_token), 但需要 antigravity 专用 client_id/scopes。
+		// 这里只解析通用字段; client_id/scopes 由 antigravity.Transformer 内部写死(取证一致)。
+		if rt := accountJSONString(fields["refresh_token"]); rt != "" {
+			credential.Kind = AccountKindOAuth
+			credential.AccessToken = accountJSONString(fields["access_token"])
+			credential.RefreshToken = rt
+			credential.Email = accountJSONString(fields["email"])
+			if credential.AccessToken == "" {
+				return nil, fmt.Errorf("antigravity: 提供了 refresh_token 但缺少 access_token")
+			}
+			if millis, ok := accountJSONNumberOf(fields["expiry_date"]); ok && millis > 0 {
+				credential.ExpiresAt = timeUnixMillis(millis)
+			} else {
+				credential.ExpiresAt = accountJWTExpiry(credential.AccessToken)
+			}
+			break
+		}
+		return nil, fmt.Errorf("antigravity: 必须提供带 refresh_token 的 OAuth 凭据(从 Antigravity 授权流程获取); Cookie 形态不支持")
 	case AccountPlatformGrok:
 		credential.Kind = AccountKindCookie
 		// Grok 的会话 Cookie 是 sso; sso-rw 是它的孪生键, 不参与鉴权。

@@ -15,6 +15,7 @@ const (
 	ProtocolOpenAIImage          Protocol = 1 << 4 // OpenAI Images 协议(generations / edits / variations)。
 	ProtocolOpenAIVideo          Protocol = 1 << 5 // OpenAI Videos 协议(P2 异步任务, 当前未启用)。
 	ProtocolXunfeiSparkWS        Protocol = 1 << 6 // 科大讯飞星火原生 WebSocket 协议。
+	ProtocolGeminiCLI            Protocol = 1 << 7 // Gemini CLI 订阅渠道: v1internal:generateContent 信封协议。
 )
 
 // 上游在标准协议之上的方言。
@@ -24,8 +25,9 @@ const (
 type Dialect string
 
 const (
-	DialectGeneric Dialect = "generic" // 标准协议, 不做任何厂商特化。
-	DialectXunfei  Dialect = "xunfei"  // 科大讯飞星火原生 WebSocket。
+	DialectGeneric   Dialect = "generic"    // 标准协议, 不做任何厂商特化。
+	DialectXunfei    Dialect = "xunfei"     // 科大讯飞星火原生 WebSocket。
+	DialectGeminiCLI Dialect = "gemini_cli" // Gemini CLI 订阅渠道: 使用 v1internal RPC 冒号协议。
 )
 
 // 渠道的可编辑配置; 落库时平铺成 channels 的各列, 出入 JSON 时平铺成渠道读写接口的各字段。
@@ -49,6 +51,7 @@ type ChannelConfig struct {
 	AnthropicMessagePath      string         `json:"anthropic_message_path" gorm:"column:anthropic_message_path;default:/v1/messages"`                       // Anthropic Messages 请求路径; 留空由后端填默认路径。
 	Proxy                     bool           `json:"proxy" gorm:"default:false"`                                                                             // 是否使用代理。
 	ChannelProxy              string         `json:"channel_proxy"`                                                                                          // 渠道专用代理地址; 留空表示不用渠道专用代理。[覆盖范围外] 可能含 user:pass 凭据, 当前不落库加密。
+	GeminiProject             string         `json:"gemini_project" gorm:"column:gemini_project"`                                                            // GCP project ID 用于 Gemini CLI 渠道; 留空则由 onboardUser 自动分配。
 	CustomHeader              []CustomHeader `json:"custom_header" gorm:"serializer:json"`                                                                   // 追加到上游请求的 Header。[覆盖范围外] 可能含 Authorization 等凭据, 当前不落库加密。
 	ParamOverride             string         `json:"param_override"`                                                                                         // 请求参数覆盖配置; 留空表示不覆盖。[覆盖范围外] 可能夹带凭据参数, 当前不落库加密。
 	MatchRegex                string         `json:"match_regex"`                                                                                            // 拉取模型列表时的过滤表达式; 留空表示不过滤。

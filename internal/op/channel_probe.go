@@ -43,12 +43,18 @@ func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key, ap
 	target.BaseURL = strings.TrimSpace(target.BaseURL)
 	target.ChannelProxy = strings.TrimSpace(target.ChannelProxy)
 	target.MatchRegex = strings.TrimSpace(target.MatchRegex)
+	target.GeminiProject = strings.TrimSpace(target.GeminiProject)
 	if target.BaseURL == "" {
 		return nil, ErrProbeBaseURLRequired
 	}
 
 	// 客户端由调用方按代理配置构建(编辑表单与自动添加共用), 本函数只管探测与合并。
 	var err error
+
+	// Gemini CLI 渠道走 Antigravity 身份, 只探测 fetchAvailableModels, 不并发探测 OpenAI/Anthropic。
+	if target.Dialect == model.DialectGeminiCLI {
+		return probeGeminiCLIModels(client, target, key, ctx)
+	}
 
 	var openaiModels, anthropicModels []string
 	var openaiErr, anthropicErr error
@@ -195,6 +201,65 @@ func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key, ap
 		models = append(models, fetched)
 	}
 	return models, nil
+}
+
+// probeGeminiCLIModels 探测 Gemini CLI 渠道的模型清单。
+//
+// 走 Antigravity 身份: loadBase 用 prod 跑 loadCodeAssist 拿 currentTier;
+// dataBase 用 daily 跑 onboardUser 分配 project; 最后用 retrieveUserQuota 取模型清单。
+//
+// 为什么模型清单来自 retrieveUserQuota 而不是 fetchAvailableModels:
+// 对 @google/gemini-cli@0.68.0 发行包取证, fetchAvailableModels 全包 0 次命中, CLI 从不调用;
+// CLI 的真实机制是 refreshUserQuota() -> retrieveUserQuota({project}), 读 quota.buckets[].modelId。
+// 配额视角也更贴合订阅额度账号 —— 它回答的是"这个账号现在能用哪些模型", 而 fetchAvailableModels
+// 返回的是"服务端提供了哪些模型", 后者会把账号无权使用的模型也算进来。
+//
+// project 解析顺序: 用户填写的 GeminiProject > onboardUser 分配的 > loadCodeAssist 给出的。
+// Antigravity 路径通常自动分配, 故 GeminiProject 是**可选覆盖**, 不是必填。
+func probeGeminiCLIModels(client *http.Client, target model.ChannelConfig, key string, ctx context.Context) ([]model.ChannelFetchModel, error) {
+	loadBase, dataBase := GeminiCLIBases(target)
+	loadResult, err := LoadCodeAssist(ctx, client, loadBase, key)
+	if err != nil {
+		return nil, fmt.Errorf("gemini cli loadCodeAssist: %w", err)
+	}
+	project := strings.TrimSpace(target.GeminiProject)
+	if project == "" {
+		project = loadResult.ProjectID()
+	}
+	if project == "" {
+		onboardResult, onboardErr := OnboardUser(ctx, client, dataBase, key, OnboardUserOptions{TierID: loadResult.TierID()})
+		if onboardErr != nil {
+			return nil, fmt.Errorf("gemini cli onboardUser: %w", onboardErr)
+		}
+		project = onboardResult.ProjectID()
+	}
+	if project == "" {
+		// 到这里说明自动分配也没给出 project: 只能让用户填, 不能带空 project 发请求。
+		return nil, fmt.Errorf("gemini cli: %w (请在上游渠道配置里填写 GCP project id)", ErrGeminiCLIProjectRequired)
+	}
+	quota, err := RetrieveUserQuota(ctx, client, dataBase, key, project)
+	if err != nil {
+		return nil, fmt.Errorf("gemini cli retrieveUserQuota: %w", err)
+	}
+	names := quota.AvailableModels()
+	if len(names) == 0 {
+		// 配额响应里没有 buckets 视作失败: 静默返回空清单会让界面显示"该渠道无模型",
+		// 而真实原因可能是凭据 scope 不足或 project 不对, 两者都需要被看见。
+		return nil, errors.New("gemini cli: retrieveUserQuota 未返回任何可用模型(检查凭据是否为 Antigravity 授权、project 是否正确)")
+	}
+	result := make([]model.ChannelFetchModel, 0, len(names))
+	for _, name := range names {
+		fetched := model.ChannelFetchModel{
+			Name:      name,
+			Protocols: model.ProtocolGeminiCLI,
+			Source:    model.CapabilitySourceModelsDev,
+		}
+		if capability, ok := CapabilityGet(name); ok {
+			fetched.Capability = capability.MediaKind()
+		}
+		result = append(result, fetched)
+	}
+	return result, nil
 }
 
 // imageModelNamePattern 常见生图模型的名称关键词; 命中即默认勾选生图协议位。

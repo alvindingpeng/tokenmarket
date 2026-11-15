@@ -577,3 +577,88 @@ func TestAccountOAuthGeminiRefreshResponse(t *testing.T) {
 		t.Fatalf("expires_at = %v, want %v", result.ExpiresAt, want)
 	}
 }
+
+// Antigravity 的刷新规格必须带完整 scope, 否则新令牌会退回默认 scope,
+// 表现为"刷新成功但数据面 403" —— 这是本平台最难查的一类静默失效。
+func TestAntigravitySpecRequestsScopes(t *testing.T) {
+	// Antigravity 的 client 不内置默认值, 必须由部署配置注入(与 gemini 的"内置可覆盖"不同)。
+	// 未配置时规格里没有 client_id, 刷新会当场报错 —— 那个行为由另一个用例钉住。
+	t.Setenv("SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_ID", "test-antigravity-id")
+	t.Setenv("SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_SECRET", "test-antigravity-secret")
+
+	spec, err := AccountOAuthSpecOf(AccountPlatformAntigravity)
+	if err != nil {
+		t.Fatalf("antigravity 必须登记刷新规格: %v", err)
+	}
+	if spec.TokenURL == "" || spec.ClientID == "" {
+		t.Fatalf("antigravity 规格不完整: %+v", spec)
+	}
+	if len(spec.Scopes) == 0 {
+		t.Fatal("antigravity 刷新必须提交 scope, 否则新令牌会丢失 cclog/experimentsandconfigs")
+	}
+	has := func(want string) bool {
+		for _, s := range spec.Scopes {
+			if s == want {
+				return true
+			}
+		}
+		return false
+	}
+	for _, want := range []string{
+		"https://www.googleapis.com/auth/cclog",
+		"https://www.googleapis.com/auth/experimentsandconfigs",
+	} {
+		if !has(want) {
+			t.Errorf("antigravity 刷新 scope 缺少 %s", want)
+		}
+	}
+
+	// 光有 spec.Scopes 不算数: 必须真的落在刷新请求体里。
+	_, body, err := AccountOAuthRefreshRequest(spec, AccountCredential{
+		Platform:     AccountPlatformAntigravity,
+		RefreshToken: "rt",
+	})
+	if err != nil {
+		t.Fatalf("构造刷新请求: %v", err)
+	}
+	form, err := url.ParseQuery(string(body))
+	if err != nil {
+		t.Fatalf("刷新请求体不是合法表单: %v (%s)", err, body)
+	}
+	scope := form.Get("scope")
+	if scope == "" {
+		t.Fatal("刷新表单里没有 scope 字段: Scopes 没有被落在请求体上")
+	}
+	for _, want := range []string{"cclog", "experimentsandconfigs"} {
+		if !strings.Contains(scope, want) {
+			t.Errorf("刷新表单 scope 里缺 %s, 实际=%q", want, scope)
+		}
+	}
+	if got := form.Get("refresh_token"); got != "rt" {
+		t.Errorf("refresh_token = %q, want rt", got)
+	}
+	if got := form.Get("client_id"); got == "" {
+		t.Error("刷新表单缺 client_id")
+	}
+}
+
+// 刷新路径同样必须在未配置时拦住, 而不是发出一个必然 invalid_client 的请求。
+func TestAntigravityRefreshRequiresConfiguredClient(t *testing.T) {
+	t.Setenv("SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_ID", "")
+	t.Setenv("SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_SECRET", "")
+
+	spec, err := AccountOAuthSpecOf(AccountPlatformAntigravity)
+	if err != nil {
+		t.Fatalf("规格应能取到: %v", err)
+	}
+	_, _, err = AccountOAuthRefreshRequest(spec, AccountCredential{
+		Platform:     AccountPlatformAntigravity,
+		RefreshToken: "rt",
+	})
+	if err == nil {
+		t.Fatal("未配置 client 时刷新必须报错")
+	}
+	if !strings.Contains(err.Error(), "SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_ID") {
+		t.Errorf("刷新错误没指出该配的变量: %v", err)
+	}
+}

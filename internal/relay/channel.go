@@ -90,6 +90,34 @@ func buildOutbound(channel model.Channel, grant model.ChannelGrant, channelKey m
 			Domain:      channelKey.Domain,
 		})
 		return outbound, protocol, passthrough, err
+	case model.ProtocolGeminiCLI:
+		// Gemini CLI 订阅渠道: 出站是 Antigravity 的 v1internal:generateContent 信封。
+		//
+		// 为什么不用 axonhub 的 antigravity.Transformer: 它在构造时就用 refresh_token 建了一个
+		// 自己的 token provider, 之后一直拿那份 refresh_token 去换令牌。而本项目的
+		// op.AccountRefresh 定时任务也在用同一个 refresh_token 刷新并回写库与缓存。
+		// Google 每次刷新都轮换 refresh_token, 两条路径于是各自持有对方已作废的值 ——
+		// 症状是"账号刷新成功但转发 401", 隔一段时间复发, 极难归因。
+		// (该库虽然留了 OnRefreshed 回调来接这条链路, 但它只在该 Transformer 自己刷新时触发;
+		//  定时任务的刷新不会告知它, 反过来它刷新后若回调写库又会与定时任务抢写。)
+		// 因此这里使用与其它协议同一套令牌来源(已刷好的 access_token), 续期仍由单一路径掌管。
+		//
+		// 这样做的另一个好处: 请求由 sendConverted 的 executor 用 resolveUpstreamClient 取得的
+		// client 发出, 渠道代理与出口池因此自然生效, 不需要在这里重复处理代理。
+		if channelKey.AccountKind != model.AccountKindOAuth {
+			return nil, model.ProtocolGeminiCLI, passthrough, fmt.Errorf(
+				"gemini cli 渠道需要 OAuth 账号凭据, 当前 account_kind=%q", channelKey.AccountKind)
+		}
+		// antigravity 与 gemini 的凭据不通用: 后者缺 cclog/experimentsandconfigs, 数据面会 403。
+		if channelKey.AccountPlatform != "" && channelKey.AccountPlatform != model.AccountPlatformAntigravity {
+			return nil, model.ProtocolGeminiCLI, passthrough, fmt.Errorf(
+				"gemini cli 渠道需要 antigravity 平台的凭据(当前 %q): "+
+					"Gemini CLI 的凭据缺少 cclog/experimentsandconfigs, 数据面会 403",
+				channelKey.AccountPlatform)
+		}
+		outbound, err := newGeminiCLIOutbound(channel.BaseURL, key, channel.GeminiProject)
+		return outbound, model.ProtocolGeminiCLI, passthrough, err
+
 	default:
 		return nil, 0, false, fmt.Errorf("channel grant %d supports no known protocol: %d", grant.ID, grant.Protocols)
 	}

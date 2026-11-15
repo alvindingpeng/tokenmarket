@@ -265,12 +265,18 @@ func TestProviderOfRejectsUnknown(t *testing.T) {
 
 // 支持平台的端点必须有出处且不为空 —— 空端点会变成"请求打到空地址"这种无从排查的错。
 func TestProviderOfSupportedPlatforms(t *testing.T) {
-	for _, platform := range []string{"claude", "codex", "gemini"} {
+	for _, platform := range []string{"claude", "codex", "gemini", "antigravity"} {
 		t.Run(platform, func(t *testing.T) {
 			// gemini 的 client 来自部署配置, 测试里配一份假值才能验到"参数完整"。
 			if platform == "gemini" {
 				t.Setenv("SWITCHYARD_GEMINI_OAUTH_CLIENT_ID", "test-google-id")
 				t.Setenv("SWITCHYARD_GEMINI_OAUTH_CLIENT_SECRET", "test-google-secret")
+			}
+			// antigravity 的 client 不内置默认值, 未配置时 ProviderOf 会明确报错。
+			// 这里配假值测"配置后参数完整"; 未配置的报错另有专门用例。
+			if platform == "antigravity" {
+				t.Setenv("SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_ID", "test-ag-id")
+				t.Setenv("SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_SECRET", "test-ag-secret")
 			}
 			p, err := ProviderOf(platform)
 			if err != nil {
@@ -332,4 +338,108 @@ func TestGeminiProviderEmptyDBSourceFails(t *testing.T) {
 	// 当前实现: DB getter 返回空串 -> 回退 env -> 回退内置默认。
 	// 要让清空生效, 需要在 model 层处理"空串等于显式清空"的语义, 这里暂不实现。
 	_ = func() {}
+}
+
+// Antigravity 与 gemini 是两套**不可互换**的凭据, 这条测试钉住这个区别。
+//
+// 为什么必须钉: 两者后端相同(Google Code Assist), 看起来"都是 Google 登录",
+// 最容易的做法是复用 gemini 那一套。但实测(2026-11)用 gemini 的 token 请求
+// Antigravity 数据面(retrieveUserQuota/generateContent)一律
+// 403 "The caller does not have permission" —— tokeninfo 显示缺 cclog 与
+// experimentsandconfigs, 而这两个 scope 只在 Antigravity 的 client 下才有。
+// 一旦有人"顺手合并"这两个分支, 症状会是登录成功但一个模型都拉不到,
+// 且错误信息看不出与 scope 有关。这条测试让合并立刻失败。
+func TestAntigravityProviderDiffersFromGemini(t *testing.T) {
+	t.Setenv("SWITCHYARD_GEMINI_OAUTH_CLIENT_ID", "test-google-id")
+	t.Setenv("SWITCHYARD_GEMINI_OAUTH_CLIENT_SECRET", "test-google-secret")
+	t.Setenv("SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_ID", "test-antigravity-id")
+	t.Setenv("SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_SECRET", "test-antigravity-secret")
+
+	gem, err := ProviderOf("gemini")
+	if err != nil {
+		t.Fatalf("gemini provider: %v", err)
+	}
+	ag, err := ProviderOf("antigravity")
+	if err != nil {
+		t.Fatalf("antigravity provider: %v", err)
+	}
+
+	if ag.ClientID == gem.ClientID {
+		t.Errorf("antigravity 与 gemini 的 client_id 必须不同(同一 client 拿不到 cclog/experimentsandconfigs)")
+	}
+	if ag.ClientSecret == gem.ClientSecret {
+		t.Errorf("antigravity 与 gemini 的 client_secret 必须不同")
+	}
+
+	hasScope := func(scopes []string, want string) bool {
+		for _, s := range scopes {
+			if s == want {
+				return true
+			}
+		}
+		return false
+	}
+	// Antigravity 必须申请这两个 scope, 少任一个数据面就 403。
+	for _, want := range []string{
+		"https://www.googleapis.com/auth/cclog",
+		"https://www.googleapis.com/auth/experimentsandconfigs",
+	} {
+		if !hasScope(ag.Scopes, want) {
+			t.Errorf("antigravity 缺少必需 scope %s (缺了会让数据面 403)", want)
+		}
+	}
+	// 对照: gemini 不该申请这两个(那是 Antigravity client 的权限)。
+	if hasScope(gem.Scopes, "https://www.googleapis.com/auth/cclog") {
+		t.Errorf("gemini 不应申请 cclog —— 该 scope 属于 Antigravity 的 client")
+	}
+
+	for _, p := range []struct {
+		name string
+		v    Provider
+	}{{"gemini", gem}, {"antigravity", ag}} {
+		if p.v.AuthStyle != AuthStyleRedirect {
+			t.Errorf("%s auth style = %q, want redirect", p.name, p.v.AuthStyle)
+		}
+		// access_type=offline 是拿到 refresh_token 的前提, 少了它账号无法自动续期。
+		if got := p.v.ExtraAuth.Get("access_type"); got != "offline" {
+			t.Errorf("%s access_type = %q, want offline", p.name, got)
+		}
+	}
+}
+
+// Antigravity 不内置默认 client: 未配置时必须**明确报错并指出变量名**。
+//
+// 这条测试守的是一类很难自查的失败: 若 ProviderOf 在没有 client 时也返回一个空 client 的
+// Provider, 界面就会出现"授权按钮亮着, 一点就报 invalid_client"的死路, 而 invalid_client
+// 读起来像"账号坏了"。拿空 client 去打上游也不是选项 —— 那等于在别人的风控体系里制造无意义流量。
+func TestAntigravityProviderRequiresConfiguredClient(t *testing.T) {
+	// 显式清空, 排除外部环境残留导致的假通过。
+	t.Setenv("SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_ID", "")
+	t.Setenv("SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_SECRET", "")
+
+	_, err := ProviderOf("antigravity")
+	if err == nil {
+		t.Fatal("未配置 client 时 ProviderOf(antigravity) 必须报错, 否则界面会给出一个点了就失败的授权按钮")
+	}
+	// 错误信息必须是可行动的: 直接给出该配哪两个变量。
+	if !strings.Contains(err.Error(), "SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_ID") ||
+		!strings.Contains(err.Error(), "SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_SECRET") {
+		t.Errorf("错误信息没有指出该配的环境变量: %v", err)
+	}
+
+	// 只配 id 不配 secret 也必须视为未配置: 半对凭据会得到 invalid_client。
+	t.Setenv("SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_ID", "only-id")
+	if _, err := ProviderOf("antigravity"); err == nil {
+		t.Fatal("只配 client_id 时应报未配置(半对凭据会 invalid_client)")
+	}
+
+	// 配齐后才可用。
+	t.Setenv("SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_SECRET", "only-secret")
+	p, err := ProviderOf("antigravity")
+	if err != nil {
+		t.Fatalf("配齐后应可用: %v", err)
+	}
+	if p.ClientID != "only-id" || p.ClientSecret != "only-secret" {
+		t.Errorf("provider 取的 client 不对: id=%q secret=%q", p.ClientID, p.ClientSecret)
+	}
 }

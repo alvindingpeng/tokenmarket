@@ -25,7 +25,11 @@ import type { AccountPlatform } from '@/api/channel';
  * 除非给每层都加上互斥的豁免逻辑; 那比一个面板复杂得多, 也更容易在下次改弹层时重新坏掉。
  */
 
-const SUPPORTED: AccountPlatform[] = ['claude', 'codex', 'gemini'];
+// antigravity 与 gemini 同是 Google 后端, 但**凭据不通用**: gemini 用 Gemini CLI 的 client,
+// antigravity 用 Antigravity 的 client 并多申请 cclog 与 experimentsandconfigs 两个 scope。
+// 实测(2026-11)用 gemini 的凭据打 Antigravity 数据面一律 403 "The caller does not have permission",
+// 所以两者都必须存在, 由用户按自己实际使用的客户端来选。
+const SUPPORTED: AccountPlatform[] = ['claude', 'codex', 'gemini', 'antigravity'];
 
 export function AccountSignIn({
     channelId,
@@ -159,6 +163,13 @@ export function AccountSignIn({
                             {platform === 'gemini' ? (
                                 <p className="rounded-md border border-blue-500/40 bg-blue-500/10 p-2.5 text-xs text-blue-900 dark:text-blue-200">
                                     {t('geminiNotice')}
+                                </p>
+                            ) : platform === 'antigravity' ? (
+                                // 必须说清"为什么有两个 Google 平台": 用户会疑惑 gemini 与 antigravity
+                                // 有什么区别。区别在于凭据不通用, 选错的症状是登录成功但一个模型都拉不到,
+                                // 那种失败很难自己归因到"选错了平台"。
+                                <p className="rounded-md border border-blue-500/40 bg-blue-500/10 p-2.5 text-xs text-blue-900 dark:text-blue-200">
+                                    {t('antigravityNotice')}
                                 </p>
                             ) : (
                                 <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-900 dark:text-amber-200">

@@ -79,6 +79,35 @@ const (
 	geminiBuiltinClientSecret = "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"
 )
 
+// Antigravity 客户端的凭据**不由代码提供**, 必须由部署配置注入。
+//
+// 为什么不内置默认值(与 gemini 那对不同): 把某厂商应用的 client 身份写进公开仓库,
+// 等于让每个部署者都在冒用同一个应用 —— 配额、责任与风控都落在不属于他们的地方,
+// 而且会让该应用的身份在公开代码里被固化, 后续任何人都能直接拿去用。
+// gemini 那对内置值属于既有决定(它让开箱可用), 但不应把这个模式再复制一次。
+//
+// 与 gemini 的另一处区别: 两套 client 的授权范围不同, **凭据不可互换**。
+// 用 gemini 的 token 请求 Antigravity 数据面会 403, 缺的是 cclog 与 experimentsandconfigs
+// (见 antigravityScopes 的注释)。所以配错 client 的症状是"授权成功但一个模型都拉不到"。
+const (
+	antigravityOAuthClientIDEnv     = "SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_ID"
+	antigravityOAuthClientSecretEnv = "SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_SECRET"
+)
+
+// antigravityScopes 是 Antigravity 要求的权限。
+//
+// 前三个与 Gemini CLI 相同(Code Assist 的通用权限), 后两个是 Antigravity 特有的。
+// 实测(2026-11): 用只含前三个 scope 的 token 请求 retrieveUserQuota 与 generateContent
+// 一律 403 "The caller does not have permission"; 缺的正是这两个。
+// 所以它们不是可选项 —— 少了整个数据面不可用, 且报错看不出与 scope 有关。
+var antigravityScopes = []string{
+	"https://www.googleapis.com/auth/cloud-platform",
+	"https://www.googleapis.com/auth/userinfo.email",
+	"https://www.googleapis.com/auth/userinfo.profile",
+	"https://www.googleapis.com/auth/cclog",
+	"https://www.googleapis.com/auth/experimentsandconfigs",
+}
+
 // accountOAuthSpecs 平台 -> 令牌端点规格。未登记的平台的 OAuth 刷新会明确失败, 而不是
 // 拿一个猜出来的端点去打上游 —— 打错端点最坏的情况是让对方以为我们在暴力破解。
 var accountOAuthSpecs = map[string]AccountOAuthSpec{
@@ -156,6 +185,30 @@ var accountOAuthSpecs = map[string]AccountOAuthSpec{
 			}
 		},
 	},
+	AccountPlatformAntigravity: {
+		Platform: AccountPlatformAntigravity,
+		// 与 gemini 共用 Google 的令牌端点, 但 client 不同(见 antigravityOAuthClientIDEnv 注释)。
+		TokenURL: "https://oauth2.googleapis.com/token",
+		// client_id 由部署配置提供; 未配置时 AccountOAuthRefreshRequest 会明确报错指路。
+		// 这里不写死: 本平台不内置默认 client(理由见常量注释), 与 gemini 的"内置可覆盖"不同。
+		BodyFormat:        accountBodyFormatForm,
+		AccessTokenField:  "access_token",
+		RefreshTokenField: "refresh_token",
+		ExpiresInField:    "expires_in",
+		// 响应与存储键名和 gemini 一样是 snake_case。
+		StoreAccessTokenField:  "access_token",
+		StoreRefreshTokenField: "refresh_token",
+		// **关键**: 刷新时必须把 scope 一起发, 否则新令牌会退回 Google 的默认 scope,
+		// 丢掉 cclog 与 experimentsandconfigs —— 表现为"刷新成功但数据面 403"。
+		// 这是本平台最容易踩的坑, 实测已确认缺这两个 scope 时 retrieveUserQuota 直接 403。
+		Scopes: antigravityScopes,
+		ExtraFields: func(credential AccountCredential) map[string]string {
+			_, clientSecret := AntigravityOAuthClient()
+			return map[string]string{
+				"client_secret": clientSecret,
+			}
+		},
+	},
 	AccountPlatformClaude: {
 		Platform: AccountPlatformClaude,
 		// 端点与 client_id 来自 Claude Code 官方发行包(2.1.325)里提取的常量,
@@ -197,6 +250,11 @@ func AccountOAuthSpecOf(platform string) (AccountOAuthSpec, error) {
 	if platform == AccountPlatformGemini {
 		spec.ClientID = geminiOAuthClientID()
 	}
+	// Antigravity 的 client 同样来自部署配置, 但不内置默认值:
+	// 未配置时这里保持空, 由 AccountOAuthRefreshRequest 当场报错并指出该配哪两个变量。
+	if platform == AccountPlatformAntigravity {
+		spec.ClientID, _ = AntigravityOAuthClient()
+	}
 	return spec, nil
 }
 
@@ -229,6 +287,16 @@ func AccountOAuthRefreshRequest(spec AccountOAuthSpec, credential AccountCredent
 			clientIDEnv, clientSecretEnv := GeminiOAuthClientEnvNames()
 			return "", nil, fmt.Errorf(
 				"%s: 未配置 OAuth 客户端, 请设置环境变量 %s 与 %s (需为本部署自行注册的 Google OAuth 客户端)",
+				spec.Platform, clientIDEnv, clientSecretEnv)
+		}
+	}
+	if spec.Platform == AccountPlatformAntigravity {
+		// 本平台不内置默认 client, 未配置就是不能用。同样在此拦住并指明变量名,
+		// 否则会拿空 client 去打上游, 换回一个读起来像"账号失效"的 invalid_client。
+		if !AntigravityOAuthClientConfigured() {
+			clientIDEnv, clientSecretEnv := AntigravityOAuthClientEnvNames()
+			return "", nil, fmt.Errorf(
+				"%s: 未配置 OAuth 客户端, 请设置环境变量 %s 与 %s (Antigravity 的 client 不内置默认值)",
 				spec.Platform, clientIDEnv, clientSecretEnv)
 		}
 	}
@@ -454,4 +522,36 @@ func GeminiOAuthClientEnvNames() (clientID, clientSecret string) {
 // 与其把取值逻辑复制一份(迟早漂移), 不如在这里只开一个导出入口。
 func GeminiOAuthClient() (clientID, clientSecret string) {
 	return geminiOAuthClientID(), geminiOAuthClientSecret()
+}
+
+// AntigravityOAuthClient 返回 Antigravity 平台的 OAuth client 凭据。
+//
+// 只从环境变量读, 代码里不内置默认值(理由见 antigravityOAuthClientIDEnv 的注释)。
+// 未配置时返回空对, 由调用方(授权入口与刷新路径)明确报错并指出该配哪两个变量 ——
+// 绝不用一个猜来的 client 去打上游: 那会把"漏配环境变量"变成"账号坏了"。
+//
+// 两个变量必须同时配: 只配一个时整对视为未配置。理由与 gemini 那对相同 ——
+// id 与 secret 是配对的, 混搭会得到一对不匹配的凭据, 上游回 invalid_client。
+func AntigravityOAuthClient() (clientID, clientSecret string) {
+	return strings.TrimSpace(os.Getenv(antigravityOAuthClientIDEnv)),
+		strings.TrimSpace(os.Getenv(antigravityOAuthClientSecretEnv))
+}
+
+// AntigravityOAuthClientEnvNames 返回需配置的变量名, 供错误信息直接指路。
+func AntigravityOAuthClientEnvNames() (clientIDEnv, clientSecretEnv string) {
+	return antigravityOAuthClientIDEnv, antigravityOAuthClientSecretEnv
+}
+
+// AntigravityOAuthClientConfigured 报告 Antigravity 的 client 是否已配置。
+func AntigravityOAuthClientConfigured() bool {
+	clientID, clientSecret := AntigravityOAuthClient()
+	return clientID != "" && clientSecret != ""
+}
+
+// AntigravityOAuthScopes 返回 Antigravity 要求的 scope 列表。
+// 含 cclog 与 experimentsandconfigs, 缺任一个数据面就会 403(实测确认)。
+func AntigravityOAuthScopes() []string {
+	out := make([]string, len(antigravityScopes))
+	copy(out, antigravityScopes)
+	return out
 }

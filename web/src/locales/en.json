@@ -1312,7 +1312,12 @@
             "backToStats": "Back to Stats",
             "grantClearAll": "Clear all models",
             "modelRemove": "Remove model",
-            "grantRemove": "Remove this key’s grant"
+            "grantRemove": "Remove this key’s grant",
+            "geminiProject": "GCP Project ID (optional)",
+            "geminiProjectPlaceholder": "Leave empty for auto-assignment",
+            "geminiProjectHint": "Optional override. Leave empty and Google assigns a project automatically on the Antigravity path.",
+            "geminiProxyHint": "Proxy is required for regions where direct access is blocked: both model fetch and forwarding go through the channel proxy.",
+            "geminiCredentialHint": "This channel requires credentials authorized with the Antigravity client. Old Gemini CLI credentials return 403 (missing scope)."
         },
         "review": {
             "tabChannels": "Channels",
@@ -1522,7 +1527,8 @@
                 "success": "Account {name} imported",
                 "clientNotice": "This sign-in uses the vendor CLI's own OAuth client: the authorization page will show that CLI requesting access. Use an account you can afford to lose.",
                 "geminiNotice": "This sign-in uses the built-in Gemini CLI OAuth client: the authorization page will show \"Gemini CLI\" requesting access. You can configure your own client in settings.",
-                "needChannel": "Select the target channel above first"
+                "needChannel": "Select the target channel above first",
+                "antigravityNotice": "Login as the Antigravity app. Requires the deployment to configure SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_ID and _CLIENT_SECRET first (the Antigravity client is not built in). Its credential is NOT interchangeable with the Gemini CLI one: the Gemini CLI token lacks the cclog and experimentsandconfigs scopes, so pulling models or relaying returns 403. Google has also retired the Gemini CLI free tier for individuals (UNSUPPORTED_CLIENT), so personal subscriptions must use this platform."
             }
         }
     },

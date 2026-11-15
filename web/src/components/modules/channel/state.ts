@@ -11,6 +11,8 @@ export type ChannelFormState = {
     openai_chat_completion_path: string;
     openai_response_path: string;
     anthropic_message_path: string;
+    /** GCP Project ID for gemini_cli dialect (optional, auto-assigned for personal accounts). */
+    gemini_project?: string;
     keys: {
         name: string;
         key: string; // 上游访问凭据; 讯飞渠道用它承载 API Key; 账号凭据承载整包账号 JSON。
@@ -63,6 +65,7 @@ export const emptyFormState: ChannelFormState = {
     openai_chat_completion_path: '/v1/chat/completions',
     openai_response_path: '/v1/responses',
     anthropic_message_path: '/v1/messages',
+    gemini_project: '',
     keys: [],
     egresses: [],
     models: [],
@@ -86,6 +89,7 @@ export function fromChannel(channel: ChannelDetail): ChannelFormState {
         openai_chat_completion_path: channel.openai_chat_completion_path,
         openai_response_path: channel.openai_response_path,
         anthropic_message_path: channel.anthropic_message_path,
+        gemini_project: channel.gemini_project ?? '',
         // 讯飞三项读侧可能缺省, 归一为空串: 表单里处处少判一次 undefined。
         keys: channel.keys.map(({ name, key, enabled, app_id, api_secret, domain,
             account_kind, account_platform, account_email, token_expires_at, token_refresh_at, disabled_until }) => ({
@@ -139,6 +143,7 @@ export function toChannelDetail(state: ChannelFormState, id: number): ChannelDet
     return {
         ...toChannelConfig(state),
         id,
+        gemini_project: state.gemini_project?.trim() || undefined,
         // 讯飞三项写侧恒带, 与读侧的可能缺省相反: 后端整体替换凭据, 少带一项会被当作清空。
         keys: state.keys.map(({ name, key, enabled, app_id, api_secret, domain }) => ({
             name: name.trim(), key: key.trim(), enabled,

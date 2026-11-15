@@ -248,9 +248,10 @@ func rawStringOf(m map[string]any, key string) string {
 // 由后端计算而非前端写死: 哪些平台能登录取决于部署是否配好了 client(gemini 就要配),
 // 前端写死会出现"按钮亮着但一点就报未配置"的死路。
 func listSignInPlatforms(c *gin.Context) {
-	platforms := make([]gin.H, 0, 3)
+	platforms := make([]gin.H, 0, 4)
 	for _, platform := range []string{
-		model.AccountPlatformClaude, model.AccountPlatformCodex, model.AccountPlatformGemini,
+		model.AccountPlatformClaude, model.AccountPlatformCodex,
+		model.AccountPlatformGemini, model.AccountPlatformAntigravity,
 	} {
 		provider, err := signin.ProviderOf(platform)
 		if err != nil {
@@ -284,6 +285,10 @@ func clientOwnerOf(platform string) string {
 		return "codex-cli"
 	case model.AccountPlatformGemini:
 		return "self-registered"
+	case model.AccountPlatformAntigravity:
+		// Antigravity 的 client 不是我们自己注册的, 也不是用户注册的, 而是 Google 随其
+		// 桌面客户端分发的那一个。授权页会显示成 Antigravity 在申请权限 —— 用户有权先知道。
+		return "antigravity-app"
 	}
 	return ""
 }

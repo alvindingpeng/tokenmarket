@@ -247,6 +247,35 @@ function ChannelFormFields({ channel, onBack, onChannelRefetch }: {
                                     </label>
                                 ))}
                             </div>
+                            {state.dialect === 'gemini_cli' && (
+                                <div className="space-y-3 rounded-xl border border-border bg-muted/30 p-3">
+                                    <div className="space-y-2">
+                                        <Label htmlFor={`${idPrefix}-gemini-project`}>{t('geminiProject')}</Label>
+                                        <Input
+                                            id={`${idPrefix}-gemini-project`}
+                                            value={state.gemini_project}
+                                            onChange={(e) => setState({ ...state, gemini_project: e.target.value })}
+                                            placeholder={t('geminiProjectPlaceholder')}
+                                            className="rounded-xl"
+                                        />
+                                        <p className="text-xs text-muted-foreground">{t('geminiProjectHint')}</p>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor={`${idPrefix}-channel-proxy`}>{t('channelProxy')}</Label>
+                                        <Input
+                                            id={`${idPrefix}-channel-proxy`}
+                                            type="url"
+                                            value={state.channel_proxy}
+                                            onChange={(e) => setState({ ...state, channel_proxy: e.target.value })}
+                                            placeholder={t('channelProxyPlaceholder')}
+                                            className="rounded-xl font-mono text-sm"
+                                        />
+                                        <p className="text-xs text-muted-foreground">{t('channelProxyHint')}</p>
+                                    </div>
+                                    <p className="text-xs text-amber-600 dark:text-amber-400">{t('geminiProxyHint')}</p>
+                                    <p className="text-xs text-muted-foreground">{t('geminiCredentialHint')}</p>
+                                </div>
+                            )}
                         </div>
                     )}
 
