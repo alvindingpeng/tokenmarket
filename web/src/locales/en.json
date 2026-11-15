@@ -1487,6 +1487,22 @@
                 "secretNote": "This file grants full access to the account. Treat it like a password and do not share it.",
                 "copy": "Copy",
                 "copyFailed": "Could not copy"
+            },
+            "signIn": {
+                "trigger": "Sign in with browser",
+                "title": "Sign in with browser",
+                "description": "Open the provider authorization page, authorize, then paste what the page shows back here. It becomes an account credential of this channel.",
+                "platform": "Platform",
+                "name": "Credential name",
+                "namePlaceholder": "Leave empty to auto-name",
+                "start": "Open authorization page",
+                "step1": "Step 1: authorize in the opened page",
+                "openAgain": "Reopen the authorization page",
+                "step2": "Step 2: paste back the result",
+                "pastePlaceholder": "Paste the code or the full address",
+                "complete": "Complete sign-in and import",
+                "success": "Account {name} imported",
+                "clientNotice": "This sign-in uses the vendor CLI's own OAuth client: the authorization page will show that CLI requesting access. Use an account you can afford to lose."
             }
         }
     },

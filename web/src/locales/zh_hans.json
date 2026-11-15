@@ -1487,6 +1487,22 @@
                 "secretNote": "该文件等同于账号的完整访问权限。请像对待密码一样对待它, 不要分享。",
                 "copy": "复制",
                 "copyFailed": "复制失败"
+            },
+            "signIn": {
+                "trigger": "网页登录导入",
+                "title": "网页登录导入账号",
+                "description": "打开上游授权页, 完成授权后把页面上显示的内容贴回来。成功即成为本渠道的一个账号凭据。",
+                "platform": "平台",
+                "name": "凭据名",
+                "namePlaceholder": "留空则自动命名",
+                "start": "打开授权页",
+                "step1": "第一步: 在弹出的页面完成授权",
+                "openAgain": "重新打开授权页",
+                "step2": "第二步: 把结果贴回来",
+                "pastePlaceholder": "粘贴授权码或完整地址",
+                "complete": "完成登录并导入",
+                "success": "账号 {name} 已导入",
+                "clientNotice": "本次登录使用上游 CLI 自带的 OAuth 客户端, 授权页会显示成该 CLI 在申请权限。请使用一个可以承受损失的账号。"
             }
         }
     },

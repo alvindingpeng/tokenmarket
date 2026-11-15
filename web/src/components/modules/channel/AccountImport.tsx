@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/morphing-dialog';
 import { accountImport, accountRefreshKey, type AccountImportResult, type AccountPlatform } from '@/api/channel';
 import { CliHint } from './CliHint';
+import { AccountSignIn } from './AccountSignIn';
 
 /**
  * AccountImport 导入上游账号 JSON 作为渠道凭据。
@@ -156,6 +157,18 @@ export function AccountImport({ channelId, onImported, channels }: {
                     <MorphingDialogDescription className="mt-1 text-sm text-muted-foreground">
                         {t('hint')}
                     </MorphingDialogDescription>
+
+                    {/* 网页登录是「粘贴 JSON」之外的另一条入口, 不是替代:
+                        手上已有凭据文件的人继续贴 JSON, 什么都没有的人点授权即可。
+                        目标渠道沿用下面选定的那个, 两处不能各选一次。 */}
+                    {(channelId ?? targetChannel) !== undefined && (
+                        <div className="mt-3">
+                            <AccountSignIn
+                                channelId={(channelId ?? targetChannel) as number}
+                                onSuccess={() => setResult(null)}
+                            />
+                        </div>
+                    )}
 
                     <div className="mt-4 space-y-3">
                         {/* 目标渠道只在独立导入模式下出现: 渠道内导入时目标已经确定, 再摆一个不可改的

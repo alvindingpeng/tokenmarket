@@ -378,3 +378,11 @@ func GeminiOAuthClientConfigured() bool {
 func GeminiOAuthClientEnvNames() (clientID, clientSecret string) {
 	return geminiOAuthClientIDEnv, geminiOAuthClientSecretEnv
 }
+
+// GeminiOAuthClient 返回配置好的 client_id 与 client_secret(导出版)。
+//
+// 登录流程(internal/signin)在 model 之外, 拿不到未导出的那两个小写函数;
+// 与其把取值逻辑复制一份(迟早漂移), 不如在这里只开一个导出入口。
+func GeminiOAuthClient() (clientID, clientSecret string) {
+	return geminiOAuthClientID(), geminiOAuthClientSecret()
+}

@@ -1487,6 +1487,22 @@
                 "secretNote": "該檔案等同於帳號的完整存取權限。請像對待密碼一樣對待它, 不要分享。",
                 "copy": "複製",
                 "copyFailed": "複製失敗"
+            },
+            "signIn": {
+                "trigger": "網頁登入匯入",
+                "title": "網頁登入匯入帳號",
+                "description": "開啟上游授權頁, 完成授權後把頁面上顯示的內容貼回來。成功即成為本渠道的一個帳號憑證。",
+                "platform": "平台",
+                "name": "憑證名",
+                "namePlaceholder": "留空則自動命名",
+                "start": "開啟授權頁",
+                "step1": "第一步: 在彈出的頁面完成授權",
+                "openAgain": "重新開啟授權頁",
+                "step2": "第二步: 把結果貼回來",
+                "pastePlaceholder": "貼上授權碼或完整位址",
+                "complete": "完成登入並匯入",
+                "success": "帳號 {name} 已匯入",
+                "clientNotice": "本次登入使用上游 CLI 自帶的 OAuth 用戶端, 授權頁會顯示成該 CLI 在申請權限。請使用一個可以承受損失的帳號。"
             }
         }
     },
