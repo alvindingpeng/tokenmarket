@@ -130,6 +130,34 @@ func TestScoreRetryLocalExclusionSurvivesRecoveryAndConfigChanges(t *testing.T) 
 	}
 }
 
+func TestScoreRateRetryReprobesAfterBackoff(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprint(w, `{"error":{"message":"Resource has been exhausted","type":"rate_limit_error","code":429}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"ok","object":"chat.completion","model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+	}))
+	defer srv.Close()
+	config := model.DefaultGroupRelayConfigForMode(model.GroupModeScore)
+	config.MemberRetryIntervalSeconds = 1
+	config.MaxTotalAttempts = 1
+	env := newRelayGroup(t, srv.URL, model.ProtocolOpenAIChatCompletion, model.MediaKindText, 1, config)
+	setScoreTestGroup(t, env, config)
+	started := time.Now()
+	w := forwardRequest(llm.APIFormatOpenAIChatCompletion, env.userID, fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"hi"}]}`, env.group))
+	if w.Code != http.StatusOK || calls.Load() != 2 {
+		t.Fatalf("score mode must re-probe after a rate backoff: status=%d calls=%d body=%s", w.Code, calls.Load(), w.Body.String())
+	}
+	if time.Since(started) < 900*time.Millisecond {
+		t.Fatalf("rate retry did not back off: elapsed=%s", time.Since(started))
+	}
+}
+
 func TestScoreRetryClientPolicyAndMediaProtection(t *testing.T) {
 	for _, tc := range []struct {
 		name, body string

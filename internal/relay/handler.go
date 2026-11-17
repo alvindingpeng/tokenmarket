@@ -299,10 +299,16 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				continue
 			}
 			group = effectiveGroupForRequest(group, c.GetString("routing_preference"))
-			group = scoreRetries.filtered(group)
+			// A rate retry is explicitly waiting to probe the same upstream again. In score mode,
+			// ordinary failures stay excluded, but this retry must survive the request-local filter.
+			if !pendingRateRetry {
+				group = scoreRetries.filtered(group)
+			}
 			// Recheck after refresh: a live configuration change may lower the
 			// budget or switch this request into score mode between attempts.
-			if group.Mode == model.GroupModeScore && totalAttempts >= scoreAttemptLimit(group.RelayConfig.MaxTotalAttempts) {
+			// The pending rate retry is a bounded probe and does not consume totalAttempts,
+			// so score mode must not reject it at the refreshed budget guard.
+			if !pendingRateRetry && group.Mode == model.GroupModeScore && totalAttempts >= scoreAttemptLimit(group.RelayConfig.MaxTotalAttempts) {
 				if lastScoreError != nil {
 					stop(lastScoreError, upstreamStatus(lastScoreError))
 				} else {
@@ -625,7 +631,11 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					canaryFailed = true
 				}
 				if group.Mode == model.GroupModeScore {
-					scoreRetries.exclude(item, class == ErrorClassQuota)
+					// Rate failures are bounded by rateRetryBackoff and must be probed again after the wait;
+					// all other score-mode failures remain excluded for this request.
+					if class != ErrorClassRate {
+						scoreRetries.exclude(item, class == ErrorClassQuota)
+					}
 					lastScoreError = err
 				}
 				// 上游限流视为限流而非故障: 标记该上游当前窗口触顶供选路跳过, 不计失败率也不冷却。
