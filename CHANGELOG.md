@@ -1,5 +1,29 @@
 # 更新说明
 
+## v1.10.5 — 2026-11-17
+
+**修复: 调用订阅渠道模型报 404 /v1/chat/completions**
+
+订阅渠道的授权里混入了 OpenAI/Anthropic 协议位（生产实测为 `142 = 128|8|4|2`），
+导致转发按 OpenAI 出站拼出 `{base}/v1/chat/completions`，而订阅上游只讲
+`v1internal:generateContent`，于是 404。404 完全指不出根因在协议位。
+
+协议位被污染有两个来源：
+
+- 前端 `Protocol` 枚举里**没有** GeminiCLI 位（后端有 `1<<7`），探测回来的 128 在前端是未知位；
+- 前端手动添加模型时，默认协议只区分了 xunfei，订阅渠道落到了 `Protocol.OpenAIResponse`。
+
+修复：
+
+1. 前端补上 `GeminiCLI: 1 << 7`，新增 gemini 协议列（订阅渠道固定显示，带该位的老数据也显示），
+   手动添加模型的默认协议对订阅渠道改为 `GeminiCLI`。
+2. 后端 `buildOutbound` 对订阅渠道把授权协议位收敛到 Gemini CLI 位：
+   历史脏数据或将来再误并别的位，都不会把请求打到不存在的端点。
+
+验证: 新增用例以 `GeminiCLI|OpenAI|Anthropic` 的脏授权打真实 Forward，
+断言上游只收到 v1internal 路径。变异验证移除收敛后立刻复现
+`订阅渠道被打到 /v1/chat/completions` —— 与生产症状一致。
+
 ## v1.10.4 — 2026-11-17
 
 修复订阅渠道保存授权失败：模型读取后携带 Gemini CLI 协议位（`ProtocolGeminiCLI`），但保存校验的合法协议位列表遗漏该位，导致协议组合 `142` 被错误拒绝。

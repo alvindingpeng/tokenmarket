@@ -13,6 +13,7 @@ export const Protocol = {
     AnthropicMessage: 1 << 3,
     OpenAIImage: 1 << 4, // 生图协议(generations / edits); P2 视频为 1 << 5。
     XunfeiSpark: 1 << 6, // 讯飞星火协议。1 << 0 保留、1 << 5 已被视频占坑, 新位只能顺延; 落库后与后端 model.Protocol 一致, 同样不可再变更。
+    GeminiCLI: 1 << 7, // Gemini CLI 订阅信封协议(v1internal:generateContent); 与后端 model.ProtocolGeminiCLI 对齐。
 } as const;
 
 // Dialect 是上游在标准协议之上的方言，决定出站转换器的厂商特化配置。

@@ -24,6 +24,13 @@ import (
 // want 是客户端请求使用的协议, 由调用方按入站格式定出; 选中的协议随请求状态推给界面, 故一并返回。
 // inboundFormat 只在 ProtocolOpenAIImage 下生效: 区分 generations / edits 两种请求路径。
 func buildOutbound(channel model.Channel, grant model.ChannelGrant, channelKey model.ChannelKey, want model.Protocol, inboundFormat llm.APIFormat) (transformer.Outbound, model.Protocol, bool, error) {
+	// 订阅渠道的上游只讲 v1internal RPC 冒号协议, 没有 OpenAI/Anthropic 的 HTTP 端点。
+	// 授权里若混入了别的协议位(历史数据或保存时误并), 直接按 want 取会一路走到 OpenAI 出站,
+	// 把请求打到 {base}/v1/chat/completions 并拿到 404 —— 而 404 完全指不出根因在协议位。
+	// 因此这里把订阅渠道一律收敛到协议位里真正生效的那几个, 不让 passthrough 抢占。
+	if channel.Dialect == model.DialectSubscription {
+		grant.Protocols &= model.ProtocolGeminiCLI
+	}
 	protocol, passthrough := want, grant.Protocols&want != 0
 	if !passthrough {
 		// 媒体协议不走跨协议回退: 客户端发起的生图/生视频请求只能由带对应协议位的授权承接,
@@ -37,6 +44,8 @@ func buildOutbound(channel model.Channel, grant model.ChannelGrant, channelKey m
 				protocol = model.ProtocolOpenAIResponse
 			case grant.Protocols&model.ProtocolOpenAIChatCompletion != 0:
 				protocol = model.ProtocolOpenAIChatCompletion
+			case grant.Protocols&model.ProtocolGeminiCLI != 0:
+				protocol = model.ProtocolGeminiCLI
 			case grant.Protocols&model.ProtocolXunfeiSparkWS != 0:
 				// 星火 WebSocket 只承接纯文本对话(无工具/视觉), 排在 HTTP 协议之后兜底:
 				// 同一授权能走 OpenAI 兼容 HTTP 时优先走它, 不丢能力。

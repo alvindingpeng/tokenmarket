@@ -25,6 +25,12 @@ import { grantKey, type ChannelFormState } from './state';
 const hasSparkColumn = (state: ChannelFormState) =>
     state.dialect === 'xunfei'
     || [...state.grants.values()].some((protocols) => (protocols & Protocol.XunfeiSpark) !== 0);
+
+// gemini 列同理: 订阅渠道的模型探测直接落 ProtocolGeminiCLI, 必须能看见、能取消。
+// 非订阅渠道带着该位时也显示, 否则那条授权会变成无处查看的暗格。
+const hasGeminiCLIColumn = (state: ChannelFormState) =>
+    state.dialect === 'subscription'
+    || [...state.grants.values()].some((protocols) => (protocols & Protocol.GeminiCLI) !== 0);
 function GrantCells({ state, setState, models, keyNames, remove, icon: Icon, tip }: {
     state: ChannelFormState;
     setState: (next: ChannelFormState) => void;
@@ -75,6 +81,7 @@ function GrantCells({ state, setState, models, keyNames, remove, icon: Icon, tip
             {cell(Protocol.AnthropicMessage)}
             {cell(Protocol.OpenAIImage)}
             {hasSparkColumn(state) && cell(Protocol.XunfeiSpark)}
+            {hasGeminiCLIColumn(state) && cell(Protocol.GeminiCLI)}
             <span className="w-7 flex justify-center">
                 {remove && (
                     <IconButton
@@ -134,7 +141,15 @@ export function FormGrants({ state, setState }: {
             protocols |= state.grants.get(grantKey(modelName, activeKey)) ?? 0;
         }
         const grants = new Map(state.grants);
-        if (activeKey) grants.set(grantKey(name, activeKey), protocols || (state.dialect === 'xunfei' ? Protocol.OpenAIChatCompletion | Protocol.XunfeiSpark : Protocol.OpenAIResponse));
+        // 订阅渠道只能走 Gemini CLI 信封: 它的上游地址只讲 v1internal:generateContent,
+        // 给 OpenAI/Anthropic 协议位会让转发拼出 /v1/chat/completions 并直接 404。
+        const fallback =
+            state.dialect === 'xunfei'
+                ? Protocol.OpenAIChatCompletion | Protocol.XunfeiSpark
+                : state.dialect === 'subscription'
+                    ? Protocol.GeminiCLI
+                    : Protocol.OpenAIResponse;
+        if (activeKey) grants.set(grantKey(name, activeKey), protocols || fallback);
         setState({ ...state, models: [...state.models, name], grants });
         setAdding('');
     };
