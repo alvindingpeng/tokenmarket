@@ -2,6 +2,8 @@ package ratelimit
 
 import (
 	"testing"
+
+	"github.com/alvindingpeng/switchyard/internal/model"
 	"time"
 )
 
@@ -135,5 +137,37 @@ func TestNoLimitsAlwaysAllows(t *testing.T) {
 		if decision := limiter.Reserve([]Scope{scope}, 1000, 1000); !decision.Allowed {
 			t.Fatal("无限制时应始终放行")
 		}
+	}
+}
+
+// TestReserveProbeSkipsForcedButStillCountsQuota 钉住"探测只豁免上游 429 标记"。
+//
+// 两件事必须同时成立: 持有探测名额的请求能真的打到上游(否则标记永远清不掉),
+// 但它仍要计入 RPM/并发额度(否则探测就成了绕过配额的后门)。
+func TestReserveProbeSkipsForcedButStillCountsQuota(t *testing.T) {
+	l := New(func(scope Scope) Limits { return Limits{} })
+	scope := Scope{Kind: model.RateScopeChannel, ID: 1}
+	l.MarkBlocked([]Scope{scope}, 1, 1)
+
+	if d := l.Reserve([]Scope{scope}, 1, 1); d.Allowed {
+		t.Fatal("普通预留必须被上游 429 标记挡住")
+	}
+	if d := l.ReserveProbe([]Scope{scope}, 1, 1); !d.Allowed {
+		t.Fatal("探测预留必须放行: 否则探测打不到上游, 标记永远清不掉")
+	}
+	// 放行之后额度照算: 并发占用应已 +1。
+	if n := l.ConcurrentUsage(scope); n != 1 {
+		t.Fatalf("探测请求仍应计入并发额度: got %d", n)
+	}
+}
+
+// TestClearBlockedLiftsNormalAdmission 是边界: 探测成功后普通请求也要能进。
+func TestClearBlockedLiftsNormalAdmission(t *testing.T) {
+	l := New(func(scope Scope) Limits { return Limits{} })
+	scope := Scope{Kind: model.RateScopeChannel, ID: 1}
+	l.MarkBlocked([]Scope{scope}, 1, 1)
+	l.ClearBlocked([]Scope{scope})
+	if d := l.Reserve([]Scope{scope}, 1, 1); !d.Allowed {
+		t.Fatal("撤销标记后普通预留应放行: 否则探测成功也解不开锁")
 	}
 }

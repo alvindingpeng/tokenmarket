@@ -137,11 +137,24 @@ func scopePriority(kind string) int {
 	}
 }
 
+// probeForcedSkip 标记一次预留是否作为"恢复探测"：探测需要忽略上游 429 强制标记，
+// 否则形成死锁 —— 成员被标记 → 准入拒绝(一次上游都没打) → 成功不了 → 清不掉标记。
+// 只忽略 forced 这一项：探测仍是一次真实调用，照样要占 RPM/并发额度。
+// 若整块绕过准入，探测就变成绕过配额的后门。
+// ReserveProbe 是恢复探测专用预留：除忽略上游 429 强制标记外，与 Reserve 完全一致。
+func (l *Limiter) ReserveProbe(scopes []Scope, estInput, estOutput int64) Decision {
+	return l.reserveInternal(scopes, estInput, estOutput, true)
+}
+
 // Reserve 为一批范围一次性预留额度: 全部范围均放行才扣减, 任一触顶则整批不扣。
 // estInput/estOutput 为本次请求的 token 预估, 结束时以 Commit 按真实用量结算。
 // 按优先级顺序检查范围: system > group > channel > user > api_key > channel_key/channel_model,
 // 高优先级限流命中时短路拒绝, 避免全局限流被低优先级范围绕过。
 func (l *Limiter) Reserve(scopes []Scope, estInput, estOutput int64) Decision {
+	return l.reserveInternal(scopes, estInput, estOutput, false)
+}
+
+func (l *Limiter) reserveInternal(scopes []Scope, estInput, estOutput int64, skipForced bool) Decision {
 	scopes = l.scopes(scopes)
 	// 按优先级排序: 高优先级范围先检查, 命中时短路拒绝。
 	sort.Slice(scopes, func(i, j int) bool {
@@ -163,7 +176,7 @@ func (l *Limiter) Reserve(scopes []Scope, estInput, estOutput int64) Decision {
 	for _, scope := range scopes {
 		limits := l.policy(scope)
 		b := l.bucketLocked(scope, window)
-		if b.forced {
+		if b.forced && !skipForced {
 			return Decision{RetryAfter: windowEnd(window, now), BlockedScope: scope}
 		}
 		if limits.Concurrent > 0 && l.active[l.activeKey(scope)] >= limits.Concurrent {

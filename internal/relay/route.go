@@ -626,6 +626,19 @@ func recordRouteFailure(group model.Group, itemID, failures int) bool {
 	return true
 }
 
+// probeHeldBy 报告某成员当前是否持有本分组的恢复探测名额。
+//
+// 准入层用它区分两种"被标记触顶": 持有探测名额的那一个请求**必须**真的打到上游,
+// 否则探测永远走不出去, 标记也就永远清不掉 —— 被拒绝的请求成功不了, 只有成功才清标记。
+// 这是只有出口实测才能确认上游是否放开的场合, 少一次真实调用就多锁死一整个窗口。
+func probeHeldBy(groupID, itemID int) bool {
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	route := routes[groupID]
+	return route != nil && route.ProbeItemID == itemID
+}
+
 // releaseRouteProbe 归还未产生成败结论的探测占用, 用于请求被人工中止或客户端断开。
 func releaseRouteProbe(group model.Group, itemID int) {
 	routeMu.Lock()

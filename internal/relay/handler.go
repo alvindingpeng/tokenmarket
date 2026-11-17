@@ -489,7 +489,19 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			}
 			var upstreamReservation *ratelimit.Reservation
 			if err == nil {
-				decision := limiter.Reserve(upstreamScopes, upEstIn, upEstOut)
+				// 持有恢复探测名额的请求改用 ReserveProbe: 它忽略上游 429 强制标记, 其余核算照旧。
+				//
+				// 为什么必须在准入层一并放开, 而不是只放开选路: 只放开选路会形成死锁 ——
+				// 成员被标记 → 选路放行探测 → 准入层看到标记又拒绝(一次上游都没打) →
+				// 请求失败、成功不了 → 清不掉标记 → 下一轮继续拒绝。探测名额形同虚设,
+				// 整组仍要空等窗口重置, 这正是用户看到"一个账号都没跑通"的那条链路。
+				var decision ratelimit.Decision
+				if probeHeldBy(group.ID, item.ID) {
+					decision = limiter.ReserveProbe(upstreamScopes, upEstIn, upEstOut)
+					request.addRouteEvent("admission", "forced_probe_bypass")
+				} else {
+					decision = limiter.Reserve(upstreamScopes, upEstIn, upEstOut)
+				}
 				if !decision.Allowed {
 					recordScopeUsage(upstreamScopes, 0, 0, 0, 1) // admission rejected; no upstream dispatch took place.
 					request.addRouteEvent("admission", "upstream_rate_limited")
