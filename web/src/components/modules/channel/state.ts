@@ -179,3 +179,44 @@ export function toChannelDetail(state: ChannelFormState, id: number): ChannelDet
             }),
     };
 }
+
+// SaveBlocker 是"还不能保存"的一条原因; reason 供界面映射文案, name 标出是哪条凭据。
+export type SaveBlocker = {
+	reason: 'name' | 'base_url' | 'paths' | 'no_keys' | 'key_secret' | 'spark_creds' | 'no_models';
+	name?: string;
+};
+// channelSaveBlockers 推导"保存按钮为什么点不动"。
+//
+// 抽成纯函数是为了能测: 这些判断此前只活在组件里, 只能靠手点按钮验证,
+// 而"订阅渠道不该要求模型与凭据"这类规则一旦回退, 手点也未必发现
+// (界面只显示缺项列表, 看不出哪一条本不该存在)。
+//
+// 返回值是缺项的原因标识, 空数组表示可以保存。
+export function channelSaveBlockers(
+	state: ChannelFormState,
+	helpers: {
+		sparkOnly: (protocols: number) => boolean;
+	}
+): SaveBlocker[] {
+	const blockers: SaveBlocker[] = [];
+	if (state.name.trim() === '') blockers.push({ reason: 'name' });
+	// 订阅渠道的调用信息由平台描述提供, 地址不在这里填, 因此地址必填不适用。
+	// 只按方言放开, 不按"看起来像订阅"判断: 靠猜会让普通渠道悄悄失去必填。
+	const isSubscription = state.dialect === 'subscription';
+	if (!isSubscription && state.base_url.trim() === '') blockers.push({ reason: 'base_url' });
+	if ([state.openai_chat_completion_path, state.openai_response_path, state.anthropic_message_path]
+		.some((p) => p !== '' && !p.startsWith('/'))) blockers.push({ reason: 'paths' });
+	// 订阅渠道的凭据要登录后导入, 建渠道时必然没有 —— 要求非空会让建渠道永远走不通。
+	if (!isSubscription && state.keys.length === 0) blockers.push({ reason: 'no_keys' });
+	for (const k of state.keys) {
+		if (k.key.trim() === '') blockers.push({ reason: 'key_secret', name: k.name });
+		if (state.dialect === 'xunfei') {
+			const needsSpark = state.models.some((m) => helpers.sparkOnly(state.grants.get(grantKey(m, k.name)) ?? 0));
+			if (needsSpark && (k.app_id.trim() === '' || k.api_secret.trim() === ''))
+				blockers.push({ reason: 'spark_creds', name: k.name });
+		}
+	}
+	// 订阅渠道的模型只能登录后从平台同步, 建渠道时为空的正常状态, 不能当缺项。
+	if (!isSubscription && state.models.length === 0) blockers.push({ reason: 'no_models' });
+	return blockers;
+}

@@ -23,9 +23,9 @@ import { IconButton } from '@/components/common/IconButton';
 import { useSettingStore } from '@/stores/setting';
 import { SHELL_HEIGHT } from './layout';
 import {
+    channelSaveBlockers,
     emptyFormState,
     fromChannel,
-    grantKey,
     toChannelDetail,
     type ChannelFormState,
 } from './state';
@@ -77,16 +77,14 @@ function ChannelFormFields({ channel, onBack, onChannelRefetch }: {
     // 新建与编辑弹窗可同时存在, 控件 id 需按渠道隔离。
     const idPrefix = channel ? `channel-${channel.id}` : 'new-channel';
 
-    // 后端会拒的四项在此先挡: 名称与地址非空, 路径以 / 开头, 至少一份填了 Key 的凭据, 至少一个模型。
+    // 缺项在此先挡, 免得对着一个点不动的按钮无从下手。
+    // 订阅渠道豁免地址与凭据两项(由平台描述与登录提供), 模型豁免见 channelSaveBlockers。
     // 讯飞渠道的凭据: 只有 Spark 协议位在该凭据上真正生效(授权没有任何 HTTP 协议位兜底)时才要求
     // App ID 与 API Secret —— 星火签名两项都要用, 缺一个这凭据就调不通, 保存后再报错更难查;
     // API 鉴权(HTTP)只需 Key, 不强迫填 WebSocket 签名凭据。
     const sparkOnly = (protocols: number) =>
         (protocols & Protocol.XunfeiSpark) !== 0
         && (protocols & (Protocol.OpenAIChatCompletion | Protocol.OpenAIResponse | Protocol.AnthropicMessage)) === 0;
-    const keyNeedsSparkCreds = (keyName: string) =>
-        state.dialect === 'xunfei'
-        && state.models.some((modelName) => sparkOnly(state.grants.get(grantKey(modelName, keyName)) ?? 0));
     // 订阅渠道的调用信息由平台描述提供, 地址与凭据都不在这里填, 因此这两项必填对它不适用。
     // 只按方言放开, 不按"看起来像订阅"判断: 靠猜会让普通渠道悄悄失去必填, 空地址请求极难排查。
     const isSubscription = state.dialect === 'subscription';
@@ -95,18 +93,22 @@ function ChannelFormFields({ channel, onBack, onChannelRefetch }: {
     const subPlatformList = subPlatformQuery.data ?? [];
     const selectedSubPlatform = subPlatformList.find((p) => p.id === state.sub_platform);
     // 缺项逐条列在保存按钮旁: 按钮点不动时要能看到缺什么, 免得对着一个无反应的按钮无从下手。
-    const saveBlockers: string[] = [];
-    if (state.name.trim() === '') saveBlockers.push(t('saveBlockedName'));
-    if (!isSubscription && state.base_url.trim() === '') saveBlockers.push(t('saveBlockedBaseUrl'));
-    if ([state.openai_chat_completion_path, state.openai_response_path, state.anthropic_message_path]
-        .some((path) => path !== '' && !path.startsWith('/'))) saveBlockers.push(t('saveBlockedPaths'));
-    if (!isSubscription && state.keys.length === 0) saveBlockers.push(t('saveBlockedNoKeys'));
-    for (const k of state.keys) {
-        if (k.key.trim() === '') saveBlockers.push(t('saveBlockedKeySecret', { name: k.name }));
-        if (keyNeedsSparkCreds(k.name) && (k.app_id.trim() === '' || k.api_secret.trim() === ''))
-            saveBlockers.push(t('saveBlockedSparkCreds', { name: k.name }));
-    }
-    if (state.models.length === 0) saveBlockers.push(t('saveBlockedNoModels'));
+    // 判定逻辑在 state.ts 的 channelSaveBlockers: 抽成纯函数才能被测到。
+    // 订阅渠道"模型与凭据都不必填"这条规则如果只写在这里, 回退时只能靠手点按钮才会发现 ——
+    // 而界面只显示缺项列表, 看不出哪一条本不该存在。
+    const blockers = channelSaveBlockers(state, { sparkOnly });
+    const saveBlockers = blockers.map((blocker) => {
+        switch (blocker.reason) {
+            case 'name': return t('saveBlockedName');
+            case 'base_url': return t('saveBlockedBaseUrl');
+            case 'paths': return t('saveBlockedPaths');
+            case 'no_keys': return t('saveBlockedNoKeys');
+            // 这两个 reason 一定带 name(见 SaveBlocker 的产生处), 空串兜底只为满足类型。
+            case 'key_secret': return t('saveBlockedKeySecret', { name: blocker.name ?? '' });
+            case 'spark_creds': return t('saveBlockedSparkCreds', { name: blocker.name ?? '' });
+            case 'no_models': return t('saveBlockedNoModels');
+        }
+    });
     const canSubmit = saveBlockers.length === 0;
 
     const steps: { id: StepID; label: string }[] = [
@@ -125,6 +127,8 @@ function ChannelFormFields({ channel, onBack, onChannelRefetch }: {
             dialect: preset.dialect,
             // 订阅模板给 sub_platform 且地址为空: 地址由后端按平台描述补, 前端不再抄一份。
             sub_platform: preset.sub_platform ?? '',
+            // 只覆盖模板明确给出的项: 其余模板不设 model_auto_add, 保持用户原值不被重置。
+            model_auto_add: preset.model_auto_add ?? state.model_auto_add,
             base_url: preset.base_url,
             openai_chat_completion_path: preset.openai_chat_completion_path,
             openai_response_path: preset.openai_response_path,

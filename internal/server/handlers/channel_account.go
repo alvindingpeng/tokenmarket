@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/charmbracelet/log"
+
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
@@ -125,6 +127,17 @@ func importChannelAccount(c *gin.Context) {
 	if refreshWarning != nil {
 		body["warning"] = refreshWarning.Error()
 	}
+	// 订阅渠道的模型清单只能靠渠道里已有的账号去探测, 而账号是"建完渠道之后"才导入的 ——
+	// 建渠道那一刻没有账号, 保存时触发的 autoAddAfterSave 必然拿不到凭据而跳过。
+	// 这里补一次触发: 导入账号是订阅渠道真正具备拉模型条件的第一刻。
+	// best-effort: 探测失败不影响导入结果(账号已经落库), 与 autoAddAfterSave 同口径。
+	if channel, channelErr := op.ChannelGet(request.ChannelID); channelErr == nil && channel.ModelAutoAdd {
+		if client, clientErr := probeHTTPClient(channel.ChannelConfig); clientErr != nil {
+			log.Warnf("auto-add after import: build probe client for channel %d failed: %v", channel.ID, clientErr)
+		} else if addErr := op.AutoAddChannelModels(c.Request.Context(), channel.ID, channel.ChannelConfig, client, userID); addErr != nil {
+			log.Warnf("auto-add after import: channel %d failed: %v", channel.ID, addErr)
+		}
+	}
 	resp.Success(c, body)
 }
 
@@ -174,6 +187,7 @@ func listChannelAccounts(c *gin.Context) {
 	userID, role := middleware.CurrentUser(c)
 	resp.Success(c, op.AccountList(model.Scope{ID: userID, Role: role}))
 }
+
 type importChannelAccountBatchRequest struct {
 	ChannelID int    `json:"channel_id"`
 	Platform  string `json:"platform"`
@@ -226,12 +240,12 @@ func importChannelAccountBatch(c *gin.Context) {
 			succeeded++
 		}
 		body = append(body, gin.H{
-			"name":          result.Name,
-			"ok":            result.OK,
+			"name":           result.Name,
+			"ok":             result.OK,
 			"channel_key_id": result.ChannelKeyID,
-			"platform":      result.Platform,
-			"kind":          result.Kind,
-			"error":         result.Error,
+			"platform":       result.Platform,
+			"kind":           result.Kind,
+			"error":          result.Error,
 		})
 	}
 	resp.Success(c, gin.H{

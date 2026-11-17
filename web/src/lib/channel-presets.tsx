@@ -33,6 +33,11 @@ export type ChannelPreset = {
      * 普通模板不给(undefined), 订阅模板给出平台 id。
      */
     sub_platform?: string;
+    /**
+     * 订阅模板默认打开后台自动添加: 它的模型只能登录后从平台同步, 手工填不了,
+     * 不打开就永远拉不到模型(预设文案承诺的"自动同步"落空)。
+     */
+    model_auto_add?: boolean;
     base_url: string;
     openai_chat_completion_path: string;
     openai_response_path: string;
@@ -235,6 +240,9 @@ export const CHANNEL_PRESETS: ChannelPreset[] = [
         dialect: 'subscription',
         sub_platform: 'gemini',
         base_url: '',
+        // 订阅渠道的模型只能登录后从平台拿到, 手工填不了。默认打开自动添加,
+        // 登录/导入账号后自动并入模型和价格 —— 否则预设文案承诺的"自动同步"是空话。
+        model_auto_add: true,
         openai_chat_completion_path: '/v1/chat/completions', openai_response_path: '/v1/responses', anthropic_message_path: '/v1/messages',
     },
 ];

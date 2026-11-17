@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/log"
+
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
@@ -181,6 +183,16 @@ func completeAccountSignIn(c *gin.Context) {
 	}
 	if refreshWarning != nil {
 		payload["warning"] = refreshWarning.Error()
+	}
+	// 网页登录是订阅渠道建号的主路径, 与 import 一样要到"账号已落库"这一刻才能拉模型:
+	// 建渠道时没有账号, 保存触发的 autoAddAfterSave 拿不到凭据而跳过, 模型就永远空着。
+	// best-effort, 失败不影响登录结果(账号已经落库)。
+	if channel, channelErr := op.ChannelGet(request.ChannelID); channelErr == nil && channel.ModelAutoAdd {
+		if client, clientErr := probeHTTPClient(channel.ChannelConfig); clientErr != nil {
+			log.Warnf("auto-add after signin: build probe client for channel %d failed: %v", channel.ID, clientErr)
+		} else if addErr := op.AutoAddChannelModels(c.Request.Context(), channel.ID, channel.ChannelConfig, client, userID); addErr != nil {
+			log.Warnf("auto-add after signin: channel %d failed: %v", channel.ID, addErr)
+		}
 	}
 	resp.Success(c, payload)
 }
