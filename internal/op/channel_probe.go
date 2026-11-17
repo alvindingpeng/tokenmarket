@@ -46,12 +46,35 @@ var ErrProbeInvalidFilter = errors.New("invalid filter regex")
 // 这里先按凭据的 AccountKind/AccountPlatform 解出真正的 access_token, 再交给探测链。
 // 静态凭据原样透传, 行为与直接调用 ProbeChannelModels 完全一致。
 func ProbeChannelKey(client *http.Client, target model.ChannelConfig, channelKey model.ChannelKey, ctx context.Context) ([]model.ChannelFetchModel, error) {
-	return ProbeChannelModels(
+	models, _, err := ProbeChannelKeyWithProject(client, target, channelKey, ctx)
+	return models, err
+}
+
+// ProbeChannelKeyWithProject 与 ProbeChannelKey 相同, 但额外返回探测解析出的 GCP project。
+//
+// 订阅渠道(Gemini/Antigravity)的 project 由上游在 loadCodeAssist/onboardUser 时分配,
+// 用户通常不填。转发时的 generateContent 信封需要这个 project:
+// 实测 project 为空会得到 403 SUBSCRIPTION_REQUIRED, 而该错误看不出缺的是 project。
+// 因此探测拿到它就顺手回写渠道, 让转发链路读得到。
+func ProbeChannelKeyWithProject(client *http.Client, target model.ChannelConfig, channelKey model.ChannelKey, ctx context.Context) ([]model.ChannelFetchModel, string, error) {
+	if target.Dialect == model.DialectGeminiCLI || target.Dialect.Subscribable() {
+		target.BaseURL = strings.TrimSpace(target.BaseURL)
+		target.GeminiProject = strings.TrimSpace(target.GeminiProject)
+		resolved, err := probeGeminiCLIModelsWithProject(
+			client, target, model.ChannelKeyToken(channelKey), ctx,
+		)
+		if err != nil {
+			return nil, "", err
+		}
+		return resolved.models, resolved.project, nil
+	}
+	models, err := ProbeChannelModels(
 		client, target,
 		model.ChannelKeyToken(channelKey),
 		channelKey.AppID, channelKey.APISecret, channelKey.Domain,
 		ctx,
 	)
+	return models, "", err
 }
 func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key, appID, apiSecret, domain string, ctx context.Context) ([]model.ChannelFetchModel, error) {
 	// 探测收的是尚未落库的提交配置, 不经 normalizeChannelConfig, 故在此自行去空白;
@@ -238,11 +261,30 @@ func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key, ap
 //
 // project 解析顺序: 用户填写的 GeminiProject > onboardUser 分配的 > loadCodeAssist 给出的。
 // Antigravity 路径通常自动分配, 故 GeminiProject 是**可选覆盖**, 不是必填。
+// geminiCLIProbeResult 把探测结果与解析出的 project 一起带回。
+//
+// 为什么 project 必须带出来: 探测阶段已经从 loadCodeAssist/onboardUser 拿到了 project,
+// 但转发时只读 channel.GeminiProject(通常为空), 于是 generateContent 信封里 project 是空串。
+// 实测(2026-11)同一账号: project 为空 -> 403 SUBSCRIPTION_REQUIRED; project 正确 -> 200。
+// 那个 403 说的是"没有有效产品授权", 完全指不到"信封少了 project"。
+type geminiCLIProbeResult struct {
+	models  []model.ChannelFetchModel
+	project string
+}
+
 func probeGeminiCLIModels(client *http.Client, target model.ChannelConfig, key string, ctx context.Context) ([]model.ChannelFetchModel, error) {
+	resolved, err := probeGeminiCLIModelsWithProject(client, target, key, ctx)
+	if err != nil {
+		return nil, err
+	}
+	return resolved.models, nil
+}
+
+func probeGeminiCLIModelsWithProject(client *http.Client, target model.ChannelConfig, key string, ctx context.Context) (geminiCLIProbeResult, error) {
 	loadBase, dataBase := GeminiCLIBases(target)
 	loadResult, err := LoadCodeAssist(ctx, client, loadBase, key)
 	if err != nil {
-		return nil, fmt.Errorf("gemini cli loadCodeAssist: %w", err)
+		return geminiCLIProbeResult{}, fmt.Errorf("gemini cli loadCodeAssist: %w", err)
 	}
 	project := strings.TrimSpace(target.GeminiProject)
 	if project == "" {
@@ -251,23 +293,23 @@ func probeGeminiCLIModels(client *http.Client, target model.ChannelConfig, key s
 	if project == "" {
 		onboardResult, onboardErr := OnboardUser(ctx, client, dataBase, key, OnboardUserOptions{TierID: loadResult.TierID()})
 		if onboardErr != nil {
-			return nil, fmt.Errorf("gemini cli onboardUser: %w", onboardErr)
+			return geminiCLIProbeResult{}, fmt.Errorf("gemini cli onboardUser: %w", onboardErr)
 		}
 		project = onboardResult.ProjectID()
 	}
 	if project == "" {
 		// 到这里说明自动分配也没给出 project: 只能让用户填, 不能带空 project 发请求。
-		return nil, fmt.Errorf("gemini cli: %w (请在上游渠道配置里填写 GCP project id)", ErrGeminiCLIProjectRequired)
+		return geminiCLIProbeResult{}, fmt.Errorf("gemini cli: %w (请在上游渠道配置里填写 GCP project id)", ErrGeminiCLIProjectRequired)
 	}
 	quota, err := RetrieveUserQuota(ctx, client, dataBase, key, project)
 	if err != nil {
-		return nil, fmt.Errorf("gemini cli retrieveUserQuota: %w", err)
+		return geminiCLIProbeResult{}, fmt.Errorf("gemini cli retrieveUserQuota: %w", err)
 	}
 	names := quota.AvailableModels()
 	if len(names) == 0 {
 		// 配额响应里没有 buckets 视作失败: 静默返回空清单会让界面显示"该渠道无模型",
 		// 而真实原因可能是凭据 scope 不足或 project 不对, 两者都需要被看见。
-		return nil, errors.New("gemini cli: retrieveUserQuota 未返回任何可用模型(检查凭据是否为 Antigravity 授权、project 是否正确)")
+		return geminiCLIProbeResult{}, errors.New("gemini cli: retrieveUserQuota 未返回任何可用模型(检查凭据是否为 Antigravity 授权、project 是否正确)")
 	}
 	result := make([]model.ChannelFetchModel, 0, len(names))
 	for _, name := range names {
@@ -281,7 +323,7 @@ func probeGeminiCLIModels(client *http.Client, target model.ChannelConfig, key s
 		}
 		result = append(result, fetched)
 	}
-	return result, nil
+	return geminiCLIProbeResult{models: result, project: project}, nil
 }
 
 // imageModelNamePattern 常见生图模型的名称关键词; 命中即默认勾选生图协议位。

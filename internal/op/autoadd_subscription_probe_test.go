@@ -63,7 +63,7 @@ func TestAutoAddChannelModelsUnwrapsSubscriptionAccountJSON(t *testing.T) {
 		case strings.Contains(r.URL.Path, "loadCodeAssist"):
 			fmt.Fprint(w, `{"cloudaicompanionProject":"proj-1","currentTier":{"id":"free-tier"}}`)
 		case strings.Contains(r.URL.Path, "retrieveUserQuota"):
-			fmt.Fprint(w, `{"quota":{"buckets":[{"modelId":"gemini-2.5-pro","remainingFraction":0.9}]}}`)
+			fmt.Fprint(w, `{"buckets":[{"modelId":"gemini-2.5-pro","remainingFraction":0.9,"remainingAmount":"100"}]}`)
 		default:
 			fmt.Fprint(w, `{}`)
 		}
@@ -103,6 +103,72 @@ func TestAutoAddChannelModelsUnwrapsSubscriptionAccountJSON(t *testing.T) {
 	}
 	if probeAuth != "Bearer "+wantToken {
 		t.Fatalf("Authorization 不是解出来的 access_token: %q", probeAuth)
+	}
+
+	// 探测解析出的 project 必须回写渠道: 转发信封要用它。
+	// 实测 project 为空时 generateContent 返回 403 SUBSCRIPTION_REQUIRED,
+	// 而那个错误说的是"没有有效产品授权", 完全指不到缺的是 project。
+	var saved model.Channel
+	if err := conn.Where("id = ?", channel.ID).First(&saved).Error; err != nil {
+		t.Fatalf("reload channel: %v", err)
+	}
+	if saved.GeminiProject != "proj-1" {
+		t.Fatalf("gemini_project = %q, want proj-1(探测解析出的 project 未回写)", saved.GeminiProject)
+	}
+}
+
+// 用户手填的 project 优先: 自动分配不得覆盖人工配置。
+func TestAutoAddKeepsManualGeminiProject(t *testing.T) {
+	var quotaHits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "loadCodeAssist"):
+			fmt.Fprint(w, `{"cloudaicompanionProject":"auto-assigned","currentTier":{"id":"free-tier"}}`)
+		case strings.Contains(r.URL.Path, "retrieveUserQuota"):
+			quotaHits++
+			fmt.Fprint(w, `{"buckets":[{"modelId":"gemini-2.5-pro","remainingFraction":1}]}`)
+		default:
+			fmt.Fprint(w, `{}`)
+		}
+	}))
+	defer srv.Close()
+
+	setupAutoAddGlobalDB(t)
+	conn := db.GetDB()
+	channel := model.Channel{ChannelConfig: model.ChannelConfig{
+		Name:          "订阅渠道-手填project",
+		Dialect:       model.DialectSubscription,
+		SubPlatform:   "gemini",
+		BaseURL:       srv.URL,
+		GeminiProject: "manual-project",
+		ModelAutoAdd:  true,
+	}}
+	if err := conn.Create(&channel).Error; err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	key := model.ChannelKey{ChannelID: channel.ID, ChannelKeyConfig: model.ChannelKeyConfig{
+		Name:            "acct-1",
+		Key:             `{"access_token":"tok","refresh_token":"rt"}`,
+		Enabled:         true,
+		AccountKind:     model.AccountKindOAuth,
+		AccountPlatform: model.AccountPlatformAntigravity,
+	}}
+	if err := conn.Create(&key).Error; err != nil {
+		t.Fatalf("create key: %v", err)
+	}
+
+	if err := AutoAddChannelModels(context.Background(), channel.ID, channel.ChannelConfig, srv.Client(), 0); err != nil {
+		t.Fatalf("auto add: %v", err)
+	}
+	var saved model.Channel
+	if err := conn.Where("id = ?", channel.ID).First(&saved).Error; err != nil {
+		t.Fatalf("reload channel: %v", err)
+	}
+	if saved.GeminiProject != "manual-project" {
+		t.Fatalf("gemini_project = %q, 人工配置被自动分配覆盖了", saved.GeminiProject)
+	}
+	if quotaHits == 0 {
+		t.Fatal("应使用手填 project 调用 retrieveUserQuota")
 	}
 }
 

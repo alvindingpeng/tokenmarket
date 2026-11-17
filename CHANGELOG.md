@@ -1,5 +1,33 @@
 # 更新说明
 
+## v1.10.7 — 2026-11-17
+
+**修复: 订阅渠道调用 403 SUBSCRIPTION_REQUIRED**
+
+调用新上架的订阅模型返回 403 `SUBSCRIPTION_REQUIRED (#3501)`，报错原文是
+"you do not have a valid license of this product"，容易被误读成账号没有开通订阅。
+
+真实原因是**请求信封里的 `project` 是空串**。订阅渠道的 GCP project 由上游在
+`loadCodeAssist` 时分配，用户通常不填；探测阶段拿到了这个 project 却**用完即弃**，
+没有回写渠道。转发时只读 `channel.GeminiProject`（空值），于是
+`v1internal:generateContent` 的信封里 `"project": ""`。
+
+实测同一账号同一模型：
+
+| 信封 project | 结果 |
+| --- | --- |
+| `""` | 403 `SUBSCRIPTION_REQUIRED` |
+| `"aicode-consumers"`（loadCodeAssist 返回） | 200 + 正常回复 |
+
+修复：探测把解析出的 project 一并带出，`AutoAddChannelModels` 在入库事务里回写
+`gemini_project`。只在渠道当前为空时写，**用户手填的值优先**，自动分配不覆盖人工配置。
+
+为什么这个错误特别难查：403 说的是"没有有效产品授权"，metadata 里的 error_number
+是 1001，链接指向购买 license 的页面。它完全指不到"信封少了 project"这一层 ——
+而 project 缺失是本地配置问题，不是账号资质问题。
+
+验证: 变异验证去掉回写后，用例立即报 `gemini_project = "", want proj-1(探测解析出的 project 未回写)`。
+
 ## v1.10.6 — 2026-11-17
 
 **重构: 订阅渠道的转发协议由平台描述声明**

@@ -269,6 +269,10 @@ func AutoAddChannelModels(ctx context.Context, channelID int, config model.Chann
 	type probeResult struct {
 		keyName string
 		fetched []model.ChannelFetchModel
+		// project 是探测解析出的 GCP project(仅订阅渠道有值, 其余为空)。
+		// 转发时的 generateContent 信封要用它; 不回写的话转发读到的是空串,
+		// 实测会得到 403 SUBSCRIPTION_REQUIRED —— 而那个错误指不到缺 project。
+		project string
 	}
 	var results []probeResult
 	var skipped []string
@@ -279,7 +283,7 @@ func AutoAddChannelModels(ctx context.Context, channelID int, config model.Chann
 		keyIDByName[channelKey.Name] = channelKey.ID
 		// 走 ProbeChannelKey 而不是直接传 channelKey.Key: 订阅渠道的 Key 里是整包账号 JSON,
 		// 直接当令牌用会把 JSON 塞进 Authorization 头, 上游回 401 且报错指不到真实原因。
-		fetched, err := ProbeChannelKey(client, config, channelKey, ctx)
+		fetched, project, err := ProbeChannelKeyWithProject(client, config, channelKey, ctx)
 		if err != nil {
 			log.Warnf("auto-add: probe key %q of channel %d failed: %v", channelKey.Name, channelID, err)
 			continue
@@ -298,7 +302,7 @@ func AutoAddChannelModels(ctx context.Context, channelID int, config model.Chann
 		if len(allowed) == 0 {
 			continue
 		}
-		results = append(results, probeResult{keyName: channelKey.Name, fetched: allowed})
+		results = append(results, probeResult{keyName: channelKey.Name, fetched: allowed, project: project})
 	}
 	if len(results) == 0 && len(skipped) == 0 {
 		return nil
@@ -334,6 +338,19 @@ func AutoAddChannelModels(ctx context.Context, channelID int, config model.Chann
 					// 预填失败不该回滚已并入的模型: 模型本身已经可用, 只是价格还要人工补。
 					log.Warnf("auto-add: fill supply price for channel %d failed: %v", channelID, err)
 				}
+			}
+			// 回写探测解析出的 project: 转发信封要用它, 而用户通常不填。
+			// 只在渠道当前为空时写 —— 用户手填的值优先, 自动分配不得覆盖人工配置。
+			for _, result := range results {
+				if strings.TrimSpace(result.project) == "" {
+					continue
+				}
+				if err := tx.Model(&model.Channel{}).
+					Where("id = ? AND (gemini_project = '' OR gemini_project IS NULL)", channelID).
+					Update("gemini_project", result.project).Error; err != nil {
+					return fmt.Errorf("failed to persist gemini project for channel %d: %w", channelID, err)
+				}
+				break
 			}
 			// 授权定稿后媒体形态可能变化(新并入生图位), 与手工保存同一套重算。
 			return syncChannelModelKinds(tx, channelID)
