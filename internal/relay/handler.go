@@ -211,6 +211,14 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		// rateRetries 单独统计"上游 429 之后的退避重试"次数, 不并入 totalAttempts(理由见 rateRetryBackoff)。
 		// 跨成员累计、换成员后不清零: 限流是上游侧的窗口状态, 与"换个成员重新开始"无关。
 		rateRetries := 0
+		// pendingRateRetry 表示上一轮是退避过的上游 429, 本轮是那次退避换来的重试。
+		// 预算检查必须为它放行: MaxTotalAttempts 收紧时(线上实测可到 1), 否则一次瞬时 429
+		// 就会在"还没退避"就被判死, 退避逻辑形同虚设 —— 正是 TestRateRetryDoesNotConsumeTotalAttemptBudget 抓到的形态。
+		//
+		// 与"不计入 totalAttempts"是两道互补的保护, 不是重复: 前者管住"这一轮能不能跑",
+		// 后者管住"预算数字不被虚增"。任一条单独存在时常见路径都能跑通(故删其一未必触发失败),
+		// 但两条都留着才能同时防住紧预算(1~2 次)与多成员多次 429 两种形态。
+		pendingRateRetry := false
 		var scoreRetries scoreRetryState
 		var lastScoreError error
 		// 灰度命中在请求首次解析分组时定下, 并沿用到整条重试链: 同一次请求若在灰度与常规路径之间
@@ -257,7 +265,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		for {
 			// Score bounds use the refreshed configuration below. Other modes
 			// retain their existing retry semantics.
-			if group.Mode != model.GroupModeScore && group.RelayConfig.MaxTotalAttempts > 0 && totalAttempts >= group.RelayConfig.MaxTotalAttempts {
+			// pendingRateRetry 的轮次不查预算: 它不消耗 totalAttempts(见 rateRetryBackoff),
+			// 若在这里被拦, 429 之后的退避永远等不到执行。
+			if !pendingRateRetry && group.Mode != model.GroupModeScore && group.RelayConfig.MaxTotalAttempts > 0 && totalAttempts >= group.RelayConfig.MaxTotalAttempts {
 				stop(errors.New("relay maximum total attempts exceeded"), http.StatusServiceUnavailable)
 				return
 			}
@@ -528,6 +538,8 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				// 跨成员尝试预算只在真正向上游发出请求的轮次消耗: 准入拒绝与等待轮都不计,
 				// 换成员、超时与 5xx 等真实尝试照常计, MaxTotalAttempts 仍是重试上限。
 				totalAttempts++
+				// 这次退避换来的重试已经真正发出去了, 豁免随之失效: 后续轮次回到正常预算约束。
+				pendingRateRetry = false
 				request.addRouteEvent("dispatch", "upstream_admitted")
 			}
 
@@ -638,6 +650,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					// 若照计, 退避重试反而更快耗尽预算, 比不修更差。真正打到模型并失败的轮次照旧计。
 					if _, ok := rateRetryBackoff(ctx, request, group, rateRetries); ok {
 						rateRetries++
+						pendingRateRetry = true
 						continue
 					}
 					stop(err, upstreamStatus(err))
