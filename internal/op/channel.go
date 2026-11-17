@@ -353,6 +353,11 @@ func normalizeChannelConfig(ctx context.Context, config model.ChannelConfig) (mo
 // 凭据, 模型与授权的名称在此去空白并校验非空: 名称是三者的匹配与引用依据, 集中在入口清理后,
 // 下游三个同步函数拿到的即是干净数据, 无需各自再 trim 一遍。
 func normalizeChannelDetail(ctx context.Context, detail *model.ChannelDetail) error {
+	// 订阅渠道先按平台描述补齐方言与地址, 再走通用规范化:
+	// 顺序不能反 —— 地址必填校验在 normalizeChannelConfig 里, 装配必须发生在它之前。
+	if err := applySubscriptionPlatform(&detail.ChannelConfig); err != nil {
+		return err
+	}
 	config, err := normalizeChannelConfig(ctx, detail.ChannelConfig)
 	if err != nil {
 		return err

@@ -99,7 +99,7 @@ func newRelayGroupDialect(t *testing.T, upstreamURL string, protocols model.Prot
 	for i := 0; i < members; i++ {
 		modelName := fmt.Sprintf("up-model-%s-%d", suffix, i)
 		created, err := op.ChannelCreate(&model.ChannelDetail{
-			ChannelConfig: model.ChannelConfig{Name: fmt.Sprintf("ch-%s-%d", suffix, i), Enabled: true, BaseURL: upstreamURL, Dialect: dialect, KeyRotationStrategy: "roundrobin"},
+			ChannelConfig: model.ChannelConfig{Name: fmt.Sprintf("ch-%s-%d", suffix, i), Enabled: true, BaseURL: upstreamURL, Dialect: dialect, KeyRotationStrategy: "roundrobin", SubPlatform: subPlatformForDialect(dialect)},
 			Keys:          keysForSpecs(keySpecs, i),
 			Models:        []string{modelName},
 			Grants:        []model.ChannelGrantConfig{{ModelName: modelName, KeyName: grantKeyName(keySpecs), Protocols: protocols}},
@@ -162,6 +162,17 @@ func grantKeyName(keySpecs []model.ChannelKeyConfig) string {
 		return "k1"
 	}
 	return keySpecs[0].Name
+}
+
+// subPlatformForDialect 返回该方言建渠道时应填的平台名。
+//
+// 订阅渠道必须给平台名(否则系统不知道补什么地址), 其余方言不许给(自相矛盾状态会被拒)。
+// 取 gemini 是因为它是当前唯一登记的订阅平台; 将来多登记几个时, 用例要测哪个平台就传哪个。
+func subPlatformForDialect(dialect model.Dialect) string {
+	if dialect.Subscribable() {
+		return "gemini"
+	}
+	return ""
 }
 
 // forwardRequest 以真实的 Forward 转发一条请求并返回响应。

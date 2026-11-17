@@ -64,6 +64,10 @@ type ChannelConfig struct {
 	MatchRegex                string         `json:"match_regex"`                                                                                            // 拉取模型列表时的过滤表达式; 留空表示不过滤。
 	ModelAutoAdd              bool           `json:"model_auto_add" gorm:"column:model_auto_add;default:false"`                                              // 保存后自动探测上游模型并入渠道; 默认关, 只增不删、授权按位 OR。
 	KeyRotationStrategy       string         `json:"key_rotation_strategy" gorm:"default:roundrobin"`                                                        // Key 轮换策略: roundrobin(轮询) / random(随机) / failover(故障切换)。
+	// SubPlatform 是订阅渠道的平台标识(见 internal/subplatform); 空表示非订阅渠道。
+	// 它只记录"这个渠道是哪个平台", 具体行为(地址/方言/账号平台)由平台描述给出 ——
+	// 冗余存地址会让两者漂移, 而地址是平台描述里最容易改的一项。
+	SubPlatform string `json:"sub_platform,omitempty" gorm:"size:32;not null;default:''"`
 }
 
 // 渠道准入审核状态(ReviewStatus)。

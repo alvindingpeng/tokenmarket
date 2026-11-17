@@ -8,9 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
-	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/looplj/axonhub/llm"
 )
 
@@ -40,19 +38,6 @@ func TestSubscriptionChannelRotatesAccounts(t *testing.T) {
 	}
 	env := newRelayGroupDialect(t, upstream.URL, model.ProtocolOpenAIChatCompletion, model.MediaKindText, 1,
 		model.DefaultGroupRelayConfigForMode(model.GroupModeFailover), model.DialectSubscription, keySpecs)
-
-	var dbKeys []model.ChannelKey
-	if derr := db.GetDB().Find(&dbKeys).Error; derr != nil {
-		t.Logf("read keys err: %v", derr)
-	}
-	for _, k := range dbKeys {
-		t.Logf("key id=%d name=%s enabled=%v priority=%d kind=%s", k.ID, k.Name, k.Enabled, k.Priority, k.AccountKind)
-	}
-	if kk, kerr := op.SelectChannelKey(1, "roundrobin"); kerr != nil {
-		t.Logf("SelectChannelKey err: %v", kerr)
-	} else {
-		t.Logf("SelectChannelKey ok id=%d", kk.ID)
-	}
 
 	body := fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"hi"}]}`, env.group)
 	for i := 0; i < 2; i++ {

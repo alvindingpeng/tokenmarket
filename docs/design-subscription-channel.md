@@ -642,3 +642,40 @@ if channel.Dialect.Subscribable() {
 **对 S3/S5 的影响**：S3 建订阅渠道时写 key 必须走 `AccountImport`（它负责解析与校验 JSON），
 **不能**直接 `ChannelCreate` 塞 `ChannelKeyConfig{AccountKind: "oauth", Key: <token>}`。
 这条如果不提前知道，调试成本就是本次这样的十几轮。
+
+### 13.7 S3 已完成（2026-11-17）
+
+**S3 交付**：平台描述层 + 建渠道自动装配 + 平台清单接口 + 启动校验。
+
+| 新增/改动 | 作用 |
+|---|---|
+| `internal/subplatform/platform.go` | 平台描述：`ID`/`Name`/`Dialect`/`AccountPlatform`/`BaseURL`/`Description` |
+| `internal/subplatform/validate.go` | 自洽校验：方言必须是订阅方言、账号平台必须已登记 |
+| `internal/op/channel_subplatform.go` | `applySubscriptionPlatform`：按平台补方言与地址 |
+| `internal/model/channel.go` | 新增 `SubPlatform` 字段 |
+| `internal/server/handlers/channel_subplatform.go` | `GET /api/v1/channel/subplatform/platforms` |
+| `cmd/start.go` | 启动时跑 `subplatform.Validate()`，不通过就 exit 1 |
+| `channel_account_signin.go` | 补 `credentialJSONOf` 的 antigravity 分支 |
+
+**装配规则（三条，都有测试钉住）**：
+
+1. 用户填了地址 → **不覆盖**（平台描述是默认值，自建中转/企业专线要能改）
+2. 用户没填 → 用平台描述的地址
+3. 非订阅方言带平台名 → **报错**（自相矛盾状态）
+
+**`credentialJSONOf` 缺 antigravity 是 S3 发现的真缺口**：它的 `default` 分支报
+"平台 X 的登录凭据转换尚未实现"，而 `ProviderOf` **支持** antigravity 登录。
+也就是说登录能成功，但换完令牌转凭据这一步会失败 —— 补上了，且复用 gemini 同一份 JSON 形状
+（解析层两者共用字段，差异在授权身份不在凭据形状）。
+
+**变异（3 次全部正确抓住）**：
+
+| 变异 | 结果 |
+|---|---|
+| 无条件覆盖用户地址 | FAIL（`got daily-cloudcode...` want 用户自填地址） |
+| 不校验非订阅方言带平台名 | FAIL（"非订阅方言带平台名必须报错"） |
+| 未登记平台也放行 | FAIL（"未登记平台必须报错"） |
+
+**S3 让 S4 测试失败了一次，这是正确行为**：S4 建订阅渠道的测试数据没给 `SubPlatform`，
+而 S3 要求订阅渠道必须有平台名。已修测试数据（加 `subPlatformForDialect` 辅助），
+而不是放宽校验 —— 放宽会让空壳渠道能建起来。

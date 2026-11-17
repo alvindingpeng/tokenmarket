@@ -15,6 +15,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/rhttp"
 	"github.com/alvindingpeng/switchyard/internal/server"
 	"github.com/alvindingpeng/switchyard/internal/server/auth"
+	"github.com/alvindingpeng/switchyard/internal/subplatform"
 	"github.com/alvindingpeng/switchyard/internal/task"
 	"github.com/alvindingpeng/switchyard/internal/update"
 	"github.com/alvindingpeng/switchyard/internal/utils/shutdown"
@@ -82,6 +83,16 @@ var startCmd = &cobra.Command{
 		if err := op.InitCache(); err != nil {
 			log.Errorf("cache init error: %v", err)
 			return
+		}
+
+		// 订阅平台描述自洽校验。加平台时最容易漏的是"方言可用"与"账号平台已登记",
+		// 两者编译期都不报错, 只会在用户建完渠道点登录之后才失败 —— 在启动时挡下来。
+		if problems := subplatform.Validate(); len(problems) > 0 {
+			for _, p := range problems {
+				log.Error(p)
+			}
+			log.Errorf("subscription platform descriptions invalid: %d problem(s)", len(problems))
+			os.Exit(1)
 		}
 		shutdown.Register("op.SaveCache", op.SaveCache)
 

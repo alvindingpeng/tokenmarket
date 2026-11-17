@@ -77,11 +77,11 @@ func beginAccountSignIn(c *gin.Context) {
 		return
 	}
 	resp.Success(c, gin.H{
-		"platform":      flow.Platform,
-		"authorize_url": flow.AuthorizeURL,
-		"state":         flow.State,
+		"platform":       flow.Platform,
+		"authorize_url":  flow.AuthorizeURL,
+		"state":          flow.State,
 		"user_code_hint": flow.UserCodeHint,
-		"expires_in":    int(signin.FlowTTL.Seconds()),
+		"expires_in":     int(signin.FlowTTL.Seconds()),
 	})
 }
 
@@ -223,6 +223,15 @@ func credentialJSONOf(platform string, tokens *signin.TokenResult) (string, erro
 			// Gemini CLI 的 oauth_creds.json 用毫秒时间戳, 解析层按毫秒读 —— 这里必须一致。
 			m["expiry_date"] = tokens.ExpiresAt.UnixMilli()
 		}
+	case model.AccountPlatformAntigravity:
+		// 与 gemini 同形状(解析层共用同一组字段, 见 model/account_json.go 的 antigravity 分支),
+		// 因此这里写同一份 JSON。两者真正的差异在授权身份(client/scopes), 不在凭据形状 ——
+		// 把它当两种形状处理只会让刷新链路多出一条无意义的分支。
+		m["access_token"] = tokens.AccessToken
+		m["refresh_token"] = tokens.RefreshToken
+		if !tokens.ExpiresAt.IsZero() {
+			m["expiry_date"] = tokens.ExpiresAt.UnixMilli()
+		}
 	default:
 		return "", errors.New("平台 " + platform + " 的登录凭据转换尚未实现")
 	}
@@ -257,9 +266,9 @@ func listSignInPlatforms(c *gin.Context) {
 		if err != nil {
 			// 不支持或未配置: 不列出来, 并把原因带上, 界面可以据此显示"为什么没有它"。
 			platforms = append(platforms, gin.H{
-				"platform":    platform,
-				"available":   false,
-				"reason":      err.Error(),
+				"platform":  platform,
+				"available": false,
+				"reason":    err.Error(),
 			})
 			continue
 		}
@@ -270,7 +279,7 @@ func listSignInPlatforms(c *gin.Context) {
 			"user_code_hint": provider.UserCodeHint,
 			// 登录用的是各官方 CLI 的 OAuth 客户端。这一点必须让用户知道: 授权页上会
 			// 显示成该 CLI 在申请权限, 用户有权在授权前明白自己在给谁授权。
-			"client_owner":   clientOwnerOf(platform),
+			"client_owner": clientOwnerOf(platform),
 		})
 	}
 	resp.Success(c, platforms)
