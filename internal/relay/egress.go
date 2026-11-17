@@ -33,6 +33,15 @@ var (
 // 返回 hasPool=false 表示该渠道没有配置出口池, 调用方沿用渠道自身的代理配置(向后兼容)。
 // 返回 error 只在"配了出口但一个都没启用"时出现: 此时既不该悄悄直连(可能违背渠道的访问要求),
 // 也不该随便挑一个停用的, 让本轮明确失败比默默改变出口更安全。
+// PickEgress 是 pickEgress 的导出形态, 供探测路径复用同一套出口选择。
+//
+// 没有它时, "拉取模型"会绕过出口池直连: 渠道配了 JP 出口代理, 转发走代理,
+// 探测却从本机 IP 出去 —— 于是出现"转发能用、拉模型报地区不支持"这种自相矛盾的状态,
+// 而两者用的是同一份账号与同一份配置, 排查时极难想到差异在出口。
+func PickEgress(channel model.Channel, clientCountry string) (model.ChannelEgress, bool, error) {
+	return pickEgress(channel, clientCountry)
+}
+
 func pickEgress(channel model.Channel, clientCountry string) (model.ChannelEgress, bool, error) {
 	if len(channel.Egresses) == 0 {
 		return model.ChannelEgress{}, false, nil

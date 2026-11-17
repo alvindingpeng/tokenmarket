@@ -132,7 +132,8 @@ func importChannelAccount(c *gin.Context) {
 	// 这里补一次触发: 导入账号是订阅渠道真正具备拉模型条件的第一刻。
 	// best-effort: 探测失败不影响导入结果(账号已经落库), 与 autoAddAfterSave 同口径。
 	if channel, channelErr := op.ChannelGet(request.ChannelID); channelErr == nil && channel.ModelAutoAdd {
-		if client, clientErr := probeHTTPClient(channel.ChannelConfig); clientErr != nil {
+		// 走渠道出口池: 与转发同一条线路, 否则配了出口代理的渠道拉模型会被上游按地区拒绝。
+		if client, clientErr := probeHTTPClientForChannel(channel); clientErr != nil {
 			log.Warnf("auto-add after import: build probe client for channel %d failed: %v", channel.ID, clientErr)
 		} else if addErr := op.AutoAddChannelModels(c.Request.Context(), channel.ID, channel.ChannelConfig, client, userID); addErr != nil {
 			log.Warnf("auto-add after import: channel %d failed: %v", channel.ID, addErr)

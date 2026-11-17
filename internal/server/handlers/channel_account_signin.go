@@ -188,7 +188,8 @@ func completeAccountSignIn(c *gin.Context) {
 	// 建渠道时没有账号, 保存触发的 autoAddAfterSave 拿不到凭据而跳过, 模型就永远空着。
 	// best-effort, 失败不影响登录结果(账号已经落库)。
 	if channel, channelErr := op.ChannelGet(request.ChannelID); channelErr == nil && channel.ModelAutoAdd {
-		if client, clientErr := probeHTTPClient(channel.ChannelConfig); clientErr != nil {
+		// 走渠道出口池: 与转发同一条线路, 否则配了出口代理的渠道拉模型会被上游按地区拒绝。
+		if client, clientErr := probeHTTPClientForChannel(channel); clientErr != nil {
 			log.Warnf("auto-add after signin: build probe client for channel %d failed: %v", channel.ID, clientErr)
 		} else if addErr := op.AutoAddChannelModels(c.Request.Context(), channel.ID, channel.ChannelConfig, client, userID); addErr != nil {
 			log.Warnf("auto-add after signin: channel %d failed: %v", channel.ID, addErr)

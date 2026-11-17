@@ -12,6 +12,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/netguard"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/price"
+	"github.com/alvindingpeng/switchyard/internal/relay"
 	"github.com/alvindingpeng/switchyard/internal/rhttp"
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
 	"github.com/alvindingpeng/switchyard/internal/server/resp"
@@ -503,7 +504,17 @@ func autoAddAfterSave(c *gin.Context, channelID int, config model.ChannelConfig,
 	if !config.ModelAutoAdd {
 		return
 	}
-	client, err := probeHTTPClient(config)
+	// 取渠道实体的出口池: 探测必须与转发走同一条出口, 否则会"转发能用、拉模型报地区不支持"。
+	channel, channelErr := op.ChannelGet(channelID)
+	var (
+		client *http.Client
+		err    error
+	)
+	if channelErr == nil {
+		client, err = probeHTTPClientForChannel(channel)
+	} else {
+		client, err = probeHTTPClient(config)
+	}
 	if err != nil {
 		log.Warnf("auto-add: build probe client for channel %d failed: %v", channelID, err)
 		return
@@ -585,7 +596,20 @@ func fetchModel(c *gin.Context) {
 			return
 		}
 	}
-	client, err := probeHTTPClient(request.Channel)
+	// 有渠道 ID 时按渠道取出口池: 探测必须与转发走同一条出口,
+	// 否则渠道配了出口代理时拉模型会从本机 IP 直连而被上游拒绝。
+	var (
+		client *http.Client
+		err    error
+	)
+	if request.ChannelID != 0 {
+		if channel, channelErr := op.ChannelGet(request.ChannelID); channelErr == nil {
+			client, err = probeHTTPClientForChannel(channel)
+		}
+	}
+	if client == nil {
+		client, err = probeHTTPClient(request.Channel)
+	}
 	if err != nil {
 		resp.Error(c, http.StatusBadGateway, err.Error())
 		return
@@ -641,6 +665,33 @@ func probeModelsForRequest(client *http.Client, request model.ChannelFetchModelR
 // probeHTTPClient 按渠道配置构建探测用的 HTTP 客户端: 直连 / 应用代理 / 渠道专用代理。
 // 实现在 rhttp.ForChannel —— 后台自动添加任务也要按同一套规则建客户端, 两处不能各写一份,
 // 否则「保存时能探测到、后台复查探测不到」这类偏差极难排查。
+//
+// 注意: 这个版本不看出口池(egress)。有渠道 ID 时应当用 probeHTTPClientForChannel,
+// 否则渠道配了出口代理时, 探测会从本机 IP 直连 —— 与转发路径用的是不同出口,
+// 表现为"转发能用、拉模型报地区不支持"。
 func probeHTTPClient(target model.ChannelConfig) (*http.Client, error) {
 	return rhttp.ForChannel(target)
+}
+
+// probeHTTPClientForChannel 按渠道 ID 取出口池并择优建客户端, 让探测与转发走同一条线路。
+//
+// 这是修一个真实故障: 渠道配了 JP 出口代理, 转发走 JP 正常, 但"拉取模型"直连本机,
+// 被上游以 UNSUPPORTED_LOCATION 拒绝 —— 同一份账号、同一份配置, 差异只在出口。
+// 出口池为空时回退到 rhttp.ForChannel, 与不带 egress 的老行为完全一致。
+func probeHTTPClientForChannel(channel model.Channel) (*http.Client, error) {
+	if len(channel.Egresses) == 0 {
+		return probeHTTPClient(channel.ChannelConfig)
+	}
+	// 探测没有客户端国家信息, 传空: 出口打分里"地区匹配"项不做加权, 只按实测耗时与权重择优。
+	egress, _, err := relay.PickEgress(channel, "")
+	if err != nil {
+		return nil, err
+	}
+	if egress.ID == 0 {
+		return probeHTTPClient(channel.ChannelConfig)
+	}
+	if egress.Kind == model.EgressKindDirect {
+		return rhttp.Direct()
+	}
+	return rhttp.Shared(strings.TrimSpace(egress.URL))
 }

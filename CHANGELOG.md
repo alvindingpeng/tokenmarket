@@ -1,5 +1,32 @@
 # 更新说明
 
+## v1.10.2 — 2026-11-17
+
+**修复: 探测（拉取模型）绕过渠道出口池，导致配了代理仍报地区不支持**
+
+渠道配了地区出口代理（如 JP）后，转发走代理正常，但"拉取模型"完全绕过出口池：
+`probeHTTPClient` 直接调 `rhttp.ForChannel`，后者只看 `Proxy` 布尔值与 `ChannelProxy`，
+**完全不读 `channel_egresses`**。于是探测从本机 IP 出去，被上游以
+`403 UNSUPPORTED_LOCATION` 拒绝 —— 而同一份账号、同一份配置的转发却是正常的。
+
+实测对比（生产库副本 + 真实凭据）：
+
+| 路径 | 结果 |
+|---|---|
+| 直连（修复前的探测行为）| `403 UNSUPPORTED_LOCATION` 地区不支持 |
+| 走渠道出口（转发行为）| `403 The caller does not have permission`（地区错误消失）|
+
+修复：导出 `relay.PickEgress`，新增 `probeHTTPClientForChannel`（按渠道取出口池择优，
+出口池为空时回退到原行为），四个探测调用点全部切换：保存后自动同步、手动拉取模型、
+导入账号后同步、网页登录后同步。
+
+这是**探测与转发必须走同一条线路**的一条具体化：两者用同一份账号与配置，
+只看出口差异就排查，成本极高。
+
+验证：新增 2 个用例。变异验证把 `len(channel.Egresses) == 0` 改成恒真
+（等价于回退），`TestProbeHTTPClientForChannelUsesEgress` 立刻 FAIL，
+报错为请求绕过代理去解析 `example.invalid` —— 证明用例锁住了"真的走代理"而非"返回了非 nil client"。
+
 ## v1.10.1 — 2026-11-17
 
 **修复: 订阅渠道拉取模型报 401 Invalid Credentials**
