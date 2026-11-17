@@ -590,3 +590,55 @@ if bucket.RemainingFraction <= 0 {
 | 探测侧去掉 `Subscribable()` 判定 | FAIL（订阅渠道报地址缺失） |
 
 **全量验证**：`go build` OK；`go test ./internal/...` 无失败；`tsc --noEmit` exit 0；`vitest` 60 文件 539 测试全通过。
+
+### 13.5 S4 已完成（2026-11-17，修法 A）
+
+**S4 交付**：订阅渠道在转发主路径改走按渠道选 key，其余方言零变化。
+
+```go
+// handler.go:372
+if channel.Dialect.Subscribable() {
+	channelKey, err = op.SelectChannelKey(channelModel.ChannelID, channel.KeyRotationStrategy)
+} else if grant.ChannelKey != nil && grant.ChannelKey.Enabled {
+	channelKey = grant.ChannelKey
+} else { ... }
+```
+
+**故意保留的字段**：订阅渠道的 `ChannelGrant.ChannelKeyID` 仍然非空且被回填，
+但它只是占位、不参与本轮选择。代码里写明了这一点 —— 这类"看着生效其实不生效"的字段
+正是本系统已经踩过的坑（`key_rotation_strategy`、`channel_keys.priority`）。
+
+**未改动的三处**（都有各自的正当理由）：
+
+| 位置 | 为什么不改 |
+|---|---|
+| `videotask.go:141` | 视频任务回放**必须**用创建时的那个凭据（任务 ID 绑在那家上游），换 key 就是错 |
+| `breaker_probe.go:52` | 熔断探针遍历**每个 Grant** 各用自己的 key，正是要覆盖所有账号；改了会漏探 |
+| `op/group.go:482` | 纯展示（成员对应哪个 key），不影响转发 |
+
+**验证（含变异）**：
+
+| 测试 | 作用 |
+|---|---|
+| `TestSubscriptionChannelRotatesAccounts` | 端到端：同渠道两账号连发两次，上游必须收到两把不同 Bearer |
+| `TestGenericChannelKeepsGrantBoundKey` | 边界：普通渠道仍只用 Grant 绑定的那把（承诺"零变化"） |
+| `TestSelectChannelKeyRotatesAcrossAccounts` 等 4 个 | `SelectChannelKey` 本身的轮询/优先级/熔断/全不可用 |
+
+**变异**：把 `if channel.Dialect.Subscribable()` 改成 `if false && ...`（即回到死代码状态），
+`TestSubscriptionChannelRotatesAccounts` 精准失败并报出
+`订阅渠道多账号未轮换, 两次都用 "Bearer token-one" —— SelectChannelKey 仍是死代码`。
+还原后全绿。
+
+### 13.6 实施中查清的一个约束：`account_kind=oauth` 的 Key 必须存账号 JSON
+
+这是 S4 调试时花时间最多的点，**值得写进方案**：
+
+- `channel_keys.key` 对 `account_kind=oauth` 存的是**账号 JSON**（含 `access_token` 等字段），
+  不是裸 token。用裸字符串当 oauth key 会让该 key 不可用，症状是转发报
+  `no available upstream; waiting disabled`（429）—— **报错完全指不到真实原因**。
+- 平台不同，JSON 形状也不同：Codex 是顶层 snake_case，Claude 在 `claudeAiOauth` 下且为 camelCase
+  （见 `internal/model/account_json.go:76-115`）。
+
+**对 S3/S5 的影响**：S3 建订阅渠道时写 key 必须走 `AccountImport`（它负责解析与校验 JSON），
+**不能**直接 `ChannelCreate` 塞 `ChannelKeyConfig{AccountKind: "oauth", Key: <token>}`。
+这条如果不提前知道，调试成本就是本次这样的十几轮。

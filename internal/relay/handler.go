@@ -364,8 +364,21 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			// 动态选择渠道 Key：根据 channel.KeyRotationStrategy 从可用 keys 中选择
 			// 如果 Grant 绑定了固定 key (grant.ChannelKey != nil)，优先使用固定 key（向后兼容）
 			// 否则使用轮换策略动态选择
+			//
+			// 订阅渠道例外: 一个渠道挂多个订阅账号时, "用哪个账号"必须由轮换策略决定,
+			// 而不是由分组成员碰巧引用了哪个 Grant 决定。此时 grant.ChannelKey 只是占位,
+			// 不参与本轮选择 —— 它仍然存在, 因为 Grant 表要求 ChannelKeyID 非空。
 			var channelKey *model.ChannelKey
-			if grant.ChannelKey != nil && grant.ChannelKey.Enabled {
+			if channel.Dialect.Subscribable() {
+				// 订阅渠道: 从该渠道所有可用 key 里按策略选, 忽略 Grant 绑定的占位 key。
+				channelKey, err = op.SelectChannelKey(channelModel.ChannelID, channel.KeyRotationStrategy)
+				if err != nil {
+					if !waitAvailable() {
+						return
+					}
+					continue
+				}
+			} else if grant.ChannelKey != nil && grant.ChannelKey.Enabled {
 				// Grant 绑定了固定 key，直接使用（兼容旧行为）
 				channelKey = grant.ChannelKey
 			} else {

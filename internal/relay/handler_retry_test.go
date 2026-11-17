@@ -74,6 +74,14 @@ type relayGroupEnv struct {
 // members 决定分组里放几个成员: 每个成员是独立渠道上的一条授权(独立渠道/凭据/模型),
 // 一个成员被 MarkBlocked 或冷却时不会牵连其余成员, 换目标行为才能观察清楚。
 func newRelayGroup(t *testing.T, upstreamURL string, protocols model.Protocol, kind model.MediaKind, members int, relayConfig model.GroupRelayConfig) relayGroupEnv {
+	return newRelayGroupDialect(t, upstreamURL, protocols, kind, members, relayConfig, model.DialectGeneric, nil)
+}
+
+// newRelayGroupDialect 与 newRelayGroup 相同, 但可指定方言与凭据配置(订阅渠道要多账号)。
+//
+// 单独开一个函数而不给原函数加参数: 既有用例全部走 generic 单凭据, 让它们继续最简调用,
+// 新用例才显式说明自己需要什么方言。
+func newRelayGroupDialect(t *testing.T, upstreamURL string, protocols model.Protocol, kind model.MediaKind, members int, relayConfig model.GroupRelayConfig, dialect model.Dialect, keySpecs []model.ChannelKeyConfig) relayGroupEnv {
 	t.Helper()
 	relayRetryTestDB(t)
 	ctx := context.Background()
@@ -91,10 +99,10 @@ func newRelayGroup(t *testing.T, upstreamURL string, protocols model.Protocol, k
 	for i := 0; i < members; i++ {
 		modelName := fmt.Sprintf("up-model-%s-%d", suffix, i)
 		created, err := op.ChannelCreate(&model.ChannelDetail{
-			ChannelConfig: model.ChannelConfig{Name: fmt.Sprintf("ch-%s-%d", suffix, i), Enabled: true, BaseURL: upstreamURL},
-			Keys:          []model.ChannelKeyConfig{{Name: "k1", Key: fmt.Sprintf("sk-%d", i), Enabled: true}},
+			ChannelConfig: model.ChannelConfig{Name: fmt.Sprintf("ch-%s-%d", suffix, i), Enabled: true, BaseURL: upstreamURL, Dialect: dialect, KeyRotationStrategy: "roundrobin"},
+			Keys:          keysForSpecs(keySpecs, i),
 			Models:        []string{modelName},
-			Grants:        []model.ChannelGrantConfig{{ModelName: modelName, KeyName: "k1", Protocols: protocols}},
+			Grants:        []model.ChannelGrantConfig{{ModelName: modelName, KeyName: grantKeyName(keySpecs), Protocols: protocols}},
 		}, scope, ctx)
 		if err != nil {
 			t.Fatalf("create channel %d: %v", i, err)
@@ -132,6 +140,28 @@ func newRelayGroup(t *testing.T, upstreamURL string, protocols model.Protocol, k
 		t.Fatalf("create group: %v", err)
 	}
 	return relayGroupEnv{userID: user.ID, group: groupName, grantIDs: grantIDs}
+}
+
+// keysForSpecs 返回第 idx 个渠道的凭据列表: keySpecs 为空时退回单个默认凭据。
+//
+// 每个渠道各带一份同形凭据是为了让 members 个成员互不共用账号(共用会让"换了哪个凭据"
+// 无法归因到具体渠道)。
+func keysForSpecs(keySpecs []model.ChannelKeyConfig, idx int) []model.ChannelKeyConfig {
+	if len(keySpecs) == 0 {
+		return []model.ChannelKeyConfig{{Name: "k1", Key: fmt.Sprintf("sk-%d", idx), Enabled: true}}
+	}
+	return append([]model.ChannelKeyConfig(nil), keySpecs...)
+}
+
+// grantKeyName 返回授权要绑定的凭据名: 有 keySpecs 时取第一个, 否则为默认的 k1。
+//
+// 订阅渠道的多账号用例里, 授权只绑第一个账号等于死代码场景 —— 其余账号能否被轮到,
+// 正是被测的行为。
+func grantKeyName(keySpecs []model.ChannelKeyConfig) string {
+	if len(keySpecs) == 0 {
+		return "k1"
+	}
+	return keySpecs[0].Name
 }
 
 // forwardRequest 以真实的 Forward 转发一条请求并返回响应。
