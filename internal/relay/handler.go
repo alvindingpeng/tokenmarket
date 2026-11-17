@@ -224,7 +224,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			request.markFailed(cause, "", nil)
 			if !c.Writer.Written() && c.Request.Context().Err() == nil {
 				if status == http.StatusTooManyRequests {
-					c.Header("Retry-After", "1")
+					// 上游限流是按固定窗口(60 秒)计的: 告诉客户端 1 秒后重试, 只会让它在整个窗口里
+					// 反复撞墙, 每个请求都再吃一次 429。按真实窗口给出 Retry-After。
+					c.Header("Retry-After", strconv.Itoa(ratelimit.WindowSeconds()))
 				}
 				response := inbound.TransformError(context.WithoutCancel(ctx), relayResponseError(cause, status))
 				c.Data(response.StatusCode, "application/json", response.Body)
@@ -333,6 +335,12 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				// 分组一个成员都没有时, 等待永远等不到上游: 直接点明配置缺失, 不再报笼统的"无可用上游"。
 				if len(group.Items) == 0 {
 					stop(fmt.Errorf("group %q has no upstream members configured", group.Name), http.StatusServiceUnavailable)
+					return
+				}
+				// 全部候选都因上游 429 在本窗口被强制跳过时, 别再说"等待被禁用": 阻塞原因是上游限流,
+				// 恢复时机是窗口结束(固定 60 秒), 与分组是否开启排队无关。
+				if reason := limitedUpstreamReason(group); reason != "" {
+					stop(errors.New(reason), http.StatusTooManyRequests)
 					return
 				}
 				if !waitAvailable() {

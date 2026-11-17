@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"fmt"
 	"maps"
 	"math"
 	"math/rand/v2"
@@ -652,6 +653,35 @@ func upstreamItemLimited(item model.GroupItem) bool {
 		}
 	}
 	return false
+}
+
+// limitedUpstreamReason 说明"候选全被上游限流挡掉"这一具体原因, 拿不到时返回空串。
+//
+// 为什么需要它: 选路返回空成员后, 请求会走 waitAvailable, 而等待队列默认关闭
+// (max_waiting_requests=0), 于是对外只会报 "no available upstream; waiting disabled"。
+// 那条文案把"排队功能没开"当成了原因, 可真实原因是上游刚回过 429 —— 管理员照它去开排队,
+// 既治不好限流, 还会白白让请求堆在队列里。
+//
+// 只在这一情形下替换文案: 必须存在被限流标记的成员, 且全组没有其他可用成员。
+// 若还有健康成员, 空候选另有原因(冷却/停用等), 应保留原有等待语义。
+func limitedUpstreamReason(group model.Group) string {
+	limited, healthy := 0, 0
+	for _, item := range group.Items {
+		if !item.Available {
+			continue
+		}
+		if upstreamItemLimited(item) {
+			limited++
+			continue
+		}
+		healthy++
+	}
+	if limited == 0 || healthy > 0 {
+		return ""
+	}
+	return fmt.Sprintf(
+		"all %d upstream member(s) of group %q are rate limited by the provider in the current window; retry after the window resets",
+		limited, group.Name)
 }
 
 // groupRouteLocked 取出分组路由状态并清理已删除成员的残留; 调用方必须持有锁。

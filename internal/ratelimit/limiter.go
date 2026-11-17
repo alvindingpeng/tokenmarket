@@ -9,6 +9,10 @@ import (
 
 const windowSeconds = 60 // 固定窗口长度(秒)。
 
+// WindowSeconds 暴露固定窗口长度: 上游 429 的强制标记随该窗口过期, 对外回复 Retry-After
+// 必须用同一个数值, 否则客户端会在窗口内反复重试, 每次都再撞一次限流。
+func WindowSeconds() int { return windowSeconds }
+
 // Scope 限流主体: 一个可独立计量的范围, 如用户、API Key 或渠道凭据。
 type Scope struct {
 	Kind  string // model.RateScope* 的范围标识。

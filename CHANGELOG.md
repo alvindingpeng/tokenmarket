@@ -1,5 +1,39 @@
 # 更新说明
 
+## v1.10.10 — 2026-11-17
+
+**修复: 报错 `no available upstream; waiting disabled` 指错了原因**
+
+订阅模型偶发返回：
+
+```
+429 no available upstream; waiting disabled
+```
+
+而渠道、账号、模型全都健康（`disabled_until` 为空、`error_count=0`），稍后同样的请求又能成功。
+
+**根因**：上游返回 429 后，`limiter.MarkBlocked` 会把该成员强制标记为"本窗口触顶"，
+`route.go` 选路时直接把它排除，**整个候选集为空**。空候选进入 `waitAvailable()`，
+而分组等待队列默认关闭（`max_waiting_requests=0`，这是有意的设计），
+于是对外只报 `no available upstream; waiting disabled`。
+
+那条文案把"排队功能没开"当成了原因。真实原因是**上游限流**，并且会在一个
+固定窗口（60 秒）结束后自行恢复。管理员照这条错误去开排队，既治不好限流，
+还会让请求白白堆在队列里等一个根本不该等的上游。
+
+**修复**：
+
+1. 全部候选都被上游 429 挡掉时，直接报真实原因：
+   `all N upstream member(s) of group "X" are rate limited by the provider in the current window; retry after the window resets`（429）。
+2. `Retry-After` 由固定 `1` 秒改为真实窗口长度（60 秒）。原来告诉客户端 1 秒后重试，
+   它会在整个窗口内反复重试，每次都再吃一次 429。
+
+两处都只在"确实全部被上游限流"时生效；还有健康成员或成员只是被停用时保持原有语义，
+避免把"等冷却到期"错说成"等限流窗口"。
+
+验证：变异验证让 `limitedUpstreamReason` 恒返回空串，用例立即报
+`候选全被上游限流挡住时, 必须给出限流原因, 否则对外只会误报等待被禁用`。
+
 ## v1.10.9 — 2026-11-17
 
 **修复: 一次瞬时 429 把整个订阅渠道暂停，报「no upstream members configured」**
