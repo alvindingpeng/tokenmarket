@@ -208,6 +208,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		failedItemID := 0 // 当前累计连续失败次数的成员 ID。
 		failures := 0     // 该成员包含首次请求的连续失败次数。
 		totalAttempts := 0
+		// rateRetries 单独统计"上游 429 之后的退避重试"次数, 不并入 totalAttempts(理由见 rateRetryBackoff)。
+		// 跨成员累计、换成员后不清零: 限流是上游侧的窗口状态, 与"换个成员重新开始"无关。
+		rateRetries := 0
 		var scoreRetries scoreRetryState
 		var lastScoreError error
 		// 灰度命中在请求首次解析分组时定下, 并沿用到整条重试链: 同一次请求若在灰度与常规路径之间
@@ -624,7 +627,21 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 						stop(err, upstreamStatus(err))
 						return
 					}
-					continue
+					// 上游限流的重试必须退避, 且不消耗跨成员尝试预算。
+					//
+					// 缺陷(线上实测 2026-11-17): 这里原本是裸 continue —— 打完一次 429 立刻重选同一成员接着打。
+					// 单账号订阅渠道只有一个候选, 摘掉探测名额后下一轮又选它, 于是 MaxTotalAttempts 的 10 次
+					// 在约 2 秒内(实测每次 215~317ms)全部砸向上游。上游刚说"当前窗口已满", 网关却继续猛打,
+					// 把剩余额度一秒烧光, 用户侧从"偶发 429"变成"整段请求必然失败"。
+					//
+					// 不计入 totalAttempts 的理由: 429 代表请求根本没被模型处理, 与准入拒绝同性质;
+					// 若照计, 退避重试反而更快耗尽预算, 比不修更差。真正打到模型并失败的轮次照旧计。
+					if _, ok := rateRetryBackoff(ctx, request, group, rateRetries); ok {
+						rateRetries++
+						continue
+					}
+					stop(err, upstreamStatus(err))
+					return
 				}
 				// 请求本身有问题或内容被安全策略拦截: 换渠道必然同样失败, 直接透传上游错误。
 				// 内容拦截不换渠道, 是为了不跨供应商绕过内容审查。
@@ -1119,4 +1136,60 @@ func checkContextLimit(modelName string, bodyBytes []byte) (exceeded bool, limit
 	}
 
 	return false, capability.Context, estInput
+}
+
+// rateRetryBackoffMaxRetries 是单个请求内允许的"上游 429 后退避重试"次数上限。
+//
+// 与 MaxTotalAttempts 分开计数: 429 说明请求根本没被模型处理(与准入拒绝同性质),
+// 计入总预算会让退避重试反而更快撞到"maximum total attempts exceeded"。
+// 上限定 3 是实测口径: 上游 429 多半在几秒内自愈, 三次退避足够跨过一次瞬时窗口;
+// 再多也不会让一次必然失败的请求变得更可能成功, 只让用户多等。
+const rateRetryBackoffMaxRetries = 3
+
+// rateRetryWait 算第 retry 次(0 起)429 重试前的退避时长: 基数取成员重试间隔, 指数递增并封顶 8 倍。
+//
+// 抽成纯函数是为了让时长曲线可被确定性断言, 不必在测试里真的等上几秒。
+func rateRetryWait(group model.Group, retry int) time.Duration {
+	wait := time.Duration(group.RelayConfig.MemberRetryIntervalSeconds) * time.Second
+	if wait <= 0 {
+		wait = time.Second
+	}
+	mult := 1 << uint(retry)
+	if mult > 8 {
+		mult = 8
+	}
+	return wait * time.Duration(mult)
+}
+
+// rateRetryBackoff 在一次上游 429 之后退避等待, 返回是否应当继续重试。
+//
+// 为什么必须退避: 上游刚用 429 明确表示"本窗口已满"。立即重选同一成员再打(原实现是裸 continue),
+// 单账号订阅渠道下 10 次重试会在约 2 秒内全部砸向已满的窗口(实测每次 215~317ms),
+// 把剩余额度瞬间烧光 —— 用户侧从"偶发限流"变成"这段请求必然失败"。
+//
+// 退避时长取 max(成员重试间隔, 指数递增): 首次即等满配置的重试间隔(默认 1 秒),
+// 之后 2s、4s, 最多 8s, 与常见的上游固定窗口节奏相称。
+// 用 ctx 的剩余预算封顶: 请求总超时(默认 600s)必须优先于退避, 不能把用户挂死在这里。
+func rateRetryBackoff(ctx context.Context, request *RequestState, group model.Group, retry int) (time.Duration, bool) {
+	if retry >= rateRetryBackoffMaxRetries {
+		request.addRouteEvent("rate_retry", "retry_budget_exhausted")
+		return 0, false
+	}
+	wait := rateRetryWait(group, retry)
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining < wait {
+			// 剩余预算不足: 不硬等到超时, 直接把这轮的限流错误透传, 让客户端自己排。
+			request.addRouteEvent("rate_retry", "deadline_insufficient")
+			return 0, false
+		}
+	}
+	request.addRouteEvent("rate_retry", wait.String())
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return 0, false
+	case <-timer.C:
+		return wait, true
+	}
 }
