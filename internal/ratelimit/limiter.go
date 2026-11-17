@@ -240,6 +240,32 @@ func (l *Limiter) Blocked(scope Scope) bool {
 	return false
 }
 
+// ForcedBlocked 判断某范围是否因**上游 429** 被强制标记, 不看并发与策略配额。
+//
+// 与 Blocked 分开的理由: 三种"触顶"的成因完全不同, 恢复手段也不同。
+//
+//   - 并发占满: 等手头这些请求结算就会松开, 探测只会白白多打一次上游。
+//   - 策略配额(RPM/TPM): 要等本窗口计数过期, 探测同样无意义。
+//   - 上游 429: 这是一次**单点观测**, 上游可能几秒就放开; 探测是唯一能提前确认的办法。
+//
+// 选路只对上游 429 放开探测名额, 因此必须能单独问到这一种。
+func (l *Limiter) ForcedBlocked(scope Scope) bool {
+	for _, s := range l.scopes([]Scope{scope}) {
+		if l.forcedBlocked(s) {
+			return true
+		}
+	}
+	return false
+}
+
+func (l *Limiter) forcedBlocked(scope Scope) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	window := l.now().Unix() / windowSeconds
+	b := l.buckets[l.key(scope, window)]
+	return b != nil && b.forced
+}
+
 func (l *Limiter) blocked(scope Scope) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -276,6 +302,24 @@ func (l *Limiter) MarkBlocked(scopes []Scope, estInput, estOutput int64) {
 		b := l.bucketLocked(scope, window)
 		b.forced = true // 上游 429: 本窗口内跳过该范围, 与策略配置无关。
 		// Forced blocking is independent of counters; do not manufacture token usage.
+	}
+}
+
+// ClearBlocked 撤销某范围在本窗口的上游 429 触顶标记。
+//
+// 存在的理由: 触发标记的是一次 429 的**单点观测**, 它可能来自上游瞬时抖动,
+// 也可能来自一个很快就被放开的突发限流。标记却会锁死整个 60 秒窗口, 期间所有请求
+// 连一次上游都不打就被拒绝。既然选路允许触顶成员做探测请求, 探测成功就必须撤销标记 ——
+// 否则"探测"只能证明上游好了, 却永远解不开那个锁。
+func (l *Limiter) ClearBlocked(scopes []Scope) {
+	scopes = l.scopes(scopes)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	window := l.now().Unix() / windowSeconds
+	for _, scope := range scopes {
+		if b := l.buckets[l.key(scope, window)]; b != nil {
+			b.forced = false
+		}
 	}
 }
 

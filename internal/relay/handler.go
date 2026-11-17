@@ -741,6 +741,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				recordMemberMetric(group.ID, item.ID, channelModel.ID, group.RelayConfig.MetricWindowSize, roundWaitTime, true)
 				// 出口成绩同源记录: 下一轮选出口就按这份实测耗时排序。
 				recordEgressSample(egress.ID, group.RelayConfig.MetricWindowSize, roundWaitTime, true)
+				// 成功即证明上游限流已解除: 撤销本窗口的 429 强制触顶标记。
+				// 少了这一步, 触顶成员虽被允许做探测请求, 探测成功后标记仍在,
+				// 后续请求会继续被判为触顶直到窗口重置 —— 探测就失去了意义。
+				limiter.ClearBlocked(upstreamScopes)
 				// 成功请求重置 Key 错误计数
 				if channelKey != nil {
 					op.ResetChannelKeyErrors(channelKey.ID)

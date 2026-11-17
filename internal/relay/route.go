@@ -131,7 +131,9 @@ func pickCanaryItem(group model.Group) (model.GroupItem, bool) {
 func pickGroupItem(group model.Group) model.GroupItem {
 	if group.Mode == model.GroupModeManual {
 		for _, item := range group.Items {
-			if item.ID == group.ActiveItemID && item.Available && !upstreamItemLimited(item) {
+			// 手动模式同样要过并发与策略配额检查: 人工指定只决定"选谁", 不代表可以绕过限流。
+			if item.ID == group.ActiveItemID && item.Available &&
+				!upstreamItemLimited(item) && !upstreamItemBlockedByPolicy(item) {
 				return item
 			}
 		}
@@ -154,7 +156,10 @@ func pickGroupItem(group model.Group) model.GroupItem {
 	if group.RequestRoutingPreference == "" && route.CurrentItemID != 0 && route.AffinityUntil > now {
 		current := itemOf(group, route.CurrentItemID)
 		_, cooling := route.Cooldowns[current.ID]
-		if current.Available && !cooling && route.ProbeItemID != current.ID && !upstreamItemLimited(current) {
+		// 亲和快捷路径同样要过并发与策略配额检查: 否则亲和期内的成员会绕过限流,
+		// 把本已占满的并发额度继续往上叠(既有缺陷, 本次一并修正)。
+		if current.Available && !cooling && route.ProbeItemID != current.ID &&
+			!upstreamItemLimited(current) && !upstreamItemBlockedByPolicy(current) {
 			return current
 		}
 	}
@@ -168,19 +173,33 @@ func pickGroupItem(group model.Group) model.GroupItem {
 	bestHealthyPriority, hasHealthy := 0, false
 	for i := range group.Items {
 		item := &group.Items[i]
-		// 上游限流触顶的成员直接出局: 与冷却不同, 不计失败率也不设恢复惩罚。
-		if !item.Available || upstreamItemLimited(*item) {
+		if !item.Available {
 			continue
 		}
+		// 并发占满与策略配额(RPM/TPM)触顶必须直接出局: 这两类的恢复与上游无关,
+		// 探测只会多打一次上游却不改变它们的状态。只有上游 429 值得占探测名额。
+		if upstreamItemBlockedByPolicy(*item) {
+			continue
+		}
+		// 上游 429 触顶的成员与冷却成员同样**只做探测**, 不能直接出局。
+		//
+		// 早先这里是 `upstreamItemLimited -> continue`, 把触顶成员整个 60 秒窗口踢出选路。
+		// 线上代价: 订阅渠道只有一个账号时, 一次瞬时 429 就让整组在窗口内没有任何候选,
+		// 请求在几毫秒内被网关拒绝(实测 duration 2~3ms), 连一次上游探测都没有 ——
+		// 而上游往往几秒后就恢复了, 网关却要空等到窗口重置。
+		//
+		// 改法是把它并进冷却的探测语义: 触顶成员仍只占一个探测名额, 由该请求去试上游;
+		// 试通即证明限流已解除, 试不通也只消耗那个名额, 不会把正常流量放给确实受限的成员。
+		limited := upstreamItemLimited(*item)
 		deadline, cooling := route.Cooldowns[item.ID]
-		if cooling && deadline > now {
+		if !limited && cooling && deadline > now {
 			continue
 		}
-		if cooling {
+		if limited || cooling {
 			if probeCandidate == nil {
 				probeCandidate = item
 			}
-			// A recovered member is probe-only while another probe is in flight.
+			// A recovered/limited member is probe-only while another probe is in flight.
 			// Keeping it in candidates would let score/price selection release
 			// normal traffic before the probe has established recovery.
 			if route.ProbeItemID != 0 {
@@ -645,10 +664,20 @@ func hasOtherEligible(group model.Group, excludeItemID int) bool {
 	return false
 }
 
-// upstreamItemLimited 判断成员的任一上游维度当前窗口是否已限流触顶。
+// upstreamItemLimited 判断成员是否被**上游 429** 强制标记(可用于放开探测的那种触顶)。
 func upstreamItemLimited(item model.GroupItem) bool {
 	for _, scope := range upstreamItemScopes(item) {
-		if limiter.Blocked(scope) {
+		if limiter.ForcedBlocked(scope) {
+			return true
+		}
+	}
+	return false
+}
+
+// upstreamItemBlockedByPolicy 判断成员是否因并发或策略配额触顶(这类不该探测)。
+func upstreamItemBlockedByPolicy(item model.GroupItem) bool {
+	for _, scope := range upstreamItemScopes(item) {
+		if limiter.Blocked(scope) && !limiter.ForcedBlocked(scope) {
 			return true
 		}
 	}

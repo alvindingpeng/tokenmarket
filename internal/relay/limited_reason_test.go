@@ -34,9 +34,13 @@ func TestLimitedUpstreamReasonNamesRateLimitInsteadOfWaiting(t *testing.T) {
 	defer ResetRouteState(group.ID)
 
 	limitedMembers(upstreamItemScopes(item))
-	in := pickGroupItem(group)
-	if in.ID != 0 {
-		t.Fatalf("成员已被上游 429 标记却仍被选中: %d", in.ID)
+	// 第一个请求会被放去做探测(见 TestRateLimitedMemberGetsProbeInsteadOfBeingBanished),
+	// 它占用唯一的探测名额; 此时后续请求既没有候选、也没有名额可拿, 才真正需要解释原因。
+	if first := pickGroupItem(group); first.ID != item.ID {
+		t.Fatalf("前置条件: 首个请求应被放去探测, got %d", first.ID)
+	}
+	if second := pickGroupItem(group); second.ID != 0 {
+		t.Fatalf("探测名额已被占用时不该再放行: got %d", second.ID)
 	}
 	reason := limitedUpstreamReason(group)
 	if reason == "" {
