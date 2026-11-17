@@ -889,3 +889,56 @@ anthropic: upstream 404 Not Found: 404 page not found (请求路径: [/models /m
 **第 6 条值得记住**：变异**没被抓住**时才暴露测试漏洞 —— 第一版 `TestSubscriptionChannelPricingFollowsReference`
 只把 m0 传给预填函数，m1 从未进入，"缺失不填"实际没被覆盖，而测试当时是绿的。
 不看变异结果就会误判覆盖率。
+
+### 16.7 真实环境首跑结果（2026-11-17，生产）
+
+§16.4 里"用 httptest 假上游验证"的假设，这次用真实上游账号跑了一遍，结果分成三段：
+
+**一、401 Invalid Credentials —— 已定位并已修复**
+
+首次上线后订阅渠道报：
+
+```
+gemini cli loadCodeAssist: status=401 body={"error":{"code":401,
+  "message":"Request had invalid authentication credentials.", ...}}
+```
+
+根因不是账号失效：订阅渠道把**整包账号 JSON**存在 `channel_keys.key` 列，
+而探测链需要的是 `access_token`。自动同步与"拉取模型"按钮都把这一整串直接当 Bearer 发了出去。
+变异验证时回退修复，测试精确复现了这条报错，且断言看到
+`Authorization: Bearer {"access_token":"ya29...","refresh_token":"..."}` —— 确认因果。
+
+修复后真实链路走通，逐步结果（用生产库副本 + 真实 KEK 跑出）：
+
+| 步骤 | 结果 |
+|---|---|
+| KEK 载入 | OK |
+| 凭据解封（823 字节密文）| OK，得 451 字节明文 |
+| 明文格式 | 合法 JSON，键为 `access_token`/`refresh_token`/`expiry_date` |
+| `model.ChannelKeyToken` 解包 | OK，得到 `ya29.a0Aehf...`（258 字节真令牌，非 JSON）|
+| 上游鉴权 | **401 消失** |
+
+**二、新的阻塞点：账号所在地区不支持**
+
+401 修好之后，真实上游返回的是**另一个错误**，与代码无关：
+
+```
+403 PERMISSION_DENIED / UNSUPPORTED_LOCATION
+"Your current account is not eligible for Gemini Code Assist for individuals
+ because it is not currently available in your location."
+error_number: 1008
+```
+
+即：该 Google 账号所在地区不在 Gemini Code Assist 个人版的服务范围内。
+**这不是代码缺陷**，换一个受支持地区的账号即可。此时模型清单必然为空 ——
+这也解释了渠道 40 的 `channel_models` 计数为 0。
+建议把这条错误在界面上区分出来（地区不可用 vs 账号失效 vs 额度耗尽），
+当前三者都表现为"拉不到模型"，排查成本高。
+
+**三、access_token 只带 258 字节且无 scope 字段**
+
+该账号的账号 JSON 里 `access_token` 是 258 字节、顶层没有 `scope`。
+这不影响本次判定（401 已消失说明令牌本身被上游接受），
+但若后续遇到"权限不足"类错误，先检查账号授权时是否勾选了 Code Assist 相关 scope。
+
+**仍未验证**（与 §16.4 一致）：真实账号下的数据面转发、额度耗尽真实错误码、多账号轮换。

@@ -303,11 +303,16 @@ type CustomHeader struct {
 // 且探测用的地址, 路径, 代理与过滤表达式必须与保存后生效的完全一致, 收同一份即可; 探测用不上的字段忽略即可。
 // 不指定协议: 一次探测同时试 OpenAI 与 Anthropic 两侧, 协议支持情况由各侧的响应决定。
 type ChannelFetchModelRequest struct {
-	Channel   ChannelConfig `json:"channel"`                // 用于拉取的渠道配置, 提供地址, 路径, 代理与 Header。
-	Key       string        `json:"key" binding:"required"` // 拉取使用的上游凭据。
-	AppID     string        `json:"app_id,omitempty"`       // 讯飞 App ID。
-	APISecret string        `json:"api_secret,omitempty"`   // 讯飞 API Secret。
-	Domain    string        `json:"domain,omitempty"`       // 讯飞模型 Domain。
+	Channel ChannelConfig `json:"channel"` // 用于拉取的渠道配置, 提供地址, 路径, 代理与 Header。
+	// Key 不再 binding:"required": 订阅渠道的凭据是登录后落在库里的账号, 表单里没有 Key 可填,
+	// 要求必填会让订阅渠道的"拉取模型"永远发不出请求(400 而不是它该有的"还没有账号")。
+	// 非订阅渠道缺 Key 由各自分支显式报错, 不再依赖 binding 拦。
+	Key string `json:"key"` // 拉取使用的上游凭据。
+	// ChannelID 只对订阅渠道有意义: 用它去库里取已导入的账号凭据。
+	ChannelID int    `json:"channel_id,omitempty"` // 渠道 ID。
+	AppID     string `json:"app_id,omitempty"`     // 讯飞 App ID。
+	APISecret string `json:"api_secret,omitempty"` // 讯飞 API Secret。
+	Domain    string `json:"domain,omitempty"`     // 讯飞模型 Domain。
 }
 
 // 探测到的单个上游模型及其支持的协议集合。

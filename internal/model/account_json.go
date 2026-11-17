@@ -290,3 +290,27 @@ func accountJWTExpiry(token string) time.Time {
 	}
 	return time.Time{}
 }
+
+// ChannelKeyToken 从一条凭据取本轮请求要带的访问令牌。
+//
+// 静态凭据直接用 Key 列; 账号凭据(oauth)从 JSON 里解 access_token。
+//
+// 这一步不能只判 AccountKind != "": cookie 类账号(gemini/grok)的 Key 存的是会话串本身,
+// 根本不是 JSON。把它们也送去解析会拿到空串, 于是请求带一个空 Bearer ——
+// 症状是"cookie 账号导入后完全不工作", 而且没有任何报错指向这里。
+//
+// 探测与转发必须共用这一份实现: 探测若直接把 Key 当令牌用, 订阅渠道(Key 里是整包账号 JSON)
+// 会把整个 JSON 塞进 Authorization 头, 上游回 401 Invalid Credentials ——
+// 而那个报错完全指不到"你把 JSON 当 token 用了"。
+func ChannelKeyToken(channelKey ChannelKey) string {
+	if channelKey.AccountKind != AccountKindOAuth {
+		return channelKey.Key
+	}
+	credential, err := AccountJSONParse(channelKey.AccountPlatform, []byte(channelKey.Key))
+	if err != nil {
+		// 解析失败返回空串: 空 Bearer 会让上游回 401, 进而触发既有的凭据级熔断与换成员逻辑。
+		// 不让这里静默兜底成某种「看起来能用」的值。
+		return ""
+	}
+	return credential.AccessToken
+}

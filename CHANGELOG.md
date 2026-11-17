@@ -1,5 +1,25 @@
 # 更新说明
 
+## v1.10.1 — 2026-11-17
+
+**修复: 订阅渠道拉取模型报 401 Invalid Credentials**
+
+订阅渠道把整包账号 JSON 存在 `channel_keys.key` 列里, 而探测链需要的是 `access_token`。
+自动同步与"拉取模型"按钮都把这一整串直接当作 Bearer 令牌发了出去, 上游看到的是一串
+不是令牌的东西, 于是回 `401 Invalid Credentials` —— 报错完全指不到真实原因, 看起来像账号失效。
+
+修复: 抽出 `model.ChannelKeyToken` 统一解开账号 JSON(与转发路径 `channelKeyTokenOf` 同一份语义),
+新增 `op.ProbeChannelKey` 作为探测的推荐入口, 自动同步与手动拉取都改走它。
+静态凭据原样透传, 普通渠道行为不变。
+
+同时放宽 `ChannelFetchModelRequest.key` 的必填: 订阅渠道的表单里没有 key 可填,
+要求必填会让"拉取模型"永远先撞 400, 而不是它该有的"还没有账号"。改为传 `channel_id`,
+由后端按渠道主键取已导入的账号凭据。
+
+验证: 新增 4 个用例覆盖两条调用路径(自动同步 / 手动拉取)。变异验证把修复回退后,
+测试精确复现了生产上的 `status=401 ... Invalid Credentials`, 且断言的
+`Authorization` 里出现整包 JSON(`Bearer {"access_token":...}`) —— 确认修复真实有效。
+
 ## v1.10.0 — 2026-11-17
 
 **订阅渠道: 不填调用信息, 选平台登录即可**

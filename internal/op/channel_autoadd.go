@@ -277,7 +277,9 @@ func AutoAddChannelModels(ctx context.Context, channelID int, config model.Chann
 			continue
 		}
 		keyIDByName[channelKey.Name] = channelKey.ID
-		fetched, err := ProbeChannelModels(client, config, channelKey.Key, channelKey.AppID, channelKey.APISecret, channelKey.Domain, ctx)
+		// 走 ProbeChannelKey 而不是直接传 channelKey.Key: 订阅渠道的 Key 里是整包账号 JSON,
+		// 直接当令牌用会把 JSON 塞进 Authorization 头, 上游回 401 且报错指不到真实原因。
+		fetched, err := ProbeChannelKey(client, config, channelKey, ctx)
 		if err != nil {
 			log.Warnf("auto-add: probe key %q of channel %d failed: %v", channelKey.Name, channelID, err)
 			continue

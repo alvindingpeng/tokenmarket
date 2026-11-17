@@ -10,6 +10,12 @@ export type ChannelFormState = {
      * 后端据此按平台描述补方言与地址，所以填了它就不必再填地址。
      */
     sub_platform: string;
+    /**
+     * channel_id 是已保存渠道的主键, 新建时为 0。
+     * 订阅渠道拉取模型要用它: 它的凭据在库里(登录后导入的账号), 回忆表单里没有 key 可填,
+     * 后端只能按渠道主键取凭据。节点与提交无关, toChannelDetail 用外部传入的 id。
+     */
+    channel_id: number;
     base_url: string;
     enabled: boolean;
     proxy: boolean;
@@ -65,6 +71,7 @@ export const emptyFormState: ChannelFormState = {
     name: '',
     dialect: 'generic',
     sub_platform: '',
+    channel_id: 0,
     base_url: '',
     enabled: true,
     proxy: false,
@@ -91,6 +98,7 @@ export function fromChannel(channel: ChannelDetail): ChannelFormState {
         dialect: channel.dialect,
         // 读侧可能缺省(历史渠道没有这个列), 归一为空串。
         sub_platform: channel.sub_platform ?? '',
+        channel_id: channel.id,
         base_url: channel.base_url,
         enabled: channel.enabled,
         proxy: channel.proxy,

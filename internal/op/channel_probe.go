@@ -37,6 +37,22 @@ var ErrProbeInvalidFilter = errors.New("invalid filter regex")
 // OpenAI 侧模型列表地址从 Chat 路径推导(如 /v2/chat/completions → /v2/models), 两侧照常都探测;
 // OpenAI 侧协议位预勾 Chat|Responses|Spark, Anthropic 侧探测成功另记 Anthropic 位 —— 三种请求格式都走原生透传。
 // Domain 即模型名(出站转换器按「模型名是合法 Domain」直接选用服务版本), 探测以它单独登记一条模型。
+// ProbeChannelKey 按一条完整凭据探测模型, 是 ProbeChannelModels 的推荐入口。
+//
+// 存在的理由: ProbeChannelModels 收的是裸 key 字符串, 它无法判断这个 key 是静态令牌还是
+// 整包账号 JSON。订阅渠道的 Key 里存的正是账号 JSON, 直接当令牌用会把整个 JSON 塞进
+// Authorization 头, 上游回 401 Invalid Credentials —— 那个报错完全指不到真实原因。
+//
+// 这里先按凭据的 AccountKind/AccountPlatform 解出真正的 access_token, 再交给探测链。
+// 静态凭据原样透传, 行为与直接调用 ProbeChannelModels 完全一致。
+func ProbeChannelKey(client *http.Client, target model.ChannelConfig, channelKey model.ChannelKey, ctx context.Context) ([]model.ChannelFetchModel, error) {
+	return ProbeChannelModels(
+		client, target,
+		model.ChannelKeyToken(channelKey),
+		channelKey.AppID, channelKey.APISecret, channelKey.Domain,
+		ctx,
+	)
+}
 func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key, appID, apiSecret, domain string, ctx context.Context) ([]model.ChannelFetchModel, error) {
 	// 探测收的是尚未落库的提交配置, 不经 normalizeChannelConfig, 故在此自行去空白;
 	// 其中只有地址是硬需求: 渠道尚未命名时也可试拉, 故名称不在此校验。
