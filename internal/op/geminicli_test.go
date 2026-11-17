@@ -58,7 +58,29 @@ func TestGeminiCLIHeadersContainAntigravityUA(t *testing.T) {
 	}
 }
 
-// TestRetrieveUserQuotaResponseParsing 解析 retrieveUserQuota 真实响应样例。
+// TestRetrieveUserQuotaTopLevelBuckets covers the production RPC response shape.
+func TestRetrieveUserQuotaTopLevelBuckets(t *testing.T) {
+	for i, raw := range []string{
+		`{"buckets":[{"modelId":"gemini-3-flash","remainingFraction":1,"remainingAmount":"1000"},{"modelId":"exhausted","remainingFraction":0},{"modelId":"gemini-3-flash","remainingFraction":1,"remainingAmount":"1000"}]}`,
+		`{"buckets":[],"quota":{"buckets":[{"modelId":"stale","remainingFraction":1}]}}`,
+	} {
+		names, err := ParseRetrieveUserQuota([]byte(raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 1 {
+			if len(names) != 0 {
+				t.Fatalf("top-level empty buckets must be authoritative: %v", names)
+			}
+			continue
+		}
+		if len(names) != 1 || names[0] != "gemini-3-flash" {
+			t.Fatalf("got %v", names)
+		}
+	}
+}
+
+// TestRetrieveUserQuotaResponseParsing checks the legacy quota wrapper.
 //
 // 样例来自实测; buckets 里包含模型 ID 与 remainingFraction, 后者<=0 视作不可用。
 func TestRetrieveUserQuotaResponseParsing(t *testing.T) {

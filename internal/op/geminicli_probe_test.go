@@ -153,11 +153,9 @@ func TestProbeChannelModelsSubscriptionDialectUsesGeminiChain(t *testing.T) {
 			})
 		case "/v1internal:retrieveUserQuota":
 			writeJSON(w, map[string]any{
-				"quota": map[string]any{
-					"buckets": []any{
-						map[string]any{"modelId": "gemini-3-flash", "remainingFraction": 0.8},
-						map[string]any{"modelId": "gemini-3-ultra", "remainingFraction": 0.5},
-					},
+				"buckets": []any{
+					map[string]any{"modelId": "gemini-3-flash", "remainingFraction": 0.8, "remainingAmount": "1000"},
+					map[string]any{"modelId": "gemini-3-ultra", "remainingFraction": 0.5},
 				},
 			})
 		default:

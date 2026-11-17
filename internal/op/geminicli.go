@@ -388,9 +388,10 @@ func pollGeminiCLILRO(ctx context.Context, client *http.Client, base, key, name 
 }
 
 // RetrieveUserQuotaResult 是 retrieveUserQuota 的响应。
-// 形如 {"quota":{"buckets":[{"modelId":"gemini-3-flash","remainingFraction":0.8,...}]}}
+// 真实 RPC 返回顶层 buckets; 保留 quota 包装格式以兼容既有调用方。
 type RetrieveUserQuotaResult struct {
-	Quota *UserQuota `json:"quota,omitempty"`
+	Buckets []UserQuotaBucket `json:"buckets"`
+	Quota   *UserQuota        `json:"quota,omitempty"`
 }
 
 // UserQuota 配额体。
@@ -402,7 +403,6 @@ type UserQuota struct {
 type UserQuotaBucket struct {
 	ModelID           string  `json:"modelId"`
 	RemainingFraction float64 `json:"remainingFraction"`
-	RemainingAmount   float64 `json:"remainingAmount"`
 	ResetTime         string  `json:"resetTime,omitempty"`
 }
 
@@ -442,12 +442,16 @@ func RetrieveUserQuota(ctx context.Context, client *http.Client, dataBase, key, 
 // "没出现在列表里"意味着没有额度, 而不是"漏了"。
 // 同名桶去重并按 modelId 稳定排序: 界面排列与测试断言都不随刷新变化。
 func (r *RetrieveUserQuotaResult) AvailableModels() []string {
-	if r == nil || r.Quota == nil {
+	if r == nil {
 		return nil
 	}
-	models := make([]string, 0, len(r.Quota.Buckets))
-	seen := make(map[string]struct{}, len(r.Quota.Buckets))
-	for _, bucket := range r.Quota.Buckets {
+	buckets := r.Buckets
+	if buckets == nil && r.Quota != nil {
+		buckets = r.Quota.Buckets
+	}
+	models := make([]string, 0, len(buckets))
+	seen := make(map[string]struct{}, len(buckets))
+	for _, bucket := range buckets {
 		id := strings.TrimSpace(bucket.ModelID)
 		if id == "" {
 			continue
