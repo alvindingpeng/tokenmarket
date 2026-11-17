@@ -54,7 +54,11 @@ func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key, ap
 	var err error
 
 	// Gemini CLI 渠道走 Antigravity 身份, 只探测 fetchAvailableModels, 不并发探测 OpenAI/Anthropic。
-	if target.Dialect == model.DialectGeminiCLI {
+	//
+	// 订阅渠道同样走这条链: 订阅平台的模型清单只能通过平台的配额/可用模型接口拿到,
+	// 没有"models 列表"这种通用端点可拼。这里按方言判定的同时也要覆盖订阅方言 ——
+	// 否则订阅渠道会掉进下方通用分支, 去拼 OpenAI/Anthropic 的 models URL 并必然失败。
+	if target.Dialect == model.DialectGeminiCLI || target.Dialect.Subscribable() {
 		return probeGeminiCLIModels(client, target, key, ctx)
 	}
 

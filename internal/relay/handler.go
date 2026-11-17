@@ -562,7 +562,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				// 未真正发出请求的失败(选路、出站构造)不受影响, 仍按原流程换目标重试。
 				mediaOneShot := dispatched && isMediaProtocol(requestProtocol)
 				// 按错误分类决定重试/换渠道/透传: 语义(code/type/文本)优先、状态码兜底, 规则见 upstream_error.go。
-				class, ruleName := classifyUpstreamError(err)
+				class, ruleName := classifyUpstreamErrorForChannel(err, channel.Dialect)
 				request.addRouteEvent("error_class", ruleName)
 				// 记录本轮上游调用已经结束及其失败原因。
 				request.finishRound(err.Error(), attemptStatusOf(err))
@@ -904,7 +904,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				if ctx.Err() != nil || !upstreamFailure {
 					releaseRouteProbe(group, item.ID)
 				} else {
-					class, ruleName := classifyUpstreamError(err)
+					class, ruleName := classifyUpstreamErrorForChannel(err, channel.Dialect)
 					request.addRouteEvent("error_class", ruleName)
 					switch class {
 					case ErrorClassRate:

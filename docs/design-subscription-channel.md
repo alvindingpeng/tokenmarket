@@ -751,3 +751,63 @@ S6 的工作是**证明它生效**并钉住语义。
 
 第 2 次变异值得单独记：**如果不做这个变异，我会误以为测试覆盖了"缺失不填"**。
 测试当时是绿的，但它只验证了我传进去的那个模型。
+
+### 13.11 S2 已完成（2026-11-17）—— 查出并修了两个真缺口
+
+S2 原计划只是"核对探测/配额/刷新接线"。核对的结论是：**发现两个会让订阅渠道实际不可用的缺口**，
+都已修复并用变异验证。
+
+#### 缺口 1：探测分派不认订阅方言（会让"拉模型"完全失效）
+
+S1 只让订阅渠道**允许**空地址，但探测分派（`channel_probe.go:57`）只判断
+`Dialect == DialectGeminiCLI`。订阅渠道因此掉进通用分支，去拼 OpenAI/Anthropic 的
+`/models` URL —— 而订阅平台根本没有这种端点。
+
+实测错误（变异回退后）：
+
+```
+openai: upstream 404 Not Found: 404 page not found;
+anthropic: upstream 404 Not Found: 404 page not found (请求路径: [/models /models])
+```
+
+**这个报错完全指不到真实原因**：它看起来像"上游挂了"，实际是分派错误。
+
+修法：`if target.Dialect == model.DialectGeminiCLI || target.Dialect.Subscribable() {`。
+订阅平台的模型清单只能从平台的配额/可用模型接口拿，没有通用 models 端点可拼。
+
+#### 缺口 2：订阅账号额度耗尽被当成"限流"（会持续浪费请求）
+
+通用分类器把 `resource_exhausted` / 429 判成 `rate`（限流）。这对按量计费渠道是对的 ——
+限流窗口过去就恢复。但订阅渠道的 429 是**账户级月度额度耗尽**：用完就是彻底用完，
+要等下个计费周期，"冷却几秒再试"永远好不了。
+
+后果：一个额度耗尽的订阅账号会被**持续选中、持续失败**，每次只冷却几秒，
+而真正该发生的是渠道级暂停（`op.RecordChannelQuotaError`）让管理员换号。
+
+修法：新增 `classifyUpstreamErrorForChannel(err, dialect)`，**只对订阅方言**把 429 改判为
+`quota`；普通渠道与 `gemini_cli` 维持 `rate`（有专门用例钉住这条边界）。
+
+#### S2 验证
+
+| 测试 | 钉住什么 |
+|---|---|
+| `TestProbeChannelModelsSubscriptionDialectUsesGeminiChain` | 订阅方言走 Gemini RPC 链（断言真的调了 `retrieveUserQuota`）|
+| `TestSubscriptionQuotaExhaustedPausesChannel` | 订阅 429 → quota；generic/gemini_cli 429 → rate |
+
+变异：
+
+| 变异 | 结果 |
+|---|---|
+| 分派回退为只认 `gemini_cli` | FAIL，并打印出 `/models` 请求路径 |
+| 撤销订阅渠道的 quota 改判 | FAIL（`class=rate want quota`）|
+
+#### 核对通过、无需改动的部分
+
+| 项 | 结论 |
+|---|---|
+| 账号刷新 | `AccountRefreshRun` → `AccountOAuthSpecOf(platform)` → antigravity 已登记（`account_oauth.go:188`），链路完整 |
+| 额度暂停机制 | `RecordChannelQuotaError` 写 `disabled_until` 并同步缓存，**被动触发**（转发遇额度错误时），无主动轮询任务 |
+| 额度暂停选择 | `SelectChannelKey` 首行即查 `ChannelQuotaPaused`，与 S4 的按渠道选 key 天然衔接 |
+
+**"被动触发"这一点要记住**：订阅渠道的额度耗尽是在**第一次转发失败时**才发现，不是提前探测。
+配合上面的修法，这一次失败就足以暂停整个渠道，不会反复重试。

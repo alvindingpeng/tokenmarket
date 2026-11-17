@@ -132,3 +132,65 @@ func writeJSON(w http.ResponseWriter, v any) {
 		fmt.Fprintf(w, "encode error: %v", err)
 	}
 }
+
+// TestProbeChannelModelsSubscriptionDialectUsesGeminiChain 是 S2 的核心验收。
+//
+// 订阅渠道的目的是"不填调用信息就能拉模型", 它和 gemini_cli 渠道用的是同一条上游链
+// (LoadCodeAssist -> RetrieveUserQuota -> 可用模型), 但两者的方言不同。
+//
+// 这里专门测订阅方言: 若探测分派只认 gemini_cli, 订阅渠道会掉进通用分支,
+// 去拼 OpenAI/Anthropic 的 models URL 并必然失败 —— 而失败信息会指向"上游不可用",
+// 指不到真正的分派错误。
+func TestProbeChannelModelsSubscriptionDialectUsesGeminiChain(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		switch r.URL.Path {
+		case "/v1internal:loadCodeAssist":
+			writeJSON(w, map[string]any{
+				"currentTier":             map[string]any{"id": "free-tier"},
+				"cloudaicompanionProject": "test-project-123",
+			})
+		case "/v1internal:retrieveUserQuota":
+			writeJSON(w, map[string]any{
+				"quota": map[string]any{
+					"buckets": []any{
+						map[string]any{"modelId": "gemini-3-flash", "remainingFraction": 0.8},
+						map[string]any{"modelId": "gemini-3-ultra", "remainingFraction": 0.5},
+					},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	// 关键: 方言是 subscription, 不是 gemini_cli。
+	target := model.ChannelConfig{Dialect: model.DialectSubscription, BaseURL: srv.URL, SubPlatform: "gemini"}
+	models, err := ProbeChannelModels(srv.Client(), target, "fake-access-token", "", "", "", context.Background())
+	if err != nil {
+		t.Fatalf("订阅渠道探测应走 Gemini 链并返回模型, 实际报错: %v (请求路径: %v)", err, paths)
+	}
+	if len(models) != 2 {
+		t.Fatalf("模型数量: got %d want 2 (%+v)", len(models), models)
+	}
+	if models[0].Name != "gemini-3-flash" || models[1].Name != "gemini-3-ultra" {
+		t.Errorf("模型名不符: %+v", models)
+	}
+	for _, m := range models {
+		if m.Protocols != model.ProtocolGeminiCLI {
+			t.Errorf("%s: Protocols=%v want ProtocolGeminiCLI", m.Name, m.Protocols)
+		}
+	}
+	// 断言真的走了 Gemini RPC: 若掉进通用分支, 这里会是 /v1/models 之类。
+	sawQuota := false
+	for _, p := range paths {
+		if p == "/v1internal:retrieveUserQuota" {
+			sawQuota = true
+		}
+	}
+	if !sawQuota {
+		t.Errorf("未调用 retrieveUserQuota, 实际请求路径: %v", paths)
+	}
+}

@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
-	"strconv"
-	"strings"
-
+	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/httpclient"
+	"net/http"
+	"strconv"
+	"strings"
 )
 
 // 上游错误分类: 同一个 HTTP 状态码在不同厂商语义可能完全不同(429 既可能是限流也可能是额度耗尽),
@@ -145,6 +145,26 @@ func classifyUpstreamError(err error) (ErrorClass, string) {
 }
 
 // upstreamErrorInfo 取出上游错误的 HTTP 状态码与用于分类的全文(message/code/type/错误体)。
+// classifyUpstreamErrorForChannel 在上游是订阅渠道时对分类做一处修正。
+//
+// 要修的是 429 的歧义: 通用规则把 "resource_exhausted" 判成 rate(限流), 这对按量计费的
+// 渠道是对的 —— 限流窗口过去就好。但订阅渠道的 429 是**账户级额度耗尽**: 本月额度用完
+// 就是彻底用完, 要等下个计费周期, 靠"冷却几秒再试"永远好不了。
+//
+// 若不修正, 一个额度耗尽的订阅账号会被持续选中、持续失败, 每次都只冷却几秒,
+// 而真正该发生的是渠道级暂停, 让管理员换账号(见 op.RecordChannelQuotaError)。
+//
+// 只对订阅渠道生效: 普通渠道的 429 维持 rate 语义, 不动既有行为。
+func classifyUpstreamErrorForChannel(err error, dialect model.Dialect) (ErrorClass, string) {
+	class, rule := classifyUpstreamError(err)
+	if !dialect.Subscribable() || class != ErrorClassRate {
+		return class, rule
+	}
+	// 订阅渠道的 429 一律按额度耗尽处理: 订阅额度是账户级配额, 不存在"过一会儿再试就好"的情形。
+	// 宁可暂停渠道等换号, 也不要反复打一个已经没额度的账号。
+	return ErrorClassQuota, rule + "+subscription_quota"
+}
+
 func upstreamErrorInfo(err error) (int, string) {
 	var responseErr *llm.ResponseError
 	if errors.As(err, &responseErr) {
