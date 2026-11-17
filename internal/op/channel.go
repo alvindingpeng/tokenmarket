@@ -292,12 +292,14 @@ func normalizeChannelConfig(ctx context.Context, config model.ChannelConfig) (mo
 	if config.Name == "" {
 		return config, fmt.Errorf("channel name is required")
 	}
-	config.BaseURL = strings.TrimSpace(config.BaseURL)
-	if config.BaseURL == "" {
-		return config, fmt.Errorf("channel base url is required")
-	}
 	if config.Dialect == "" {
 		config.Dialect = model.DialectGeneric
+	}
+	config.BaseURL = strings.TrimSpace(config.BaseURL)
+	// 订阅渠道不要求地址: 它由平台描述提供, 保存时留空等装配阶段补全。
+	// 方言必须先定默认值, 否则空方言会被误判成订阅渠道而放过必填校验。
+	if config.BaseURL == "" && !config.Dialect.Subscribable() {
+		return config, fmt.Errorf("channel base url is required")
 	}
 	var err error
 	if config.OpenAIChatCompletionPath, err = normalizedPath(config.OpenAIChatCompletionPath, "/v1/chat/completions"); err != nil {
@@ -331,8 +333,12 @@ func normalizeChannelConfig(ctx context.Context, config model.ChannelConfig) (mo
 	// SSRF 防护: 上游地址与渠道专用代理都不得指向私网(环回/内网/链路本地)。
 	// 校验放在保存入口而非拨号时才拦: 错误配置当场报错, 管理员能立刻知道是哪一项被拒。
 	// 管理员自建内网上游(本地 vLLM 等)可显式打开 allow_private_upstream 放行。
-	if err := netguard.CheckURL(ctx, config.BaseURL, AllowPrivateUpstream()); err != nil {
-		return config, fmt.Errorf("channel %s: %w", config.Name, err)
+	// 订阅渠道的地址此时可能仍为空(由平台描述补全), 空地址没有主机可查, 跳过 SSRF 校验;
+	// 补全后的地址在装配阶段会走同一道校验, 不会因此漏掉防护。
+	if config.BaseURL != "" {
+		if err := netguard.CheckURL(ctx, config.BaseURL, AllowPrivateUpstream()); err != nil {
+			return config, fmt.Errorf("channel %s: %w", config.Name, err)
+		}
 	}
 	if config.ChannelProxy != "" {
 		// 渠道专用代理允许 http/https/socks5/socks5h(与转发层一致), 用 CheckProxyURL 而非 CheckURL。

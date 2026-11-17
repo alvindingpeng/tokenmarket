@@ -44,7 +44,9 @@ func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key, ap
 	target.ChannelProxy = strings.TrimSpace(target.ChannelProxy)
 	target.MatchRegex = strings.TrimSpace(target.MatchRegex)
 	target.GeminiProject = strings.TrimSpace(target.GeminiProject)
-	if target.BaseURL == "" {
+	// 订阅渠道的调用信息由平台描述提供, 地址可以留空(如 Gemini 分支用 GeminiCLIBases 的内置默认值)。
+	// 其余方言仍然要求地址: 它们没有任何内置默认值, 空地址只会让请求打到空 URL 上。
+	if target.BaseURL == "" && !target.Dialect.Subscribable() {
 		return nil, ErrProbeBaseURLRequired
 	}
 

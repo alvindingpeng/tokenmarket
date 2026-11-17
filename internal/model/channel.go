@@ -28,7 +28,14 @@ const (
 	DialectGeneric   Dialect = "generic"    // 标准协议, 不做任何厂商特化。
 	DialectXunfei    Dialect = "xunfei"     // 科大讯飞星火原生 WebSocket。
 	DialectGeminiCLI Dialect = "gemini_cli" // Gemini CLI 订阅渠道: 使用 v1internal RPC 冒号协议。
+	// DialectSubscription 订阅渠道: 调用信息(地址/凭据)由平台描述提供, 建渠道时不手填。
+	// 与 gemini_cli 的分工: gemini_cli 是"已经落地的具体平台", subscription 是"按平台名装配"的入口类型。
+	// 它存在的理由是把"要不要填 base_url"这件事按类型区分开, 而不是靠判断哪个平台。
+	DialectSubscription Dialect = "subscription"
 )
+
+// Subscribable 报告该方言是否属于订阅渠道: 允许地址为空, 由平台描述补全。
+func (d Dialect) Subscribable() bool { return d == DialectSubscription }
 
 // 渠道的可编辑配置; 落库时平铺成 channels 的各列, 出入 JSON 时平铺成渠道读写接口的各字段。
 // 单独成结构体是为了让库内实体, 读取副本与提交请求共用同一份定义: 这些字段在三处的形状本就一致,

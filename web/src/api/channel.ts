@@ -17,7 +17,9 @@ export const Protocol = {
 
 // Dialect 是上游在标准协议之上的方言，决定出站转换器的厂商特化配置。
 // 地址与路径不属于方言范畴，由前端按服务商预填到渠道字段上。
-export type Dialect = 'generic' | 'xunfei' | 'gemini_cli';
+// subscription 是订阅渠道: 调用信息(地址/凭据)由平台描述提供, 建渠道时不手填。
+// 它与 gemini_cli 的分工是"入口类型" vs "已落地的具体平台", 详见后端 model/channel.go。
+export type Dialect = 'generic' | 'xunfei' | 'gemini_cli' | 'subscription';
 
 type CustomHeader = {
     header_key: string;

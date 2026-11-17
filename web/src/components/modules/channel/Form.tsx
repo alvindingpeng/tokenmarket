@@ -86,13 +86,16 @@ function ChannelFormFields({ channel, onBack, onChannelRefetch }: {
     const keyNeedsSparkCreds = (keyName: string) =>
         state.dialect === 'xunfei'
         && state.models.some((modelName) => sparkOnly(state.grants.get(grantKey(modelName, keyName)) ?? 0));
+    // 订阅渠道的调用信息由平台描述提供, 地址与凭据都不在这里填, 因此这两项必填对它不适用。
+    // 只按方言放开, 不按"看起来像订阅"判断: 靠猜会让普通渠道悄悄失去必填, 空地址请求极难排查。
+    const isSubscription = state.dialect === 'subscription';
     // 缺项逐条列在保存按钮旁: 按钮点不动时要能看到缺什么, 免得对着一个无反应的按钮无从下手。
     const saveBlockers: string[] = [];
     if (state.name.trim() === '') saveBlockers.push(t('saveBlockedName'));
-    if (state.base_url.trim() === '') saveBlockers.push(t('saveBlockedBaseUrl'));
+    if (!isSubscription && state.base_url.trim() === '') saveBlockers.push(t('saveBlockedBaseUrl'));
     if ([state.openai_chat_completion_path, state.openai_response_path, state.anthropic_message_path]
         .some((path) => path !== '' && !path.startsWith('/'))) saveBlockers.push(t('saveBlockedPaths'));
-    if (state.keys.length === 0) saveBlockers.push(t('saveBlockedNoKeys'));
+    if (!isSubscription && state.keys.length === 0) saveBlockers.push(t('saveBlockedNoKeys'));
     for (const k of state.keys) {
         if (k.key.trim() === '') saveBlockers.push(t('saveBlockedKeySecret', { name: k.name }));
         if (keyNeedsSparkCreds(k.name) && (k.app_id.trim() === '' || k.api_secret.trim() === ''))
