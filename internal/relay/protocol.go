@@ -114,11 +114,15 @@ func inspectStreamEvent(format llm.APIFormat, event *httpclient.StreamEvent) (bo
 			}
 			return true, &llm.ResponseError{Detail: llm.ErrorDetail{Message: "response failed", Type: "response_failed"}}
 		case responses.StreamEventTypeResponseIncomplete:
-			message := "response incomplete"
-			if parsed.Response != nil && parsed.Response.IncompleteDetails != nil && parsed.Response.IncompleteDetails.Reason != "" {
-				message += ": " + parsed.Response.IncompleteDetails.Reason
-			}
-			return true, &llm.ResponseError{Detail: llm.ErrorDetail{Message: message, Type: "response_incomplete"}}
+			// response.incomplete 是**正常终态**, 不是错误: 按 OpenAI Responses 规范,
+			// incomplete_details.reason 只有 "max_output_tokens"(输出到上限) 与
+			// "content_filter"(被安全策略截断) 两种, 二者都是服务端按客户端要求正常收尾。
+			//
+			// 早先这里无条件返回 ResponseError, 后果被线上实测抓到(v1.10.12):
+			// 订阅渠道流式请求只要被 max_tokens 截断, 就被记为失败、计入成员失败率,
+			// 反复几次把 breaker 打开, 整个账号在一个窗口内被踢出路由 ——
+			// 用户侧表现是"第一句话能通, 后面全 429 no available upstream"。
+			return true, nil
 		case responses.StreamEventTypeResponseCancelled:
 			return true, &llm.ResponseError{Detail: llm.ErrorDetail{Message: "response cancelled", Type: "response_cancelled"}}
 		case responses.StreamEventTypeError:
@@ -178,7 +182,10 @@ func validateResponse(format llm.APIFormat, response *llm.Response) error {
 	case "error":
 		return &llm.ResponseError{Detail: llm.ErrorDetail{Message: "response failed", Type: "response_failed"}}
 	case "length":
-		return &llm.ResponseError{Detail: llm.ErrorDetail{Message: "response incomplete", Type: "response_incomplete"}}
+		// finish_reason=length 表示输出到达 max_tokens 上限, 是客户端自己设定的正常收尾,
+		// 与 stop 同类; 判成失败会连带把成员计为失败并触发 breaker(与流式 response.incomplete
+		// 同一缺陷, 见 inspectStreamEvent 里的注释)。
+		return nil
 	case "cancelled":
 		return &llm.ResponseError{Detail: llm.ErrorDetail{Message: "response cancelled", Type: "response_cancelled"}}
 	default:

@@ -1,5 +1,46 @@
 # 更新说明
 
+## v1.10.12 — 2026-11-17
+
+**修复: 流式请求被 `max_tokens` 截断会被判成失败, 反复几次把整个账号踢出路由**
+
+订阅模型用流式调用时：第一句能通，之后全线失败：
+
+```
+429 no available upstream; waiting disabled
+```
+
+而渠道、账号、模型都健康，`retrieveUserQuota` 17 个 bucket 全 `remainingFraction=1`。
+
+**根因**：OpenAI Responses 规范里，输出到达 `max_output_tokens` 上限时上游下发的是
+`response.incomplete`（`incomplete_details.reason = "max_output_tokens"`）—— 这是
+**正常终态**，与 `stop` 同类，因为上限是客户端自己设的。规范中该 `reason` 只有
+`max_output_tokens` 与 `content_filter` 两种，都不是故障。
+
+`protocol.go` 却把 `response.incomplete` **无条件**转成 `ResponseError`，于是：
+
+```
+正常截断 → 记为 failed → classifyUpstreamError 落到 default → countFailure=true
+         → 计入成员失败率 → breaker 打开 → 整个账号被踢出路由一个窗口
+```
+
+线上实测抓到的正是这条链（`relay_request_attempts`）：
+
+```
+22:14:01 failed dur=1322 ttfb=1044532373
+  err=error: response incomplete: max_output_tokens, type: response_incomplete
+  dec={"phase":"success"...}   ← 选路正常, 上游也真实返回了, 却被判失败
+```
+
+**修复**（两条路径是同一个缺陷）：
+
+1. 流式 `response.incomplete`：不再报错，按正常结束处理（`inspectStreamEvent`）。
+2. 非流式 `finish_reason=length`：同样改为正常收尾（`validateResponse`）。
+
+`response.failed` / `finish_reason=error` 仍照旧判错，放宽只针对「按客户端要求收尾」的终态。
+
+这一处不解，v1.10.11 的探测恢复也救不了：breaker 打开后候选池整个为空，
+请求连探测名额都拿不到。
 ## v1.10.11 — 2026-11-17
 
 **修复: 一次瞬时 429 会把订阅渠道锁死整个窗口, 用户侧表现「一个账号都没跑通」**
