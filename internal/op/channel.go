@@ -80,7 +80,7 @@ func updateChannelModelBreakerCache(id int, update func(*model.ChannelModel)) {
 
 // 已定义的全部协议位, 用于校验提交的协议掩码。
 // ProtocolOpenAIVideo 一并列入, 管理后台勾选不会被判为非法位; 视频路由本身 P2 阶段再补。
-const definedProtocols = model.ProtocolOpenAIChatCompletion | model.ProtocolOpenAIResponse | model.ProtocolAnthropicMessage | model.ProtocolOpenAIImage | model.ProtocolOpenAIVideo | model.ProtocolXunfeiSparkWS
+const definedProtocols = model.ProtocolOpenAIChatCompletion | model.ProtocolOpenAIResponse | model.ProtocolAnthropicMessage | model.ProtocolOpenAIImage | model.ProtocolOpenAIVideo | model.ProtocolXunfeiSparkWS | model.ProtocolGeminiCLI
 
 // ChannelDetailGet 返回指定渠道的完整配置, 供编辑表单读取; 非归属者按不存在处理。
 func ChannelDetailGet(id int, scope model.Scope) (model.ChannelDetail, error) {
