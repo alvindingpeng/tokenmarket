@@ -1,5 +1,47 @@
 # 更新说明
 
+## v1.10.9 — 2026-11-17
+
+**修复: 一次瞬时 429 把整个订阅渠道暂停，报「no upstream members configured」**
+
+这是 v1.10.0 引入的缺陷（entscheidend: 由我上一版的设计错误导致），症状比原因难查得多。
+
+现象：调用订阅模型返回
+
+```
+503 group "gemini-3.5-flash-lite" has no upstream members configured
+```
+
+而实际上分组成员、渠道、凭据、模型全都正常存在。
+
+**根因链条**：
+
+1. `classifyUpstreamErrorForChannel` 把订阅渠道的**所有 429** 一律判成 `ErrorClassQuota`，
+   注释理由是"订阅额度是账户级配额，用完只能等下个周期"。
+2. `ErrorClassQuota` 会调用 `op.RecordChannelQuotaError`，把**整个渠道**暂停（默认 30 分钟起）。
+3. 渠道被暂停后，`grantAvailability` 判定成员不可用，分组成员被全部剔除。
+4. 于是对外报"没有上游成员"。
+
+**那个前提是错的**。实测（2026-11）：同一账号同一模型返回 429
+`Resource has been exhausted (e.g. check quota)`，而 `retrieveUserQuota` 同时显示
+17 个模型 `remainingFraction` **全为 1**（额度满），重置在一周后。
+也就是说那个 429 是**每分钟速率限制**，会自行恢复。
+
+代价被放大了两个数量级：几秒钟能自愈的限流 → 整渠道下线半小时。
+而订阅渠道通常只有一个账号，渠道一停就没有替代成员。
+
+**修复**：只有错误文本明确表达额度本身耗尽时才升格为 `quota`：
+
+- `insufficient_quota` / `insufficient_balance` / `billing_hard_limit_reached`
+- `credit balance too low` / `daily limit` / `monthly limit` / `exceeded your current quota`
+
+`resource_exhausted`、`quota exceeded` 这类上游对限流也用的措辞**不再**算额度耗尽证据。
+
+验证：变异验证回退成"一律 quota"，用例立即报
+`方言 "subscription": class=quota want rate (rule=rate_limited+subscription_quota)`。
+
+同时更正了 v1.10.0 那条验收测试的错误前提（它把"订阅 429 一律 quota"当成期望行为）。
+
 ## v1.10.8 — 2026-11-17
 
 **修复: 流式请求返回 "This version of Antigravity is no longer supported"**

@@ -145,14 +145,25 @@ func classifyUpstreamError(err error) (ErrorClass, string) {
 }
 
 // upstreamErrorInfo 取出上游错误的 HTTP 状态码与用于分类的全文(message/code/type/错误体)。
-// classifyUpstreamErrorForChannel 在上游是订阅渠道时对分类做一处修正。
+// classifyUpstreamErrorForChannel 在上游是订阅渠道时对 429 的分类做一处修正。
 //
-// 要修的是 429 的歧义: 通用规则把 "resource_exhausted" 判成 rate(限流), 这对按量计费的
-// 渠道是对的 —— 限流窗口过去就好。但订阅渠道的 429 是**账户级额度耗尽**: 本月额度用完
-// 就是彻底用完, 要等下个计费周期, 靠"冷却几秒再试"永远好不了。
+// 要处理的是 429 的两种截然不同的含义, 而通用分类器把它们都判成 rate(限流):
 //
-// 若不修正, 一个额度耗尽的订阅账号会被持续选中、持续失败, 每次都只冷却几秒,
-// 而真正该发生的是渠道级暂停, 让管理员换账号(见 op.RecordChannelQuotaError)。
+//  1. 速率限制(每分钟请求数/每分钟 token 数): 等窗口过去就能恢复 —— 该按 rate 冷却几秒重试。
+//  2. 额度耗尽(账户级月度配额用完): 冷却多久都没用, 必须暂停渠道等换号。
+//
+// 早先这里把订阅渠道的 429 **一律**判成 quota, 理由是"订阅额度是账户级配额"。
+// 实测(2026-11)推翻了它: 同一账号同一模型返回 429 Resource has been exhausted,
+// 而 retrieveUserQuota 显示 17 个模型 remainingFraction 全为 1(额度满), 重置在一周后。
+// 也就是说那个 429 是每分钟速率限制, 会自行恢复。
+//
+// 一律判 quota 的代价被低估了: 一次瞬时 429 就会调用 op.RecordChannelQuotaError
+// 把**整个渠道**暂停(默认 30 分钟起)。订阅渠道往往只有一个账号, 暂停后分组没有可用成员,
+// 对外表现为 relay_unavailable「group has no upstream members configured」——
+// 一个几秒钟就能自愈的限流, 被放大成半小时的渠道下线。
+//
+// 因此只有在错误文本明确表达"额度/配额本身耗尽"时才升格为 quota;
+// 单纯 429 与 resource_exhausted 保持 rate。
 //
 // 只对订阅渠道生效: 普通渠道的 429 维持 rate 语义, 不动既有行为。
 func classifyUpstreamErrorForChannel(err error, dialect model.Dialect) (ErrorClass, string) {
@@ -160,9 +171,38 @@ func classifyUpstreamErrorForChannel(err error, dialect model.Dialect) (ErrorCla
 	if !dialect.Subscribable() || class != ErrorClassRate {
 		return class, rule
 	}
-	// 订阅渠道的 429 一律按额度耗尽处理: 订阅额度是账户级配额, 不存在"过一会儿再试就好"的情形。
-	// 宁可暂停渠道等换号, 也不要反复打一个已经没额度的账号。
+	if !subscriptionQuotaExhausted(err) {
+		return class, rule
+	}
 	return ErrorClassQuota, rule + "+subscription_quota"
+}
+
+// subscriptionQuotaExhausted 判断订阅渠道的 429 是否真的表示"额度已耗尽"。
+//
+// 判定只认明确表达配额耗尽的说法。resource_exhausted / quota exceeded 这类措辞
+// 上游对限流也用(实测 Gemini Code Assist 每分钟限流就回 Resource has been exhausted),
+// 因此它们**不算**额度耗尽证据, 否则又会退回"一次限流下线半小时"的老问题。
+func subscriptionQuotaExhausted(err error) bool {
+	_, text := upstreamErrorInfo(err)
+	text = strings.ToLower(text)
+	for _, token := range subscriptionQuotaTokens {
+		if strings.Contains(text, token) {
+			return true
+		}
+	}
+	return false
+}
+
+// subscriptionQuotaTokens 是"额度确实耗尽、只能等下个周期"的措辞。
+//
+// 这些说法出现在上游响应里时, 冷却重试没有意义, 暂停渠道换号才是正确处置。
+var subscriptionQuotaTokens = []string{
+	"insufficient_quota", "insufficient quota",
+	"insufficient_balance", "insufficient balance",
+	"billing_hard_limit_reached", "billing hard limit",
+	"credit balance too low", "insufficient credits",
+	"daily limit", "monthly limit",
+	"exceeded your current quota",
 }
 
 func upstreamErrorInfo(err error) (int, string) {
