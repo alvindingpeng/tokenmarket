@@ -9,6 +9,7 @@ import (
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/relay/xfyun"
+	"github.com/alvindingpeng/switchyard/internal/subplatform"
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/auth"
 	"github.com/looplj/axonhub/llm/httpclient"
@@ -24,12 +25,26 @@ import (
 // want 是客户端请求使用的协议, 由调用方按入站格式定出; 选中的协议随请求状态推给界面, 故一并返回。
 // inboundFormat 只在 ProtocolOpenAIImage 下生效: 区分 generations / edits 两种请求路径。
 func buildOutbound(channel model.Channel, grant model.ChannelGrant, channelKey model.ChannelKey, want model.Protocol, inboundFormat llm.APIFormat) (transformer.Outbound, model.Protocol, bool, error) {
-	// 订阅渠道的上游只讲 v1internal RPC 冒号协议, 没有 OpenAI/Anthropic 的 HTTP 端点。
+	// 订阅渠道的上游只讲该平台声明的那一条协议, 没有通用的 OpenAI/Anthropic HTTP 端点。
 	// 授权里若混入了别的协议位(历史数据或保存时误并), 直接按 want 取会一路走到 OpenAI 出站,
 	// 把请求打到 {base}/v1/chat/completions 并拿到 404 —— 而 404 完全指不出根因在协议位。
-	// 因此这里把订阅渠道一律收敛到协议位里真正生效的那几个, 不让 passthrough 抢占。
+	// 因此按平台声明收敛, 不让 passthrough 抢占。
+	//
+	// 收敛依据必须来自平台描述而不是按方言写死 Gemini CLI: 订阅方言是"入口类型",
+	// 底下可以有 Gemini(冒号 RPC), Claude(Messages), Codex(Responses) 等互不相通的协议。
+	// 写死会让将来接的 Claude/Codex 订阅渠道被打到 Gemini 的端点上, 是同一个 404 换了方向。
 	if channel.Dialect == model.DialectSubscription {
-		grant.Protocols &= model.ProtocolGeminiCLI
+		declared := model.Protocol(0)
+		if platform, ok := subplatform.Of(channel.SubPlatform); ok {
+			declared = platform.Protocols
+		}
+		if declared == 0 {
+			// 平台未声明(理论上 Validate 已挡在启动期): 收敛到空, 由下方 default 明确报错,
+			// 而不是猜一条协议把请求发到错误端点。
+			grant.Protocols = 0
+		} else {
+			grant.Protocols &= declared
+		}
 	}
 	protocol, passthrough := want, grant.Protocols&want != 0
 	if !passthrough {

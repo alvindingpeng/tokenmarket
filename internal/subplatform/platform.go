@@ -33,6 +33,13 @@ type Platform struct {
 	BaseURL string
 	// Description 是界面提示语, 说明这个平台需要什么前置条件(如代理、GCP Project)。
 	Description string
+	// Protocols 是该平台上游真正支持的协议位。
+	//
+	// 为什么必须由平台声明而不是在转发里按方言推断: 订阅方言是"入口类型", 底下可以挂
+	// Gemini(冒号 RPC)、Claude(Anthropic Messages)、Codex(OpenAI Responses) 等互不相通的协议。
+	// 转发只看到 Dialect=="subscription" 时无从知道该走哪一个, 猜错就是拼出不存在的端点(404)。
+	// 平台自己声明, 转发按声明收敛, 加平台时这里跟着写, 不会漏。
+	Protocols model.Protocol
 }
 
 // registrations 是已登记的平台。
@@ -49,6 +56,7 @@ var registrations = []Platform{
 		// loadCodeAssist 由 op.GeminiCLIBases 单独切到 prod 端点。
 		BaseURL:     "https://daily-cloudcode-pa.googleapis.com",
 		Description: "Google 订阅账号(Gemini/Antigravity)。国内需配置代理; GCP Project 可留空由上游自动分配。",
+		Protocols:   model.ProtocolGeminiCLI,
 	},
 }
 

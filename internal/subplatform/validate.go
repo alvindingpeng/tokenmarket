@@ -30,6 +30,9 @@ func Validate() []error {
 		if !p.Dialect.Subscribable() {
 			problems = append(problems, fmt.Errorf("平台 %q 的方言 %q 不是订阅方言", p.ID, p.Dialect))
 		}
+		if p.Protocols == 0 {
+			problems = append(problems, fmt.Errorf("平台 %q 未声明协议位: 转发无从判断该走哪条上游协议", p.ID))
+		}
 		if p.AccountPlatform == "" {
 			problems = append(problems, fmt.Errorf("平台 %q 缺少账号平台标识", p.ID))
 		} else if _, err := model.AccountOAuthSpecOf(p.AccountPlatform); err != nil {

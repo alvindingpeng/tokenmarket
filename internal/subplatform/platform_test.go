@@ -35,6 +35,23 @@ func TestGeminiPlatformMatchesExistingConstants(t *testing.T) {
 	if p.AccountPlatform != model.AccountPlatformAntigravity {
 		t.Errorf("账号平台: got %q want %q", p.AccountPlatform, model.AccountPlatformAntigravity)
 	}
+	// 平台声明的协议位决定转发走哪条上游协议。声明缺失或认错协议,
+	// 请求会被打到不存在的端点并得到 404 —— 而 404 指不出根因在声明上。
+	if p.Protocols != model.ProtocolGeminiCLI {
+		t.Errorf("协议位: got %d want %d(ProtocolGeminiCLI)", p.Protocols, model.ProtocolGeminiCLI)
+	}
+}
+
+// TestProtocolsDeclaredForEveryPlatform 所有已登记平台都必须声明协议位。
+//
+// 空白声明不会被 Validate 之外的任何地方发现: 转发只会收敛成空协议、换下一个成员,
+// 表现为"渠道有模型但永远不可用", 排查时完全看不到协议这一层。
+func TestProtocolsDeclaredForEveryPlatform(t *testing.T) {
+	for _, p := range All() {
+		if p.Protocols == 0 {
+			t.Errorf("平台 %q 未声明协议位", p.ID)
+		}
+	}
 }
 
 // TestAllSorted 接口输出的顺序必须稳定。
