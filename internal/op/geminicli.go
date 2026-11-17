@@ -84,7 +84,10 @@ const (
 
 	// Antigravity 必需的三个请求头。少任一个都可能被拒, 且错误体不说明原因。
 	// 注意 UA 里是 google-api-nodejs-client(带 s), 写错成 google-api-monjs-client 之类不会报错, 只会被拒。
-	geminiCLIAntigravityUA        = "antigravity/1.1.0 google-api-nodejs-client/10.3.0"
+	// 版本号同样是 1.200.0: 上游对流式请求做客户端版本闸门, 旧版本会拿到
+	// "This version of Antigravity is no longer supported" 的提示正文(HTTP 仍是 200)。
+	// 探测虽不走流式, 但保持与转发同一个版本声明, 免得两条路径对上游呈现两种客户端身份。
+	geminiCLIAntigravityUA        = "antigravity/1.200.0 google-api-nodejs-client/10.3.0"
 	geminiCLIAntigravityAPIClient = "gl-node/22.21.1"
 	// geminiCLIAntigravityClientMetadata 声明客户端是 Antigravity IDE。
 	//

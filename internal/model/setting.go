@@ -55,6 +55,16 @@ const (
 	SettingKeyBalanceReserveImages SettingKey = "balance_reserve_images"     // 生图预扣保守张数(无 N 时使用), 默认 4。
 	SettingKeyMinBalance           SettingKey = "min_balance"                // 允许的最低余额, 0 表示不足即拒
 
+	// SettingKeyAntigravityClientVersion 是向 Google Code Assist 声明的 Antigravity 客户端版本号。
+	//
+	// 为什么必须可配而不是写死: 上游对流式请求(streamGenerateContent)做客户端版本闸门,
+	// 版本过旧会返回 200 但正文被替换成"This version of Antigravity is no longer supported"
+	// —— 状态码是成功的, 只有正文能看出被拒, 排查成本极高。而闸门是**分批灰度**的,
+	// 既非简单的大小比较(实测 1.100.0 通过而 1.99.9 被拒, 2.0.0 通过而 2.5.0 被拒),
+	// 也会随上游发版推进而变化, 写死的版本号注定在将来某天被同样拦下。
+	// 留空则用内置默认值(见 relay 的默认版本常量)。
+	SettingKeyAntigravityClientVersion SettingKey = "antigravity_client_version"
+
 	// 充值与支付(D1 易支付首发, 网关参数全部后台可配, 商户信息后配即可用)。
 	SettingKeyEpayGatewayURL       SettingKey = "epay_gateway_url"        // 易支付网关地址, 如 https://pay.example.com; 留空表示支付未配置
 	SettingKeyEpayPID              SettingKey = "epay_pid"                // 商户 ID
@@ -247,12 +257,14 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyAutoAddInterval, Value: "24"}, // 每天复查一次: 上游新模型上线速度不会快到需要更频繁。
 		// 默认沿用渠道级开关: 升级前只有显式开启 model_auto_add 的渠道会自动添加, 保持该语义不变。
 		{Key: SettingKeyAutoAddScope, Value: "flagged"},
-		{Key: SettingKeyShareCodeSeq, Value: "1000"},            // 发布编码从 1001 起, 记录已发到的最大号
-		{Key: SettingKeyBalanceReserveCap, Value: "4096"},       // 预扣估算默认输出上限
-		{Key: SettingKeyBalanceReserveImages, Value: "4"},       // 生图预扣保守张数, 4 张覆盖 dall-e-3 / gpt-image-1 n=4 上限
-		{Key: SettingKeyMinBalance, Value: "0"},                 // 不允许透支
-		{Key: SettingKeyAllowPrivateUpstream, Value: "false"},   // SSRF 防护默认开: 私网上游需管理员显式放行
-		{Key: SettingKeyAdminDefaultPwdChanged, Value: "false"}, // 初始 admin/admin 未改前视为未完成部署
+		{Key: SettingKeyShareCodeSeq, Value: "1000"},      // 发布编码从 1001 起, 记录已发到的最大号
+		{Key: SettingKeyBalanceReserveCap, Value: "4096"}, // 预扣估算默认输出上限
+		{Key: SettingKeyBalanceReserveImages, Value: "4"}, // 生图预扣保守张数, 4 张覆盖 dall-e-3 / gpt-image-1 n=4 上限
+		{Key: SettingKeyMinBalance, Value: "0"},           // 不允许透支
+		// 内置默认与 relay 的兜底版本一致; 留空同样回落到该默认值。
+		{Key: SettingKeyAntigravityClientVersion, Value: "1.200.0"}, // Antigravity 客户端版本(上游按它做闸门)
+		{Key: SettingKeyAllowPrivateUpstream, Value: "false"},       // SSRF 防护默认开: 私网上游需管理员显式放行
+		{Key: SettingKeyAdminDefaultPwdChanged, Value: "false"},     // 初始 admin/admin 未改前视为未完成部署
 		// 充值与支付: 全部留空/默认, 商户信息在管理端补上即启用。
 		{Key: SettingKeyEpayGatewayURL, Value: ""},                                        // 留空表示支付未配置, 充值入口优雅降级
 		{Key: SettingKeyEpayPID, Value: ""},                                               // 商户 ID 后配
@@ -390,6 +402,23 @@ func (s *Setting) Validate() error {
 		value, err := strconv.ParseFloat(s.Value, 64)
 		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
 			return fmt.Errorf("min balance must be a finite non-negative number")
+		}
+		return nil
+	case SettingKeyAntigravityClientVersion:
+		// 形如 1.200.0 的语义化版本; 上游按版本号做客户端闸门, 乱写等于把自己拦死。
+		// 允许空值: 空表示用内置默认, 不该因为清空一个可选覆盖项就让保存失败。
+		value := strings.TrimSpace(s.Value)
+		if value == "" {
+			return nil
+		}
+		parts := strings.Split(value, ".")
+		if len(parts) != 3 {
+			return fmt.Errorf("antigravity client version must look like 1.200.0")
+		}
+		for _, part := range parts {
+			if n, err := strconv.Atoi(part); err != nil || n < 0 {
+				return fmt.Errorf("antigravity client version must look like 1.200.0")
+			}
 		}
 		return nil
 	case SettingKeyAllowPrivateUpstream:

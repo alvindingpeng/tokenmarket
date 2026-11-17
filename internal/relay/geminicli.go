@@ -13,6 +13,9 @@ import (
 	"github.com/looplj/axonhub/llm/streams"
 	"github.com/looplj/axonhub/llm/transformer"
 	"github.com/looplj/axonhub/llm/transformer/gemini"
+
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/op"
 )
 
 // Antigravity 的客户端身份常量。与 model/account_oauth.go 里那对保持一致 ——
@@ -25,9 +28,30 @@ const (
 	// 自动分配的 project(aicode-consumers), 而 pluginType=GEMINI 的个人免费层已被 Google 停用
 	// (onboardUser 返回 403 UNSUPPORTED_CLIENT, error_number 1013)。
 	antigravityClientMetadata = `{"ideType":"ANTIGRAVITY","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}`
-	// antigravityUserAgent 形如官方的 antigravity/<ver> <os>/<arch>。
-	antigravityUserAgent = "antigravity/1.1.0 windows/amd64"
+	// antigravityUserAgentVersion 是内置默认的 Antigravity 客户端版本号。
+	//
+	// 为什么从 1.1.0 提到 1.20x: 实测上游对流式请求(streamGenerateContent)做版本闸门,
+	// 1.1.0 返回 200 但正文被替换成 "This version of Antigravity is no longer supported",
+	// 于是客户端拿到一段提示文案而不是模型输出 —— 状态码成功, 根因只能靠读正文发现。
+	//
+	// 默认值只作兜底: 真正的版本号走设置项 SettingKeyAntigravityClientVersion,
+	// 因为该闸门是分批灰度且会随上游发版变化(实测 1.100.0/1.200.0/2.0.0 通过,
+	// 1.99.9/2.5.0 被拒), 写死必然在将来某天再次被拦。
+	antigravityUserAgentVersion = "1.200.0"
+	antigravityUserAgentOS      = "windows/amd64"
 )
+
+// antigravityUserAgent 取本轮使用的 Antigravity User-Agent。
+//
+// 版本号优先读设置项, 留空/读取失败时回落到内置默认值 —— 构造请求不能因为设置库异常而失败:
+// 缺这个头本身就会让上游拒掉请求, 为了一个可选覆盖给自己制造失败没有道理。
+func antigravityUserAgent() string {
+	version := antigravityUserAgentVersion
+	if v, err := op.SettingGetString(model.SettingKeyAntigravityClientVersion); err == nil && strings.TrimSpace(v) != "" {
+		version = strings.TrimSpace(v)
+	}
+	return "antigravity/" + version + " " + antigravityUserAgentOS
+}
 
 // geminiCLIOutbound 把统一请求转成 Antigravity 的 v1internal:generateContent 信封。
 //
@@ -102,7 +126,7 @@ func (t *geminiCLIOutbound) TransformRequest(ctx context.Context, llmReq *llm.Re
 
 	headers := make(http.Header)
 	headers.Set("Content-Type", "application/json")
-	headers.Set("User-Agent", antigravityUserAgent)
+	headers.Set("User-Agent", antigravityUserAgent())
 	headers.Set("X-Goog-Api-Client", antigravityAPIClientHeader)
 	headers.Set("Client-Metadata", antigravityClientMetadata)
 	if llmReq.Stream != nil && *llmReq.Stream {
