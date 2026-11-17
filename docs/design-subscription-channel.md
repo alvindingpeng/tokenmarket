@@ -811,3 +811,81 @@ anthropic: upstream 404 Not Found: 404 page not found (请求路径: [/models /m
 
 **"被动触发"这一点要记住**：订阅渠道的额度耗尽是在**第一次转发失败时**才发现，不是提前探测。
 配合上面的修法，这一次失败就足以暂停整个渠道，不会反复重试。
+
+---
+
+## 十六、实施完成总结（2026-11-17）
+
+### 16.1 阶段状态
+
+| 阶段 | 内容 | 提交 | 状态 |
+|---|---|---|---|
+| S0 | 死代码确认（`SelectChannelKey` 在转发路径不生效）| `f86d9a4` | 完成 |
+| S1 | 订阅方言 + 地址必填豁免 + SSRF 校验豁免 | `d47332a` | 完成 |
+| S4 | 转发按渠道选 key（修法 A）| `bdc9923` | 完成 |
+| S3 | 平台描述层 + 建渠道自动装配 + 平台清单接口 | `433c406` | 完成 |
+| S5 | 前端订阅表单 | `ea23cb1` | 完成 |
+| S6 | 定价取参考价（方案 A）| `7bfc013` | 完成 |
+| S2 | 探测分派 + 额度耗尽分类（查出并修两个真缺口）| `15fe0bd` | 完成 |
+
+**七个阶段全部完成。** 比原估 5.5 天多出的部分，主要是 S2 查出的两个缺口
+（原计划里 S2 只是"核对"，实际是两处修复）。
+
+### 16.2 部署前必须做的一件事
+
+**打开 `channel_auto_add_fill_price` 开关**（设置页 → 自动添加 → 依参考价预填供货价）。
+
+理由：该开关默认 `false`。关着时订阅渠道拉进来的模型供货价全为 0，
+而 `0 × (1+markup) = 0` —— **渠道看起来配好了，实际全部免费，界面上没有任何地方提示这件事**。
+选方案 A（参考价）的前提就是这个开关打开。
+
+### 16.3 部署安全性
+
+| 项 | 结论 |
+|---|---|
+| 对现有渠道的影响 | **零**。S4 只对 `Dialect.Subscribable()` 生效，S2 的分类修正同样只对订阅方言生效；25 个既有渠道全是 generic/xunfei/gemini_cli |
+| 数据库迁移 | `AutoMigrate` 含 `model.Channel{}`，`sub_platform` 列自动新增，默认 `''` |
+| 老渠道读取 | `sub_platform` 为空 + `dialect` 非订阅 → `applySubscriptionPlatform` 直接返回 nil，不报错 |
+| 启动校验 | `subplatform.Validate()` 失败即 `exit 1`；当前只有一个 gemini 平台，校验通过 |
+
+### 16.4 尚未验证的部分（诚实列出）
+
+这些都是**没有真实上游账号就无法验证**的，不要当成已验证：
+
+| 项 | 状态 |
+|---|---|
+| 真实 Gemini/Antigravity 账号的端到端转发 | 未测（用 httptest 假上游验证了协议形态与解析）|
+| 额度耗尽时的真实错误码与分类 | 未测（按 429 + RESOURCE_EXHAUSTED 的已知形态实现）|
+| antigravity 的 OAuth client 配置 | 需部署环境变量（`AntigravityOAuthClientEnvNames`），未配置时登录会明确报错 |
+| 额度耗尽后数据面（真实转发）的行为 | 未测（只验证了探测阶段的过滤逻辑）|
+| 多账号实际轮换在真实订阅账号下的表现 | 未测（用假上游验证了 Handler 分支确实换 key）|
+
+### 16.5 完整验证基线（本次全部跑过）
+
+| 检查 | 结果 |
+|---|---|
+| `go build ./...` | OK |
+| `go vet ./internal/... ./cmd/...` | 无输出 |
+| `go test -count=1 ./internal/...` | 全通过 |
+| 改动文件 `gofmt -l` | 干净 |
+| `tsc --noEmit` | 零错误 |
+| `vitest run` | 61 文件 / 544 测试全过 |
+| locale 键数 | en/zh_hans/zh_hant 各 2681，完全一致 |
+| 改动文件 eslint | 零错误（既有 6 个 error 都在未改动的 `AccountImport*.tsx`/`CliHint.tsx`）|
+
+### 16.6 变异测试清单（每个修复都证明过"能抓住回退"）
+
+| # | 变异 | 谁抓住 |
+|---|---|---|
+| 1 | S4 分支改成 `if false && ...`（回到死代码）| `TestSubscriptionChannelRotatesAccounts` |
+| 2 | S3 无条件覆盖用户地址 | `TestSubscriptionChannelKeepsUserBaseURL` |
+| 3 | S3 不校验非订阅方言带平台名 | `TestNonSubscriptionChannelRejectsPlatform` |
+| 4 | S3 未登记平台放行 | `TestSubscriptionChannelRejectsUnknownPlatform` |
+| 5 | S6 `Scale` 忽略 ratio | `TestSubscriptionChannelPricingFollowsReference` |
+| 6 | S6 参考价缺失时编假价 | 修正测试后抓住（第一版测试有漏洞）|
+| 7 | S2 分派回退为只认 `gemini_cli` | `TestProbeChannelModelsSubscriptionDialectUsesGeminiChain` |
+| 8 | S2 撤销 quota 改判 | `TestSubscriptionQuotaExhaustedPausesChannel` |
+
+**第 6 条值得记住**：变异**没被抓住**时才暴露测试漏洞 —— 第一版 `TestSubscriptionChannelPricingFollowsReference`
+只把 m0 传给预填函数，m1 从未进入，"缺失不填"实际没被覆盖，而测试当时是绿的。
+不看变异结果就会误判覆盖率。
