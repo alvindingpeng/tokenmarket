@@ -28,6 +28,11 @@ export type ChannelPreset = {
     iconClassName?: string; // 单色图标在深色主题下需反色。
     description: Record<Locale, string>; // 模板在不同界面语言下的说明。
     dialect: Dialect;
+    /**
+     * sub_platform 只对订阅渠道有意义: 它决定后端按哪个平台的描述补地址与方言。
+     * 普通模板不给(undefined), 订阅模板给出平台 id。
+     */
+    sub_platform?: string;
     base_url: string;
     openai_chat_completion_path: string;
     openai_response_path: string;
@@ -216,6 +221,20 @@ export const CHANNEL_PRESETS: ChannelPreset[] = [
         },
         dialect: 'gemini_cli',
         base_url: 'https://daily-cloudcode-pa.googleapis.com',
+        openai_chat_completion_path: '/v1/chat/completions', openai_response_path: '/v1/responses', anthropic_message_path: '/v1/messages',
+    },
+    {
+        // 订阅渠道模板: 地址留空, 由后端按平台描述补 —— 前端抄一份默认地址会在后端改端点时
+        // 悄悄过期, 而渠道看起来一切正常。
+        id: 'subscription', label: 'Subscription', Icon: Brain,
+        description: {
+            zh_hans: '不填调用信息: 选平台后登录账号, 模型与价格自动同步',
+            zh_hant: '不填呼叫資訊: 選平台後登入帳號, 模型與價格自動同步',
+            en: 'No call config to fill: pick a platform, sign in, models and pricing sync automatically',
+        },
+        dialect: 'subscription',
+        sub_platform: 'gemini',
+        base_url: '',
         openai_chat_completion_path: '/v1/chat/completions', openai_response_path: '/v1/responses', anthropic_message_path: '/v1/messages',
     },
 ];

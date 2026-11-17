@@ -8,6 +8,7 @@ import {
     useChannelDetail,
     useCreateChannel,
     useUpdateChannel,
+    useSubPlatforms,
 } from '@/api/channel';
 import { CHANNEL_PRESETS, type ChannelPreset } from '@/lib/channel-presets';
 import { useMorphingDialog } from '@/components/ui/morphing-dialog';
@@ -89,6 +90,10 @@ function ChannelFormFields({ channel, onBack, onChannelRefetch }: {
     // 订阅渠道的调用信息由平台描述提供, 地址与凭据都不在这里填, 因此这两项必填对它不适用。
     // 只按方言放开, 不按"看起来像订阅"判断: 靠猜会让普通渠道悄悄失去必填, 空地址请求极难排查。
     const isSubscription = state.dialect === 'subscription';
+    // 平台清单来自后端, 前端不硬编码: 后端加平台只要写个 Go 文件, 下拉里自然就有。
+    const subPlatformQuery = useSubPlatforms();
+    const subPlatformList = subPlatformQuery.data ?? [];
+    const selectedSubPlatform = subPlatformList.find((p) => p.id === state.sub_platform);
     // 缺项逐条列在保存按钮旁: 按钮点不动时要能看到缺什么, 免得对着一个无反应的按钮无从下手。
     const saveBlockers: string[] = [];
     if (state.name.trim() === '') saveBlockers.push(t('saveBlockedName'));
@@ -118,6 +123,8 @@ function ChannelFormFields({ channel, onBack, onChannelRefetch }: {
             ...state,
             name: state.name || preset.label,
             dialect: preset.dialect,
+            // 订阅模板给 sub_platform 且地址为空: 地址由后端按平台描述补, 前端不再抄一份。
+            sub_platform: preset.sub_platform ?? '',
             base_url: preset.base_url,
             openai_chat_completion_path: preset.openai_chat_completion_path,
             openai_response_path: preset.openai_response_path,
@@ -208,15 +215,53 @@ function ChannelFormFields({ channel, onBack, onChannelRefetch }: {
                                     required
                                 />
                             </div>
+                            {isSubscription && (
+                                <div className="space-y-2">
+                                    <Label htmlFor={`${idPrefix}-sub-platform`}>{t('subPlatform')}</Label>
+                                    <select
+                                        id={`${idPrefix}-sub-platform`}
+                                        value={state.sub_platform}
+                                        onChange={(e) => {
+                                            const picked = subPlatformList.find((p) => p.id === e.target.value);
+                                            setState({
+                                                ...state,
+                                                sub_platform: e.target.value,
+                                                // 地址留空让后端按平台描述补: 前端抄一份默认地址会在
+                                                // 后端改端点时悄悄过期, 而渠道看起来一切正常。
+                                                base_url: '',
+                                                // 名称留空时用平台名做默认, 省得用户为每个渠道起名。
+                                                name: state.name.trim() === '' && picked ? picked.name : state.name,
+                                            });
+                                        }}
+                                        className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm"
+                                        required
+                                    >
+                                        <option value="">{t('subPlatformPlaceholder')}</option>
+                                        {subPlatformList.map((p) => (
+                                            <option key={p.id} value={p.id}>{p.name}</option>
+                                        ))}
+                                    </select>
+                                    {selectedSubPlatform && (
+                                        <p className="text-xs text-muted-foreground">{selectedSubPlatform.description}</p>
+                                    )}
+                                </div>
+                            )}
+                            {/*
+                              * 订阅渠道也允许改地址(自建中转、企业专线), 只是不再是必填。
+                              * 藏起整个输入框会让这类用户无处可改, 与"平台描述是默认值不是强制值"矛盾。
+                              */}
                             <div className="space-y-2">
-                                <Label htmlFor={`${idPrefix}-base-url`}>{t('baseUrl')}</Label>
+                                <Label htmlFor={`${idPrefix}-base-url`}>
+                                    {isSubscription ? t('baseUrlOptional') : t('baseUrl')}
+                                </Label>
                                 <Input
                                     id={`${idPrefix}-base-url`}
                                     type="url"
                                     value={state.base_url}
                                     onChange={(e) => setState({ ...state, base_url: e.target.value })}
                                     className="rounded-xl"
-                                    required
+                                    placeholder={isSubscription ? selectedSubPlatform?.base_url : undefined}
+                                    required={!isSubscription}
                                 />
                             </div>
                             {([

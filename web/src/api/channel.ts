@@ -123,6 +123,12 @@ export type ChannelDetail = {
     id: number;
     name: string;
     dialect: Dialect;
+    /**
+     * sub_platform 是订阅渠道的平台标识（见 internal/subplatform）。
+     * 只有 dialect === 'subscription' 时才有意义：它决定系统按哪个平台的描述
+     * 补齐地址与方言。空表示非订阅渠道。
+     */
+    sub_platform?: string;
     enabled: boolean;
     base_url: string; // 上游地址，各协议共用。
     openai_chat_completion_path: string;
@@ -784,5 +790,47 @@ export function accountImportBatch(payload: {
         method: 'POST',
         body: payload,
         timeoutMs: ACCOUNT_IMPORT_TIMEOUT_MS,
+    });
+}
+
+
+/**
+ * SubPlatform 是后端登记的订阅平台描述（internal/subplatform）。
+ *
+ * 前端不硬编码这份清单：加平台是后端加一个 Go 文件，前端只要照这里的字段渲染，
+ * 就不会出现"后端加了平台但前端下拉里没有"的漂移。
+ */
+export type SubPlatform = {
+    id: string;
+    name: string;
+    description: string;
+    dialect: Dialect;
+    account_platform: AccountPlatform;
+    base_url: string;
+};
+
+/**
+ * subPlatforms 取可用于建订阅渠道的平台清单。
+ *
+ * 与 signInPlatforms 的分工：后者答"哪些账号平台能网页登录"（账号页用），
+ * 本接口答"哪些平台能一键建出订阅渠道"（渠道表单用）。两者不是同一份清单。
+ */
+export function subPlatforms() {
+    return apiRequest<SubPlatform[]>('/api/v1/channel/subplatform/platforms', {
+        method: 'GET',
+    });
+}
+
+/**
+ * useSubPlatforms 取订阅平台清单。
+ *
+ * 平台清单是部署的固有属性(写在后端 Go 文件里), 不会在会话中变化,
+ * 因此 staleTime 给 Infinity: 不必每次打开表单都请求一次。
+ */
+export function useSubPlatforms() {
+    return useQuery({
+        queryKey: ['channel', 'subplatform', 'list'],
+        queryFn: subPlatforms,
+        staleTime: Infinity,
     });
 }

@@ -5,6 +5,11 @@ import type { ChannelDetail, ChannelKey } from '@/api/channel';
 export type ChannelFormState = {
     name: string;
     dialect: ChannelDetail['dialect'];
+    /**
+     * sub_platform 是订阅渠道的平台标识。只有 dialect === 'subscription' 时有意义：
+     * 后端据此按平台描述补方言与地址，所以填了它就不必再填地址。
+     */
+    sub_platform: string;
     base_url: string;
     enabled: boolean;
     proxy: boolean;
@@ -59,6 +64,7 @@ export function grantKey(modelName: string, keyName: string) {
 export const emptyFormState: ChannelFormState = {
     name: '',
     dialect: 'generic',
+    sub_platform: '',
     base_url: '',
     enabled: true,
     proxy: false,
@@ -83,6 +89,8 @@ export function fromChannel(channel: ChannelDetail): ChannelFormState {
     return {
         name: channel.name,
         dialect: channel.dialect,
+        // 读侧可能缺省(历史渠道没有这个列), 归一为空串。
+        sub_platform: channel.sub_platform ?? '',
         base_url: channel.base_url,
         enabled: channel.enabled,
         proxy: channel.proxy,
@@ -117,6 +125,9 @@ export function toChannelConfig(state: ChannelFormState) {
     return {
         name: state.name.trim(),
         dialect: state.dialect,
+        // 非订阅渠道恒发空串: 后端对"非订阅方言带平台名"是硬报错,
+        // 发空串保证切换方言时不会残留旧平台名把保存卡死。
+        sub_platform: state.dialect === 'subscription' ? state.sub_platform.trim() : '',
         enabled: state.enabled,
         base_url: state.base_url.trim(),
         openai_chat_completion_path: state.openai_chat_completion_path.trim(),
