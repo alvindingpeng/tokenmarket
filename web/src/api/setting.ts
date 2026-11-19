@@ -1,0 +1,198 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiRequest, apiUpload, downloadFile } from './client';
+import { POLL_SLOW } from '@/lib/polling';
+
+/**
+ * Setting 数据
+ */
+export interface Setting {
+    key: string;
+    value: string;
+}
+
+export const SettingKey = {
+    ProxyURL: 'proxy_url',
+    StatsSaveInterval: 'stats_save_interval',
+    ModelInfoUpdateInterval: 'model_info_update_interval',
+    CORSAllowOrigins: 'cors_allow_origins',
+    ModelFilter: 'model_filter',
+    MarkupRatio: 'markup_ratio', // 渠道商供货价上浮比例, 用户价 = 供货价 × (1 + ratio)。
+    RegisterUserEnabled: 'register_user_enabled',
+    RegisterResellerEnabled: 'register_reseller_enabled',
+    RegisterApprovalRequired: 'register_approval_required',
+    FxRateUpdateEnabled: 'fx_rate_update_enabled',
+    FxRateUpdateInterval: 'fx_rate_update_interval',
+    MinBalance: 'min_balance', // 余额下限, 低于该值拒绝新请求。
+    BalanceReserveOutputCap: 'balance_reserve_output_cap', // 预扣估算用的单请求输出 token 上限。
+    BalanceReserveImages: 'balance_reserve_images', // 生图预扣保守张数(无 n 时按此冻结), 默认 4。
+    ScorePriceWeight: 'score_price_weight', // 综合评分系统默认: 价格权重, 分组内填 0(未自定义)时生效。
+    ScoreLatencyWeight: 'score_latency_weight', // 综合评分系统默认: 延迟权重。
+    ScoreSuccessWeight: 'score_success_weight', // 综合评分系统默认: 成功率权重。
+    // 系统信息配置: 站点身份信息与公告, 仅管理员可改, 公开端只在登录前读取。
+    SiteName: 'site_name', // 站点名称, 留空回退默认标题。
+    SiteDescription: 'site_description', // 站点描述, 展示在登录页与关于处。
+    SiteContact: 'site_contact', // 联系方式。
+    SiteAnnouncement: 'site_announcement', // 全局公告正文。
+    SiteAnnouncementEnabled: 'site_announcement_enabled', // 公告开关。
+    MaintenanceMode: 'maintenance_mode', // 维护模式开关。
+    MaintenanceNotice: 'maintenance_notice', // 维护提示文案。
+    // 第二批运营可靠性: 日志生命周期 / 自动备份 / 渠道健康 / 告警, 仅管理员可改。
+    LogRetentionDays: 'log_retention_days', // 调用日志留存天数, 默认 7。
+    LogArchiveEnabled: 'log_archive_enabled', // 清理前先归档, 默认 true。
+    LogStoreBody: 'log_store_body', // 是否保存请求/响应正文, 默认 true。
+    LogMaskFields: 'log_mask_fields', // 额外脱敏字段(逗号分隔 JSON key)。
+    AuditRetentionDays: 'audit_retention_days', // 审计日志留存天数, 默认 180, 范围 1-3650。
+    AuditArchiveEnabled: 'audit_archive_enabled', // 审计清理前是否先归档为 NDJSON, 默认 true。
+    ArchiveRetentionDays: 'archive_retention_days', // 归档 NDJSON 文件留存天数, 默认 180, 范围 1-3650。
+    // 用户等级配额(JSON 字符串): {"free":{"rpm":20,"tpm":40000,"concurrent":2}, ...}。
+    UserTierPolicies: 'user_tier_policies',
+    AutoBackupEnabled: 'auto_backup_enabled', // 自动备份开关, 默认 true。
+    AutoBackupKeep: 'auto_backup_keep', // 备份保留份数, 默认 7。
+    AutoBackupInterval: 'auto_backup_interval', // 备份间隔(小时), 默认 24。
+    BackupEncrypt: 'backup_encrypt', // 备份加密开关, 默认 false; 口令在 config.json backup.passphrase。
+    BackupRemote: 'backup_remote', // 备份异地推送开关, 默认 false; 地址凭据在 config.json backup.remote_*。
+    HealthCheckEnabled: 'health_check_enabled', // 渠道健康探测开关, 默认 false。
+    HealthCheckInterval: 'health_check_interval', // 探测间隔(分钟), 默认 30。
+    HealthLatencyMS: 'health_latency_ms', // 延迟告警阈值(毫秒), 0 关闭, 默认 1000。
+    AlertWebhookURL: 'alert_webhook_url', // 告警 Webhook 地址, 留空仅站内通知。
+    AlertDedupMinutes: 'alert_dedup_minutes', // 告警去重窗口(分钟), 0 表示不去重。
+    AlertFailStreak: 'alert_fail_streak', // 连续失败多少次判宕机(抖动抑制)。
+    AlertChannels: 'alert_channels', // 启用的告警渠道(逗号分隔): webhook,telegram,email; 空为仅 webhook。
+    AlertTelegramBotToken: 'alert_telegram_bot_token', // Telegram Bot Token。
+    AlertTelegramChatID: 'alert_telegram_chat_id', // Telegram Chat ID。
+    AlertEmailSMTPHost: 'alert_email_smtp_host', // SMTP 服务器地址。
+    AlertEmailSMTPPort: 'alert_email_smtp_port', // SMTP 端口。
+    AlertEmailUsername: 'alert_email_username', // SMTP 登录账号。
+    AlertEmailPassword: 'alert_email_password', // SMTP 登录密码。
+    AlertEmailFrom: 'alert_email_from', // 发件人地址。
+    AlertEmailTo: 'alert_email_to', // 收件人地址(逗号分隔)。
+    AlertFeishuWebhook: 'alert_feishu_webhook', // 飞书群机器人地址, 留空表示未配置。
+    AlertDingtalkWebhook: 'alert_dingtalk_webhook', // 钉钉群机器人地址, 留空表示未配置。
+    AlertWecomWebhook: 'alert_wecom_webhook', // 企业微信群机器人地址, 留空表示未配置。
+    AlertRedeliverWindow: 'alert_redeliver_window_hours', // 自动补发窗口(小时), 0 表示不限窗口。
+    MetricsAuth: 'metrics_auth', // 探针鉴权: bearer(默认需令牌) | off(显式开放)。
+    BreakerKeyThreshold: 'breaker_key_threshold', // 凭据级熔断的错误次数阈值, 0 表示不按计数熔断, 默认 5。
+    BreakerKeyMinutes: 'breaker_key_minutes', // 凭据级熔断时长(分钟), 默认 5。
+    BreakerKeyHardMinutes: 'breaker_key_hard_minutes', // 鉴权/额度错误的立即熔断时长(分钟), 默认 30。
+    BreakerModelThreshold: 'breaker_model_threshold', // 渠道模型级熔断的错误次数阈值, 0 表示不按计数熔断, 默认 5。
+    BreakerModelMinutes: 'breaker_model_minutes', // 渠道模型级熔断时长(分钟), 默认 5。
+    BreakerMaxMinutes: 'breaker_max_minutes', // 连续熔断的时长上限(分钟), 默认 60。
+    BreakerCoolAuthSeconds: 'breaker_cool_auth_seconds', // 鉴权/额度错误后该成员换路冷却秒数, 默认 60。
+    BreakerCoolSoftSeconds: 'breaker_cool_soft_seconds', // 过载/模型缺失等软错误后该成员换路冷却秒数, 默认 30。
+    // 更新检查用的 GitHub 访问令牌: 只抬高 API 限流, 不填走匿名。回显为占位符, 不回传真值。
+    GithubToken: 'github_token',
+    // 更新检查此前只能改令牌: 开关与周期在设置页根本没有入口,
+    // 想停掉每小时一次的匿名 GitHub 请求只能去数据库改行。现在与令牌并排管理。
+    UpdateCheckEnabled: 'update_check_enabled', // 是否自动检查 Release 更新, 默认 true。
+    UpdateCheckMinutes: 'update_check_interval', // 自动检查间隔(分钟), 默认 60, 范围 1-1440。
+    // 渠道观察期(P2): 审核通过后先试运行, 达标自动转正, 不达标逐级降级。
+    ChannelObservationDays: 'channel_observation_days', // 观察期天数, 默认 7。
+    ChannelObservationMinSamples: 'channel_observation_min_samples', // 毕业最低请求数, 默认 100。
+    ChannelObservationSuccessFloor: 'channel_observation_success_floor', // 毕业成功率线(0..1), 默认 0.98。
+    // 渠道模型自动添加条件(B4): 只并入满足条件的上游模型, 并可自动预填供货价。
+    AutoAddPriceMin: 'channel_auto_add_price_min', // 参考价下限(每百万 token), 0 不限。
+    AutoAddPriceMax: 'channel_auto_add_price_max', // 参考价上限, 0 不限。
+    AutoAddMarkupMin: 'channel_auto_add_markup_min', // 倍率下限(模型价 ÷ 渠道价位中位数), 0 不限。
+    AutoAddMarkupMax: 'channel_auto_add_markup_max', // 倍率上限, 0 不限。
+    AutoAddExclude: 'channel_auto_add_exclude', // 排除正则。
+    AutoAddInclude: 'channel_auto_add_include', // 名称白名单正则: 非空时只有命中的模型才并入。
+    AutoAddFillPrice: 'channel_auto_add_fill_price', // 并入时按参考价预填供货价, 默认 false。
+    // 后台自动添加: 关掉保存触发的一次性行为, 改成周期复查上游模型清单并自动并入。
+    AutoAddBackground: 'channel_auto_add_background', // 后台复查开关, 默认 false。
+    AutoAddInterval: 'channel_auto_add_interval', // 后台复查周期(小时), 默认 24。
+    AutoAddScope: 'channel_auto_add_scope', // 复查范围: flagged(仅已开启自动添加) | approved(全部已过审)。
+
+    // Gemini OAuth 客户端配置: 留空则使用内置默认值(Gemini CLI 的 client_id/secret)。
+    // 填写自定义值会覆盖内置默认; client_secret 按加密存储并掩码回显。
+    GeminiOAuthClientID: 'gemini_oauth_client_id',
+    GeminiOAuthClientSecret: 'gemini_oauth_client_secret',
+} as const;
+
+/**
+ * 获取 Setting 列表 Hook
+ * 
+ * @example
+ * const { data: settings, isLoading, error } = useSettingList();
+ * 
+ * if (isLoading) return <Loading />;
+ * if (error) return <Error message={error.message} />;
+ * 
+ * settings?.forEach(setting => console.log(setting.key, setting.value));
+ */
+export function useSettingList() {
+    return useQuery({
+        queryKey: ['settings', 'list'],
+        queryFn: () => apiRequest<Setting[]>('/api/v1/setting/list'),
+        refetchInterval: POLL_SLOW,
+        refetchOnMount: 'always',
+    });
+}
+
+/**
+ * 设置 Setting Hook
+ * 
+ * @example
+ * const setSetting = useSetSetting();
+ * 
+ * setSetting.mutate({
+ *   key: 'theme',
+ *   value: 'dark',
+ * });
+ */
+export function useSetSetting() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: (data: Setting) =>
+            apiRequest<Setting>('/api/v1/setting/set', { method: 'POST', body: data }),
+        onSuccess: () => {
+            void queryClient.invalidateQueries({ queryKey: ['settings', 'list'] });
+            // 站点信息与注册开关同样由这个端点写入, 而消费方(登录页 / 浏览器标题 / 公告与
+            // 维护横幅)各自缓存自己的查询键。后端无从知道刚改的键会被谁读, 所以前端一律广播
+            // 失效: 否则管理员保存完「系统信息配置」, 要等页面刷新才看得到效果。
+            void queryClient.invalidateQueries({ queryKey: ['site', 'config'] });
+            void queryClient.invalidateQueries({ queryKey: ['user', 'register-config'] });
+        },
+    });
+}
+
+/**
+ * 数据库导入/导出
+ */
+interface DBImportResult {
+    rows_affected: Record<string, number>;
+}
+
+function exportFallbackFilename() {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    return `switchyard-export-${ts}.json`;
+}
+
+/**
+ * 导出数据库（下载 JSON 文件）
+ * 整库导出是敏感导出: 走通用客户端, 撞上 step-up 时弹密码确认并带凭证重发这一次。
+ */
+export function useExportDB() {
+    return useMutation({
+        mutationFn: async () => {
+            const filename = await downloadFile('/api/v1/setting/export', exportFallbackFilename());
+            return { filename };
+        },
+    });
+}
+
+/**
+ * 导入数据库（上传 JSON 文件）
+ * 备份导入是高危写操作: 与导出同一套 step-up 二次确认。
+ */
+export function useImportDB() {
+    return useMutation({
+        mutationFn: async (file: File) => {
+            const form = new FormData();
+            form.append('file', file);
+            return await apiUpload<DBImportResult>('/api/v1/setting/import', form);
+        },
+    });
+}

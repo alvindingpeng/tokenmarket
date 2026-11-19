@@ -1,0 +1,213 @@
+import { useState } from 'react';
+import { CASHFLOW_CURRENCIES } from '@/api/fx';
+import { useTranslations } from 'use-intl';
+import { Landmark, Loader2, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+    markWithdrawalPaid,
+    reviewWithdrawal,
+    rollbackWithdrawal,
+    useWithdrawals,
+    type Withdrawal,
+} from '@/api/withdrawal';
+import { formatAmount, formatDateTime } from '@/lib/format';
+import { formatCashflowAmount } from '@/api/currency';
+
+// STATUSES 状态筛选项; 空串表示全部。
+const STATUSES = ['', 'pending', 'approved', 'paid', 'rejected', 'cancelled'];
+
+// Withdrawals 提现管理: 审核队列 + 打款登记; v1 全部人工(D3), 打款失败可回滚。
+export default function Withdrawals() {
+    const t = useTranslations('withdrawals');
+    const [status, setStatus] = useState('pending');
+    const [notes, setNotes] = useState<Record<number, string>>({});
+    const [payingId, setPayingId] = useState(0);
+    const [paidRef, setPaidRef] = useState('');
+    // actualCurrency 实际打款币种: 与申请到账币种不同的场景(手工换汇)需要显式登记; 空 = 不另记。
+    const [actualCurrency, setActualCurrency] = useState('');
+    // 资金操作的二次确认: 通过=解冻转已通过(占用可提额度), 回滚=把已打款的单子退回已通过。
+    // 两者此前都是单击即执行, 而提现审核没有撤销按钮 —— 点错了只能手工改库。
+    const [confirming, setConfirming] = useState<{ id: number; kind: 'approve' | 'rollback' } | null>(null);
+    const list = useWithdrawals(status, 0);
+    const items = list.data?.items ?? [];
+
+    // handleReview 审核: 通过进 approved, 拒绝解冻回可提。
+    const handleReview = (order: Withdrawal, approve: boolean) => {
+        reviewWithdrawal(order.id, approve, (notes[order.id] ?? '').trim())
+            .then(() => {
+                toast.success(approve ? t('review.approved', { id: order.id }) : t('review.rejected', { id: order.id }));
+                void list.refetch();
+            })
+            .catch((error) => toast.error(t('actionFailed'), { description: (error as Error).message }));
+    };
+
+    // handlePay 打款登记: 凭证号必填, 标记后资金出池。
+    const handlePay = (order: Withdrawal) => {
+        markWithdrawalPaid(order.id, paidRef.trim(), actualCurrency)
+            .then(() => {
+                toast.success(t('paid.done', { id: order.id }));
+                setPayingId(0);
+                setPaidRef('');
+                setActualCurrency('');
+                void list.refetch();
+            })
+            .catch((error) => toast.error(t('actionFailed'), { description: (error as Error).message }));
+    };
+
+    // handleRollback 打款回滚: 已提转回冻结。
+    const handleRollback = (order: Withdrawal) => {
+        rollbackWithdrawal(order.id)
+            .then(() => {
+                toast.success(t('rollback.done', { id: order.id }));
+                void list.refetch();
+            })
+            .catch((error) => toast.error(t('actionFailed'), { description: (error as Error).message }));
+    };
+
+    return (
+        <div className="flex h-full min-h-0 flex-col gap-3 pb-24 md:pb-0">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+                <h2 className="flex items-center gap-2 text-lg font-bold text-card-foreground">
+                    <Landmark className="size-5" />
+                    {t('title')}
+                </h2>
+                <div className="flex items-center gap-2">
+                    <Select value={status || 'all'} onValueChange={(value) => setStatus(value === 'all' ? '' : value)}>
+                        <SelectTrigger className="w-36 rounded-xl"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            {STATUSES.map((value) => (
+                                <SelectItem key={value} value={value || 'all'}>{value === '' ? t('filterAll') : t('status.' + value)}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <Button variant="outline" size="sm" onClick={() => void list.refetch()} disabled={list.isRefetching} className="rounded-xl">
+                        <RefreshCw className={'size-4' + (list.isRefetching ? ' animate-spin' : '')} />
+                        {t('refresh')}
+                    </Button>
+                </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-auto overscroll-contain rounded-3xl border border-border bg-card">
+                {list.isLoading ? (
+                    <div className="flex h-full items-center justify-center gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" />{t('loading')}</div>
+                ) : list.isError ? (
+                    <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground"><p>{t('error')}</p><Button variant="outline" size="sm" onClick={() => void list.refetch()} className="rounded-xl">{t('retry')}</Button></div>
+                ) : items.length === 0 ? (
+                    <div className="flex h-full items-center justify-center text-muted-foreground">{t('empty')}</div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[1000px] text-sm">
+                            <thead className="sticky top-0 bg-card text-left text-xs text-muted-foreground"><tr>
+                                <th className="px-4 py-3 font-medium">{t('table.id')}</th>
+                                <th className="px-4 py-3 font-medium">{t('table.user')}</th>
+                                <th className="px-4 py-3 font-medium">{t('table.amount')}</th>
+                                <th className="px-4 py-3 font-medium">{t('table.fee')}</th>
+                                <th className="px-4 py-3 font-medium">{t('table.actual')}</th>
+                                <th className="px-4 py-3 font-medium">{t('table.account')}</th>
+                                <th className="px-4 py-3 font-medium">{t('table.status')}</th>
+                                <th className="px-4 py-3 font-medium">{t('table.time')}</th>
+                                <th className="px-4 py-3 font-medium">{t('table.actions')}</th>
+                            </tr></thead>
+                            <tbody>
+                                {items.map((order) => (
+                                    <tr key={order.id} className="border-t border-border align-middle">
+                                        <td className="px-4 py-3 font-mono text-xs">#{order.id}</td>
+                                        <td className="px-4 py-3">
+                                            <div className="font-medium">{order.username || ('#' + order.user_id)}</div>
+                                            <div className="text-xs text-muted-foreground">{order.account_name} · {t('method.' + order.method)}</div>
+                                        </td>
+                                        <td className="px-4 py-3 tabular-nums">{formatAmount(order.amount)}</td>
+                                        <td className="px-4 py-3 tabular-nums">{formatAmount(order.fee)}</td>
+                                        <td className="px-4 py-3 tabular-nums font-medium">
+                                            {order.payout_currency
+                                                ? formatCashflowAmount(order.payout_amount ?? order.actual_cents / 100, order.payout_currency) + ' ' + order.payout_currency.toUpperCase()
+                                                : '¥' + formatCashflowAmount(order.actual_cents / 100, 'CNY')}
+                                            {order.actual_currency && (
+                                                <div className="text-xs text-muted-foreground">
+                                                    {t('paid.vsActual', { requested: (order.payout_currency ?? 'CNY').toUpperCase(), actual: order.actual_currency.toUpperCase() })}
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-3 font-mono text-xs">{order.account_no}</td>
+                                        <td className="px-4 py-3">{t('status.' + order.status)}</td>
+                                        <td className="px-4 py-3 tabular-nums text-muted-foreground">{formatDateTime(order.applied_at, '-')}</td>
+                                        <td className="px-4 py-3">
+                                            {order.status === 'pending' ? (
+                                                <div className="flex flex-col gap-1.5">
+                                                    <div className="flex gap-1.5">
+                                                        {confirming?.id === order.id && confirming.kind === 'approve' ? (
+                                                            <>
+                                                                <Button size="sm" className="h-8 rounded-xl" onClick={() => { setConfirming(null); handleReview(order, true); }}>{t('confirm.yes')}</Button>
+                                                                <Button size="sm" variant="outline" className="h-8 rounded-xl" onClick={() => setConfirming(null)}>{t('confirm.no')}</Button>
+                                                            </>
+                                                        ) : (
+                                                            <Button size="sm" className="h-8 rounded-xl" onClick={() => setConfirming({ id: order.id, kind: 'approve' })}>{t('action.approve')}</Button>
+                                                        )}
+                                                        <Button size="sm" variant="outline" className="h-8 rounded-xl" onClick={() => handleReview(order, false)}>{t('action.reject')}</Button>
+                                                    </div>
+                                                    <Input
+                                                        className="h-8 w-40 rounded-xl text-xs"
+                                                        placeholder={t('review.notePlaceholder')}
+                                                        value={notes[order.id] ?? ''}
+                                                        onChange={(event) => setNotes((prev) => ({ ...prev, [order.id]: event.target.value }))}
+                                                    />
+                                                </div>
+                                            ) : order.status === 'approved' ? (
+                                                payingId === order.id ? (
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <Input
+                                                            className="h-8 w-40 rounded-xl text-xs"
+                                                            placeholder={t('paid.refPlaceholder')}
+                                                            value={paidRef}
+                                                            onChange={(event) => setPaidRef(event.target.value)}
+                                                            autoFocus
+                                                        />
+                                                        <Select value={actualCurrency || 'keep'} onValueChange={(v) => setActualCurrency(v === 'keep' ? '' : v)}>
+                                                            <SelectTrigger className="h-8 w-40 rounded-xl text-xs"><SelectValue /></SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="keep">{t('paid.currencyKeep')}</SelectItem>
+                                                                {CASHFLOW_CURRENCIES.map((code) => (
+                                                                    <SelectItem key={code} value={code}>{code}</SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                        {order.payout_currency && (
+                                                            <p className="text-xs text-muted-foreground">{t('paid.requestedVsActual', { requested: order.payout_currency.toUpperCase() })}</p>
+                                                        )}
+                                                        <div className="flex gap-1.5">
+                                                            <Button size="sm" className="h-8 rounded-xl" disabled={paidRef.trim() === ''} onClick={() => handlePay(order)}>{t('paid.confirm')}</Button>
+                                                            <Button size="sm" variant="outline" className="h-8 rounded-xl" onClick={() => { setPayingId(0); setPaidRef(''); setActualCurrency(''); }}>{t('action.cancel')}</Button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <Button size="sm" variant="outline" className="h-8 rounded-xl" onClick={() => { setPayingId(order.id); setPaidRef(''); setActualCurrency(''); }}>{t('action.markPaid')}</Button>
+                                                )
+                                            ) : order.status === 'paid' ? (
+                                                <div className="flex flex-col gap-1.5">
+                                                    <span className="font-mono text-xs text-muted-foreground">{order.paid_ref}</span>
+                                                    {confirming?.id === order.id && confirming.kind === 'rollback' ? (
+                                                        <div className="flex gap-1.5">
+                                                            <Button size="sm" className="h-8 rounded-xl" onClick={() => { setConfirming(null); handleRollback(order); }}>{t('confirm.yes')}</Button>
+                                                            <Button size="sm" variant="outline" className="h-8 rounded-xl" onClick={() => setConfirming(null)}>{t('confirm.no')}</Button>
+                                                        </div>
+                                                    ) : (
+                                                        <Button size="sm" variant="outline" className="h-8 rounded-xl" onClick={() => setConfirming({ id: order.id, kind: 'rollback' })}>{t('action.rollback')}</Button>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="text-xs text-muted-foreground">{order.review_note || '-'}</span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}

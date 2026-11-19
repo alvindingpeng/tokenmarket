@@ -1,0 +1,326 @@
+package model
+
+import "time"
+
+// 渠道支持的上游线协议, 以位掩码存储, 一条渠道授权可同时支持多个协议。
+type Protocol uint8
+
+// 协议位从 1 << 1 开始, 1 << 0 保留待用; 位值会落库并与前端交互, 不可再变更。
+// 媒体协议位 1<<4 / 1<<5 是 P1 阶段为生图/生视频预留的, 视频位暂未实现但已在位掩码中占好坑:
+// 未来加路由时不需要再布局, 也不需要移动已有位的数值。
+const (
+	ProtocolOpenAIChatCompletion Protocol = 1 << 1 // OpenAI Chat Completions 协议。
+	ProtocolOpenAIResponse       Protocol = 1 << 2 // OpenAI Responses 协议。
+	ProtocolAnthropicMessage     Protocol = 1 << 3 // Anthropic Messages 协议。
+	ProtocolOpenAIImage          Protocol = 1 << 4 // OpenAI Images 协议(generations / edits / variations)。
+	ProtocolOpenAIVideo          Protocol = 1 << 5 // OpenAI Videos 协议(P2 异步任务, 当前未启用)。
+	ProtocolXunfeiSparkWS        Protocol = 1 << 6 // 科大讯飞星火原生 WebSocket 协议。
+	ProtocolGeminiCLI            Protocol = 1 << 7 // Gemini CLI 订阅渠道: v1internal:generateContent 信封协议。
+)
+
+// 上游在标准协议之上的方言。
+// 同一协议下不同服务商仍可能有请求体或响应体上的差异, 例如思考内容放 reasoning_content 还是 reasoning,
+// 这类差异无法由地址与路径表达, 需按方言分支构造出站转换器。
+// 地址与路径不属于方言范畴, 由前端按服务商预填到渠道字段上。
+type Dialect string
+
+const (
+	DialectGeneric   Dialect = "generic"    // 标准协议, 不做任何厂商特化。
+	DialectXunfei    Dialect = "xunfei"     // 科大讯飞星火原生 WebSocket。
+	DialectGeminiCLI Dialect = "gemini_cli" // Gemini CLI 订阅渠道: 使用 v1internal RPC 冒号协议。
+	// DialectSubscription 订阅渠道: 调用信息(地址/凭据)由平台描述提供, 建渠道时不手填。
+	// 与 gemini_cli 的分工: gemini_cli 是"已经落地的具体平台", subscription 是"按平台名装配"的入口类型。
+	// 它存在的理由是把"要不要填 base_url"这件事按类型区分开, 而不是靠判断哪个平台。
+	DialectSubscription Dialect = "subscription"
+)
+
+// Subscribable 报告该方言是否属于订阅渠道: 允许地址为空, 由平台描述补全。
+func (d Dialect) Subscribable() bool { return d == DialectSubscription }
+
+// 渠道的可编辑配置; 落库时平铺成 channels 的各列, 出入 JSON 时平铺成渠道读写接口的各字段。
+// 单独成结构体是为了让库内实体, 读取副本与提交请求共用同一份定义: 这些字段在三处的形状本就一致,
+// 各写一遍只会让加字段时漏改其中一处。
+// 不带 binding 约束: 保存与探测都收这一份配置, 但两者的必填项不同 —— 探测发生在渠道尚未命名时,
+// 故必填校验分别由 normalizeChannelConfig 与 fetchUpstreamModels 按各自的需要给出。
+type ChannelConfig struct {
+	Name string `json:"name" gorm:"uniqueIndex:idx_channel_owner_name;not null"`
+	// MarkupRatio 渠道级上浮比例; <0 = 跟随全局 markup_ratio 设置。渠道商利润率差异大, 全局一刀切逼着
+	// 用"调供货价"表达利润策略, 那会污染多币种折算与参考价对齐; 覆盖后供货价保持原币报价原样。
+	MarkupRatio               float64        `json:"markup_ratio" gorm:"default:-1"`                                                                         // 渠道名称。
+	Dialect                   Dialect        `json:"dialect" gorm:"not null;default:generic"`                                                                // 上游方言, 决定出站转换器的厂商特化配置。
+	Enabled                   bool           `json:"enabled" gorm:"default:true"`                                                                            // 渠道是否可用。
+	BaseURL                   string         `json:"base_url"`                                                                                               // 上游地址, 各协议共用; [覆盖范围外] user:pass@host 形态的内嵌凭据当前不落库加密。
+	OpenAIChatCompletionPath  string         `json:"openai_chat_completion_path" gorm:"column:openai_chat_completion_path;default:/v1/chat/completions"`     // OpenAI Chat Completions 请求路径; 留空由后端填默认路径。
+	OpenAIResponsePath        string         `json:"openai_response_path" gorm:"column:openai_response_path;default:/v1/responses"`                          // OpenAI Responses 请求路径; 留空由后端填默认路径。
+	OpenAIImageGenerationPath string         `json:"openai_image_generation_path" gorm:"column:openai_image_generation_path;default:/v1/images/generations"` // OpenAI Images 协议: 图像生成请求路径; 留空由后端填默认路径。
+	OpenAIImageEditPath       string         `json:"openai_image_edit_path" gorm:"column:openai_image_edit_path;default:/v1/images/edits"`                   // OpenAI Images 协议: 图像编辑请求路径; 留空由后端填默认路径。
+	OpenAIVideoBasePath       string         `json:"openai_video_base_path" gorm:"column:openai_video_base_path;default:/v1"`                                // OpenAI Videos 协议: 视频接口基路径; 留空由后端填默认路径。
+	AnthropicMessagePath      string         `json:"anthropic_message_path" gorm:"column:anthropic_message_path;default:/v1/messages"`                       // Anthropic Messages 请求路径; 留空由后端填默认路径。
+	Proxy                     bool           `json:"proxy" gorm:"default:false"`                                                                             // 是否使用代理。
+	ChannelProxy              string         `json:"channel_proxy"`                                                                                          // 渠道专用代理地址; 留空表示不用渠道专用代理。[覆盖范围外] 可能含 user:pass 凭据, 当前不落库加密。
+	GeminiProject             string         `json:"gemini_project" gorm:"column:gemini_project"`                                                            // GCP project ID 用于 Gemini CLI 渠道; 留空则由 onboardUser 自动分配。
+	CustomHeader              []CustomHeader `json:"custom_header" gorm:"serializer:json"`                                                                   // 追加到上游请求的 Header。[覆盖范围外] 可能含 Authorization 等凭据, 当前不落库加密。
+	ParamOverride             string         `json:"param_override"`                                                                                         // 请求参数覆盖配置; 留空表示不覆盖。[覆盖范围外] 可能夹带凭据参数, 当前不落库加密。
+	MatchRegex                string         `json:"match_regex"`                                                                                            // 拉取模型列表时的过滤表达式; 留空表示不过滤。
+	ModelAutoAdd              bool           `json:"model_auto_add" gorm:"column:model_auto_add;default:false"`                                              // 保存后自动探测上游模型并入渠道; 默认关, 只增不删、授权按位 OR。
+	KeyRotationStrategy       string         `json:"key_rotation_strategy" gorm:"default:roundrobin"`                                                        // Key 轮换策略: roundrobin(轮询) / random(随机) / failover(故障切换)。
+	// SubPlatform 是订阅渠道的平台标识(见 internal/subplatform); 空表示非订阅渠道。
+	// 它只记录"这个渠道是哪个平台", 具体行为(地址/方言/账号平台)由平台描述给出 ——
+	// 冗余存地址会让两者漂移, 而地址是平台描述里最容易改的一项。
+	SubPlatform string `json:"sub_platform,omitempty" gorm:"size:32;not null;default:''"`
+}
+
+// 渠道准入审核状态(ReviewStatus)。
+const (
+	ChannelReviewDraft    = "draft"    // 草稿: 新建默认态, 不能发布/进公开候选。
+	ChannelReviewPending  = "pending"  // 待审核: 已提交, 等管理员审批; 同一渠道只允许一条 pending。
+	ChannelReviewApproved = "approved" // 已通过: 允许发布与进入对外候选。
+	ChannelReviewRejected = "rejected" // 已驳回: 附驳回原因, 修改后可重新提交。
+	ChannelReviewStale    = "stale"    // 待复审: 审核通过后关键配置指纹失配; 只挡新暴露, 存量分组流量不断。
+)
+
+// 渠道信任分级(TrustLevel, 观察期评估使用, P1 仅迁移交列)。
+const (
+	ChannelTrustObserving = "observing" // 观察期: 审核通过后的试运行阶段。
+	ChannelTrustTrusted   = "trusted"   // 转正: 观察期毕业。
+	ChannelTrustProbation = "probation" // 延长观察: 观察期首次不达标。
+	ChannelTrustRevoked   = "revoked"   // 收回: 再次不达标, 禁止发布。
+)
+
+// 单个上游渠道的共享配置; 路径按协议分别配置, 凭据由 ChannelKey 提供。
+type Channel struct {
+	// DisabledUntil is a channel-wide hard quota pause, independent of manual Enabled.
+	// Key/model successes and recovery probes must never clear this deadline.
+	DisabledUntil *time.Time `json:"disabled_until,omitempty"`
+	ID            int        `json:"id" gorm:"primaryKey"`                                                 // 渠道主键。
+	UserID        uint       `json:"user_id" gorm:"uniqueIndex:idx_channel_owner_name;not null;default:0"` // 归属用户; 渠道名在归属内唯一, 跨用户可重名。
+	Shared        bool       `json:"shared" gorm:"default:false"`                                          // 是否已发布到用户侧(共享)。
+	ShareCode     string     `json:"share_code" gorm:"index"`                                              // 发布编码: 4 位纯数字(1001 起), 界面展示为 "#1001"; 用户侧显示为渠道名称, 唯一性由发布流程保证(空串不参与)。
+	// 准入审核(P1): 发布与对外候选都要过审; 关键配置指纹失配自动转 stale 待复审。
+	ReviewStatus      string     `json:"review_status" gorm:"size:16;not null;default:draft;index"` // 审核状态 draft|pending|approved|rejected|stale。
+	ReviewNote        string     `json:"review_note" gorm:"size:512;not null;default:''"`           // 提交说明 / 审核意见 / 驳回原因。
+	SubmittedAt       *time.Time `json:"submitted_at,omitempty"`                                    // 最近一次提交审核时间。
+	ReviewedBy        uint       `json:"reviewed_by" gorm:"not null;default:0"`                     // 审核人用户 ID, 从未审核为 0。
+	ReviewedAt        *time.Time `json:"reviewed_at,omitempty"`                                     // 最近一次审核时间。
+	ConfigFingerprint string     `json:"config_fingerprint" gorm:"size:64"`                         // 审核通过时的关键配置指纹; 更新后比对失配触发 stale。
+	// 信任分级(P2 列, P1 一并迁移): 观察期升降级写这几列, 与资金口径完全正交。
+	TrustLevel       string          `json:"trust_level" gorm:"size:16;not null;default:observing;index"` // observing|trusted|probation|revoked。
+	ObservationStart *time.Time      `json:"observation_start,omitempty"`                                 // 观察期起算时间。
+	ObservationUntil *time.Time      `json:"observation_until,omitempty"`                                 // 观察期截止时间。
+	ChannelConfig                    // 可编辑配置, 平铺为 channels 的各列。
+	Keys             []ChannelKey    `json:"-" gorm:"foreignKey:ChannelID;constraint:OnDelete:CASCADE"` // 渠道下的上游凭据; 不出 JSON, 读取走 ChannelDetail。
+	Egresses         []ChannelEgress `json:"-" gorm:"foreignKey:ChannelID;constraint:OnDelete:CASCADE"` // 渠道的出口池; 随渠道一起进缓存, 转发路径每轮按实测择优。
+	Models           []ChannelModel  `json:"-" gorm:"foreignKey:ChannelID;constraint:OnDelete:CASCADE"` // 渠道提供的模型; 不出 JSON, 读取走 ChannelDetail。
+	StatsMetrics                     // 渠道自身的累计统计。
+}
+
+// 渠道凭据的可编辑配置; 名称在渠道内唯一, 整体替换时以它为匹配依据。
+// 与 ChannelConfig 同理, 库内实体与读写接口共用这一份定义。
+type ChannelKeyConfig struct {
+	Name      string `json:"name" gorm:"not null;index:idx_channel_key,unique"`            // 凭据名称, 界面展示与人工识别用。
+	Key       string `json:"key" gorm:"not null;serializer:switchyard_secret_channel_key"` // 上游访问凭据; 信封加密落库(绑定 channel_id+name 归属), 运行时读明文。
+	AppID     string `json:"app_id"`                                                       // 讯飞 App ID。
+	APISecret string `json:"api_secret" gorm:"serializer:switchyard_secret_channel_key"`   // 讯飞 API Secret; 信封加密落库。
+	Domain    string `json:"domain"`                                                       // 讯飞服务域名/模型 Domain。
+	Enabled   bool   `json:"enabled" gorm:"default:true"`                                  // 是否可用, 禁用后不参与选路但保留统计。
+	// Key 轮换与故障追踪。
+	Priority      int        `json:"priority" gorm:"default:0"`      // 优先级(failover 模式), 数值越小越优先。
+	ErrorCount    int        `json:"error_count" gorm:"default:0"`   // 累计错误次数。
+	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`        // 最后错误时间。
+	DisabledUntil *time.Time `json:"disabled_until,omitempty"`       // 自动禁用截止时间(故障熔断)。
+	BreakerTrips  int        `json:"breaker_trips" gorm:"default:0"` // 自上次成功以来累计熔断次数; 熔断时长按它翻倍, 成功即清零。
+	ProbeCount    int        `json:"probe_count" gorm:"default:0"`   // 熔断恢复探测尝试次数; 超过上限则不再自动探测。
+	ProbeAt       *time.Time `json:"probe_at,omitempty"`             // 上次探测时间。
+	// 上游账号(导入的 OAuth 账号 JSON)。
+	//
+	// 为什么整包 JSON 放进已有的 Key 列而不是新开一张表: Key 列本来就是「这把凭据的全部秘密」,
+	// 已经走信封加密、绑定 (channel_id, name)、运行时读明文。账号 JSON 是它的另一种形态
+	// (里面含 access_token/refresh_token), 语义一致, 没必要为此再造一套密文与归属校验。
+	// AccountKind 只是告诉转发与定时任务「这包东西该怎么用」。
+	AccountKind     string     `json:"account_kind,omitempty" gorm:"size:16;not null;default:''"`     // 空=普通静态 Key; oauth/cookie=导入的账号。
+	AccountPlatform string     `json:"account_platform,omitempty" gorm:"size:16;not null;default:''"` // codex/kiro/gemini/grok/claude; 空表示非账号凭据。
+	AccountEmail    string     `json:"account_email,omitempty" gorm:"size:255;not null;default:''"`   // 展示用, 从 JSON 或 JWT claim 取。
+	TokenExpiresAt  *time.Time `json:"token_expires_at,omitempty"`                                    // 当前访问令牌的到期时间; 定时任务据此提前刷新。
+	TokenRefreshAt  *time.Time `json:"token_refresh_at,omitempty"`                                    // 最近一次刷新时间, 用于展示与排查。
+}
+
+// 渠道下的一份上游凭据; 不同凭据通常对应不同的额度与计费。
+type ChannelKey struct {
+	ID               int `json:"id" gorm:"primaryKey"`                                    // 凭据主键。
+	ChannelID        int `json:"channel_id" gorm:"not null;index:idx_channel_key,unique"` // 所属渠道 ID。
+	ChannelKeyConfig     // 可编辑配置, 平铺为 channel_keys 的各列。
+	StatsMetrics         // 该凭据自身的累计统计。
+}
+
+// 渠道提供的单个上游模型。
+type ChannelModel struct {
+	ID            int        `json:"id" gorm:"primaryKey"`                                      // 渠道模型主键。
+	ChannelID     int        `json:"channel_id" gorm:"not null;index:idx_channel_model,unique"` // 所属渠道 ID。
+	Name          string     `json:"name" gorm:"not null;index:idx_channel_model,unique"`       // 上游模型名称。
+	Listed        bool       `json:"listed" gorm:"default:false"`                               // 是否上架: 已发布渠道中只有上架的模型对用户可见。
+	SupplyPrice   LLMPrice   `json:"supply_price" gorm:"serializer:json"`                       // 供货价(读/写/缓存读/缓存写, 每百万 token); 未设置即 0。
+	PriceCurrency string     `json:"price_currency" gorm:"size:8;default:''"`                   // 供货价币种声明; 空 = USD(账面币种, 零折算)。结算时按汇率快照折算入账。
+	MediaSupply   MediaPrice `json:"media_supply" gorm:"serializer:json"`                       // 媒体供货价(每张 / 每秒 / 分档); 仅 kind=image|video 时使用, 老库迁移为零值。
+	Kind          MediaKind  `json:"kind,omitempty" gorm:"column:kind;default:''"`              // 模型媒体形态; 文本留空, image=P1 生图, video=P2 视频。
+	StatsMetrics             // 该模型自身的累计统计。
+	// 渠道模型级故障熔断: 区分于 Key 级熔断, 隔离同渠道其它模型与该模型的其它 Key。
+	ErrorCount    int        `json:"error_count" gorm:"default:0"`   // 累计错误次数。
+	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`        // 最后错误时间。
+	DisabledUntil *time.Time `json:"disabled_until,omitempty"`       // 自动禁用截止时间(故障熔断)。
+	BreakerTrips  int        `json:"breaker_trips" gorm:"default:0"` // 自上次成功以来累计熔断次数; 熔断时长按它翻倍, 成功即清零。
+	ProbeCount    int        `json:"probe_count" gorm:"default:0"`   // 熔断恢复探测尝试次数; 超过上限则不再自动探测。
+	ProbeAt       *time.Time `json:"probe_at,omitempty"`             // 上次探测时间。
+}
+
+// UserPrice 按比例放大 LLMPrice 形式供货价得到用户单价。
+func (m ChannelModel) UserPriceLLM(markup float64) LLMPrice { return m.SupplyPrice.Scale(markup) }
+
+// UserPriceMedia 按比例放大 MediaPrice 形式供货价得到用户单价。
+func (m ChannelModel) UserPriceMedia(markup float64) MediaPrice {
+	return m.MediaSupply.Scale(markup)
+}
+
+// 渠道内的一条上游授权: 指定模型使用指定凭据时支持的协议集合, 也是转发的最小单位。
+// 上游按凭据分组授权模型, 且同一凭据下不同模型可能位于不同协议的端点, 故协议归属于模型与凭据的组合。
+type ChannelGrant struct {
+	ID             int           `json:"id" gorm:"primaryKey"`                                                                               // 授权主键。
+	ChannelModelID int           `json:"channel_model_id" gorm:"not null;index:idx_channel_grant,unique"`                                    // 渠道模型 ID。
+	ChannelModel   *ChannelModel `json:"channel_model,omitempty" gorm:"foreignKey:ChannelModelID;references:ID;constraint:OnDelete:CASCADE"` // 授权引用的渠道模型。
+	ChannelKeyID   int           `json:"channel_key_id" gorm:"not null;index:idx_channel_grant,unique"`                                      // 凭据 ID。
+	ChannelKey     *ChannelKey   `json:"channel_key,omitempty" gorm:"foreignKey:ChannelKeyID;references:ID;constraint:OnDelete:CASCADE"`     // 授权引用的凭据。
+	Protocols      Protocol      `json:"protocols" gorm:"not null"`                                                                          // 该组合支持的协议位掩码。
+}
+
+// 渠道读写副本: 编辑表单的完整形状, 读取与提交同构。
+// 读写同构使前端无需为提交另建一套类型, 后端也无需按字段比对增量: 表单本就一次给出完整配置。
+// 凭据与模型只给界面用得上的字段: 两者在渠道内按名称唯一, 提交时也按名称引用, 主键与统计都无从使用。
+// 集合字段恒为数组, 读取侧承诺不为 null。
+type ChannelDetail struct {
+	ID            int                  `json:"id"` // 渠道主键; 创建时提交 0, 由数据库分配。
+	ChannelConfig                      // 渠道自身的可编辑配置。
+	Keys          []ChannelKeyConfig   `json:"keys"`     // 渠道下的上游凭据。
+	Egresses      []ChannelEgress      `json:"egresses"` // 渠道的出口池; 空表示沿用渠道自身的代理配置(向后兼容)。
+	Models        []string             `json:"models"`   // 渠道提供的上游模型名称。
+	Grants        []ChannelGrantConfig `json:"grants"`   // 渠道下的授权。
+}
+
+// 渠道授权的可编辑形状, 两侧按名称引用。
+// 名称在渠道内唯一, 本就是模型与凭据的匹配依据; 而新增的模型与凭据在同一事务内才分配主键,
+// 提交方拿不到, 无法在一次请求里既建模型又给它授权。读写用同一种寻址, 界面无需在主键与名称之间翻译。
+type ChannelGrantConfig struct {
+	ModelName string   `json:"model_name"` // 渠道模型名称。
+	KeyName   string   `json:"key_name"`   // 渠道凭据名称。
+	Protocols Protocol `json:"protocols"`  // 该组合支持的协议位掩码。
+}
+
+// 渠道及其模型的累计统计, 自带展示所需的名称与启停状态。
+// 这一份同时充当渠道列表项: 列表页要展示的名称, 启停与模型个数都在此, 模型个数即 Models 的长度,
+// 故不再另给渠道概览接口 —— 列表页与首页榜单共用这一条响应, 整份配置在点开编辑时由 /channel/detail 单独取。
+// 名称与渠道配置重复给出是有意的: 消费方由此无需再按主键回查渠道。
+type ChannelStats struct {
+	ChannelID   int    `json:"channel_id"`   // 渠道主键。
+	UserID      uint   `json:"user_id"`      // 归属用户。
+	ChannelName string `json:"channel_name"` // 渠道名称。
+	Shared      bool   `json:"shared"`       // 是否已发布到用户侧。
+	ShareCode   string `json:"share_code"`   // 发布唯一编码; 未发布为空。
+	Enabled     bool   `json:"enabled"`      // 渠道是否可用, 供列表页的开关与过滤使用。
+	// 渠道级额度暂停与 Enabled 是两回事: 前者由上游明确余额不足自动写入, 后者是人工开关,
+	// 二者互不覆盖。暂停截止时间随列表外露, 卡片才能给出暂停原因与剩余时长并提供提前恢复入口,
+	// 不必再为这一列单开接口。
+	DisabledUntil *time.Time `json:"disabled_until,omitempty"` // 额度暂停截止时间; 未暂停不给出。
+	// 准入审核状态随列表一并外露: 卡片徽章与发布闸口提示只消费这一条查询, 无需另开接口。
+	ReviewStatus string     `json:"review_status"`          // 审核状态 draft|pending|approved|rejected|stale。
+	ReviewNote   string     `json:"review_note"`            // 提交说明 / 审核意见 / 驳回原因。
+	SubmittedAt  *time.Time `json:"submitted_at,omitempty"` // 最近提交审核时间。
+	ReviewedAt   *time.Time `json:"reviewed_at,omitempty"`  // 最近审核时间。
+	// 信任级别与观察期窗口随列表外露(P2): 卡片要显示「观察期剩余 N 天」进度条,
+	// 单独开接口会让列表页多一轮往返, 而这几列本就是渠道行的字段。
+	TrustLevel       string              `json:"trust_level"`                 // 信任级别 trusted|observing|probation|revoked。
+	ObservationStart *time.Time          `json:"observation_start,omitempty"` // 观察期起始时间。
+	ObservationUntil *time.Time          `json:"observation_until,omitempty"` // 观察期截止时间。
+	Models           []ChannelModelStats `json:"models"`                      // 该渠道各模型的独立统计, 恒为数组; 长度即渠道的模型个数。
+	StatsMetrics                         // 渠道自身的累计统计。
+}
+
+// 单个渠道模型的累计统计。
+type ChannelModelStats struct {
+	ModelID      int    `json:"model_id"`   // 渠道模型主键。
+	ModelName    string `json:"model_name"` // 上游模型名称。
+	StatsMetrics        // 该模型自身的累计统计。
+	// 渠道模型级熔断状态随统计一并外露: 界面据此展示「熔断中/剩余时长」, 无需另开接口。
+	ErrorCount    int        `json:"error_count"`              // 熔断计数(与熔断共用同一列, 熔断后清零)。
+	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`  // 最后错误时间, 从未出错不给出。
+	DisabledUntil *time.Time `json:"disabled_until,omitempty"` // 熔断截止时间, 未熔断不给出。
+}
+
+// 审核队列条目: 审核决策所需的最小字段集, 不外露路径、代理与凭据。
+// 管理员看全量, 渠道商只看自有提交; 两侧消费同一形状, 前端无需分叉。
+type ChannelReviewItem struct {
+	ChannelID    int        `json:"channel_id"`             // 渠道主键。
+	UserID       uint       `json:"user_id"`                // 归属用户 ID。
+	OwnerName    string     `json:"owner_name"`             // 归属用户名, 供管理员队列展示。
+	ChannelName  string     `json:"channel_name"`           // 渠道名称。
+	ReviewStatus string     `json:"review_status"`          // 审核状态 draft|pending|approved|rejected|stale。
+	ReviewNote   string     `json:"review_note"`            // 提交说明 / 审核意见 / 驳回原因。
+	SubmittedAt  *time.Time `json:"submitted_at,omitempty"` // 最近提交审核时间, 从未提交不给出。
+	ReviewedBy   uint       `json:"reviewed_by"`            // 审核人用户 ID, 从未审核为 0。
+	ReviewerName string     `json:"reviewer_name"`          // 审核人用户名, 从未审核为空。
+	ReviewedAt   *time.Time `json:"reviewed_at,omitempty"`  // 最近审核时间, 从未审核不给出。
+	Shared       bool       `json:"shared"`                 // 是否已发布到用户侧。
+	Enabled      bool       `json:"enabled"`                // 渠道是否可用。
+	ModelCount   int        `json:"model_count"`            // 渠道模型个数, 供队列概览。
+}
+
+// 供分组页选取的一条候选授权, 字段与分组成员的展示字段一一对应。
+// 分组页只需按渠道分组列出可选授权并判断可用性, 由此无需再拉整份渠道列表:
+// 那里带着统计, 路径, 代理与凭据明文, 与选取成员无关。
+type ChannelGrantCandidate struct {
+	ID            int        `json:"id"`                       // 授权主键, 分组成员按它引用。
+	ChannelID     int        `json:"channel_id"`               // 授权所属渠道 ID。
+	ChannelName   string     `json:"channel_name"`             // 展示名: 已发布渠道一律显示发布唯一编码, 未发布渠道显示真名。
+	ModelName     string     `json:"model_name"`               // 授权引用的上游模型名称。
+	KeyName       string     `json:"key_name"`                 // 授权引用的凭据名称; 非归属者视角为空(脱敏)。
+	Protocols     Protocol   `json:"protocols"`                // 授权支持的协议位掩码。
+	Available     bool       `json:"available"`                // 渠道与凭据均启用且模型, 凭据均存在时为真。
+	Listed        bool       `json:"listed"`                   // 模型是否上架; 非归属者只能看到上架模型。
+	SupplyPrice   LLMPrice   `json:"supply_price"`             // 供货价(四类, 已折算为账面币种 USD), 未设置即 0。
+	UserPrice     LLMPrice   `json:"user_price"`               // 用户价(折算后上浮), 展示与计费同口径。
+	MediaSupply   MediaPrice `json:"media_supply,omitempty"`   // 媒体供货价(已折算为 USD); 文本模型为零值。
+	UserMedia     MediaPrice `json:"user_media,omitempty"`     // 媒体用户价(折算后上浮)。
+	Kind          MediaKind  `json:"kind,omitempty"`           // 模型媒体形态, 文本留空。
+	PriceCurrency string     `json:"price_currency,omitempty"` // 渠道报价币种; 空或 USD 表示零折算。
+	FxMissing     bool       `json:"fx_missing,omitempty"`     // 声明了非 USD 报价但牌价不可用: 价格未折算, 候选按不可用处理。
+}
+
+// 追加到上游请求的单个 Header。
+type CustomHeader struct {
+	HeaderKey   string `json:"header_key"`   // Header 名称。
+	HeaderValue string `json:"header_value"` // Header 值。
+}
+
+// 按凭据拉取上游模型列表的请求; 渠道尚未保存时也可试拉, 故随请求携带拉取所需的渠道配置。
+// 直接收整份渠道配置而不另立探测专用形状: 探测发生在编辑表单内, 提交方手上本就是完整配置,
+// 且探测用的地址, 路径, 代理与过滤表达式必须与保存后生效的完全一致, 收同一份即可; 探测用不上的字段忽略即可。
+// 不指定协议: 一次探测同时试 OpenAI 与 Anthropic 两侧, 协议支持情况由各侧的响应决定。
+type ChannelFetchModelRequest struct {
+	Channel ChannelConfig `json:"channel"` // 用于拉取的渠道配置, 提供地址, 路径, 代理与 Header。
+	// Key 不再 binding:"required": 订阅渠道的凭据是登录后落在库里的账号, 表单里没有 Key 可填,
+	// 要求必填会让订阅渠道的"拉取模型"永远发不出请求(400 而不是它该有的"还没有账号")。
+	// 非订阅渠道缺 Key 由各自分支显式报错, 不再依赖 binding 拦。
+	Key string `json:"key"` // 拉取使用的上游凭据。
+	// ChannelID 只对订阅渠道有意义: 用它去库里取已导入的账号凭据。
+	ChannelID int    `json:"channel_id,omitempty"` // 渠道 ID。
+	AppID     string `json:"app_id,omitempty"`     // 讯飞 App ID。
+	APISecret string `json:"api_secret,omitempty"` // 讯飞 API Secret。
+	Domain    string `json:"domain,omitempty"`     // 讯飞模型 Domain。
+}
+
+// 探测到的单个上游模型及其支持的协议集合。
+// 能力来源与媒体形态一并带回界面: 前者说明协议位是查官方登记得来的还是按名称关键词兜底猜的,
+// 后者用于在授权矩阵上提示"这个模型其实是生图/生视频模型", 免得管理员按文本渠道去配。
+type ChannelFetchModel struct {
+	Name       string    `json:"name"`                 // 上游模型名称。
+	Protocols  Protocol  `json:"protocols"`            // 由探测结果得出的协议位掩码。
+	Capability MediaKind `json:"capability,omitempty"` // 官方登记推出的媒体形态; text 表示文本或未知。
+	Source     string    `json:"source,omitempty"`     // 判定依据: models.dev | keyword | 空(无依据)。
+}

@@ -1,0 +1,269 @@
+package relay
+
+import (
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/op"
+)
+
+// egressState 是单个出口的运行时状态。
+//
+// 指标部分直接复用成员指标的 EMA 结构与样本窗口: 出口好坏与成员好坏的判断方式完全一致,
+// 没有理由再造一套; 额外只多一份失败冷却。
+//
+// 只存进程内, 不落库: 出口成绩是"几秒钟就能重新学到"的东西 —— 每个出口各被选中一次
+// 就有样本了, 而一个不通的出口最多让一次请求失败(随后进冷却)。为它做持久化快照
+// 要动 route_metrics 的格式, 收益不成比例。
+type egressState struct {
+	memberMetric
+	cooldownUntil int64 // 冷却截止(Unix 毫秒); 0 表示未冷却。
+}
+
+var (
+	egressMu     sync.Mutex
+	egressStates = make(map[int]*egressState)
+)
+
+// pickEgress 在渠道的出口池里为本轮挑一个出口。
+//
+// 返回 hasPool=false 表示该渠道没有配置出口池, 调用方沿用渠道自身的代理配置(向后兼容)。
+// 返回 error 只在"配了出口但一个都没启用"时出现: 此时既不该悄悄直连(可能违背渠道的访问要求),
+// 也不该随便挑一个停用的, 让本轮明确失败比默默改变出口更安全。
+// PickEgress 是 pickEgress 的导出形态, 供探测路径复用同一套出口选择。
+//
+// 没有它时, "拉取模型"会绕过出口池直连: 渠道配了 JP 出口代理, 转发走代理,
+// 探测却从本机 IP 出去 —— 于是出现"转发能用、拉模型报地区不支持"这种自相矛盾的状态,
+// 而两者用的是同一份账号与同一份配置, 排查时极难想到差异在出口。
+func PickEgress(channel model.Channel, clientCountry string) (model.ChannelEgress, bool, error) {
+	return pickEgress(channel, clientCountry)
+}
+
+func pickEgress(channel model.Channel, clientCountry string) (model.ChannelEgress, bool, error) {
+	if len(channel.Egresses) == 0 {
+		return model.ChannelEgress{}, false, nil
+	}
+
+	egressMu.Lock()
+	defer egressMu.Unlock()
+
+	now := time.Now().UnixMilli()
+	neutral := neutralEgressWaitLocked()
+
+	enabled := 0
+	var (
+		best      model.ChannelEgress
+		bestScore float64
+		hasBest   bool
+		probe     model.ChannelEgress
+		probeAt   int64
+	)
+	for _, egress := range channel.Egresses {
+		if !egress.Enabled {
+			continue
+		}
+		enabled++
+		state := egressStates[egress.ID]
+		if state != nil && state.cooldownUntil > now {
+			// 全部冷却时探最早恢复的那个: 拒绝请求必然失败, 试一次仍有成功机会。
+			if probeAt == 0 || state.cooldownUntil < probeAt {
+				probe, probeAt = egress, state.cooldownUntil
+			}
+			continue
+		}
+		score := egressScoreLocked(egress, state, neutral, clientCountry)
+		// 同分时权重大的先上: 权重就是"我给这条线路的偏好", 冷出口的采样顺序也由它决定。
+		if !hasBest || score < bestScore || (score == bestScore && egress.Weight > best.Weight) {
+			best, bestScore, hasBest = egress, score, true
+		}
+	}
+	if enabled == 0 {
+		return model.ChannelEgress{}, true, fmt.Errorf("channel %s has no enabled egress", channel.Name)
+	}
+	if !hasBest {
+		return probe, true, nil
+	}
+	return best, true, nil
+}
+
+// egressScoreLocked 返回出口的排序分数(越小越好), 调用方须持有 egressMu。
+func egressScoreLocked(egress model.ChannelEgress, state *egressState, neutral float64, clientCountry string) float64 {
+	// 冷出口按"已知出口的平均水平"参与: 既不会因为没数据被无条件优先(那会让新出口抢走全部流量),
+	// 也不会因为没数据永远轮不到 —— 它只在已知出口都比平均更慢时才胜出。
+	score := neutral
+	if state != nil && state.samples > 0 {
+		score = state.emaWaitMs
+	}
+	// 区域亲和: 调用方地区与出口地区一致时减免一个固定值。默认 0 即完全关闭,
+	// 因为地区码来自反代头, 未配可信代理时它恒为空, 开着也不会有任何效果。
+	if bonus := op.EgressRegionBonusMs(); bonus > 0 && clientCountry != "" &&
+		egress.Region != "" && strings.EqualFold(egress.Region, clientCountry) {
+		score -= float64(bonus)
+	}
+	return score
+}
+
+// neutralEgressWaitLocked 返回已观测出口的平均耗时; 没有任何观测时返回 0(全部并列, 由权重定序)。
+func neutralEgressWaitLocked() float64 {
+	sum, count := 0.0, 0
+	for _, state := range egressStates {
+		if state.samples > 0 {
+			sum += state.emaWaitMs
+			count++
+		}
+	}
+	if count == 0 {
+		return 0
+	}
+	return sum / float64(count)
+}
+
+// recordEgressSample 把一次出口的实测结果并入 EMA; 成功时解除冷却。
+// egressID 为 0(未走出口池)时直接返回, 不产生任何状态。
+func recordEgressSample(egressID, window int, waitMs int64, success bool) {
+	if egressID == 0 {
+		return
+	}
+	egressMu.Lock()
+	state := egressStates[egressID]
+	if state == nil {
+		state = &egressState{}
+		egressStates[egressID] = state
+	}
+	applySample(&state.memberMetric, window, waitMs, success)
+	if success {
+		state.cooldownUntil = 0
+	}
+	egressMu.Unlock()
+
+	// 标记必须在放锁之后: 落库协程的取锁顺序是 persistDirtyMu -> egressMu,
+	// 在 egressMu 内再取 persistDirtyMu 会形成环。
+	markEgressDirty()
+}
+
+// coolEgress 让某个出口在一段时间内不被选中; seconds<=0 时忽略。
+// 与成员冷却同源: 只防"本轮立刻又选中同一个", 不做长惩罚 —— 长惩罚由出口自己的成功率体现。
+func coolEgress(egressID, seconds int) {
+	if egressID == 0 || seconds <= 0 {
+		return
+	}
+	egressMu.Lock()
+	state := egressStates[egressID]
+	if state == nil {
+		state = &egressState{}
+		egressStates[egressID] = state
+	}
+	state.cooldownUntil = time.Now().UnixMilli() + int64(seconds)*1000
+	egressMu.Unlock()
+
+	markEgressDirty()
+}
+
+// EgressRuntimeView 是出口健康看板使用的运行时快照。它不包含代理 URL 或凭据。
+type EgressRuntimeView struct {
+	EgressID            int     `json:"egress_id"`
+	Samples             int     `json:"samples"`
+	HasData             bool    `json:"has_data"`
+	SuccessRate         float64 `json:"success_rate"`
+	AvgWaitMs           float64 `json:"avg_wait_ms"`
+	CooldownUntil       int64   `json:"cooldown_until"`
+	CooldownRemainingMs int64   `json:"cooldown_remaining_ms"`
+	Cooling             bool    `json:"cooling"`
+	UpdatedAt           int64   `json:"updated_at"`
+}
+
+// EgressRuntimeViews 返回指定出口的只读健康快照。调用方须先按资源作用域裁剪出口列表。
+func EgressRuntimeViews(egresses []model.ChannelEgress) []EgressRuntimeView {
+	egressMu.Lock()
+	defer egressMu.Unlock()
+
+	now := time.Now().UnixMilli()
+	views := make([]EgressRuntimeView, 0, len(egresses))
+	for _, egress := range egresses {
+		view := EgressRuntimeView{EgressID: egress.ID}
+		if state := egressStates[egress.ID]; state != nil {
+			view.Samples = state.samples
+			view.HasData = state.samples > 0
+			view.SuccessRate = state.emaSuccess
+			view.AvgWaitMs = state.emaWaitMs
+			view.CooldownUntil = state.cooldownUntil
+			if state.cooldownUntil > now {
+				view.Cooling = true
+				view.CooldownRemainingMs = state.cooldownUntil - now
+			}
+			view.UpdatedAt = state.updatedAt
+		}
+		views = append(views, view)
+	}
+	return views
+}
+
+// egressCooling 判断出口当前是否处于冷却中, 供排查与测试使用。
+func egressCooling(egressID int) bool {
+	egressMu.Lock()
+	defer egressMu.Unlock()
+
+	state := egressStates[egressID]
+	return state != nil && state.cooldownUntil > time.Now().UnixMilli()
+}
+
+// egressMetricRecords 导出全部出口状态的持久化快照, 供后台批量落库。
+// 样本与冷却都为空的条目(fail closed 留下的空壳)不落库。
+func egressMetricRecords() []model.EgressMetricRecord {
+	egressMu.Lock()
+	defer egressMu.Unlock()
+
+	records := make([]model.EgressMetricRecord, 0, len(egressStates))
+	for id, state := range egressStates {
+		if state.samples <= 0 && state.cooldownUntil == 0 {
+			continue
+		}
+		records = append(records, model.EgressMetricRecord{
+			EgressID:      id,
+			EmaWaitMs:     state.emaWaitMs,
+			EmaSuccess:    state.emaSuccess,
+			Samples:       state.samples,
+			CooldownUntil: state.cooldownUntil,
+		})
+	}
+	return records
+}
+
+// restoreEgressMetrics 启动时把出口成绩与冷却恢复进进程内状态。
+//
+// 没有这一步, 每次重启都会把全部出口打回"零样本": 它们按并列处理, 由权重定序 ——
+// 权重最高的那条哪怕早已不通, 也会在重启后的第一批请求里被优先选中, 用户吃 502。
+// 恢复之后, 选路从上一轮进程的认知继续, 而不是从一张白纸开始。
+//
+// 冷却一并恢复: 刚刚被判定不可用的线路不该因为一次重启就立刻重试。
+// 已过期的冷却不写进状态, 免得给早已恢复的出口留下无意义的行。
+func restoreEgressMetrics(records []model.EgressMetricRecord) {
+	egressMu.Lock()
+	defer egressMu.Unlock()
+
+	now := time.Now().UnixMilli()
+	for _, record := range records {
+		if record.Samples <= 0 && record.CooldownUntil <= now {
+			continue
+		}
+		egressStates[record.EgressID] = &egressState{
+			memberMetric: memberMetric{
+				emaWaitMs:  record.EmaWaitMs,
+				emaSuccess: record.EmaSuccess,
+				samples:    record.Samples,
+				updatedAt:  record.UpdatedAt.UnixMilli(),
+			},
+			cooldownUntil: record.CooldownUntil,
+		}
+	}
+}
+
+// resetEgressStates 丢弃全部出口状态, 供测试隔离使用。
+func resetEgressStates() {
+	egressMu.Lock()
+	defer egressMu.Unlock()
+	egressStates = make(map[int]*egressState)
+}

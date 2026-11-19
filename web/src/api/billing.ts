@@ -1,0 +1,272 @@
+import { useQuery } from '@tanstack/react-query';
+import { apiRequest } from './client';
+import type { UserView } from './user';
+import { balanceLedgerQueryOptions, type LedgerRow } from './wallet';
+
+/**
+ * 计费明细（与后端 model.BillingRecord 对齐）：
+ * user_price 为上浮后的用户价，supply_price 为供货价；
+ * user_cost 按用户价计支出，owner_revenue 按供货价计渠道商收入，platform_revenue 为上浮差额。
+ */
+export type BillingRecord = {
+    id: number;
+    request_id: string;
+    user_id: number;
+    api_key_id: number;
+    group_id: number;
+    group_model: string;
+    channel_id: number;
+    owner_id: number;
+    share_code: string;
+    model_name: string;
+    supply_price: {
+        input: number;
+        output: number;
+        cache_read: number;
+        cache_write: number;
+    };
+    user_price: {
+        input: number;
+        output: number;
+        cache_read: number;
+        cache_write: number;
+    };
+    input_token: number;
+    output_token: number;
+    cache_read_token: number;
+    cache_write_token: number;
+    media_units?: {
+        images?: number;
+        seconds?: number;
+        resolution?: string;
+    };
+    media_user?: {
+        per_image?: number;
+        per_video?: number;
+        per_second?: number;
+    };
+    media_supply?: {
+        per_image?: number;
+        per_video?: number;
+        per_second?: number;
+    };
+    user_cost: number;
+    owner_revenue: number;
+    platform_revenue: number;
+    /** 供货价币种 + 结算汇率快照(1 原币折 USD); 旧行 currency 为空, 按 USD 解释。 */
+    currency?: string;
+    fx_rate?: number;
+    fx_day?: string;
+    status: 'settled' | 'refunded';
+    created_at: string;
+};
+
+/**
+ * 计费日聚合行（消费与收入视图共用同一种行形状）。
+ */
+export type BillingDaily = {
+    date: string;
+    input_token: number;
+    output_token: number;
+    cache_read_token: number;
+    cache_write_token: number;
+    request_count: number;
+    user_cost: number;
+    owner_revenue: number;
+    platform_revenue: number;
+};
+
+// BillingFilter 计费明细的筛选条件; 后端对非管理员强制只看自己。
+export type BillingFilter = {
+    model?: string;
+    channel?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+    user_id?: number;
+    // fx_day 折算质量下钻: 精确采集日(YYYYMMDD) / unavailable(当时无牌价) / none(未走折算, 后端转空值过滤)。
+    fx_day?: string;
+};
+
+// billingQuery 把筛选条件与分页参数序列化为查询串, 列表与导出共用。
+function billingQuery(filter: BillingFilter, limit: number, offset: number): string {
+    const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (filter.model) query.set('model', filter.model);
+    if (filter.channel) query.set('channel', filter.channel);
+    if (filter.status) query.set('status', filter.status);
+    if (filter.from) query.set('from', filter.from);
+    if (filter.to) query.set('to', filter.to);
+    if (filter.user_id) query.set('user_id', String(filter.user_id));
+    if (filter.fx_day) query.set('fx_day', filter.fx_day);
+    return query.toString();
+}
+
+/**
+ * useBillingRecords 计费明细分页查询：普通用户/渠道商恒返回自己的，管理员可按 user_id 过滤。
+ */
+export function useBillingRecords(filter: BillingFilter = {}, limit = 20, offset = 0) {
+    return useQuery({
+        queryKey: ['billing', 'records', filter, limit, offset],
+        queryFn: () => apiRequest<{ items: BillingRecord[]; total: number }>('/api/v1/stats/billing/records?' + billingQuery(filter, limit, offset)),
+        placeholderData: (previous) => previous,
+    });
+}
+
+// billingExportUrl 构造计费明细 CSV 下载地址(同一套筛选条件, 单次上限 5000 条)。
+export function billingExportUrl(filter: BillingFilter = {}): string {
+    return './api/v1/stats/billing/records/export?' + billingQuery(filter, 5000, 0);
+}
+
+/**
+ * useBalanceLedger 计费页的余额流水分页查询: 普通用户恒返回自己的, 管理员可按 userID 指定。
+ * 类型与查询配置都来自 api/wallet(balanceLedgerQueryOptions), 两页共享同一份缓存。
+ */
+export function useBalanceLedger(kind = '', limit = 20, offset = 0, userID = 0) {
+    return useQuery(balanceLedgerQueryOptions({ kind, limit, offset, userId: userID }));
+}
+
+/**
+ * useBillingDaily 当前用户近 30 天消费聚合。
+ */
+export function useBillingDaily() {
+    return useQuery({
+        queryKey: ['billing', 'daily'],
+        queryFn: () => apiRequest<BillingDaily[]>('/api/v1/stats/billing'),
+    });
+}
+
+/**
+ * useRevenueDaily 收入聚合（供货价口径）：渠道商恒返回自己，管理员可按 owner_id 过滤。
+ */
+export function useRevenueDaily(ownerID = 0) {
+    return useQuery({
+        queryKey: ['billing', 'revenue', ownerID],
+        queryFn: () => apiRequest<BillingDaily[]>(`/api/v1/stats/billing/revenue${ownerID ? `?owner_id=${ownerID}` : ''}`),
+    });
+}
+
+/**
+ * useAccountProfile 账户概览：余额、冻结额、累计消费/收入（登录态轮询自 /user/status）。
+ */
+export function useAccountProfile() {
+    return useQuery({
+        queryKey: ['user', 'status'],
+        queryFn: () => apiRequest<UserView>('/api/v1/user/status'),
+    });
+}
+
+export type RelayRequestView = {
+    id: string;
+    user_id: number;
+    api_key_name: string;
+    model: string;
+    status: string;
+    client_ip?: string;
+    duration_ns: number;
+    first_token_duration_ns: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    cost: number;
+    target_channel_code?: string;
+    target_model?: string;
+    error?: string;
+    started_at: string;
+};
+
+export type TradeDetail = {
+    record: BillingRecord;
+    request?: RelayRequestView;
+    ledgers: LedgerRow[];
+    disputes: Dispute[];
+};
+
+export type Dispute = {
+    id: number;
+    record_id: number;
+    request_id: string;
+    user_id: number;
+    owner_id: number;
+    channel_id: number;
+    model_name: string;
+    user_cost: number;
+    reason: string;
+    status: "pending" | "approved" | "rejected";
+    review_note: string;
+    reviewed_by: number;
+    reviewed_at?: string;
+    created_at: string;
+};
+
+export type SettlementStatement = {
+    id: number;
+    statement_no: string;
+    owner_id: number;
+    period: string;
+    request_count: number;
+    input_token: number;
+    output_token: number;
+    gross_revenue: number;
+    refund_deduction: number;
+    net_revenue: number;
+    status: string;
+    created_at: string;
+};
+
+export type ProfitMarginSummary = {
+    period: string;
+    user_cost: number;
+    owner_revenue: number;
+    platform_revenue: number;
+    margin_rate: number;
+    request_count: number;
+    refund_amount: number;
+    recharge_amount: number;
+};
+
+export function useTradeDetail(recordID: number | null) {
+    return useQuery({
+        queryKey: ["trade", "detail", recordID],
+        queryFn: () => recordID ? apiRequest<TradeDetail>(`/api/v1/trade/detail?record_id=${recordID}`) : Promise.resolve(null),
+        enabled: Boolean(recordID),
+    });
+}
+
+export function createDispute(data: { record_id: number; reason: string }) {
+    return apiRequest<Dispute>("/api/v1/dispute/create", { method: "POST", body: data });
+}
+
+export function useDisputes(status = "", limit = 20, offset = 0) {
+    const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (status) query.set("status", status);
+    return useQuery({
+        queryKey: ["dispute", "list", status, limit, offset],
+        queryFn: () => apiRequest<{ items: Dispute[]; total: number }>("/api/v1/dispute/list?" + query.toString()),
+    });
+}
+
+export function reviewDispute(data: { dispute_id: number; approve: boolean; review_note: string }) {
+    return apiRequest<string>("/api/v1/dispute/review", { method: "POST", body: data });
+}
+
+export function useSettlements(period = "", limit = 20, offset = 0) {
+    const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (period) query.set("period", period);
+    return useQuery({
+        queryKey: ["settlement", "list", period, limit, offset],
+        queryFn: () => apiRequest<{ items: SettlementStatement[]; total: number }>("/api/v1/settlement/list?" + query.toString()),
+    });
+}
+
+export function generateSettlement(day?: string) {
+    return apiRequest<string>("/api/v1/settlement/generate", { method: "POST", body: { day } });
+}
+
+export function useProfitMargin(from = "", to = "") {
+    const query = new URLSearchParams();
+    if (from) query.set("from", from);
+    if (to) query.set("to", to);
+    return useQuery({
+        queryKey: ["profit", "margin", from, to],
+        queryFn: () => apiRequest<{ overall: ProfitMarginSummary; trends: ProfitMarginSummary[] }>("/api/v1/settlement/margin?" + query.toString()),
+    });
+}

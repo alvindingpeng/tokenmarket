@@ -1,0 +1,271 @@
+package op
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/alvindingpeng/switchyard/internal/alert"
+	"github.com/alvindingpeng/switchyard/internal/conf"
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+)
+
+// BackupDir 返回自动备份目录。
+func BackupDir() string { return filepath.Join("data", "backups") }
+
+// AutoBackupResult 一次自动备份的结果。
+type AutoBackupResult struct {
+	File      string `json:"file"`
+	Size      int64  `json:"size"`
+	Verified  bool   `json:"verified"`
+	Pruned    int    `json:"pruned"`
+	Encrypted bool   `json:"encrypted"`
+	Checksum  string `json:"checksum"`
+	Remote    string `json:"remote"` // ok | skipped | failed
+}
+
+// AutoBackupRun 一致性备份 SQLite 数据库并校验, 保留固定份数。
+// 对 SQLite 使用 VACUUM INTO 生成独立快照文件, 避免 WAL 带来的不一致。
+// 对 MySQL/PostgreSQL 仅记录状态: 由 DBA 做离线备份, 不在进程内导出全量数据。
+func AutoBackupRun() (AutoBackupResult, error) {
+	if enabled, _ := SettingGetBool(model.SettingKeyAutoBackupEnabled); !enabled {
+		return AutoBackupResult{}, nil
+	}
+	if err := os.MkdirAll(BackupDir(), 0o750); err != nil {
+		return AutoBackupResult{}, fmt.Errorf("create backup dir: %w", err)
+	}
+	name := "backup-" + time.Now().Format("20060102-150405") + ".db"
+	path := filepath.Join(BackupDir(), name)
+
+	// VACUUM INTO 需要在主库连接上执行, 生成的文件是完整一致快照。
+	// 注意: 这是物理快照, 静态凭据列存的是信封密文(绑定本机主密钥): 换一台主密钥不同的实例恢复时,
+	// 必须连同同一份 KEK 一起搬; 跨 KEK 的迁移/恢复请走 JSON 导出导入(导出解密、导入用目标 KEK 重加密)。
+	sqlDB, err := db.GetDB().DB()
+	if err != nil {
+		return AutoBackupResult{}, fmt.Errorf("get sql db: %w", err)
+	}
+	// VACUUM INTO 不接受绑定参数, 只能拼接; path 由服务端时间戳生成本无用户输入,
+	// 但 CWD 目录名可能含单引号, 故做标准 SQL 字符串转义防语句破坏/注入。
+	escaped := strings.ReplaceAll(path, "'", "''")
+	if _, err := sqlDB.Exec(fmt.Sprintf("VACUUM INTO '%s'", escaped)); err != nil {
+		return AutoBackupResult{}, fmt.Errorf("vacuum into backup: %w", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return AutoBackupResult{}, fmt.Errorf("stat backup: %w", err)
+	}
+	result := AutoBackupResult{File: path, Size: info.Size(), Remote: "skipped"}
+
+	// 校验备份可打开并含关键表。
+	result.Verified = verifyBackup(path)
+
+	// 可选加密: 口令来自 config/env(见 backupcrypto.go), 缺口令视为配置错误, 备份整体判失败。
+	artifact := path
+	if encrypt, _ := SettingGetBool(model.SettingKeyBackupEncrypt); encrypt {
+		passphrase := strings.TrimSpace(conf.AppConfig.Backup.Passphrase)
+		if passphrase == "" {
+			return result, fmt.Errorf("backup encryption enabled but backup.passphrase is not configured")
+		}
+		encPath := path + ".enc"
+		if err := EncryptBackupFile(path, encPath, passphrase); err != nil {
+			return result, fmt.Errorf("encrypt backup: %w", err)
+		}
+		if err := os.Remove(path); err != nil {
+			return result, fmt.Errorf("remove plaintext backup: %w", err)
+		}
+		artifact = encPath
+		result.Encrypted = true
+		result.File = artifact
+		result.Size = 0
+		if encInfo, err := os.Stat(artifact); err == nil {
+			result.Size = encInfo.Size()
+		}
+	}
+
+	// 校验和必写: 恢复前先验后用, 异地取回的备份也以此验真。
+	if err := WriteBackupChecksum(artifact); err != nil {
+		return result, err
+	}
+	result.Checksum = filepath.Base(BackupChecksumFile(artifact))
+
+	// 异地推送: 本地备份已成功, 推送失败不判整体失败, 记告警进闭环。
+	if remote, _ := SettingGetBool(model.SettingKeyBackupRemote); remote {
+		if !BackupRemoteConfigured() {
+			result.Remote = "failed"
+			RaiseAlertFacts(context.Background(), AlertFacts{
+				Kind:   "backup_failed",
+				Reason: "backup remote push skipped: backup.remote_url is not configured",
+				Fields: backupFields(result, "异地开关已打开但没有配置推送地址, 本次备份只留在本机"),
+			})
+		} else if err := PushBackupRemote(artifact, BackupChecksumFile(artifact)); err != nil {
+			result.Remote = "failed"
+			RaiseAlertFacts(context.Background(), AlertFacts{
+				Kind:   "backup_failed",
+				Reason: "backup remote push failed",
+				Fields: backupFields(result, "异地推送失败: "+err.Error()),
+			})
+		} else {
+			result.Remote = "ok"
+		}
+	}
+
+	// 保留策略: 保留最近 N 份, 多余删除。
+	keep, err := SettingGetInt(model.SettingKeyAutoBackupKeep)
+	if err != nil || keep < 1 {
+		keep = 7
+	}
+	result.Pruned = pruneBackups(keep)
+	return result, nil
+}
+
+// backupFields 组装备份类告警的明细行: 管理员要知道有没有新恢复点、文件在哪、多大、能不能打开。
+// extra 放本次特有的结论(异地失败原因等), 排在最后。
+func backupFields(result AutoBackupResult, extra string) []alert.Field {
+	fields := []alert.Field{
+		{Label: "备份文件", Value: result.File},
+		{Label: "大小", Value: fmt.Sprintf("%.1f MB", float64(result.Size)/(1024*1024))},
+		{Label: "完整性校验", Value: map[bool]string{true: "通过", false: "未通过"}[result.Verified]},
+		{Label: "加密", Value: map[bool]string{true: "是", false: "否"}[result.Encrypted]},
+		{Label: "校验和文件", Value: result.Checksum},
+		{Label: "异地状态", Value: remoteStatusLabel(result.Remote)},
+		{Label: "清理旧备份", Value: fmt.Sprintf("%d 份", result.Pruned)},
+	}
+	if extra != "" {
+		fields = append(fields, alert.Field{Label: "本次异常", Value: extra})
+	}
+	return append(fields, alert.Field{Label: "影响", Value: "此刻起数据库没有可用的新恢复点"})
+}
+
+// remoteStatusLabel 异地推送状态的中文说明。
+func remoteStatusLabel(remote string) string {
+	switch remote {
+	case "ok":
+		return "已推送异地"
+	case "skipped":
+		return "未开启异地"
+	case "failed":
+		return "异地推送失败"
+	}
+	return remote
+}
+
+// verifyBackup 打开备份文件并检查关键表存在, 返回是否通过。
+func verifyBackup(path string) bool {
+	verify, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
+	if err != nil {
+		return false
+	}
+	sqlDB, err := verify.DB()
+	if err != nil {
+		return false
+	}
+	defer sqlDB.Close()
+	var count int64
+	if err := sqlDB.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users'").Scan(&count); err != nil || count < 1 {
+		return false
+	}
+	if err := sqlDB.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='relay_requests'").Scan(&count); err != nil || count < 1 {
+		return false
+	}
+	return true
+}
+
+// pruneBackups 删除超出保留份数的旧备份, 返回删除数。
+func pruneBackups(keep int) int {
+	entries, err := os.ReadDir(BackupDir())
+	if err != nil {
+		return 0
+	}
+	type fileEntry struct {
+		name    string
+		modTime time.Time
+	}
+	files := make([]fileEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !isBackupArtifact(entry.Name()) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, fileEntry{name: entry.Name(), modTime: info.ModTime()})
+	}
+	if len(files) <= keep {
+		return 0
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].modTime.After(files[j].modTime) })
+	pruned := 0
+	for _, file := range files[keep:] {
+		full := filepath.Join(BackupDir(), file.name)
+		if err := os.Remove(full); err == nil {
+			pruned++
+			_ = os.Remove(BackupChecksumFile(full)) // 校验和与备份同生共死。
+		}
+	}
+	return pruned
+}
+
+// backupArtifactPrefix 是本进程生成的备份文件名前缀, 后面紧跟 `YYYYMMDD-HHMMSS`。
+// 轮转和列表都只认这个名字: 目录里可能还有运维手工放进来的其他 .db(导入中间文件、
+// 恢复前的手工快照), 按扩展名判会把它们当成本服务的备份一起轮转删掉。
+const backupArtifactPrefix = "backup-"
+
+// isBackupArtifact 判断是否是本进程生成的备份产物(明文 .db 或密文 .db.enc)。
+// .sha256 旁路文件不算工件: 它必须跟着主体文件走, 不能单独参与保留计数。
+func isBackupArtifact(name string) bool {
+	base := name
+	if strings.HasSuffix(base, ".enc") {
+		base = strings.TrimSuffix(base, ".enc")
+	}
+	if filepath.Ext(base) != ".db" {
+		return false
+	}
+	stamp := strings.TrimSuffix(strings.TrimPrefix(base, backupArtifactPrefix), ".db")
+	if !strings.HasPrefix(base, backupArtifactPrefix) {
+		return false
+	}
+	_, err := time.Parse("20060102-150405", stamp)
+	return err == nil
+}
+
+// BackupVerifySQLite 导出版校验: 打开备份并确认关键表存在。
+func BackupVerifySQLite(path string) bool { return verifyBackup(path) }
+
+// BackupList 返回备份目录中已有备份, 新的在前。
+func BackupList() ([]map[string]any, error) {
+	entries, err := os.ReadDir(BackupDir())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []map[string]any{}, nil
+		}
+		return nil, err
+	}
+	files := make([]map[string]any, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !isBackupArtifact(entry.Name()) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		full := filepath.Join(BackupDir(), entry.Name())
+		_, checksumErr := os.Stat(BackupChecksumFile(full))
+		files = append(files, map[string]any{
+			"name":      entry.Name(),
+			"size":      info.Size(),
+			"mod_time":  info.ModTime(),
+			"encrypted": strings.HasSuffix(entry.Name(), ".enc"),
+			"checksum":  checksumErr == nil,
+		})
+	}
+	return files, nil
+}

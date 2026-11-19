@@ -1,0 +1,176 @@
+{
+    "en": {
+        "loadFailed": "Failed to load",
+        "account": {
+            "title": "Account Overview",
+            "balance": "Available Balance",
+            "frozen": "Frozen",
+            "frozenHint": "Pre-authorized",
+            "totalSpent": "Total Spent",
+            "totalRevenue": "Total Revenue",
+            "totalRecharged": "Total Recharged"
+        },
+        "details": {
+            "title": "Billing Details",
+            "hint": "Recent 200 records",
+            "empty": "No billing records yet",
+            "column": {
+                "time": "Time",
+                "model": "Model",
+                "channel": "Channel",
+                "tokens": "Tokens",
+                "spend": "Spend",
+                "revenue": "Revenue",
+                "status": "Status"
+            }
+        },
+        "tokens": {
+            "input": "in",
+            "output": "out",
+            "cacheRead": "cr",
+            "cacheWrite": "cw"
+        },
+        "status": {
+            "settled": "Settled",
+            "refunded": "Refunded"
+        },
+        "trend": {
+            "title": "Spending Trend",
+            "range": "Last 30 days",
+            "empty": "No spending data in the last 30 days",
+            "summary": "Total",
+            "column": {
+                "date": "Date",
+                "requests": "Requests",
+                "tokens": "Tokens",
+                "spend": "Spend"
+            }
+        },
+        "revenue": {
+            "title": "Revenue Trend",
+            "hint": "At supply price",
+            "empty": "No revenue data in the last 30 days",
+            "summary": "Total",
+            "column": {
+                "ownerRevenue": "Owner Revenue",
+                "commission": "Commission"
+            }
+        }
+    },
+    "zh_hans": {
+        "loadFailed": "加载失败",
+        "account": {
+            "title": "账户概览",
+            "balance": "可用余额",
+            "frozen": "冻结额",
+            "frozenHint": "预扣中",
+            "totalSpent": "累计消费",
+            "totalRevenue": "累计收入",
+            "totalRecharged": "累计充值"
+        },
+        "details": {
+            "title": "消费明细",
+            "hint": "最近 200 条",
+            "empty": "暂无消费记录",
+            "column": {
+                "time": "时间",
+                "model": "模型",
+                "channel": "渠道",
+                "tokens": "Tokens",
+                "spend": "支出",
+                "revenue": "收入",
+                "status": "状态"
+            }
+        },
+        "tokens": {
+            "input": "输入",
+            "output": "输出",
+            "cacheRead": "缓存读",
+            "cacheWrite": "缓存写"
+        },
+        "status": {
+            "settled": "已结算",
+            "refunded": "已退款"
+        },
+        "trend": {
+            "title": "消费趋势",
+            "range": "近 30 天",
+            "empty": "近 30 天暂无消费数据",
+            "summary": "合计",
+            "column": {
+                "date": "日期",
+                "requests": "请求数",
+                "tokens": "Tokens",
+                "spend": "消费"
+            }
+        },
+        "revenue": {
+            "title": "收入趋势",
+            "hint": "按供货价",
+            "empty": "近 30 天暂无收入数据",
+            "summary": "合计",
+            "column": {
+                "ownerRevenue": "供货收入",
+                "commission": "平台佣金"
+            }
+        }
+    },
+    "zh_hant": {
+        "loadFailed": "載入失敗",
+        "account": {
+            "title": "帳戶概覽",
+            "balance": "可用餘額",
+            "frozen": "凍結額",
+            "frozenHint": "預扣中",
+            "totalSpent": "累計消費",
+            "totalRevenue": "累計收入",
+            "totalRecharged": "累計儲值"
+        },
+        "details": {
+            "title": "消費明細",
+            "hint": "最近 200 筆",
+            "empty": "暫無消費記錄",
+            "column": {
+                "time": "時間",
+                "model": "模型",
+                "channel": "渠道",
+                "tokens": "Tokens",
+                "spend": "支出",
+                "revenue": "收入",
+                "status": "狀態"
+            }
+        },
+        "tokens": {
+            "input": "輸入",
+            "output": "輸出",
+            "cacheRead": "快取讀",
+            "cacheWrite": "快取寫"
+        },
+        "status": {
+            "settled": "已結算",
+            "refunded": "已退款"
+        },
+        "trend": {
+            "title": "消費趨勢",
+            "range": "近 30 天",
+            "empty": "近 30 天暫無消費數據",
+            "summary": "合計",
+            "column": {
+                "date": "日期",
+                "requests": "請求數",
+                "tokens": "Tokens",
+                "spend": "消費"
+            }
+        },
+        "revenue": {
+            "title": "收入趨勢",
+            "hint": "按供貨價",
+            "empty": "近 30 天暫無收入數據",
+            "summary": "合計",
+            "column": {
+                "ownerRevenue": "供貨收入",
+                "commission": "平台佣金"
+            }
+        }
+    }
+}

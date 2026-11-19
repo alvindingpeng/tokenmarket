@@ -1,0 +1,355 @@
+import { useEffect } from 'react';
+import { queryOptions, useMutation } from '@tanstack/react-query';
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import { apiRequest, apiUnauthorizedEvent, clearStepUpToken, currentAuthGeneration, resetAuthSession, setAPIKey } from './client';
+import type { UserTier } from '@/lib/user-tier';
+
+/**
+ * 用户登录请求
+ */
+export interface UserLoginRequest {
+    username: string;
+    password: string;
+    totp_code?: string;
+    expire: number; // 登录状态过期时间，正数为秒，-1 表示 30 天。
+}
+
+/**
+ * 用户角色：管理员、渠道商、普通用户。
+ */
+export type Role = 'admin' | 'reseller' | 'user';
+
+/**
+ * 用户视图（与后端 model.UserView 对齐）。
+ */
+export type UserView = {
+    id: number;
+    username: string;
+    email: string;
+    totp_enabled?: boolean;
+    role: Role;
+    status: 'active' | 'pending' | 'disabled';
+    // tier 服务等级: 存量账号可能回空串(未设置), 后端按 free 兜底; 界面据此显示"未设置"。
+    tier?: UserTier | '';
+    balance: number;
+    frozen: number;
+    total_spent: number;
+    total_revenue: number;
+    total_recharged: number;
+    created_at: string;
+};
+
+/**
+ * 注册开关配置（登录页据其决定展示哪些注册入口）。
+ */
+export type RegisterConfig = {
+    user_enabled: boolean;
+    reseller_enabled: boolean;
+    approval_required: boolean;
+};
+
+/**
+ * 注册请求；渠道商注册可附申请理由，用户注册无理由字段。
+ * 密码输入两遍（password/password_confirm），邮箱验证码（email_code）校验通过才能注册。
+ */
+export interface UserRegisterRequest {
+    username: string;
+    password: string;
+    password_confirm: string;
+    email: string;
+    email_code: string;
+    reason?: string;
+}
+
+/**
+ * 邮箱验证码请求；purpose: register(注册) | reset(找回密码)。
+ */
+export interface EmailCodeRequest {
+    email: string;
+    purpose: 'register' | 'reset';
+}
+
+/**
+ * 找回密码请求：邮箱验证码通过后重设密码，同样输入两遍。
+ */
+export interface ForgotPasswordRequest {
+    email: string;
+    email_code: string;
+    password: string;
+    password_confirm: string;
+}
+
+/**
+ * 认证状态 Store
+ */
+interface AuthState {
+    isAuthenticated: boolean;
+    isLoading: boolean;
+    isAPIKeyAuth: boolean;
+    token: string | null;
+    role: Role | null; // 当前登录用户角色，用于按角色裁剪导航与页面。
+    userId: number; // 当前用户 id，钱包页查本人流水与管理层引用用。
+
+    // Actions
+    setAuth: (user: UserView) => void;
+    setAPIKeyAuth: (apiKey: string) => void;
+    checkAuth: () => Promise<void>;
+    logout: () => void;
+}
+
+/**
+ * 认证状态管理 Store（使用 zustand + persist）
+ */
+let authCheck = 0;
+
+export const useAuthStore = create<AuthState>()(
+    persist(
+        (set, get) => ({
+            isAuthenticated: false,
+            isLoading: true,
+            isAPIKeyAuth: false,
+            token: null,
+            role: null,
+            userId: 0,
+
+            setAuth: (user: UserView) => {
+                setAPIKey(null);
+                resetAuthSession();
+                set({
+                    isAuthenticated: true,
+                    isAPIKeyAuth: false,
+                    token: null,
+                    role: user.role,
+                    userId: user.id,
+                    isLoading: false
+                });
+            },
+
+            setAPIKeyAuth: (apiKey: string) => {
+                setAPIKey(apiKey);
+                resetAuthSession();
+                set({
+                    isAuthenticated: true,
+                    isAPIKeyAuth: true,
+                    token: apiKey,
+                    role: null,
+                    userId: 0,
+                    isLoading: false
+                });
+            },
+
+            checkAuth: async () => {
+                const generation = currentAuthGeneration();
+                const check = ++authCheck;
+                const isCurrent = () => generation === currentAuthGeneration() && check === authCheck;
+                const { token, isAPIKeyAuth } = get();
+                setAPIKey(isAPIKeyAuth ? token : null);
+
+                if (isAPIKeyAuth && !token) {
+                    get().logout();
+                    return;
+                }
+
+                try {
+                    const endpoint = isAPIKeyAuth ? '/api/v1/apikey/login' : '/api/v1/user/status';
+                    const profile = await apiRequest<UserView>(endpoint, { dispatchUnauthorized: false });
+                    if (!isCurrent()) return;
+                    if (get().userId !== (profile?.id ?? 0) || get().role !== (profile?.role ?? null)) {
+                        resetAuthSession();
+                    }
+                    set({
+                        isAuthenticated: true,
+                        isLoading: false,
+                        token: isAPIKeyAuth ? token : null,
+                        role: profile?.role ?? null,
+                        userId: profile?.id ?? 0
+                    });
+                } catch {
+                    if (isCurrent()) get().logout();
+                }
+            },
+
+            logout: () => {
+                setAPIKey(null);
+                resetAuthSession();
+                set({
+                    isAuthenticated: false,
+                    isAPIKeyAuth: false,
+                    token: null,
+                    role: null,
+                    userId: 0,
+                    isLoading: false
+                });
+                if (typeof document !== 'undefined') {
+                    const cookiePath = new URL('./', document.baseURI).pathname; // 当前应用所在目录对应的 Cookie 路径。
+                    document.cookie = `auth=; Max-Age=0; Path=${cookiePath}; SameSite=Lax`;
+                    // 反向代理重写 Cookie Path 时也可省略目录末尾的斜杠。
+                    if (cookiePath !== '/') {
+                        document.cookie = `auth=; Max-Age=0; Path=${cookiePath.slice(0, -1)}; SameSite=Lax`;
+                    }
+                }
+            }
+        }),
+        {
+            name: 'auth-storage',
+            partialize: (state) => ({
+                token: state.token,
+                isAPIKeyAuth: state.isAPIKeyAuth,
+                role: state.role,
+            })
+        }
+    )
+);
+
+/**
+ * 用户登录 Hook
+ * 
+ * @example
+ * const login = useLogin();
+ * login.mutate({ username: 'admin', password: '123456', expire: 86400 });
+ * 
+ * if (login.isPending) return <Loading />;
+ * if (login.isError) return <Error message={login.error.message} />;
+ */
+export function loginUser(data: UserLoginRequest) {
+    setAPIKey(null);
+    return apiRequest<UserView>('/api/v1/user/login', {
+        method: 'POST', body: data, dispatchUnauthorized: false,
+    });
+}
+
+export function useLogin() {
+    const { setAuth } = useAuthStore();
+
+    return useMutation({
+        mutationFn: loginUser,
+        onSuccess: (user: UserView) => {
+            setAuth(user);
+        },
+    });
+}
+
+/**
+ * 注册配置查询定义（登录页与启动预取共用）。
+ */
+export const registerConfigQueryOptions = queryOptions({
+    queryKey: ['user', 'register-config'],
+    queryFn: () => apiRequest<RegisterConfig>('/api/v1/user/register-config'),
+});
+
+/**
+ * 注册 Hook：kind 决定注册为普通用户还是渠道商，角色由接口固定，不随请求提交。
+ */
+export function useRegister(kind: 'user' | 'reseller') {
+    return useMutation({
+        mutationFn: (data: UserRegisterRequest) =>
+            apiRequest<UserView>(kind === 'user' ? '/api/v1/user/register' : '/api/v1/user/register-reseller', {
+                method: 'POST',
+                body: data,
+                dispatchUnauthorized: false,
+            }),
+    });
+}
+
+/**
+ * 发送邮箱验证码 Hook：注册与找回密码共用，60 秒冷却由后端限流。
+ */
+export function useSendEmailCode() {
+    return useMutation({
+        mutationFn: (data: EmailCodeRequest) =>
+            apiRequest<string>('/api/v1/user/email-code', {
+                method: 'POST',
+                body: data,
+                dispatchUnauthorized: false,
+            }),
+    });
+}
+
+/**
+ * 找回密码 Hook：邮箱验证码通过后重设密码，旧会话全部吊销。
+ */
+export function useForgotPassword() {
+    return useMutation({
+        mutationFn: (data: ForgotPasswordRequest) =>
+            apiRequest<string>('/api/v1/user/forgot-password', {
+                method: 'POST',
+                body: data,
+                dispatchUnauthorized: false,
+            }),
+    });
+}
+
+/**
+ * 修改密码 Hook
+ * 
+ * @example
+ * const changePassword = useChangePassword();
+ * changePassword.mutate({ oldPassword: '123', newPassword: '456' });
+ */
+export function useChangePassword() {
+    return useMutation({
+        mutationFn: (data: { oldPassword: string; newPassword: string }) =>
+            apiRequest<string>('/api/v1/user/change-password', {
+                method: 'POST',
+                body: {
+                    old_password: data.oldPassword,
+                    new_password: data.newPassword,
+                },
+            }),
+        onSuccess: () => clearStepUpToken(), // 改密即换 token_version: 旧的二次验证凭证当场作废, 本地也不留。
+    });
+}
+
+/**
+ * 修改用户名 Hook
+ * 
+ * @example
+ * const changeUsername = useChangeUsername();
+ * changeUsername.mutate({ newUsername: 'newname' });
+ */
+export function useChangeUsername() {
+    return useMutation({
+        mutationFn: (data: { newUsername: string }) =>
+            apiRequest<string>('/api/v1/user/change-username', {
+                method: 'POST',
+                body: { new_username: data.newUsername },
+            }),
+    });
+}
+
+/**
+ * 认证状态和方法 Hook
+ * 
+ * @example
+ * const auth = useAuth();
+ * 
+ * if (auth.isAuthenticated) {
+ *   // 已登录
+ * }
+ * 
+ * auth.logout(); // 登出
+ */
+export function useAuth() {
+    const store = useAuthStore();
+    const { checkAuth, isLoading } = store;
+
+    // 只在首次挂载时检查认证状态
+    useEffect(() => {
+        const handleUnauthorized = () => useAuthStore.getState().logout();
+        window.addEventListener(apiUnauthorizedEvent, handleUnauthorized);
+        if (isLoading) {
+            void checkAuth();
+        }
+        return () => window.removeEventListener(apiUnauthorizedEvent, handleUnauthorized);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // 有意只在挂载时执行一次
+
+    return {
+        isAuthenticated: store.isAuthenticated,
+        isAPIKeyAuth: store.isAPIKeyAuth,
+        isLoading: store.isLoading,
+        role: store.role,
+        logout: store.logout,
+    };
+}

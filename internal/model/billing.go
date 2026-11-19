@@ -1,0 +1,69 @@
+package model
+
+import "time"
+
+// BillingRecord 一次调用的计费明细。
+// 三方账目在同一行对平: UserCost = OwnerRevenue + PlatformRevenue;
+// OwnerRevenue 按供货价计入渠道归属者(渠道归属 admin 时也记 owner, 平台收入为上浮部分)。
+type BillingRecord struct {
+	ID        uint64 `json:"id" gorm:"primaryKey"`
+	RequestID uint64 `json:"request_id" gorm:"index"`
+	// 复合索引 (user_id, created_at) 服务用户统计的按时间范围聚合(user_stats), 让范围过滤在索引内完成;
+	// 单列索引保留供按 user_id 的全量查询。本次只优化用户调用分析, 暂不新增 owner 复合索引。
+	UserID     uint   `json:"user_id" gorm:"index;index:idx_billing_records_user_created,priority:1"` // 付费方: API Key 归属用户。
+	APIKeyID   int    `json:"api_key_id"`
+	GroupID    int    `json:"group_id"`
+	GroupModel string `json:"group_model"`                                                            // 客户端模型名, 即分组名。
+	ChannelID  int    `json:"channel_id" gorm:"index:idx_billing_records_channel_created,priority:1"` // 落地渠道; 渠道利润分析按 (channel_id, created_at) 做范围聚合。
+	OwnerID    uint   `json:"owner_id" gorm:"index"`                                                  // 发布者: 渠道归属用户, 收入按供货价计入。
+	ShareCode  string `json:"share_code"`
+	ModelName  string `json:"model_name"`
+
+	SupplyPrice LLMPrice `json:"supply_price" gorm:"serializer:json"` // 供货价快照(读/写/缓存读/缓存写)。
+	UserPrice   LLMPrice `json:"user_price" gorm:"serializer:json"`   // 用户价快照(供货价上浮后)。
+	MarkupRatio float64  `json:"markup_ratio"`                        // 结算时的上浮比例快照, 供账单复核; 改价不影响历史解释。
+	// 币种快照: 渠道供货价的声明币种 + 结算时生效的汇率(1 原币折多少 USD)。
+	// 旧行为空 = USD 零折算(该机制上线前的所有账单, 读取侧按 USD 解释)。
+	// 汇率随行钉死而不查 fx_rates 回放: 汇率日后会变, 账单必须自带当时的答案。
+	Currency    string  `json:"currency" gorm:"size:8;default:''"`
+	FxRate      float64 `json:"fx_rate" gorm:"default:1"`
+	FxDay       string  `json:"fx_day" gorm:"size:16;default:''"` // 牌价采集日; unavailable = 采集失败按原价入账, 对账重点关注。
+	PriceSource string  `json:"price_source" gorm:"size:32"`      // 价格口径: channel_model 表示渠道模型发布价。
+
+	InputToken      int64 `json:"input_token"`
+	OutputToken     int64 `json:"output_token"`
+	CacheReadToken  int64 `json:"cache_read_token"`
+	CacheWriteToken int64 `json:"cache_write_token"`
+
+	// 媒体计量与定价快照; 仅媒体形态模型(image/video)的行非零, token 四列保持 0。
+	// 独立成列而不复用 SupplyPrice: 旧账单行的 supply_price 仍是 token 四类快照, 反序列化不受影响。
+	MediaSupply MediaPrice `json:"media_supply,omitempty" gorm:"serializer:json"` // 媒体供货价快照(每张/每秒/分档)。
+	MediaUser   MediaPrice `json:"media_user,omitempty" gorm:"serializer:json"`   // 媒体用户价快照(上浮后)。
+	MediaUnits  MediaUnits `json:"media_units,omitempty" gorm:"serializer:json"`  // 媒体用量(张数/秒数/档位)。
+
+	UserCost        float64 `json:"user_cost" gorm:"type:decimal(18,6)"`        // 用户支出(上浮后价格), 媒体行含按张/按秒部分。
+	OwnerRevenue    float64 `json:"owner_revenue" gorm:"type:decimal(18,6)"`    // 发布者收入(供货价)。
+	PlatformRevenue float64 `json:"platform_revenue" gorm:"type:decimal(18,6)"` // 平台收入(上浮部分)。
+
+	Status string `json:"status"` // settled | refunded
+	// 两条复合索引的第二列(用户统计 (user_id, created_at)、渠道利润分析 (channel_id, created_at)); 单列索引保留。
+	// 同一列挂多个索引时 tag 用分号并列声明, 少写一条会静默丢掉前一条复合索引。
+	CreatedAt time.Time `json:"created_at" gorm:"index;index:idx_billing_records_user_created,priority:2;index:idx_billing_records_channel_created,priority:2"`
+}
+
+// BalanceReservation 余额预扣记录; 请求结束时结算, 超时未结算由定时任务回滚冻结额。
+type BalanceReservation struct {
+	ID             uint64     `json:"id" gorm:"primaryKey"`
+	UserID         uint       `json:"user_id" gorm:"index"`
+	RequestID      uint64     `json:"request_id" gorm:"index"`
+	Amount         float64    `json:"amount" gorm:"type:decimal(18,6)"`
+	Settled        bool       `json:"settled" gorm:"index"`
+	CreatedAt      time.Time  `json:"created_at"`
+	LeaseExpiresAt *time.Time `json:"lease_expires_at" gorm:"index"`
+}
+
+// BillingStatus 计费记录状态。
+const (
+	BillingStatusSettled  = "settled"
+	BillingStatusRefunded = "refunded"
+)

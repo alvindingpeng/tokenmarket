@@ -1,0 +1,211 @@
+import { useTranslations } from 'use-intl';
+import { Info, Tag, AlertTriangle, Download, Loader2, RefreshCw } from 'lucide-react';
+import Github from '@thesvg/react/github';
+import { useCheckUpdate, useNowVersion, useUpdateCore, useUpdateStatus } from '@/api/update';
+import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
+
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || 'unknown'; // 当前前端构建对应的应用版本。
+// 更新源固定为本分支仓库; 构建时仍可通过 VITE_GITHUB_REPO 注入展示地址。
+const GITHUB_REPO = import.meta.env.VITE_GITHUB_REPO || 'https://github.com/alvindingpeng/tokenmarket';
+
+// SettingInfo 展示版本信息，并在更新后清理本项目的浏览器缓存。
+export function SettingInfo() {
+    const t = useTranslations('setting');
+    const statusQuery = useUpdateStatus(true);
+    const checkUpdate = useCheckUpdate();
+    const nowVersionQuery = useNowVersion();
+    const updateCore = useUpdateCore();
+
+    const backendNowVersion = nowVersionQuery.data || statusQuery.data?.current_version || '';
+    const latestVersion = statusQuery.data?.latest_version || '';
+
+    // 前端版本与后端当前版本不一致 → 浏览器缓存问题
+    const isCacheMismatch = !!backendNowVersion && backendNowVersion !== APP_VERSION;
+    // 只有仓库有更新且本平台产物已上传时才显示可点击的更新按钮。
+    const hasNewVersion = !!statusQuery.data?.update_available && !statusQuery.data.asset_missing;
+    // 检查失败时后端会保留上一次成功看到的版本号; 此时必须标明它是旧的,
+    // 否则界面会把一个过期版本当成"仓库当前最新版", 正是让管理员误判的原因。
+    const staleLatest = !!statusQuery.data?.check_failed;
+
+    // clearCacheAndReload 清理当前应用目录的缓存和 Service Worker 注册后刷新页面。
+    const clearCacheAndReload = async () => {
+        const scope = new URL('./', document.baseURI); // 当前应用的 Service Worker 作用域及缓存所属目录。
+        if ('caches' in window) {
+            const names = await caches.keys();
+            await Promise.all(names.filter((name) => name.startsWith(`switchyard-${encodeURIComponent(scope.pathname)}-`)).map((name) => caches.delete(name)));
+        }
+
+        if ('serviceWorker' in navigator) {
+            const registration = await navigator.serviceWorker.getRegistration(scope.href);
+            if (registration && registration.scope === scope.href) await registration.unregister();
+        }
+
+        window.location.reload();
+    };
+
+    // handleForceRefresh 立即清理缓存并重新加载当前页面。
+    const handleForceRefresh = () => {
+        void clearCacheAndReload();
+    };
+
+    // handleUpdate 更新服务端程序，成功后清理旧前端缓存。
+    const handleUpdate = () => {
+        updateCore.mutate(undefined, {
+            onSuccess: () => {
+                toast.success(t('info.updateSuccess'));
+                // 更新成功后清理缓存并刷新
+                setTimeout(() => {
+                    void clearCacheAndReload();
+                }, 1500);
+            },
+            onError: () => {
+                toast.error(t('info.updateFailed'));
+            }
+        });
+    };
+
+    return (
+        <div className="rounded-3xl border border-border bg-card p-6 space-y-5">
+            <h2 className="text-lg font-bold text-card-foreground flex items-center gap-2">
+                <Info className="h-5 w-5" />
+                {t('info.title')}
+            </h2>
+            {/* GitHub 仓库: 地址留空时整行不展示。 */}
+            {GITHUB_REPO && (
+                <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <Github variant="mono" className="h-5 w-5 text-muted-foreground" />
+                        <span className="text-sm font-medium">{t('info.github')}</span>
+                    </div>
+                    <a
+                        href={GITHUB_REPO}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex min-h-7 items-center text-sm text-primary hover:underline"
+                    >
+                        {GITHUB_REPO.replace(/^https?:\/\/(www\.)?github\.com\//, '')}
+                    </a>
+                </div>
+            )}
+            {/* 当前版本 */}
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                    <Tag className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-sm font-medium">{t('info.currentVersion')}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                    {nowVersionQuery.isLoading ? (
+                        <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                    ) : (
+                        <code className="text-sm font-mono text-muted-foreground">
+                            {backendNowVersion || t('info.unknown')}
+                        </code>
+                    )}
+                </div>
+            </div>
+
+            {/* 最新版本: 后端检查失败时保留未知状态, 不误报为缓存问题。 */}
+            {(
+                <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <Download className="h-5 w-5 text-muted-foreground" />
+                        <span className="text-sm font-medium">{t('info.latestVersion')}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {statusQuery.isLoading ? (
+                            <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                        ) : (
+                            <span className="flex items-center gap-2">
+                                <code className="text-sm font-mono text-muted-foreground">
+                                    {latestVersion || t('info.unknown')}
+                                </code>
+                                {staleLatest && (
+                                    <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-600 dark:text-amber-400">
+                                        {t('info.staleBadge')}
+                                    </span>
+                                )}
+                            </span>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {statusQuery.data?.check_failed && (
+                <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                    <div className="flex items-center justify-between gap-2"><span>{t('info.checkFailed')}</span><Button variant="outline" size="sm" onClick={() => checkUpdate.mutate()} disabled={checkUpdate.isPending}><RefreshCw className="mr-1 size-3" />{t('info.checkNow')}</Button></div>
+                    <p className="mt-1 break-words text-xs">{statusQuery.data.check_error}</p>
+                    {statusQuery.data.last_check_at > 0 && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            {t('info.lastCheck', { time: new Date(statusQuery.data.last_check_at * 1000).toLocaleString() })}
+                        </p>
+                    )}
+                </div>
+            )}
+            {statusQuery.data?.asset_missing && !statusQuery.data.check_failed && (
+                <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-muted-foreground">{t('info.assetMissing')}</p>
+            )}
+
+            {/* 浏览器缓存问题警告 */}
+            {isCacheMismatch && (
+                <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-xl space-y-2">
+                    <div className="flex items-start gap-3">
+                        <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                        <div className="flex-1 space-y-1">
+                            <p className="text-sm text-destructive font-medium">
+                                {t('info.versionMismatch')}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                                {t('info.versionMismatchHint', { frontend: APP_VERSION, backend: backendNowVersion })}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex justify-end">
+                        <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={handleForceRefresh}
+                            className="rounded-xl"
+                        >
+                            {t('info.forceRefresh')}
+                        </Button>
+                    </div>
+                </div>
+            )}
+
+            {/* 有新版本可更新 */}
+            {hasNewVersion && (
+                <div className="p-3 bg-primary/10 border border-primary/20 rounded-xl space-y-2">
+                    <div className="flex items-start gap-3">
+                        <Download className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                        <div className="flex-1 space-y-1">
+                            <p className="text-sm text-primary font-medium">
+                                {t('info.newVersionAvailable')}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                                {t('info.newVersionAvailableHint')}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex justify-end">
+                        <Button
+                            variant="default"
+                            size="sm"
+                            onClick={handleUpdate}
+                            disabled={updateCore.isPending}
+                            className="rounded-xl"
+                        >
+                            {updateCore.isPending ? t('info.updating') : t('info.updateNow')}
+                        </Button>
+                    </div>
+                </div>
+            )}
+            {/* 已是最新: 明确说一句, 免得管理员看到相同的两个版本号仍怀疑没检查成功 */}
+            {statusQuery.data?.up_to_date && !staleLatest && (
+                <p className="rounded-xl border border-border bg-accent/30 p-3 text-xs text-muted-foreground">
+                    {t('info.upToDate')}
+                </p>
+            )}
+        </div>
+    );
+}

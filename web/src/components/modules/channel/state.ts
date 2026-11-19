@@ -1,0 +1,230 @@
+import type { ChannelDetail, ChannelKey } from '@/api/channel';
+
+// ChannelFormState 是渠道表单的全部可编辑内容。
+// 全按名称组织而不存主键: 后端凭据与模型都按名称匹配增删改, 而新建渠道和新加模型时主键尚不存在。
+export type ChannelFormState = {
+    name: string;
+    dialect: ChannelDetail['dialect'];
+    /**
+     * sub_platform 是订阅渠道的平台标识。只有 dialect === 'subscription' 时有意义：
+     * 后端据此按平台描述补方言与地址，所以填了它就不必再填地址。
+     */
+    sub_platform: string;
+    /**
+     * channel_id 是已保存渠道的主键, 新建时为 0。
+     * 订阅渠道拉取模型要用它: 它的凭据在库里(登录后导入的账号), 回忆表单里没有 key 可填,
+     * 后端只能按渠道主键取凭据。节点与提交无关, toChannelDetail 用外部传入的 id。
+     */
+    channel_id: number;
+    base_url: string;
+    enabled: boolean;
+    proxy: boolean;
+    openai_chat_completion_path: string;
+    openai_response_path: string;
+    anthropic_message_path: string;
+    /** GCP Project ID for gemini_cli dialect (optional, auto-assigned for personal accounts). */
+    gemini_project?: string;
+    keys: {
+        name: string;
+        key: string; // 上游访问凭据; 讯飞渠道用它承载 API Key; 账号凭据承载整包账号 JSON。
+        // 讯飞星火专用(dialect=xunfei 才填写); 读侧可能缺省, 归一为空串, 写侧恒带三项。
+        app_id: string;
+        api_secret: string;
+        domain: string;
+        enabled: boolean;
+        // 以下字段只用于界面展示, 提交时不带。
+        //
+        // 为什么留在表单状态里: 凭据列表要显示"这是哪个平台、到期没有", 而这份数据是
+        // 随渠道详情一起读回来的。若在 fromChannel 里丢掉, 列表就只能退回显示掩码 JSON ——
+        // 而账号凭据的掩码 JSON 是 '{"' 开头的一串随机字符, 认不出是哪个账号。
+        //
+        // 提交时为什么不带: 后端 syncChannelKeys 只按 key/app_id/api_secret/domain/enabled
+        // 五个字段比对与更新, 账号元数据列在中途不会被覆盖; 显式不带可以避免
+        // "把展示字段当编辑字段"的误读。
+        // 类型直接借 ChannelKey 的同名字段, 不再抄一份联合类型:
+        // 抄一份的代价是后端加了平台之后两处都要改, 而漏改的那处只在渲染时才暴露。
+        account_kind?: ChannelKey['account_kind'];
+        account_platform?: ChannelKey['account_platform'];
+        account_email?: string;
+        token_expires_at?: string;
+        token_refresh_at?: string;
+        disabled_until?: string | null;
+    }[];
+    // 出口池按名称组织, 与凭据一致: 后端同样按名称增删改, 新建渠道时主键尚不存在。
+    egresses: { name: string; kind: ChannelDetail['egresses'][number]['kind']; url: string; region: string; weight: number; enabled: boolean }[];
+    models: string[];
+    grants: Map<string, number>; // 键为 grantKey(模型名, 凭据名), 值为 Protocol 位掩码。
+    custom_header: ChannelDetail['custom_header'];
+    channel_proxy: string;
+    param_override: string;
+    match_regex: string;
+    model_auto_add: boolean;
+    markup_ratio: string; // 表单里以字符串承载, 空串 = 跟随全局; 提交时解析。
+};
+
+// grantKey 生成授权在状态里的键; 分隔符取 \0, 模型名与凭据名都不会含它。
+export function grantKey(modelName: string, keyName: string) {
+    return `${modelName}\0${keyName}`;
+}
+
+export const emptyFormState: ChannelFormState = {
+    name: '',
+    dialect: 'generic',
+    sub_platform: '',
+    channel_id: 0,
+    base_url: '',
+    enabled: true,
+    proxy: false,
+    openai_chat_completion_path: '/v1/chat/completions',
+    openai_response_path: '/v1/responses',
+    anthropic_message_path: '/v1/messages',
+    gemini_project: '',
+    keys: [],
+    egresses: [],
+    models: [],
+    grants: new Map(),
+    custom_header: [],
+    channel_proxy: '',
+    param_override: '',
+    match_regex: '',
+    model_auto_add: false,
+    markup_ratio: '',
+};
+
+// fromChannel 把渠道完整配置还原为表单状态; 授权读写都按名称, 直接建索引即可。
+export function fromChannel(channel: ChannelDetail): ChannelFormState {
+    return {
+        name: channel.name,
+        dialect: channel.dialect,
+        // 读侧可能缺省(历史渠道没有这个列), 归一为空串。
+        sub_platform: channel.sub_platform ?? '',
+        channel_id: channel.id,
+        base_url: channel.base_url,
+        enabled: channel.enabled,
+        proxy: channel.proxy,
+        openai_chat_completion_path: channel.openai_chat_completion_path,
+        openai_response_path: channel.openai_response_path,
+        anthropic_message_path: channel.anthropic_message_path,
+        gemini_project: channel.gemini_project ?? '',
+        // 讯飞三项读侧可能缺省, 归一为空串: 表单里处处少判一次 undefined。
+        keys: channel.keys.map(({ name, key, enabled, app_id, api_secret, domain,
+            account_kind, account_platform, account_email, token_expires_at, token_refresh_at, disabled_until }) => ({
+            name, key, enabled,
+            app_id: app_id ?? '', api_secret: api_secret ?? '', domain: domain ?? '',
+            // 账号元数据原样带过来供列表展示(见 ChannelFormState.keys 的说明)。
+            account_kind, account_platform, account_email, token_expires_at, token_refresh_at, disabled_until,
+        })),
+        // 后端承诺 egresses 恒为数组; 老库没有出口时就是空数组。
+        egresses: (channel.egresses ?? []).map(({ name, kind, url, region, weight, enabled }) => ({ name, kind, url, region, weight, enabled })),
+        models: [...channel.models],
+        grants: new Map(channel.grants.map((g) => [grantKey(g.model_name, g.key_name), g.protocols])),
+        custom_header: channel.custom_header,
+        channel_proxy: channel.channel_proxy,
+        param_override: channel.param_override,
+        match_regex: channel.match_regex,
+        model_auto_add: channel.model_auto_add,
+        markup_ratio: channel.markup_ratio !== undefined && channel.markup_ratio >= 0 ? String(channel.markup_ratio) : '',
+    };
+}
+
+// toChannelConfig 生成渠道自身的配置字段, 提交与探测共用。
+// 探测只用得上其中的地址, 路径, 代理与过滤表达式, 但必须与保存后生效的完全一致, 故由同一处给出。
+export function toChannelConfig(state: ChannelFormState) {
+    return {
+        name: state.name.trim(),
+        dialect: state.dialect,
+        // 非订阅渠道恒发空串: 后端对"非订阅方言带平台名"是硬报错,
+        // 发空串保证切换方言时不会残留旧平台名把保存卡死。
+        sub_platform: state.dialect === 'subscription' ? state.sub_platform.trim() : '',
+        enabled: state.enabled,
+        base_url: state.base_url.trim(),
+        openai_chat_completion_path: state.openai_chat_completion_path.trim(),
+        openai_response_path: state.openai_response_path.trim(),
+        anthropic_message_path: state.anthropic_message_path.trim(),
+        proxy: state.proxy,
+        custom_header: state.custom_header.filter((h) => h.header_key.trim() && h.header_value !== ''),
+        channel_proxy: state.channel_proxy.trim(),
+        param_override: state.param_override.trim(),
+        match_regex: state.match_regex.trim(),
+        model_auto_add: state.model_auto_add,
+        // 空 = 跟随全局(-1); 非法输入按跟随全局处理, 后端对 >10 再做一次硬校验。
+        markup_ratio: (() => {
+            const parsed = Number(state.markup_ratio.trim());
+            return Number.isFinite(parsed) && parsed >= 0 ? parsed : -1;
+        })(),
+    };
+}
+
+// toChannelDetail 把表单状态还原为提交用的完整配置; 创建时 id 取 0, 由后端分配。
+// 读写同构, 提交即全量: 无需与原渠道逐字段比对, 表单本就一次给出完整配置。
+// 协议位为空的条目不是授权, 在此丢弃。
+export function toChannelDetail(state: ChannelFormState, id: number): ChannelDetail {
+    return {
+        ...toChannelConfig(state),
+        id,
+        gemini_project: state.gemini_project?.trim() || undefined,
+        // 讯飞三项写侧恒带, 与读侧的可能缺省相反: 后端整体替换凭据, 少带一项会被当作清空。
+        keys: state.keys.map(({ name, key, enabled, app_id, api_secret, domain }) => ({
+            name: name.trim(), key: key.trim(), enabled,
+            app_id: app_id.trim(), api_secret: api_secret.trim(), domain: domain.trim(),
+        })),
+        // 出口不带主键提交: 后端按名称匹配, 主键由它自己维护, 换 ID 会让历史成绩对不上。
+        egresses: state.egresses.map(({ name, kind, url, region, weight, enabled }) => ({
+            id: 0, // 提交不带主键: 后端按名称匹配已有出口, 主键由它维护。
+            name: name.trim(),
+            kind,
+            url: kind === 'direct' ? '' : url.trim(),
+            region: region.trim(),
+            weight,
+            enabled,
+        })),
+        models: [...state.models],
+        grants: [...state.grants]
+            .filter(([, protocols]) => protocols !== 0)
+            .map(([mapKey, protocols]) => {
+                const [model_name, key_name] = mapKey.split('\0');
+                return { model_name, key_name, protocols };
+            }),
+    };
+}
+
+// SaveBlocker 是"还不能保存"的一条原因; reason 供界面映射文案, name 标出是哪条凭据。
+export type SaveBlocker = {
+	reason: 'name' | 'base_url' | 'paths' | 'no_keys' | 'key_secret' | 'spark_creds' | 'no_models';
+	name?: string;
+};
+// channelSaveBlockers 推导"保存按钮为什么点不动"。
+//
+// 抽成纯函数是为了能测: 这些判断此前只活在组件里, 只能靠手点按钮验证,
+// 而"订阅渠道不该要求模型与凭据"这类规则一旦回退, 手点也未必发现
+// (界面只显示缺项列表, 看不出哪一条本不该存在)。
+//
+// 返回值是缺项的原因标识, 空数组表示可以保存。
+export function channelSaveBlockers(
+	state: ChannelFormState,
+	helpers: {
+		sparkOnly: (protocols: number) => boolean;
+	}
+): SaveBlocker[] {
+	const blockers: SaveBlocker[] = [];
+	if (state.name.trim() === '') blockers.push({ reason: 'name' });
+	// 订阅渠道的调用信息由平台描述提供, 地址不在这里填, 因此地址必填不适用。
+	// 只按方言放开, 不按"看起来像订阅"判断: 靠猜会让普通渠道悄悄失去必填。
+	const isSubscription = state.dialect === 'subscription';
+	if (!isSubscription && state.base_url.trim() === '') blockers.push({ reason: 'base_url' });
+	if ([state.openai_chat_completion_path, state.openai_response_path, state.anthropic_message_path]
+		.some((p) => p !== '' && !p.startsWith('/'))) blockers.push({ reason: 'paths' });
+	// 订阅渠道的凭据要登录后导入, 建渠道时必然没有 —— 要求非空会让建渠道永远走不通。
+	if (!isSubscription && state.keys.length === 0) blockers.push({ reason: 'no_keys' });
+	for (const k of state.keys) {
+		if (k.key.trim() === '') blockers.push({ reason: 'key_secret', name: k.name });
+		if (state.dialect === 'xunfei') {
+			const needsSpark = state.models.some((m) => helpers.sparkOnly(state.grants.get(grantKey(m, k.name)) ?? 0));
+			if (needsSpark && (k.app_id.trim() === '' || k.api_secret.trim() === ''))
+				blockers.push({ reason: 'spark_creds', name: k.name });
+		}
+	}
+	// 订阅渠道的模型只能登录后从平台同步, 建渠道时为空的正常状态, 不能当缺项。
+	if (!isSubscription && state.models.length === 0) blockers.push({ reason: 'no_models' });
+	return blockers;
+}

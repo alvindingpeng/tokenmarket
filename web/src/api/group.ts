@@ -1,0 +1,294 @@
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { apiRequest } from './client';
+import { queryClient } from './client';
+import { groupListQueryOptions } from './queries';
+
+// GroupMode 表示分组的路由模式: manual 固定成员, 其余为动态选路策略。
+export type GroupMode = 'manual' | 'failover' | 'price' | 'latency' | 'success' | 'score' | 'random';
+
+// PriceMetric 是低价优先与综合评分比较成员价格时使用的口径。
+export type PriceMetric = 'blended' | 'input' | 'output';
+
+// GroupRelayConfig 保存分组 Relay 配置。
+export interface GroupRelayConfig {
+ request_timeout_seconds: number;
+ max_wait_seconds: number;
+ max_waiting_requests: number;
+ max_total_attempts: number;
+ member_stream_idle_timeout_seconds: number;
+    member_max_attempts: number;
+    member_retry_interval_seconds: number;
+    member_non_stream_response_timeout_seconds: number;
+    member_stream_first_event_timeout_seconds: number;
+    member_cooldown_seconds: number;
+    member_affinity_seconds: number;
+    price_metric: PriceMetric;
+    metric_window_size: number;
+    score_price_weight: number;
+    score_latency_weight: number;
+    score_success_weight: number;
+    reliability_floor: number;
+    // 以下是灰度分流配置: 灰度叠加在上述任一选择模式之上, 手动模式不生效(手动的成员是硬约束)。
+    canary_item_id: number; // 灰度成员的分组成员 ID(GroupItem.id); 0 表示关闭灰度。
+    canary_percent: number; // 命中灰度的流量百分比 0-100。
+    canary_user_ids: number[]; // 显式灰度用户: 非空时这些用户恒定走灰度, 优先于比例。
+    canary_per_request: boolean; // false=按 API Key 粘性分桶(同一 Key 结果稳定), true=每请求重新抽样。
+}
+
+// GroupScoreBasis 是综合评分实际采用的权重与可靠性下限, 解析顺序为
+// 分组自定义 > 系统设置 > 内置兜底, 与选路的取值完全一致。
+export interface GroupScoreBasis {
+    price_weight: number;
+    latency_weight: number;
+    success_weight: number;
+    reliability_floor: number; // 0..1, 低于此值按比例折减总分。
+}
+
+// GroupMemberMetric 是分组成员的实时选路指标与综合评分快照。
+// 指标是首响应耗时与成功率的滑动平均; 评分按 basis 的配比在本分组全部成员内归一化后加权,
+// 口径与选路一致, 冷成员(samples=0)的延迟与成功率按中性值 50 参与。
+export interface GroupMemberMetric {
+    item_id: number;
+    wait_ms: number;
+    success: number;
+    samples: number;
+    score: number; // 0-100 综合得分, 已含可靠性软惩罚。
+    price_score: number;
+    latency_score: number;
+    success_score: number;
+    cold: boolean;
+    healthy: boolean;
+}
+
+// GroupMetrics 是分组成员指标接口的响应: 评分依据 + 全部成员(含冷成员)。
+export interface GroupMetrics {
+    basis: GroupScoreBasis;
+    items: GroupMemberMetric[];
+}
+
+// useGroupMetrics 轮询分组成员的实时选路指标与综合评分; 未指定分组时不请求, 由 MemberStatus 按成员取用。
+export function useGroupMetrics(groupId?: number) {
+    return useQuery({
+        queryKey: ['group', 'metrics', groupId],
+        queryFn: () => apiRequest<GroupMetrics>(`/api/v1/group/metrics/${groupId}`),
+        enabled: !!groupId,
+        refetchInterval: POLL_NORMAL,
+        refetchOnMount: 'always',
+    });
+}
+
+// GroupItem 是分组内一条可路由的成员，对应一条渠道授权。
+// 名称、所属渠道与可用性由后端补齐：授权是 (模型, 凭据) 的组合，界面只需展示与排序，无需再按主键回查。
+import type { LLMPrice } from './share';
+import { POLL_NORMAL } from '@/lib/polling';
+
+export interface GroupItem {
+    id: number;
+    group_id: number;
+    channel_grant_id: number;
+    priority: number;
+    channel_id: number;
+    channel_name: string;
+    model_name: string;
+    key_name: string;
+    protocols: number; // 该授权支持的 Protocol 位掩码。
+    available: boolean; // 为假表示该成员当前无法转发，但仍会列出以便移除。
+    supply_price: LLMPrice; // 供货价（渠道商收入口径）。
+    user_price: LLMPrice; // 上浮后的用户价；同名模型在不同发布渠道价格不同，逐成员展示。
+}
+
+// GroupRuntime 是分组的实时路由状态。
+// current_item_id 两种模式共用：手动模式下即人工指定的成员，故障转移模式下由 Relay 的路由决定。
+export interface GroupRuntime {
+    group_id: number;
+    current_item_id: number;
+    probe_item_id: number;
+    affinity_until: number;
+    cooldowns: Record<number, number>;
+}
+
+// Group 是客户端模型名称对应的渠道分组。
+export interface Group {
+    id: number;
+    name: string;
+    mode: GroupMode;
+    relay_config: GroupRelayConfig;
+    items: GroupItem[]; // 恒为数组，后端读取侧承诺不为 null。
+    runtime: GroupRuntime; // 随分组一并返回；当前成员一律读 runtime.current_item_id。
+}
+
+// GroupItemInput 是提交的成员，按渠道授权主键引用；提交顺序即优先级顺序。
+export interface GroupItemInput {
+    channel_grant_id: number;
+}
+
+// GroupCreateRequest 是创建分组的请求。
+export interface GroupCreateRequest {
+    name: string;
+    mode: GroupMode;
+    relay_config: GroupRelayConfig;
+    items: GroupItemInput[];
+}
+
+// GroupUpdateRequest 是分组配置、成员与当前成员的变更；items 为整体替换，按授权主键匹配保留已有成员。
+// 只提交发生变化的字段；当前成员是分组的普通字段，与其余变更共用本请求。
+export interface GroupUpdateRequest {
+    name?: string;
+    mode?: GroupMode;
+    relay_config?: GroupRelayConfig;
+    items?: GroupItemInput[];
+    active_item_id?: number; // 手动模式指定的当前成员，0 表示取消选择。
+}
+
+// writeGroupCache 把一份分组写回列表与详情两处缓存，已存在则替换，不存在则插入。
+// 写操作的响应与事件流都经由此处收敛，两处读的是同一份数据，无需再重新拉取列表。
+function writeGroupCache(group: Group) {
+    queryClient.setQueryData(groupListQueryOptions.queryKey, (current: Group[] | undefined) => {
+        if (!current) return current;
+        const next = current.filter((item) => item.id !== group.id);
+        next.push(group);
+        // 与后端 op.GroupList 的定序保持一致：API Key 表单的模型选择器没有排序开关，依赖列表自带的名称顺序。
+        next.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+        return next;
+    });
+    queryClient.setQueryData(['groups', 'detail', group.id], group);
+}
+
+// removeGroupCache 从列表与详情两处缓存移除一个分组。
+function removeGroupCache(id: number) {
+    queryClient.setQueryData(groupListQueryOptions.queryKey, (current: Group[] | undefined) =>
+        current?.filter((item) => item.id !== id)
+    );
+    queryClient.removeQueries({ queryKey: ['groups', 'detail', id] });
+}
+
+// useGroupList 获取全部分组，并由明确需要实时状态的页面控制是否订阅事件流。
+export function useGroupList(enabled = true, eventsEnabled = false) {
+    const query = useQuery({ ...groupListQueryOptions, enabled });
+
+    useGroupEventStream(enabled && eventsEnabled);
+
+    return query;
+}
+
+// useGroup 获取单个分组，供只关心一个分组的页面使用；实时状态按需订阅。
+export function useGroup(id: number | undefined, enabled = true, eventsEnabled = false) {
+    const query = useQuery({
+        queryKey: ['groups', 'detail', id],
+        queryFn: () => apiRequest<Group>(`/api/v1/group/get/${id}`),
+        enabled: enabled && id !== undefined,
+    });
+
+    useGroupEventStream(enabled && eventsEnabled);
+
+    return query;
+}
+
+// groupEventSource 是全应用共享的一条分组事件连接，由订阅方引用计数维持。
+// 列表页与日志详情可能同时订阅，各自建连会白占浏览器对同域的连接数。
+let groupEventSource: EventSource | null = null;
+let groupEventRefCount = 0; // 当前订阅该连接的组件数量，归零时关闭连接。
+
+// useGroupEventStream 订阅分组的变更事件与运行状态增量，并写回列表与详情两处缓存。
+function useGroupEventStream(enabled: boolean) {
+    useEffect(() => {
+        if (!enabled) return;
+
+        groupEventRefCount++;
+        if (!groupEventSource) {
+            const source = new EventSource('./api/v1/group/events', { withCredentials: true });
+            groupEventSource = source;
+            source.addEventListener('changed', (event) => {
+                writeGroupCache(JSON.parse((event as MessageEvent<string>).data) as Group);
+            });
+            source.addEventListener('deleted', (event) => {
+                removeGroupCache(Number((event as MessageEvent<string>).data));
+            });
+            source.addEventListener('runtime', (event) => {
+                const update = JSON.parse((event as MessageEvent<string>).data) as GroupRuntime;
+                queryClient.setQueryData(groupListQueryOptions.queryKey, (current: Group[] | undefined) =>
+                    current?.map((group) => group.id === update.group_id ? { ...group, runtime: update } : group)
+                );
+                queryClient.setQueryData(['groups', 'detail', update.group_id], (current: Group | undefined) =>
+                    current && { ...current, runtime: update }
+                );
+            });
+            // 后端不留事件历史，连接断开期间的变更无从补发，故每次连上都重新拉取一次对齐。
+            // 拉取放在 onopen 而非 onerror: EventSource 自行重连，onerror 在每次失败时都会触发，
+            // 写在那里会让断网期间反复全量重拉。
+            source.onopen = () => {
+                void queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
+                void queryClient.invalidateQueries({ queryKey: ['groups', 'detail'] });
+            };
+        }
+
+        return () => {
+            groupEventRefCount--;
+            if (groupEventRefCount > 0) return;
+            groupEventSource?.close();
+            groupEventSource = null;
+        };
+    }, [enabled]);
+}
+
+// useCreateGroup 创建分组。
+export function useCreateGroup() {
+    return useMutation({
+        mutationFn: (data: GroupCreateRequest) =>
+            apiRequest<Group>('/api/v1/group/create', { method: 'POST', body: data }),
+        onSuccess: writeGroupCache,
+    });
+}
+
+// GroupAddItemsRequest 是"只追加成员"的请求: 一次把一个或多个授权追加到多个分组末尾。
+// 与 GroupUpdateRequest.items 的区别是语义: items 是整体替换, 调用方必须先持有准确的当前集合 ——
+// 广场/分组页手里的是快照, 用户在弹层停留期间别的会话可能已经改过同一个分组, 按旧快照合并再提交
+// 会把对方刚加的成员整段盖掉且不报错。本请求只声明"要加哪些", 由后端在事务内读当前集合再追加。
+export interface GroupAddItemsRequest {
+    group_ids: number[];
+    channel_grant_ids: number[];
+}
+
+// GroupAddItemsResult 是一个分组的追加结果: 新增了几条、跳过了(已存在)几条、追加后的完整分组。
+export interface GroupAddItemsResult {
+    group_id: number;
+    added: number[];
+    skipped: number[];
+    group: Group;
+}
+
+// useAddGroupItems 把授权原子追加进分组。
+// 幂等: 已存在的授权跳过而不报错, 因此重复点击与两个标签页各提交一次都是安全操作。
+export function useAddGroupItems() {
+    return useMutation({
+        mutationFn: (data: GroupAddItemsRequest) =>
+            apiRequest<GroupAddItemsResult[]>('/api/v1/group/add-items', { method: 'POST', body: data }),
+        // 后端逐个分组返回追加后的完整分组, 直接写回缓存即可: 与列表/详情两处读的是同一份数据,
+        // 不必再 invalidate 重拉(那样会白打一次接口, 且中间态会让界面闪一下)。
+        onSuccess: (results) => {
+            for (const result of results) writeGroupCache(result.group);
+            // 广场卡片的"已在某配置"角标取自服务端返回的 in_groups(随目录 20 秒轮询刷新)。
+            // 加入后立刻失效一次, 让角标跟上 —— 否则用户刚加完, 卡片仍显示"未加入", 只能靠等下轮轮询。
+            void queryClient.invalidateQueries({ queryKey: ['market', 'models'] });
+        },
+    });
+}
+
+// useUpdateGroup 更新分组配置、成员或当前成员，响应即变更后的完整分组。
+export function useUpdateGroup() {
+    return useMutation({
+        mutationFn: ({ id, ...data }: GroupUpdateRequest & { id: number }) =>
+            apiRequest<Group>(`/api/v1/group/update/${id}`, { method: 'POST', body: data }),
+        onSuccess: writeGroupCache,
+    });
+}
+
+// useDeleteGroup 删除分组。
+export function useDeleteGroup() {
+    return useMutation({
+        mutationFn: (id: number) =>
+            apiRequest<null>(`/api/v1/group/delete/${id}`, { method: 'DELETE' }),
+        onSuccess: (_, id) => removeGroupCache(id),
+    });
+}

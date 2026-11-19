@@ -1,0 +1,832 @@
+package relay
+
+import (
+	"fmt"
+	"maps"
+	"math"
+	"math/rand/v2"
+	"sync"
+	"time"
+
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/op"
+)
+
+// RouteState 是一个分组的进程内路由状态; 跨该分组的全部请求共享。
+// 同时作为路由流的消息形状与分组读取响应中的 runtime 字段: 冷却, 探测与亲和都是本包路由算法的概念,
+// 故状态形状由本包定义, 分组的持久化配置不含它; 内部标志未导出, 不会随消息出到 JSON。
+// 两种模式共用 CurrentItemID: 手动模式下即人工指定的成员, 故障转移模式下由路由决定,
+// 前端由此只读这一个字段即可知道当前承载请求的成员, 无需再按模式分支。
+type RouteState struct {
+	GroupID       int           `json:"group_id"`        // 状态所属的分组 ID, 供状态流按分组定位。
+	CurrentItemID int           `json:"current_item_id"` // 当前承载请求的成员 ID, 0 表示尚未建立路由或未人工指定。
+	ProbeItemID   int           `json:"probe_item_id"`   // 当前占用恢复探测的成员 ID, 同一分组同时只允许一个成员被探测; 手动模式恒为 0。
+	AffinityUntil int64         `json:"affinity_until"`  // 当前路由的亲和截止 Unix 毫秒时间, 0 表示无亲和; 手动模式恒为 0。
+	Cooldowns     map[int]int64 `json:"cooldowns"`       // 失败成员 ID 对应的冷却截止 Unix 毫秒时间, 已到期的条目由前端按当前时间忽略。
+
+	affinityArmed bool // 当前路由下一次成功后是否开始亲和, 仅故障切换后为真。
+
+	// 冷启动探索配额的状态(见 explore.go): 计数器流水般地推进探索节奏, exploreItemID 记录
+	// 最近一轮是否由探索决定。两者都是进程内的瞬时状态, 与冷却/探测一样不落库 ——
+	// 重启后计数归零只会让探索节奏重新开始, 不影响正确性。
+	exploreCounter int // 该分组已发生的正常择优轮次, 用于按固定节奏放行探索。
+	exploreItemID  int // 最近一轮由冷启动探索选中的成员 ID, 0 表示最近一轮是正常择优。
+}
+
+const routeStreamBuffer = 16 // 单个路由流连接的非阻塞消息缓冲容量。
+
+var (
+	routeMu      sync.Mutex                           // routeMu 保护全部分组路由状态。
+	routes       = make(map[int]*RouteState)          // routes 按分组 ID 保存路由状态。
+	routeStreams = make(map[chan RouteState]struct{}) // 全部路由 SSE 连接。
+)
+
+// RouteStateOf 返回分组当前的实时路由状态, 供读取接口随分组一并返回。
+// 手动模式没有进程内路由: 当前成员即人工指定的成员, 冷却与亲和均不适用, 故直接由分组配置得出。
+func RouteStateOf(group model.Group) RouteState {
+	if group.Mode == model.GroupModeManual {
+		return RouteState{
+			GroupID:       group.ID,
+			CurrentItemID: group.ActiveItemID,
+			Cooldowns:     map[int]int64{},
+		}
+	}
+
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	route := routes[group.ID]
+	if route == nil {
+		return RouteState{GroupID: group.ID, Cooldowns: map[int]int64{}}
+	}
+	state := *route
+	state.Cooldowns = maps.Clone(route.Cooldowns)
+	return state
+}
+
+// ResetRouteState 丢弃分组的进程内路由状态, 用于分组切换选择模式或被删除。
+// 不丢弃的话冷却与亲和会在 failover 切到 manual 再切回来之后复活并继续影响选路, 分组删除后其状态也会永久残留。
+func ResetRouteState(groupID int) {
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	delete(routes, groupID)
+}
+
+// ResetAllRouteStates discards every process-local group route state.
+// It is intended for tests and controlled cache/database replacement only.
+func ResetAllRouteStates() {
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	routes = make(map[int]*RouteState)
+}
+
+// pickGroupItem 按分组模式选择本轮目标成员, 没有可用成员时返回零值; group.Items 已按 Priority 升序排列。
+// 手动模式固定人工成员; 其余模式为动态选路, 共用冷却, 探测与亲和机制:
+// 先在未冷却成员中按模式策略择优, 优先级高于全部候选的冷却到期成员获得一个探测请求。
+// 渠道是否可用不在此判断: 渠道禁用或缺少密钥由调用方发现并作为一轮失败上报, 该成员随即进入冷却而在后续轮次被跳过。
+// effectiveGroupForRequest applies a validated API-key preference to this request only.
+// RouteState remains group-scoped; the preference changes selection mode but never bypasses
+// availability, limits, protocol capability, billing, or retry bounds.
+func effectiveGroupForRequest(group model.Group, preference string) model.Group {
+	// Manual selection is a hard constraint, not a preference.
+	if group.Mode == model.GroupModeManual {
+		return group
+	}
+	if preference != "" && preference != model.RoutingPreferenceInherit && model.IsValidRoutingPreference(preference) {
+		group.RequestRoutingPreference = preference
+		group.Mode = model.GroupModeForRoutingPreference(preference, group.Mode)
+	}
+	return group
+}
+
+// pickCanaryItem 返回本轮应当走的灰度成员; 灰度未开启或该成员当前不可用(停用、额度熔断、冷却中、正被探测)时
+// 返回假, 由调用方回落到策略选路。命中判定不在这里做: 命中结果是每请求固定的, 由调用方算一次并复用。
+// 灰度命中者不再参与策略择优: 灰度阶段的目的就是让新成员获得固定比例的确定性流量,
+// 若仍按评分/价格挑选, 便宜的旧成员会把样本全部吃掉, 新成员永远凑不够观测数据。
+// 这里刻意不改动 route.CurrentItemID 与亲和: 路由状态是整组共享的, 把灰度成员写成当前成员会让
+// 未命中灰度的流量在亲和期内一起被带到新渠道, 相当于灰度比例被亲和放大。
+func pickCanaryItem(group model.Group) (model.GroupItem, bool) {
+	if !group.RelayConfig.CanaryActive() {
+		return model.GroupItem{}, false
+	}
+	item := itemOf(group, group.RelayConfig.CanaryItemID)
+	if item.ID == 0 || !item.Available || upstreamItemLimited(item) {
+		return model.GroupItem{}, false
+	}
+	routeMu.Lock()
+	defer routeMu.Unlock()
+	route := groupRouteLocked(group)
+	if deadline, cooling := route.Cooldowns[item.ID]; cooling && deadline > time.Now().UnixMilli() {
+		return model.GroupItem{}, false
+	}
+	// 灰度成员正被当作恢复探测对象时让出本轮: 探测流量已经确定由它承接, 再叠灰度会放大该成员的瞬时压力。
+	if route.ProbeItemID == item.ID {
+		return model.GroupItem{}, false
+	}
+	return item, true
+}
+
+func pickGroupItem(group model.Group) model.GroupItem {
+	if group.Mode == model.GroupModeManual {
+		for _, item := range group.Items {
+			// 手动模式同样要过并发与策略配额检查: 人工指定只决定"选谁", 不代表可以绕过限流。
+			if item.ID == group.ActiveItemID && item.Available &&
+				!upstreamItemLimited(item) && !upstreamItemBlockedByPolicy(item) {
+				return item
+			}
+		}
+		return model.GroupItem{}
+	}
+
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	route := groupRouteLocked(group)
+	now := time.Now().UnixMilli()
+	if route.AffinityUntil <= now {
+		route.AffinityUntil = 0
+	}
+	// 探索标记只对"刚刚过去的那一轮"有效: 本轮重新选路时先清掉, 免得路由解释把上一轮的
+	// 探索错记到这一轮头上(同分组的并发请求也会各自覆盖它, 故它只用于解释, 不参与决策)。
+	route.exploreItemID = 0
+
+	// 亲和期内沿用当前成员, 不提前探测已恢复的高优先级成员。
+	if group.RequestRoutingPreference == "" && route.CurrentItemID != 0 && route.AffinityUntil > now {
+		current := itemOf(group, route.CurrentItemID)
+		_, cooling := route.Cooldowns[current.ID]
+		// 亲和快捷路径同样要过并发与策略配额检查: 否则亲和期内的成员会绕过限流,
+		// 把本已占满的并发额度继续往上叠(既有缺陷, 本次一并修正)。
+		if current.Available && !cooling && route.ProbeItemID != current.ID &&
+			!upstreamItemLimited(current) && !upstreamItemBlockedByPolicy(current) {
+			return current
+		}
+	}
+
+	// 按优先级扫描: 未冷却成员进入候选; 冷却已到期的成员同样回池, 额外登记首个为探测候选。
+	// 到期成员必须回池: 冷却条目只在探测成功或成员被移除时才删除, 若把到期成员一律挡在候选外、
+	// 又只对"优先级压过全部健康成员"者放行探测, 那么优先级低的成员一次失败后就再也拿不到流量 ——
+	// 冷却早已到期却永久饿死, 价格优先/综合评分等策略随之失效(最便宜的成员被永久踢出局)。
+	candidates := make([]model.GroupItem, 0, len(group.Items))
+	var probeCandidate *model.GroupItem
+	bestHealthyPriority, hasHealthy := 0, false
+	for i := range group.Items {
+		item := &group.Items[i]
+		if !item.Available {
+			continue
+		}
+		// 并发占满与策略配额(RPM/TPM)触顶必须直接出局: 这两类的恢复与上游无关,
+		// 探测只会多打一次上游却不改变它们的状态。只有上游 429 值得占探测名额。
+		if upstreamItemBlockedByPolicy(*item) {
+			continue
+		}
+		// 上游 429 触顶的成员与冷却成员同样**只做探测**, 不能直接出局。
+		//
+		// 早先这里是 `upstreamItemLimited -> continue`, 把触顶成员整个 60 秒窗口踢出选路。
+		// 线上代价: 订阅渠道只有一个账号时, 一次瞬时 429 就让整组在窗口内没有任何候选,
+		// 请求在几毫秒内被网关拒绝(实测 duration 2~3ms), 连一次上游探测都没有 ——
+		// 而上游往往几秒后就恢复了, 网关却要空等到窗口重置。
+		//
+		// 改法是把它并进冷却的探测语义: 触顶成员仍只占一个探测名额, 由该请求去试上游;
+		// 试通即证明限流已解除, 试不通也只消耗那个名额, 不会把正常流量放给确实受限的成员。
+		limited := upstreamItemLimited(*item)
+		deadline, cooling := route.Cooldowns[item.ID]
+		if !limited && cooling && deadline > now {
+			continue
+		}
+		if limited || cooling {
+			if probeCandidate == nil {
+				probeCandidate = item
+			}
+			// A recovered/limited member is probe-only while another probe is in flight.
+			// Keeping it in candidates would let score/price selection release
+			// normal traffic before the probe has established recovery.
+			if route.ProbeItemID != 0 {
+				continue
+			}
+		} else if !hasHealthy || item.Priority < bestHealthyPriority {
+			bestHealthyPriority, hasHealthy = item.Priority, true
+		}
+		candidates = append(candidates, *item)
+	}
+
+	// 冷却到期的成员优先级高于全部健康候选时先放一个探测请求(与故障转移原语义一致);
+	// 全组都在恢复时也只放一个探测, 避免永久等待; 占用期间到期成员不进入正常候选池。
+	if probeCandidate != nil && route.ProbeItemID == 0 &&
+		(!hasHealthy || probeCandidate.Priority < bestHealthyPriority) {
+		route.ProbeItemID = probeCandidate.ID
+		publishRouteLocked(route)
+		return *probeCandidate
+	}
+
+	if len(candidates) == 0 {
+		return model.GroupItem{}
+	}
+
+	chosen := selectGroupItem(group, candidates)
+	// Strategy-selected recovery traffic must reserve the same single probe slot.
+	if _, recovering := route.Cooldowns[chosen.ID]; recovering {
+		route.ProbeItemID = chosen.ID
+		publishRouteLocked(route)
+		return chosen
+	}
+	// 冷启动探索: 按实测成绩择优的模式下, 没有观测的成员会被评分结构性排除在外
+	// (延迟与成功率只能取中性值), 永远拿不到第一批样本; 这里按固定节奏把一小部分请求
+	// 定向给这样的成员, 让它先攒够样本, 之后回到正常评分竞争(详见 explore.go)。
+	if explore, ok := coldStartExplore(group, candidates, chosen, route); ok {
+		chosen = explore
+	}
+	route.CurrentItemID = chosen.ID
+	publishRouteLocked(route)
+	return chosen
+}
+
+// routeExplanation records observable constraints at selection time; admission
+// remains authoritative because concurrent callers may consume capacity afterwards.
+func routeExplanation(group model.Group, chosen model.GroupItem, canary bool) model.RelayRouteDecision {
+	state := RouteStateOf(group)
+	now := time.Now().UnixMilli()
+	reason := "strategy_" + string(group.Mode)
+	// 灰度是决定本轮选路的直接原因, 其余解释都只描述状态, 不能覆盖它。
+	// 灰度命中优先记录: 它是本轮选路的决定因素, 比探测与亲和更能解释"为什么是这个成员"。
+	if canary && chosen.ID != 0 {
+		reason = "canary_rollout"
+	}
+	if reason != "canary_rollout" {
+		if state.ProbeItemID == chosen.ID && chosen.ID != 0 {
+			reason = "recovery_probe"
+		}
+		// 冷启动探索: 本轮不是评分择优的结果, 而是给新成员的试探配额。必须如实记下来,
+		// 否则用户看到日志里"按评分选路"却打到评分排名靠后的新渠道, 无法解释。
+		if state.exploreItemID == chosen.ID && chosen.ID != 0 {
+			reason = "cold_start_explore"
+		}
+		if group.RequestRoutingPreference == "" && state.AffinityUntil > now && state.CurrentItemID == chosen.ID && chosen.ID != 0 {
+			reason = "affinity"
+		}
+	}
+	result := model.RelayRouteDecision{Mode: string(group.Mode), Phase: "selected", Reason: reason}
+	for _, item := range group.Items {
+		why := "eligible"
+		switch {
+		case !item.Available:
+			why = "unavailable"
+		case upstreamItemLimited(item):
+			why = "rate_or_concurrency_limit"
+		case group.Mode == model.GroupModeManual && item.ID != group.ActiveItemID:
+			why = "not_manual_target"
+		case state.Cooldowns[item.ID] > now:
+			why = "cooldown"
+		case item.ID == chosen.ID:
+			why = "selected"
+		}
+		result.Candidates = append(result.Candidates, model.RelayRouteCandidate{ItemID: item.ID, ChannelCode: item.ChannelName, Model: item.ModelName, Reason: why})
+	}
+	return result
+}
+
+// selectGroupItem 在未冷却候选中按模式策略选出本轮成员; candidates 已按优先级升序。
+// 故障转移维持优先级顺序; 其余动态策略在候选集内按各自维度择优, 平局回落优先级。
+func selectGroupItem(group model.Group, candidates []model.GroupItem) model.GroupItem {
+	switch group.Mode {
+	case model.GroupModePrice:
+		best, bestPrice := candidates[0], memberPrice(group, candidates[0])
+		for _, item := range candidates[1:] {
+			if p := memberPrice(group, item); p < bestPrice {
+				best, bestPrice = item, p
+			}
+		}
+		return best
+	case model.GroupModeLatency:
+		best := candidates[0]
+		bestWait, bestKnown := memberWait(group, candidates[0])
+		for _, item := range candidates[1:] {
+			w, known := memberWait(group, item)
+			// 有实测耗时者优先于冷成员; 同为冷成员时按优先级保持原顺序。
+			if known && (!bestKnown || w < bestWait) {
+				best, bestWait, bestKnown = item, w, true
+			}
+		}
+		return best
+	case model.GroupModeSuccess:
+		best := candidates[0]
+		bestRate, bestKnown := memberRate(group, candidates[0])
+		for _, item := range candidates[1:] {
+			r, known := memberRate(group, item)
+			if known && (!bestKnown || r > bestRate) {
+				best, bestRate, bestKnown = item, r, true
+			}
+		}
+		return best
+	case model.GroupModeScore:
+		return selectByScore(group, candidates)
+	case model.GroupModeRandom:
+		return candidates[rand.IntN(len(candidates))]
+	default: // 故障转移及未知模式: 按优先级取第一个。
+		return candidates[0]
+	}
+}
+
+// memberPrice 返回成员在配置口径下的用户价(每百万 token)。
+func memberPrice(group model.Group, item model.GroupItem) float64 {
+	price := item.UserPrice
+	switch group.RelayConfig.PriceMetric {
+	case model.PriceMetricInput:
+		return price.Input
+	case model.PriceMetricOutput:
+		return price.Output
+	default: // blended: 读写均值。
+		return (price.Input + price.Output) / 2
+	}
+}
+
+// memberWait 返回成员用于排名的耗时(毫秒)。
+// 指标按上游渠道模型全局聚合, 使同一模型的成绩在任意分组与用户下一致。
+// 冷成员(无观测)返回中性中性值而非 0: 若把冷成员当最优, 一个尚无成绩的成员会无条件压过
+// 有真实成绩的成员; 中性值只在其它维度胜出时才可能被选中, 兼顾新成员试用与老成员降级。
+func memberWait(group model.Group, item model.GroupItem) (float64, bool) {
+	waitMs, _, samples := memberScopeMetric(group, item)
+	if samples == 0 {
+		return 0, false
+	}
+	return waitMs, true
+}
+
+// memberRate 返回成员用于排名的成功率; ok 为 false 表示冷成员(无观测)。
+func memberRate(group model.Group, item model.GroupItem) (float64, bool) {
+	_, success, samples := memberScopeMetric(group, item)
+	if samples == 0 {
+		return 0, false
+	}
+	return success, true
+}
+
+// memberScopeMetric 取成员的评分指标: 优先用渠道模型全局指标, 缺失时回落本分组观测。
+// 全局指标冷启动时按「该渠道模型样本数最大的成员观测」播种, 保证重启后评分从最有据的历史成绩
+// 起步; 旧实现用首个被访问的成员播种, 一条陈旧小样本足以把整个模型钉死在 0 分(生产实证)。
+func memberScopeMetric(group model.Group, item model.GroupItem) (waitMs float64, success float64, samples int) {
+	if item.ChannelModelID != 0 {
+		if waitMs, success, samples = seedModelMetricBest(item.ChannelModelID); samples > 0 {
+			return waitMs, success, samples
+		}
+	}
+	return memberMetricOf(group.ID, item.ID)
+}
+
+// selectByScore 综合评分: 价格(低好), 延迟(低好)与成功率(高好)各自在候选集内归一化后加权求和。
+// 权重为相对值, 总和为分母; 冷成员在延迟与成功率维度按最优值参与, 让新成员先获得一次试用。
+func selectByScore(group model.Group, candidates []model.GroupItem) model.GroupItem {
+	config := group.RelayConfig
+	priceWeight, latencyWeight, successWeight := effectiveScoreWeights(config)
+	weightSum := float64(priceWeight + latencyWeight + successWeight)
+	if weightSum <= 0 {
+		return candidates[0]
+	}
+
+	prices := make([]float64, len(candidates))
+	waits := make([]float64, len(candidates))
+	rates := make([]float64, len(candidates))
+	samples := make([]int, len(candidates))
+	known := make([]bool, len(candidates))
+	for i, item := range candidates {
+		prices[i] = memberPrice(group, item)
+		waits[i], rates[i], samples[i] = memberScopeMetric(group, item)
+		known[i] = samples[i] > 0
+	}
+
+	// 可靠性软性惩罚: 成功率低于下限的成员按 succ/floor 比例折减总分, 而非无条件垫底。
+	// 之前的硬门槛会把"仅略低于下限"的成员和最便宜成员一起压到健康成员之后, 反而违背了
+	// 价格权重(如 60)——最便宜但成功率 0.66 的模型被更贵的 0.77 模型反超。
+	// 软惩罚既保留价格主导, 又把彻底不可用(succ≈0)的模型自动压到近 0 分垫底。
+	floor := effectiveReliabilityFloor(config)
+	best, bestScore := candidates[0], math.Inf(-1)
+	for i, item := range candidates {
+		score := memberScore(priceWeight, latencyWeight, successWeight, i, prices, waits, rates, known)
+		// 折减强度按样本置信度缩放: 一条孤例观测不足以把分数乘到 0(否则评分归零后永不被选中,
+		// 也就永远翻不了身), 样本充足的失败模型仍被压到近 0 分垫底。
+		score *= reliabilityPenalty(rates[i], samples[i], floor)
+		// 观察期折减: 未转正渠道在同等条件下排在稳定渠道之后, 但仍可被选中以积累毕业样本。
+		score *= observationPenalty(item)
+		if score > bestScore {
+			best, bestScore = item, score
+		}
+	}
+	return best
+}
+
+// 观察期折减(P2): 尚未转正的渠道在综合评分里按级别打折。
+//
+// 为什么是折减而不是排除: 观察期渠道已经过审、可以正常转发, 直接排除会让渠道商刚上线就零流量,
+// 永远攒不够毕业样本。折减让它在同等条件下排在稳定渠道之后, 但仍能被选中并积累数据。
+//
+// 三档系数与设计稿一致: observing 0.85 / probation 0.70 / revoked 0.50。
+// trusted 与未知(非渠道成员、渠道已删) 均为 1.0, 保持既有行为不变。
+const (
+	observationFactorDefault   = 1.0
+	observationFactorObserving = 0.85
+	observationFactorProbation = 0.70
+	observationFactorRevoked   = 0.50
+)
+
+// observationPenalty 返回成员所属渠道的观察期折减系数(≤1)。
+// 只作用于 score 模式与评分展示: failover/price/latency 等模式是硬排序, 不该被质量标签改写,
+// 否则「按价格排序」的结果会依赖与价格无关的信任级别, 用户无法解释。
+func observationPenalty(item model.GroupItem) float64 {
+	if item.ChannelID == 0 {
+		return observationFactorDefault
+	}
+	level, ok := op.ChannelTrustLevelOf(item.ChannelID)
+	if !ok {
+		return observationFactorDefault
+	}
+	switch level {
+	case model.ChannelTrustObserving:
+		return observationFactorObserving
+	case model.ChannelTrustProbation:
+		return observationFactorProbation
+	case model.ChannelTrustRevoked:
+		return observationFactorRevoked
+	default: // trusted 与历史空值
+		return observationFactorDefault
+	}
+}
+
+// reliabilityFloorDefault 是成员可靠性下限的内置兜底: 成功率(EMA)低于该值视为不健康成员。
+const reliabilityFloorDefault = 0.7
+
+// penaltyConfidenceK 是可靠性软惩罚的置信度常数: 观测样本数 n 对应的惩罚强度为 n/(n+k)。
+// 样本越少惩罚越轻, 让一次孤例观测(哪怕恰好失败)不足以把分数直接乘到 0;
+// 样本充足后强度趋近 1, 行为与全额软惩罚一致。
+const penaltyConfidenceK = 5
+
+// reliabilityPenalty 返回可靠性软惩罚系数(≤1): 成功率低于下限时按 rate/floor 折减,
+// 折减强度再按样本置信度 n/(n+penaltyConfidenceK) 缩放 —— 单条陈旧观测不足以钉死评分,
+// 而样本充足的失败模型仍会被压到近 0 分垫底。冷成员(无样本)恒不惩罚, 保留一次试用机会。
+func reliabilityPenalty(rate float64, samples int, floor float64) float64 {
+	if floor <= 0 || samples <= 0 || rate >= floor {
+		return 1
+	}
+	strength := float64(samples) / (float64(samples) + penaltyConfidenceK)
+	return 1 - strength*(1-rate/floor)
+}
+
+// effectiveReliabilityFloor 解析可靠性下限: 分组自定义优先, 否则用系统设置, 均缺失回落内置值。
+func effectiveReliabilityFloor(config model.GroupRelayConfig) float64 {
+	if config.ReliabilityFloor > 0 {
+		return float64(config.ReliabilityFloor) / 100
+	}
+	if system, err := op.SettingGetInt(model.SettingKeyScoreReliabilityFloor); err == nil && system > 0 {
+		return float64(system) / 100
+	}
+	return reliabilityFloorDefault
+}
+
+// 综合评分的内置兜底配比: 系统设置缺失且分组未自定义时使用。
+const (
+	defaultScorePriceWeight   = 40
+	defaultScoreLatencyWeight = 30
+	defaultScoreSuccessWeight = 30
+)
+
+// effectiveScoreWeights 解析综合评分的有效权重。
+// 分组内某维度权重为 0 表示未自定义, 按系统默认设置(设置页"综合评分默认参数")执行;
+// 分组自定义的维度(>0)保持不变。分组与系统都未给出有效配比时回落内置 40/30/30。
+func effectiveScoreWeights(config model.GroupRelayConfig) (int, int, int) {
+	priceWeight, latencyWeight, successWeight := config.ScorePriceWeight, config.ScoreLatencyWeight, config.ScoreSuccessWeight
+	if priceWeight <= 0 {
+		if system, err := op.SettingGetInt(model.SettingKeyScorePriceWeight); err == nil && system > 0 {
+			priceWeight = system
+		}
+	}
+	if latencyWeight <= 0 {
+		if system, err := op.SettingGetInt(model.SettingKeyScoreLatencyWeight); err == nil && system > 0 {
+			latencyWeight = system
+		}
+	}
+	if successWeight <= 0 {
+		if system, err := op.SettingGetInt(model.SettingKeyScoreSuccessWeight); err == nil && system > 0 {
+			successWeight = system
+		}
+	}
+	if priceWeight <= 0 && latencyWeight <= 0 && successWeight <= 0 {
+		return defaultScorePriceWeight, defaultScoreLatencyWeight, defaultScoreSuccessWeight
+	}
+	return priceWeight, latencyWeight, successWeight
+}
+
+// memberScore 计算候选集中第 i 个成员的综合评分; 各维度在候选集内最小-最大归一化, 区间退化时并列。
+// known 标记该成员是否有实测数据: 冷成员的延迟与成功率按中性值 0.5 参与,
+// 既不因无样本被当成最优而抢占首位, 也不因无样本被误判为最差。
+func memberScore(priceWeight, latencyWeight, successWeight, i int, prices, waits, rates []float64, known []bool) float64 {
+	priceScore := normalizedDim(prices, i, false) // 价格低者得分高。
+	latScore, succScore := 0.5, 0.5
+	if known[i] {
+		latScore = normalizedDim(waits, i, false) // 延迟低者得分高。
+		succScore = normalizedDim(rates, i, true) // 成功率高者得分高。
+	}
+	return (float64(priceWeight)*priceScore +
+		float64(latencyWeight)*latScore +
+		float64(successWeight)*succScore) /
+		float64(priceWeight+latencyWeight+successWeight)
+}
+
+// normalizedDim 把维度值归一到 0..1; higherBetter 为假时反向; 全体同值时并列返回 1。
+func normalizedDim(values []float64, i int, higherBetter bool) float64 {
+	minV, maxV := values[0], values[0]
+	for _, v := range values {
+		minV = min(minV, v)
+		maxV = max(maxV, v)
+	}
+	if maxV == minV {
+		return 1
+	}
+	norm := (values[i] - minV) / (maxV - minV)
+	if higherBetter {
+		return norm
+	}
+	return 1 - norm
+}
+
+// recordRouteSuccess 上报一轮成功: 结束该成员的冷却与探测占用, 并在故障切换后按配置开始亲和。
+func recordRouteSuccess(group model.Group, itemID int) {
+	if group.Mode == model.GroupModeManual {
+		return
+	}
+
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	route := routes[group.ID]
+	if route == nil {
+		return
+	}
+	now := time.Now().UnixMilli()
+	changed := false
+
+	// 任何一次成功都证明该成员可用: 清掉残留的冷却条目。
+	// 不清的话条目会一直挂在冷却表里, 让该成员反复被登记为"恢复探测"候选。
+	if _, cooling := route.Cooldowns[itemID]; cooling {
+		delete(route.Cooldowns, itemID)
+		changed = true
+	}
+	// 探测成功说明该成员已恢复; 若当前路由不在亲和期内则立即切回该成员。
+	if route.ProbeItemID == itemID {
+		route.ProbeItemID = 0
+		if route.CurrentItemID == 0 || route.AffinityUntil <= now {
+			route.CurrentItemID = itemID
+			route.AffinityUntil = 0
+		}
+		changed = true
+	}
+	// 亲和只在故障切换后的首次成功时开始, 使请求在一段时间内稳定留在备用成员上。
+	if route.CurrentItemID == itemID && route.affinityArmed {
+		route.affinityArmed = false
+		if group.RelayConfig.MemberAffinitySeconds > 0 {
+			route.AffinityUntil = now + int64(group.RelayConfig.MemberAffinitySeconds)*1000
+			changed = true
+		}
+	}
+	if changed {
+		publishRouteLocked(route)
+	}
+}
+
+// recordRouteFailure 上报一轮失败: 达到配置的总尝试次数后将该成员打入冷却并让出当前路由, 返回是否已冷却。
+// failures 为该成员在本请求内包含首次请求的连续失败次数, 由调用方累计。
+func recordRouteFailure(group model.Group, itemID, failures int) bool {
+	if group.Mode == model.GroupModeManual {
+		return false
+	}
+
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	route := routes[group.ID]
+	if route == nil {
+		return false
+	}
+	// 探测请求只有一次机会, 常规成员达到配置的总尝试次数后进入冷却。
+	if route.ProbeItemID != itemID && failures < group.RelayConfig.MemberMaxAttempts {
+		return false
+	}
+
+	now := time.Now().UnixMilli()
+	route.Cooldowns[itemID] = now + int64(group.RelayConfig.MemberCooldownSeconds)*1000
+	if route.ProbeItemID == itemID {
+		route.ProbeItemID = 0
+	}
+	// 当前路由失败才需要下一个成员开始亲和; 独立探测失败不影响当前路由。
+	if route.CurrentItemID == itemID {
+		route.CurrentItemID = 0
+		route.AffinityUntil = 0
+		route.affinityArmed = true
+	}
+	publishRouteLocked(route)
+	return true
+}
+
+// probeHeldBy 报告某成员当前是否持有本分组的恢复探测名额。
+//
+// 准入层用它区分两种"被标记触顶": 持有探测名额的那一个请求**必须**真的打到上游,
+// 否则探测永远走不出去, 标记也就永远清不掉 —— 被拒绝的请求成功不了, 只有成功才清标记。
+// 这是只有出口实测才能确认上游是否放开的场合, 少一次真实调用就多锁死一整个窗口。
+func probeHeldBy(groupID, itemID int) bool {
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	route := routes[groupID]
+	return route != nil && route.ProbeItemID == itemID
+}
+
+// releaseRouteProbe 归还未产生成败结论的探测占用, 用于请求被人工中止或客户端断开。
+func releaseRouteProbe(group model.Group, itemID int) {
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	if route := routes[group.ID]; route != nil && route.ProbeItemID == itemID {
+		route.ProbeItemID = 0
+		publishRouteLocked(route)
+	}
+}
+
+// hasOtherEligible 检查同分组内除了 excludeItemID 之外是否还有可用成员(未冷却、未限流、可用)。
+// 用于决定当前成员失败后是否立即换组, 还是等待重试当前成员。
+func hasOtherEligible(group model.Group, excludeItemID int) bool {
+	routeMu.Lock()
+	route := routes[group.ID]
+	var cooldowns map[int]int64
+	if route != nil {
+		cooldowns = maps.Clone(route.Cooldowns)
+	}
+	routeMu.Unlock()
+
+	now := time.Now().UnixMilli()
+	for _, item := range group.Items {
+		if item.ID == excludeItemID {
+			continue
+		}
+		if !item.Available || upstreamItemLimited(item) {
+			continue
+		}
+		if deadline, cooling := cooldowns[item.ID]; cooling && deadline > now {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// upstreamItemLimited 判断成员是否被**上游 429** 强制标记(可用于放开探测的那种触顶)。
+func upstreamItemLimited(item model.GroupItem) bool {
+	for _, scope := range upstreamItemScopes(item) {
+		if limiter.ForcedBlocked(scope) {
+			return true
+		}
+	}
+	return false
+}
+
+// upstreamItemBlockedByPolicy 判断成员是否因并发或策略配额触顶(这类不该探测)。
+func upstreamItemBlockedByPolicy(item model.GroupItem) bool {
+	for _, scope := range upstreamItemScopes(item) {
+		if limiter.Blocked(scope) && !limiter.ForcedBlocked(scope) {
+			return true
+		}
+	}
+	return false
+}
+
+// limitedUpstreamReason 说明"候选全被上游限流挡掉"这一具体原因, 拿不到时返回空串。
+//
+// 为什么需要它: 选路返回空成员后, 请求会走 waitAvailable, 而等待队列默认关闭
+// (max_waiting_requests=0), 于是对外只会报 "no available upstream; waiting disabled"。
+// 那条文案把"排队功能没开"当成了原因, 可真实原因是上游刚回过 429 —— 管理员照它去开排队,
+// 既治不好限流, 还会白白让请求堆在队列里。
+//
+// 只在这一情形下替换文案: 必须存在被限流标记的成员, 且全组没有其他可用成员。
+// 若还有健康成员, 空候选另有原因(冷却/停用等), 应保留原有等待语义。
+func limitedUpstreamReason(group model.Group) string {
+	limited, healthy := 0, 0
+	for _, item := range group.Items {
+		if !item.Available {
+			continue
+		}
+		if upstreamItemLimited(item) {
+			limited++
+			continue
+		}
+		healthy++
+	}
+	if limited == 0 || healthy > 0 {
+		return ""
+	}
+	return fmt.Sprintf(
+		"all %d upstream member(s) of group %q are rate limited by the provider in the current window; retry after the window resets",
+		limited, group.Name)
+}
+
+// groupRouteLocked 取出分组路由状态并清理已删除成员的残留; 调用方必须持有锁。
+func groupRouteLocked(group model.Group) *RouteState {
+	route := routes[group.ID]
+	if route == nil {
+		route = &RouteState{GroupID: group.ID, Cooldowns: make(map[int]int64)}
+		routes[group.ID] = route
+	}
+	items := make(map[int]bool, len(group.Items))
+	for _, item := range group.Items {
+		items[item.ID] = true
+	}
+	for itemID := range route.Cooldowns {
+		if !items[itemID] {
+			delete(route.Cooldowns, itemID)
+		}
+	}
+	if route.ProbeItemID != 0 && !items[route.ProbeItemID] {
+		route.ProbeItemID = 0
+	}
+	if route.exploreItemID != 0 && !items[route.exploreItemID] {
+		route.exploreItemID = 0
+	}
+	if route.CurrentItemID != 0 && !items[route.CurrentItemID] {
+		route.CurrentItemID = 0
+		route.AffinityUntil = 0
+		route.affinityArmed = false
+	}
+	return route
+}
+
+// itemOf 返回分组内指定 ID 的成员, 不存在时返回零值。
+func itemOf(group model.Group, itemID int) model.GroupItem {
+	for _, item := range group.Items {
+		if item.ID == itemID {
+			return item
+		}
+	}
+	return model.GroupItem{}
+}
+
+// publishRouteLocked 非阻塞发布路由状态, 连接拥塞时关闭它并交给客户端重连获取全量快照; 冷却表按值复制以免前端读到后续变更; 调用方必须持有锁。
+func publishRouteLocked(route *RouteState) {
+	markRouteDirty(route.GroupID) // 路由状态变更后由后台批量落库, 重启可恢复。
+	message := *route
+	message.Cooldowns = maps.Clone(route.Cooldowns)
+	for stream := range routeStreams {
+		select {
+		case stream <- message:
+		default:
+			delete(routeStreams, stream)
+			close(stream)
+		}
+	}
+}
+
+// OpenRouteStream 注册路由流连接, 返回后续增量通道。
+// 不再返回快照: 分组读取接口已随分组带回当前路由状态, 前端由此拿到的初始值即全量, 连接只负责增量。
+func OpenRouteStream() chan RouteState {
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	stream := make(chan RouteState, routeStreamBuffer)
+	routeStreams[stream] = struct{}{}
+	return stream
+}
+
+// CloseRouteStream 注销并关闭指定路由流连接。
+func CloseRouteStream(stream chan RouteState) {
+	routeMu.Lock()
+	defer routeMu.Unlock()
+
+	if _, exists := routeStreams[stream]; exists {
+		delete(routeStreams, stream)
+		close(stream)
+	}
+}
+
+// coolItem 立即把成员打入冷却并让出当前路由, 冷却时长由调用方按错误类别给出。
+// 与 recordRouteFailure 的区别: 不看尝试次数、时长不取配置值, 供凭据/额度/过载/模型类错误快速换路。
+func coolItem(group model.Group, itemID int, seconds int) {
+	if group.Mode == model.GroupModeManual {
+		return
+	}
+	if seconds < 1 {
+		seconds = 1
+	}
+	routeMu.Lock()
+	defer routeMu.Unlock()
+	route := routes[group.ID]
+	if route == nil {
+		return
+	}
+	route.Cooldowns[itemID] = time.Now().UnixMilli() + int64(seconds)*1000
+	if route.ProbeItemID == itemID {
+		route.ProbeItemID = 0
+	}
+	// 当前路由失败才需要下一个成员开始亲和。
+	if route.CurrentItemID == itemID {
+		route.CurrentItemID = 0
+		route.AffinityUntil = 0
+		route.affinityArmed = true
+	}
+	publishRouteLocked(route)
+}

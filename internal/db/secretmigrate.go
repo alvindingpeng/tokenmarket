@@ -1,0 +1,213 @@
+package db
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/secretstore"
+	"gorm.io/gorm"
+)
+
+// 既有明文的原子幂等迁移: 把 settings / channel_keys 里遗留的明文凭据包进信封。
+//
+//   - 幂等: 已是信封的行只验不改(顺带校验当前主密钥能开这些信封), 重复执行零写入;
+//   - 全量验证: settings.value 与 channel_keys 的秘密列(key / api_secret)里出现的每一个信封都会被验开 ——
+//     包括落在非密钥设置行里的信封。错误的主密钥在启动的这一步就暴露, 不必等有流量才发现;
+//   - 原子: 全部 UPDATE 收在一个事务里, 中途失败不留半加密状态;
+//   - fail closed: 任何信封打不开(主密钥配错/被换行搬运)都在写入前报错, 启动拒绝继续。
+//
+// 走原始 SQL 读写而不经过 gorm 模型: 序列化器会把读到的值解开成明文、写入时再加密,
+// 拿它做迁移会把已加密行反复重新加密, 也会让库里到底是什么变得不可见。
+type SecretMigrationStats struct {
+	SettingsEncrypted    int `json:"settings_encrypted"`     // 本次加密的密钥类设置行。
+	ChannelKeysEncrypted int `json:"channel_keys_encrypted"` // 本次加密的渠道凭据秘密列(key / api_secret)。
+	EgressesEncrypted    int `json:"egresses_encrypted"`     // 本次加密的出口代理地址(channel_egresses.url)。
+	AlreadyEncrypted     int `json:"already_encrypted"`      // 已是信封并验开通过的行。
+	EmptySkipped         int `json:"empty_skipped"`          // 空值行: 无秘密可言, 保持空串。
+}
+
+// Total 返回本次实际加密的行数。
+func (s SecretMigrationStats) Total() int {
+	return s.SettingsEncrypted + s.ChannelKeysEncrypted + s.EgressesEncrypted
+}
+
+// MigrateSecretRows 迁移(或 dryRun 演练)存量明文凭据。主密钥未初始化直接报错。
+func MigrateSecretRows(ctx context.Context, dryRun bool) (SecretMigrationStats, error) {
+	store, err := secretstore.Require()
+	if err != nil {
+		return SecretMigrationStats{}, err
+	}
+	conn := db.WithContext(ctx)
+	var stats SecretMigrationStats
+
+	var settingRows []struct {
+		Key   string
+		Value string
+	}
+	if err := conn.Raw("SELECT key, value FROM settings").Scan(&settingRows).Error; err != nil {
+		return stats, fmt.Errorf("read settings for secret migration: %w", err)
+	}
+	type settingUpdate struct{ key, value string }
+	settingUpdates := make([]settingUpdate, 0)
+	for _, row := range settingRows {
+		if !model.SettingNeedsAtRestEncryption(model.SettingKey(row.Key)) {
+			// 非密钥设置项不加密, 但值里若出现信封(被搬移的密文/历史脏数据/换钥残留)必须验:
+			// 启动要把"库里每个信封都能被当前主密钥打开"验证完整, 错误 KEK 不等流量来暴露。
+			if secretstore.IsEnvelope(row.Value) {
+				if _, err := store.Open(secretstore.SettingBinding(row.Key), row.Value); err != nil {
+					return stats, fmt.Errorf("setting %q: %w", row.Key, err)
+				}
+				stats.AlreadyEncrypted++
+			}
+			continue
+		}
+		sealed, encrypted, err := migrateSecretValue(store, secretstore.SettingBinding(row.Key), row.Value, &stats)
+		if err != nil {
+			return stats, fmt.Errorf("setting %q: %w", row.Key, err)
+		}
+		if encrypted {
+			settingUpdates = append(settingUpdates, settingUpdate{key: row.Key, value: sealed})
+		}
+	}
+
+	var keyRows []struct {
+		ID        int
+		ChannelID int
+		Name      string
+		Key       string
+		APISecret string
+	}
+	// 老库可能还没有 api_secret 列(只读巡检/尚未跑过补列迁移): 缺列时以空串代入, 只迁 key。
+	secretSelect := "key, api_secret"
+	if !conn.Migrator().HasColumn("channel_keys", "api_secret") {
+		secretSelect = "key, '' AS api_secret"
+	}
+	if err := conn.Raw("SELECT id, channel_id, name, " + secretSelect + " FROM channel_keys").Scan(&keyRows).Error; err != nil {
+		return stats, fmt.Errorf("read channel keys for secret migration: %w", err)
+	}
+	type keyUpdate struct {
+		id     int
+		column string
+		value  string
+	}
+	keyUpdates := make([]keyUpdate, 0)
+	for _, row := range keyRows {
+		if row.ChannelID == 0 {
+			// 归属缺失的行没法绑 AAD: 与其写进弱绑定密文, 不如把问题摆出来。
+			return stats, fmt.Errorf("channel key row %d has no channel_id ownership, refusing to migrate", row.ID)
+		}
+		// key 与 api_secret 两个秘密列走同一套迁移: 明文包进信封, 信封逐个验开。
+		// api_secret 是讯飞专用的第二秘密列, 绝大多数凭据没有它: 空值不计入统计,
+		// 免得每行凭据都多报一次 empty_skipped, 扰动既有行级计数语义。
+		for _, secretColumn := range []struct {
+			column    string
+			value     string
+			skipEmpty bool
+		}{{column: "key", value: row.Key}, {column: "api_secret", value: row.APISecret, skipEmpty: true}} {
+			if secretColumn.skipEmpty && secretColumn.value == "" {
+				continue
+			}
+			// 绑定带列名: key 与 api_secret 的密文互换位置在这里就会被归属比对拦下。
+			sealed, encrypted, err := migrateSecretValue(store, secretstore.ChannelKeyColumnBinding(row.ChannelID, row.Name, secretColumn.column), secretColumn.value, &stats)
+			if err != nil {
+				return stats, fmt.Errorf("channel key %d/%q: %w", row.ChannelID, row.Name, err)
+			}
+			if encrypted {
+				keyUpdates = append(keyUpdates, keyUpdate{id: row.ID, column: secretColumn.column, value: sealed})
+			}
+		}
+	}
+
+	// 出口代理地址: 此前是唯一明文落库的凭据列(库文件与 VACUUM INTO 物理备份里都是
+	// http://user:pass@host:port 原文)。绑定与序列化器一致, 取 (channel_id, name)。
+	var egressRows []struct {
+		ID        int
+		ChannelID int
+		Name      string
+		URL       string
+	}
+	// 老库/只读巡检可能还没有这张表: 缺表不算错误, 照常继续(其余表照旧迁移)。
+	if conn.Migrator().HasTable("channel_egresses") {
+		if err := conn.Raw("SELECT id, channel_id, name, url FROM channel_egresses").Scan(&egressRows).Error; err != nil {
+			return stats, fmt.Errorf("read channel egresses for secret migration: %w", err)
+		}
+	}
+	type egressUpdate struct {
+		id    int
+		value string
+	}
+	egressUpdates := make([]egressUpdate, 0)
+	for _, row := range egressRows {
+		if row.ChannelID == 0 || row.Name == "" {
+			// 没有归属就没法绑 AAD: 与其写进弱绑定密文, 不如把问题摆出来。
+			return stats, fmt.Errorf("channel egress row %d has no (channel_id, name) ownership, refusing to migrate", row.ID)
+		}
+		sealed, encrypted, err := migrateSecretValue(store, secretstore.ChannelEgressBinding(row.ChannelID, row.Name), row.URL, &stats)
+		if err != nil {
+			return stats, fmt.Errorf("channel egress %d/%q: %w", row.ChannelID, row.Name, err)
+		}
+		if encrypted {
+			egressUpdates = append(egressUpdates, egressUpdate{id: row.ID, value: sealed})
+		}
+	}
+
+	// TOTP has no legacy plaintext format: validate every stored envelope before startup.
+	if err := validateUserTOTPSecrets(conn, store); err != nil {
+		return stats, err
+	}
+	if dryRun || (len(settingUpdates) == 0 && len(keyUpdates) == 0 && len(egressUpdates) == 0) {
+		return stats, nil
+	}
+	err = conn.Transaction(func(tx *gorm.DB) error {
+		for _, update := range settingUpdates {
+			if err := tx.Exec("UPDATE settings SET value = ? WHERE key = ?", update.value, update.key).Error; err != nil {
+				return err
+			}
+		}
+		for _, update := range keyUpdates {
+			if err := tx.Exec("UPDATE channel_keys SET "+update.column+" = ? WHERE id = ?", update.value, update.id).Error; err != nil {
+				return err
+			}
+		}
+		for _, update := range egressUpdates {
+			if err := tx.Exec("UPDATE channel_egresses SET url = ? WHERE id = ?", update.value, update.id).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return stats, fmt.Errorf("apply secret migration: %w", err)
+	}
+	return stats, nil
+}
+
+// migrateSecretValue 判定单个取值的迁移动作: 空值跳过, 信封验开计数, 明文加密计数。
+func migrateSecretValue(store *secretstore.MasterKey, binding secretstore.Binding, value string, stats *SecretMigrationStats) (sealed string, encrypted bool, err error) {
+	if value == "" {
+		stats.EmptySkipped++
+		return "", false, nil
+	}
+	if secretstore.IsEnvelope(value) {
+		if _, err := store.Open(binding, value); err != nil {
+			// 主密钥配错、keyID 对不上、或密文被搬到别的行, 都在这里被拦下。
+			return "", false, err
+		}
+		stats.AlreadyEncrypted++
+		return "", false, nil
+	}
+	sealed, err = store.Seal(binding, value)
+	if err != nil {
+		return "", false, err
+	}
+	switch binding.Table {
+	case secretSettingTable:
+		stats.SettingsEncrypted++
+	case secretEgressTable:
+		stats.EgressesEncrypted++
+	default:
+		stats.ChannelKeysEncrypted++
+	}
+	return sealed, true, nil
+}

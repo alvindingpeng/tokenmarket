@@ -1,0 +1,139 @@
+package conf
+
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/charmbracelet/log"
+	"github.com/spf13/viper"
+)
+
+// 请求体上限的缺省值: 网关会把请求体读进内存做改写与留痕, 不设上限时一个大 body
+// 就足以把内存吃穿; 正常文本补全请求远小于 32 MiB。生图底图与生视频素材是真正的
+// 例外, 故转发接口(/v1)单列一档而不是直接豁免。
+//
+// /v1 这一档取 64 MiB 而不是更大: 请求体读进来之后还要交给 axonhub 的
+// httpclient.ReadHTTPRequest, 它对请求体的上限写死为 64 MiB(maxRequestBodySize),
+// 超过即返回 ErrRequestBodyTooLarge。网关放行到 512 MiB 并不能让这些请求成功, 只会让它
+// 多读一遍内存、再多拷一份 body 用于留痕, 然后在下一跳以"上游读取失败"的形状报错 ——
+// 既救不活也说不清。两侧同值, 超限在入口处就得到 413 与一条明确的日志。真要放过
+// 64 MiB 以上的素材, 必须同时改这里与上游库的常量, 只改一侧没有意义。
+const (
+	DefaultMaxBodyBytes      int64 = 32 << 20
+	DefaultRelayMaxBodyBytes int64 = 64 << 20
+)
+
+// MaxBodyBytes 返回管理端请求体上限; 配置为 0 或负数时回退缺省值。
+func MaxBodyBytes() int64 {
+	if AppConfig.Server.MaxBodyBytes > 0 {
+		return AppConfig.Server.MaxBodyBytes
+	}
+	return DefaultMaxBodyBytes
+}
+
+// RelayMaxBodyBytes 返回转发接口(/v1)的请求体上限。
+func RelayMaxBodyBytes() int64 {
+	if AppConfig.Server.RelayMaxBodyBytes > 0 {
+		return AppConfig.Server.RelayMaxBodyBytes
+	}
+	return DefaultRelayMaxBodyBytes
+}
+
+type Server struct {
+	Host           string   `mapstructure:"host"`
+	Port           int      `mapstructure:"port"`
+	TrustedProxies []string `mapstructure:"trusted_proxies"`
+	// MaxBodyBytes 管理端请求体上限(字节), 缺省 32 MiB; <=0 用内置默认值。
+	// 网关会把请求体读进内存做改写与留痕, 不设上限时一个大 body 就能把内存吃穿。
+	MaxBodyBytes int64 `mapstructure:"max_body_bytes"`
+	// RelayMaxBodyBytes 转发接口(/v1)的请求体上限; 生图底图与生视频素材需要更宽的一档,
+	// 但仍是上限而不是豁免。缺省 64 MiB, 与上游 axonhub httpclient 的读取上限同值。
+	RelayMaxBodyBytes int64 `mapstructure:"relay_max_body_bytes"`
+}
+
+type Log struct {
+	Level string `mapstructure:"level"`
+}
+
+type Database struct {
+	Type string `mapstructure:"type"`
+	Path string `mapstructure:"path"`
+}
+
+// Backup 备份机密配置: 只走 config.json 或环境变量(SWITCHYARD_BACKUP_*), 不入库。
+// 备份文件包含整个数据库, 口令与异地凭据若入库会被一并备份出去。
+type Backup struct {
+	Passphrase     string `mapstructure:"passphrase"`      // 备份加密口令, 空表示不加密。
+	RemoteURL      string `mapstructure:"remote_url"`      // WebDAV 异地目录地址, 空表示不推送。
+	RemoteUser     string `mapstructure:"remote_user"`     // WebDAV 用户名(可选)。
+	RemotePassword string `mapstructure:"remote_password"` // WebDAV 密码(可选)。
+}
+
+// Secret 静态凭据信封加密的主密钥(KEK)配置: 只走 config.json 或环境变量(SWITCHYARD_SECRET_*), 不入库。
+// 主密钥没有任何默认值或零值回退: 缺失/非法时启动拒绝(fail closed), 不存在"未配置就明文跑"的模式。
+type Secret struct {
+	KEKFile string `mapstructure:"kek_file"` // 主密钥文件路径(内容 hex 或 base64, 32 字节)。
+	KeyID   string `mapstructure:"key_id"`   // 可选显式密钥 ID; 留空按密钥材料派生(共享 KEK 的实例自动一致)。
+}
+
+type Config struct {
+	Server   Server   `mapstructure:"server"`
+	Log      Log      `mapstructure:"log"`
+	Database Database `mapstructure:"database"`
+	Backup   Backup   `mapstructure:"backup"`
+	Secret   Secret   `mapstructure:"secret"`
+}
+
+var AppConfig Config
+
+func Load(path string) error {
+	if path != "" {
+		viper.SetConfigFile(path)
+	} else {
+		viper.SetConfigName("config")
+		viper.SetConfigType("json")
+		viper.AddConfigPath("data")
+	}
+
+	viper.AutomaticEnv()
+	viper.SetEnvPrefix(APP_NAME)
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+
+	setDefaults()
+
+	if err := viper.ReadInConfig(); err == nil {
+		log.Infof("Using config file: %s", viper.ConfigFileUsed())
+	} else {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			log.Infof("Config file not found, creating default config")
+			if err := os.MkdirAll("data", 0755); err != nil {
+				log.Errorf("Failed to create data directory: %v", err)
+			}
+			if err := viper.SafeWriteConfigAs("data/config.json"); err != nil {
+				log.Errorf("Failed to create default config: %v", err)
+			}
+		} else {
+			return fmt.Errorf("error reading config file: %w", err)
+		}
+	}
+
+	if err := viper.Unmarshal(&AppConfig); err != nil {
+		return fmt.Errorf("unable to decode config into struct: %w", err)
+	}
+	return nil
+}
+
+func setDefaults() {
+	viper.SetDefault("server.host", "0.0.0.0")
+	viper.SetDefault("server.port", 8080)
+	// 缺省值与下方常量保持一致。
+	viper.SetDefault("server.max_body_bytes", DefaultMaxBodyBytes)
+	viper.SetDefault("server.relay_max_body_bytes", DefaultRelayMaxBodyBytes)
+	viper.SetDefault("database.type", "sqlite")
+	viper.SetDefault("database.path", "data/data.db")
+	viper.SetDefault("log.level", "info")
+	// 主密钥配置默认留空即可: 空表示"没配", 启动会 fail closed 报错, 不会有任何默认密钥。
+	viper.SetDefault("secret.kek_file", "")
+	viper.SetDefault("secret.key_id", "")
+}

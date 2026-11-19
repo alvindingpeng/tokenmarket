@@ -1,0 +1,191 @@
+name: release
+
+on:
+  push:
+    # 本地开发分支叫 master, 但 GitHub 仓库的默认分支是 main —— 两个都要列。
+    # 只写 master 的后果: 发布提交落在 main 上时整个流程一次都不触发,
+    # 从 v0.19.0 起 GitHub 上再没有新 Release, 应用内「检查更新」就一直停在
+    # 最后一个成功发布的版本(v0.18.0)。
+    branches:
+      - master
+      - main
+    paths:
+      - main.go
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    name: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Free Disk Space
+        uses: endersonmenezes/free-disk-space@v3
+        with:
+          remove_android: true
+          remove_dotnet: true
+          remove_haskell: true
+          remove_tool_cache: true
+          remove_swap: true
+          remove_packages_one_command: true
+          remove_packages: "azure-cli google-cloud-cli microsoft-edge-stable google-chrome-stable firefox postgresql* temurin-* *llvm* mysql* dotnet-sdk-*"
+          remove_folders: "/usr/share/swift /usr/share/miniconda /usr/share/az* /usr/local/lib/node_modules /usr/local/share/chromium /usr/local/share/powershell /usr/local/julia /usr/local/aws-cli /usr/local/aws-sam-cli /usr/share/gradle"
+          rm_cmd: "rmz"
+          rmz_version: "3.1.1"
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Publish tag
+        id: version
+        run: |
+          VERSION=$(grep '^// Version ' main.go | sed 's|^// Version ||' | tr -d ' ')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          # 本地 post-commit 钩子(scripts/publish-release.sh)会先一步建 tag 并推 Release,
+          # 这里必须幂等: tag 已存在就复用; 只有它指向别的提交时才是真问题, 显式报错。
+          if git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null || git fetch origin "refs/tags/${VERSION}:refs/tags/${VERSION}" 2>/dev/null; then
+            TAG_SHA="$(git rev-parse "refs/tags/${VERSION}^{commit}")"
+            HEAD_SHA="$(git rev-parse HEAD)"
+            if [ "${TAG_SHA}" != "${HEAD_SHA}" ]; then
+              echo "::error::tag ${VERSION} 已指向 ${TAG_SHA}, 与本次提交 ${HEAD_SHA} 不一致" >&2
+              exit 1
+            fi
+            echo "tag ${VERSION} 已存在且指向当前提交, 跳过创建"
+          else
+            git tag "${VERSION}"
+            git push origin "${VERSION}"
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 'latest'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: '11.10.0'
+          cache: true
+          cache_dependency_path: web/pnpm-lock.yaml
+
+      - name: Build frontend
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+        env:
+          VITE_APP_VERSION: ${{ steps.version.outputs.version }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Update price
+        run: python3 scripts/updatePrice.py
+
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r28c
+
+      - name: Build
+        run: bash scripts/build.sh
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+      - name: Generate changelog
+        # 本地钩子已按 CHANGELOG.md 建好带正文的 Release 时, 不要再用自动生成的笔记覆盖它。
+        # CHANGELOG.md 才是本项目发布说明的唯一来源(见其文件头)。
+        run: |
+          if BODY=$(gh release view "${{ steps.version.outputs.version }}" --json body -q .body 2>/dev/null) && [ -n "${BODY// /}" ]; then
+            echo "Release 正文已存在(来自 CHANGELOG.md), 跳过自动笔记"
+          else
+            npx changelogithub
+          fi
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Upload Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: build/archives/*
+          prerelease: false
+          tag_name: ${{ steps.version.outputs.version }}
+
+      # Docker Hub 是可选镜像源: 没配 DOCKERHUB_USERNAME/DOCKERHUB_TOKEN 时整段跳过。
+      # 之前这两步无条件执行, 缺密钥会让整个 Release 流水线红着失败, 但归档产物其实早就传好了。
+      - name: Check Docker Hub credentials
+        id: dockerhub
+        env:
+          DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          IMAGES="ghcr.io/${{ github.repository }}"
+          if [ -n "$DOCKERHUB_USER" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            IMAGES=$(printf '%s\n%s' "$IMAGES" "$DOCKERHUB_USER/${{ github.event.repository.name }}")
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "DOCKERHUB_USERNAME/DOCKERHUB_TOKEN 未配置, 跳过 Docker Hub 镜像推送(仅推 ghcr.io)。"
+          fi
+          {
+            echo "images<<DOCKERHUB_EOF"
+            echo "$IMAGES"
+            echo "DOCKERHUB_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          # 镜像清单在上一步按有无凭据算好: 条件为假时只留 ghcr, 不会给 metadata-action 一个空镜像名。
+          images: ${{ steps.dockerhub.outputs.images }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ steps.version.outputs.version }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        if: steps.dockerhub.outputs.enabled == 'true'
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./scripts/dockerfile/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/i386,linux/arm64,linux/arm/v7
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            TARGETPLATFORM

@@ -1,0 +1,457 @@
+package op
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"path"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/relay/xfyun/httpsig"
+	"github.com/dlclark/regexp2"
+)
+
+// ErrProbeBaseURLRequired 渠道地址缺失: 属请求参数错误而非上游故障, 调用方按 400 返回。
+var ErrProbeBaseURLRequired = errors.New("channel base url is required")
+
+// ErrProbeInvalidFilter 过滤表达式无法编译: 属请求参数错误, 调用方按 400 返回。
+var ErrProbeInvalidFilter = errors.New("invalid filter regex")
+
+// ProbeChannelModels 按渠道配置与凭据拉取上游模型列表, 并按过滤表达式筛选后返回。
+// 同时探测 OpenAI 与 Anthropic 两侧, 谁返回了哪些模型, 就给对应协议位打勾: 协议支持由探测结果决定, 无需用户声明。
+// OpenAI 侧记为 Responses 而不是 Chat: Chat Completions 已被官方标记弃用, 新渠道应默认走 Responses,
+// 仍需 Chat 的渠道由用户在界面上手动勾选。两侧的 /models 地址与认证形态不同, 故必须分别探测:
+// 单协议上游只有一侧会成功, "哪侧成功" 本身就是协议支持的证据。
+// 只有两侧都失败(且没有讯飞 Domain 可登记)才算失败; 一侧失败属正常情况, 单协议上游本就只有一侧讲得通, 按成功那侧的结果返回。
+// 编辑表单的手动刷新与渠道保存后的自动添加共用此函数, 保证两侧看到同一份结果。
+//
+// 讯飞渠道经 appID/apiSecret/domain 三个凭据字段识别(编辑表单只在 xunfei 方言下携带):
+// HTTP 侧探测只用 key(API 鉴权即 APIPassword 的 Bearer); appID/apiSecret 是 WebSocket 帧与 URL 签名凭据, 探测不拨 WebSocket, 暂不消费。
+// 讯飞 MaaS 三个原生接口(chat/responses/anthropic)共用一份模型列表(线上实测 /v2/models、/v1/models、/anthropic/v1/models 均可用),
+// OpenAI 侧模型列表地址从 Chat 路径推导(如 /v2/chat/completions → /v2/models), 两侧照常都探测;
+// OpenAI 侧协议位预勾 Chat|Responses|Spark, Anthropic 侧探测成功另记 Anthropic 位 —— 三种请求格式都走原生透传。
+// Domain 即模型名(出站转换器按「模型名是合法 Domain」直接选用服务版本), 探测以它单独登记一条模型。
+// ProbeChannelKey 按一条完整凭据探测模型, 是 ProbeChannelModels 的推荐入口。
+//
+// 存在的理由: ProbeChannelModels 收的是裸 key 字符串, 它无法判断这个 key 是静态令牌还是
+// 整包账号 JSON。订阅渠道的 Key 里存的正是账号 JSON, 直接当令牌用会把整个 JSON 塞进
+// Authorization 头, 上游回 401 Invalid Credentials —— 那个报错完全指不到真实原因。
+//
+// 这里先按凭据的 AccountKind/AccountPlatform 解出真正的 access_token, 再交给探测链。
+// 静态凭据原样透传, 行为与直接调用 ProbeChannelModels 完全一致。
+func ProbeChannelKey(client *http.Client, target model.ChannelConfig, channelKey model.ChannelKey, ctx context.Context) ([]model.ChannelFetchModel, error) {
+	models, _, err := ProbeChannelKeyWithProject(client, target, channelKey, ctx)
+	return models, err
+}
+
+// ProbeChannelKeyWithProject 与 ProbeChannelKey 相同, 但额外返回探测解析出的 GCP project。
+//
+// 订阅渠道(Gemini/Antigravity)的 project 由上游在 loadCodeAssist/onboardUser 时分配,
+// 用户通常不填。转发时的 generateContent 信封需要这个 project:
+// 实测 project 为空会得到 403 SUBSCRIPTION_REQUIRED, 而该错误看不出缺的是 project。
+// 因此探测拿到它就顺手回写渠道, 让转发链路读得到。
+func ProbeChannelKeyWithProject(client *http.Client, target model.ChannelConfig, channelKey model.ChannelKey, ctx context.Context) ([]model.ChannelFetchModel, string, error) {
+	if target.Dialect == model.DialectGeminiCLI || target.Dialect.Subscribable() {
+		target.BaseURL = strings.TrimSpace(target.BaseURL)
+		target.GeminiProject = strings.TrimSpace(target.GeminiProject)
+		resolved, err := probeGeminiCLIModelsWithProject(
+			client, target, model.ChannelKeyToken(channelKey), ctx,
+		)
+		if err != nil {
+			return nil, "", err
+		}
+		return resolved.models, resolved.project, nil
+	}
+	models, err := ProbeChannelModels(
+		client, target,
+		model.ChannelKeyToken(channelKey),
+		channelKey.AppID, channelKey.APISecret, channelKey.Domain,
+		ctx,
+	)
+	return models, "", err
+}
+func ProbeChannelModels(client *http.Client, target model.ChannelConfig, key, appID, apiSecret, domain string, ctx context.Context) ([]model.ChannelFetchModel, error) {
+	// 探测收的是尚未落库的提交配置, 不经 normalizeChannelConfig, 故在此自行去空白;
+	// 其中只有地址是硬需求: 渠道尚未命名时也可试拉, 故名称不在此校验。
+	target.BaseURL = strings.TrimSpace(target.BaseURL)
+	target.ChannelProxy = strings.TrimSpace(target.ChannelProxy)
+	target.MatchRegex = strings.TrimSpace(target.MatchRegex)
+	target.GeminiProject = strings.TrimSpace(target.GeminiProject)
+	// 订阅渠道的调用信息由平台描述提供, 地址可以留空(如 Gemini 分支用 GeminiCLIBases 的内置默认值)。
+	// 其余方言仍然要求地址: 它们没有任何内置默认值, 空地址只会让请求打到空 URL 上。
+	if target.BaseURL == "" && !target.Dialect.Subscribable() {
+		return nil, ErrProbeBaseURLRequired
+	}
+
+	// 客户端由调用方按代理配置构建(编辑表单与自动添加共用), 本函数只管探测与合并。
+	var err error
+
+	// Gemini CLI 渠道走 Antigravity 身份, 只探测 fetchAvailableModels, 不并发探测 OpenAI/Anthropic。
+	//
+	// 订阅渠道同样走这条链: 订阅平台的模型清单只能通过平台的配额/可用模型接口拿到,
+	// 没有"models 列表"这种通用端点可拼。这里按方言判定的同时也要覆盖订阅方言 ——
+	// 否则订阅渠道会掉进下方通用分支, 去拼 OpenAI/Anthropic 的 models URL 并必然失败。
+	if target.Dialect == model.DialectGeminiCLI || target.Dialect.Subscribable() {
+		return probeGeminiCLIModels(client, target, key, ctx)
+	}
+
+	var openaiModels, anthropicModels []string
+	var openaiErr, anthropicErr error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	openaiModelsURL := modelsURL(target.BaseURL, target.OpenAIResponsePath)
+	if target.Dialect == model.DialectXunfei {
+		// 讯飞只有 OpenAI Chat 一种 HTTP 接口, 模型列表地址从 Chat 路径推导(如 /v2/chat/completions → /v2/models)。
+		openaiModelsURL = modelsURL(target.BaseURL, target.OpenAIChatCompletionPath)
+	}
+	go func() {
+		defer wg.Done()
+		openaiModels, openaiErr = fetchOpenAIModels(client, ctx, target, key, apiSecret, openaiModelsURL)
+	}()
+	go func() {
+		defer wg.Done()
+		anthropicModels, anthropicErr = fetchAnthropicModels(client, ctx, target, key, modelsURL(target.BaseURL, target.AnthropicMessagePath))
+	}()
+	wg.Wait()
+
+	if openaiErr != nil && anthropicErr != nil && strings.TrimSpace(domain) == "" {
+		// 上游鉴权失败或地址不通属于调用方配置问题, 带上上游原文, 便于在界面上直接看到原因。
+		// 讯飞 WebSocket 渠道没有可探测的 /models 端点, Domain 即模型清单, 有 Domain 时不算失败。
+		return nil, fmt.Errorf("openai: %v; anthropic: %v", openaiErr, anthropicErr)
+	}
+
+	var re, reGlobal *regexp2.Regexp
+	if target.MatchRegex != "" {
+		if re, err = regexp2.Compile(target.MatchRegex, regexp2.ECMAScript); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrProbeInvalidFilter, err)
+		}
+	}
+	// 全局过滤由设置页维护, 与渠道过滤同取 AND: 模型须同时通过两枚正则才保留, 留空的一侧不生效。
+	// 设置缺失按不过滤处理: 启动初始化会补齐默认值, 缺行只可能出现在旧库尚未刷新的瞬间。
+	globalFilter, _ := SettingGetString(model.SettingKeyModelFilter)
+	if globalFilter != "" {
+		if reGlobal, err = regexp2.Compile(globalFilter, regexp2.ECMAScript); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrProbeInvalidFilter, err)
+		}
+	}
+
+	// 模型名须同时通过渠道与全局两枚过滤正则, 编译与匹配错误统一按错误返回。
+	matches := func(name string) (bool, error) {
+		if re != nil {
+			matched, err := re.MatchString(name)
+			if err != nil {
+				return false, err
+			}
+			if !matched {
+				return false, nil
+			}
+		}
+		if reGlobal != nil {
+			matched, err := reGlobal.MatchString(name)
+			if err != nil {
+				return false, err
+			}
+			if !matched {
+				return false, nil
+			}
+		}
+		return true, nil
+	}
+
+	// 两侧结果按名称合并成一份有序集合: 同名模型在两侧都出现时, 协议位取并集。
+	// 保持首次出现的顺序, 界面上模型的排列才与上游返回的一致;
+	// 先并入 OpenAI 再并入 Anthropic, 顺序写死而不用 map 遍历, 否则界面上的模型排列会随每次刷新变化。
+	protocolsByModel := make(map[string]model.Protocol, len(openaiModels)+len(anthropicModels))
+	order := make([]string, 0, len(openaiModels)+len(anthropicModels))
+	for _, name := range openaiModels {
+		matched, err := matches(name)
+		if err != nil {
+			return nil, err
+		}
+		if !matched {
+			continue
+		}
+		if _, ok := protocolsByModel[name]; !ok {
+			order = append(order, name)
+		}
+		if target.Dialect == model.DialectXunfei {
+			// 讯飞 MaaS 的 Chat 与 Responses 是并列的原生接口, 都记上让两种请求格式都走原生透传;
+			// Spark 位标记「该模型名也可走原生 WebSocket」。
+			protocolsByModel[name] |= model.ProtocolOpenAIChatCompletion | model.ProtocolOpenAIResponse | model.ProtocolXunfeiSparkWS
+		} else {
+			protocolsByModel[name] |= model.ProtocolOpenAIResponse
+		}
+	}
+	for _, name := range anthropicModels {
+		matched, err := matches(name)
+		if err != nil {
+			return nil, err
+		}
+		if !matched {
+			continue
+		}
+		if _, ok := protocolsByModel[name]; !ok {
+			order = append(order, name)
+		}
+		protocolsByModel[name] |= model.ProtocolAnthropicMessage
+	}
+
+	// 讯飞 Domain 登记为一条模型(服务版本即模型名, 出站按模型名解析 Domain), 协议位与其他讯飞模型一致
+	// 预勾 Chat|Spark(API 鉴权优先, WebSocket 兜底); 与 HTTP 侧同名时协议位取并集, 过滤表达式同规则。
+	if sparkDomain := strings.TrimSpace(domain); sparkDomain != "" {
+		matched, err := matches(sparkDomain)
+		if err != nil {
+			return nil, err
+		}
+		if matched {
+			if _, ok := protocolsByModel[sparkDomain]; !ok {
+				order = append(order, sparkDomain)
+			}
+			protocolsByModel[sparkDomain] |= model.ProtocolOpenAIChatCompletion | model.ProtocolXunfeiSparkWS
+		}
+	}
+
+	models := make([]model.ChannelFetchModel, 0, len(order))
+	for _, name := range order {
+		// 生图模型无法从 /models 端点确认能力, 故按能力登记预勾选生图协议位; 管理员在授权矩阵中
+		// 仍可自由增删该位, 这里只影响探测后的初始状态。
+		// 图文混合模型(如 gemini-flash-image)同样登记了 image 输出, 但它同时能聊天: 预勾生图位会被
+		// 判成按张计费, 聊天流量就会按图片计价, 故这类模型只提示、不预勾, 由管理员自己决定。
+		protocols := protocolsByModel[name]
+		fetched := model.ChannelFetchModel{Name: name}
+		if capability, ok := CapabilityGet(name); ok {
+			fetched.Capability = capability.MediaKind()
+			fetched.Source = model.CapabilitySourceModelsDev
+			if !capability.MixedMedia() {
+				if capability.OutputsImage() {
+					protocols |= model.ProtocolOpenAIImage
+				}
+				if capability.OutputsVideo() {
+					protocols |= model.ProtocolOpenAIVideo
+				}
+			}
+		} else if matchesImageModelName(name) {
+			// 能力登记里没有的模型(自建、小众供应商、新模型)退回名称关键词兜底, 保持既有行为不倒退。
+			protocols |= model.ProtocolOpenAIImage
+			fetched.Capability = model.MediaKindImage
+			fetched.Source = "keyword"
+		}
+		fetched.Protocols = protocols
+		models = append(models, fetched)
+	}
+	return models, nil
+}
+
+// probeGeminiCLIModels 探测 Gemini CLI 渠道的模型清单。
+//
+// 走 Antigravity 身份: loadBase 用 prod 跑 loadCodeAssist 拿 currentTier;
+// dataBase 用 daily 跑 onboardUser 分配 project; 最后用 retrieveUserQuota 取模型清单。
+//
+// 为什么模型清单来自 retrieveUserQuota 而不是 fetchAvailableModels:
+// 对 @google/gemini-cli@0.68.0 发行包取证, fetchAvailableModels 全包 0 次命中, CLI 从不调用;
+// CLI 的真实机制是 refreshUserQuota() -> retrieveUserQuota({project}), 读 quota.buckets[].modelId。
+// 配额视角也更贴合订阅额度账号 —— 它回答的是"这个账号现在能用哪些模型", 而 fetchAvailableModels
+// 返回的是"服务端提供了哪些模型", 后者会把账号无权使用的模型也算进来。
+//
+// project 解析顺序: 用户填写的 GeminiProject > onboardUser 分配的 > loadCodeAssist 给出的。
+// Antigravity 路径通常自动分配, 故 GeminiProject 是**可选覆盖**, 不是必填。
+// geminiCLIProbeResult 把探测结果与解析出的 project 一起带回。
+//
+// 为什么 project 必须带出来: 探测阶段已经从 loadCodeAssist/onboardUser 拿到了 project,
+// 但转发时只读 channel.GeminiProject(通常为空), 于是 generateContent 信封里 project 是空串。
+// 实测(2026-11)同一账号: project 为空 -> 403 SUBSCRIPTION_REQUIRED; project 正确 -> 200。
+// 那个 403 说的是"没有有效产品授权", 完全指不到"信封少了 project"。
+type geminiCLIProbeResult struct {
+	models  []model.ChannelFetchModel
+	project string
+}
+
+func probeGeminiCLIModels(client *http.Client, target model.ChannelConfig, key string, ctx context.Context) ([]model.ChannelFetchModel, error) {
+	resolved, err := probeGeminiCLIModelsWithProject(client, target, key, ctx)
+	if err != nil {
+		return nil, err
+	}
+	return resolved.models, nil
+}
+
+func probeGeminiCLIModelsWithProject(client *http.Client, target model.ChannelConfig, key string, ctx context.Context) (geminiCLIProbeResult, error) {
+	loadBase, dataBase := GeminiCLIBases(target)
+	loadResult, err := LoadCodeAssist(ctx, client, loadBase, key)
+	if err != nil {
+		return geminiCLIProbeResult{}, fmt.Errorf("gemini cli loadCodeAssist: %w", err)
+	}
+	project := strings.TrimSpace(target.GeminiProject)
+	if project == "" {
+		project = loadResult.ProjectID()
+	}
+	if project == "" {
+		onboardResult, onboardErr := OnboardUser(ctx, client, dataBase, key, OnboardUserOptions{TierID: loadResult.TierID()})
+		if onboardErr != nil {
+			return geminiCLIProbeResult{}, fmt.Errorf("gemini cli onboardUser: %w", onboardErr)
+		}
+		project = onboardResult.ProjectID()
+	}
+	if project == "" {
+		// 到这里说明自动分配也没给出 project: 只能让用户填, 不能带空 project 发请求。
+		return geminiCLIProbeResult{}, fmt.Errorf("gemini cli: %w (请在上游渠道配置里填写 GCP project id)", ErrGeminiCLIProjectRequired)
+	}
+	quota, err := RetrieveUserQuota(ctx, client, dataBase, key, project)
+	if err != nil {
+		return geminiCLIProbeResult{}, fmt.Errorf("gemini cli retrieveUserQuota: %w", err)
+	}
+	names := quota.AvailableModels()
+	if len(names) == 0 {
+		// 配额响应里没有 buckets 视作失败: 静默返回空清单会让界面显示"该渠道无模型",
+		// 而真实原因可能是凭据 scope 不足或 project 不对, 两者都需要被看见。
+		return geminiCLIProbeResult{}, errors.New("gemini cli: retrieveUserQuota 未返回任何可用模型(检查凭据是否为 Antigravity 授权、project 是否正确)")
+	}
+	result := make([]model.ChannelFetchModel, 0, len(names))
+	for _, name := range names {
+		fetched := model.ChannelFetchModel{
+			Name:      name,
+			Protocols: model.ProtocolGeminiCLI,
+			Source:    model.CapabilitySourceModelsDev,
+		}
+		if capability, ok := CapabilityGet(name); ok {
+			fetched.Capability = capability.MediaKind()
+		}
+		result = append(result, fetched)
+	}
+	return geminiCLIProbeResult{models: result, project: project}, nil
+}
+
+// imageModelNamePattern 常见生图模型的名称关键词; 命中即默认勾选生图协议位。
+// 覆盖 OpenAI dall-e / gpt-image, Black Forest Labs flux, 阿里 seedream/wanx, Google imagen,
+// Stability sd 系列, Midjourney 代理站命名与 recraft / ideogram 等主流供应商。
+var imageModelNamePattern = regexp2.MustCompile(`dall-e|gpt-image|chatgpt-image|image-|imagen|flux|seedream|seededit|wanx|stable-diffusion|sdxl|sd3|midjourney|mj-|ideogram|recraft|playground-v`, regexp2.None)
+
+// matchesImageModelName 判断模型名是否命中生图关键词; regexp2 编译失败不可能发生(模式是常量)。
+func matchesImageModelName(name string) bool {
+	matched, err := imageModelNamePattern.MatchString(name)
+	return err == nil && matched
+}
+
+// modelsURL 取协议请求路径的父级目录, 与地址拼成同级的 /models 地址。
+// 例如 /v1/chat/completions 与 /v1/messages 都得到 /v1/models, /chat/completions 得到 /models。
+func modelsURL(baseURL, protocolPath string) string {
+	parent := path.Dir(strings.TrimRight(protocolPath, "/"))
+	// Anthropic 的 /v1/messages 只有一层, 父级即 /v1; Chat 的 /v1/chat/completions 需要再上一层。
+	if strings.HasSuffix(parent, "/chat") {
+		parent = path.Dir(parent)
+	}
+	if parent == "." || parent == "/" {
+		parent = ""
+	}
+	return strings.TrimRight(baseURL, "/") + parent + "/models"
+}
+
+// refer: https://platform.openai.com/docs/api-reference/models/list
+// 讯飞 MaaS 渠道按 APIKey/APISecret 的 V2 签名鉴权(见 httpsig), 其余渠道走 Bearer。
+func newOpenAIModelsRequest(ctx context.Context, target model.ChannelConfig, key, apiSecret, url string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	if httpsig.Required(target.BaseURL, apiSecret) {
+		if err := httpsig.SignHTTPV2(req, key, apiSecret, time.Now()); err != nil {
+			return nil, err
+		}
+	} else {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	for _, header := range target.CustomHeader {
+		if header.HeaderKey != "" {
+			req.Header.Set(header.HeaderKey, header.HeaderValue)
+		}
+	}
+	return req, nil
+}
+
+func fetchOpenAIModels(httpClient *http.Client, ctx context.Context, target model.ChannelConfig, key, apiSecret, url string) ([]string, error) {
+	req, err := newOpenAIModelsRequest(ctx, target, key, apiSecret, url)
+	if err != nil {
+		return nil, err
+	}
+	response, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	result, err := decodeModelList[model.OpenAIModelList](response)
+	if err != nil {
+		return nil, err
+	}
+
+	models := make([]string, 0, len(result.Data))
+	for _, m := range result.Data {
+		models = append(models, m.ID)
+	}
+	return models, nil
+}
+
+// refer: https://platform.claude.com/docs
+func fetchAnthropicModels(httpClient *http.Client, ctx context.Context, target model.ChannelConfig, key, url string) ([]string, error) {
+	var allModels []string
+	var afterID string
+	for {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("X-Api-Key", key)
+		req.Header.Set("Anthropic-Version", "2023-06-01")
+		for _, header := range target.CustomHeader {
+			if header.HeaderKey != "" {
+				req.Header.Set(header.HeaderKey, header.HeaderValue)
+			}
+		}
+		if afterID != "" {
+			q := req.URL.Query()
+			q.Set("after_id", afterID)
+			req.URL.RawQuery = q.Encode()
+		}
+
+		response, err := httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		// 分页时每轮都会新建响应, 必须当轮读完即关; 用 defer 会攒到整个函数返回才释放。
+		result, err := decodeModelList[model.AnthropicModelList](response)
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range result.Data {
+			allModels = append(allModels, m.ID)
+		}
+		if !result.HasMore {
+			break
+		}
+		afterID = result.LastID
+	}
+	return allModels, nil
+}
+
+// decodeModelList 关闭响应并把响应体解成模型列表; 非 2xx 时按上游错误返回。
+// 两侧解析流程一致, 只有目标结构不同, 故用类型参数收敛; 分页调用要求当轮读完即关, 关闭点放在此处最稳。
+func decodeModelList[T any](response *http.Response) (T, error) {
+	defer response.Body.Close()
+	var result T
+	// 上游报错时响应体常是能被正常解码的 JSON, 若不先拦下, 模型列表会解成空列表并当作成功;
+	// 响应体截断到 512 字节: 部分上游在鉴权失败时返回整页 HTML, 全文带到界面上无用。
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		body, err := io.ReadAll(io.LimitReader(response.Body, 512))
+		if err != nil {
+			return result, fmt.Errorf("upstream %s", response.Status)
+		}
+		return result, fmt.Errorf("upstream %s: %s", response.Status, strings.TrimSpace(string(body)))
+	}
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return result, err
+	}
+	return result, nil
+}

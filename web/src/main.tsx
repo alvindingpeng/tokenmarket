@@ -1,0 +1,51 @@
+import { createRoot } from 'react-dom/client';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from '@/api/client';
+import { AppContainer } from '@/components/app';
+import { serviceWorkerURL } from '@/lib/sw-url';
+import { ErrorBoundary } from '@/components/common/ErrorBoundary';
+import { TOTPResult } from '@/components/modules/setting/TOTPResult';
+import { StepUpDialog } from '@/components/common/StepUpDialog';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { Toaster } from '@/components/ui/sonner';
+import { LocaleProvider } from '@/provider/locale';
+import { ThemeProvider } from '@/provider/theme';
+import './globals.css';
+
+createRoot(document.getElementById('root')!).render(
+  <ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <LocaleProvider>
+        <TooltipProvider>
+          {/* 最后一道兜底: 外壳自身出错时也要给出可操作的提示, 而不是白屏。 */}
+          <ErrorBoundary full>
+            <AppContainer />
+          </ErrorBoundary>
+          {/* 高危操作的密码确认弹窗挂在全局: 任何页面的请求撞上 step-up 都弹同一个框。 */}
+          <StepUpDialog />
+          <TOTPResult />
+          <Toaster
+            position="top-left"
+            toastOptions={{
+              classNames: {
+                success: '[&_[data-icon]]:text-primary',
+                error: '[&_[data-icon]]:text-destructive',
+                warning: '[&_[data-icon]]:text-destructive/70',
+              },
+            }}
+          />
+        </TooltipProvider>
+      </LocaleProvider>
+    </QueryClientProvider>
+  </ThemeProvider>,
+);
+
+// 生产环境在页面加载完成后注册当前应用目录作用域的 Service Worker。
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    // 注册地址带上应用版本: 发版即换脚本 URL, 浏览器必定安装新 worker 并清掉旧缓存。
+    void navigator.serviceWorker.register(serviceWorkerURL(import.meta.env.VITE_APP_VERSION), { scope: './' }).catch((error: unknown) => {
+      console.error('Service Worker registration failed', error);
+    });
+  });
+}

@@ -1,0 +1,212 @@
+{
+    "en": {
+        "title": "User Management",
+        "create": "Create User",
+        "table": {
+            "username": "Username",
+            "role": "Role",
+            "status": "Status",
+            "balance": "Balance",
+            "frozen": "Frozen",
+            "totalSpent": "Total Spent",
+            "totalRevenue": "Total Revenue",
+            "createdAt": "Created At",
+            "actions": "Actions",
+            "unknownDate": "Unknown"
+        },
+        "role": {
+            "admin": "Administrator",
+            "reseller": "Reseller",
+            "user": "User"
+        },
+        "status": {
+            "active": "Active",
+            "pending": "Pending",
+            "disabled": "Disabled"
+        },
+        "form": {
+            "username": "Username",
+            "password": "Password",
+            "passwordOptional": "Password (optional)",
+            "passwordUnchanged": "Leave empty to keep the current password",
+            "role": "Role",
+            "status": "Status",
+            "cancel": "Cancel",
+            "submit": "Create",
+            "submitting": "Creating...",
+            "save": "Save",
+            "saving": "Saving..."
+        },
+        "action": {
+            "edit": "Edit",
+            "resetPassword": "Reset Password",
+            "delete": "Delete"
+        },
+        "reset": {
+            "description": "Set a new password for {username}.",
+            "newPassword": "New Password",
+            "submit": "Reset",
+            "resetting": "Resetting..."
+        },
+        "delete": {
+            "description": "Delete user {username}? This cannot be undone.",
+            "submit": "Delete",
+            "deleting": "Deleting..."
+        },
+        "toast": {
+            "created": "User created",
+            "createFailed": "Failed to create user",
+            "updated": "User updated",
+            "updateFailed": "Failed to update user",
+            "passwordReset": "Password reset",
+            "resetFailed": "Failed to reset password",
+            "deleted": "User deleted",
+            "deleteFailed": "Failed to delete user"
+        },
+        "list": {
+            "empty": "No users yet",
+            "error": "Failed to load users",
+            "retry": "Retry"
+        }
+    },
+    "zh_hans": {
+        "title": "用户管理",
+        "create": "创建用户",
+        "table": {
+            "username": "用户名",
+            "role": "角色",
+            "status": "状态",
+            "balance": "余额",
+            "frozen": "冻结",
+            "totalSpent": "累计消费",
+            "totalRevenue": "累计收益",
+            "createdAt": "创建时间",
+            "actions": "操作",
+            "unknownDate": "未知"
+        },
+        "role": {
+            "admin": "管理员",
+            "reseller": "渠道商",
+            "user": "用户"
+        },
+        "status": {
+            "active": "启用",
+            "pending": "待审核",
+            "disabled": "停用"
+        },
+        "form": {
+            "username": "用户名",
+            "password": "密码",
+            "passwordOptional": "密码（可选）",
+            "passwordUnchanged": "留空则保持原密码不变",
+            "role": "角色",
+            "status": "状态",
+            "cancel": "取消",
+            "submit": "创建",
+            "submitting": "创建中...",
+            "save": "保存",
+            "saving": "保存中..."
+        },
+        "action": {
+            "edit": "编辑",
+            "resetPassword": "重置密码",
+            "delete": "删除"
+        },
+        "reset": {
+            "description": "为 {username} 设置新密码。",
+            "newPassword": "新密码",
+            "submit": "重置",
+            "resetting": "重置中..."
+        },
+        "delete": {
+            "description": "确定删除用户 {username}？该操作不可撤销。",
+            "submit": "删除",
+            "deleting": "删除中..."
+        },
+        "toast": {
+            "created": "用户已创建",
+            "createFailed": "创建用户失败",
+            "updated": "用户已更新",
+            "updateFailed": "更新用户失败",
+            "passwordReset": "密码已重置",
+            "resetFailed": "重置密码失败",
+            "deleted": "用户已删除",
+            "deleteFailed": "删除用户失败"
+        },
+        "list": {
+            "empty": "暂无用户",
+            "error": "用户列表加载失败",
+            "retry": "重试"
+        }
+    },
+    "zh_hant": {
+        "title": "用戶管理",
+        "create": "建立用戶",
+        "table": {
+            "username": "用戶名",
+            "role": "角色",
+            "status": "狀態",
+            "balance": "餘額",
+            "frozen": "凍結",
+            "totalSpent": "累計消費",
+            "totalRevenue": "累計收益",
+            "createdAt": "建立時間",
+            "actions": "操作",
+            "unknownDate": "未知"
+        },
+        "role": {
+            "admin": "管理員",
+            "reseller": "經銷商",
+            "user": "用戶"
+        },
+        "status": {
+            "active": "啟用",
+            "pending": "待審核",
+            "disabled": "停用"
+        },
+        "form": {
+            "username": "用戶名",
+            "password": "密碼",
+            "passwordOptional": "密碼（選填）",
+            "passwordUnchanged": "留空則保留原密碼",
+            "role": "角色",
+            "status": "狀態",
+            "cancel": "取消",
+            "submit": "建立",
+            "submitting": "建立中...",
+            "save": "儲存",
+            "saving": "儲存中..."
+        },
+        "action": {
+            "edit": "編輯",
+            "resetPassword": "重設密碼",
+            "delete": "刪除"
+        },
+        "reset": {
+            "description": "為 {username} 設定新密碼。",
+            "newPassword": "新密碼",
+            "submit": "重設",
+            "resetting": "重設中..."
+        },
+        "delete": {
+            "description": "確定刪除用戶 {username}？此操作無法復原。",
+            "submit": "刪除",
+            "deleting": "刪除中..."
+        },
+        "toast": {
+            "created": "用戶已建立",
+            "createFailed": "建立用戶失敗",
+            "updated": "用戶已更新",
+            "updateFailed": "更新用戶失敗",
+            "passwordReset": "密碼已重設",
+            "resetFailed": "重設密碼失敗",
+            "deleted": "用戶已刪除",
+            "deleteFailed": "刪除用戶失敗"
+        },
+        "list": {
+            "empty": "暫無用戶",
+            "error": "用戶列表載入失敗",
+            "retry": "重試"
+        }
+    }
+}

@@ -1,0 +1,697 @@
+package handlers
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/netguard"
+	"github.com/alvindingpeng/switchyard/internal/op"
+	"github.com/alvindingpeng/switchyard/internal/price"
+	"github.com/alvindingpeng/switchyard/internal/relay"
+	"github.com/alvindingpeng/switchyard/internal/rhttp"
+	"github.com/alvindingpeng/switchyard/internal/server/middleware"
+	"github.com/alvindingpeng/switchyard/internal/server/resp"
+	"github.com/alvindingpeng/switchyard/internal/server/router"
+	"github.com/charmbracelet/log"
+	"github.com/gin-gonic/gin"
+)
+
+func init() {
+	// 渠道管理: 管理员(全部渠道)与渠道商(自有渠道); 用户无渠道管理。
+	router.NewGroupRouter("/api/v1/channel").
+		Use(middleware.Auth()).
+		Use(middleware.RequireJSON()).
+		AddRoute(
+			router.NewRoute("/detail/:id", http.MethodGet).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(getChannelDetail),
+		).
+		AddRoute(
+			router.NewRoute("/stats", http.MethodGet).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(listChannelStats),
+		).
+		AddRoute(
+			router.NewRoute("/stats/daily/:id", http.MethodGet).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(getChannelDailyStats),
+		).
+		// 渠道利润分析只有管理员看: 口径是平台侧收入/成本/毛利, 渠道商不应看到平台加价空间。
+		AddRoute(
+			router.NewRoute("/profit/:id", http.MethodGet).
+				Allow(model.RoleAdmin).
+				Handle(getChannelProfit),
+		).
+		AddRoute(
+			router.NewRoute("/grants", http.MethodGet).
+				Handle(listChannelGrant),
+		).
+		AddRoute(
+			router.NewRoute("/create", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(createChannel),
+		).
+		AddRoute(
+			router.NewRoute("/update", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(updateChannel),
+		).
+		AddRoute(
+			router.NewRoute("/enable", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(enableChannel),
+		).
+		AddRoute(
+			router.NewRoute("/delete/:id", http.MethodDelete).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(deleteChannel),
+		).
+		AddRoute(
+			router.NewRoute("/fetch-model", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(fetchModel),
+		).
+		AddRoute(
+			router.NewRoute("/publish", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(publishChannel),
+		).
+		AddRoute(
+			router.NewRoute("/models/:id", http.MethodGet).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(getChannelModelListings),
+		).
+		AddRoute(
+			router.NewRoute("/models/update", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(updateChannelModelListings),
+		).
+		AddRoute(
+			router.NewRoute("/models/reprice", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(previewChannelReprice),
+		).
+		AddRoute(
+			router.NewRoute("/models/reprice/apply", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(applyChannelReprice),
+		).
+		AddRoute(
+			router.NewRoute("/breaker/reset", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(resetChannelBreaker),
+		)
+}
+
+// channelRepriceRequest 是一键改价的提交形状, 预览与执行共用。
+// multiplier 是"官方价 × 倍率"里的倍率, 不是上浮比例: 2 表示官方价的两倍, 与用户价的 markup 口径不同。
+type channelRepriceRequest struct {
+	ID         int      `json:"id"`
+	Multiplier float64  `json:"multiplier"`
+	Names      []string `json:"names,omitempty"` // 只改这些模型; 省略或留空表示改全部可改的行。
+}
+
+// previewChannelReprice 按统一倍率算出目标价并回执, 不写库。
+// 先预览再执行: 改价直接影响收入口径, 必须让人在写入前看清每一行的旧价与新价。
+func previewChannelReprice(c *gin.Context) {
+	var request channelRepriceRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	result, err := op.ChannelRepricePlan(request.ID, scopeOf(c), request.Multiplier)
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	resp.Success(c, result)
+}
+
+// applyChannelReprice 按统一倍率改价并落库, 回执与预览同形, 便于界面直接续用同一份预览。
+// 改价是收入口径的变更, 故写入审计, 使调价可追溯。
+func applyChannelReprice(c *gin.Context) {
+	var request channelRepriceRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	result, err := op.ChannelRepriceApply(request.ID, scopeOf(c), request.Multiplier, request.Names, c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if result.Updated > 0 {
+		audit(c, "channel.model-reprice", fmt.Sprintf("channel#%d", request.ID),
+			fmt.Sprintf("multiplier=%g updated=%d", result.Multiplier, result.Updated))
+	}
+	resp.Success(c, result)
+}
+
+// resetChannelBreaker 手动解除渠道下凭据或渠道模型的熔断, 以及渠道级的额度暂停。
+// 自动熔断按时间自愈, 上游修好(换 Key、补额度)后需要能立刻恢复, 否则只能干等熔断到期。
+func resetChannelBreaker(c *gin.Context) {
+	var request struct {
+		ID         int      `json:"id"`
+		KeyNames   []string `json:"key_names,omitempty"`
+		ModelNames []string `json:"model_names,omitempty"`
+		// channel 解除渠道级额度暂停: 上游余额不足会把整条渠道硬暂停, 补好额度后不必干等到期。
+		// 它与 key_names/model_names 可同时提交, 三者合并到同一个 reset 条数里。
+		Channel bool `json:"channel,omitempty"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	hasNames := len(request.KeyNames) > 0 || len(request.ModelNames) > 0
+	count := 0
+	if request.Channel {
+		resumed, err := op.ChannelQuotaResume(request.ID, scopeOf(c), c.Request.Context())
+		if err != nil {
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		if resumed {
+			count++
+			// 提前解除一个跨重启仍在的硬暂停是人工决策, 必须留痕。
+			audit(c, "channel.quota-resume", fmt.Sprintf("channel#%d", request.ID), "channel quota pause lifted")
+		}
+	}
+	// 渠道级暂停没有名称可给, 故名称与 channel 是并列的三选一; 一个都没给时仍调
+	// ChannelBreakerReset, 由它给出原来那条"至少给一个名称"的错误文案, 免得两处维护同一句话。
+	if hasNames || !request.Channel {
+		resetCount, err := op.ChannelBreakerReset(request.ID, request.KeyNames, request.ModelNames, scopeOf(c), c.Request.Context())
+		if err != nil {
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		if resetCount > 0 {
+			audit(c, "channel.breaker-reset", fmt.Sprintf("channel#%d", request.ID),
+				fmt.Sprintf("keys=%v models=%v count=%d", request.KeyNames, request.ModelNames, resetCount))
+		}
+		count += resetCount
+	}
+	resp.Success(c, gin.H{"reset": count})
+}
+
+// scopeOf 从上下文取访问者作用域。
+func scopeOf(c *gin.Context) model.Scope {
+	userID, role := middleware.CurrentUser(c)
+	return model.Scope{ID: userID, Role: role}
+}
+
+// publishChannel 发布或取消发布渠道到用户侧; 发布自动生成唯一编码。
+func publishChannel(c *gin.Context) {
+	var request struct {
+		ID     int  `json:"id"`
+		Shared bool `json:"shared"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	channel, err := op.ChannelPublish(request.ID, request.Shared, scopeOf(c), c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	audit(c, "channel.publish", fmt.Sprintf("channel#%d", channel.ID), fmt.Sprintf("shared=%v share_code=%s", channel.Shared, channel.ShareCode))
+	resp.Success(c, gin.H{"id": channel.ID, "shared": channel.Shared, "share_code": channel.ShareCode})
+}
+
+// getChannelModelListings 返回渠道模型的上架配置(含四类供货价), 供发布管理界面编辑。
+func getChannelModelListings(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
+		return
+	}
+	listings, err := op.ChannelModelListingGet(id, scopeOf(c))
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+	resp.Success(c, listings)
+}
+
+// listingChange 描述一行改价/上下架的前后差异, 用于审计与回执。
+type listingChange struct {
+	Name   string `json:"name"`
+	Detail string `json:"detail"`
+}
+
+// diffListings 比对上架配置的改动, 只回报真正变化的行。
+// 整体提交的语义是"这份清单生效", 但审计要回答的是"谁把哪个模型的价格从多少改成了多少",
+// 因此这里按名称逐字段比对, 未变动的行不进审计, 避免每次保存都写几十条噪声。
+func diffListings(before []op.ChannelModelListing, after []op.ChannelModelListing) []listingChange {
+	previous := make(map[string]op.ChannelModelListing, len(before))
+	for _, listing := range before {
+		previous[listing.Name] = listing
+	}
+	changes := make([]listingChange, 0)
+	for _, listing := range after {
+		old, ok := previous[listing.Name]
+		if !ok {
+			continue
+		}
+		if old.Listed != listing.Listed {
+			changes = append(changes, listingChange{
+				Name:   listing.Name,
+				Detail: fmt.Sprintf("listed: %v -> %v", old.Listed, listing.Listed),
+			})
+		}
+		// 币种切换改变所有单价的含义(数字没变但计费折算变了), 必须留痕。
+		if model.NormalizeCurrency(old.PriceCurrency) != model.NormalizeCurrency(listing.PriceCurrency) {
+			changes = append(changes, listingChange{
+				Name:   listing.Name,
+				Detail: fmt.Sprintf("price_currency: %s -> %s", model.NormalizeCurrency(old.PriceCurrency), model.NormalizeCurrency(listing.PriceCurrency)),
+			})
+		}
+		fields := []struct {
+			name     string
+			oldValue float64
+			newValue float64
+		}{
+			{"input", old.SupplyPrice.Input, listing.SupplyPrice.Input},
+			{"output", old.SupplyPrice.Output, listing.SupplyPrice.Output},
+			{"cache_read", old.SupplyPrice.CacheRead, listing.SupplyPrice.CacheRead},
+			{"cache_write", old.SupplyPrice.CacheWrite, listing.SupplyPrice.CacheWrite},
+		}
+		for _, field := range fields {
+			if field.oldValue == field.newValue {
+				continue
+			}
+			changes = append(changes, listingChange{
+				Name:   listing.Name,
+				Detail: fmt.Sprintf("%s: %g -> %g", field.name, field.oldValue, field.newValue),
+			})
+		}
+	}
+	return changes
+}
+
+// updateChannelModelListings 更新渠道模型的上架与供货价; 未设置价格的模型按 0 计费。
+// 回执带上本次真正改动的行, 供前端提示"改了什么"; 改动同时写入审计, 使调价可追溯。
+func updateChannelModelListings(c *gin.Context) {
+	var request struct {
+		ID       int                      `json:"id"`
+		Listings []op.ChannelModelListing `json:"listings"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	before, err := op.ChannelModelListingGet(request.ID, scopeOf(c))
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+	if err := op.ChannelModelListingUpdate(request.ID, request.Listings, scopeOf(c), c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	changes := diffListings(before, request.Listings)
+	if len(changes) > 0 {
+		parts := make([]string, 0, len(changes))
+		for _, change := range changes {
+			parts = append(parts, change.Name+" "+change.Detail)
+		}
+		audit(c, "channel.model-price", fmt.Sprintf("channel#%d", request.ID), strings.Join(parts, "; "))
+	}
+	resp.Success(c, gin.H{"changed": changes})
+}
+
+// getChannelDetail 返回单个渠道的完整配置, 供编辑表单打开时读取。
+// 与列表分开: 整份配置带着路径, 代理与凭据明文, 只有正在编辑的那一个渠道用得上。
+func getChannelDetail(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
+		return
+	}
+	detail, err := op.ChannelDetailGet(id, scopeOf(c))
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+	resp.Success(c, detail)
+}
+
+// getChannelDailyStats 返回渠道自身与各模型近若干天的按天统计, 供渠道页展示成功率与延迟的逐日变化。
+func getChannelDailyStats(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
+		return
+	}
+	days, err := strconv.Atoi(c.DefaultQuery("days", "14"))
+	if err != nil || days < 1 || days > 90 {
+		days = 14
+	}
+	userID, role := middleware.CurrentUser(c)
+	channelDaily, modelDaily, err := op.ChannelDailyStatsGet(id, days, model.Scope{ID: userID, Role: role})
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+	// 模型名按渠道模型主键补齐, 前端按 channel_model_id 归组即可。
+	names, err := op.ChannelModelNames(id)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	models := make([]gin.H, 0)
+	byModel := make(map[int][]model.StatsChannelModelDaily)
+	for _, row := range modelDaily {
+		byModel[row.ChannelModelID] = append(byModel[row.ChannelModelID], row)
+	}
+	for modelID, rows := range byModel {
+		models = append(models, gin.H{
+			"channel_model_id": modelID,
+			"model_name":       names[modelID],
+			"days":             rows,
+		})
+	}
+	resp.Success(c, gin.H{"channel": channelDaily, "models": models})
+}
+
+// 渠道利润接口的机器可读错误码: 前端按码区分参数错误与渠道不存在, 不靠文案匹配。
+const (
+	codeChannelProfitInvalidRange = "invalid_date_range"
+	codeChannelProfitNotFound     = "channel_not_found"
+)
+
+// getChannelProfit 返回指定渠道在日期区间内的结算利润分析, 仅管理员可用。
+// 只读聚合: 不触碰账务, 也不拼接请求日志; 收入/成本/毛利全部取自 billing_records 的结算快照。
+func getChannelProfit(c *gin.Context) {
+	channelID, ok := parseChannelIDParam(c)
+	if !ok {
+		return
+	}
+	var query model.ChannelProfitQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		// 绑定错误原文会带库字段与结构体细节, 响应只给固定文案, 具体原因由错误码表达。
+		resp.ErrorWithCode(c, http.StatusBadRequest, "日期格式不正确, 应为 YYYY-MM-DD", codeChannelProfitInvalidRange)
+		return
+	}
+	profit, err := op.ChannelProfit(c.Request.Context(), channelID, query.StartDate, query.EndDate)
+	switch {
+	case errors.Is(err, op.ErrChannelProfitDateRange):
+		resp.ErrorWithCode(c, http.StatusBadRequest, "日期范围不合法: 开始日期不能晚于结束日期", codeChannelProfitInvalidRange)
+	case errors.Is(err, op.ErrChannelProfitChannelNotFound):
+		resp.ErrorWithCode(c, http.StatusNotFound, "渠道不存在", codeChannelProfitNotFound)
+	case err != nil:
+		// 底层错误(含 SQL/驱动细节)只进服务端日志, 不进响应体。
+		log.Error("channel profit query failed", "channel_id", channelID, "err", err)
+		resp.ErrorWithCode(c, http.StatusInternalServerError, resp.ErrInternalServer, "channel_profit_query_failed")
+	default:
+		resp.Success(c, profit)
+	}
+}
+
+// listChannelStats 返回全部渠道及其模型的累计统计, 也是渠道列表页的数据来源。
+// 不带整份配置: 统计每次转发都在变, 界面按更短的间隔刷新它, 而路径, 代理与凭据明文只在编辑时用得上。
+func listChannelStats(c *gin.Context) {
+	resp.Success(c, op.ChannelStatsList(scopeOf(c)))
+}
+
+// listChannelGrant 返回全部渠道授权候选, 供分组页选取成员。
+func listChannelGrant(c *gin.Context) {
+	// 候选口径按访问者区分: 归属者看自有渠道, 其他用户只看已发布渠道的上架模型(编码脱敏)。
+	resp.Success(c, op.ChannelGrantCandidates(scopeOf(c)))
+}
+
+// logChannelWriteRejection 把被拒绝的渠道提交写一条 WARN 日志。
+//
+// 存在的理由: 配置校验失败是正常返回路径, 既不写审计也不写日志 —— 于是"保存失败"在服务端
+// 完全不留痕, 只能靠 nginx 访问日志的状态码与响应体字节数反推原因。2026-11-03 排查出口
+// 保存失败时就卡在这里: 应用日志一条 ERROR 都没有, 只有猜测。
+//
+// 只记渠道 ID、被拒绝的字段类别与原因, 不记配置内容 —— 提交体里有上游凭据与代理密码。
+func logChannelWriteRejection(action string, channelID int, err error) {
+	log.Warnf("channel %s rejected: channel=%d reason=%s", action, channelID, err.Error())
+}
+
+// channelWriteErrorStatus 把渠道增删改的错误映射为 HTTP 状态码。
+//
+// 单独抽成函数是为了可测: 这张映射曾把"输入不合法"错判成 500, 而 500 会让管理员
+// 以为是服务端故障 —— 2026-11-03 出口代理地址被 SSRF 防护拒绝那次, 正是这个映射把
+// 排查方向带偏: 界面没有任何提示, 只能靠翻 nginx 访问日志里的状态码才定位到。
+//
+// 输入不合法回 400: 前端的 step-up 与错误提示都按状态码分流, 500 会被当成"服务挂了"。
+func channelWriteErrorStatus(err error) int {
+	if errors.Is(err, op.ErrInvalidInput) {
+		return http.StatusBadRequest
+	}
+	return http.StatusInternalServerError
+}
+
+func createChannel(c *gin.Context) {
+	var req model.ChannelDetail
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	channel, err := op.ChannelCreate(&req, scopeOf(c), c.Request.Context())
+	if err != nil {
+		logChannelWriteRejection("create", req.ID, err)
+		resp.Error(c, channelWriteErrorStatus(err), err.Error())
+		return
+	}
+	if err := addChannelModelPrices(channel.Models, c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	autoAddAfterSave(c, channel.ID, req.ChannelConfig, scopeOf(c).ID)
+	resp.Success(c, channel)
+}
+
+func updateChannel(c *gin.Context) {
+	var req model.ChannelDetail
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	if req.ID == 0 {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
+		return
+	}
+	channel, err := op.ChannelUpdate(&req, scopeOf(c), c.Request.Context())
+	if err != nil {
+		logChannelWriteRejection("update", req.ID, err)
+		resp.Error(c, channelWriteErrorStatus(err), err.Error())
+		return
+	}
+	if err := addChannelModelPrices(channel.Models, c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := op.LLMCleanupGhosts(c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	autoAddAfterSave(c, channel.ID, req.ChannelConfig, scopeOf(c).ID)
+	resp.Success(c, channel)
+}
+
+// autoAddAfterSave 渠道保存成功后, 若开启了 model_auto_add 则按配置自动探测并并入上游模型。
+// 探测与并入是 best-effort: 失败只记日志, 不影响已经成功的保存; 客户端构建失败同样只记日志。
+func autoAddAfterSave(c *gin.Context, channelID int, config model.ChannelConfig, actorID uint) {
+	if !config.ModelAutoAdd {
+		return
+	}
+	// 取渠道实体的出口池: 探测必须与转发走同一条出口, 否则会"转发能用、拉模型报地区不支持"。
+	channel, channelErr := op.ChannelGet(channelID)
+	var (
+		client *http.Client
+		err    error
+	)
+	if channelErr == nil {
+		client, err = probeHTTPClientForChannel(channel)
+	} else {
+		client, err = probeHTTPClient(config)
+	}
+	if err != nil {
+		log.Warnf("auto-add: build probe client for channel %d failed: %v", channelID, err)
+		return
+	}
+	if err := op.AutoAddChannelModels(c.Request.Context(), channelID, config, client, actorID); err != nil {
+		log.Warnf("auto-add: channel %d failed: %v", channelID, err)
+	}
+}
+
+func enableChannel(c *gin.Context) {
+	var request struct {
+		ID      int  `json:"id"`
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	if err := op.ChannelEnabled(request.ID, request.Enabled, scopeOf(c), c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, nil)
+}
+
+func deleteChannel(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
+		return
+	}
+	if err := op.ChannelDel(id, scopeOf(c), c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := op.LLMCleanupGhosts(c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, nil)
+}
+
+// addChannelModelPrices 为渠道模型匹配校准价格，并批量写入尚不存在的价格记录。
+func addChannelModelPrices(modelNames []string, ctx context.Context) error {
+	seen := make(map[string]struct{}, len(modelNames))
+	llmInfos := make([]model.LLMInfo, 0, len(modelNames))
+	for _, modelName := range modelNames {
+		modelName = strings.ToLower(modelName)
+		if _, ok := seen[modelName]; ok {
+			continue
+		}
+		seen[modelName] = struct{}{}
+		llmInfo := model.LLMInfo{Name: modelName}
+		if modelPrice := price.GetLLMPrice(modelName); modelPrice != nil {
+			llmInfo.LLMPrice = *modelPrice
+		}
+		llmInfos = append(llmInfos, llmInfo)
+	}
+	return op.LLMBatchCreate(llmInfos, ctx)
+}
+
+// fetchModel 按提交的渠道配置与凭据拉取上游模型列表; 探测与协议判定在 op.ProbeChannelModels,
+// 这里只负责按代理配置构建客户端并按失败类型映射状态码。
+func fetchModel(c *gin.Context) {
+	var request model.ChannelFetchModelRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	// SSRF 防护: 探测收到的是未落库配置, 不经保存时的 normalizeChannelConfig 校验,
+	// 必须在入口显式复核地址 —— 否则渠道商可用本端点探测内网/云元数据。
+	if err := netguard.CheckURL(c.Request.Context(), request.Channel.BaseURL, op.AllowPrivateUpstream()); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if strings.TrimSpace(request.Channel.ChannelProxy) != "" {
+		if err := netguard.CheckProxyURL(c.Request.Context(), request.Channel.ChannelProxy, op.AllowPrivateUpstream()); err != nil {
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	// 有渠道 ID 时按渠道取出口池: 探测必须与转发走同一条出口,
+	// 否则渠道配了出口代理时拉模型会从本机 IP 直连而被上游拒绝。
+	var (
+		client *http.Client
+		err    error
+	)
+	if request.ChannelID != 0 {
+		if channel, channelErr := op.ChannelGet(request.ChannelID); channelErr == nil {
+			client, err = probeHTTPClientForChannel(channel)
+		}
+	}
+	if client == nil {
+		client, err = probeHTTPClient(request.Channel)
+	}
+	if err != nil {
+		resp.Error(c, http.StatusBadGateway, err.Error())
+		return
+	}
+	fetched, err := probeModelsForRequest(client, request, c)
+	if err != nil {
+		// 地址缺失与过滤正则编译错误属请求参数问题, 按 400; 两侧探测都失败是调用方配置问题, 按 502 带上游原文。
+		if errors.Is(err, op.ErrProbeBaseURLRequired) || errors.Is(err, op.ErrProbeInvalidFilter) {
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		resp.Error(c, http.StatusBadGateway, err.Error())
+		return
+	}
+	resp.Success(c, fetched)
+}
+
+// probeModelsForRequest 决定这次探测用哪份凭据。
+//
+// 订阅渠道拿不到"手填的 Key": 它的凭据是登录后导入的账号, 存在库里而不是表单里。
+// 若照旧用 request.Key, 探测会带一个空令牌直接 401 —— 而界面上的"拉取模型"按钮
+// 在订阅渠道下根本没有 Key 可填, 表现为按钮点了就报鉴权失败。
+//
+// 因此订阅渠道改为取库里第一条可用凭据; 其余方言维持原行为(用提交上来的 Key),
+// 这样编辑表单里"改了 Key 还没保存, 先试拉一下"的能力不受影响。
+func probeModelsForRequest(client *http.Client, request model.ChannelFetchModelRequest, c *gin.Context) ([]model.ChannelFetchModel, error) {
+	if !request.Channel.Dialect.Subscribable() {
+		return op.ProbeChannelModels(client, request.Channel, request.Key, request.AppID, request.APISecret, request.Domain, c.Request.Context())
+	}
+	channelID := request.ChannelID
+	if channelID == 0 {
+		return nil, fmt.Errorf("订阅渠道拉取模型必须指定 channel_id: 凭据在库里而不在表单里")
+	}
+	userID, role := middleware.CurrentUser(c)
+	channel, err := op.ChannelGet(channelID)
+	if err != nil {
+		return nil, fmt.Errorf("渠道不存在")
+	}
+	if !(model.Scope{ID: userID, Role: role}).Owns(channel.UserID) {
+		return nil, fmt.Errorf("渠道不存在")
+	}
+	keys := op.ChannelKeysByChannel(channelID)
+	for _, channelKey := range keys {
+		if !channelKey.Enabled || strings.TrimSpace(channelKey.Key) == "" {
+			continue
+		}
+		// 用一个账号探测即可: 同一渠道下的账号属于同一订阅, 可用模型清单一致。
+		return op.ProbeChannelKey(client, request.Channel, channelKey, c.Request.Context())
+	}
+	return nil, fmt.Errorf("订阅渠道还没有可用账号: 请先登录或导入账号再拉取模型")
+}
+
+// probeHTTPClient 按渠道配置构建探测用的 HTTP 客户端: 直连 / 应用代理 / 渠道专用代理。
+// 实现在 rhttp.ForChannel —— 后台自动添加任务也要按同一套规则建客户端, 两处不能各写一份,
+// 否则「保存时能探测到、后台复查探测不到」这类偏差极难排查。
+//
+// 注意: 这个版本不看出口池(egress)。有渠道 ID 时应当用 probeHTTPClientForChannel,
+// 否则渠道配了出口代理时, 探测会从本机 IP 直连 —— 与转发路径用的是不同出口,
+// 表现为"转发能用、拉模型报地区不支持"。
+func probeHTTPClient(target model.ChannelConfig) (*http.Client, error) {
+	return rhttp.ForChannel(target)
+}
+
+// probeHTTPClientForChannel 按渠道 ID 取出口池并择优建客户端, 让探测与转发走同一条线路。
+//
+// 这是修一个真实故障: 渠道配了 JP 出口代理, 转发走 JP 正常, 但"拉取模型"直连本机,
+// 被上游以 UNSUPPORTED_LOCATION 拒绝 —— 同一份账号、同一份配置, 差异只在出口。
+// 出口池为空时回退到 rhttp.ForChannel, 与不带 egress 的老行为完全一致。
+func probeHTTPClientForChannel(channel model.Channel) (*http.Client, error) {
+	if len(channel.Egresses) == 0 {
+		return probeHTTPClient(channel.ChannelConfig)
+	}
+	// 探测没有客户端国家信息, 传空: 出口打分里"地区匹配"项不做加权, 只按实测耗时与权重择优。
+	egress, _, err := relay.PickEgress(channel, "")
+	if err != nil {
+		return nil, err
+	}
+	if egress.ID == 0 {
+		return probeHTTPClient(channel.ChannelConfig)
+	}
+	if egress.Kind == model.EgressKindDirect {
+		return rhttp.Direct()
+	}
+	return rhttp.Shared(strings.TrimSpace(egress.URL))
+}

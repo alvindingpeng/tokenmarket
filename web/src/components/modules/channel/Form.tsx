@@ -1,0 +1,467 @@
+import { useState } from 'react';
+import { ChevronLeft, Plus, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { useTranslations } from 'use-intl';
+import {
+    Protocol,
+    type ChannelDetail,
+    useChannelDetail,
+    useCreateChannel,
+    useUpdateChannel,
+    useSubPlatforms,
+} from '@/api/channel';
+import { CHANNEL_PRESETS, type ChannelPreset } from '@/lib/channel-presets';
+import { useMorphingDialog } from '@/components/ui/morphing-dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { FormEgresses } from './FormEgresses';
+import { FormGrants } from './FormGrants';
+import { FormKeys } from './FormKeys';
+import { IconButton } from '@/components/common/IconButton';
+import { useSettingStore } from '@/stores/setting';
+import { SHELL_HEIGHT } from './layout';
+import {
+    channelSaveBlockers,
+    emptyFormState,
+    fromChannel,
+    toChannelDetail,
+    type ChannelFormState,
+} from './state';
+
+type StepID = 'preset' | 'connection' | 'keys' | 'egresses' | 'grants' | 'advanced';
+
+// ChannelForm 新建与编辑共用; 编辑时按 id 取回整份配置, 到齐后再进表单。
+// 配置不随渠道列表下发, 故编辑必然要等这一趟请求; 占位与表单同高, 弹窗不会因此跳动。
+export function ChannelForm({ channelId, onBack }: {
+    channelId?: number;
+    onBack?: () => void; // 编辑态由统计视图切入, 给出返回入口; 新建态没有可返回的视图。
+}) {
+    const t = useTranslations('channel.form');
+    const { data: detail, isPending, isError, refetch } = useChannelDetail(channelId);
+
+    if (channelId === undefined) {
+        return <ChannelFormFields />;
+    }
+    if (!detail) {
+        return (
+            // 占位高度与弹窗描述区保持同一值(见 Card.tsx), 视图切换时尺寸一致不跳动。
+            <div className={`flex items-center justify-center ${SHELL_HEIGHT}`}>
+                <p className="text-sm text-muted-foreground">
+                    {isError ? t('detailFailed') : isPending ? t('detailLoading') : null}
+                </p>
+            </div>
+        );
+    }
+    return <ChannelFormFields channel={detail} onBack={onBack} onChannelRefetch={() => void refetch()} />;
+}
+
+// ChannelFormFields 承载表单本体; 初始状态在挂载时定稿, 故必须等配置到齐后才渲染。
+// 新建从模板步骤起, 编辑跳过模板直接进连接步骤; 步骤顺序即数据依赖顺序:
+// 模板给出地址与路径 -> 拉取需要地址与凭据 -> 授权引用凭据与模型。
+function ChannelFormFields({ channel, onBack, onChannelRefetch }: {
+    channel?: ChannelDetail;
+    onBack?: () => void;
+    // 导入账号后要重拉渠道详情: 导入的凭据直接落库, 不经过表单草稿, 不重拉则界面上看不到。
+    onChannelRefetch?: () => void;
+}) {
+    const t = useTranslations('channel.form');
+    const locale = useSettingStore((state) => state.locale);
+    const { setIsOpen } = useMorphingDialog();
+    const createChannel = useCreateChannel();
+    const updateChannel = useUpdateChannel();
+    const [state, setState] = useState<ChannelFormState>(channel ? fromChannel(channel) : emptyFormState);
+    const [step, setStep] = useState<StepID>(channel ? 'connection' : 'preset');
+    const isPending = createChannel.isPending || updateChannel.isPending;
+    // 新建与编辑弹窗可同时存在, 控件 id 需按渠道隔离。
+    const idPrefix = channel ? `channel-${channel.id}` : 'new-channel';
+
+    // 缺项在此先挡, 免得对着一个点不动的按钮无从下手。
+    // 订阅渠道豁免地址与凭据两项(由平台描述与登录提供), 模型豁免见 channelSaveBlockers。
+    // 讯飞渠道的凭据: 只有 Spark 协议位在该凭据上真正生效(授权没有任何 HTTP 协议位兜底)时才要求
+    // App ID 与 API Secret —— 星火签名两项都要用, 缺一个这凭据就调不通, 保存后再报错更难查;
+    // API 鉴权(HTTP)只需 Key, 不强迫填 WebSocket 签名凭据。
+    const sparkOnly = (protocols: number) =>
+        (protocols & Protocol.XunfeiSpark) !== 0
+        && (protocols & (Protocol.OpenAIChatCompletion | Protocol.OpenAIResponse | Protocol.AnthropicMessage)) === 0;
+    // 订阅渠道的调用信息由平台描述提供, 地址与凭据都不在这里填, 因此这两项必填对它不适用。
+    // 只按方言放开, 不按"看起来像订阅"判断: 靠猜会让普通渠道悄悄失去必填, 空地址请求极难排查。
+    const isSubscription = state.dialect === 'subscription';
+    // 平台清单来自后端, 前端不硬编码: 后端加平台只要写个 Go 文件, 下拉里自然就有。
+    const subPlatformQuery = useSubPlatforms();
+    const subPlatformList = subPlatformQuery.data ?? [];
+    const selectedSubPlatform = subPlatformList.find((p) => p.id === state.sub_platform);
+    // 缺项逐条列在保存按钮旁: 按钮点不动时要能看到缺什么, 免得对着一个无反应的按钮无从下手。
+    // 判定逻辑在 state.ts 的 channelSaveBlockers: 抽成纯函数才能被测到。
+    // 订阅渠道"模型与凭据都不必填"这条规则如果只写在这里, 回退时只能靠手点按钮才会发现 ——
+    // 而界面只显示缺项列表, 看不出哪一条本不该存在。
+    const blockers = channelSaveBlockers(state, { sparkOnly });
+    const saveBlockers = blockers.map((blocker) => {
+        switch (blocker.reason) {
+            case 'name': return t('saveBlockedName');
+            case 'base_url': return t('saveBlockedBaseUrl');
+            case 'paths': return t('saveBlockedPaths');
+            case 'no_keys': return t('saveBlockedNoKeys');
+            // 这两个 reason 一定带 name(见 SaveBlocker 的产生处), 空串兜底只为满足类型。
+            case 'key_secret': return t('saveBlockedKeySecret', { name: blocker.name ?? '' });
+            case 'spark_creds': return t('saveBlockedSparkCreds', { name: blocker.name ?? '' });
+            case 'no_models': return t('saveBlockedNoModels');
+        }
+    });
+    const canSubmit = saveBlockers.length === 0;
+
+    const steps: { id: StepID; label: string }[] = [
+        ...(channel ? [] : [{ id: 'preset' as StepID, label: t('stepPreset') }]),
+        { id: 'connection', label: t('stepConnection') },
+        { id: 'keys', label: t('stepKeys') },
+        { id: 'egresses', label: t('stepEgresses') },
+        { id: 'grants', label: t('stepGrants') },
+        { id: 'advanced', label: t('stepAdvanced') },
+    ];
+
+    const applyPreset = (preset: ChannelPreset) => {
+        setState({
+            ...state,
+            name: state.name || preset.label,
+            dialect: preset.dialect,
+            // 订阅模板给 sub_platform 且地址为空: 地址由后端按平台描述补, 前端不再抄一份。
+            sub_platform: preset.sub_platform ?? '',
+            // 只覆盖模板明确给出的项: 其余模板不设 model_auto_add, 保持用户原值不被重置。
+            model_auto_add: preset.model_auto_add ?? state.model_auto_add,
+            base_url: preset.base_url,
+            openai_chat_completion_path: preset.openai_chat_completion_path,
+            openai_response_path: preset.openai_response_path,
+            anthropic_message_path: preset.anthropic_message_path,
+        });
+        setStep('connection');
+    };
+
+    // 新建与编辑都一趟完成且都提交整份配置: 授权按名称引用, 与凭据和模型在同一次请求里原子生效。
+    const submit = (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        if (!canSubmit) return;
+        const detail = toChannelDetail(state, channel?.id ?? 0);
+        // 两条分支都必须把失败原因显示出来。更新分支此前没有 onError, 保存失败时界面毫无反应:
+        // 管理员只看到"点了没反应", 而真实原因(出口地址被 SSRF 防护拒绝)被静默丢掉,
+        // 线上只能靠翻 nginx 访问日志里的 500 才查得出来。
+        const onError = (error: Error) => toast.error(error.message);
+        if (channel) {
+            updateChannel.mutate(detail, { onSuccess: () => setIsOpen(false), onError });
+        } else {
+            createChannel.mutate(detail, { onSuccess: () => setIsOpen(false), onError });
+        }
+    };
+
+    // 表单高度固定, 否则切换步骤时弹窗会随内容高度跳动; 内容更高的步骤由步骤区内部滚动消化。
+    // 29rem 是连接页恰好铺满所需: 首行留白 8px + 五个字段组 290px + 五道间距 80px + 开关行 20px + 底部按钮 52px。
+    // 各步骤首行统一落在同一水平线: connection 与 advanced 的首行是无边框文案, 补 8px 才能与步骤导航的按钮文案对齐;
+    // keys 与 grants 的首行是 36px 控件行, 文案居中后天然齐平, 无需补白。步骤区自带 4px 内边距供焦点环显示。
+    // 高度取 SHELL_HEIGHT: 既夹住矮屏(按钮行 shrink-0 常驻可见, 步骤区自己滚动消化超高内容),
+    // 又在正常视口保持固定尺寸不随步骤跳动。详情视图取同一高度以对齐尺寸。
+    return (
+        <form onSubmit={submit} className={`flex min-h-0 flex-col overflow-hidden md:flex-row gap-6 ${SHELL_HEIGHT}`}>
+            <nav className="md:w-28 shrink-0 flex md:flex-col gap-1 overflow-x-auto pt-1">
+                {steps.map((s) => (
+                    <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => setStep(s.id)}
+                        className={`rounded-xl px-3 py-2 text-left text-sm font-medium whitespace-nowrap transition-colors ${step === s.id ? 'bg-muted' : 'text-muted-foreground hover:bg-muted/50'}`}
+                    >
+                        {s.label}
+                    </button>
+                ))}
+                {/* 返回统计的入口与步骤同列, 顶到底部与步骤拉开距离, 表明它不是其中一步。
+                    窄屏下步骤横向排布, 此时它跟在末尾, mt-auto 不生效。 */}
+                {onBack && (
+                    <button
+                        type="button"
+                        onClick={onBack}
+                        className="md:mt-auto flex items-center gap-1.5 rounded-xl px-3 py-2 text-left text-sm whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted/50"
+                    >
+                        <ChevronLeft className="size-4 shrink-0" />
+                        {t('backToStats')}
+                    </button>
+                )}
+            </nav>
+
+            <div className="flex-1 min-w-0 flex flex-col min-h-0">
+                <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-1">
+                    {step === 'preset' && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {CHANNEL_PRESETS.map((preset) => (
+                                <button
+                                    key={preset.id}
+                                    type="button"
+                                    onClick={() => applyPreset(preset)}
+                                    className="flex items-center gap-4 rounded-xl border border-border px-5 py-4 hover:bg-muted/50 transition-colors"
+                                >
+                                    <preset.Icon className={`size-7 shrink-0 ${preset.iconClassName ?? ''}`} />
+                                    <span className="min-w-0 text-left">
+                                        <span className="block truncate text-lg font-semibold">{preset.label}</span>
+                                        <span className="block truncate text-xs text-muted-foreground">{preset.description[locale]}</span>
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    {step === 'connection' && (
+                        <div className="space-y-4 pt-2">
+                            <div className="space-y-2">
+                                <Label htmlFor={`${idPrefix}-name`}>{t('name')}</Label>
+                                <Input
+                                    id={`${idPrefix}-name`}
+                                    value={state.name}
+                                    onChange={(e) => setState({ ...state, name: e.target.value })}
+                                    className="rounded-xl"
+                                    required
+                                />
+                            </div>
+                            {isSubscription && (
+                                <div className="space-y-2">
+                                    <Label htmlFor={`${idPrefix}-sub-platform`}>{t('subPlatform')}</Label>
+                                    <select
+                                        id={`${idPrefix}-sub-platform`}
+                                        value={state.sub_platform}
+                                        onChange={(e) => {
+                                            const picked = subPlatformList.find((p) => p.id === e.target.value);
+                                            setState({
+                                                ...state,
+                                                sub_platform: e.target.value,
+                                                // 地址留空让后端按平台描述补: 前端抄一份默认地址会在
+                                                // 后端改端点时悄悄过期, 而渠道看起来一切正常。
+                                                base_url: '',
+                                                // 名称留空时用平台名做默认, 省得用户为每个渠道起名。
+                                                name: state.name.trim() === '' && picked ? picked.name : state.name,
+                                            });
+                                        }}
+                                        className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm"
+                                        required
+                                    >
+                                        <option value="">{t('subPlatformPlaceholder')}</option>
+                                        {subPlatformList.map((p) => (
+                                            <option key={p.id} value={p.id}>{p.name}</option>
+                                        ))}
+                                    </select>
+                                    {selectedSubPlatform && (
+                                        <p className="text-xs text-muted-foreground">{selectedSubPlatform.description}</p>
+                                    )}
+                                </div>
+                            )}
+                            {/*
+                              * 订阅渠道也允许改地址(自建中转、企业专线), 只是不再是必填。
+                              * 藏起整个输入框会让这类用户无处可改, 与"平台描述是默认值不是强制值"矛盾。
+                              */}
+                            <div className="space-y-2">
+                                <Label htmlFor={`${idPrefix}-base-url`}>
+                                    {isSubscription ? t('baseUrlOptional') : t('baseUrl')}
+                                </Label>
+                                <Input
+                                    id={`${idPrefix}-base-url`}
+                                    type="url"
+                                    value={state.base_url}
+                                    onChange={(e) => setState({ ...state, base_url: e.target.value })}
+                                    className="rounded-xl"
+                                    placeholder={isSubscription ? selectedSubPlatform?.base_url : undefined}
+                                    required={!isSubscription}
+                                />
+                            </div>
+                            {([
+                                ['openai_chat_completion_path', 'OpenAI Chat'],
+                                ['openai_response_path', 'OpenAI Responses'],
+                                ['anthropic_message_path', 'Anthropic'],
+                            ] as const)
+                                .map(([field, label]) => (
+                                <div key={field} className="space-y-2">
+                                    <Label htmlFor={`${idPrefix}-${field}`}>{label}</Label>
+                                    <Input
+                                        id={`${idPrefix}-${field}`}
+                                        value={state[field]}
+                                        onChange={(e) => setState({ ...state, [field]: e.target.value })}
+                                        aria-invalid={state[field] !== '' && !state[field].startsWith('/')}
+                                        className="rounded-xl font-mono text-sm"
+                                    />
+                                </div>
+                            ))}
+                            {state.dialect === 'xunfei' && (
+                                <div className="text-xs text-muted-foreground leading-relaxed">{t('xunfeiConnectionHint')}</div>
+                            )}
+                            <div className="flex flex-wrap items-center gap-6">
+                                {([['enabled', t('enabled')], ['proxy', t('proxy')]] as const).map(([field, label]) => (
+                                    <label key={field} className="flex items-center gap-2 cursor-pointer">
+                                        <Switch
+                                            checked={state[field]}
+                                            onCheckedChange={(checked) => setState({ ...state, [field]: checked })}
+                                        />
+                                        <span className="text-sm">{label}</span>
+                                    </label>
+                                ))}
+                            </div>
+                            {state.dialect === 'gemini_cli' && (
+                                <div className="space-y-3 rounded-xl border border-border bg-muted/30 p-3">
+                                    <div className="space-y-2">
+                                        <Label htmlFor={`${idPrefix}-gemini-project`}>{t('geminiProject')}</Label>
+                                        <Input
+                                            id={`${idPrefix}-gemini-project`}
+                                            value={state.gemini_project}
+                                            onChange={(e) => setState({ ...state, gemini_project: e.target.value })}
+                                            placeholder={t('geminiProjectPlaceholder')}
+                                            className="rounded-xl"
+                                        />
+                                        <p className="text-xs text-muted-foreground">{t('geminiProjectHint')}</p>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor={`${idPrefix}-channel-proxy`}>{t('channelProxy')}</Label>
+                                        <Input
+                                            id={`${idPrefix}-channel-proxy`}
+                                            type="url"
+                                            value={state.channel_proxy}
+                                            onChange={(e) => setState({ ...state, channel_proxy: e.target.value })}
+                                            placeholder={t('channelProxyPlaceholder')}
+                                            className="rounded-xl font-mono text-sm"
+                                        />
+                                        <p className="text-xs text-muted-foreground">{t('channelProxyHint')}</p>
+                                    </div>
+                                    <p className="text-xs text-amber-600 dark:text-amber-400">{t('geminiProxyHint')}</p>
+                                    <p className="text-xs text-muted-foreground">{t('geminiCredentialHint')}</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {step === 'keys' && (
+                        <FormKeys
+                            state={state}
+                            setState={setState}
+                            channelId={channel?.id}
+                            onAccountImported={onChannelRefetch}
+                        />
+                    )}
+                    {step === 'egresses' && <FormEgresses state={state} setState={setState} />}
+                    {step === 'grants' && <FormGrants state={state} setState={setState} />}
+
+                    {step === 'advanced' && (
+                        <div className="space-y-4 pt-2">
+                            {([
+                                ['channel_proxy', t('channelProxy')],
+                                ['match_regex', t('matchRegex')],
+                            ] as const).map(([field, label]) => (
+                                <div key={field} className="space-y-2">
+                                    <Label htmlFor={`${idPrefix}-${field}`}>{label}</Label>
+                                    <Input
+                                        id={`${idPrefix}-${field}`}
+                                        value={state[field]}
+                                        onChange={(e) => setState({ ...state, [field]: e.target.value })}
+                                        className="rounded-xl"
+                                    />
+                                </div>
+                            ))}
+                            <div className="space-y-2">
+                                <Label htmlFor={`${idPrefix}-param-override`}>{t('paramOverride')}</Label>
+                                <textarea
+                                    id={`${idPrefix}-param-override`}
+                                    value={state.param_override}
+                                    onChange={(e) => setState({ ...state, param_override: e.target.value })}
+                                    className="min-h-24 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                />
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label htmlFor="markup_ratio">{t('markupRatio')}</Label>
+                                <div className="flex items-center gap-2">
+                                    <Input id="markup_ratio" type="number" min={0} max={10} step="0.01"
+                                        placeholder={t('markupRatioFollowGlobal')}
+                                        value={state.markup_ratio}
+                                        onChange={(e) => setState({ ...state, markup_ratio: e.target.value })} />
+                                    <span className="text-xs text-muted-foreground">{t('markupRatioHint')}</span>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/30 px-3 py-2.5">
+                                <Switch
+                                    checked={state.model_auto_add}
+                                    onCheckedChange={(checked) => setState({ ...state, model_auto_add: checked })}
+                                />
+                                <div className="space-y-0.5">
+                                    <div className="text-sm leading-tight">{t('modelAutoAdd')}</div>
+                                    <div className="text-xs text-muted-foreground leading-tight">{t('modelAutoAddHint')}</div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <Label>{t('customHeader')}</Label>
+                                    <IconButton
+                                        onClick={() => setState({
+                                            ...state,
+                                            custom_header: [...state.custom_header, { header_key: '', header_value: '' }],
+                                        })}
+                                        className="size-9"
+                                        tip={t('customHeaderAdd')}
+                                    >
+                                        <Plus className="size-4" />
+                                    </IconButton>
+                                </div>
+                                {/* 列名只在有行时出现, 两列各占一半, 与下方输入框对齐; 末尾留出删除按钮的宽度。 */}
+                                {state.custom_header.length > 0 && (
+                                    <div className="flex items-center gap-2">
+                                        <Label className="flex-1 text-muted-foreground">{t('customHeaderKey')}</Label>
+                                        <Label className="flex-1 text-muted-foreground">{t('customHeaderValue')}</Label>
+                                        <span className="size-9 shrink-0" />
+                                    </div>
+                                )}
+                                {state.custom_header.map((header, idx) => (
+                                    <div key={idx} className="flex items-center gap-2">
+                                        {(['header_key', 'header_value'] as const).map((field) => (
+                                            <Input
+                                                key={field}
+                                                value={header[field]}
+                                                onChange={(e) => setState({
+                                                    ...state,
+                                                    custom_header: state.custom_header.map((h, i) =>
+                                                        i === idx ? { ...h, [field]: e.target.value } : h),
+                                                })}
+                                                className="rounded-xl flex-1"
+                                            />
+                                        ))}
+                                        <IconButton
+                                            onClick={() => setState({
+                                                ...state,
+                                                custom_header: state.custom_header.filter((_, i) => i !== idx),
+                                            })}
+                                            className="size-9 hover:text-destructive"
+                                            tip={t('delete')}
+                                        >
+                                            <Trash2 className="size-4" />
+                                        </IconButton>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="shrink-0 flex items-center justify-end gap-2 pt-4">
+                    {saveBlockers.length > 0 && (
+                        <span className="flex-1 text-right text-xs text-muted-foreground truncate" title={saveBlockers.join(' · ')}>
+                            {t('saveBlockedHint')}{saveBlockers.join(' · ')}
+                        </span>
+                    )}
+                    <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setIsOpen(false)}
+                        className="rounded-xl h-9 px-4"
+                    >
+                        {t('cancel')}
+                    </Button>
+                    <Button type="submit" disabled={isPending || !canSubmit} className="rounded-xl h-9 px-4">
+                        {channel ? t('save') : t('submit')}
+                    </Button>
+                </div>
+            </div>
+        </form>
+    );
+}

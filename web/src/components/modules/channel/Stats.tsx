@@ -1,0 +1,594 @@
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import {
+    Activity,
+    Check,
+    CheckCircle2,
+    Clock,
+    Copy,
+    DollarSign,
+    Download,
+    Eye,
+    EyeOff,
+    FileText,
+    MessageSquare,
+    Pencil,
+    RotateCcw,
+    Share2,
+    Trash2,
+    X,
+} from 'lucide-react';
+import { snapdom } from '@zumer/snapdom';
+import { toast } from 'sonner';
+import { useTranslations } from 'use-intl';
+import {
+    type ChannelStatsFormatted,
+    type ChannelTrustLevel,
+    useChannelDailyStats,
+    useChannelQuality,
+    useDeleteChannel,
+    useResetChannelBreaker,
+} from '@/api/channel';
+import { GradeBadge, ObservationProgress, QualityTrend, TrustBadge } from './QualityBadge';
+import { type StatsMetricsFormatted } from '@/api/stats';
+import { formatTime } from '@/lib/utils';
+import { useMorphingDialog } from '@/components/ui/morphing-dialog';
+import { useAuth } from '@/api/user';
+import { EgressHealth } from './EgressHealth';
+import { ChannelProfitPanel } from './Profit';
+import { isBroken, remainText } from './breaker';
+import { ChannelPauseBadge } from './PauseBadge';
+
+type FormattedMetric = StatsMetricsFormatted['request_count'];
+
+// 模型统计的排序维度
+type ModelSortKey = 'cost' | 'count' | 'tokens';
+
+// 成功率百分比, 无请求时按 0 处理
+const successRate = (success: number, failed: number) => {
+    const total = success + failed;
+    return total > 0 ? (success / total) * 100 : 0;
+};
+
+// MetricValue 统一渲染数值与单位
+function MetricValue({ metric }: { metric: FormattedMetric }) {
+    return (
+        <span>
+            {metric.formatted.value}
+            <span className="ml-0.5 text-xs font-normal text-muted-foreground">{metric.formatted.unit}</span>
+        </span>
+    );
+}
+
+// TrendDay 是趋势表的一行: 日期, 请求数, 成功率与平均延迟。
+type TrendDay = { date: string; requests: number; rate: number; avgWait: string };
+
+// trendDays 把一组按天原始统计换算成展示行, 按日期倒序(最新在前)。
+function trendDays(days: { date: string; input_token: number; output_token: number; input_cost: number; output_cost: number; wait_time: number; request_success: number; request_failed: number }[]): TrendDay[] {
+    return days
+        .map((day) => {
+            const requests = day.request_success + day.request_failed;
+            const rate = requests > 0 ? (day.request_success / requests) * 100 : 0;
+            const avgMs = requests > 0 ? day.wait_time / requests : 0;
+            const wait = formatTime(avgMs).formatted;
+            return { date: day.date, requests, rate, avgWait: `${wait.value}${wait.unit}` };
+        })
+        .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+// TrendPanel 展示渠道整体或单个模型近 14 天的请求量, 成功率与平均延迟。
+type TrendModel = { id: number; name: string };
+
+function TrendPanel({ channelId, models }: { channelId: number; models: TrendModel[] }) {
+    const t = useTranslations('channel.stats');
+    const { data: daily } = useChannelDailyStats(channelId);
+    const [selected, setSelected] = useState<number | 'channel'>('channel');
+
+    const rows = useMemo<TrendDay[]>(() => {
+        if (!daily) return [];
+        if (selected === 'channel') return trendDays(daily.channel);
+        const model = daily.models.find((m) => m.channel_model_id === selected);
+        return model ? trendDays(model.days) : [];
+    }, [daily, selected]);
+
+    const formatDate = (date: string) => (date.length === 8 ? `${date.slice(4, 6)}-${date.slice(6, 8)}` : date);
+
+    return (
+        <section data-share-exclude className="shrink-0 rounded-2xl border bg-card p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('trend')}</h4>
+                <select
+                    value={String(selected)}
+                    onChange={(event) => setSelected(event.target.value === 'channel' ? 'channel' : Number(event.target.value))}
+                    className="rounded-lg border border-border bg-transparent px-2 py-1 text-xs text-foreground outline-none"
+                >
+                    <option value="channel">{t('trendChannel')}</option>
+                    {models.map((model) => (
+                        <option key={model.id} value={model.id}>{model.name}</option>
+                    ))}
+                </select>
+            </div>
+            {rows.length === 0 ? (
+                <div className="py-4 text-center text-xs text-muted-foreground">{t('trendEmpty')}</div>
+            ) : (
+                <div className="max-h-48 overflow-y-auto rounded-xl border border-border/50">
+                    <table className="w-full text-xs tabular-nums">
+                        <thead className="sticky top-0 bg-muted/70 text-muted-foreground">
+                            <tr>
+                                <th className="px-2 py-1.5 text-left font-medium">{t('trendDate')}</th>
+                                <th className="px-2 py-1.5 text-right font-medium">{t('trendRequests')}</th>
+                                <th className="px-2 py-1.5 text-right font-medium">{t('trendSuccessRate')}</th>
+                                <th className="px-2 py-1.5 text-right font-medium">{t('trendAvgLatency')}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rows.map((row) => (
+                                <tr key={row.date} className="border-t border-border/40">
+                                    <td className="px-2 py-1 text-left text-muted-foreground">{formatDate(row.date)}</td>
+                                    <td className="px-2 py-1 text-right">{row.requests}</td>
+                                    <td className="px-2 py-1 text-right">{row.rate.toFixed(1)}%</td>
+                                    <td className="px-2 py-1 text-right">{row.avgWait}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </section>
+    );
+}
+
+// ChannelStats 展示单个渠道的汇总指标与模型排行, 布局随容器宽度自适应, 并可导出为分享图
+// 统计自带渠道名称与模型清单, 由 /channel/stats 一并给出
+// 渠道的编辑与删除入口也在此: 卡片只负责打开弹窗, 需要看清指标后才动手的操作都收在头部
+// QualityPanel 展示渠道质量等级、观察期进度与近 30 天趋势(P2/P3)。
+// 数据每天才更新一次, 故不轮询; 面板本身随弹窗挂载/卸载, 天然只在查看详情时请求。
+function QualityPanel({ channelId, trustLevel }: { channelId: number; trustLevel?: ChannelTrustLevel }) {
+    const t = useTranslations('channel.quality');
+    const { data, isLoading } = useChannelQuality(channelId, 30);
+    if (isLoading) {
+        return <div className="h-20 animate-pulse rounded-2xl border bg-card" />;
+    }
+    if (!data) {
+        return null;
+    }
+    const yesterday = data.yesterday;
+    return (
+        <section data-share-exclude className="rounded-2xl border bg-card p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('title')}</h4>
+                <div className="flex items-center gap-1.5">
+                    <TrustBadge level={data.trust_level ?? trustLevel} />
+                    <GradeBadge grade={yesterday?.grade} />
+                </div>
+            </div>
+            {/* 观察期进度只在未转正时出现: 转正后展示进度条毫无意义, 只会占地方。 */}
+            {data.observing && (
+                <div className="mb-2">
+                    <ObservationProgress
+                        level={data.trust_level}
+                        until={data.observation_until}
+                        samples={data.window_samples}
+                        minSamples={data.min_samples}
+                        successRate={data.window_success_rate}
+                        floor={data.success_floor}
+                    />
+                </div>
+            )}
+            <QualityTrend trend={data.trend} days={30} />
+            {yesterday && (
+                <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] tabular-nums text-muted-foreground">
+                    <span>{t('successShort', { rate: (yesterday.success_rate * 100).toFixed(1) })}</span>
+                    <span>{t('avgWait', { ms: yesterday.avg_wait_ms })}</span>
+                    <span>{t('uptimeShort', { uptime: yesterday.uptime_pct.toFixed(1) })}</span>
+                </div>
+            )}
+        </section>
+    );
+}
+
+export function ChannelStats({ channel, onEdit }: {
+    channel: ChannelStatsFormatted;
+    onEdit: () => void; // 切换同一弹窗到编辑表单。
+}) {
+    const t = useTranslations('channel.stats');
+    const tCommon = useTranslations('common');
+    // 利润接口是管理员接口: 非管理员连面板都不挂载, 避免每开一次详情就白打一个 403。
+    const { role } = useAuth();
+    const isAdmin = role === 'admin';
+    const { setIsOpen } = useMorphingDialog();
+    const deleteChannel = useDeleteChannel();
+    const resetBreaker = useResetChannelBreaker();
+    const [modelSort, setModelSort] = useState<ModelSortKey>('cost');
+    // 隐藏渠道名称, 分享图也跟随此状态
+    const [isNameHidden, setIsNameHidden] = useState(false);
+    // 删除需二次确认, 确认态下换成取消与确认两个键
+    const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+    const [isSharing, setIsSharing] = useState(false);
+    // 分享图预览, url 用于展示, blob 用于复制和下载
+    const [preview, setPreview] = useState<{ url: string; blob: Blob } | null>(null);
+    // 分享截图的源节点
+    const contentRef = useRef<HTMLDivElement>(null);
+    const metrics = channel.formatted;
+
+    // 预览关闭或组件卸载时释放临时对象 URL
+    useEffect(() => () => {
+        if (preview) URL.revokeObjectURL(preview.url);
+    }, [preview]);
+
+    // 渠道汇总指标, 次要行承载成功率与输入/输出明细
+    // 等待耗时展示真正的平均值(累计耗时/请求总数), 累计值放次要行
+    const totalRequests = metrics.request_success.raw + metrics.request_failed.raw;
+    const avgWaitFormatted = formatTime(totalRequests > 0 ? metrics.wait_time.raw / totalRequests : 0).formatted;
+    const summary: { icon: React.ReactNode; label: string; value: React.ReactNode; sub?: React.ReactNode }[] = [
+        {
+            icon: <Activity className="size-3.5 text-chart-1" />,
+            label: t('totalRequests'),
+            value: <MetricValue metric={metrics.request_count} />,
+            sub: (
+                <>
+                    <span className="text-accent">{metrics.request_success.formatted.value}</span>
+                    <span className="text-muted-foreground/40">/</span>
+                    <span className="text-destructive">{metrics.request_failed.formatted.value}</span>
+                    <span className="text-muted-foreground/40">·</span>
+                    <span>{successRate(metrics.request_success.raw, metrics.request_failed.raw).toFixed(1)}%</span>
+                </>
+            ),
+        },
+        {
+            icon: <FileText className="size-3.5 text-chart-3" />,
+            label: t('totalToken'),
+            value: <MetricValue metric={metrics.total_token} />,
+            sub: (
+                <>
+                    <span>↓ {metrics.input_token.formatted.value}{metrics.input_token.formatted.unit}</span>
+                    <span>↑ {metrics.output_token.formatted.value}{metrics.output_token.formatted.unit}</span>
+                </>
+            ),
+        },
+        {
+            icon: <DollarSign className="size-3.5 text-chart-5" />,
+            label: t('totalCost'),
+            value: <MetricValue metric={metrics.total_cost} />,
+            sub: (
+                <>
+                    <span>↓ {metrics.input_cost.formatted.value}{metrics.input_cost.formatted.unit}</span>
+                    <span>↑ {metrics.output_cost.formatted.value}{metrics.output_cost.formatted.unit}</span>
+                </>
+            ),
+        },
+        {
+            icon: <Clock className="size-3.5 text-primary" />,
+            label: t('avgWaitTime'),
+            value: (
+                <span className="text-lg font-bold tabular-nums text-card-foreground">
+                    {avgWaitFormatted.value}
+                    <span className="ml-0.5 text-xs font-normal text-muted-foreground">{avgWaitFormatted.unit}</span>
+                </span>
+            ),
+            sub: (
+                <span>
+                    {t('cumulative')} {metrics.wait_time.formatted.value}
+                    {metrics.wait_time.formatted.unit}
+                </span>
+            ),
+        },
+    ];
+
+    // 模型级统计: 按当前维度排序并计算占比, 各项格式化已由查询层完成
+    const modelStats = useMemo(() => {
+        const items = channel.models.map((channelModel) => {
+            const { formatted } = channelModel;
+            return {
+                id: channelModel.model_id,
+                name: channelModel.model_name,
+                // 熔断状态随统计同源下发: 熔断中的模型请求会直接失败, 排行里必须能一眼看出,
+                // 否则只会看到成功率变 0 却找不到原因。
+                disabledUntil: channelModel.disabledUntil,
+                errorCount: channelModel.error_count,
+                // 熔断时长按累计次数递增, 只报"连续错误 N 次"会让管理员以为每次都是同一个时长。
+                breakerTrips: channelModel.breakerTrips,
+                weight: modelSort === 'cost'
+                    ? formatted.total_cost.raw
+                    : modelSort === 'tokens' ? formatted.total_token.raw : formatted.request_count.raw,
+                rate: successRate(formatted.request_success.raw, formatted.request_failed.raw),
+                count: formatted.request_count,
+                tokens: formatted.total_token,
+                cost: formatted.total_cost,
+            };
+        });
+
+        const total = items.reduce((sum, item) => sum + item.weight, 0);
+        return items
+            .sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name))
+            .map((item) => ({ ...item, share: total > 0 ? (item.weight / total) * 100 : 0 }));
+    }, [channel.models, modelSort]);
+
+    const sortOptions: { key: ModelSortKey; label: string }[] = [
+        { key: 'cost', label: t('sortByCost') },
+        { key: 'count', label: t('sortByCount') },
+        { key: 'tokens', label: t('sortByTokens') },
+    ];
+
+    // 把统计区克隆进屏外的固定宽度卡片再截图, 容器查询使分享图不受当前屏幕宽度影响
+    const handleShare = async () => {
+        if (!contentRef.current) return;
+
+        const stage = document.createElement('div');
+        stage.className = 'rounded-3xl bg-card px-4 py-2 text-card-foreground';
+        // 宽度与桌面端弹窗卡片一致, 定位到屏外避免闪动
+        Object.assign(stage.style, { position: 'fixed', top: '0', left: '-10000px', width: '768px' });
+        stage.appendChild(contentRef.current.cloneNode(true));
+        document.body.appendChild(stage);
+
+        setIsSharing(true);
+        try {
+            const blob = await snapdom.toBlob(stage, {
+                type: 'png',
+                scale: 2,
+                embedFonts: true,
+                exclude: ['[data-share-exclude]'],
+                excludeMode: 'remove',
+            });
+            setPreview({ url: URL.createObjectURL(blob), blob });
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : String(error));
+        } finally {
+            stage.remove();
+            setIsSharing(false);
+        }
+    };
+
+    const handleCopyImage = async () => {
+        if (!preview) return;
+        try {
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': preview.blob })]);
+            toast.success(tCommon('copy.success'));
+        } catch {
+            toast.error(tCommon('copy.failed'));
+        }
+    };
+
+    const handleDownloadImage = () => {
+        if (!preview) return;
+        const link = document.createElement('a');
+        link.href = preview.url;
+        link.download = `channel-${channel.channel_id}.png`;
+        link.click();
+    };
+
+    return (
+        // 撑满弹窗给定的高度, 两列各自拉伸填满; 内容更高时(窄屏堆成一列)继续增长, 由外层滚动。
+        // 高度不能写成 @2xl/stats:h-full: 容器查询只能由祖先容器回答, 这里自己声明了 @container/stats, 查不到自己。
+        // min-h-full 在分享用的屏外容器里取不到确定高度, 退化为 0, 不影响分享图。
+        <div ref={contentRef} className="@container/stats cursor-default flex min-h-full flex-col">
+            {/* 利润分析只对管理员开放, 放在汇总之上: 这是经营口径, 与转发统计分开读。 */}
+            {isAdmin && (
+                <div className="mb-4">
+                    <ChannelProfitPanel channelId={channel.channel_id} />
+                </div>
+            )}
+            <div className="grid flex-1 gap-4 @2xl/stats:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
+                {/* 左列: 渠道汇总 */}
+                <section className="flex min-h-0 flex-col gap-2">
+                    {/* min-h-7 由最高的子元素(size-7 图标按钮)决定, 不锁死上限;
+                        与右列表头取同一下限, 两列的卡片顶边才对齐。 */}
+                    <div className="flex min-h-7 items-center gap-1">
+                        <h3 className={`truncate text-xs font-semibold tracking-wider text-muted-foreground ${isNameHidden ? 'select-none blur-[3px]' : ''}`}>
+                            {channel.channel_name}
+                        </h3>
+                        <div data-share-exclude className="flex shrink-0 items-center">
+                            <button
+                                type="button"
+                                onClick={() => setIsNameHidden(!isNameHidden)}
+                                aria-pressed={isNameHidden}
+                                className="flex size-7 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground disabled:opacity-50"
+                            >
+                                {isNameHidden ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                            </button>
+                            <button type="button" onClick={handleShare} disabled={isSharing} className="flex size-7 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground disabled:opacity-50">
+                                <Share2 className="size-3.5" />
+                            </button>
+                            {isConfirmingDelete ? (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsConfirmingDelete(false)}
+                                        aria-label={t('cancel')}
+                                        className="flex size-7 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground"
+                                    >
+                                        <X className="size-3.5" />
+                                    </button>
+                                    {/* 删除成功后该渠道已不存在, 连带关掉弹窗 */}
+                                    <button
+                                        type="button"
+                                        onClick={() => deleteChannel.mutate(channel.channel_id, {
+                                            onSuccess: () => setIsOpen(false),
+                                            // 只有 onSuccess: 删除失败时弹窗不关、也没有任何提示,
+                                            // 用户只能反复点同一个按钮。删除是破坏性操作, 后果必须说清楚。
+                                            onError: (error) => toast.error(t('deleteFailed'), { description: error.message }),
+                                        })}
+                                        disabled={deleteChannel.isPending}
+                                        aria-label={t('confirmDelete')}
+                                        className="flex size-7 items-center justify-center rounded-md text-destructive transition-colors hover:text-destructive/70 disabled:opacity-50"
+                                    >
+                                        <Check className="size-3.5" />
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={onEdit}
+                                        aria-label={t('edit')}
+                                        className="flex size-7 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground"
+                                    >
+                                        <Pencil className="size-3.5" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsConfirmingDelete(true)}
+                                        aria-label={t('delete')}
+                                        className="flex size-7 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-destructive"
+                                    >
+                                        <Trash2 className="size-3.5" />
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                    {/* 渠道级额度暂停: 与人工启停、模型级熔断并列展示, 只有暂停中才出现。
+                        放在汇总之上, 是因为它解释了"为什么这条渠道的请求全在失败", 属于要先读到的结论。 */}
+                    <ChannelPauseBadge channel={channel} hint />
+                    {/* 宽屏下四项各占四分之一列高: 行数与 summary 的项数一致, 等分由 grid-rows-4 表达。 */}
+                    <dl className="grid grid-cols-2 gap-2 @md/stats:grid-cols-4 @2xl/stats:flex-1 @2xl/stats:grid-cols-1 @2xl/stats:grid-rows-4">
+                        {summary.map(({ icon, label, value, sub }) => (
+                            <div key={label} className="flex flex-col rounded-2xl border bg-card p-3">
+                                <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                    {icon}
+                                    <span className="truncate">{label}</span>
+                                </dt>
+                                <dd className="mt-auto pt-2 text-right">
+                                    <span className="block text-lg font-bold tabular-nums text-card-foreground">{value}</span>
+                                    {sub && (
+                                        <span className="mt-0.5 flex flex-wrap items-center justify-end gap-x-2 text-[11px] tabular-nums text-muted-foreground">
+                                            {sub}
+                                        </span>
+                                    )}
+                                </dd>
+                            </div>
+                        ))}
+                    </dl>
+                    {/* 质量与观察期(P2/P3): 只有展开详情才拉取 —— 列表页不需要逐卡请求质量接口。
+                        观察期进度条与质量趋势并列: 前者解释"为什么还没转正", 后者解释"转正后表现如何"。 */}
+                    <QualityPanel channelId={channel.channel_id} trustLevel={channel.trust_level} />
+                    <EgressHealth channelId={channel.channel_id} />
+                </section>
+
+                {/* 右列: 模型统计, 仅列出当前维度下的前五名 */}
+                <section className="flex min-h-0 flex-col gap-2">
+                    {/* 与左列表头取同一下限, 两列的卡片顶边才对齐。 */}
+                    <div className="flex min-h-6 items-center justify-between gap-2">
+                        <h4 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            {t('models')}
+                            <span className="tabular-nums">({channel.models.length})</span>
+                        </h4>
+                        <div className="flex shrink-0 items-center text-xs">
+                            {sortOptions.map(({ key, label }, index) => (
+                                <Fragment key={key}>
+                                    {index > 0 && <span aria-hidden="true" className="mx-1 text-muted-foreground/40">/</span>}
+                                    <button
+                                        type="button"
+                                        onClick={() => setModelSort(key)}
+                                        aria-pressed={modelSort === key}
+                                        className={`min-h-7 px-1.5 transition-colors ${modelSort === key
+                                            ? 'font-medium text-foreground'
+                                            : 'text-muted-foreground/50 hover:text-muted-foreground'}`}
+                                    >
+                                        {label}
+                                    </button>
+                                </Fragment>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* 宽屏下五项等分右列剩余高度, 与左列同为 grid 等分; 窄屏按内容取高。
+                        行数固定为 5 而不是随模型数变化: 不足 5 个时行高仍按五等分, 两列的卡片高度才一致;
+                        超出的模型不显示, 这里是排行摘要而非完整列表。 */}
+                    {modelStats.length === 0 ? (
+                        <div className="flex items-center justify-center rounded-2xl border bg-card p-6 text-center text-xs text-muted-foreground @2xl/stats:flex-1">
+                            {t('noModels')}
+                        </div>
+                    ) : (
+                        <ul className="grid gap-2 @2xl/stats:flex-1 @2xl/stats:grid-rows-5">
+                            {modelStats.slice(0, 5).map((model) => (
+                                <li
+                                    key={model.id}
+                                    className="grid gap-2 rounded-2xl border bg-card p-3 @md/stats:grid-cols-[minmax(0,1fr)_auto] @md/stats:items-center @md/stats:gap-4"
+                                >
+                                    <div className="min-w-0 space-y-1.5">
+                                        <span className="flex items-center gap-1.5">
+                                            <span className="truncate text-sm font-medium text-card-foreground">{model.name}</span>
+                                            {isBroken(model.disabledUntil) && (
+                                                <button
+                                                    type="button"
+                                                    data-share-exclude
+                                                    disabled={resetBreaker.isPending}
+                                                    title={t('breakerTitle', { count: model.errorCount, trips: model.breakerTrips })}
+                                                    onClick={() => resetBreaker.mutate(
+                                                        { id: channel.channel_id, model_names: [model.name] },
+                                                        {
+                                                            onSuccess: (result) => result.reset > 0
+                                                                ? toast.success(t('breakerReset', { name: model.name }))
+                                                                : toast.info(t('breakerAlreadyClear', { name: model.name })),
+                                                            onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
+                                                        }
+                                                    )}
+                                                    className="flex shrink-0 items-center gap-0.5 rounded-md bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive transition-colors hover:bg-destructive/20 disabled:opacity-50"
+                                                >
+                                                    <RotateCcw className="size-2.5" />
+                                                    {t('breakerBadge', { time: remainText(model.disabledUntil) })}
+                                                </button>
+                                            )}
+                                        </span>
+                                        <div className="flex items-center gap-2">
+                                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                                                <div className="h-full rounded-full bg-primary" style={{ width: `${model.share}%` }} />
+                                            </div>
+                                            <span className="w-8 shrink-0 text-right text-[10px] tabular-nums text-muted-foreground">
+                                                {model.share.toFixed(0)}%
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs tabular-nums @md/stats:w-64 @md/stats:grid-cols-4 @md/stats:gap-x-2">
+                                        <div className="flex items-center gap-1">
+                                            <MessageSquare className="size-3.5 shrink-0 text-chart-1" />
+                                            <MetricValue metric={model.count} />
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <CheckCircle2 className="size-3.5 shrink-0 text-accent" />
+                                            <span>{model.rate.toFixed(0)}%</span>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <FileText className="size-3.5 shrink-0 text-chart-3" />
+                                            <MetricValue metric={model.tokens} />
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <DollarSign className="size-3.5 shrink-0 text-chart-5" />
+                                            <MetricValue metric={model.cost} />
+                                        </div>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </section>
+            </div>
+
+            {/* 近 14 天趋势: 渠道整体或按模型的每日成功率与平均延迟 */}
+            <TrendPanel channelId={channel.channel_id} models={channel.models.map((model) => ({ id: model.model_id, name: model.model_name }))} />
+
+            {/* 分享图预览: 覆盖整张弹窗卡片 */}
+            {preview && (
+                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 rounded-3xl bg-card/95 p-4 backdrop-blur-sm">
+                    <img
+                        src={preview.url}
+                        alt=""
+                        className="max-h-[70vh] min-h-0 w-auto max-w-full rounded-2xl border border-border object-contain"
+                    />
+                    <div className="flex shrink-0 items-center gap-2">
+                        <button type="button" onClick={handleCopyImage} className="flex size-10 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:text-foreground active:scale-95">
+                            <Copy className="size-4" />
+                        </button>
+                        <button type="button" onClick={handleDownloadImage} className="flex size-10 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:text-foreground active:scale-95">
+                            <Download className="size-4" />
+                        </button>
+                        <button type="button" onClick={() => setPreview(null)} className="flex size-10 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:text-foreground active:scale-95">
+                            <X className="size-4" />
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}

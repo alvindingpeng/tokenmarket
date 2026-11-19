@@ -1,0 +1,351 @@
+package model
+
+import (
+	"reflect"
+	"slices"
+)
+
+// 分组选择上游成员的模式。
+type GroupMode string
+
+const (
+	GroupModeManual   GroupMode = "manual"   // 只使用人工选中的成员。
+	GroupModeFailover GroupMode = "failover" // 按成员排序选择并在失败时切换。
+	GroupModePrice    GroupMode = "price"    // 低价优先: 在可用成员中选用户价最低者, 失败时按价递增切换。
+	GroupModeLatency  GroupMode = "latency"  // 延迟优先: 按首响应耗时滑动平均选最快者, 失败时自动切换。
+	GroupModeSuccess  GroupMode = "success"  // 成功率优先: 按滑动窗口成功率选最稳者, 失败时自动切换。
+	GroupModeScore    GroupMode = "score"    // 综合评分: 价格, 延迟与成功率按权重加权评分, 选最高者。
+	GroupModeRandom   GroupMode = "random"   // 随机分发: 在可用成员中随机选择, 请求均匀摊开。
+)
+
+// RoutingPreference 是 API Key 可覆盖的用户侧选路偏好。空值兼容旧数据, 等同 inherit.
+const (
+	RoutingPreferenceInherit  = "inherit"
+	RoutingPreferenceBalanced = "balanced"
+	RoutingPreferencePrice    = "price"
+	RoutingPreferenceLatency  = "latency"
+	RoutingPreferenceSuccess  = "success"
+)
+
+func IsValidRoutingPreference(value string) bool {
+	switch value {
+	case "", RoutingPreferenceInherit, RoutingPreferenceBalanced, RoutingPreferencePrice, RoutingPreferenceLatency, RoutingPreferenceSuccess:
+		return true
+	default:
+		return false
+	}
+}
+
+func GroupModeForRoutingPreference(preference string, inherited GroupMode) GroupMode {
+	switch preference {
+	case RoutingPreferenceBalanced:
+		return GroupModeScore
+	case RoutingPreferencePrice:
+		return GroupModePrice
+	case RoutingPreferenceLatency:
+		return GroupModeLatency
+	case RoutingPreferenceSuccess:
+		return GroupModeSuccess
+	default:
+		return inherited
+	}
+}
+
+// IsValidGroupMode 判断模式标识是否受支持, 供导入校验等非绑定场景使用。
+func IsValidGroupMode(mode GroupMode) bool {
+	switch mode {
+	case GroupModeManual, GroupModeFailover, GroupModePrice, GroupModeLatency, GroupModeSuccess, GroupModeScore, GroupModeRandom:
+		return true
+	}
+	return false
+}
+
+// 价格口径: 低价优先与综合评分比较成员价格时使用的维度。
+const (
+	PriceMetricBlended string = "blended" // 读写价格均值。
+	PriceMetricInput   string = "input"   // 仅输入价格。
+	PriceMetricOutput  string = "output"  // 仅输出价格。
+)
+
+// IsValidPriceMetric 判断价格口径标识是否受支持。
+func IsValidPriceMetric(metric string) bool {
+	switch metric {
+	case PriceMetricBlended, PriceMetricInput, PriceMetricOutput:
+		return true
+	}
+	return false
+}
+
+func clampPositive(value, fallback, maximum int) int {
+	if value < 1 {
+		return fallback
+	}
+	if value > maximum {
+		return maximum
+	}
+	return value
+}
+
+// 分组 Relay 的持久化配置，数据库中以 JSON 存储。
+type GroupRelayConfig struct {
+	MemberStreamIdleTimeoutSeconds        int    `json:"member_stream_idle_timeout_seconds" binding:"omitempty,min=1,max=3600"`
+	RequestTimeoutSeconds                 int    `json:"request_timeout_seconds" binding:"omitempty,min=1,max=3600"`                    // 整请求最大耗时, 包含重试与流式传输。
+	MaxWaitSeconds                        int    `json:"max_wait_seconds" binding:"omitempty,min=0,max=300"`                            // 无可用成员时最大等待秒数, 0 立即返回。
+	MaxWaitingRequests                    int    `json:"max_waiting_requests" binding:"omitempty,min=0,max=1000"`                       // 同一分组同时排队的请求上限, 0 不排队。
+	MaxTotalAttempts                      int    `json:"max_total_attempts" binding:"omitempty,min=1,max=100"`                          // 单请求跨成员最大尝试轮次, 含首次; score 按不同渠道模型计数, 设为 5 即最多尝试 5 个候选。
+	MemberMaxAttempts                     int    `json:"member_max_attempts" binding:"omitempty,min=1,max=100"`                         // 单个成员包含首次请求的总尝试次数, 动态选路模式(非手动)生效。
+	MemberRetryIntervalSeconds            int    `json:"member_retry_interval_seconds" binding:"omitempty,min=1,max=300"`               // 同一成员相邻两次尝试之间的等待秒数。
+	MemberNonStreamResponseTimeoutSeconds int    `json:"member_non_stream_response_timeout_seconds" binding:"omitempty,min=1,max=3600"` // 单个成员返回完整非流式响应的超时秒数。
+	MemberStreamFirstEventTimeoutSeconds  int    `json:"member_stream_first_event_timeout_seconds" binding:"omitempty,min=1,max=3600"`  // 单个成员返回首个有效流事件的超时秒数。
+	MemberCooldownSeconds                 int    `json:"member_cooldown_seconds" binding:"omitempty,min=1,max=86400"`                   // 单个成员耗尽尝试后被跳过的秒数, 动态选路模式(非手动)生效。
+	MemberAffinitySeconds                 int    `json:"member_affinity_seconds" binding:"omitempty,min=0,max=3600"`                    // 成员亲和时间:动态选路成功后继续保持当前成员的秒数;当前成员失败会立即结束亲和,0 表示不保持。
+	PriceMetric                           string `json:"price_metric" binding:"omitempty,oneof=blended input output"`                   // 低价优先与综合评分的价格口径: blended 读写均值, input 仅输入, output 仅输出。
+	MetricWindowSize                      int    `json:"metric_window_size" binding:"omitempty,min=5,max=200"`                          // 延迟与成功率指标的样本窗口规模, 越大越平滑, 5-200。
+	ScorePriceWeight                      int    `json:"score_price_weight" binding:"omitempty,min=0,max=100"`                          // 综合评分中价格的相对权重, 0-100; 0 表示未自定义, 运行时跟随系统默认设置。
+	ScoreLatencyWeight                    int    `json:"score_latency_weight" binding:"omitempty,min=0,max=100"`                        // 综合评分中延迟的相对权重, 0-100; 0 表示未自定义, 运行时跟随系统默认设置。
+	ScoreSuccessWeight                    int    `json:"score_success_weight" binding:"omitempty,min=0,max=100"`                        // 综合评分中成功率的相对权重, 0-100; 0 表示未自定义, 运行时跟随系统默认设置。
+	// ReliabilityFloor 是综合评分的可靠性下限(百分比, 0-100): 成功率低于该值的成员排到全部达标成员之后。
+	// 0 表示未自定义, 运行时跟随系统默认设置; 用于避免最便宜的成员凭静态价格长期霸占首位。
+	ReliabilityFloor int `json:"reliability_floor" binding:"omitempty,min=0,max=100"`
+	// 灰度分流(金丝雀): 与上面所有选择模式正交, 命中者优先走灰度成员, 未命中或灰度不可用则完全按原模式选路。
+	// 这样新渠道/新模型不必先临时改分组模式, 也不会把未命中流量的既有行为换掉。
+	CanaryItemID     int   `json:"canary_item_id" binding:"omitempty,min=0"`         // 灰度成员的分组成员 ID; 0 表示关闭灰度。
+	CanaryPercent    int   `json:"canary_percent" binding:"omitempty,min=0,max=100"` // 命中灰度的流量百分比, 0-100。
+	CanaryUserIDs    []int `json:"canary_user_ids"`                                  // 显式灰度用户 ID 列表; 非空时这些用户恒定走灰度, 优先于比例。
+	CanaryPerRequest bool  `json:"canary_per_request"`                               // 假=按 API Key 指纹粘性分桶(同一 Key 结果稳定), 真=每请求重新抽样。
+}
+
+// canaryBuckets 是粘性分桶的固定桶数: 比例按桶划分, 分桶键只依赖请求身份, 故同一 Key 反复命中同一结果。
+// 用 100 个桶是为了让 1% 这样的细粒度比例也精确, 同时桶数固定才能让"同一 Key 落在哪个桶"保持不变。
+const canaryBuckets = 100
+
+// CanaryActive 判断灰度分流是否真的会生效: 必须指定了灰度成员且比例非零。
+// 灰度成员是否存在、是否可用由选路侧再判一次, 配置层只判"有没有配"。
+func (config GroupRelayConfig) CanaryActive() bool {
+	return config.CanaryItemID != 0 && config.CanaryPercent > 0
+}
+
+// CanaryHit 判定本次请求是否落在灰度里。
+// userID 是请求所属用户(API Key 的归属者), keyID 是 API Key 主键, requestSeed 是每请求不同的随机数。
+// 显式用户列表优先于比例: 命中列表的用户恒走灰度, 未命中列表的用户不走 —— 否则"指定用户"会被比例稀释成概率。
+// 默认按 Key 粘性分桶: 同一把 Key 的流量整体走灰度或整体不走, 避免同一客户端在两条路径间来回抖动,
+// 也就避免同一会话的连续请求打到两个不同上游而丢掉上下文缓存收益; 未绑定 Key 时退化到按用户分桶。
+// canary_per_request 打开后改为按 requestSeed 逐请求抽样, 用于"只要一点点样本先看看"的场景。
+func (config GroupRelayConfig) CanaryHit(userID uint, keyID int, requestSeed uint64) bool {
+	if !config.CanaryActive() {
+		return false
+	}
+	if len(config.CanaryUserIDs) > 0 {
+		return slices.Contains(config.CanaryUserIDs, int(userID))
+	}
+	if config.CanaryPercent >= 100 {
+		return true
+	}
+	if config.CanaryPerRequest {
+		return int(requestSeed%canaryBuckets) < config.CanaryPercent
+	}
+	seed := uint64(userID) * 0x9E3779B97F4A7C15
+	if keyID > 0 {
+		seed = uint64(keyID) * 0x9E3779B97F4A7C15
+	}
+	// 乘法散列取高位: 低位变化规律性太强, 用高位才能让相邻 Key 主键落进不同桶。
+	bucket := int((seed ^ (seed >> 29)) % canaryBuckets)
+	return bucket < config.CanaryPercent
+}
+
+// DefaultGroupRelayConfig 返回手动模式的默认参数, 兼容没有模式上下文的调用方。
+func DefaultGroupRelayConfig() GroupRelayConfig {
+	return DefaultGroupRelayConfigForMode(GroupModeManual)
+}
+
+// DefaultGroupRelayConfigForMode 按策略给新分组设置默认参数; 已有分组的配置不会被改写。
+func DefaultGroupRelayConfigForMode(mode GroupMode) GroupRelayConfig {
+	config := GroupRelayConfig{
+		MemberStreamIdleTimeoutSeconds:        60,
+		RequestTimeoutSeconds:                 600,
+		MaxWaitSeconds:                        30,
+		MaxWaitingRequests:                    0,
+		MaxTotalAttempts:                      10,
+		MemberMaxAttempts:                     1, // 失败优先换成员, 避免同一故障端点连续阻塞。
+		MemberRetryIntervalSeconds:            1,
+		MemberNonStreamResponseTimeoutSeconds: 120,
+		MemberStreamFirstEventTimeoutSeconds:  30,
+		MemberCooldownSeconds:                 60,
+		MemberAffinitySeconds:                 0,
+		PriceMetric:                           PriceMetricBlended,
+		MetricWindowSize:                      20,
+		// 权重 0 表示运行时使用系统默认设置, 而非固定拷贝一份旧默认。
+		ScorePriceWeight:   0,
+		ScoreLatencyWeight: 0,
+		ScoreSuccessWeight: 0,
+	}
+	switch mode {
+	case GroupModeFailover:
+		config.MemberAffinitySeconds = 60 // 备用成员成功后短暂稳定, 再允许主成员恢复探测。
+	case GroupModeLatency:
+		config.MetricWindowSize = 10 // 对延迟变化反应较快。
+	case GroupModeSuccess:
+		config.MetricWindowSize = 30 // 成功率避免被个别失败过度扰动。
+	case GroupModeRandom:
+		config.MemberCooldownSeconds = 30 // 分散流量时较快恢复健康成员的采样。
+	}
+	return config
+}
+
+// NormalizeGroupRelayConfig 补齐没有模式上下文的旧调用方(手动模式默认)。
+func NormalizeGroupRelayConfig(config *GroupRelayConfig) {
+	NormalizeGroupRelayConfigForMode(config, GroupModeManual)
+}
+
+// NormalizeGroupRelayConfigForMode 按模式填充缺失配置, 显式设置的参数保持不变。
+func NormalizeGroupRelayConfigForMode(config *GroupRelayConfig, mode GroupMode) {
+	defaults := DefaultGroupRelayConfigForMode(mode)
+	// 含切片后结构体不再可用 == 比较, 全零判定改用 DeepEqual; 语义与原先一致。
+	if reflect.DeepEqual(*config, GroupRelayConfig{}) {
+		*config = defaults
+		return
+	}
+	if config.MemberStreamIdleTimeoutSeconds < 1 {
+		config.MemberStreamIdleTimeoutSeconds = defaults.MemberStreamIdleTimeoutSeconds
+	}
+	if config.RequestTimeoutSeconds < 1 {
+		config.RequestTimeoutSeconds = defaults.RequestTimeoutSeconds
+	}
+	if config.MaxWaitSeconds < 0 {
+		config.MaxWaitSeconds = defaults.MaxWaitSeconds
+	}
+	if config.MaxWaitingRequests < 0 {
+		config.MaxWaitingRequests = defaults.MaxWaitingRequests
+	}
+	if config.MaxTotalAttempts < 1 {
+		config.MaxTotalAttempts = defaults.MaxTotalAttempts
+	}
+	config.RequestTimeoutSeconds = min(config.RequestTimeoutSeconds, 3600)
+	config.MemberStreamIdleTimeoutSeconds = min(config.MemberStreamIdleTimeoutSeconds, 3600)
+	config.MaxWaitSeconds = min(config.MaxWaitSeconds, 300)
+	config.MaxWaitingRequests = min(config.MaxWaitingRequests, 1000)
+	config.MaxTotalAttempts = min(config.MaxTotalAttempts, 100)
+	config.MemberMaxAttempts = clampPositive(config.MemberMaxAttempts, defaults.MemberMaxAttempts, 100)
+	config.MemberRetryIntervalSeconds = clampPositive(config.MemberRetryIntervalSeconds, defaults.MemberRetryIntervalSeconds, 300)
+	config.MemberNonStreamResponseTimeoutSeconds = clampPositive(config.MemberNonStreamResponseTimeoutSeconds, defaults.MemberNonStreamResponseTimeoutSeconds, 3600)
+	config.MemberStreamFirstEventTimeoutSeconds = clampPositive(config.MemberStreamFirstEventTimeoutSeconds, defaults.MemberStreamFirstEventTimeoutSeconds, 3600)
+	config.MemberCooldownSeconds = clampPositive(config.MemberCooldownSeconds, defaults.MemberCooldownSeconds, 86400)
+	if config.MemberAffinitySeconds < 0 {
+		config.MemberAffinitySeconds = defaults.MemberAffinitySeconds
+	}
+	config.MemberAffinitySeconds = min(config.MemberAffinitySeconds, 3600)
+	config.ReliabilityFloor = min(max(config.ReliabilityFloor, 0), 100)
+	if !IsValidPriceMetric(config.PriceMetric) {
+		config.PriceMetric = defaults.PriceMetric
+	}
+	if config.MetricWindowSize < 5 || config.MetricWindowSize > 200 {
+		config.MetricWindowSize = defaults.MetricWindowSize
+	}
+	config.ScorePriceWeight = min(max(config.ScorePriceWeight, 0), 100)
+	config.ScoreLatencyWeight = min(max(config.ScoreLatencyWeight, 0), 100)
+	config.ScoreSuccessWeight = min(max(config.ScoreSuccessWeight, 0), 100)
+	// 灰度配置只做范围收敛, 不做"没配就补默认": 灰度成员 0 与比例 0 本身就是「关闭」这一有效状态。
+	config.CanaryItemID = max(config.CanaryItemID, 0)
+	config.CanaryPercent = min(max(config.CanaryPercent, 0), 100)
+	// 用户 ID 去重并丢掉非法值: 重复项只会让列表越来越长, 负数与 0 不是合法用户。
+	if len(config.CanaryUserIDs) > 0 {
+		seen := make(map[int]bool, len(config.CanaryUserIDs))
+		cleaned := make([]int, 0, len(config.CanaryUserIDs))
+		for _, id := range config.CanaryUserIDs {
+			if id <= 0 || seen[id] {
+				continue
+			}
+			seen[id] = true
+			cleaned = append(cleaned, id)
+		}
+		config.CanaryUserIDs = cleaned
+	}
+	// 权重按提交值保留: 0 表示未自定义, 运行时由 relay 侧按系统默认设置解析(相对权重, 无须归一)。
+}
+
+// 客户端模型名称及其可手动选择或故障转移的上游分组。
+type Group struct {
+	RequestRoutingPreference string           `json:"-" gorm:"-"`                                                                                                       // 请求级偏好, 不持久化。
+	ID                       int              `json:"id" gorm:"primaryKey"`                                                                                             // 分组主键。
+	UserID                   uint             `json:"user_id" gorm:"uniqueIndex:idx_group_owner_name;not null;default:0"`                                               // 归属用户; 分组名在归属内唯一, 跨用户可重名。
+	Name                     string           `json:"name" gorm:"uniqueIndex:idx_group_owner_name;not null"`                                                            // 客户端请求使用的模型名称。
+	Mode                     GroupMode        `json:"mode" gorm:"not null;default:manual" binding:"omitempty,oneof=manual failover price latency success score random"` // 选择成员的模式。
+	ActiveItemID             int              `json:"active_item_id" gorm:"not null;default:0"`                                                                         // 手动模式指定的成员, 故障转移模式忽略该值, 0 表示未指定; 写入侧字段, 读取一律用响应中的 runtime.current_item_id, 出 JSON 仅为让备份转储带上它。
+	RelayConfig              GroupRelayConfig `json:"relay_config" gorm:"serializer:json"`                                                                              // 该分组的 Relay 路由配置。
+	Items                    []GroupItem      `json:"items" gorm:"foreignKey:GroupID;constraint:OnDelete:CASCADE"`                                                      // 该分组可手动选择或故障转移的分组项; 读取时恒为数组, 空集合也给出以免各消费方各自兜底。
+}
+
+// 分组内一个可选择的渠道授权分组项。
+// 读取时补齐授权两侧的名称, 所属渠道与可用性: 界面只需展示与排序, 由此无需再按主键回查渠道, 模型与凭据。
+// 补齐的字段不含上游凭据本身, 转发所需的完整授权由 Relay 另行按主键取。
+type GroupItem struct {
+	ID             int           `json:"id" gorm:"primaryKey"`                                                         // 分组项主键。
+	GroupID        int           `json:"group_id" gorm:"not null;index:idx_group_grant,unique"`                        // 所属分组 ID。
+	ChannelGrantID int           `json:"channel_grant_id" gorm:"not null;index:idx_group_grant,unique"`                // 引用的渠道授权 ID。
+	ChannelGrant   *ChannelGrant `json:"-" gorm:"foreignKey:ChannelGrantID;references:ID;constraint:OnDelete:CASCADE"` // 仅用于声明级联外键, 授权被删除时成员随之删除; 读取时不填充, 展示所需字段见下方。
+	Priority       int           `json:"priority" gorm:"not null"`                                                     // Priority 决定界面展示和故障转移模式下的成员切换顺序。
+
+	ChannelID      int        `json:"channel_id" gorm:"-"`               // 授权所属渠道 ID。
+	ChannelKeyID   int        `json:"channel_key_id" gorm:"-"`           // 授权引用的凭据 ID, 供上游限流定位。
+	ChannelModelID int        `json:"channel_model_id" gorm:"-"`         // 授权引用的渠道模型 ID, 供上游限流定位。
+	ChannelName    string     `json:"channel_name" gorm:"-"`             // 展示名: 已发布渠道一律显示发布唯一编码, 未发布渠道显示真名。
+	ModelName      string     `json:"model_name" gorm:"-"`               // 授权引用的上游模型名称。
+	KeyName        string     `json:"key_name" gorm:"-"`                 // 授权引用的凭据名称; 非归属者视角为空(脱敏)。
+	Protocols      Protocol   `json:"protocols" gorm:"-"`                // 授权支持的协议位掩码。
+	Available      bool       `json:"available" gorm:"-"`                // 渠道与凭据均启用且模型, 凭据均存在时为真; 为假表示该成员当前无法转发, 但仍需列出以便移除。
+	SupplyPrice    LLMPrice   `json:"supply_price" gorm:"-"`             // 供货价(四类)。
+	UserPrice      LLMPrice   `json:"user_price" gorm:"-"`               // 用户价(上浮后)。
+	MediaSupply    MediaPrice `json:"media_supply" gorm:"-"`             // 媒体供货价, 仅模型 kind=image|video 时使用。
+	UserMedia      MediaPrice `json:"user_media" gorm:"-"`               // 媒体用户价(上浮后)。
+	Kind           MediaKind  `json:"kind,omitempty" gorm:"-"`           // 模型媒体形态, 文本留空。
+	PriceCurrency  string     `json:"price_currency,omitempty" gorm:"-"` // 渠道报价币种; 空或 USD 表示零折算。
+	FxMissing      bool       `json:"fx_missing,omitempty" gorm:"-"`     // 声明了非 USD 报价但牌价不可用: 价格未折算, 成员按不可用处理。
+}
+
+// 创建分组请求; 成员顺序即优先级顺序。
+// 不收主键与当前成员: 分组主键由数据库分配, 当前成员在创建后另行指定。
+type GroupCreateRequest struct {
+	Name        string           `json:"name" binding:"required"`                                                           // 客户端请求使用的模型名称。
+	Mode        GroupMode        `json:"mode" binding:"omitempty,oneof=manual failover price latency success score random"` // 选择成员的模式, 留空按手动。
+	RelayConfig GroupRelayConfig `json:"relay_config"`                                                                      // Relay 路由配置, 零值由后端补默认。
+	Items       []GroupItemInput `json:"items"`                                                                             // 初始成员集合。
+}
+
+// 分组普通配置, 成员和当前成员的变更请求; 分组主键走路径, 不进请求体。
+// 当前成员是分组的一个普通可选字段, 与其余字段共用本请求: 它不需要独立的权限, 审计或并发粒度。
+type GroupUpdateRequest struct {
+	Name         *string           `json:"name,omitempty"`                                                                              // Name 仅在名称变更时发送。
+	Mode         *GroupMode        `json:"mode,omitempty" binding:"omitempty,oneof=manual failover price latency success score random"` // Mode 仅在选择模式变更时发送。
+	RelayConfig  *GroupRelayConfig `json:"relay_config,omitempty"`                                                                      // RelayConfig 仅在 Relay 配置变更时发送完整配置。
+	Items        *[]GroupItemInput `json:"items,omitempty"`                                                                             // 新的成员集合, 整体替换; 提交顺序即优先级顺序。
+	ActiveItemID *int              `json:"active_item_id,omitempty"`                                                                    // 手动模式指定的当前成员, 0 表示取消选择; 用指针以便与"未提交该字段"区分。
+}
+
+// 提交分组成员时按渠道授权主键引用。
+// 授权在提交前已由渠道页面创建, 主键必然存在, 故成员无需按名称引用;
+// 成员自身的主键不参与提交: 整体替换按授权主键匹配, 已有成员的主键与统计由后端保留。
+type GroupItemInput struct {
+	ChannelGrantID int `json:"channel_grant_id" binding:"required"` // 待引用的渠道授权 ID。
+}
+
+// GroupAddItemsRequest 是「只追加成员」的请求: 一次把一个或多个授权追加到多个分组末尾。
+//
+// 与 GroupUpdateRequest.Items 的区别是语义而非形状: Items 是**整体替换**(提交的是完整新集合),
+// 调用方必须先读到当前集合、在本地合并、再把合并结果提交回来 —— 并发下两个会话各自读、各自合并、
+// 后写的那份把先写的增量整段覆盖掉, 表现为"加进去的成员又不见了", 且库里没有任何痕迹可查。
+// 本请求只声明"要加哪些", 由后端在事务内读出当前集合再追加, 因此并发安全且天然幂等:
+// 已经在分组里的授权不重复添加, 也不改变既有成员的顺序与优先级。
+type GroupAddItemsRequest struct {
+	GroupIDs       []int `json:"group_ids" binding:"required,min=1"`               // 目标分组主键; 一次可提交多个, 逐个追加。
+	ChannelGrantIDs []int `json:"channel_grant_ids" binding:"required,min=1,dive,gt=0"` // 待追加的渠道授权主键; 顺序即追加顺序。
+}
+
+// GroupAddItemsResult 是只追加的结果: 每个分组各自新增与被跳过了多少条。
+// 逐个分组给结果而不是只给一个汇总数: 一次提交多个分组时, "哪些真加进去了"必须能逐条看清,
+// 否则界面只能笼统地说"部分成功", 用户无从判断该重试哪一个。
+type GroupAddItemsResult struct {
+	GroupID  int   `json:"group_id"`  // 目标分组主键。
+	Added    []int `json:"added"`     // 本次真正新增的授权主键, 按追加顺序。
+	Skipped  []int `json:"skipped"`   // 已在该分组中而跳过的授权主键(重复提交不该报错)。
+	Group    Group `json:"group"`     // 追加后的完整分组, 语义与 GroupUpdate 的响应一致。
+}

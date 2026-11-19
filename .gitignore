@@ -1,0 +1,8 @@
+data
+build
+dist/
+static/out/*
+!static/out/README.md
+.vscode
+__pycache__/
+*.pyc

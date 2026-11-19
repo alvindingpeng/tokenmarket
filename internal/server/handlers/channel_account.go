@@ -1,0 +1,258 @@
+package handlers
+
+// 上游账号 JSON 的导入接口。
+//
+// 放在渠道路由下而不是新开一组: 账号凭据就是渠道下的 ChannelKey, 归属校验、权限与
+// 渠道编辑完全一致 —— 谁有权改这个渠道, 谁才有权往里塞凭据。
+
+import (
+	"errors"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/charmbracelet/log"
+
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/op"
+	"github.com/alvindingpeng/switchyard/internal/server/middleware"
+	"github.com/alvindingpeng/switchyard/internal/server/resp"
+	"github.com/alvindingpeng/switchyard/internal/server/router"
+	"github.com/gin-gonic/gin"
+)
+
+func init() {
+	router.NewGroupRouter("/api/v1/channel/account").
+		Use(middleware.Auth()).
+		AddRoute(
+			// 账号管理面: 把所有渠道下的账号汇总成一张表。
+			// 放在渠道路由下而不是新开一组, 理由与 /import 相同 —— 账号就是渠道下的凭据,
+			// 归属与权限语义完全一致, 另起一组只会多一份需要同步的鉴权逻辑。
+			router.NewRoute("/list", http.MethodGet).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(listChannelAccounts),
+		).
+		AddRoute(
+			// 支持的平台与字段形状: 每种平台的具体键名见 model/account_json.go 的解析分支。
+			// RequireJSON 挂在这条路由而非整个分组: /import 收的是 JSON body,
+			// 而 /:id/refresh 的入参全在 URL 里, 不放宽会让它要求调用方发一个空 body,
+			// 否则回 415 —— 那种报错与"刷新失败"看起来毫不相干, 排查成本很高。
+			router.NewRoute("/import", http.MethodPost).
+				Use(middleware.RequireJSON()).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(importChannelAccount),
+		).
+		AddRoute(
+			// 批量导入: 一次贴多个账号 JSON, 逐条落库, 一条失败不影响其他。
+			// 刻意不做首刷(见 op.AccountImportBatch): 逐条首刷会 N 次上游调用, 又慢又可能触发风控。
+			router.NewRoute("/import-batch", http.MethodPost).
+				Use(middleware.RequireJSON()).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(importChannelAccountBatch),
+		).
+		AddRoute(
+			router.NewRoute("/:id/refresh", http.MethodPost).
+				Allow(model.RoleAdmin, model.RoleReseller).
+				Handle(refreshChannelAccount),
+		)
+}
+
+type importChannelAccountRequest struct {
+	ChannelID int    `json:"channel_id"`
+	Platform  string `json:"platform"`
+	Name      string `json:"name"`
+	Raw       string `json:"raw"`
+	Enabled   *bool  `json:"enabled"`
+	Priority  int    `json:"priority"`
+}
+
+// importChannelAccount 导入一份账号 JSON 作为渠道凭据。
+//
+// 返回体里 refreshed_now 与 warning 两件事要分开看:
+//   - refreshed_now=true 表示导入时已经刷过一次令牌, 账号当场可用;
+//   - 带 warning 表示账号已落库但首刷失败 —— 这是成功响应, 不是错误,
+//     因为账号 JSON 本身可能没问题(只是上游此刻不通)。若把它当错误返回, 使用者会重复导入,
+//     然后撞上"凭据名已存在"。
+func importChannelAccount(c *gin.Context) {
+	var request importChannelAccountRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.Error(c, http.StatusBadRequest, "请求格式错误")
+		return
+	}
+	userID, role := middleware.CurrentUser(c)
+	channel, err := op.ChannelGet(request.ChannelID)
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, "渠道不存在")
+		return
+	}
+	if !(model.Scope{ID: userID, Role: role}).Owns(channel.UserID) {
+		// 不归属时按 404 处理: 不暴露渠道存在性。
+		resp.Error(c, http.StatusNotFound, "渠道不存在")
+		return
+	}
+
+	enabled := true
+	if request.Enabled != nil {
+		enabled = *request.Enabled
+	}
+	result, err := op.AccountImport(c.Request.Context(), channel.ID, op.AccountImportSpec{
+		Platform: request.Platform,
+		Name:     request.Name,
+		Raw:      request.Raw,
+		Enabled:  enabled,
+		Priority: request.Priority,
+	}, time.Now())
+
+	// 首刷失败是"部分成功": 账号已落库, 只把警告带回去, 不当成请求失败。
+	var refreshWarning *op.AccountImportRefreshWarning
+	if err != nil && !errors.As(err, &refreshWarning) {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	body := gin.H{
+		"channel_key_id": result.ChannelKeyID,
+		"name":           result.Name,
+		"platform":       result.Platform,
+		"kind":           result.Kind,
+		"email":          result.Email,
+		"refreshed_now":  result.RefreshedNow,
+		// 续期能力必须让界面能展示: cookie 类账号没有 refresh 概念,
+		// 失效后只能人工重导, 这一点若不说清, 使用者会以为"系统会自己处理"。
+		"auto_renewable": result.Kind == model.AccountKindOAuth,
+	}
+	if result.ExpiresAt != nil {
+		body["expires_at"] = result.ExpiresAt.Format(time.RFC3339)
+	}
+	if refreshWarning != nil {
+		body["warning"] = refreshWarning.Error()
+	}
+	// 订阅渠道的模型清单只能靠渠道里已有的账号去探测, 而账号是"建完渠道之后"才导入的 ——
+	// 建渠道那一刻没有账号, 保存时触发的 autoAddAfterSave 必然拿不到凭据而跳过。
+	// 这里补一次触发: 导入账号是订阅渠道真正具备拉模型条件的第一刻。
+	// best-effort: 探测失败不影响导入结果(账号已经落库), 与 autoAddAfterSave 同口径。
+	if channel, channelErr := op.ChannelGet(request.ChannelID); channelErr == nil && channel.ModelAutoAdd {
+		// 走渠道出口池: 与转发同一条线路, 否则配了出口代理的渠道拉模型会被上游按地区拒绝。
+		if client, clientErr := probeHTTPClientForChannel(channel); clientErr != nil {
+			log.Warnf("auto-add after import: build probe client for channel %d failed: %v", channel.ID, clientErr)
+		} else if addErr := op.AutoAddChannelModels(c.Request.Context(), channel.ID, channel.ChannelConfig, client, userID); addErr != nil {
+			log.Warnf("auto-add after import: channel %d failed: %v", channel.ID, addErr)
+		}
+	}
+	resp.Success(c, body)
+}
+
+// refreshChannelAccount 手动触发一次刷新, 用于运营在导入后立刻验证账号是否可用。
+func refreshChannelAccount(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, "凭据 ID 非法")
+		return
+	}
+	userID, role := middleware.CurrentUser(c)
+	channelKey, err := op.ChannelKeyLookup(id)
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, "凭据不存在")
+		return
+	}
+	channel, err := op.ChannelGet(channelKey.ChannelID)
+	if err != nil || !(model.Scope{ID: userID, Role: role}).Owns(channel.UserID) {
+		resp.Error(c, http.StatusNotFound, "凭据不存在")
+		return
+	}
+	if channelKey.AccountKind != model.AccountKindOAuth {
+		// cookie 类没有续期能力: 明确拒绝而不是"刷了个空"。
+		resp.Error(c, http.StatusBadRequest, "该凭据不是可自动续期的账号(cookie 类账号无法刷新)")
+		return
+	}
+
+	if err := op.AccountRefresh(c.Request.Context(), id, time.Now()); err != nil {
+		var persistErr *op.AccountRefreshPersistError
+		if errors.As(err, &persistErr) {
+			// 回写失败必须用最高级别提示: 上游已轮换旧令牌而新值没落库, 这个账号可能已经废了。
+			resp.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	resp.Success(c, gin.H{"refreshed": true})
+}
+
+// listChannelAccounts 返回当前作用域可见的全部上游账号。
+//
+// 这是账号管理面的唯一数据来源: 导入之后账号散落在各个渠道的凭据列表里,
+// 而账号会自己到期、自己失效、自己在后台被刷新 —— 没有一张汇总表,
+// 使用者就只能一个一个渠道点进去看, 等于逼他们把"定时验证"当不存在。
+func listChannelAccounts(c *gin.Context) {
+	userID, role := middleware.CurrentUser(c)
+	resp.Success(c, op.AccountList(model.Scope{ID: userID, Role: role}))
+}
+
+type importChannelAccountBatchRequest struct {
+	ChannelID int    `json:"channel_id"`
+	Platform  string `json:"platform"`
+	Items     []struct {
+		Name string `json:"name"`
+		Raw  string `json:"raw"`
+	} `json:"items"`
+	Enabled *bool `json:"enabled"`
+}
+
+// importChannelAccountBatch 批量导入多个账号到同一渠道。
+//
+// 返回逐条结果而不是只给一个汇总: 一批里字段齐全和缺字段的账号混在一起是常态,
+// 笼统说"部分失败"只会让使用者一条条猜。逐条带原因, 界面才能逐条展示。
+func importChannelAccountBatch(c *gin.Context) {
+	var request importChannelAccountBatchRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.Error(c, http.StatusBadRequest, "请求格式错误")
+		return
+	}
+	if len(request.Items) == 0 {
+		resp.Error(c, http.StatusBadRequest, "没有要导入的账号")
+		return
+	}
+	userID, role := middleware.CurrentUser(c)
+	channel, err := op.ChannelGet(request.ChannelID)
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, "渠道不存在")
+		return
+	}
+	if !(model.Scope{ID: userID, Role: role}).Owns(channel.UserID) {
+		resp.Error(c, http.StatusNotFound, "渠道不存在")
+		return
+	}
+
+	enabled := true
+	if request.Enabled != nil {
+		enabled = *request.Enabled
+	}
+	items := make([]op.AccountBatchItem, 0, len(request.Items))
+	for _, item := range request.Items {
+		items = append(items, op.AccountBatchItem{Name: item.Name, Raw: item.Raw})
+	}
+	results := op.AccountImportBatch(c.Request.Context(), channel.ID, request.Platform, items, enabled, time.Now())
+
+	succeeded := 0
+	body := make([]gin.H, 0, len(results))
+	for _, result := range results {
+		if result.OK {
+			succeeded++
+		}
+		body = append(body, gin.H{
+			"name":           result.Name,
+			"ok":             result.OK,
+			"channel_key_id": result.ChannelKeyID,
+			"platform":       result.Platform,
+			"kind":           result.Kind,
+			"error":          result.Error,
+		})
+	}
+	resp.Success(c, gin.H{
+		"total":     len(results),
+		"succeeded": succeeded,
+		"failed":    len(results) - succeeded,
+		"results":   body,
+	})
+}

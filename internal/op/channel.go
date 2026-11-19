@@ -1,0 +1,1800 @@
+package op
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	mathrand "math/rand"
+	"net/url"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/netguard"
+	"github.com/alvindingpeng/switchyard/internal/utils/cache"
+	"github.com/charmbracelet/log"
+	"gorm.io/gorm"
+)
+
+var (
+	channelCache      = cache.New[int, model.Channel](16)      // 渠道配置的进程内副本。
+	channelKeyCache   = cache.New[int, model.ChannelKey](16)   // 渠道凭据的进程内副本。
+	channelModelCache = cache.New[int, model.ChannelModel](16) // 渠道模型的进程内副本。
+	channelGrantCache = cache.New[int, model.ChannelGrant](16) // 渠道授权的进程内副本。
+)
+
+// ErrInvalidInput 标记"提交内容本身不合法"(而非服务端故障)的错误。
+//
+// 存在的理由: 渠道增删改此前把任何错误一律回 500 —— 于是"出口填了内网代理地址、被
+// SSRF 防护拦下"这类用户输入问题, 在网络面板、日志与监控里都表现为服务端故障,
+// 前端也无从按状态码分流提示。2026-11-03 线上实测: 出口地址被拒时前端收到 500。
+var ErrInvalidInput = errors.New("invalid input")
+
+// InvalidInputError 携带原始原因的不合法输入错误。
+// Error() 只返回原因本身, 让界面直接显示 "egress egress-1: upstream host ... is private",
+// 而不是多一层 "channel config is invalid: " 这样没有信息量的前缀。
+type InvalidInputError struct{ Reason error }
+
+func (e *InvalidInputError) Error() string { return e.Reason.Error() }
+
+func (e *InvalidInputError) Unwrap() error { return e.Reason }
+
+// Is 让 errors.Is(err, ErrInvalidInput) 成立, 与包内其他 sentinel 的判定方式一致。
+func (e *InvalidInputError) Is(target error) bool { return target == ErrInvalidInput }
+
+// channelModelCacheWriteMu 串行化 channelModelCache 的读-改-写: 统计累加(旧副本+统计后整体回写)
+// 与改价更新(新价格整体写入)并发时会互相顶掉对方的字段, 表现为"改完价格路由还按旧价走",
+// 故两处写路径互斥; 纯读(快照/选路)不参与锁, 缓存本身并发读安全。
+var channelModelCacheWriteMu sync.Mutex
+
+// channelBreakerWriteMu 串行化错误记录和成功重置的读库-写库-回写缓存,
+// 避免并发请求丢失计数, 或较早的数据库结果在较晚的重置之后才写入缓存。
+var channelBreakerWriteMu sync.Mutex
+
+// 只修改熔断字段, 不拿数据库旧统计/价格覆盖缓存中尚未落库的累加。
+// 与统计累加和子表重载使用相同的锁顺序; cache.Get/Set 本身只保证单次操作安全。
+func updateChannelKeyBreakerCache(id int, update func(*model.ChannelKey)) {
+	channelKeyStatsNeedUpdateLock.Lock()
+	defer channelKeyStatsNeedUpdateLock.Unlock()
+	if cached, ok := channelKeyCache.Get(id); ok {
+		update(&cached)
+		channelKeyCache.Set(id, cached)
+	}
+}
+
+func updateChannelModelBreakerCache(id int, update func(*model.ChannelModel)) {
+	channelModelStatsNeedUpdateLock.Lock()
+	defer channelModelStatsNeedUpdateLock.Unlock()
+	channelModelCacheWriteMu.Lock()
+	defer channelModelCacheWriteMu.Unlock()
+	if cached, ok := channelModelCache.Get(id); ok {
+		update(&cached)
+		channelModelCache.Set(id, cached)
+	}
+}
+
+// 已定义的全部协议位, 用于校验提交的协议掩码。
+// ProtocolOpenAIVideo 一并列入, 管理后台勾选不会被判为非法位; 视频路由本身 P2 阶段再补。
+const definedProtocols = model.ProtocolOpenAIChatCompletion | model.ProtocolOpenAIResponse | model.ProtocolAnthropicMessage | model.ProtocolOpenAIImage | model.ProtocolOpenAIVideo | model.ProtocolXunfeiSparkWS | model.ProtocolGeminiCLI
+
+// ChannelDetailGet 返回指定渠道的完整配置, 供编辑表单读取; 非归属者按不存在处理。
+func ChannelDetailGet(id int, scope model.Scope) (model.ChannelDetail, error) {
+	channel, ok := channelCache.Get(id)
+	if !ok || !scope.Owns(channel.UserID) {
+		return model.ChannelDetail{}, fmt.Errorf("channel not found")
+	}
+	return channelDetail(channel), nil
+}
+
+// ChannelStatsList 返回全部渠道及其模型的累计统计, 自带名称与启停状态, 同时充当列表页的渠道列表。
+// 不带整份配置: 路径, 代理与凭据明文只在编辑时用得上, 由 ChannelDetailGet 按主键单独给出。
+func ChannelStatsList(scope model.Scope) []model.ChannelStats {
+	modelsByChannel := make(map[int][]model.ChannelModelStats, channelCache.Len())
+	for _, channelModel := range channelModelCache.GetAll() {
+		modelsByChannel[channelModel.ChannelID] = append(modelsByChannel[channelModel.ChannelID], model.ChannelModelStats{
+			ModelID:       channelModel.ID,
+			ModelName:     channelModel.Name,
+			StatsMetrics:  channelModel.StatsMetrics,
+			ErrorCount:    channelModel.ErrorCount,
+			LastErrorAt:   channelModel.LastErrorAt,
+			DisabledUntil: channelModel.DisabledUntil,
+		})
+	}
+	stats := make([]model.ChannelStats, 0, channelCache.Len())
+	for _, channel := range channelCache.GetAll() {
+		// 归属过滤: 管理员看全部, 其余只看自有渠道。
+		if !scope.Owns(channel.UserID) {
+			continue
+		}
+		models := modelsByChannel[channel.ID]
+		if models == nil {
+			models = []model.ChannelModelStats{}
+		}
+		stats = append(stats, model.ChannelStats{
+			ChannelID:   channel.ID,
+			UserID:      channel.UserID,
+			ChannelName: channel.Name,
+			Shared:      channel.Shared,
+			ShareCode:   channel.ShareCode,
+			Enabled:     channel.Enabled,
+			// 额度暂停截止时间与 enabled 并列外露: 前者是上游余额不足自动写入的硬暂停,
+			// 后者是人工开关, 列表页要把两者分开显示(暂停原因与剩余时长 + 提前恢复入口)。
+			DisabledUntil: channel.DisabledUntil,
+			// 审核字段必须随列表一并外露: 卡片徽章与发布闸口只消费这一条查询,
+			// 漏拷会让 review_status 恒为空串, 徽章渲染成裸 key, 发布闸口对已过审渠道也恒判为受阻。
+			ReviewStatus: channel.ReviewStatus,
+			ReviewNote:   channel.ReviewNote,
+			SubmittedAt:  channel.SubmittedAt,
+			ReviewedAt:   channel.ReviewedAt,
+			// 观察期字段同理: 漏拷会让前端进度条恒显示「已转正」, 掩盖真实的观察状态。
+			TrustLevel:       channel.TrustLevel,
+			ObservationStart: channel.ObservationStart,
+			ObservationUntil: channel.ObservationUntil,
+			Models:           models,
+			StatsMetrics:     channel.StatsMetrics,
+		})
+	}
+	return stats
+}
+
+// ChannelCreate 创建渠道及其凭据, 模型与授权, 返回创建后的完整配置。
+// 三者在同一事务内落库: 授权按名称引用两侧, 待凭据与模型拿到主键后由 syncChannelGrants 解析,
+// 由此建一个带授权的渠道只需一趟请求。
+func ChannelCreate(detail *model.ChannelDetail, scope model.Scope, ctx context.Context) (*model.ChannelDetail, error) {
+	if err := normalizeChannelDetail(ctx, detail); err != nil {
+		// 含 SSRF 防护拒绝的地址: 归类为输入错误而不是服务端故障, 让调用方回 400
+		// 并把原因原样显示给管理员, 而不是显示一个无从下手的 500。
+		return nil, &InvalidInputError{Reason: err}
+	}
+
+	channel := model.Channel{UserID: scope.ID, ChannelConfig: detail.ChannelConfig,
+		ReviewStatus: model.ChannelReviewDraft, TrustLevel: model.ChannelTrustObserving}
+	// 管理员免审渠道建即过审: 免得管理员自有渠道被提交-审批流程卡住(开关默认开)。
+	// 指纹在创建时定稿: 此刻模型清单与配置就是审核看到的样子, 后续改动靠指纹比对触发 stale。
+	if channelReviewBypass(channel.UserID) {
+		now := time.Now()
+		channel.ReviewStatus = model.ChannelReviewApproved
+		channel.ReviewedBy = scope.ID
+		channel.ReviewedAt = &now
+		channel.ConfigFingerprint = channelConfigFingerprint(detail.ChannelConfig, detail.Models)
+	}
+	if err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&channel).Error; err != nil {
+			return fmt.Errorf("failed to create channel: %w", err)
+		}
+		if err := syncChannelChildren(tx, channel.ID, detail); err != nil {
+			return err
+		}
+		// 管理员免审也必须进入观察期: 免掉的是审批动作, 不是质量观察。
+		if channelReviewBypass(channel.UserID) {
+			if err := ChannelTrustStart(tx, channel.ID); err != nil {
+				return fmt.Errorf("failed to start channel observation: %w", err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	var trustFields model.Channel
+	if err := db.GetDB().WithContext(ctx).Select("trust_level", "observation_start", "observation_until").First(&trustFields, channel.ID).Error; err == nil {
+		channel.TrustLevel = trustFields.TrustLevel
+		channel.ObservationStart = trustFields.ObservationStart
+		channel.ObservationUntil = trustFields.ObservationUntil
+	}
+	channelCache.Set(channel.ID, channel)
+	// 凭据, 模型, 出口与授权的主键都在事务内分配, 此刻只在库里; 重载子表缓存以让授权候选与转发都能查到。
+	if err := reloadChannelChildren(ctx, channel.ID); err != nil {
+		return nil, err
+	}
+	// 回读缓存再拼返回值: 出口是在事务里按行插入的, 手里这份 channel 没有它们,
+	// 直接返回会让"刚建的渠道出口列表是空的", 而转发其实已经在用。
+	if cached, ok := channelCache.Get(channel.ID); ok {
+		channel = cached
+	}
+	created := channelDetail(channel)
+	return &created, nil
+}
+
+// ChannelUpdate 按提交的完整配置整体替换渠道及其凭据, 模型与授权, 返回刷新后的配置。
+// 提交即全量而非按字段比对增量: 渠道是人工编辑的十几个字段, 表单本就一次给出完整配置,
+// 未列出的凭据与模型会被删除并级联删除其授权。
+func ChannelUpdate(detail *model.ChannelDetail, scope model.Scope, ctx context.Context) (*model.ChannelDetail, error) {
+	existing, ok := channelCache.Get(detail.ID)
+	if !ok || !scope.Owns(existing.UserID) {
+		return nil, fmt.Errorf("channel not found")
+	}
+	if err := normalizeChannelDetail(ctx, detail); err != nil {
+		// 含 SSRF 防护拒绝的地址: 归类为输入错误而不是服务端故障, 让调用方回 400
+		// 并把原因原样显示给管理员, 而不是显示一个无从下手的 500。
+		return nil, &InvalidInputError{Reason: err}
+	}
+
+	if err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 逐列点名而不整行覆盖: 全量提交下 enabled 置假与被清空的可选字段都必须落库, 按零值跳过会写不进去;
+		// 而统计列由转发累加, 不在提交范围内, 整行覆盖会把它抹回提交时的旧值。
+		// 上浮覆盖值在白名单内: <0 视为跟随全局, 其余必须落在常识区间(0 = 不加价, 10 = 1000% 已到荒谬边界)。
+		if markup := detail.ChannelConfig.MarkupRatio; markup < ChannelMarkupFollowGlobal || markup > 10 {
+			return &InvalidInputError{Reason: fmt.Errorf("markup_ratio must be -1 (follow global) or between 0 and 10")}
+		}
+		if err := tx.Model(&model.Channel{}).Where("id = ?", detail.ID).
+			Select("name", "dialect", "enabled", "base_url", "markup_ratio",
+				"openai_chat_completion_path", "openai_response_path", "openai_image_generation_path", "openai_image_edit_path", "anthropic_message_path",
+				"proxy", "channel_proxy", "custom_header", "param_override", "match_regex", "model_auto_add").
+			Updates(&model.Channel{ChannelConfig: detail.ChannelConfig}).Error; err != nil {
+			return fmt.Errorf("failed to update channel: %w", err)
+		}
+		return syncChannelChildren(tx, detail.ID, detail)
+	}); err != nil {
+		return nil, err
+	}
+
+	// 缓存条目由提交的配置重建, 统计从原条目搬过来: 它含本轮尚未落库的累加, 比库内的行更新。
+	// 归属与发布状态同样从原条目搬: 提交不含这三者, 不搬会在缓存里丢掉归属与共享编码。
+	channelStatsNeedUpdateLock.Lock()
+	channel := model.Channel{ID: detail.ID, ChannelConfig: detail.ChannelConfig}
+	if cached, ok := channelCache.Get(detail.ID); ok {
+		channel.StatsMetrics = cached.StatsMetrics
+		channel.DisabledUntil = cached.DisabledUntil
+		channel.UserID = cached.UserID
+		channel.Shared = cached.Shared
+		channel.ShareCode = cached.ShareCode
+		channel.ReviewStatus = cached.ReviewStatus
+		channel.ReviewNote = cached.ReviewNote
+		channel.SubmittedAt = cached.SubmittedAt
+		channel.ReviewedBy = cached.ReviewedBy
+		channel.ReviewedAt = cached.ReviewedAt
+		channel.ConfigFingerprint = cached.ConfigFingerprint
+		channel.TrustLevel = cached.TrustLevel
+		channel.ObservationStart = cached.ObservationStart
+		channel.ObservationUntil = cached.ObservationUntil
+	}
+	channelCache.Set(detail.ID, channel)
+	channelStatsNeedUpdateLock.Unlock()
+
+	// 凭据, 模型与授权的增删都会改变可选路由集合, 重载该渠道的三类缓存并刷新分组。
+	if err := reloadChannelChildren(ctx, detail.ID); err != nil {
+		return nil, err
+	}
+	if err := groupRefreshCache(ctx); err != nil {
+		return nil, fmt.Errorf("failed to refresh groups: %w", err)
+	}
+	// 指纹比对触发 stale: 已过审渠道的关键配置被改即转 stale, 复审前不新增暴露;
+	// 存量分组成员走 group_items 直连, 不看审核状态, 流量零中断。
+	// 管理员免审渠道不进复审流程, 直接换基线(基线随人工改动推进)。
+	if channel.ReviewStatus == model.ChannelReviewApproved && channelFingerprintOf(channel) != channel.ConfigFingerprint {
+		if channelReviewBypass(channel.UserID) {
+			if err := channelReviewSyncBaseline(ctx, channel.ID); err != nil {
+				return nil, err
+			}
+		} else if err := channelReviewMarkStale(ctx, scope.ID, channel.ID); err != nil {
+			return nil, err
+		}
+	}
+	// 同创建: 出口由 reloadChannelChildren 刷进缓存, 回读才能拿到带主键的最新一份。
+	if cached, ok := channelCache.Get(channel.ID); ok {
+		channel = cached
+	}
+	updated := channelDetail(channel)
+	return &updated, nil
+}
+
+// normalizeChannelConfig 补齐提交配置中的默认值并校验协议路径。
+// 路径留空会与地址拼成错误的上游地址, 故一律回退到协议默认路径; Header 恒为数组, 免得落库后读出 null。
+// 全部字段在此去空白: 落库后的配置被读侧无条件信任, 空白与空串都不会再传到转发链路。
+func normalizeChannelConfig(ctx context.Context, config model.ChannelConfig) (model.ChannelConfig, error) {
+	config.Name = strings.TrimSpace(config.Name)
+	if config.Name == "" {
+		return config, fmt.Errorf("channel name is required")
+	}
+	if config.Dialect == "" {
+		config.Dialect = model.DialectGeneric
+	}
+	config.BaseURL = strings.TrimSpace(config.BaseURL)
+	// 订阅渠道不要求地址: 它由平台描述提供, 保存时留空等装配阶段补全。
+	// 方言必须先定默认值, 否则空方言会被误判成订阅渠道而放过必填校验。
+	if config.BaseURL == "" && !config.Dialect.Subscribable() {
+		return config, fmt.Errorf("channel base url is required")
+	}
+	var err error
+	if config.OpenAIChatCompletionPath, err = normalizedPath(config.OpenAIChatCompletionPath, "/v1/chat/completions"); err != nil {
+		return config, err
+	}
+	if config.OpenAIResponsePath, err = normalizedPath(config.OpenAIResponsePath, "/v1/responses"); err != nil {
+		return config, err
+	}
+	if config.OpenAIImageGenerationPath, err = normalizedPath(config.OpenAIImageGenerationPath, "/v1/images/generations"); err != nil {
+		return config, err
+	}
+	if config.OpenAIImageEditPath, err = normalizedPath(config.OpenAIImageEditPath, "/v1/images/edits"); err != nil {
+		return config, err
+	}
+	if config.OpenAIVideoBasePath, err = normalizedPath(config.OpenAIVideoBasePath, "/v1"); err != nil {
+		return config, err
+	}
+	// 视频出站由转换器在基路径后拼接 /videos 与 /videos/{id}, 基路径结尾多一个斜杠会拼出双斜杠。
+	// 只填 "/" 表示视频直接挂在域名根下, 去掉后为空是预期结果。
+	config.OpenAIVideoBasePath = strings.TrimSuffix(config.OpenAIVideoBasePath, "/")
+	if config.AnthropicMessagePath, err = normalizedPath(config.AnthropicMessagePath, "/v1/messages"); err != nil {
+		return config, err
+	}
+	if config.CustomHeader == nil {
+		config.CustomHeader = []model.CustomHeader{}
+	}
+
+	config.ChannelProxy = strings.TrimSpace(config.ChannelProxy)
+	config.ParamOverride = strings.TrimSpace(config.ParamOverride)
+	config.MatchRegex = strings.TrimSpace(config.MatchRegex)
+	// SSRF 防护: 上游地址与渠道专用代理都不得指向私网(环回/内网/链路本地)。
+	// 校验放在保存入口而非拨号时才拦: 错误配置当场报错, 管理员能立刻知道是哪一项被拒。
+	// 管理员自建内网上游(本地 vLLM 等)可显式打开 allow_private_upstream 放行。
+	// 订阅渠道的地址此时可能仍为空(由平台描述补全), 空地址没有主机可查, 跳过 SSRF 校验;
+	// 补全后的地址在装配阶段会走同一道校验, 不会因此漏掉防护。
+	if config.BaseURL != "" {
+		if err := netguard.CheckURL(ctx, config.BaseURL, AllowPrivateUpstream()); err != nil {
+			return config, fmt.Errorf("channel %s: %w", config.Name, err)
+		}
+	}
+	if config.ChannelProxy != "" {
+		// 渠道专用代理允许 http/https/socks5/socks5h(与转发层一致), 用 CheckProxyURL 而非 CheckURL。
+		if err := netguard.CheckProxyURL(ctx, config.ChannelProxy, AllowPrivateUpstream()); err != nil {
+			return config, fmt.Errorf("channel %s proxy: %w", config.Name, err)
+		}
+	}
+	return config, nil
+}
+
+// normalizeChannelDetail 规范化整份提交配置; 渠道自身的字段交由 normalizeChannelConfig 处理。
+// 凭据, 模型与授权的名称在此去空白并校验非空: 名称是三者的匹配与引用依据, 集中在入口清理后,
+// 下游三个同步函数拿到的即是干净数据, 无需各自再 trim 一遍。
+func normalizeChannelDetail(ctx context.Context, detail *model.ChannelDetail) error {
+	// 订阅渠道先按平台描述补齐方言与地址, 再走通用规范化:
+	// 顺序不能反 —— 地址必填校验在 normalizeChannelConfig 里, 装配必须发生在它之前。
+	if err := applySubscriptionPlatform(&detail.ChannelConfig); err != nil {
+		return err
+	}
+	config, err := normalizeChannelConfig(ctx, detail.ChannelConfig)
+	if err != nil {
+		return err
+	}
+	detail.ChannelConfig = config
+
+	seenKeys := make(map[string]struct{}, len(detail.Keys))
+	for i := range detail.Keys {
+		detail.Keys[i].Name = strings.TrimSpace(detail.Keys[i].Name)
+		if _, duplicated := seenKeys[detail.Keys[i].Name]; duplicated {
+			return fmt.Errorf("duplicated channel key name: %s", detail.Keys[i].Name)
+		}
+		seenKeys[detail.Keys[i].Name] = struct{}{}
+		if detail.Keys[i].Name == "" {
+			return fmt.Errorf("channel key name is required")
+		}
+		// 凭据两端的空白会被原样拼进认证 Header, 一并去掉。
+		detail.Keys[i].Key = strings.TrimSpace(detail.Keys[i].Key)
+	}
+	for i := range detail.Models {
+		detail.Models[i] = strings.TrimSpace(detail.Models[i])
+		if detail.Models[i] == "" {
+			return fmt.Errorf("channel model name is required")
+		}
+	}
+	for i := range detail.Grants {
+		detail.Grants[i].ModelName = strings.TrimSpace(detail.Grants[i].ModelName)
+		detail.Grants[i].KeyName = strings.TrimSpace(detail.Grants[i].KeyName)
+	}
+	// 出口按名称去重: 名称是增删改的定位键, 重名会让"改哪个"变得不确定。
+	seenEgress := make(map[string]struct{}, len(detail.Egresses))
+	for i := range detail.Egresses {
+		normalized, err := detail.Egresses[i].Normalize()
+		if err != nil {
+			return err
+		}
+		if _, duplicated := seenEgress[normalized.Name]; duplicated {
+			return fmt.Errorf("duplicated egress name: %s", normalized.Name)
+		}
+		seenEgress[normalized.Name] = struct{}{}
+		// SSRF 防护: 出口代理地址同样不得指向私网; direct 出口无地址, 不校验。
+		// 出口 URL 允许 http/https/socks5/socks5h, 用 CheckProxyURL 与转发层口径一致。
+		if normalized.Kind != model.EgressKindDirect && normalized.URL != "" {
+			if err := netguard.CheckProxyURL(context.Background(), normalized.URL, AllowPrivateUpstream()); err != nil {
+				// 补一句"谁能放行": 出口地址是私网时, 管理员要么填错了地址, 要么确实需要
+				// 显式打开 allow_private_upstream。只回一句 "cannot save" 两条路都走不通。
+				return fmt.Errorf("egress %s: %w (refused to prevent SSRF; enable allow_private_upstream to permit internal addresses)", normalized.Name, err)
+			}
+		}
+		detail.Egresses[i] = normalized
+	}
+	return nil
+}
+
+// syncChannelChildren 按提交的完整配置整体替换渠道下的凭据, 模型与授权。
+// 凭据与模型必须先落库: 授权引用两者的主键, 新增的两者在同一事务内才拿得到。
+func syncChannelChildren(tx *gorm.DB, channelID int, detail *model.ChannelDetail) error {
+	if err := syncChannelKeys(tx, channelID, detail.Keys); err != nil {
+		return err
+	}
+	if err := syncChannelModels(tx, channelID, detail.Models); err != nil {
+		return err
+	}
+	if err := syncChannelEgresses(tx, channelID, detail.Egresses); err != nil {
+		return err
+	}
+	return syncChannelGrants(tx, channelID, detail.Grants)
+}
+
+// syncChannelEgresses 按名称增量同步渠道的出口池: 同名更新, 新名插入, 未提交的删除。
+// 按名称而非整表重建: 出口 ID 是选路指标与日志的键, 每次保存都换 ID 会让历史成绩对不上。
+func syncChannelEgresses(tx *gorm.DB, channelID int, requested []model.ChannelEgress) error {
+	var existing []model.ChannelEgress
+	if err := tx.Where("channel_id = ?", channelID).Find(&existing).Error; err != nil {
+		return fmt.Errorf("failed to load channel egresses: %w", err)
+	}
+	existingByName := make(map[string]model.ChannelEgress, len(existing))
+	for _, egress := range existing {
+		existingByName[egress.Name] = egress
+	}
+	for _, requestedEgress := range requested {
+		if current, ok := existingByName[requestedEgress.Name]; ok {
+			// 掩码占位: 编辑表单把回显的掩码原样带回时保持库中原地址, 与 syncChannelKeys 同口径。
+			// 不识别的话, 每次只改权重或地区都会把真实代理地址覆盖成 "http://user:••••@host"。
+			if isMaskedEgressURL(requestedEgress.URL) {
+				requestedEgress.URL = current.URL
+			}
+			if current.Kind != requestedEgress.Kind || current.URL != requestedEgress.URL ||
+				current.Region != requestedEgress.Region || current.Weight != requestedEgress.Weight ||
+				current.Enabled != requestedEgress.Enabled {
+				// 身份必须随 Model 一起给: url 走信封加密 —— map 写入绕过字段序列化器, 由 db 侧兜底回调封存,
+				// 而封存绑定是 (channel_id, name)。只传零值 Model 的话兜底回调推不出归属, 会 fail closed
+				// 拒绝写入, 保存出口就会整条失败。与 syncChannelKeys 的 identity 同口径。
+				identity := model.ChannelEgress{ID: current.ID, ChannelID: current.ChannelID, Name: current.Name}
+				if err := tx.Model(&identity).Where("id = ?", current.ID).
+					Updates(map[string]any{
+						"kind":    requestedEgress.Kind,
+						"url":     requestedEgress.URL,
+						"region":  requestedEgress.Region,
+						"weight":  requestedEgress.Weight,
+						"enabled": requestedEgress.Enabled,
+					}).Error; err != nil {
+					return fmt.Errorf("failed to update channel egress: %w", err)
+				}
+			}
+			delete(existingByName, requestedEgress.Name)
+			continue
+		}
+		newEgress := model.ChannelEgress{ChannelID: channelID}
+		newEgress.Name = requestedEgress.Name
+		newEgress.Kind = requestedEgress.Kind
+		newEgress.URL = requestedEgress.URL
+		newEgress.Region = requestedEgress.Region
+		newEgress.Weight = requestedEgress.Weight
+		newEgress.Enabled = requestedEgress.Enabled
+		if err := tx.Create(&newEgress).Error; err != nil {
+			return fmt.Errorf("failed to create channel egress: %w", err)
+		}
+	}
+	deletedIDs := make([]int, 0, len(existingByName))
+	for _, egress := range existingByName {
+		deletedIDs = append(deletedIDs, egress.ID)
+	}
+	if len(deletedIDs) == 0 {
+		return nil
+	}
+	if err := tx.Delete(&model.ChannelEgress{}, deletedIDs).Error; err != nil {
+		return fmt.Errorf("failed to delete channel egresses: %w", err)
+	}
+	return nil
+}
+
+// ChannelEnabled 更新渠道启用状态。
+func ChannelEnabled(id int, enabled bool, scope model.Scope, ctx context.Context) error {
+	channelStatsNeedUpdateLock.Lock()
+	defer channelStatsNeedUpdateLock.Unlock()
+	channel, ok := channelCache.Get(id)
+	if !ok || !scope.Owns(channel.UserID) {
+		return fmt.Errorf("channel not found")
+	}
+	if err := db.GetDB().WithContext(ctx).Model(&model.Channel{}).Where("id = ?", id).Update("enabled", enabled).Error; err != nil {
+		return err
+	}
+	channel.Enabled = enabled
+	channelCache.Set(id, channel)
+	return nil
+}
+
+// ChannelDel 删除渠道及其凭据, 模型与渠道授权, 关联分组项由数据库外键级联删除。
+func ChannelDel(id int, scope model.Scope, ctx context.Context) error {
+	if channel, ok := channelCache.Get(id); !ok || !scope.Owns(channel.UserID) {
+		return fmt.Errorf("channel not found")
+	}
+	grantIDs := channelGrantIDs(id)
+	if err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if len(grantIDs) > 0 {
+			if err := clearActiveItems(tx, grantIDs); err != nil {
+				return err
+			}
+		}
+		if err := tx.Delete(&model.Channel{}, id).Error; err != nil {
+			return fmt.Errorf("failed to delete channel: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	channelStatsNeedUpdateLock.Lock()
+	channelCache.Del(id)
+	delete(channelStatsNeedUpdate, id)
+	channelStatsNeedUpdateLock.Unlock()
+
+	channelKeyStatsNeedUpdateLock.Lock()
+	for _, channelKey := range channelKeyCache.GetAll() {
+		if channelKey.ChannelID == id {
+			channelKeyCache.Del(channelKey.ID)
+			delete(channelKeyStatsNeedUpdate, channelKey.ID)
+		}
+	}
+	channelKeyStatsNeedUpdateLock.Unlock()
+
+	channelModelStatsNeedUpdateLock.Lock()
+	for _, channelModel := range channelModelCache.GetAll() {
+		if channelModel.ChannelID == id {
+			channelModelCache.Del(channelModel.ID)
+			delete(channelModelStatsNeedUpdate, channelModel.ID)
+		}
+	}
+	channelModelStatsNeedUpdateLock.Unlock()
+
+	channelGrantCache.Del(grantIDs...)
+	if err := groupRefreshCache(ctx); err != nil {
+		return fmt.Errorf("failed to refresh groups: %w", err)
+	}
+	return nil
+}
+
+// ChannelGet 返回指定渠道的缓存副本, 供转发按地址, 路径与代理构造上游请求。
+// 不补齐凭据, 模型与授权: 转发所需的授权由 ChannelGrantGet 按主键单独取, 那里已连带给出两侧。
+func ChannelGet(id int) (model.Channel, error) {
+	channel, ok := channelCache.Get(id)
+	if !ok {
+		return model.Channel{}, fmt.Errorf("channel not found")
+	}
+	return channel, nil
+}
+
+// ChannelGrantGet 返回可用于转发的渠道授权, 并补齐其模型与凭据。
+// 凭据被停用, 以及模型, 凭据缺失时一律返回错误, 使调用方拿到的授权必然可直接转发, 无需再逐项检查。
+// 授权本身没有停用状态: 不再授权就删掉该组合, 无需保留一行停用记录。
+func ChannelGrantGet(id int) (model.ChannelGrant, error) {
+	grant, ok := channelGrantCache.Get(id)
+	if !ok {
+		return model.ChannelGrant{}, fmt.Errorf("channel grant not found")
+	}
+	channelModel, ok := channelModelCache.Get(grant.ChannelModelID)
+	if !ok {
+		return model.ChannelGrant{}, fmt.Errorf("channel model %d not found", grant.ChannelModelID)
+	}
+	if ChannelQuotaPaused(channelModel.ChannelID) {
+		return model.ChannelGrant{}, fmt.Errorf("channel %d quota is temporarily exhausted", channelModel.ChannelID)
+	}
+	channelKey, ok := channelKeyCache.Get(grant.ChannelKeyID)
+	if !ok {
+		return model.ChannelGrant{}, fmt.Errorf("channel key %d not found", grant.ChannelKeyID)
+	}
+	if !channelKey.Enabled {
+		return model.ChannelGrant{}, fmt.Errorf("channel key %d is disabled", channelKey.ID)
+	}
+	grant.ChannelModel = &channelModel
+	grant.ChannelKey = &channelKey
+	return grant, nil
+}
+
+// ChannelGrantCandidates 返回授权候选及其展示字段, 供分组页选取成员。
+// 供给侧隔离: 候选一律只含「已发布渠道 + 已上架模型」, 对所有角色一视同仁(含渠道归属者与管理员),
+// 未上架模型只在归属者的渠道管理页存在; 渠道名以发布唯一编码展示, 凭据名除归属者外脱敏为空。
+// 可用性与 GroupList 补齐成员时同一口径: 渠道与凭据均启用即可用, 由此候选与已选成员不会各判一套。
+func ChannelGrantCandidates(scope model.Scope) []model.ChannelGrantCandidate {
+	candidates := make([]model.ChannelGrantCandidate, 0, channelGrantCache.Len())
+	for _, grant := range channelGrantCache.GetAll() {
+		parts, ok := grantPartsOf(grant)
+		if !ok {
+			continue
+		}
+		// 供给侧隔离: 未发布渠道或未上架模型不出候选, 归属者与管理员也不例外。
+		// 过审闸口(P1): 进对外候选即被分组选走的新暴露, 额外要求 approved;
+		// draft/pending/rejected/stale 都不新增暴露, 已在分组里的存量成员不受影响。
+		if !parts.Channel.Shared || parts.Channel.ReviewStatus != model.ChannelReviewApproved || !parts.ChannelModel.Listed {
+			continue
+		}
+		// 价格折算、可用性判定、展示名与脱敏统一走 grantCandidateOf(见 grant_view.go):
+		// 分组页看到的价格与选路/预扣是同一个数, 不会出现"候选显示便宜、选中后按原币扣"。
+		candidates = append(candidates, grantCandidateOf(grant, parts, scope))
+	}
+	// 按渠道, 模型, 凭据三级定序: 分组页按这三级组织候选且不提供排序开关, 顺序须由此处定稿。
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].ChannelID != candidates[j].ChannelID {
+			return candidates[i].ChannelID < candidates[j].ChannelID
+		}
+		if candidates[i].ModelName != candidates[j].ModelName {
+			return candidates[i].ModelName < candidates[j].ModelName
+		}
+		return candidates[i].KeyName < candidates[j].KeyName
+	})
+	return candidates
+}
+
+// ChannelPublish 发布或取消发布渠道: 发布时生成 4 位数字编码(1001 起, 界面展示 #1001 形式), 用户侧以该编码展示渠道。
+// 已发布渠道再次发布保留原编码; 取消发布清空共享标记但保留编码历史无意义, 故一并清空。
+func ChannelPublish(id int, shared bool, scope model.Scope, ctx context.Context) (model.Channel, error) {
+	channelStatsNeedUpdateLock.Lock()
+	defer channelStatsNeedUpdateLock.Unlock()
+	channel, ok := channelCache.Get(id)
+	if !ok || !scope.Owns(channel.UserID) {
+		return model.Channel{}, fmt.Errorf("channel not found")
+	}
+	// 发布闸口(P1): 发布即新暴露到用户侧, 必须已过审且未被撤销信任; 取消发布不受限。
+	if shared {
+		if channel.ReviewStatus != model.ChannelReviewApproved {
+			return model.Channel{}, fmt.Errorf("channel review not approved")
+		}
+		if channel.TrustLevel == model.ChannelTrustRevoked {
+			return model.Channel{}, fmt.Errorf("channel trust revoked")
+		}
+	}
+	updates := map[string]any{"shared": shared}
+	if shared {
+		if channel.ShareCode == "" {
+			code, err := nextShareCode(ctx)
+			if err != nil {
+				return model.Channel{}, err
+			}
+			updates["share_code"] = code
+			channel.ShareCode = code
+		}
+	} else {
+		// 编码锁死: 取消发布只关共享开关, 不清编码 —— 编号是渠道的终身身份,
+		// 计费明细/日志按编码回查, 编号随发布状态变化会让历史记录失去锚点。
+		// 对外可见性由 Shared 开关把守(分享页按 Shared 查找), 保留编码不泄露任何内容。
+		updates["shared"] = false
+	}
+	if err := db.GetDB().WithContext(ctx).Model(&model.Channel{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return model.Channel{}, fmt.Errorf("failed to update channel share state: %w", err)
+	}
+	channel.Shared = shared
+	channelCache.Set(id, channel)
+	return channel, nil
+}
+
+// 发布编码规则(v0.32.0): 4 位纯数字, 从 1001 起递增, 界面统一展示为 "#1001" 形式。
+// 号码锁死: 渠道拿到编码后终身保留(取消发布不清、再次发布沿用原号), 已删除渠道的号码不回收 ——
+// 每个号码历史上只属于一个渠道, 计费明细/日志按编码回查不会张冠李戴。
+const (
+	shareCodeStart = 1001 // 起始号码, 用户要求从 1001 开始。
+	shareCodeMax   = 9999 // 4 位数字上限, 用尽后明确报错而不是发出 5 位号。
+)
+
+// shareCodeMu 串行化取号: 发布是低频管理动作, 进程内互斥 + 库内冲突复查足够。
+var shareCodeMu sync.Mutex
+
+// nextShareCode 取下一个可用发布编码: 计数器单调递增, 并跳过库内已占号码。
+func nextShareCode(ctx context.Context) (string, error) {
+	shareCodeMu.Lock()
+	defer shareCodeMu.Unlock()
+	next := SettingGetIntDefault(model.SettingKeyShareCodeSeq, shareCodeStart-1) + 1
+	if next < shareCodeStart {
+		next = shareCodeStart
+	}
+	for next <= shareCodeMax {
+		code := fmt.Sprintf("%04d", next)
+		var count int64
+		if err := db.GetDB().WithContext(ctx).Model(&model.Channel{}).Where("share_code = ?", code).Count(&count).Error; err != nil {
+			return "", err
+		}
+		if count == 0 {
+			if err := SettingUpsert(model.SettingKeyShareCodeSeq, strconv.Itoa(next)); err != nil {
+				return "", err
+			}
+			return code, nil
+		}
+		next++
+	}
+	return "", fmt.Errorf("share code space exhausted")
+}
+
+// parseShareCode 判定编码是否符合新规则(4 位数字且 >= 1001), 返回其数值。
+func parseShareCode(code string) (int, bool) {
+	if len(code) != 4 {
+		return 0, false
+	}
+	n := 0
+	for _, ch := range code {
+		if ch < '0' || ch > '9' {
+			return 0, false
+		}
+		n = n*10 + int(ch-'0')
+	}
+	if n < shareCodeStart {
+		return 0, false
+	}
+	return n, true
+}
+
+// ShareCodeBackfill 把不符合新规则的存量编码换成顺序号(按渠道 ID 定序), 启动时一次性执行。
+// 幂等: 数字编码一律原样保留不重排(渠道删除/重排都不会动已发号码), 第二次运行零改动。
+func ShareCodeBackfill(ctx context.Context) (int, error) {
+	shareCodeMu.Lock()
+	defer shareCodeMu.Unlock()
+	// 空编码也纳入: 早期"取消发布清编码"清掉的存量渠道要补发终身编码,
+	// 否则统计页对它们只能回退显示渠道名, 编号身份出现双轨。
+	var channels []model.Channel
+	if err := db.GetDB().WithContext(ctx).Order("id").Find(&channels).Error; err != nil {
+		return 0, err
+	}
+	taken := make(map[string]bool, len(channels))
+	maxUsed := SettingGetIntDefault(model.SettingKeyShareCodeSeq, shareCodeStart-1)
+	for _, channel := range channels {
+		if n, ok := parseShareCode(channel.ShareCode); ok {
+			taken[channel.ShareCode] = true
+			if n > maxUsed {
+				maxUsed = n
+			}
+		}
+	}
+	next := shareCodeStart
+	updated := 0
+	for _, channel := range channels {
+		if _, ok := parseShareCode(channel.ShareCode); ok {
+			continue // 已是合规编码, 保持稳定不重排(空串会落到补发分支)。
+		}
+		for taken[fmt.Sprintf("%04d", next)] {
+			next++
+		}
+		code := fmt.Sprintf("%04d", next)
+		if err := db.GetDB().WithContext(ctx).Model(&model.Channel{}).Where("id = ?", channel.ID).Update("share_code", code).Error; err != nil {
+			return updated, err
+		}
+		channelStatsNeedUpdateLock.Lock()
+		if cached, ok := channelCache.Get(channel.ID); ok {
+			cached.ShareCode = code
+			channelCache.Set(channel.ID, cached)
+		}
+		channelStatsNeedUpdateLock.Unlock()
+		taken[code] = true
+		// 新分配的号同样要推进计数器, 否则全部存量都是旧码时计数器停在起点, 取号要靠冲突跳过兜底。
+		if v, _ := parseShareCode(code); v > maxUsed {
+			maxUsed = v
+		}
+		next++
+		updated++
+	}
+	// 计数器推到实际用掉的最大号, 后续取号不与回填结果撞车。
+	if maxUsed > SettingGetIntDefault(model.SettingKeyShareCodeSeq, shareCodeStart-1) {
+		if err := SettingUpsert(model.SettingKeyShareCodeSeq, strconv.Itoa(maxUsed)); err != nil {
+			return updated, err
+		}
+	}
+	if updated > 0 {
+		if err := AuditLogAdd(ctx, 0, "channel.share_code_backfill", "channels", fmt.Sprintf("backfilled=%d", updated)); err != nil {
+			log.Warnf("share code backfill: audit failed: %v", err)
+		}
+	}
+	return updated, nil
+}
+
+// maxSupplyPricePerMillion 单类供货价上限(每百万 token): 正常模型远低于此, 越界基本是少打小数点。
+const maxSupplyPricePerMillion = 1_000_000.0
+
+// ChannelModelListing 是一个渠道模型的上架配置提交形状。
+type ChannelModelListing struct {
+	Name          string           `json:"name"`                     // 渠道模型名称。
+	Listed        bool             `json:"listed"`                   // 是否上架。
+	SupplyPrice   model.LLMPrice   `json:"supply_price"`             // 供货价(读/写/缓存读/缓存写); 未设置即 0。
+	PriceCurrency string           `json:"price_currency,omitempty"` // 供货价币种声明; 空 = USD(账面币种, 零折算)。
+	MediaSupply   model.MediaPrice `json:"media_supply,omitempty"`   // 媒体供货价(每张/每秒/分档); 仅媒体形态模型使用。
+	Kind          model.MediaKind  `json:"kind,omitempty"`           // 模型媒体形态; 只读回显, 由授权协议位推导。
+}
+
+// ChannelModelListingGet 返回渠道的模型上架配置, 供发布管理界面编辑。
+func ChannelModelListingGet(id int, scope model.Scope) ([]ChannelModelListing, error) {
+	channel, ok := channelCache.Get(id)
+	if !ok || !scope.Owns(channel.UserID) {
+		return nil, fmt.Errorf("channel not found")
+	}
+	listings := make([]ChannelModelListing, 0)
+	for _, channelModel := range channelModelCache.GetAll() {
+		if channelModel.ChannelID != id {
+			continue
+		}
+		listings = append(listings, ChannelModelListing{
+			Name:          channelModel.Name,
+			Listed:        channelModel.Listed,
+			SupplyPrice:   channelModel.SupplyPrice,
+			PriceCurrency: model.NormalizeCurrency(channelModel.PriceCurrency),
+			MediaSupply:   channelModel.MediaSupply,
+			Kind:          channelModel.Kind,
+		})
+	}
+	sort.Slice(listings, func(i, j int) bool { return listings[i].Name < listings[j].Name })
+	return listings, nil
+}
+
+// ChannelModelListingUpdate 整体更新渠道模型的上架与供货价; 未提及的模型保持不变。
+// 上架与供货价属于发布配置, 不随渠道编辑的整体替换被覆盖(按名称匹配的行本就不动)。
+func ChannelModelListingUpdate(id int, listings []ChannelModelListing, scope model.Scope, ctx context.Context) error {
+	channel, ok := channelCache.Get(id)
+	if !ok || !scope.Owns(channel.UserID) {
+		return fmt.Errorf("channel not found")
+	}
+	byName := make(map[string]model.ChannelModel)
+	for _, channelModel := range channelModelCache.GetAll() {
+		if channelModel.ChannelID == id {
+			byName[channelModel.Name] = channelModel
+		}
+	}
+	for _, listing := range listings {
+		channelModel, ok := byName[strings.TrimSpace(listing.Name)]
+		if !ok {
+			return fmt.Errorf("channel model %s not found", listing.Name)
+		}
+		price := listing.SupplyPrice
+		// 价格是收入口径, 校验从严: 负数会让用户"反向赚钱", 过大则几乎必然是误输入(少打小数点)。
+		for _, pair := range []struct {
+			field string
+			value float64
+		}{
+			{"input", price.Input},
+			{"output", price.Output},
+			{"cache_read", price.CacheRead},
+			{"cache_write", price.CacheWrite},
+		} {
+			if pair.value < 0 {
+				return fmt.Errorf("%s supply price cannot be negative", pair.field)
+			}
+			if pair.value > maxSupplyPricePerMillion {
+				return fmt.Errorf("%s supply price %g exceeds the %g per-million cap", pair.field, pair.value, maxSupplyPricePerMillion)
+			}
+		}
+		// 币种声明必须落在白名单内: 币种错了折算就是错价, 且没有牌价可依。
+		listing.PriceCurrency = model.NormalizeCurrency(listing.PriceCurrency)
+		if !model.ValidPriceCurrency(listing.PriceCurrency) {
+			return fmt.Errorf("model %s: unsupported price currency %q", listing.Name, listing.PriceCurrency)
+		}
+		media := listing.MediaSupply
+		if err := media.Validate(); err != nil {
+			return fmt.Errorf("model %s: %w", listing.Name, err)
+		}
+		// 上架但不定价 = 该模型对用户可见却按 0 计费, 是实打实的收入泄漏, 故直接拒绝。
+		// 媒体形态模型以媒体价为准: token 四类全零但按张定价同样视为已定价。
+		unpriced := price.Input == 0 && price.Output == 0 && price.CacheRead == 0 && price.CacheWrite == 0
+		mediaUnpriced := media.PerImage == 0 && media.PerVideo == 0 && media.PerSecond == 0 && len(media.Resolution) == 0
+		if listing.Listed && unpriced && mediaUnpriced {
+			return fmt.Errorf("channel model %s is listed but has no supply price", listing.Name)
+		}
+		// supply_price 走 JSON 序列化器, 必须用结构体更新: map 更新绕过序列化器会写入非法值。
+		if err := db.GetDB().WithContext(ctx).Model(&model.ChannelModel{}).Where("id = ?", channelModel.ID).
+			Select("listed", "supply_price", "price_currency", "media_supply").
+			Updates(model.ChannelModel{Listed: listing.Listed, SupplyPrice: price, PriceCurrency: listing.PriceCurrency, MediaSupply: media}).Error; err != nil {
+			return fmt.Errorf("failed to update channel model listing: %w", err)
+		}
+		channelModel.Listed = listing.Listed
+		channelModel.SupplyPrice = price
+		channelModel.PriceCurrency = listing.PriceCurrency
+		channelModel.MediaSupply = media
+		channelModelCacheWriteMu.Lock()
+		channelModelCache.Set(channelModel.ID, channelModel)
+		channelModelCacheWriteMu.Unlock()
+	}
+	return nil
+}
+
+// channelRefreshCache 从数据库刷新渠道, 凭据, 模型与渠道授权缓存。
+func channelRefreshCache(ctx context.Context) error {
+	channelBreakerWriteMu.Lock()
+	defer channelBreakerWriteMu.Unlock()
+	conn := db.GetDB().WithContext(ctx)
+	channels := []model.Channel{}
+	if err := conn.Find(&channels).Error; err != nil {
+		log.Warnf("failed to get channels: %v", err)
+		return err
+	}
+	channelKeys := []model.ChannelKey{}
+	if err := conn.Find(&channelKeys).Error; err != nil {
+		return err
+	}
+	channelModels := []model.ChannelModel{}
+	if err := conn.Find(&channelModels).Error; err != nil {
+		return err
+	}
+	channelGrants := []model.ChannelGrant{}
+	if err := conn.Find(&channelGrants).Error; err != nil {
+		return err
+	}
+
+	// 出口随渠道一起进缓存: 转发路径每轮要按出口择优, 不能每次请求都查库。
+	channelEgresses := []model.ChannelEgress{}
+	if err := conn.Order("channel_id, id").Find(&channelEgresses).Error; err != nil {
+		return err
+	}
+	egressesByChannel := make(map[int][]model.ChannelEgress, len(channels))
+	for _, egress := range channelEgresses {
+		egressesByChannel[egress.ChannelID] = append(egressesByChannel[egress.ChannelID], egress)
+	}
+
+	channelCache.Clear()
+	channelKeyCache.Clear()
+	channelModelCache.Clear()
+	channelGrantCache.Clear()
+	for _, channel := range channels {
+		channel.Egresses = egressesByChannel[channel.ID]
+		channelCache.Set(channel.ID, channel)
+	}
+	for _, channelKey := range channelKeys {
+		channelKeyCache.Set(channelKey.ID, channelKey)
+	}
+	for _, channelModel := range channelModels {
+		if channelModel.MediaSupply.Validate() != nil {
+			log.Warnf("quarantining channel model %d with invalid media prices", channelModel.ID)
+			channelModel.Listed = false
+		}
+		channelModelCache.Set(channelModel.ID, channelModel)
+	}
+	for _, grant := range channelGrants {
+		channelGrantCache.Set(grant.ID, grant)
+	}
+	return nil
+}
+
+// reloadChannelChildren 重新加载单个渠道的凭据, 模型与渠道授权缓存。
+// 存活目标保留缓存中尚未落库的统计, 避免刷新丢失本轮累加。
+func reloadChannelChildren(ctx context.Context, channelID int) error {
+	conn := db.GetDB().WithContext(ctx)
+	channelKeys := []model.ChannelKey{}
+	if err := conn.Where("channel_id = ?", channelID).Find(&channelKeys).Error; err != nil {
+		return fmt.Errorf("failed to load channel keys: %w", err)
+	}
+	channelModels := []model.ChannelModel{}
+	if err := conn.Where("channel_id = ?", channelID).Find(&channelModels).Error; err != nil {
+		return fmt.Errorf("failed to load channel models: %w", err)
+	}
+	modelIDs := make([]int, 0, len(channelModels))
+	for _, channelModel := range channelModels {
+		if channelModel.MediaSupply.Validate() != nil {
+			log.Warnf("quarantining channel model %d with invalid media prices", channelModel.ID)
+			channelModel.Listed = false
+		}
+		modelIDs = append(modelIDs, channelModel.ID)
+	}
+	grants := []model.ChannelGrant{}
+	if len(modelIDs) > 0 {
+		if err := conn.Where("channel_model_id IN ?", modelIDs).Find(&grants).Error; err != nil {
+			return fmt.Errorf("failed to load channel grants: %w", err)
+		}
+	}
+
+	// 先按库内行覆盖再清理消失的行: 配置以库内为准, 统计以缓存为准。
+	// 存活行的缓存值含尚未落库的累加, 比库内的行更新, 不能被库内的统计覆盖。
+	channelKeyStatsNeedUpdateLock.Lock()
+	liveKeys := make(map[int]struct{}, len(channelKeys))
+	for _, channelKey := range channelKeys {
+		liveKeys[channelKey.ID] = struct{}{}
+		if cached, ok := channelKeyCache.Get(channelKey.ID); ok {
+			channelKey.StatsMetrics = cached.StatsMetrics
+		}
+		channelKeyCache.Set(channelKey.ID, channelKey)
+	}
+	for _, cached := range channelKeyCache.GetAll() {
+		if _, live := liveKeys[cached.ID]; cached.ChannelID == channelID && !live {
+			channelKeyCache.Del(cached.ID)
+		}
+	}
+	channelKeyStatsNeedUpdateLock.Unlock()
+
+	channelModelStatsNeedUpdateLock.Lock()
+	liveModels := make(map[int]struct{}, len(channelModels))
+	for i := range channelModels {
+		if channelModels[i].MediaSupply.Validate() != nil {
+			log.Warnf("quarantining channel model %d with invalid media prices", channelModels[i].ID)
+			channelModels[i].Listed = false
+		}
+		channelModel := channelModels[i]
+		liveModels[channelModel.ID] = struct{}{}
+		if cached, ok := channelModelCache.Get(channelModel.ID); ok {
+			channelModel.StatsMetrics = cached.StatsMetrics
+		}
+		channelModelCache.Set(channelModel.ID, channelModel)
+	}
+	for _, cached := range channelModelCache.GetAll() {
+		if _, live := liveModels[cached.ID]; cached.ChannelID == channelID && !live {
+			channelModelCache.Del(cached.ID)
+		}
+	}
+	channelModelStatsNeedUpdateLock.Unlock()
+
+	// 出口没有运行时统计, 直接按库内行替换缓存里的那份, 编辑后下一轮选路立即生效。
+	channelEgresses := []model.ChannelEgress{}
+	if err := conn.Where("channel_id = ?", channelID).Order("id").Find(&channelEgresses).Error; err != nil {
+		return fmt.Errorf("failed to load channel egresses: %w", err)
+	}
+	channelStatsNeedUpdateLock.Lock()
+	if cached, ok := channelCache.Get(channelID); ok {
+		cached.Egresses = channelEgresses
+		channelCache.Set(channelID, cached)
+	}
+	channelStatsNeedUpdateLock.Unlock()
+
+	// 授权不带统计, 直接按库内行整体替换。
+	for _, grantID := range channelGrantIDs(channelID) {
+		channelGrantCache.Del(grantID)
+	}
+	for _, grant := range grants {
+		channelGrantCache.Set(grant.ID, grant)
+	}
+	return nil
+}
+
+// maskSecretMark 掩码占位标记, 与前端 maskKey 的圆点字符一致(U+2022)。
+// 真实上游密钥几乎不可能含此字符, 故可作为「提交回来的是掩码而非明文」的可靠判据。
+const maskSecretMark = "••••"
+
+// maskChannelSecret 掩码回显: 保留前3 + 后4, 中间以圆点代替; 过短的秘密整条掩掉。
+// 与前端 FormKeys.maskKey 口径一致, 避免两端显示长短不一。
+func maskChannelSecret(s string) string {
+	if s == "" {
+		return ""
+	}
+	if len(s) <= 8 {
+		return "••••••••"
+	}
+	return s[:3] + "••••••••" + s[len(s)-4:]
+}
+
+// isMaskedChannelSecret 判断提交值是否为掩码占位(含圆点标记): 掩码时保持库中原值不覆盖。
+func isMaskedChannelSecret(s string) bool {
+	return s != "" && strings.Contains(s, maskSecretMark)
+}
+
+// egressMaskMark 出口地址的掩码标记。
+// 用 ASCII 星号而不是凭据那套圆点: 圆点会被 url.String() 编码成 %E2%80%A2, 界面不可读。
+const egressMaskMark = "****"
+
+// isMaskedEgressURL 判断提交回来的出口地址是否为掩码占位。
+// 与凭据的 isMaskedChannelSecret 分开判定, 因为两者的掩码标记不同(圆点 vs 星号)。
+func isMaskedEgressURL(raw string) bool {
+	return raw != "" && strings.Contains(raw, egressMaskMark)
+}
+
+// maskEgressURL 掩码出口地址里内嵌的凭据, 保留 scheme/主机/端口与用户名。
+//
+// 回显出口地址此前是原样返回, 与紧邻的凭据处理(掩码)完全不一致:
+// 代理地址常用 http://user:pass@host:port 的形式, 明文回显意味着密码会经 API 进浏览器,
+// 被 XSS/会话劫持/抓包带走, 并在编辑页面上直接可见。
+//
+// 只掩密码而不是整条地址: 管理员需要看到自己配的是哪台机器、哪个端口、哪个账号,
+// 否则编辑表单等于不可读。这与 channel_keys 的掩码策略同源。
+func maskEgressURL(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.User == nil {
+		// 解析失败(null 之外的畸形地址): 无从区分哪段是凭据, 整条掩掉更好过漏出密码。
+		if err != nil {
+			return egressMaskMark
+		}
+		return raw
+	}
+	if _, hasPassword := parsed.User.Password(); !hasPassword {
+		// 只有用户名没有密码: 用户名本身不是秘密, 原样返回让编辑页可读。
+		return raw
+	}
+	// 手工拼回而不是交给 url.String(): 它会把掩码里的一切非字母数字百分号编码,
+	// 圆点变 %E2%80%A2、星号变 %2A, 编辑页上显示成一串转义码而非掩码。
+	// 只掩密码, scheme/用户名/主机/端口原样保留 —— 管理员需要认出自己配的是哪台机器哪个账号。
+	host := parsed.Host
+	if parsed.Opaque != "" {
+		host = parsed.Opaque
+	}
+	return parsed.Scheme + "://" + url.UserPassword(parsed.User.Username(), "").Username() +
+		":" + egressMaskMark + "@" + host
+}
+
+// channelDetail 把渠道缓存与其凭据, 模型和授权合并为编辑表单所需的完整配置。
+// 授权按名称给出而不给主键: 名称在渠道内唯一, 提交时也按名称引用, 读写同一种寻址界面才无需翻译。
+// 三个集合字段恒为数组, 空集合也给出, 免得各消费方各自兜底 null; Header 由写入侧保证已是数组。
+// 三者均按名称定序: 缓存遍历顺序随机, 而编辑表单不提供排序开关, 顺序须由此处定稿。
+func channelDetail(channel model.Channel) model.ChannelDetail {
+	detail := model.ChannelDetail{ID: channel.ID, ChannelConfig: channel.ChannelConfig}
+
+	detail.Keys = make([]model.ChannelKeyConfig, 0)
+	keyNameByID := make(map[int]string)
+	for _, channelKey := range channelKeyCache.GetAll() {
+		if channelKey.ChannelID == channel.ID {
+			// 上游凭据回显掩码而非明文: 明文经 API 返回会被 XSS/会话劫持/抓包/前端日志带走,
+			// 掩码后编辑表单只显示尾4位, 留空提交由 syncChannelKeys 识别掩码并保持原值。
+			cfg := channelKey.ChannelKeyConfig
+			cfg.Key = maskChannelSecret(cfg.Key)
+			cfg.APISecret = maskChannelSecret(cfg.APISecret)
+			detail.Keys = append(detail.Keys, cfg)
+			keyNameByID[channelKey.ID] = channelKey.Name
+		}
+	}
+	sort.Slice(detail.Keys, func(i, j int) bool { return detail.Keys[i].Name < detail.Keys[j].Name })
+
+	detail.Models = make([]string, 0)
+	modelNameByID := make(map[int]string)
+	for _, channelModel := range channelModelCache.GetAll() {
+		if channelModel.ChannelID == channel.ID {
+			detail.Models = append(detail.Models, channelModel.Name)
+			modelNameByID[channelModel.ID] = channelModel.Name
+		}
+	}
+	sort.Strings(detail.Models)
+
+	// 授权按模型主键归属本渠道, 两侧主键在此翻译成名称。
+	grants := make([]model.ChannelGrantConfig, 0)
+	for _, grant := range channelGrantCache.GetAll() {
+		modelName, ok := modelNameByID[grant.ChannelModelID]
+		if !ok {
+			continue
+		}
+		keyName, ok := keyNameByID[grant.ChannelKeyID]
+		if !ok {
+			continue
+		}
+		grants = append(grants, model.ChannelGrantConfig{ModelName: modelName, KeyName: keyName, Protocols: grant.Protocols})
+	}
+	sort.Slice(grants, func(i, j int) bool {
+		if grants[i].ModelName != grants[j].ModelName {
+			return grants[i].ModelName < grants[j].ModelName
+		}
+		return grants[i].KeyName < grants[j].KeyName
+	})
+	detail.Grants = grants
+	// 出口取自缓存里那份(它就是转发路径实际在用的配置, 编辑页看到与生效的必然是同一份),
+	// 但内嵌凭据必须掩码回显: 代理地址的 user:pass 是秘密, 明文经 API 进浏览器会被
+	// XSS/会话劫持/抓包带走, 也会直接显示在编辑页上。
+	detail.Egresses = make([]model.ChannelEgress, 0, len(channel.Egresses))
+	for _, egress := range channel.Egresses {
+		if egress.URL != "" {
+			egress.URL = maskEgressURL(egress.URL)
+		}
+		detail.Egresses = append(detail.Egresses, egress)
+	}
+	return detail
+}
+
+// channelGrantIDs 返回指定渠道下全部渠道授权的主键。
+func channelGrantIDs(channelID int) []int {
+	grantIDs := make([]int, 0)
+	for _, grant := range channelGrantCache.GetAll() {
+		if channelModel, ok := channelModelCache.Get(grant.ChannelModelID); ok && channelModel.ChannelID == channelID {
+			grantIDs = append(grantIDs, grant.ID)
+		}
+	}
+	return grantIDs
+}
+
+// syncChannelKeys 按提交的凭据集合新增, 更新与删除渠道凭据。
+// 凭据在渠道内按名称唯一, 名称作为匹配依据; 删除凭据会级联删除其渠道授权。
+func syncChannelKeys(tx *gorm.DB, channelID int, requested []model.ChannelKeyConfig) error {
+	var existing []model.ChannelKey
+	if err := tx.Where("channel_id = ?", channelID).Find(&existing).Error; err != nil {
+		return fmt.Errorf("failed to load channel keys: %w", err)
+	}
+	existingByName := make(map[string]model.ChannelKey, len(existing))
+	for _, channelKey := range existing {
+		existingByName[channelKey.Name] = channelKey
+	}
+	for _, requestedKey := range requested {
+		if current, ok := existingByName[requestedKey.Name]; ok {
+			// 掩码占位: 编辑表单留空提交时, 前端把回显的掩码值原样带回来, 这里识别掩码并保持原值,
+			// 避免把「sk-••••abcd」当新密钥覆盖真实凭据。
+			key := requestedKey.Key
+			if isMaskedChannelSecret(key) {
+				key = current.Key
+			}
+			apiSecret := requestedKey.APISecret
+			if isMaskedChannelSecret(apiSecret) {
+				apiSecret = current.APISecret
+			}
+			if current.Key != key || current.AppID != requestedKey.AppID || current.APISecret != apiSecret || current.Domain != requestedKey.Domain || current.Enabled != requestedKey.Enabled {
+				// map 更新绕过字段序列化器, key 列密文由 gorm 回调按归属绑定生成, Model 必须带上
+				// (channel_id, name) 身份: 回调推不出归属会 fail closed 拒绝写入。
+				identity := model.ChannelKey{ID: current.ID, ChannelID: current.ChannelID,
+					ChannelKeyConfig: model.ChannelKeyConfig{Name: current.Name}}
+				if err := tx.Model(&identity).Where("id = ?", current.ID).
+					Updates(map[string]any{"key": key, "app_id": requestedKey.AppID, "api_secret": apiSecret, "domain": requestedKey.Domain, "enabled": requestedKey.Enabled}).Error; err != nil {
+					return fmt.Errorf("failed to update channel key: %w", err)
+				}
+			}
+			delete(existingByName, requestedKey.Name)
+			continue
+		}
+		newKey := model.ChannelKey{ChannelID: channelID, ChannelKeyConfig: requestedKey}
+		if err := tx.Create(&newKey).Error; err != nil {
+			return fmt.Errorf("failed to create channel key: %w", err)
+		}
+	}
+	deletedKeyIDs := make([]int, 0, len(existingByName))
+	for _, channelKey := range existingByName {
+		deletedKeyIDs = append(deletedKeyIDs, channelKey.ID)
+	}
+	if len(deletedKeyIDs) == 0 {
+		return nil
+	}
+	if err := clearActiveItems(tx, grantsOf(tx, "channel_key_id", deletedKeyIDs)); err != nil {
+		return err
+	}
+	if err := tx.Delete(&model.ChannelKey{}, deletedKeyIDs).Error; err != nil {
+		return fmt.Errorf("failed to delete channel keys: %w", err)
+	}
+	return nil
+}
+
+// syncChannelModels 按提交的模型名称集合新增与删除渠道模型。
+// 模型在渠道内按名称唯一, 除名称外无可更新字段, 故提交侧直接给名称; 删除模型会级联删除其渠道授权。
+func syncChannelModels(tx *gorm.DB, channelID int, requested []string) error {
+	var existing []model.ChannelModel
+	if err := tx.Where("channel_id = ?", channelID).Find(&existing).Error; err != nil {
+		return fmt.Errorf("failed to load channel models: %w", err)
+	}
+	existingByName := make(map[string]model.ChannelModel, len(existing))
+	for _, channelModel := range existing {
+		existingByName[channelModel.Name] = channelModel
+	}
+	for _, requestedModel := range requested {
+		if _, ok := existingByName[requestedModel]; ok {
+			delete(existingByName, requestedModel)
+			continue
+		}
+		if err := tx.Create(&model.ChannelModel{ChannelID: channelID, Name: requestedModel}).Error; err != nil {
+			return fmt.Errorf("failed to create channel model: %w", err)
+		}
+	}
+	deletedModelIDs := make([]int, 0, len(existingByName))
+	for _, channelModel := range existingByName {
+		deletedModelIDs = append(deletedModelIDs, channelModel.ID)
+	}
+	if len(deletedModelIDs) == 0 {
+		return nil
+	}
+	if err := clearActiveItems(tx, grantsOf(tx, "channel_model_id", deletedModelIDs)); err != nil {
+		return err
+	}
+	if err := tx.Delete(&model.ChannelModel{}, deletedModelIDs).Error; err != nil {
+		return fmt.Errorf("failed to delete channel models: %w", err)
+	}
+	return nil
+}
+
+// syncChannelGrants 按提交的授权集合新增, 更新与删除渠道授权。
+// 授权以 (模型, 凭据) 组合唯一, 该组合作为匹配依据; 提交方按名称引用, 名称在此解析为本渠道的主键。
+// 凭据与模型已在本事务内先行同步, 故新增的两者在此都能查到, 一次提交即可完成建模型与授权。
+func syncChannelGrants(tx *gorm.DB, channelID int, requested []model.ChannelGrantConfig) error {
+	var channelModels []model.ChannelModel
+	if err := tx.Where("channel_id = ?", channelID).Find(&channelModels).Error; err != nil {
+		return fmt.Errorf("failed to load channel models: %w", err)
+	}
+	modelIDByName := make(map[string]int, len(channelModels))
+	modelIDList := make([]int, 0, len(channelModels))
+	for _, channelModel := range channelModels {
+		modelIDByName[channelModel.Name] = channelModel.ID
+		modelIDList = append(modelIDList, channelModel.ID)
+	}
+	var channelKeys []model.ChannelKey
+	if err := tx.Where("channel_id = ?", channelID).Find(&channelKeys).Error; err != nil {
+		return fmt.Errorf("failed to load channel keys: %w", err)
+	}
+	keyIDByName := make(map[string]int, len(channelKeys))
+	for _, channelKey := range channelKeys {
+		keyIDByName[channelKey.Name] = channelKey.ID
+	}
+
+	var existing []model.ChannelGrant
+	if len(modelIDList) > 0 {
+		if err := tx.Where("channel_model_id IN ?", modelIDList).Find(&existing).Error; err != nil {
+			return fmt.Errorf("failed to load channel grants: %w", err)
+		}
+	}
+	type grantKey struct {
+		modelID int // 渠道模型主键。
+		keyID   int // 渠道凭据主键。
+	}
+	existingByKey := make(map[grantKey]model.ChannelGrant, len(existing))
+	for _, grant := range existing {
+		existingByKey[grantKey{grant.ChannelModelID, grant.ChannelKeyID}] = grant
+	}
+
+	for _, requestedGrant := range requested {
+		modelID, ok := modelIDByName[requestedGrant.ModelName]
+		if !ok {
+			return fmt.Errorf("channel model %q does not belong to channel %d", requestedGrant.ModelName, channelID)
+		}
+		keyID, ok := keyIDByName[requestedGrant.KeyName]
+		if !ok {
+			return fmt.Errorf("channel key %q does not belong to channel %d", requestedGrant.KeyName, channelID)
+		}
+		if requestedGrant.Protocols == 0 || requestedGrant.Protocols&^definedProtocols != 0 {
+			return fmt.Errorf("channel grant protocols %d is empty or contains undefined bits", requestedGrant.Protocols)
+		}
+		key := grantKey{modelID, keyID}
+		if current, ok := existingByKey[key]; ok {
+			if current.Protocols != requestedGrant.Protocols {
+				if err := tx.Model(&model.ChannelGrant{}).Where("id = ?", current.ID).
+					Update("protocols", requestedGrant.Protocols).Error; err != nil {
+					return fmt.Errorf("failed to update channel grant: %w", err)
+				}
+			}
+			delete(existingByKey, key)
+			continue
+		}
+		newGrant := model.ChannelGrant{
+			ChannelModelID: modelID,
+			ChannelKeyID:   keyID,
+			Protocols:      requestedGrant.Protocols,
+		}
+		if err := tx.Create(&newGrant).Error; err != nil {
+			return fmt.Errorf("failed to create channel grant: %w", err)
+		}
+	}
+
+	deletedGrantIDs := make([]int, 0, len(existingByKey))
+	for _, grant := range existingByKey {
+		deletedGrantIDs = append(deletedGrantIDs, grant.ID)
+	}
+	if len(deletedGrantIDs) > 0 {
+		if err := clearActiveItems(tx, deletedGrantIDs); err != nil {
+			return err
+		}
+		if err := tx.Delete(&model.ChannelGrant{}, deletedGrantIDs).Error; err != nil {
+			return fmt.Errorf("failed to delete channel grants: %w", err)
+		}
+	}
+	// 授权定稿后同步模型媒体形态: 任一存留授权带生图位即视为生图模型, 生图位全部撤销后回退文本。
+	// 形态跟着协议位走而非独立编辑, 保证"授权决定能力, 形态描述能力"不会被改成互相矛盾。
+	if err := syncChannelModelKinds(tx, channelID); err != nil {
+		return err
+	}
+	return nil
+}
+
+// syncChannelModelKinds 按渠道现存授权重算每个渠道模型的媒体形态并落库。
+func syncChannelModelKinds(tx *gorm.DB, channelID int) error {
+	var models []model.ChannelModel
+	if err := tx.Where("channel_id = ?", channelID).Find(&models).Error; err != nil {
+		return fmt.Errorf("failed to load channel models for kind sync: %w", err)
+	}
+	if len(models) == 0 {
+		return nil
+	}
+	modelIDs := make([]int, 0, len(models))
+	for _, channelModel := range models {
+		modelIDs = append(modelIDs, channelModel.ID)
+	}
+	var grants []model.ChannelGrant
+	if err := tx.Where("channel_model_id IN ?", modelIDs).Find(&grants).Error; err != nil {
+		return fmt.Errorf("failed to load channel grants for kind sync: %w", err)
+	}
+	imageModels := make(map[int]bool, len(models))
+	videoModels := make(map[int]bool, len(models))
+	for _, grant := range grants {
+		if grant.Protocols&model.ProtocolOpenAIImage != 0 {
+			imageModels[grant.ChannelModelID] = true
+		}
+		if grant.Protocols&model.ProtocolOpenAIVideo != 0 {
+			videoModels[grant.ChannelModelID] = true
+		}
+	}
+	for _, channelModel := range models {
+		kind := model.MediaKindText
+		if imageModels[channelModel.ID] {
+			kind = model.MediaKindImage
+		}
+		// 能力登记里明确只输出视频的模型, 即使没勾任何媒体协议位也按视频形态落库:
+		// 形态决定预扣与结算口径, 视频模型按 token 计费会把时长流量算成文本流量。
+		if capability, ok := CapabilityGet(channelModel.Name); ok && capability.MediaKind() == model.MediaKindVideo {
+			kind = model.MediaKindVideo
+		}
+		// 显式勾了生视频协议位的模型一律按视频形态落库: 管理员的直接授权意图优先于能力登记与生图位。
+		if videoModels[channelModel.ID] {
+			kind = model.MediaKindVideo
+		}
+		if channelModel.Kind == kind {
+			continue
+		}
+		if err := tx.Model(&model.ChannelModel{}).Where("id = ?", channelModel.ID).
+			Update("kind", string(kind)).Error; err != nil {
+			return fmt.Errorf("failed to sync channel model kind: %w", err)
+		}
+	}
+	return nil
+}
+
+// normalizedPath 去掉协议路径两端空白, 留空时回退到默认路径, 并校验前导斜杠。
+// 缺少前导斜杠会与地址拼成错误的上游地址, 在写入前拒绝。
+func normalizedPath(value, fallback string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback, nil
+	}
+	if !strings.HasPrefix(value, "/") {
+		return value, fmt.Errorf("channel path %q must start with /", value)
+	}
+	return value, nil
+}
+
+// clearActiveItems 清理引用待删除授权的分组当前项。
+// grants 既可以是授权主键切片, 也可以是筛选授权主键的子查询, 由调用方按删除的是授权, 模型还是凭据给出。
+func clearActiveItems(tx *gorm.DB, grants any) error {
+	itemIDs := tx.Model(&model.GroupItem{}).Select("id").Where("channel_grant_id IN (?)", grants)
+	if err := tx.Model(&model.Group{}).
+		Where("active_item_id IN (?)", itemIDs).
+		Update("active_item_id", 0).Error; err != nil {
+		return fmt.Errorf("failed to clear active items: %w", err)
+	}
+	return nil
+}
+
+// grantsOf 返回筛选指定列命中某组主键的授权主键子查询, 供 clearActiveItems 级联定位。
+func grantsOf(tx *gorm.DB, column string, ids []int) *gorm.DB {
+	return tx.Model(&model.ChannelGrant{}).Select("id").Where(column+" IN ?", ids)
+}
+
+// ChannelModelBrief 是渠道模型的展示要素: 上游模型名与归属渠道的对外展示名。
+type ChannelModelBrief struct {
+	ID          int
+	Name        string
+	ChannelName string // 已发布渠道示编码, 未发布渠道示真名。
+}
+
+// ChannelModelBriefs 返回对 scope 可见的渠道模型展示要素, 供模型页把评分按名称归并。
+// 与 ChannelGrantCandidates 同一供给侧口径: 未发布渠道或未上架模型不出现在他人视角,
+// 免得模型评分顺带泄漏内部渠道真名; 归属者与管理员仍可见自己的未发布渠道。
+func ChannelModelBriefs(scope model.Scope) []ChannelModelBrief {
+	briefs := make([]ChannelModelBrief, 0, channelModelCache.Len())
+	for _, channelModel := range channelModelCache.GetAll() {
+		channel, ok := channelCache.Get(channelModel.ChannelID)
+		if !ok {
+			continue
+		}
+		owner := scope.Owns(channel.UserID)
+		if !channel.Shared && !owner {
+			continue
+		}
+		if !channel.Shared && !channelModel.Listed && !owner {
+			continue
+		}
+		name := channel.Name
+		if channel.Shared && channel.ShareCode != "" {
+			name = "#" + channel.ShareCode
+		}
+		briefs = append(briefs, ChannelModelBrief{ID: channelModel.ID, Name: channelModel.Name, ChannelName: name})
+	}
+	return briefs
+}
+
+// SelectChannelKey 根据渠道的 Key 轮换策略从可用 keys 中选择一个。
+// 支持 roundrobin(轮询)、random(随机)、failover(故障切换) 三种策略。
+// 返回选中的 key；若无可用 key 则返回 error。
+func SelectChannelKey(channelID int, strategy string) (*model.ChannelKey, error) {
+	if ChannelQuotaPaused(channelID) {
+		return nil, fmt.Errorf("channel %d quota is temporarily exhausted", channelID)
+	}
+	// 获取该渠道的所有启用的 keys，按优先级排序
+	var keys []model.ChannelKey
+	query := db.GetDB().Where("channel_id = ? AND enabled = ?", channelID, true)
+
+	// 排除熔断中的 keys（DisabledUntil 在未来）
+	query = query.Where("disabled_until IS NULL OR disabled_until < ?", time.Now())
+
+	if err := query.Order("priority ASC, id ASC").Find(&keys).Error; err != nil {
+		return nil, fmt.Errorf("query channel keys: %w", err)
+	}
+
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("no available keys for channel %d", channelID)
+	}
+
+	switch strategy {
+	case "failover":
+		// 故障切换: 返回优先级最高（priority 最小）且未熔断的第一个 key
+		return &keys[0], nil
+
+	case "random":
+		// 随机: 从可用 keys 中随机选择
+		idx := mathrand.Intn(len(keys))
+		return &keys[idx], nil
+
+	case "roundrobin":
+		fallthrough
+	default:
+		// 轮询(默认): 使用全局计数器对 keys 数量取模
+		// 为避免跨实例状态同步，使用简单的本地计数器
+		val, _ := keyRotationCounters.LoadOrStore(channelID, new(uint64))
+		counter := val.(*uint64)
+		idx := int(atomic.AddUint64(counter, 1) % uint64(len(keys)))
+		return &keys[idx], nil
+	}
+}
+
+// RecordChannelKeyError 记录某个 key 的错误，用于故障熔断。
+// 当错误次数达到阈值时自动禁用该 key 一段时间。
+func RecordChannelKeyError(channelKeyID int, errorType string) {
+	channelBreakerWriteMu.Lock()
+	defer channelBreakerWriteMu.Unlock()
+	var key model.ChannelKey
+	if err := db.GetDB().First(&key, channelKeyID).Error; err != nil {
+		return
+	}
+
+	now := time.Now()
+	errorCount := key.ErrorCount + 1
+	// breakerAt 记录本轮是否触发熔断以及截止时间, 决定要不要给管理员发告警。
+	var breakerAt *time.Time
+
+	// 阈值与时长来自系统设置(运维参数), 缺键或非法值回退到内置默认。
+	threshold := breakerKeyThreshold()
+	duration := time.Minute * time.Duration(breakerKeyMinutes())
+	hardDuration := time.Minute * time.Duration(breakerKeyHardMinutes())
+	maxMinutes := breakerMaxMinutes()
+	// trips 是自上次成功以来的第几次熔断, 决定本次停多久。
+	trips := key.BreakerTrips + 1
+
+	updates := map[string]interface{}{
+		"error_count":   errorCount,
+		"last_error_at": &now,
+		"breaker_trips": trips,
+	}
+
+	// 凭据失效与额度耗尽在可见的将来都不会自愈: 跳过计数阈值按硬熔断时长立即熔断,
+	// 避免后续请求继续拿废 Key 反复打上游; 其余错误走计数阈值。
+	if errorType == "auth" || errorType == "quota" {
+		disabledUntil := now.Add(escalatedBreakerDuration(hardDuration, trips, maxMinutes))
+		updates["disabled_until"] = &disabledUntil
+		updates["error_count"] = 0
+		result := db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", channelKeyID).Updates(updates)
+		if result.Error != nil || result.RowsAffected == 0 {
+			return
+		}
+		updateChannelKeyBreakerCache(channelKeyID, func(cached *model.ChannelKey) {
+			cached.ErrorCount = 0
+			cached.LastErrorAt = &now
+			cached.DisabledUntil = &disabledUntil
+			cached.BreakerTrips = trips
+		})
+		key.DisabledUntil = &disabledUntil
+		// 熔断是一次自动降级决策, 必须让管理员知道: 哪家渠道、哪个凭据、停到几点、第几次。
+		raiseKeyBreakerAlert(key, errorType, disabledUntil, 0, trips)
+		// 检查是否达到降级阈值
+		if degradeThreshold := breakerDegradeThreshold(); degradeThreshold > 0 && trips >= degradeThreshold {
+			raiseKeyDegradeAlert(key, trips, degradeThreshold)
+		}
+		return
+	}
+
+	// 达到阈值时启动熔断; 阈值为 0 表示关闭计数熔断, 只保留鉴权/额度的立即熔断。
+	if threshold > 0 && errorCount >= threshold {
+		disabledUntil := now.Add(escalatedBreakerDuration(duration, trips, maxMinutes))
+		updates["disabled_until"] = &disabledUntil
+		updates["error_count"] = 0 // 重置计数器; breaker_trips 保留, 它才是"停多久"的依据
+		key.DisabledUntil = &disabledUntil
+		breakerAt = &disabledUntil
+	}
+
+	result := db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", channelKeyID).Updates(updates)
+	if result.Error != nil || result.RowsAffected == 0 {
+		return
+	}
+	updateChannelKeyBreakerCache(channelKeyID, func(cached *model.ChannelKey) {
+		cached.ErrorCount = updates["error_count"].(int)
+		cached.LastErrorAt = &now
+		cached.DisabledUntil = key.DisabledUntil
+		cached.BreakerTrips = trips
+	})
+	// 告警放在写库之后: 库里没落上就发通知, 管理员会看到一条查无实据的熔断。
+	if breakerAt != nil {
+		raiseKeyBreakerAlert(key, errorType, *breakerAt, threshold, trips)
+		// 检查是否达到降级阈值
+		if degradeThreshold := breakerDegradeThreshold(); degradeThreshold > 0 && trips >= degradeThreshold {
+			raiseKeyDegradeAlert(key, trips, degradeThreshold)
+		}
+	}
+}
+
+// ResetChannelKeyErrors 重置某个 key 的错误计数（成功请求时调用）。
+// breaker_trips 一并清零: 成功就是"它又能用了"的唯一证据, 不清零则恢复的成员会被
+// 之前攒下的熔断次数继续压着, 下次偶发失败直接跳到很长的熔断时长。
+func ResetChannelKeyErrors(channelKeyID int) {
+	channelBreakerWriteMu.Lock()
+	defer channelBreakerWriteMu.Unlock()
+	result := db.GetDB().Model(&model.ChannelKey{}).Where("id = ?", channelKeyID).Updates(map[string]interface{}{
+		"error_count":    0,
+		"breaker_trips":  0,
+		"disabled_until": nil,
+	})
+	if result.Error != nil || result.RowsAffected == 0 {
+		return
+	}
+	updateChannelKeyBreakerCache(channelKeyID, func(cached *model.ChannelKey) {
+		cached.ErrorCount = 0
+		cached.BreakerTrips = 0
+		cached.DisabledUntil = nil
+	})
+}
+
+// keyRotationCounters 为每个 channel 维护轮询计数器
+var keyRotationCounters sync.Map // map[int]*uint64
+
+// 熔断参数读取: 全部走系统设置, 缺键、非法或越界时回退到下面的默认值,
+// 使老库(没有这些键)与手工改库都保持既有行为, 转发路径不会因配置缺失而中断。
+const (
+	defaultBreakerKeyThreshold   = 5
+	defaultBreakerKeyMinutes     = 5
+	defaultBreakerKeyHardMinutes = 30
+	defaultBreakerModelThreshold = 5
+	defaultBreakerModelMinutes   = 5
+	defaultBreakerMaxMinutes     = 60
+
+	defaultBreakerCoolAuthSeconds = 60
+	defaultBreakerCoolSoftSeconds = 30
+
+	defaultBreakerDegradeThreshold = 3
+)
+
+func breakerSetting(key model.SettingKey, fallback int, max int) int {
+	v := SettingGetIntDefault(key, fallback)
+	if v < 0 || v > max {
+		return fallback
+	}
+	return v
+}
+
+func breakerKeyThreshold() int {
+	return breakerSetting(model.SettingKeyBreakerKeyThreshold, defaultBreakerKeyThreshold, 100)
+}
+
+func breakerKeyMinutes() int {
+	return breakerSetting(model.SettingKeyBreakerKeyMinutes, defaultBreakerKeyMinutes, 1440)
+}
+
+func breakerKeyHardMinutes() int {
+	return breakerSetting(model.SettingKeyBreakerKeyHardMinutes, defaultBreakerKeyHardMinutes, 1440)
+}
+
+func breakerModelThreshold() int {
+	return breakerSetting(model.SettingKeyBreakerModelThreshold, defaultBreakerModelThreshold, 100)
+}
+
+func breakerModelMinutes() int {
+	return breakerSetting(model.SettingKeyBreakerModelMinutes, defaultBreakerModelMinutes, 1440)
+}
+
+func breakerMaxMinutes() int {
+	return breakerSetting(model.SettingKeyBreakerMaxMinutes, defaultBreakerMaxMinutes, 1440)
+}
+
+func breakerDegradeThreshold() int {
+	return breakerSetting(model.SettingKeyBreakerDegradeThreshold, defaultBreakerDegradeThreshold, 20)
+}
+
+// EgressRegionBonusMs 出口区域亲和加成(毫秒): 调用方地区与出口地区一致时, 该出口的排序分数
+// 减免这么多毫秒。默认 0 即关闭 —— 地区码来自反代头, 未配可信代理时恒为空, 开着也没有效果。
+func EgressRegionBonusMs() int {
+	return breakerSetting(model.SettingKeyEgressRegionBonusMs, 0, 60000)
+}
+
+// escalatedBreakerDuration 计算第 trips 次熔断的时长: 基准时长按 2 的幂递增, 上限为 maxMinutes。
+//
+// 为什么必须递增: 阈值 + 固定时长只能把故障成员"停一会儿"。一个 0% 成功率的成员会永远在
+// "停 5 分钟 → 探一次 → 再失败"的循环里打转 —— 线上实测有成员累计 38 次失败、成功率 0.00,
+// 每次都是同样的 5 分钟。递增让长期不健康的成员逐步退到边缘, 而真正自愈的成员
+// 只要成功一次就会清零计数(见 ResetChannelKeyErrors), 不会被长期压着。
+func escalatedBreakerDuration(base time.Duration, trips, maxMinutes int) time.Duration {
+	if trips < 1 {
+		trips = 1
+	}
+	maxDuration := time.Duration(maxMinutes) * time.Minute
+	duration := base
+	// 逐次翻倍, 一旦达到上限就停: 直接位移会在大 trips 时溢出。
+	for i := 1; i < trips && duration < maxDuration; i++ {
+		duration *= 2
+	}
+	if duration > maxDuration {
+		duration = maxDuration
+	}
+	return duration
+}
+
+// BreakerCoolAuthSeconds 换路冷却: 鉴权/额度错误后该成员被跳过的秒数(转发路径读取)。
+func BreakerCoolAuthSeconds() int {
+	return breakerSetting(model.SettingKeyBreakerCoolAuthSeconds, defaultBreakerCoolAuthSeconds, 600)
+}
+
+// BreakerCoolSoftSeconds 换路冷却: 过载/模型缺失等软错误后该成员被跳过的秒数(转发路径读取)。
+func BreakerCoolSoftSeconds() int {
+	return breakerSetting(model.SettingKeyBreakerCoolSoftSeconds, defaultBreakerCoolSoftSeconds, 600)
+}
+
+// isCircuitBroken 判断熔断截止时间是否在未来(仍处于熔断窗口内)。
+func isCircuitBroken(disabledUntil *time.Time) bool {
+	return disabledUntil != nil && disabledUntil.After(time.Now())
+}
+
+// RecordChannelModelError 记录某个渠道模型的错误, 用于渠道模型级故障熔断(区分于 Key 级熔断)。
+// 适用于过载/临时故障等渠道模型级错误: 同渠道下其它模型正常, 或该模型的其它 Key 正常, 隔离故障面。
+// 凭据失效/余额不足仍在 Key 级熔断(影响该 Key 所有模型); 模型缺失/内容拦截/请求错误不记错误不熔断。
+func RecordChannelModelError(channelModelID int, errorType string) {
+	channelBreakerWriteMu.Lock()
+	defer channelBreakerWriteMu.Unlock()
+	var channelModel model.ChannelModel
+	if err := db.GetDB().First(&channelModel, channelModelID).Error; err != nil {
+		return
+	}
+
+	now := time.Now()
+	errorCount := channelModel.ErrorCount + 1
+
+	// 与 Key 同一套机制, 阈值与时长各自独立可配; 熔断时长同样按累计次数递增。
+	threshold := breakerModelThreshold()
+	duration := time.Minute * time.Duration(breakerModelMinutes())
+	maxMinutes := breakerMaxMinutes()
+	trips := channelModel.BreakerTrips + 1
+
+	updates := map[string]interface{}{
+		"error_count":   errorCount,
+		"last_error_at": &now,
+		"breaker_trips": trips,
+	}
+
+	// 达到阈值时启动熔断; 阈值为 0 表示关闭该级的计数熔断。
+	var breakerAt *time.Time
+	if threshold > 0 && errorCount >= threshold {
+		disabledUntil := now.Add(escalatedBreakerDuration(duration, trips, maxMinutes))
+		updates["disabled_until"] = &disabledUntil
+		updates["error_count"] = 0 // 重置计数器; breaker_trips 保留, 它才是"停多久"的依据
+		channelModel.DisabledUntil = &disabledUntil
+		breakerAt = &disabledUntil
+	}
+
+	result := db.GetDB().Model(&model.ChannelModel{}).Where("id = ?", channelModelID).Updates(updates)
+	if result.Error != nil || result.RowsAffected == 0 {
+		return
+	}
+	updateChannelModelBreakerCache(channelModelID, func(cached *model.ChannelModel) {
+		cached.ErrorCount = updates["error_count"].(int)
+		cached.LastErrorAt = &now
+		cached.DisabledUntil = channelModel.DisabledUntil
+		cached.BreakerTrips = trips
+	})
+	// 与 Key 级熔断同理: 熔断落地后再告警, 并给出渠道名与模型名。
+	if breakerAt != nil {
+		raiseModelBreakerAlert(channelModel, errorType, *breakerAt, threshold, trips)
+		// 检查是否达到降级阈值
+		if degradeThreshold := breakerDegradeThreshold(); degradeThreshold > 0 && trips >= degradeThreshold {
+			raiseModelDegradeAlert(channelModel, trips, degradeThreshold)
+		}
+	}
+}
+
+// ResetChannelModelErrors 重置某个渠道模型的错误计数(成功请求时调用); 熔断次数同理清零。
+func ResetChannelModelErrors(channelModelID int) {
+	channelBreakerWriteMu.Lock()
+	defer channelBreakerWriteMu.Unlock()
+	result := db.GetDB().Model(&model.ChannelModel{}).Where("id = ?", channelModelID).Updates(map[string]interface{}{
+		"error_count":    0,
+		"breaker_trips":  0,
+		"disabled_until": nil,
+	})
+	if result.Error != nil || result.RowsAffected == 0 {
+		return
+	}
+	updateChannelModelBreakerCache(channelModelID, func(cached *model.ChannelModel) {
+		cached.ErrorCount = 0
+		cached.BreakerTrips = 0
+		cached.DisabledUntil = nil
+	})
+}
