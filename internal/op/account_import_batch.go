@@ -37,11 +37,11 @@ func AccountImportBatch(ctx context.Context, channelID int, platform string, ite
 	results := make([]AccountBatchResult, 0, len(items))
 	for _, item := range items {
 		result, err := AccountImport(ctx, channelID, AccountImportSpec{
-			Platform:     platform,
-			Name:         item.Name,
-			Raw:          item.Raw,
-			Enabled:      enabled,
-			SkipRefresh:  true,
+			Platform:    platform,
+			Name:        item.Name,
+			Raw:         item.Raw,
+			Enabled:     enabled,
+			SkipRefresh: true,
 		}, now)
 		if err != nil {
 			// 失败原因要原样带回: 缺 access_token 和缺 refresh_token 对使用者是两件完全不同的事,

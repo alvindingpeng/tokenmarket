@@ -16,7 +16,7 @@ func tierTestSetup(t *testing.T, rawPolicies string) {
 
 func TestUserTierLimitsForUserResolvesEffectiveTier(t *testing.T) {
 	tierTestSetup(t, `{"free":{"rpm":5,"tpm":500,"concurrent":1},"pro":{"rpm":50,"tpm":5000,"concurrent":5}}`)
-	user, err := UserCreate("tier-pro", "", "password123", model.RoleUser, model.StatusActive)
+	user, err := UserCreate("tier-pro", "", "password123", model.RoleUser, model.StatusActive, 1)
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestUserTierLimitsFallsBackToDefaultsWhenSettingCorrupt(t *testing.T) {
 
 func TestUserUpdateTierRejectsInvalid(t *testing.T) {
 	tierTestSetup(t, model.DefaultUserTierPoliciesJSON)
-	user, err := UserCreate("tier-bad", "", "password123", model.RoleUser, model.StatusActive)
+	user, err := UserCreate("tier-bad", "", "password123", model.RoleUser, model.StatusActive, 1)
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}

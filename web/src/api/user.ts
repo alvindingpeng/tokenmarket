@@ -1,9 +1,21 @@
 import { useEffect } from 'react';
-import { queryOptions, useMutation } from '@tanstack/react-query';
+import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { apiRequest, apiUnauthorizedEvent, clearStepUpToken, currentAuthGeneration, resetAuthSession, setAPIKey } from './client';
+import { apiRequest, apiUnauthorizedEvent, clearStepUpToken, currentAuthGeneration, resetAuthSession, setAPIKey, setTenantOverride } from './client';
 import type { UserTier } from '@/lib/user-tier';
+import { fetchUserTenants, fetchUserDefaultTenant } from './tenant';
+import { useAppStore } from '@/stores/app';
+
+// syncTenantOverride 把「当前查看的租户」推给请求层, 只在管理员身份下生效。
+// 普通用户的租户由后端身份决定, 发头不会有任何效果 —— 若不按角色收口, 界面会显示
+// "已切换到某租户"而请求仍落在本人租户, 造成"看的不是同一份数据"的静默不一致。
+function syncTenantOverride() {
+    const role = useAuthStore.getState().role;
+    const tenant = useAppStore.getState().currentTenant;
+    const isAdmin = role === 'admin';
+    setTenantOverride(isAdmin ? tenant?.id ?? null : null, isAdmin);
+}
 
 /**
  * 用户登录请求
@@ -165,6 +177,27 @@ export const useAuthStore = create<AuthState>()(
                         role: profile?.role ?? null,
                         userId: profile?.id ?? 0
                     });
+
+                    // Fetch user's tenants (only for non-API key auth)
+                    if (!isAPIKeyAuth && profile?.id) {
+                        try {
+                            const [tenants, defaultTenant] = await Promise.all([
+                                fetchUserTenants(),
+                                fetchUserDefaultTenant(),
+                            ]);
+                            if (isCurrent()) {
+                                useAppStore.getState().setAvailableTenants(tenants);
+                                if (defaultTenant) {
+                                    useAppStore.getState().setCurrentTenant(defaultTenant);
+                                } else if (tenants.length > 0) {
+                                    useAppStore.getState().setCurrentTenant(tenants[0]);
+                                }
+                                syncTenantOverride();
+                            }
+                        } catch (tenantErr) {
+                            console.warn('Failed to fetch user tenants:', tenantErr);
+                        }
+                    }
                 } catch {
                     if (isCurrent()) get().logout();
                 }
@@ -173,6 +206,10 @@ export const useAuthStore = create<AuthState>()(
             logout: () => {
                 setAPIKey(null);
                 resetAuthSession();
+                // Clear tenant state on logout
+                useAppStore.getState().setAvailableTenants([]);
+                useAppStore.getState().setCurrentTenant(null);
+                setTenantOverride(null, false);
                 set({
                     isAuthenticated: false,
                     isAPIKeyAuth: false,
@@ -221,11 +258,30 @@ export function loginUser(data: UserLoginRequest) {
 
 export function useLogin() {
     const { setAuth } = useAuthStore();
+    const qc = useQueryClient();
 
     return useMutation({
         mutationFn: loginUser,
-        onSuccess: (user: UserView) => {
+        onSuccess: async (user: UserView) => {
             setAuth(user);
+            // Fetch user's tenants after login
+            try {
+                const [tenants, defaultTenant] = await Promise.all([
+                    fetchUserTenants(),
+                    fetchUserDefaultTenant(),
+                ]);
+                useAppStore.getState().setAvailableTenants(tenants);
+                if (defaultTenant) {
+                    useAppStore.getState().setCurrentTenant(defaultTenant);
+                } else if (tenants.length > 0) {
+                    useAppStore.getState().setCurrentTenant(tenants[0]);
+                }
+                syncTenantOverride();
+            } catch (tenantErr) {
+                console.warn('Failed to fetch user tenants after login:', tenantErr);
+            }
+            // Invalidate user queries to refresh data
+            qc.invalidateQueries({ queryKey: ['user'] });
         },
     });
 }

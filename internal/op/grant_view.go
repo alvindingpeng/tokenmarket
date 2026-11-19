@@ -92,7 +92,7 @@ func grantCandidateOf(grant model.ChannelGrant, parts grantParts, scope model.Sc
 		FxMissing:     !fxOK,
 	}
 	// 凭据名按归属脱敏: 非归属者(含普通用户)看不到凭据名。
-	if !scope.Owns(parts.Channel.UserID) {
+	if !scope.OwnsChannelValue(parts.Channel) {
 		candidate.KeyName = ""
 	}
 	return candidate

@@ -24,7 +24,7 @@ func userDeleteTestSetup(t *testing.T) {
 
 func userDeleteTestCreateUser(t *testing.T, username string) model.User {
 	t.Helper()
-	user, err := UserCreate(username, "", "password123", model.RoleUser, model.StatusActive)
+	user, err := UserCreate(username, "", "password123", model.RoleUser, model.StatusActive, 1)
 	if err != nil {
 		t.Fatalf("create user %s: %v", username, err)
 	}

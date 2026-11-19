@@ -30,6 +30,7 @@ const (
 type RechargeOrder struct {
 	ID          uint64     `json:"id" gorm:"primaryKey"`
 	OrderNo     string     `json:"order_no" gorm:"size:32;not null;uniqueIndex"` // 业务单号 yyyymmddHHMMSS+随机
+	TenantID    uint       `json:"tenant_id" gorm:"index;index:idx_recharge_orders_tenant_created,priority:1"`
 	UserID      uint       `json:"user_id" gorm:"index"`
 	Provider    string     `json:"provider" gorm:"size:16;not null"`
 	Method      string     `json:"method" gorm:"size:16;not null"`                     // alipay|wechat|qq|空=收银台自选
@@ -48,7 +49,7 @@ type RechargeOrder struct {
 	TradeNo     *string    `json:"trade_no" gorm:"size:64;uniqueIndex"` // 第三方流水号(幂等键); 未支付为空, 唯一索引只对非空生效
 	FailReason  string     `json:"fail_reason" gorm:"size:255"`
 	NotifyRaw   string     `json:"notify_raw" gorm:"type:text"` // 回调原文(审计/纠纷取证)
-	CreatedAt   time.Time  `json:"created_at" gorm:"index"`
+	CreatedAt   time.Time  `json:"created_at" gorm:"index;index:idx_recharge_orders_tenant_created,priority:2"`
 	ExpiredAt   time.Time  `json:"expired_at"`
 	PaidAt      *time.Time `json:"paid_at"`
 }

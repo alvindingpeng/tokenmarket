@@ -14,8 +14,10 @@ import (
 // 而单测只验证了我们按自己的规格生成 URL, 验证不了对方的规格。
 //
 // 用 HEAD/GET 打真实授权端点看状态码:
-//   200/302 -> 端点与参数被接受
-//   400     -> 参数有问题(通常带 error 说明)
+//
+//	200/302 -> 端点与参数被接受
+//	400     -> 参数有问题(通常带 error 说明)
+//
 // 网络不可达时跳过, 不让 CI 因为断网变红。
 func TestAuthorizeURLAcceptedByRealEndpoint(t *testing.T) {
 	if testing.Short() {

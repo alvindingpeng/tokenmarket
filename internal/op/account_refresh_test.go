@@ -1,4 +1,3 @@
-
 package op
 
 import (
@@ -30,7 +29,7 @@ func accountTestDB(t *testing.T) {
 func seedAccountKey(t *testing.T, platform, rawJSON string, expiresAt *time.Time) model.ChannelKey {
 	t.Helper()
 	channel := model.Channel{
-		UserID: 1,
+		UserID:        1,
 		ChannelConfig: model.ChannelConfig{Name: "acc-channel-" + fmt.Sprint(time.Now().UnixNano()), Enabled: true, BaseURL: "https://api.example.com"},
 	}
 	if err := db.GetDB().Create(&channel).Error; err != nil {
@@ -42,7 +41,7 @@ func seedAccountKey(t *testing.T, platform, rawJSON string, expiresAt *time.Time
 			Name: "acc-key", Key: rawJSON, Enabled: true,
 			AccountKind:     model.AccountKindOAuth,
 			AccountPlatform: platform,
-			TokenExpiresAt:   expiresAt,
+			TokenExpiresAt:  expiresAt,
 		},
 	}
 	if err := db.GetDB().Create(&key).Error; err != nil {
@@ -93,7 +92,7 @@ func TestAccountNeedsRefreshIgnoresStaticKeys(t *testing.T) {
 // 账号 JSON 坏掉时: 刷新集合不应把它当成"到期待刷新"而反复打上游, 但也不能当成普通 Key 静默放行。
 func TestAccountCredentialOfRejectsBrokenJSON(t *testing.T) {
 	key := model.ChannelKey{ChannelKeyConfig: model.ChannelKeyConfig{
-		Key: "not-json",
+		Key:         "not-json",
 		AccountKind: model.AccountKindOAuth, AccountPlatform: model.AccountPlatformCodex,
 	}}
 	if _, ok := AccountCredentialOf(key); ok {
@@ -172,7 +171,7 @@ func TestAccountRefreshWritesPlatformFieldNames(t *testing.T) {
 		t.Fatalf("parse roundtrip: %v", err)
 	}
 	if credential.RefreshToken != "new-refresh" || credential.AccessToken != "new-access" {
-			t.Fatalf("roundtrip = %+v", credential)
+		t.Fatalf("roundtrip = %+v", credential)
 	}
 }
 

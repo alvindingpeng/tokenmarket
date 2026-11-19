@@ -72,7 +72,7 @@ func channelReviewBypass(ownerID uint) bool {
 // 管理员免审渠道提交即通过, 直接写入当前配置指纹。
 func ChannelReviewSubmit(id int, note string, scope model.Scope, ctx context.Context) (model.Channel, error) {
 	channel, ok := channelCache.Get(id)
-	if !ok || !scope.Owns(channel.UserID) {
+	if !ok || !scope.OwnsChannelValue(channel) {
 		return model.Channel{}, fmt.Errorf("channel not found")
 	}
 	switch channel.ReviewStatus {
@@ -213,7 +213,7 @@ func ChannelReviewReject(id int, note string, reviewerID uint, scope model.Scope
 func ChannelReviewList(status string, scope model.Scope) []model.ChannelReviewItem {
 	items := make([]model.ChannelReviewItem, 0, channelCache.Len())
 	for _, channel := range channelCache.GetAll() {
-		if !scope.Owns(channel.UserID) {
+		if !scope.OwnsChannelValue(channel) {
 			continue
 		}
 		if status != "" && channel.ReviewStatus != status {

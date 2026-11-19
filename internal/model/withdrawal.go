@@ -33,6 +33,7 @@ const (
 // 旧行三列为零值/空串: 读取侧回落 CNY 静态口径, 绝不为存量行伪造历史汇率。
 type Withdrawal struct {
 	ID             uint           `json:"id" gorm:"primaryKey"`
+	TenantID       uint           `json:"tenant_id" gorm:"index;index:idx_withdrawals_tenant_created,priority:1"`
 	UserID         uint           `json:"user_id" gorm:"index;not null"`
 	Amount         float64        `json:"amount" gorm:"type:decimal(18,6);not null"`
 	Fee            float64        `json:"fee" gorm:"type:decimal(18,6);not null"`
@@ -53,7 +54,7 @@ type Withdrawal struct {
 	ReviewedAt     *time.Time     `json:"reviewed_at"`
 	PaidRef        string         `json:"paid_ref" gorm:"size:128;not null;default:''"`
 	PaidAt         *time.Time     `json:"paid_at"`
-	AppliedAt      time.Time      `json:"applied_at"`
+	AppliedAt      time.Time      `json:"applied_at" gorm:"index;index:idx_withdrawals_tenant_created,priority:2"`
 }
 
 // WithdrawFee 手续费 = max(最低费, 申请额×费率), 且不超过申请额(实付不为负)。

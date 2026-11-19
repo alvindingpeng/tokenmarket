@@ -12,6 +12,7 @@ const (
 // Dispute 交易申诉单: 针对调用计费异常发起的退款申诉
 type Dispute struct {
 	ID         uint64     `json:"id" gorm:"primaryKey"`
+	TenantID   uint       `json:"tenant_id" gorm:"index;not null;default:1"`
 	RecordID   uint64     `json:"record_id" gorm:"index;not null"`  // 关联 BillingRecord.ID
 	RequestID  uint64     `json:"request_id" gorm:"index;not null"` // 关联 RelayRequest.ID
 	UserID     uint       `json:"user_id" gorm:"index;not null"`    // 申诉人 (付费用户)

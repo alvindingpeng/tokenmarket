@@ -61,8 +61,8 @@ func Migration044_HourlyStatsCompositeKey(db *gorm.DB) error {
 		}
 		// 只搬 0-23 点的行; 越界行是 017 之前自增主键缺陷的副本, 见函数注释。
 		if err := tx.Exec(fmt.Sprintf(
-			"INSERT INTO %q (date, hour, input_token, output_token, input_cost, output_cost, wait_time, request_success, request_failed) "+
-				"SELECT date, hour, input_token, output_token, input_cost, output_cost, wait_time, request_success, request_failed "+
+			"INSERT INTO %q (tenant_id, date, hour, input_token, output_token, input_cost, output_cost, wait_time, request_success, request_failed) "+
+				"SELECT COALESCE(tenant_id, 1), date, hour, input_token, output_token, input_cost, output_cost, wait_time, request_success, request_failed "+
 				"FROM %q WHERE hour >= 0 AND hour <= 23", table, legacy)).Error; err != nil {
 			return fmt.Errorf("copy %s rows: %w", table, err)
 		}
@@ -85,8 +85,9 @@ func Migration044_HourlyStatsCompositeKey(db *gorm.DB) error {
 // hourlyStatsTable 只用于建表: 与 model.StatsHourly 同结构同表名, 但显式声明复合主键,
 // 避免重建表时再次落到 "PRIMARY KEY (hour)"。
 type hourlyStatsTable struct {
-	Date string `gorm:"primaryKey;not null;index"`
-	Hour int    `gorm:"primaryKey;autoIncrement:false"`
+	TenantID uint   `gorm:"not null;default:1;index"`
+	Date     string `gorm:"primaryKey;not null;index"`
+	Hour     int    `gorm:"primaryKey;autoIncrement:false"`
 	model.StatsMetrics
 }
 

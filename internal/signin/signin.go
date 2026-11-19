@@ -32,15 +32,15 @@ import (
 
 // Flow 是一次进行中的网页登录。
 type Flow struct {
-	Platform string    `json:"platform"`
+	Platform     string `json:"platform"`
 	AuthorizeURL string `json:"authorize_url"`
 	// UserCodeHint 告诉用户贴什么: 有的平台显示一串 code, 有的把 code 放在最终页面的地址里。
 	UserCodeHint string `json:"user_code_hint"`
 	// RedirectURI 是授权请求里声明的那个; 换令牌时必须原样回传, 否则上游会拒。
 	RedirectURI string `json:"-"`
-	State    string `json:"state"`
-	verifier string
-	Created  time.Time `json:"created_at"`
+	State       string `json:"state"`
+	verifier    string
+	Created     time.Time `json:"created_at"`
 }
 
 // FlowTTL 是登录会话的有效期。

@@ -43,9 +43,11 @@ type User struct {
 	Username string `json:"username" gorm:"unique;not null"`
 	Password string `json:"-" gorm:"not null"`
 	// Email 注册邮箱(注册必填, 找回密码凭据); 空串表示老账号未绑定, 唯一性由应用层保证。
-	Email  string     `json:"email" gorm:"size:254;not null;default:'';index"`
-	Role   Role       `json:"role" gorm:"not null;default:user;index"`
-	Status UserStatus `json:"status" gorm:"not null;default:active;index"`
+	Email string `json:"email" gorm:"size:254;not null;default:'';index"`
+	Role  Role   `json:"role" gorm:"not null;default:user;index"`
+	// TenantID 租户归属; 单租户模式下每个用户仅属于一个租户。
+	TenantID uint       `json:"tenant_id" gorm:"not null;default:1;index"`
+	Status   UserStatus `json:"status" gorm:"not null;default:active;index"`
 	// Tier 服务等级: 只影响限流兜底额度, 与 Role 权限正交。空串按 free 处理(见 EffectiveTier),
 	// 这样加列前的老账号不需要回填, 也不会意外拿到高额度。
 	Tier UserTier `json:"tier" gorm:"size:32;not null;default:'';index"`

@@ -51,6 +51,7 @@ type RequestState struct {
 	ClientIP           string         `json:"client_ip"`
 	ClientCountry      string         `json:"client_country"`   // 调用方国家码, 取自可信反代注入的头; 无边缘接入时为空。
 	UserID             uint           `json:"user_id"`          // 发起请求的用户 ID(API Key 归属者), 日志与计费的归属依据。
+	TenantID           uint           `json:"tenant_id"`        // 租户 ID, 用于多租户隔离。
 	Model              string         `json:"model"`            // 客户端请求的模型名称, 即分组名称。
 	ReasoningEffort    string         `json:"reasoning_effort"` // 客户端请求的思考等级, 未指定时为空。
 	Protocol           model.Protocol `json:"protocol"`         // 客户端请求使用的协议, 由入站格式定出, 单个协议位而非掩码组合。
@@ -88,17 +89,18 @@ type RequestState struct {
 	rateReservation *ratelimit.Reservation
 
 	// 计费上下文: admin 账号不计费(reservationID 为 0); 目标信息随最终轮次覆盖。
-	reservationID     uint64           // 余额预扣记录 ID, 0 表示未预扣。
-	targetChannelID   int              // 最终轮次落地渠道 ID。
-	targetOwnerID     uint             // 最终轮次落地渠道的归属用户, 供货价收入计入该用户。
-	targetShareCode   string           // 最终轮次落地渠道的发布编码, 计费明细脱敏展示用。
-	targetSupplyPrice model.LLMPrice   // 最终轮次落地模型的供货价快照(已折算为账面币种 USD; USD 报价零折算)。
-	targetMediaSupply model.MediaPrice // 最终轮次落地模型的媒体供货价快照(图片/视频), text 模型为零值(已折算)。
-	targetFx          FxSnapshot       // 折算依据快照: 币种/汇率/牌价日, 随结算写入 billing_records 供复核。
-	targetKind        model.MediaKind  // 最终轮次落地模型的媒体形态, 用于区分计费路径。
-	targetGrantID     int              // 最终轮次落地渠道授权 ID, 生视频任务据此落库归属供后续查询定位上游。
-	targetKeyID       int              // 最终轮次实际用于上游请求的渠道凭据 ID; 轮换选路下与授权绑定的凭据不同, 生视频任务据此落库创建凭据。
-	requestedMedia    model.MediaUnits // 客户端请求声明的媒体用量(生视频的时长与分辨率档位), 上游未回显时按此结算。
+	reservationID        uint64           // 余额预扣记录 ID, 0 表示未预扣。
+	targetChannelID      int              // 最终轮次落地渠道 ID。
+	targetOwnerID        uint             // 最终轮次落地渠道的归属用户, 供货价收入计入该用户。
+	targetShareCode      string           // 最终轮次落地渠道的发布编码, 计费明细脱敏展示用。
+	targetSupplyPrice    model.LLMPrice   // 最终轮次落地模型的供货价快照(已折算为账面币种 USD; USD 报价零折算)。
+	targetMediaSupply    model.MediaPrice // 最终轮次落地模型的媒体供货价快照(图片/视频), text 模型为零值(已折算)。
+	targetFx             FxSnapshot       // 折算依据快照: 币种/汇率/牌价日, 随结算写入 billing_records 供复核。
+	targetKind           model.MediaKind  // 最终轮次落地模型的媒体形态, 用于区分计费路径。
+	targetGrantID        int              // 最终轮次落地渠道授权 ID, 生视频任务据此落库归属供后续查询定位上游。
+	targetKeyID          int              // 最终轮次实际用于上游请求的渠道凭据 ID; 轮换选路下与授权绑定的凭据不同, 生视频任务据此落库创建凭据。
+	targetChannelModelID int              // 最终轮次落地渠道模型 ID, 用于租户定价策略查找。
+	requestedMedia       model.MediaUnits // 客户端请求声明的媒体用量(生视频的时长与分辨率档位), 上游未回显时按此结算。
 
 	requestCtx    context.Context    // 请求级上下文, 同时约束等待、当前轮次和后续重试。
 	requestCancel context.CancelFunc // 中止整个请求, 同时打断等待、当前轮次和后续重试。
@@ -131,7 +133,7 @@ var (
 )
 
 // newRequestState 分配请求 ID 并登记初始运行状态; 返回的记录是本请求后续全部状态写入的入口。
-func newRequestState(ctx context.Context, modelName, reasoningEffort string, groupID int, protocol model.Protocol, body string, apiKeyID int, userID uint, clientIP, clientCountry string, timeoutSeconds int) *RequestState {
+func newRequestState(ctx context.Context, modelName, reasoningEffort string, groupID int, protocol model.Protocol, body string, apiKeyID int, userID uint, tenantID uint, clientIP, clientCountry string, timeoutSeconds int) *RequestState {
 	if timeoutSeconds < 1 {
 		timeoutSeconds = 600
 	}
@@ -145,6 +147,7 @@ func newRequestState(ctx context.Context, modelName, reasoningEffort string, gro
 		Status:          StatusRunning,
 		StartedAt:       time.Now(),
 		UserID:          userID,
+		TenantID:        tenantID,
 		Model:           modelName,
 		ReasoningEffort: reasoningEffort,
 		Protocol:        protocol,
@@ -174,7 +177,7 @@ func newRequestState(ctx context.Context, modelName, reasoningEffort string, gro
 // 避免结算与展示两条路径各自折算产生口径漂移。折算依据(FxSnapshot)随结算写入账单。
 // 折算失败(无牌价)回退恒等快照并保持原价: 计费不能因牌价缺失而停, 但 FxSnapshot.Currency
 // 会原样落库, 对账可识别"未折算"的行。
-func (r *RequestState) startRound(cancel context.CancelFunc, channelKeyName, modelName string, protocol model.Protocol, channelID int, ownerID uint, shareCode string, supplyPrice model.LLMPrice, currency string, itemID int) int {
+func (r *RequestState) startRound(cancel context.CancelFunc, channelKeyName, modelName string, protocol model.Protocol, channelID int, ownerID uint, shareCode string, supplyPrice model.LLMPrice, currency string, itemID int, channelModelID int) int {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -189,6 +192,7 @@ func (r *RequestState) startRound(cancel context.CancelFunc, channelKeyName, mod
 	r.targetChannelID = channelID
 	r.targetOwnerID = ownerID
 	r.targetShareCode = shareCode
+	r.targetChannelModelID = channelModelID
 	r.targetSupplyPrice, r.targetFx = fxConvertSupplyPrice(supplyPrice, currency)
 	r.Sending = true
 	r.Error = ""
@@ -543,7 +547,8 @@ func (r *RequestState) finishLocked(usage *llm.Usage) *billingLease {
 	}
 	// 请求级统计(总览/统计/API Key)与日志费用都按用户端计费标准计算:
 	// 本轮落地渠道的供货价上浮后即渠道模型发布价, 与 settleBillingLocked 的结算完全同口径。
-	metrics := usageMetrics(r.targetSupplyPrice.Scale(op.ChannelMarkupFor(r.targetChannelID)), usage)
+	markupRatio := op.ChannelMarkupForWithTenantAndChannelModel(r.requestCtx, r.targetChannelID, r.TenantID, uint(r.targetChannelModelID))
+	metrics := usageMetrics(r.targetSupplyPrice.Scale(markupRatio), usage)
 	r.Cost = metrics.InputCost + metrics.OutputCost
 	// 同时计算上游供货成本(不含加价), 用于成本追踪与利润分析。
 	supplyMetrics := usageMetrics(r.targetSupplyPrice, usage)
@@ -552,7 +557,7 @@ func (r *RequestState) finishLocked(usage *llm.Usage) *billingLease {
 	switch r.targetKind {
 	case model.MediaKindImage:
 		if images := mediaImageCount(r.responseBody); images > 0 {
-			userMediaCost := r.targetMediaSupply.Scale(op.ChannelMarkupFor(r.targetChannelID)).CostImages(images, "")
+			userMediaCost := r.targetMediaSupply.Scale(markupRatio).CostImages(images, "")
 			supplyMediaCost := r.targetMediaSupply.CostImages(images, "")
 			metrics.OutputCost += userMediaCost
 			r.Cost += userMediaCost
@@ -561,7 +566,7 @@ func (r *RequestState) finishLocked(usage *llm.Usage) *billingLease {
 	case model.MediaKindVideo:
 		if units := mediaVideoUnits(r.responseBody, r.requestedMedia); units.Videos > 0 {
 			r.recordVideoJob()
-			userMedia := r.targetMediaSupply.Scale(op.ChannelMarkupFor(r.targetChannelID))
+			userMedia := r.targetMediaSupply.Scale(markupRatio)
 			userMediaCost := userMedia.CostVideos(units.Videos, units.Seconds, units.Resolution)
 			supplyMediaCost := r.targetMediaSupply.CostVideos(units.Videos, units.Seconds, units.Resolution)
 			metrics.OutputCost += userMediaCost
@@ -634,21 +639,33 @@ func (r *RequestState) setRateScopes(scopes []ratelimit.Scope, reservation *rate
 
 // settleRateLimitLocked 请求结束后按真实用量结算用户侧限流额度; 无用量即退还预留。
 func (r *RequestState) settleRateLimitLocked(usage *llm.Usage) {
-	if len(r.rateScopes) == 0 {
-		return
-	}
+	scopes := r.rateScopes
 	reservation := r.rateReservation
 	r.rateScopes = nil
 	r.rateReservation = nil
+	if reservation != nil {
+		if usage == nil {
+			reservation.Settle(0, 0, true)
+		} else {
+			reservation.Settle(usage.PromptTokens, usage.CompletionTokens, false)
+		}
+	}
+	// 用户侧预留范围为空(或本次请求没走用户侧限流)时, 租户用量仍要落账:
+	// 配额是池的账, 不该因为另一套限流器没参与而漏记。
 	if usage == nil {
-		reservation.Settle(0, 0, true)
 		return
 	}
-	reservation.Settle(usage.PromptTokens, usage.CompletionTokens, false)
-	// 用量聚合供监控: 系统默认(全局)、用户与 API Key 三个维度各记一份。
-	op.RateUsageAdd(model.RateScopeSystem, 0, 1, usage.PromptTokens, usage.CompletionTokens, 0)
-	op.RateUsageAdd(model.RateScopeUser, int(r.UserID), 1, usage.PromptTokens, usage.CompletionTokens, 0)
-	op.RateUsageAdd(model.RateScopeAPIKey, r.apiKeyID, 1, usage.PromptTokens, usage.CompletionTokens, 0)
+	if len(scopes) > 0 {
+		// 用量聚合供监控: 系统默认(全局)、用户与 API Key 三个维度各记一份。
+		op.RateUsageAdd(model.RateScopeSystem, 0, 1, usage.PromptTokens, usage.CompletionTokens, 0)
+		op.RateUsageAdd(model.RateScopeUser, int(r.UserID), 1, usage.PromptTokens, usage.CompletionTokens, 0)
+		op.RateUsageAdd(model.RateScopeAPIKey, r.apiKeyID, 1, usage.PromptTokens, usage.CompletionTokens, 0)
+	}
+	// 租户维度单独记一份: 租户配额池按 tenants.id 聚合, 与用户 ID 空间无关。
+	// 缺这一份, 租户配额只能靠历史上用户维度的行反推, 跨租户并发下口径更容易漂。
+	if r.TenantID > 0 {
+		op.RateUsageAdd(model.RateScopeTenant, int(r.TenantID), 1, usage.PromptTokens, usage.CompletionTokens, 0)
+	}
 }
 
 // settleBillingLocked 结算或释放本请求的余额预扣; 无用量(失败/取消且上游未回用量)即全额释放。
@@ -677,7 +694,7 @@ func (r *RequestState) settleBillingLocked(usage *llm.Usage) {
 	}
 	read, output, cacheRead, cacheWrite := usageBuckets(usage)
 	supply := r.targetSupplyPrice
-	markupRatio := op.ChannelMarkupFor(r.targetChannelID)
+	markupRatio := op.ChannelMarkupForWithTenantAndChannelModel(r.requestCtx, r.targetChannelID, r.TenantID, uint(r.targetChannelModelID))
 	userPrice := supply.Scale(markupRatio)
 	userCost := userPrice.Cost(read, output, cacheRead, cacheWrite)
 	ownerRevenue := supply.Cost(read, output, cacheRead, cacheWrite)
@@ -866,7 +883,7 @@ func usageMetrics(price model.LLMPrice, usage *llm.Usage) model.StatsMetrics {
 // 按访问者作用域过滤: 管理员收全部, 其余只收自有请求。
 func publishRequestLocked(request *RequestState) {
 	for stream, scope := range watchers {
-		if !scope.Owns(request.UserID) {
+		if !scope.Owns(request.UserID, request.TenantID) {
 			continue
 		}
 		select {
@@ -890,7 +907,7 @@ func OpenRequestStream(scope model.Scope) ([]RequestState, chan RequestState) {
 
 	snapshot := make([]RequestState, 0, len(requests))
 	for _, request := range requests {
-		if !scope.Owns(request.UserID) {
+		if !scope.Owns(request.UserID, request.TenantID) {
 			continue
 		}
 		snapshot = append(snapshot, *request)
@@ -951,7 +968,7 @@ func Clear(scope model.Scope) {
 	mu.Lock()
 	for id, request := range requests {
 		if request.Status != StatusRunning && request.Status != StatusCommitted {
-			if scope.Owns(request.UserID) {
+			if scope.Owns(request.UserID, request.TenantID) {
 				delete(requests, id)
 			}
 		}

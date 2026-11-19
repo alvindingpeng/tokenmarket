@@ -235,7 +235,8 @@ func register(c *gin.Context, role model.Role, switchKey model.SettingKey) {
 	if approvalRequired, _ := op.SettingGetBool(model.SettingKeyRegisterApproval); approvalRequired {
 		status = model.StatusPending
 	}
-	account, err := op.UserCreate(req.Username, req.Email, req.Password, role, status)
+	// 注册端点不接受租户参数: 自助注册一律落默认租户, 之后由管理员经成员/迁租接口调整。
+	account, err := op.UserCreate(req.Username, req.Email, req.Password, role, status, op.DefaultTenantID)
 	if err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
@@ -334,7 +335,8 @@ func status(c *gin.Context) {
 }
 
 func listUsers(c *gin.Context) {
-	resp.Success(c, op.UserList())
+	// 按访问作用域裁剪: 跨租户用户列表是一条不该存在的横向信息通道。
+	resp.Success(c, op.UserListScoped(middleware.CurrentUserScope(c)))
 }
 
 // createUser 管理员建号: 角色与状态均由请求指定。
@@ -348,7 +350,8 @@ func createUser(c *gin.Context) {
 	if status == "" {
 		status = model.StatusActive
 	}
-	account, err := op.UserCreate(req.Username, req.Email, req.Password, req.Role, status)
+	// 管理员建号默认落默认租户; 要建到其它租户, 用 PUT /api/v1/admin/user/:id/tenant 迁租。
+	account, err := op.UserCreate(req.Username, req.Email, req.Password, req.Role, status, op.DefaultTenantID)
 	if err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
@@ -367,6 +370,12 @@ func updateUser(c *gin.Context) {
 	account, err := op.UserGetByID(req.ID)
 	if err != nil {
 		resp.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+	// 跨租户账号不可改: 改角色/改余额/重置密码都作用于对方租户的账号,
+	// 是比读更危险的横向通道。非归属按 404 语义, 不暴露账号存在性。
+	if !middleware.CurrentUserScope(c).OwnsUser(&account) {
+		resp.Error(c, http.StatusNotFound, resp.ErrResourceNotFound)
 		return
 	}
 	target := fmt.Sprintf("%s#%d", account.Username, account.ID)
@@ -442,13 +451,21 @@ func resetPassword(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
+	account, err := op.UserGetByID(req.ID)
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+	// 重置别人的密码等于接管对方账号, 跨租户必须拒绝。
+	if !middleware.CurrentUserScope(c).OwnsUser(&account) {
+		resp.Error(c, http.StatusNotFound, resp.ErrResourceNotFound)
+		return
+	}
 	if err := op.UserResetPassword(req.ID, req.Password); err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if account, err := op.UserGetByID(req.ID); err == nil {
-		audit(c, "user.reset-password", fmt.Sprintf("%s#%d", account.Username, account.ID), "")
-	}
+	audit(c, "user.reset-password", fmt.Sprintf("%s#%d", account.Username, account.ID), "")
 	resp.Success(c, "password reset successfully")
 }
 
@@ -465,6 +482,11 @@ func deleteUser(c *gin.Context) {
 	}
 	target := strconv.Itoa(id)
 	if account, err := op.UserGetByID(uint(id)); err == nil {
+		// 跨租户删号会把对方租户的账号连同其数据一并抹掉, 是最危险的横向写操作。
+		if !middleware.CurrentUserScope(c).OwnsUser(&account) {
+			resp.Error(c, http.StatusNotFound, resp.ErrResourceNotFound)
+			return
+		}
 		target = fmt.Sprintf("%s#%d", account.Username, account.ID)
 	}
 	if err := op.UserDelete(uint(id)); err != nil {

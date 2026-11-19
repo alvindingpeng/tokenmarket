@@ -35,7 +35,7 @@ func marketAPIEnv(t *testing.T) (model.User, string) {
 	// 用户名按用例名唯一: 进程级 userNameIndex 在用例之间不清空(InitCache 不重建用户索引),
 	// 固定用户名会让第二个用例被判"已存在"。
 	username := "market-" + strings.ToLower(strings.ReplaceAll(t.Name(), "/", "-"))
-	user, err := op.UserCreate(username, "", "password123", model.RoleUser, model.StatusActive)
+	user, err := op.UserCreate(username, "", "password123", model.RoleUser, model.StatusActive, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

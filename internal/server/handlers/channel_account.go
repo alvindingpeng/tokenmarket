@@ -79,13 +79,12 @@ func importChannelAccount(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, "请求格式错误")
 		return
 	}
-	userID, role := middleware.CurrentUser(c)
 	channel, err := op.ChannelGet(request.ChannelID)
 	if err != nil {
 		resp.Error(c, http.StatusNotFound, "渠道不存在")
 		return
 	}
-	if !(model.Scope{ID: userID, Role: role}).Owns(channel.UserID) {
+	if !middleware.CurrentUserScope(c).OwnsChannelValue(channel) {
 		// 不归属时按 404 处理: 不暴露渠道存在性。
 		resp.Error(c, http.StatusNotFound, "渠道不存在")
 		return
@@ -135,7 +134,7 @@ func importChannelAccount(c *gin.Context) {
 		// 走渠道出口池: 与转发同一条线路, 否则配了出口代理的渠道拉模型会被上游按地区拒绝。
 		if client, clientErr := probeHTTPClientForChannel(channel); clientErr != nil {
 			log.Warnf("auto-add after import: build probe client for channel %d failed: %v", channel.ID, clientErr)
-		} else if addErr := op.AutoAddChannelModels(c.Request.Context(), channel.ID, channel.ChannelConfig, client, userID); addErr != nil {
+		} else if addErr := op.AutoAddChannelModels(c.Request.Context(), channel.ID, channel.ChannelConfig, client, uint(c.GetInt("user_id"))); addErr != nil {
 			log.Warnf("auto-add after import: channel %d failed: %v", channel.ID, addErr)
 		}
 	}
@@ -149,14 +148,13 @@ func refreshChannelAccount(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, "凭据 ID 非法")
 		return
 	}
-	userID, role := middleware.CurrentUser(c)
 	channelKey, err := op.ChannelKeyLookup(id)
 	if err != nil {
 		resp.Error(c, http.StatusNotFound, "凭据不存在")
 		return
 	}
 	channel, err := op.ChannelGet(channelKey.ChannelID)
-	if err != nil || !(model.Scope{ID: userID, Role: role}).Owns(channel.UserID) {
+	if err != nil || !middleware.CurrentUserScope(c).OwnsChannelValue(channel) {
 		resp.Error(c, http.StatusNotFound, "凭据不存在")
 		return
 	}
@@ -185,8 +183,7 @@ func refreshChannelAccount(c *gin.Context) {
 // 而账号会自己到期、自己失效、自己在后台被刷新 —— 没有一张汇总表,
 // 使用者就只能一个一个渠道点进去看, 等于逼他们把"定时验证"当不存在。
 func listChannelAccounts(c *gin.Context) {
-	userID, role := middleware.CurrentUser(c)
-	resp.Success(c, op.AccountList(model.Scope{ID: userID, Role: role}))
+	resp.Success(c, op.AccountList(middleware.CurrentUserScope(c)))
 }
 
 type importChannelAccountBatchRequest struct {
@@ -213,13 +210,12 @@ func importChannelAccountBatch(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, "没有要导入的账号")
 		return
 	}
-	userID, role := middleware.CurrentUser(c)
 	channel, err := op.ChannelGet(request.ChannelID)
 	if err != nil {
 		resp.Error(c, http.StatusNotFound, "渠道不存在")
 		return
 	}
-	if !(model.Scope{ID: userID, Role: role}).Owns(channel.UserID) {
+	if !middleware.CurrentUserScope(c).OwnsChannelValue(channel) {
 		resp.Error(c, http.StatusNotFound, "渠道不存在")
 		return
 	}

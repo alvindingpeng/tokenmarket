@@ -12,6 +12,7 @@ const (
 // BillingSettlementTask keeps the original economic snapshot; never replace Snapshot on conflict.
 type BillingSettlementTask struct {
 	ID            uint64 `json:"id" gorm:"primaryKey"`
+	TenantID      uint   `json:"tenant_id" gorm:"index"`
 	ReservationID uint64 `json:"reservation_id" gorm:"uniqueIndex"`
 	RequestID     uint64 `json:"request_id,string"`
 	UserID        uint   `json:"user_id" gorm:"index"`

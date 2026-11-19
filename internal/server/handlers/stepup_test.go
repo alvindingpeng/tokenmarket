@@ -32,7 +32,7 @@ func stepupTestEnv(t *testing.T) (model.User, string) {
 		t.Fatal(err)
 	}
 	gin.SetMode(gin.TestMode)
-	user, err := op.UserCreate("stepup-admin", "", "password123", model.RoleAdmin, model.StatusActive)
+	user, err := op.UserCreate("stepup-admin", "", "password123", model.RoleAdmin, model.StatusActive, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +348,7 @@ func TestStepUpEndpointDocumentedInOpenAPI(t *testing.T) {
 // 两个闸门都排在业务 handler 之前 —— 拒绝必须零副作用。
 func TestStepUpRoleDenialPrecedesStepUpGate(t *testing.T) {
 	_, adminToken := stepupTestEnv(t)
-	plain, err := op.UserCreate("stepup-plain", "", "password123", model.RoleUser, model.StatusActive)
+	plain, err := op.UserCreate("stepup-plain", "", "password123", model.RoleUser, model.StatusActive, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -421,7 +421,7 @@ func gateTestEnvNoMarker(t *testing.T) (model.User, string) {
 	}
 	// 用户名必须是初始默认账号 "admin": 默认密码闸门只认该账号本身(见 middleware/auth.go),
 	// 换成其他管理员名会绕开闸门, 测试「默认口令未改」的门禁语义就测不到了。
-	user, err := op.UserCreate("admin", "", "password123", model.RoleAdmin, model.StatusActive)
+	user, err := op.UserCreate("admin", "", "password123", model.RoleAdmin, model.StatusActive, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

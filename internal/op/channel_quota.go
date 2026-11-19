@@ -74,7 +74,7 @@ func ChannelQuotaPaused(channelID int) bool {
 func ChannelQuotaResume(channelID int, scope model.Scope, ctx context.Context) (bool, error) {
 	channel, ok := channelCache.Get(channelID)
 	// 越权一律按不存在处理: 与 ChannelBreakerReset 同口径, 不暴露渠道是否存在。
-	if !ok || !scope.Owns(channel.UserID) {
+	if !ok || !scope.OwnsChannelValue(channel) {
 		return false, fmt.Errorf("channel not found")
 	}
 	resumed, err := clearChannelQuotaPause(channelID, ctx)

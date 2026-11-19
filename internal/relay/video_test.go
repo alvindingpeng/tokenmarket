@@ -250,7 +250,7 @@ func newVideoTaskEnv(t *testing.T) videoTaskEnv {
 	}
 	ctx := context.Background()
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano()%1e9)
-	user, err := op.UserCreate("u"+suffix, "u"+suffix+"@test.local", "password123", model.RoleAdmin, model.StatusActive)
+	user, err := op.UserCreate("u"+suffix, "u"+suffix+"@test.local", "password123", model.RoleAdmin, model.StatusActive, 1)
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -309,10 +309,10 @@ func TestVideoJobRecordsCreationKey(t *testing.T) {
 	record := func(jobID string, targetKeyID int) model.VideoJob {
 		t.Helper()
 		request := newRequestState(ctx, "grp-video", "", 7, model.ProtocolOpenAIVideo,
-			`{"model":"grp-video","prompt":"p","seconds":"4"}`, 0, env.userID, "127.0.0.1", "", 600)
+			`{"model":"grp-video","prompt":"p","seconds":"4"}`, 0, env.userID, 0, "127.0.0.1", "", 600)
 		// startRound 登记的「渠道名 · 凭据名」就是创建时实际选中的凭据(轮换选路下与授权绑定的 k1 不同)。
 		request.startRound(func() {}, env.channelName+" · k2", env.modelName, model.ProtocolOpenAIVideo,
-			env.channelID, env.userID, "share-1", model.LLMPrice{}, "", 0)
+			env.channelID, env.userID, "share-1", model.LLMPrice{}, "", 0, 0)
 		request.setMediaTarget(model.MediaKindVideo, model.MediaPrice{PerVideo: 1, PerSecond: 0.5}, env.grantID)
 		request.setRequestedMedia(model.MediaUnits{Seconds: 4, Resolution: "720p"})
 		if targetKeyID > 0 {

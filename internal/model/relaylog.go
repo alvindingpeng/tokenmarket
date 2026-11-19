@@ -28,6 +28,7 @@ type UpstreamTiming struct {
 type RelayRequest struct {
 	ID                   uint64            `json:"id" gorm:"primaryKey;autoIncrement:false"`
 	UserID               uint              `json:"user_id" gorm:"index;index:idx_relay_requests_user_started,priority:1"`
+	TenantID             uint              `json:"tenant_id" gorm:"index;index:idx_relay_requests_tenant_started,priority:1"`
 	APIKeyID             int               `json:"api_key_id" gorm:"index"`
 	APIKeyName           string            `json:"api_key_name"`
 	GroupID              int               `json:"group_id" gorm:"index"`
@@ -37,7 +38,7 @@ type RelayRequest struct {
 	Status               string            `json:"status" gorm:"index"`
 	ClientIP             string            `json:"client_ip" gorm:"size:64;index"`                // 调用方地址, 供风控与排查。
 	ClientCountry        string            `json:"client_country" gorm:"size:8;index;default:''"` // 调用方国家码(ISO 3166-1 alpha-2), 取自可信反代注入的头; 无边缘接入时为空。
-	StartedAt            time.Time         `json:"started_at" gorm:"index;index:idx_relay_requests_user_started,priority:2"`
+	StartedAt            time.Time         `json:"started_at" gorm:"index;index:idx_relay_requests_user_started,priority:2;index:idx_relay_requests_tenant_started,priority:2"`
 	FinishedAt           time.Time         `json:"finished_at"`
 	DurationNs           int64             `json:"duration_ns"`             // 总耗时(纳秒), 与状态流一致。
 	FirstTokenDurationNs int64             `json:"first_token_duration_ns"` // 首字节耗时(纳秒)。
@@ -49,10 +50,10 @@ type RelayRequest struct {
 	CompletionTokens     int64             `json:"completion_tokens"`
 	CachedTokens         int64             `json:"cached_tokens"`
 	CacheWriteTokens     int64             `json:"cache_write_tokens"`
-	Cost                 float64           `json:"cost"`              // 用户侧计费金额(美元), 含加价。
-	SupplyCost           float64           `json:"supply_cost"`       // 上游供货成本(美元), 不含加价。
-	UserCharge           float64           `json:"user_charge"`       // 用户实际扣款金额(美元), 等于 Cost。
-	Profit               float64           `json:"profit"`            // 毛利(美元) = UserCharge - SupplyCost。
+	Cost                 float64           `json:"cost"`        // 用户侧计费金额(美元), 含加价。
+	SupplyCost           float64           `json:"supply_cost"` // 上游供货成本(美元), 不含加价。
+	UserCharge           float64           `json:"user_charge"` // 用户实际扣款金额(美元), 等于 Cost。
+	Profit               float64           `json:"profit"`      // 毛利(美元) = UserCharge - SupplyCost。
 	OutputChars          int               `json:"output_chars"`
 	TargetChannelKey     string            `json:"target_channel_key"`
 	TargetChannelCode    string            `json:"target_channel_code"`

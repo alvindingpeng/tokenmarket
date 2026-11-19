@@ -41,7 +41,7 @@ type ChannelRepriceResult struct {
 // 用 token 价去覆盖媒体价等于把收入口径改错, 故一律跳过并给出原因, 由管理员在改价工作台手工填。
 func ChannelRepricePlan(channelID int, scope model.Scope, multiplier float64) (ChannelRepriceResult, error) {
 	channel, ok := channelCache.Get(channelID)
-	if !ok || !scope.Owns(channel.UserID) {
+	if !ok || !scope.OwnsChannelValue(channel) {
 		return ChannelRepriceResult{}, fmt.Errorf("channel not found")
 	}
 	if multiplier <= 0 || multiplier > maxRepriceMultiplier {
@@ -142,7 +142,7 @@ func ChannelRepriceApply(channelID int, scope model.Scope, multiplier float64, n
 // 自动熔断只按时间自愈, 上游修好(换 Key、补额度)后管理员需要能立刻恢复, 否则只能干等熔断到期。
 func ChannelBreakerReset(channelID int, keyNames, modelNames []string, scope model.Scope, ctx context.Context) (int, error) {
 	channel, ok := channelCache.Get(channelID)
-	if !ok || !scope.Owns(channel.UserID) {
+	if !ok || !scope.OwnsChannelValue(channel) {
 		return 0, fmt.Errorf("channel not found")
 	}
 	if len(keyNames) == 0 && len(modelNames) == 0 {

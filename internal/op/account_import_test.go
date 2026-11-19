@@ -1,4 +1,3 @@
-
 package op
 
 import (
@@ -144,7 +143,7 @@ func TestAccountImportRefreshesAndPersistsRotatedToken(t *testing.T) {
 
 	result, err := AccountImport(context.Background(), channel.ID, AccountImportSpec{
 		Platform: model.AccountPlatformCodex, Name: "codex-1",
-		Raw: `{"access_token":"old-access","refresh_token":"old-refresh","email":"u@example.com"}`,
+		Raw:     `{"access_token":"old-access","refresh_token":"old-refresh","email":"u@example.com"}`,
 		Enabled: true,
 	}, time.Now())
 	if err != nil {

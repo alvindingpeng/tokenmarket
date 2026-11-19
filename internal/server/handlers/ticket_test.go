@@ -38,7 +38,7 @@ func ticketAPIEnv(t *testing.T) (userToken, otherToken, adminToken, admin2Token 
 	}
 	gin.SetMode(gin.TestMode)
 	mk := func(name string, role model.Role) (model.User, string) {
-		u, err := op.UserCreate(name, "", "password123", role, model.StatusActive)
+		u, err := op.UserCreate(name, "", "password123", role, model.StatusActive, 1)
 		if err != nil {
 			t.Fatalf("create %s: %v", name, err)
 		}
@@ -293,7 +293,7 @@ func TestTicketResellerRouteGates(t *testing.T) {
 	_, userToken, _, _, _, _, _, _ := ticketAPIEnv(t)
 	engine := ticketEngine(t)
 
-	seller, err := op.UserCreate("tkh-reseller", "", "password123", model.RoleReseller, model.StatusActive)
+	seller, err := op.UserCreate("tkh-reseller", "", "password123", model.RoleReseller, model.StatusActive, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

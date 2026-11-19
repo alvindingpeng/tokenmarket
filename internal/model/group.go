@@ -268,6 +268,7 @@ type Group struct {
 	RequestRoutingPreference string           `json:"-" gorm:"-"`                                                                                                       // 请求级偏好, 不持久化。
 	ID                       int              `json:"id" gorm:"primaryKey"`                                                                                             // 分组主键。
 	UserID                   uint             `json:"user_id" gorm:"uniqueIndex:idx_group_owner_name;not null;default:0"`                                               // 归属用户; 分组名在归属内唯一, 跨用户可重名。
+	TenantID                 uint             `json:"tenant_id" gorm:"index;not null;default:0"`                                                                        // 归属租户; 多租户隔离。
 	Name                     string           `json:"name" gorm:"uniqueIndex:idx_group_owner_name;not null"`                                                            // 客户端请求使用的模型名称。
 	Mode                     GroupMode        `json:"mode" gorm:"not null;default:manual" binding:"omitempty,oneof=manual failover price latency success score random"` // 选择成员的模式。
 	ActiveItemID             int              `json:"active_item_id" gorm:"not null;default:0"`                                                                         // 手动模式指定的成员, 故障转移模式忽略该值, 0 表示未指定; 写入侧字段, 读取一律用响应中的 runtime.current_item_id, 出 JSON 仅为让备份转储带上它。
@@ -336,7 +337,7 @@ type GroupItemInput struct {
 // 本请求只声明"要加哪些", 由后端在事务内读出当前集合再追加, 因此并发安全且天然幂等:
 // 已经在分组里的授权不重复添加, 也不改变既有成员的顺序与优先级。
 type GroupAddItemsRequest struct {
-	GroupIDs       []int `json:"group_ids" binding:"required,min=1"`               // 目标分组主键; 一次可提交多个, 逐个追加。
+	GroupIDs        []int `json:"group_ids" binding:"required,min=1"`                   // 目标分组主键; 一次可提交多个, 逐个追加。
 	ChannelGrantIDs []int `json:"channel_grant_ids" binding:"required,min=1,dive,gt=0"` // 待追加的渠道授权主键; 顺序即追加顺序。
 }
 
@@ -344,8 +345,8 @@ type GroupAddItemsRequest struct {
 // 逐个分组给结果而不是只给一个汇总数: 一次提交多个分组时, "哪些真加进去了"必须能逐条看清,
 // 否则界面只能笼统地说"部分成功", 用户无从判断该重试哪一个。
 type GroupAddItemsResult struct {
-	GroupID  int   `json:"group_id"`  // 目标分组主键。
-	Added    []int `json:"added"`     // 本次真正新增的授权主键, 按追加顺序。
-	Skipped  []int `json:"skipped"`   // 已在该分组中而跳过的授权主键(重复提交不该报错)。
-	Group    Group `json:"group"`     // 追加后的完整分组, 语义与 GroupUpdate 的响应一致。
+	GroupID int   `json:"group_id"` // 目标分组主键。
+	Added   []int `json:"added"`    // 本次真正新增的授权主键, 按追加顺序。
+	Skipped []int `json:"skipped"`  // 已在该分组中而跳过的授权主键(重复提交不该报错)。
+	Group   Group `json:"group"`    // 追加后的完整分组, 语义与 GroupUpdate 的响应一致。
 }

@@ -10,7 +10,8 @@ import "time"
 // 为什么是窗口而不是开关: 开关只有全局一个状态, 忘了关就是灾难 —— 部署完告警静默到下周。
 // 窗口必须带截止时间, 到点自动恢复, 无需人工记得去关。
 type AlertSilenceWindow struct {
-	ID uint `json:"id" gorm:"primaryKey"`
+	ID       uint `json:"id" gorm:"primaryKey"`
+	TenantID uint `json:"tenant_id" gorm:"index"`
 	// StartAt/EndAt 静默起止(RFC3339 由 API 层校验); EndAt 必须晚于 StartAt。
 	StartAt time.Time `json:"start_at" gorm:"not null;index"`
 	EndAt   time.Time `json:"end_at" gorm:"not null"`

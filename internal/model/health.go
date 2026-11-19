@@ -5,6 +5,7 @@ import "time"
 // ChannelHealthRecord 渠道健康探测结果; 每次探测一行, 保留最近若干条供趋势分析。
 type ChannelHealthRecord struct {
 	ID          uint64    `json:"id" gorm:"primaryKey"`
+	TenantID    uint      `json:"tenant_id" gorm:"index"`
 	ChannelID   int       `json:"channel_id" gorm:"index"`
 	ChannelCode string    `json:"channel_code" gorm:"size:64"`
 	LatencyMs   int64     `json:"latency_ms"`
@@ -27,6 +28,7 @@ func (ChannelHealthRecord) TableName() string { return "channel_health_records" 
 // 管理员也不知道"有告警没送到"。现在失败会带原因、按退避排下一次, 由后台任务重试到位。
 type ChannelAlert struct {
 	ID          uint64 `json:"id" gorm:"primaryKey"`
+	TenantID    uint   `json:"tenant_id" gorm:"index"`
 	ChannelID   int    `json:"channel_id" gorm:"index"`
 	ChannelCode string `json:"channel_code" gorm:"size:64"` // 共享编码, 用户侧看到的标识。
 	Subject     string `json:"subject" gorm:"size:128"`     // 真实渠道名或"系统"。

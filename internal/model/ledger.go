@@ -25,6 +25,7 @@ const (
 // 预扣记 Amount=-estimate/Frozen=+estimate, 结算记 Amount=+estimate-cost/Frozen=-estimate。
 type BillingLedger struct {
 	ID           uint64    `json:"id" gorm:"primaryKey"`
+	TenantID     uint      `json:"tenant_id" gorm:"index"`
 	UserID       uint      `json:"user_id" gorm:"index"`
 	Kind         string    `json:"kind" gorm:"size:32;index"`
 	Amount       float64   `json:"amount" gorm:"type:decimal(18,6)"`

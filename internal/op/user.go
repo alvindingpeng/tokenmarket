@@ -91,7 +91,23 @@ func UserGetByID(id uint) (model.User, error) {
 	return user, nil
 }
 
+// UserListScoped 按访问作用域返回可见账号: 平台管理员看全部, 租户管理员/成员只看本租户。
+// 账号列表是租户隔离最直接的暴露面 —— 无作用域版本会把别租户的用户名与角色一并返回,
+// 等于把「这个平台上有哪些租户、各自有哪些人」直接摊给任意管理员。
+func UserListScoped(scope model.Scope) []model.UserView {
+	views := make([]model.UserView, 0, userCache.Len())
+	for _, user := range userCache.GetAll() {
+		if !scope.OwnsUser(&user) {
+			continue
+		}
+		views = append(views, user.View())
+	}
+	sort.Slice(views, func(i, j int) bool { return views[i].ID < views[j].ID })
+	return views
+}
+
 // UserList 返回全部账号的对外视图, 按主键升序。
+// 仅用于平台级(无租户)场景; 面向用户请求请走 UserListScoped。
 func UserList() []model.UserView {
 	views := make([]model.UserView, 0, userCache.Len())
 	for _, user := range userCache.GetAll() {
@@ -103,7 +119,11 @@ func UserList() []model.UserView {
 
 // UserCreate 创建账号; 角色与状态由调用方按端点语义决定, 注册端点不允许自提权。
 // email 允许为空(管理员代建的老式账号), 非空须格式合法且全库唯一。
-func UserCreate(username, email, password string, role model.Role, status model.UserStatus) (model.User, error) {
+//
+// tenantID 是账号归属租户: <=0 回落默认租户(1), 与 users.tenant_id 列默认值一致。
+// 创建成功后在同一事务内写入租户成员关系(user_tenant_mappings), 让账号从第一刻起就
+// 同时具备鉴权归属(users.tenant_id)与成员关系 —— 只写前者会让租户成员列表永远是空的。
+func UserCreate(username, email, password string, role model.Role, status model.UserStatus, tenantID uint) (model.User, error) {
 	username = strings.TrimSpace(username)
 	if username == "" || len(username) > 64 {
 		return model.User{}, fmt.Errorf("invalid username")
@@ -123,12 +143,39 @@ func UserCreate(username, email, password string, role model.Role, status model.
 			return model.User{}, fmt.Errorf("email already registered")
 		}
 	}
-	user := model.User{Username: username, Email: email, Password: password, Role: role, Status: status}
+	if tenantID == 0 {
+		tenantID = DefaultTenantID
+	}
+	user := model.User{Username: username, Email: email, Password: password, Role: role, Status: status, TenantID: tenantID}
 	if err := user.HashPassword(); err != nil {
 		return model.User{}, err
 	}
-	if err := db.GetDB().Create(&user).Error; err != nil {
-		return model.User{}, fmt.Errorf("failed to create user: %w", err)
+	// 建表判断放在事务外: SQLite 的 DEFERRED 事务里先读再写会变成锁升级,
+	// 撞上别的写者直接 SQLITE_BUSY(busy_timeout 不覆盖这类冲突), 见 UserDelete 的同一处理。
+	conn := db.GetDB()
+	hasTenants := conn.Migrator().HasTable(&model.Tenant{})
+	hasMappings := hasTenantMappingsTable(conn)
+	if err := conn.Transaction(func(tx *gorm.DB) error {
+		if hasTenants {
+			if err := tenantExistsIn(tx, tenantID); err != nil {
+				return err
+			}
+		} else if tenantID != DefaultTenantID {
+			return fmt.Errorf("tenant %d does not exist", tenantID)
+		}
+		if err := tx.Create(&user).Error; err != nil {
+			return fmt.Errorf("failed to create user: %w", err)
+		}
+		// 成员关系与账号在同一事务落库: 分开写会留下"建了号但没有成员关系"的账号,
+		// 而这类账号在租户成员列表里永远看不见。
+		if hasMappings {
+			if err := upsertTenantMapping(tx, user.ID, tenantID, TenantRoleForUser(role)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return model.User{}, err
 	}
 	userCache.Set(int(user.ID), user)
 	userNameIndex.Set(user.Username, int(user.ID))

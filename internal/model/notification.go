@@ -35,8 +35,8 @@ type Notification struct {
 	Type      NotificationType   `json:"type" gorm:"size:32;index;not null"`
 	Title     string             `json:"title" gorm:"size:255;not null"`
 	Content   string             `json:"content" gorm:"type:text;not null"`
-	Link      string             `json:"link" gorm:"size:512"`                                               // 关联跳转链接（可选）
-	RelatedID uint64             `json:"related_id" gorm:"index"`                                            // 关联实体 ID（如渠道 ID、工单 ID）
+	Link      string             `json:"link" gorm:"size:512"`    // 关联跳转链接（可选）
+	RelatedID uint64             `json:"related_id" gorm:"index"` // 关联实体 ID（如渠道 ID、工单 ID）
 	Status    NotificationStatus `json:"status" gorm:"size:16;index:idx_notification_user,priority:2;not null;default:'unread'"`
 	CreatedAt time.Time          `json:"created_at" gorm:"autoCreateTime;index"`
 	ReadAt    *time.Time         `json:"read_at,omitempty"`
@@ -44,8 +44,8 @@ type Notification struct {
 
 // NotificationListRequest 通知列表请求
 type NotificationListRequest struct {
-	Status   NotificationStatus `form:"status"`                        // 筛选状态（可选）
-	Type     NotificationType   `form:"type"`                          // 筛选类型（可选）
+	Status   NotificationStatus `form:"status"` // 筛选状态（可选）
+	Type     NotificationType   `form:"type"`   // 筛选类型（可选）
 	Page     int                `form:"page" binding:"omitempty,min=1"`
 	PageSize int                `form:"page_size" binding:"omitempty,min=1,max=100"`
 }

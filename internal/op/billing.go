@@ -71,6 +71,12 @@ func BillingReserve(userID uint, requestID uint64, estimate float64) (uint64, er
 			return fmt.Errorf("failed to create reservation: %w", err)
 		}
 		reservationID = reservation.ID
+		// 租户级冻结: 用户余额是"这个人还能花多少", 租户余额是"这个客户整体还能花多少"。
+		// 两级闸门都要过 —— 只拦用户侧的话, 一个租户可以靠不断给下属账号充值绕过平台授信。
+		tenantID := userTenantOf(tx, userID)
+		if err := tenantWalletReserve(tx, tenantID, estimate); err != nil {
+			return err
+		}
 		// 预扣流水: 可用余额减 estimate, 冻结额加 estimate。
 		return ledgerRecord(tx, model.BillingLedger{
 			UserID:       userID,
@@ -160,6 +166,13 @@ func billingSettleApply(ctx context.Context, reservationID uint64, record *model
 			if credit.RowsAffected != 1 {
 				return fmt.Errorf("failed to credit owner: user %d not found", record.OwnerID)
 			}
+		}
+		// 租户级结算与用户级结算必须落在同一个事务里: 分两次提交会出现
+		// "用户扣了钱、租户没扣"(平台白送)或"租户扣了钱、账单没落库"(客户被多收)两种缺口,
+		// 事后只能靠人工比对两张表才能发现。
+		tenantID := userTenantOf(tx, record.UserID)
+		if err := tenantWalletSettle(tx, tenantID, reserveAmount, record.UserCost); err != nil {
+			return err
 		}
 		if err := tx.Create(record).Error; err != nil {
 			return fmt.Errorf("failed to create billing record: %w", err)
@@ -276,6 +289,11 @@ func billingRelease(reservationID uint64, staleCutoff *time.Time) error {
 		// RowsAffected 先验再记流水: 用户行不存在整笔回滚。零额解冻是空更新, 不代表行缺失。
 		if reservation.Amount != 0 && unfreeze.RowsAffected != 1 {
 			return fmt.Errorf("failed to unfreeze balance: user %d not found", reservation.UserID)
+		}
+		// 租户冻结额同步退回: 与用户解冻同事务, 否则租户的冻结额会随着失败的请求
+		// 一路累积, 最终把可用余额压到 0, 客户明明没消费却付不出钱。
+		if err := tenantWalletRelease(tx, userTenantOf(tx, reservation.UserID), reservation.Amount); err != nil {
+			return err
 		}
 		released = true
 		// 释放流水: 冻结额全额退回可用余额。

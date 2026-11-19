@@ -26,7 +26,7 @@ func TestRequireStepUpGate(t *testing.T) {
 	if err := auth.InitSecret(); err != nil {
 		t.Fatal(err)
 	}
-	user, err := op.UserCreate("stepup-gate-admin", "", "password123", model.RoleAdmin, model.StatusActive)
+	user, err := op.UserCreate("stepup-gate-admin", "", "password123", model.RoleAdmin, model.StatusActive, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,12 +136,12 @@ func TestRequireStepUpRejectsForgedAndForeign(t *testing.T) {
 	if err := auth.InitSecret(); err != nil {
 		t.Fatal(err)
 	}
-	owner, err := op.UserCreate("stepup-forge-owner", "", "password123", model.RoleAdmin, model.StatusActive)
+	owner, err := op.UserCreate("stepup-forge-owner", "", "password123", model.RoleAdmin, model.StatusActive, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = op.UserDelete(owner.ID) })
-	stranger, err := op.UserCreate("stepup-forge-stranger", "", "password123", model.RoleAdmin, model.StatusActive)
+	stranger, err := op.UserCreate("stepup-forge-stranger", "", "password123", model.RoleAdmin, model.StatusActive, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

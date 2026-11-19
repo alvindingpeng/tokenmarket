@@ -164,6 +164,7 @@ func rowToState(row model.RelayRequest) RequestState {
 		StreamDuration:     time.Duration(row.StreamDurationNs),
 		ResponseDuration:   time.Duration(row.ResponseDurationNs),
 		UserID:             row.UserID,
+		TenantID:           row.TenantID,
 		Model:              row.Model,
 		ReasoningEffort:    row.ReasoningEffort,
 		Protocol:           model.Protocol(row.Protocol),

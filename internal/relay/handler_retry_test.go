@@ -87,7 +87,7 @@ func newRelayGroupDialect(t *testing.T, upstreamURL string, protocols model.Prot
 	ctx := context.Background()
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano()%1e9)
 	username := "u" + suffix
-	user, err := op.UserCreate(username, username+"@test.local", "password123", model.RoleAdmin, model.StatusActive)
+	user, err := op.UserCreate(username, username+"@test.local", "password123", model.RoleAdmin, model.StatusActive, 1)
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -364,7 +364,7 @@ func TestFinalizeCanceledSuccessKeepsBodyAndBillsMedia(t *testing.T) {
 	ctx := context.Background()
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano()%1e9)
 	username := "u" + suffix
-	user, err := op.UserCreate(username, username+"@test.local", "password123", model.RoleAdmin, model.StatusActive)
+	user, err := op.UserCreate(username, username+"@test.local", "password123", model.RoleAdmin, model.StatusActive, 1)
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -373,9 +373,9 @@ func TestFinalizeCanceledSuccessKeepsBodyAndBillsMedia(t *testing.T) {
 	}
 
 	request := newRequestState(ctx, "grp-cancel", "", 7, model.ProtocolOpenAIVideo,
-		`{"model":"grp-cancel","prompt":"p"}`, 0, user.ID, "127.0.0.1", "", 600)
+		`{"model":"grp-cancel","prompt":"p"}`, 0, user.ID, 0, "127.0.0.1", "", 600)
 	// 一轮真实的上游尝试: 计费归属(渠道发布者)随 startRound 登记, 结算要给它记收入。
-	request.startRound(func() {}, "ch · k1", "up-model", model.ProtocolOpenAIVideo, 3, user.ID, "share-1", model.LLMPrice{Input: 1, Output: 1}, "", 5)
+	request.startRound(func() {}, "ch · k1", "up-model", model.ProtocolOpenAIVideo, 3, user.ID, "share-1", model.LLMPrice{Input: 1, Output: 1}, "", 5, 0)
 	request.setMediaTarget(model.MediaKindVideo, model.MediaPrice{PerVideo: 1, PerSecond: 0.5}, 42)
 	request.setRequestedMedia(model.MediaUnits{Seconds: 4, Resolution: "720p"})
 	reservationID, err := op.BillingReserve(user.ID, request.ID, 5)
@@ -424,7 +424,7 @@ func TestZeroCapTokensStillReserves(t *testing.T) {
 
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano()%1e9)
 	username := "u" + suffix
-	user, err := op.UserCreate(username, username+"@test.local", "password123", model.RoleAdmin, model.StatusActive)
+	user, err := op.UserCreate(username, username+"@test.local", "password123", model.RoleAdmin, model.StatusActive, 1)
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -432,7 +432,7 @@ func TestZeroCapTokensStillReserves(t *testing.T) {
 		t.Fatalf("set balance: %v", err)
 	}
 	request := newRequestState(ctx, "grp-cap", "", 7, model.ProtocolOpenAIChatCompletion,
-		`{"model":"grp-cap"}`, 0, user.ID, "127.0.0.1", "", 600)
+		`{"model":"grp-cap"}`, 0, user.ID, 0, "127.0.0.1", "", 600)
 	group := model.Group{
 		ID:    7,
 		Name:  "grp-cap",

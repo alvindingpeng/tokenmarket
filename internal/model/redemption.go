@@ -5,6 +5,7 @@ import "time"
 // RedemptionBatch 兑换码批次: 一次生成的一组同面额兑换码, 便于按活动发放、限量与追溯。
 type RedemptionBatch struct {
 	ID           uint       `json:"id" gorm:"primaryKey"`
+	TenantID     uint       `json:"tenant_id" gorm:"index"`
 	Name         string     `json:"name" gorm:"size:64;not null"`
 	Credits      float64    `json:"credits" gorm:"type:decimal(18,6);not null"` // 每张面额(余额单位)。
 	Count        int        `json:"count" gorm:"not null"`                      // 生成张数。
@@ -25,6 +26,7 @@ const (
 // RedemptionCode 兑换码: 兑换以状态条件更新抢占, 并发重复兑换至多一次成功。
 type RedemptionCode struct {
 	ID        uint       `json:"id" gorm:"primaryKey"`
+	TenantID  uint       `json:"tenant_id" gorm:"index"`
 	BatchID   uint       `json:"batch_id" gorm:"index"`
 	Code      string     `json:"code" gorm:"size:40;not null;uniqueIndex"`
 	Credits   float64    `json:"credits" gorm:"type:decimal(18,6);not null"`

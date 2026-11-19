@@ -85,7 +85,7 @@ const definedProtocols = model.ProtocolOpenAIChatCompletion | model.ProtocolOpen
 // ChannelDetailGet 返回指定渠道的完整配置, 供编辑表单读取; 非归属者按不存在处理。
 func ChannelDetailGet(id int, scope model.Scope) (model.ChannelDetail, error) {
 	channel, ok := channelCache.Get(id)
-	if !ok || !scope.Owns(channel.UserID) {
+	if !ok || !scope.OwnsChannelValue(channel) {
 		return model.ChannelDetail{}, fmt.Errorf("channel not found")
 	}
 	return channelDetail(channel), nil
@@ -108,7 +108,7 @@ func ChannelStatsList(scope model.Scope) []model.ChannelStats {
 	stats := make([]model.ChannelStats, 0, channelCache.Len())
 	for _, channel := range channelCache.GetAll() {
 		// 归属过滤: 管理员看全部, 其余只看自有渠道。
-		if !scope.Owns(channel.UserID) {
+		if !scope.OwnsChannelValue(channel) {
 			continue
 		}
 		models := modelsByChannel[channel.ID]
@@ -206,7 +206,7 @@ func ChannelCreate(detail *model.ChannelDetail, scope model.Scope, ctx context.C
 // 未列出的凭据与模型会被删除并级联删除其授权。
 func ChannelUpdate(detail *model.ChannelDetail, scope model.Scope, ctx context.Context) (*model.ChannelDetail, error) {
 	existing, ok := channelCache.Get(detail.ID)
-	if !ok || !scope.Owns(existing.UserID) {
+	if !ok || !scope.OwnsChannelValue(existing) {
 		return nil, fmt.Errorf("channel not found")
 	}
 	if err := normalizeChannelDetail(ctx, detail); err != nil {
@@ -495,7 +495,7 @@ func ChannelEnabled(id int, enabled bool, scope model.Scope, ctx context.Context
 	channelStatsNeedUpdateLock.Lock()
 	defer channelStatsNeedUpdateLock.Unlock()
 	channel, ok := channelCache.Get(id)
-	if !ok || !scope.Owns(channel.UserID) {
+	if !ok || !scope.OwnsChannelValue(channel) {
 		return fmt.Errorf("channel not found")
 	}
 	if err := db.GetDB().WithContext(ctx).Model(&model.Channel{}).Where("id = ?", id).Update("enabled", enabled).Error; err != nil {
@@ -508,7 +508,7 @@ func ChannelEnabled(id int, enabled bool, scope model.Scope, ctx context.Context
 
 // ChannelDel 删除渠道及其凭据, 模型与渠道授权, 关联分组项由数据库外键级联删除。
 func ChannelDel(id int, scope model.Scope, ctx context.Context) error {
-	if channel, ok := channelCache.Get(id); !ok || !scope.Owns(channel.UserID) {
+	if channel, ok := channelCache.Get(id); !ok || !scope.OwnsChannelValue(channel) {
 		return fmt.Errorf("channel not found")
 	}
 	grantIDs := channelGrantIDs(id)
@@ -633,7 +633,7 @@ func ChannelPublish(id int, shared bool, scope model.Scope, ctx context.Context)
 	channelStatsNeedUpdateLock.Lock()
 	defer channelStatsNeedUpdateLock.Unlock()
 	channel, ok := channelCache.Get(id)
-	if !ok || !scope.Owns(channel.UserID) {
+	if !ok || !scope.OwnsChannelValue(channel) {
 		return model.Channel{}, fmt.Errorf("channel not found")
 	}
 	// 发布闸口(P1): 发布即新暴露到用户侧, 必须已过审且未被撤销信任; 取消发布不受限。
@@ -801,7 +801,7 @@ type ChannelModelListing struct {
 // ChannelModelListingGet 返回渠道的模型上架配置, 供发布管理界面编辑。
 func ChannelModelListingGet(id int, scope model.Scope) ([]ChannelModelListing, error) {
 	channel, ok := channelCache.Get(id)
-	if !ok || !scope.Owns(channel.UserID) {
+	if !ok || !scope.OwnsChannelValue(channel) {
 		return nil, fmt.Errorf("channel not found")
 	}
 	listings := make([]ChannelModelListing, 0)
@@ -826,7 +826,7 @@ func ChannelModelListingGet(id int, scope model.Scope) ([]ChannelModelListing, e
 // 上架与供货价属于发布配置, 不随渠道编辑的整体替换被覆盖(按名称匹配的行本就不动)。
 func ChannelModelListingUpdate(id int, listings []ChannelModelListing, scope model.Scope, ctx context.Context) error {
 	channel, ok := channelCache.Get(id)
-	if !ok || !scope.Owns(channel.UserID) {
+	if !ok || !scope.OwnsChannelValue(channel) {
 		return fmt.Errorf("channel not found")
 	}
 	byName := make(map[string]model.ChannelModel)
@@ -1461,7 +1461,7 @@ func ChannelModelBriefs(scope model.Scope) []ChannelModelBrief {
 		if !ok {
 			continue
 		}
-		owner := scope.Owns(channel.UserID)
+		owner := scope.Owns(channel.UserID, channel.TenantID)
 		if !channel.Shared && !owner {
 			continue
 		}

@@ -18,6 +18,7 @@ type Claims struct {
 	UserID       uint       `json:"uid"`
 	Role         model.Role `json:"role"`
 	TokenVersion int        `json:"ver"`
+	TenantID     uint       `json:"tid"`
 	jwt.RegisteredClaims
 }
 
@@ -76,6 +77,7 @@ func GenerateJWTToken(user model.User, expiresSec int) (string, int, error) {
 		UserID:       user.ID,
 		Role:         user.Role,
 		TokenVersion: user.TokenVersion,
+		TenantID:     user.TenantID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),

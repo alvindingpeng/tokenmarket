@@ -11,7 +11,8 @@ type StatsMetrics struct {
 }
 
 type StatsTotal struct {
-	ID int `gorm:"primaryKey"`
+	ID       int  `gorm:"primaryKey"`
+	TenantID uint `gorm:"not null;default:1;index"`
 	StatsMetrics
 }
 
@@ -23,23 +24,27 @@ type StatsHourly struct {
 	// 主键是 (Date, Hour) 而不是单独的 Hour: 只以小时为主键时, 每天同一小时的桶只有一行,
 	// 第二天第一次写入就把昨天那一小时的值覆盖掉了 —— 小时曲线永远只剩"今天", 跨天既无法回看,
 	// 也无法和日统计对账。改成按天留存后每天各 24 行, 历史小时分布可直接查询。
-	Hour int    `json:"hour" gorm:"primaryKey;autoIncrement:false"` // 0-23 小时刻度。
-	Date string `json:"date" gorm:"primaryKey;not null;index"`      // 归属日, 格式 20060102。
+	TenantID uint   `json:"tenant_id" gorm:"not null;default:1;index"`
+	Hour     int    `json:"hour" gorm:"primaryKey;autoIncrement:false"` // 0-23 小时刻度。
+	Date     string `json:"date" gorm:"primaryKey;not null;index"`      // 归属日, 格式 20060102。
 	StatsMetrics
 }
 
 type StatsDaily struct {
-	Date string `json:"date" gorm:"primaryKey"`
+	TenantID uint   `json:"tenant_id" gorm:"not null;default:1;index"`
+	Date     string `json:"date" gorm:"primaryKey"`
 	StatsMetrics
 }
 
 type StatsAPIKey struct {
-	APIKeyID int `json:"api_key_id" gorm:"primaryKey"`
+	TenantID uint `json:"tenant_id" gorm:"not null;default:1;index"`
+	APIKeyID int  `json:"api_key_id" gorm:"primaryKey"`
 	StatsMetrics
 }
 
 // StatsChannelDaily 是渠道维度的按天累计统计, 供渠道页展示成功率与平均延迟的逐日变化。
 type StatsChannelDaily struct {
+	TenantID  uint   `json:"tenant_id" gorm:"not null;default:1;index"`
 	ChannelID int    `json:"channel_id" gorm:"primaryKey"`          // 渠道主键。
 	Date      string `json:"date" gorm:"primaryKey;not null;index"` // 日期, 格式 20060102。
 	StatsMetrics
@@ -47,6 +52,7 @@ type StatsChannelDaily struct {
 
 // StatsChannelModelDaily 是渠道模型维度的按天累计统计, 与渠道维度同口径。
 type StatsChannelModelDaily struct {
+	TenantID       uint   `json:"tenant_id" gorm:"not null;default:1;index"`
 	ChannelModelID int    `json:"channel_model_id" gorm:"primaryKey"`    // 渠道模型主键。
 	Date           string `json:"date" gorm:"primaryKey;not null;index"` // 日期, 格式 20060102。
 	StatsMetrics

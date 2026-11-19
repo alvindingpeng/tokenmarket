@@ -169,6 +169,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			op.RateUsageAdd(model.RateScopeSystem, 0, 0, 0, 0, 1)
 			op.RateUsageAdd(model.RateScopeUser, int(keyUserID), 0, 0, 0, 1)
 			op.RateUsageAdd(model.RateScopeAPIKey, c.GetInt("api_key_id"), 0, 0, 0, 1)
+			// 被拒也是租户配额视角下的一次拒绝, 与放行后结算的租户用量行同口径。
+			if tenantID := c.GetInt("api_key_tenant_id"); tenantID > 0 {
+				op.RateUsageAdd(model.RateScopeTenant, tenantID, 0, 0, 0, 1)
+			}
 			// 通知为最佳努力异步操作; 429 主响应不能被通知写库拖慢或改变。
 			op.NotifyRateLimitHitAsync(keyUserID, metadata.Model, userDecision.BlockedScope.Kind, uint64(userDecision.BlockedScope.ID))
 			rejectRateLimited(c, inbound, userDecision)
@@ -187,7 +191,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		clientIP := c.ClientIP()
 		// 国家码只采信可信反代注入的头: 无边缘接入时这些头可被任意伪造, 采信等于把统计口径交给调用方。
 		clientCountry := geo.HeaderCountry(c.GetHeader, len(conf.AppConfig.Server.TrustedProxies) > 0)
-		request := newRequestState(c.Request.Context(), metadata.Model, reasoningEffort, group.ID, requestProtocol, bodyForLog, c.GetInt("api_key_id"), keyUserID, clientIP, clientCountry, group.RelayConfig.RequestTimeoutSeconds)
+		request := newRequestState(c.Request.Context(), metadata.Model, reasoningEffort, group.ID, requestProtocol, bodyForLog, c.GetInt("api_key_id"), keyUserID, uint(c.GetInt("api_key_tenant_id")), clientIP, clientCountry, group.RelayConfig.RequestTimeoutSeconds)
 		request.setRateScopes(userScopes, userDecision.Reservation)
 		// 生视频的计费用量来自请求本身(seconds 与分辨率档位), 预扣与结算回落都用它;
 		// 其余协议的请求没有媒体用量, 保持零值。
@@ -473,7 +477,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				cancelRoundCause(context.Canceled)
 			}
 			request.startRound(cancelRound, channel.Name+" · "+channelKey.Name, channelModel.Name, targetProtocol,
-				channel.ID, channel.UserID, channel.ShareCode, channelModel.SupplyPrice, channelModel.PriceCurrency, item.ID)
+				channel.ID, channel.UserID, channel.ShareCode, channelModel.SupplyPrice, channelModel.PriceCurrency, item.ID, channelModel.ID)
 			request.setTargetKeyID(channelKey.ID)
 			// 媒体计费上下文: 仅媒体形态模型登记; 文本模型此项保持零值, settlement 走 token 路径不变。
 			// 选择上游时只在本组成员内挑选 kind=image 的成员, 故只要命中即可认定本轮用媒体计费。
@@ -1072,6 +1076,15 @@ func reserveBalance(request *RequestState, group model.Group) error {
 				return fmt.Errorf("quota exceeded: %s %d/%d", quotaErr.Kind, quotaErr.Current, quotaErr.Limit)
 			}
 			return fmt.Errorf("failed to check quota: %w", err)
+		}
+	}
+	// 租户配额检查: 在余额预扣之前检查租户级请求数/token 配额。
+	if request.TenantID > 0 {
+		if err := op.CheckTenantQuota(request.requestCtx, request.TenantID); err != nil {
+			if quotaErr, ok := err.(op.QuotaExceeded); ok {
+				return fmt.Errorf("tenant quota exceeded: %s %d/%d", quotaErr.Kind, quotaErr.Current, quotaErr.Limit)
+			}
+			return fmt.Errorf("failed to check tenant quota: %w", err)
 		}
 	}
 	// 用户花费预算检查: 与配额同一位置(预扣前)。block 档超限直接拒绝;

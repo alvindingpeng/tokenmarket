@@ -118,6 +118,12 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.SpendBudget{},
 		&model.MarketFavorite{},
 		&model.FxRate{},
+		&model.Tenant{},
+		&model.TenantQuota{},
+		&model.TenantWallet{},
+		&model.TenantPricingPolicy{},
+		&model.TenantLedger{},
+		&model.UserTenantMapping{},
 		&model.UpstreamBill{},
 		&model.Dispute{},
 		&model.SettlementStatement{},
@@ -134,6 +140,10 @@ func InitDB(dbType, dsn string, debug bool) error {
 		return fmt.Errorf("backfill ticket resolved_at: %w", err)
 	}
 	if err := migrate.AfterAutoMigrate(db); err != nil {
+		return err
+	}
+	// Ensure default tenant exists (id=1)
+	if err := ensureDefaultTenant(db); err != nil {
 		return err
 	}
 	// Postgres: schema changes during migrations can invalidate cached prepared plans

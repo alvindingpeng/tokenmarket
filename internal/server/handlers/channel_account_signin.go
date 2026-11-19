@@ -145,8 +145,7 @@ func completeAccountSignIn(c *gin.Context) {
 		resp.Error(c, http.StatusNotFound, "渠道不存在")
 		return
 	}
-	userID, role := middleware.CurrentUser(c)
-	if !(model.Scope{ID: userID, Role: role}).Owns(channel.UserID) {
+	if !middleware.CurrentUserScope(c).OwnsChannelValue(channel) {
 		resp.Error(c, http.StatusNotFound, "渠道不存在")
 		return
 	}
@@ -191,7 +190,7 @@ func completeAccountSignIn(c *gin.Context) {
 		// 走渠道出口池: 与转发同一条线路, 否则配了出口代理的渠道拉模型会被上游按地区拒绝。
 		if client, clientErr := probeHTTPClientForChannel(channel); clientErr != nil {
 			log.Warnf("auto-add after signin: build probe client for channel %d failed: %v", channel.ID, clientErr)
-		} else if addErr := op.AutoAddChannelModels(c.Request.Context(), channel.ID, channel.ChannelConfig, client, userID); addErr != nil {
+		} else if addErr := op.AutoAddChannelModels(c.Request.Context(), channel.ID, channel.ChannelConfig, client, uint(c.GetInt("user_id"))); addErr != nil {
 			log.Warnf("auto-add after signin: channel %d failed: %v", channel.ID, addErr)
 		}
 	}

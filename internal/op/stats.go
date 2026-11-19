@@ -454,7 +454,7 @@ func ChannelModelNames(channelID int) (map[int]string, error) {
 // ChannelDailyStatsGet 返回渠道自身与各模型近 days 天的按天统计; 渠道不存在或无权访问时报错。
 func ChannelDailyStatsGet(channelID int, days int, scope model.Scope) ([]model.StatsChannelDaily, []model.StatsChannelModelDaily, error) {
 	channel, ok := channelCache.Get(channelID)
-	if !ok || !scope.Owns(channel.UserID) {
+	if !ok || !scope.OwnsChannelValue(channel) {
 		return nil, nil, fmt.Errorf("channel not found")
 	}
 	if days < 1 || days > 90 {

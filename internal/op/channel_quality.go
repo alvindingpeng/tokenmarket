@@ -321,7 +321,7 @@ type ChannelQualitySummary struct {
 // ChannelQualityGet 返回渠道质量概览与趋势; 非归属者按 404 语义处理, 不暴露资源存在性。
 func ChannelQualityGet(channelID int, days int, scope model.Scope) (ChannelQualitySummary, error) {
 	channel, ok := channelCache.Get(channelID)
-	if !ok || !scope.Owns(channel.UserID) {
+	if !ok || !scope.OwnsChannelValue(channel) {
 		return ChannelQualitySummary{}, fmt.Errorf("channel not found")
 	}
 	if days < 1 || days > 180 {

@@ -134,7 +134,7 @@ func initSubPlatformDB(t *testing.T) {
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "sub.db"), false); err != nil {
 		t.Fatalf("初始化测试库: %v", err)
 	}
-	if _, err := UserCreate(username, username+"@test.local", "password123", model.RoleAdmin, model.StatusActive); err != nil {
+	if _, err := UserCreate(username, username+"@test.local", "password123", model.RoleAdmin, model.StatusActive, 1); err != nil {
 		t.Fatalf("建管理员: %v", err)
 	}
 }

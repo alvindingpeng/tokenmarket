@@ -9,6 +9,7 @@ import { NotificationBell } from '@/components/modules/notification/Notification
 import { SiteBanners } from '@/components/site-banners';
 import { navItemsFor, useAppStore } from '@/stores/app';
 import { useAuthStore } from '@/api/user';
+import { TenantSwitcher } from '@/components/tenant/TenantSwitcher';
 import { preloadPage } from '@/lib/page-preload';
 import { cn } from '@/lib/utils';
 
@@ -160,6 +161,8 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                     页面操作按钮依次排在它左侧, 顶栏换行/截断规则保持不变。 */}
                 <div className="ml-auto flex items-center gap-x-2">
                     {actions}
+                    {/* Tenant switcher for multi-tenant support */}
+                    <TenantSwitcher />
                     {/* 通知铃铛常驻顶栏: 未读数让用户在不进页面就能发现余额/限流/审核事件。 */}
                     <NotificationBell />
                     <LanguageSwitch />

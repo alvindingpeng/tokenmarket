@@ -20,6 +20,7 @@ export const pageImports = {
     tickets: () => import('@/components/modules/tickets'),
     analytics: () => import('@/components/modules/analytics'),
     setting: () => import('@/components/modules/setting'),
+    tenant: () => import('@/components/modules/tenant'),
 };
 
 // preloadPage 根据导航意图提前加载对应页面模块。

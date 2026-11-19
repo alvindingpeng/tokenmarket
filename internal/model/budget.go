@@ -14,7 +14,8 @@ import (
 // 为什么分 warn/block 两档: block 拦在请求前(预扣之前), warn 只发一条去重通知不打扰请求 ——
 // 预算应"接近"就提醒, 不该到 100% 才让用户从失败请求里得知。
 type SpendBudget struct {
-	ID uint `json:"id" gorm:"primaryKey"`
+	ID       uint `json:"id" gorm:"primaryKey"`
+	TenantID uint `json:"tenant_id" gorm:"index;not null;default:1"`
 	// UserID 用户级预算; 与 APIKeyID 二选一, 两者都为 0 无效。
 	UserID uint `json:"user_id" gorm:"index;not null;default:0"`
 	// APIKeyID Key 级预算; billing_records 按 api_key_id 聚合。

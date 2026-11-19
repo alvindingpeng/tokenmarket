@@ -100,7 +100,7 @@ func init() {
 func getModelList(c *gin.Context) {
 	// /v1/models 列出该 API Key 归属者自己的分组名(客户端模型名)。
 	ownerID := uint(c.GetInt("api_key_user_id"))
-	models := op.GroupListModel(model.Scope{ID: ownerID, Role: model.RoleUser})
+	models := op.GroupListModel(model.Scope{ID: ownerID, Role: model.RoleUser, TenantID: 0})
 	if allowed, ok := c.Get("supported_models"); ok {
 		if names, _ := allowed.([]string); len(names) > 0 {
 			models = lo.Filter(models, func(m string, _ int) bool {
@@ -359,9 +359,8 @@ func getLastUpdateTime(c *gin.Context) {
 // listModelScores 返回各模型名的全局选路评分: 按「渠道模型」为单位统计的首响应耗时与成功率 EMA,
 // 同名模型跨渠道的多份观测按样本数加权归并, 供模型页卡片展示。
 func listModelScores(c *gin.Context) {
-	userID, role := middleware.CurrentUser(c)
 	views := relay.ModelScoreViews()
-	briefs := op.ChannelModelBriefs(model.Scope{ID: userID, Role: role})
+	briefs := op.ChannelModelBriefs(middleware.CurrentUserScope(c))
 	resp.Success(c, relay.ModelScoreBriefs(briefs, views))
 }
 

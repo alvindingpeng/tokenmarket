@@ -113,6 +113,25 @@ export function setAPIKey(value: string | null) {
 }
 
 // ---------------------------------------------------------------------------
+// 租户视图切换
+//
+// 后端以库内 users.tenant_id 为身份归属, 但它允许管理员用 X-Tenant-ID 头
+// 显式覆盖「当前正在查看的租户」, 便于在一个管理台上巡检多个租户。
+// 这里只在管理员身份下发送该头: 普通用户的租户是固定的, 带上只会被后端忽略,
+// 反而掩盖"前端以为切了、后端没切"这类不一致。
+// ---------------------------------------------------------------------------
+
+let tenantOverrideID: number | null = null;
+let tenantOverrideEnabled = false;
+
+export function setTenantOverride(tenantID: number | null, enabled: boolean) {
+    tenantOverrideID = tenantID;
+    tenantOverrideEnabled = enabled;
+}
+
+export const tenantOverrideHeader = 'X-Tenant-ID';
+
+// ---------------------------------------------------------------------------
 // 高危操作二次验证(step-up)
 //
 // 后端对高危写操作(余额调整/提现审批/备份导入/敏感导出/结算生成/计费恢复/系统设置/用户管理)
@@ -240,6 +259,10 @@ async function sendOnce(path: string, raw: RawRequest): Promise<SendOutcome> {
     if (raw.contentType && raw.body !== undefined) headers.set('Content-Type', raw.contentType);
     if (apiKey) headers.set('Authorization', `Bearer ${apiKey}`);
     if (stepUpToken) headers.set(stepUpTokenHeader, stepUpToken);
+    // 管理员切换租户视图时把目标租户带给后端; 未启用或未选中时不发, 让后端按身份默认值处理。
+    if (tenantOverrideEnabled && tenantOverrideID && tenantOverrideID > 0) {
+        headers.set(tenantOverrideHeader, String(tenantOverrideID));
+    }
 
     // 超时与调用方取消合并到一个 controller: 谁先触发谁生效。
     // 不用 AbortSignal.any: 兼容性更稳, 也便于区分「超时」与「调用方主动取消」。

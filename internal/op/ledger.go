@@ -31,6 +31,29 @@ func balanceOf(tx *gorm.DB, userID uint) float64 {
 	return balance
 }
 
+// userTenantOf 读取事务内某用户所属租户; 读不到按 0(无租户)返回。
+// 0 表示这笔资金不参与租户级闸门 —— 与租户 ID 空间无歧义, 因为租户 ID 从 1 开始。
+func userTenantOf(tx *gorm.DB, userID uint) uint {
+	var tenantID uint
+	if err := tx.Model(&model.User{}).Where("id = ?", userID).Select("tenant_id").Scan(&tenantID).Error; err != nil {
+		return 0
+	}
+	return tenantID
+}
+
+// tenantBalanceOf 读取事务内某租户的当前可用余额(扣冻结后); 读不到按 0 记。
+func tenantBalanceOf(tx *gorm.DB, tenantID uint) float64 {
+	if tenantID == 0 {
+		return 0
+	}
+	var balance float64
+	if err := tx.Model(&model.TenantWallet{}).Where("tenant_id = ?", tenantID).
+		Select("balance").Scan(&balance).Error; err != nil {
+		return 0
+	}
+	return balance
+}
+
 // LedgerQuery 余额流水查询条件; 零值表示不限。
 type LedgerQuery struct {
 	UserID uint

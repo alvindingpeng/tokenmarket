@@ -21,7 +21,8 @@ import (
 // 故 dump 的 JSON 形状单独在 apikey_dump.go 里处理, 两种序列化互不干扰。
 type APIKey struct {
 	ID                int      `json:"id" gorm:"primaryKey"`
-	UserID            uint     `json:"user_id" gorm:"index;not null;default:0"` // 归属用户; 计费与数据隔离的归属依据。
+	UserID            uint     `json:"user_id" gorm:"index;not null;default:0"`   // 归属用户; 计费与数据隔离的归属依据。
+	TenantID          uint     `json:"tenant_id" gorm:"index;not null;default:0"` // 归属租户; 多租户隔离。
 	Name              string   `json:"name" gorm:"not null"`
 	APIKey            string   `json:"api_key,omitempty" gorm:"-"`                                      // 明文: 创建时一次返回, 从不落库, 也永不回显。
 	KeyHash           string   `json:"-" gorm:"column:key_hash;size:64;index;not null;default:''"`      // 指纹, 认证查找用; 不进任何 JSON 响应。

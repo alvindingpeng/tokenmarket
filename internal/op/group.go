@@ -56,12 +56,12 @@ func GroupGet(id int, scope model.Scope) (model.Group, error) {
 }
 
 // GroupOwnerID 返回分组归属用户, 供事件流按访问者过滤; 分组不存在时 exists 为假。
-func GroupOwnerID(id int) (uint, bool) {
+func GroupOwnerID(id int) (uint, uint, bool) {
 	group, ok := groupCache.Get(id)
 	if !ok {
-		return 0, false
+		return 0, 0, false
 	}
-	return group.UserID, true
+	return group.UserID, group.TenantID, true
 }
 
 // GroupListModel 返回缓存中的全部分组模型名, 按名称定序。
@@ -501,7 +501,7 @@ func groupSnapshot(group model.Group, scope model.Scope) model.Group {
 		// 展示名与可用性判定同候选口径(单点见 grant_view.go): 已发布渠道一律显示唯一编码(#1001)。
 		item.ChannelName = grantDisplayName(channel)
 		item.Available = grantAvailability(parts, fxOK)
-		if !scope.Owns(channel.UserID) {
+		if !scope.OwnsChannelValue(channel) {
 			item.KeyName = ""
 		}
 		items = append(items, item)

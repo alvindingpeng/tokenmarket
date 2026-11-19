@@ -43,7 +43,7 @@ func TestBillingRecoveryRoutesRequireAdministrator(t *testing.T) {
 	}{
 		{"recovery-admin", model.RoleAdmin, &adminToken}, {"recovery-user", model.RoleUser, &userToken}, {"recovery-reseller", model.RoleReseller, &resellerToken},
 	} {
-		user, err := op.UserCreate(spec.name, "", "password123", spec.role, model.StatusActive)
+		user, err := op.UserCreate(spec.name, "", "password123", spec.role, model.StatusActive, 1)
 		if err != nil {
 			t.Fatal(err)
 		}

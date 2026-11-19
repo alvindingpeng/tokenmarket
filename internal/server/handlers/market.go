@@ -174,10 +174,7 @@ type marketCatalogResponse struct {
 //
 // 筛选与排序一律在服务端: 前端不重排。否则"按成功率排序"会与分页/局部筛选叠加出两套顺序。
 func listMarketModels(c *gin.Context) {
-	userID, role := middleware.CurrentUser(c)
-	scope := model.Scope{ID: userID, Role: role}
-
-	models := op.MarketCatalog(scope)
+	models := op.MarketCatalog(middleware.CurrentUserScope(c))
 	views := marketScoreIndex(relay.ModelScoreViews())
 	now := time.Now()
 

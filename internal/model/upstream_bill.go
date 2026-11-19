@@ -28,6 +28,7 @@ const UpstreamBillDiffTolerance = 0.01
 // UpstreamBill 一行 = 供应商账单里一个模型一行的成本(原币)。
 type UpstreamBill struct {
 	ID        uint64    `json:"id" gorm:"primaryKey"`
+	TenantID  uint      `json:"tenant_id" gorm:"index"`
 	ChannelID int       `json:"channel_id" gorm:"not null;index:idx_upstream_bill_unique,priority:1"`          // 本平台渠道 ID(账单按渠道导入)。
 	Period    string    `json:"period" gorm:"not null;index:idx_upstream_bill_unique,priority:2;size:16"`      // 账期 YYYYMM。
 	ModelName string    `json:"model_name" gorm:"not null;index:idx_upstream_bill_unique,priority:3;size:255"` // 上游模型名(与本平台模型名同源)。

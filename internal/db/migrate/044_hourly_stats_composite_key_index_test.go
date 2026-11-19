@@ -19,7 +19,7 @@ func TestMigration044AfterAutoMigrateIndex(t *testing.T) {
 	if err := conn.AutoMigrate(&legacyHourly{}); err != nil {
 		t.Fatalf("automigrate legacy: %v", err)
 	}
-	if err := conn.Create(&legacyHourly{Hour: 2, Date: "20261107", StatsMetrics: model.StatsMetrics{InputToken: 42}}).Error; err != nil {
+	if err := conn.Create(&legacyHourly{Hour: 2, Date: "20261107", TenantID: 1, StatsMetrics: model.StatsMetrics{InputToken: 42}}).Error; err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	// 与 db.InitDB 相同的顺序: AutoMigrate -> AfterAutoMigrate。

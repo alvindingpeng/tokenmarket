@@ -6,9 +6,10 @@ import "time"
 type SettlementStatement struct {
 	ID              uint64    `json:"id" gorm:"primaryKey"`
 	StatementNo     string    `json:"statement_no" gorm:"size:32;uniqueIndex;not null"` // 结算单号 STM-YYYYMMDD-ownerID
-	OwnerID         uint      `json:"owner_id" gorm:"index;not null"`                   // 渠道商用户 ID
-	Period          string    `json:"period" gorm:"size:16;index;not null"`             // 账期 YYYYMMDD 或 YYYY-MM
-	RequestCount    int64     `json:"request_count"`                                    // 计费请求次数
+	TenantID        uint      `json:"tenant_id" gorm:"index"`
+	OwnerID         uint      `json:"owner_id" gorm:"index;not null"`       // 渠道商用户 ID
+	Period          string    `json:"period" gorm:"size:16;index;not null"` // 账期 YYYYMMDD 或 YYYY-MM
+	RequestCount    int64     `json:"request_count"`                        // 计费请求次数
 	InputToken      int64     `json:"input_token"`
 	OutputToken     int64     `json:"output_token"`
 	GrossRevenue    float64   `json:"gross_revenue" gorm:"type:decimal(18,6);not null"`              // 供货应收毛额

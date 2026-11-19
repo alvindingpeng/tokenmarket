@@ -37,8 +37,8 @@ var settingTasks = map[model.SettingKey][]string{
 	model.SettingKeyArchiveRetentionDays:    {TaskArchiveRetention},
 	model.SettingKeyFxRateUpdateEnabled:     {TaskFxRateUpdate},
 	model.SettingKeyFxRateUpdateInterval:    {TaskFxRateUpdate},
-	model.SettingKeyAccountRefreshEnabled:  {TaskAccountTokenRefresh},
-	model.SettingKeyAccountRefreshMinutes:  {TaskAccountTokenRefresh},
+	model.SettingKeyAccountRefreshEnabled:   {TaskAccountTokenRefresh},
+	model.SettingKeyAccountRefreshMinutes:   {TaskAccountTokenRefresh},
 }
 
 // ApplySetting 重算某项设置影响到的全部任务周期。

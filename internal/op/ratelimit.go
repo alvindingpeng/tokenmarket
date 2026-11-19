@@ -307,6 +307,11 @@ func resolveEntityName(scopeType string, scopeID int) string {
 		if err := database.Select("name").First(&cm, scopeID).Error; err == nil {
 			return cm.Name
 		}
+	case model.RateScopeTenant:
+		var tenant model.Tenant
+		if err := database.Select("name").First(&tenant, scopeID).Error; err == nil {
+			return tenant.Name
+		}
 	}
 	return strconv.Itoa(scopeID)
 }

@@ -117,7 +117,6 @@ func logFilterFromQuery(c *gin.Context) relay.RequestFilter {
 
 // listLogs 分页返回调用日志, 支持关键字/终态/IP/模型/渠道/时间范围筛选; 可见性与实时流一致(管理员看全部, 其余看自有)。
 func listLogs(c *gin.Context) {
-	userID, role := middleware.CurrentUser(c)
 	filter := logFilterFromQuery(c)
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
@@ -127,19 +126,18 @@ func listLogs(c *gin.Context) {
 	if offset < 0 {
 		offset = 0
 	}
-	items, total := relay.RequestList(model.Scope{ID: userID, Role: role}, filter, limit, offset)
+	items, total := relay.RequestList(middleware.CurrentUserScope(c), filter, limit, offset)
 	resp.Success(c, gin.H{"items": items, "total": total})
 }
 
 // exportLogs 以 CSV 导出命中筛选条件的调用日志, 单次上限 5000 条; 可见性与列表一致。
 func exportLogs(c *gin.Context) {
-	userID, role := middleware.CurrentUser(c)
 	filter := logFilterFromQuery(c)
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	if limit <= 0 || limit > 5000 {
 		limit = 5000
 	}
-	items, total := relay.RequestList(model.Scope{ID: userID, Role: role}, filter, limit, 0)
+	items, total := relay.RequestList(middleware.CurrentUserScope(c), filter, limit, 0)
 
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", "attachment; filename=switchyard-logs-"+time.Now().Format("20060102-150405")+".csv")
@@ -208,8 +206,7 @@ func stopRequest(c *gin.Context) {
 
 // clearLog 删除访问者可见的已完成请求记录(管理员全部, 其余仅自有), 并在释放记录引用后主动执行垃圾回收。
 func clearLog(c *gin.Context) {
-	userID, role := middleware.CurrentUser(c)
-	relay.Clear(model.Scope{ID: userID, Role: role})
+	relay.Clear(middleware.CurrentUserScope(c))
 	runtime.GC()
 	audit(c, "log.clear", "", "")
 	c.Status(http.StatusNoContent)
@@ -217,9 +214,8 @@ func clearLog(c *gin.Context) {
 
 // canViewRequest 请求体与响应体只对归属者与管理员开放。
 func canViewRequest(c *gin.Context, requestID uint64) bool {
-	userID, role := middleware.CurrentUser(c)
 	ownerID, exists := relay.RequestOwner(requestID)
-	return exists && model.Scope{ID: userID, Role: role}.Owns(ownerID)
+	return exists && middleware.CurrentUserScope(c).Owns(ownerID, 0)
 }
 
 // getRequestBody 返回指定请求的原始请求体。
@@ -253,8 +249,7 @@ func getResponseBody(c *gin.Context) {
 // streamOverview 逐条发送建立连接时的概览及后续请求更新。
 func streamOverview(c *gin.Context) {
 	prepareSSE(c)
-	userID, role := middleware.CurrentUser(c)
-	snapshot, updates := relay.OpenRequestStream(model.Scope{ID: userID, Role: role})
+	snapshot, updates := relay.OpenRequestStream(middleware.CurrentUserScope(c))
 	defer relay.CloseRequestStream(updates)
 	if len(snapshot) == 0 {
 		// Flush a real SSE comment so proxies forward the empty-state response immediately.

@@ -19,7 +19,7 @@ func quotaUsageTestSetup(t *testing.T, tier model.UserTier) model.User {
 	if err := SettingUpsert(model.SettingKeyUserTierPolicies, model.DefaultUserTierPoliciesJSON); err != nil {
 		t.Fatalf("seed tier policies: %v", err)
 	}
-	user, err := UserCreate("quota-user", "", "password123", model.RoleUser, model.StatusActive)
+	user, err := UserCreate("quota-user", "", "password123", model.RoleUser, model.StatusActive, 1)
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}

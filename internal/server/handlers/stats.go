@@ -333,8 +333,7 @@ func getStatsAPIKey(c *gin.Context) {
 		resp.Success(c, stats)
 		return
 	}
-	userID, role := middleware.CurrentUser(c)
-	keys, err := op.APIKeyList(model.Scope{ID: userID, Role: role}, c.Request.Context())
+	keys, err := op.APIKeyList(middleware.CurrentUserScope(c), c.Request.Context())
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return

@@ -12,8 +12,9 @@ import (
 // legacyHourly 复刻迁移 44 之前的表结构: 单列 hour 主键 + 独立的 date 列。
 // 必须手工建表, 因为模型已经改成复合主键, AutoMigrate 不会再生成旧结构。
 type legacyHourly struct {
-	Hour int    `gorm:"primaryKey;autoIncrement:false"`
-	Date string `gorm:"not null"`
+	Hour     int    `gorm:"primaryKey;autoIncrement:false"`
+	Date     string `gorm:"not null"`
+	TenantID uint   `gorm:"not null;default:1"`
 	model.StatsMetrics
 }
 
@@ -31,9 +32,9 @@ func TestMigration044RebuildsCompositeKey(t *testing.T) {
 	}
 	// 同一天两小时的正常行 + 一条越界的副本行(017 之前的自增主键缺陷)。
 	rows := []legacyHourly{
-		{Hour: 0, Date: "20261107", StatsMetrics: model.StatsMetrics{InputToken: 100}},
-		{Hour: 5, Date: "20261107", StatsMetrics: model.StatsMetrics{InputToken: 200}},
-		{Hour: 24, Date: "20261107", StatsMetrics: model.StatsMetrics{InputToken: 300}},
+		{Hour: 0, Date: "20261107", TenantID: 1, StatsMetrics: model.StatsMetrics{InputToken: 100}},
+		{Hour: 5, Date: "20261107", TenantID: 1, StatsMetrics: model.StatsMetrics{InputToken: 200}},
+		{Hour: 24, Date: "20261107", TenantID: 1, StatsMetrics: model.StatsMetrics{InputToken: 300}},
 	}
 	if err := conn.Create(&rows).Error; err != nil {
 		t.Fatalf("seed legacy rows: %v", err)

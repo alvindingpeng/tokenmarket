@@ -94,6 +94,7 @@ type Channel struct {
 	DisabledUntil *time.Time `json:"disabled_until,omitempty"`
 	ID            int        `json:"id" gorm:"primaryKey"`                                                 // 渠道主键。
 	UserID        uint       `json:"user_id" gorm:"uniqueIndex:idx_channel_owner_name;not null;default:0"` // 归属用户; 渠道名在归属内唯一, 跨用户可重名。
+	TenantID      uint       `json:"tenant_id" gorm:"not null;default:1;index"`                            // 归属租户。
 	Shared        bool       `json:"shared" gorm:"default:false"`                                          // 是否已发布到用户侧(共享)。
 	ShareCode     string     `json:"share_code" gorm:"index"`                                              // 发布编码: 4 位纯数字(1001 起), 界面展示为 "#1001"; 用户侧显示为渠道名称, 唯一性由发布流程保证(空串不参与)。
 	// 准入审核(P1): 发布与对外候选都要过审; 关键配置指纹失配自动转 stale 待复审。
@@ -146,15 +147,17 @@ type ChannelKeyConfig struct {
 
 // 渠道下的一份上游凭据; 不同凭据通常对应不同的额度与计费。
 type ChannelKey struct {
-	ID               int `json:"id" gorm:"primaryKey"`                                    // 凭据主键。
-	ChannelID        int `json:"channel_id" gorm:"not null;index:idx_channel_key,unique"` // 所属渠道 ID。
-	ChannelKeyConfig     // 可编辑配置, 平铺为 channel_keys 的各列。
-	StatsMetrics         // 该凭据自身的累计统计。
+	ID               int  `json:"id" gorm:"primaryKey"`                                    // 凭据主键。
+	TenantID         uint `json:"tenant_id" gorm:"not null;default:1;index"`               // 租户 ID。
+	ChannelID        int  `json:"channel_id" gorm:"not null;index:idx_channel_key,unique"` // 所属渠道 ID。
+	ChannelKeyConfig      // 可编辑配置, 平铺为 channel_keys 的各列。
+	StatsMetrics          // 该凭据自身的累计统计。
 }
 
 // 渠道提供的单个上游模型。
 type ChannelModel struct {
 	ID            int        `json:"id" gorm:"primaryKey"`                                      // 渠道模型主键。
+	TenantID      uint       `json:"tenant_id" gorm:"not null;default:1;index"`                 // 租户 ID。
 	ChannelID     int        `json:"channel_id" gorm:"not null;index:idx_channel_model,unique"` // 所属渠道 ID。
 	Name          string     `json:"name" gorm:"not null;index:idx_channel_model,unique"`       // 上游模型名称。
 	Listed        bool       `json:"listed" gorm:"default:false"`                               // 是否上架: 已发布渠道中只有上架的模型对用户可见。
@@ -184,6 +187,7 @@ func (m ChannelModel) UserPriceMedia(markup float64) MediaPrice {
 // 上游按凭据分组授权模型, 且同一凭据下不同模型可能位于不同协议的端点, 故协议归属于模型与凭据的组合。
 type ChannelGrant struct {
 	ID             int           `json:"id" gorm:"primaryKey"`                                                                               // 授权主键。
+	TenantID       uint          `json:"tenant_id" gorm:"not null;default:1;index"`                                                          // 租户 ID。
 	ChannelModelID int           `json:"channel_model_id" gorm:"not null;index:idx_channel_grant,unique"`                                    // 渠道模型 ID。
 	ChannelModel   *ChannelModel `json:"channel_model,omitempty" gorm:"foreignKey:ChannelModelID;references:ID;constraint:OnDelete:CASCADE"` // 授权引用的渠道模型。
 	ChannelKeyID   int           `json:"channel_key_id" gorm:"not null;index:idx_channel_grant,unique"`                                      // 凭据 ID。

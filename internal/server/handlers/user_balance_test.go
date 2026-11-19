@@ -19,7 +19,7 @@ func TestUpdateUserBalanceDoesNotSkipCachedEqualTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	user, err := op.UserCreate("admin-balance-target", "", "password123", model.RoleUser, model.StatusActive)
+	user, err := op.UserCreate("admin-balance-target", "", "password123", model.RoleUser, model.StatusActive, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

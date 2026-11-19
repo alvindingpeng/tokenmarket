@@ -35,7 +35,7 @@ func AccountList(scope model.Scope) []model.AccountListEntry {
 			// 渠道已不存在但凭据还在: 属于数据不一致, 不该出现在任何人的列表里。
 			continue
 		}
-		if !scope.Owns(channel.UserID) {
+		if !scope.OwnsChannelValue(channel) {
 			continue
 		}
 		accounts = append(accounts, model.AccountListEntry{

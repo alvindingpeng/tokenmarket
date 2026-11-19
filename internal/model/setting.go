@@ -12,6 +12,12 @@ import (
 
 type SettingKey string
 
+// 租户资金闸门模式取值(见 SettingKeyTenantBillingMode)。
+const (
+	TenantBillingModeOff     = "off"     // 只记账不拦请求(默认): 兼容存量单租户部署。
+	TenantBillingModeEnforce = "enforce" // 租户可用余额不足即拒, 真正的按租户结算。
+)
+
 const (
 	SettingKeyProxyURL                SettingKey = "proxy_url"                  // 全局代理 URL; [覆盖范围外] 可能含 user:pass 凭据, 当前不落库加密(见 docs/secret-kek-runbook.md 覆盖范围)。
 	SettingKeyAllowPrivateUpstream    SettingKey = "allow_private_upstream"     // 允许上游/出口指向私网地址(SSRF 防护例外); 默认关, 管理员自建内网上游时才开
@@ -54,6 +60,14 @@ const (
 	SettingKeyBalanceReserveCap    SettingKey = "balance_reserve_output_cap" // 余额预扣估算的默认输出 token 上限。
 	SettingKeyBalanceReserveImages SettingKey = "balance_reserve_images"     // 生图预扣保守张数(无 N 时使用), 默认 4。
 	SettingKeyMinBalance           SettingKey = "min_balance"                // 允许的最低余额, 0 表示不足即拒
+
+	// SettingKeyTenantBillingMode 租户级资金闸门模式: off(默认) | enforce。
+	//
+	// 为什么必须可配且默认关闭: 存量部署里所有用户都归属默认租户 1, 而该租户钱包余额是 0。
+	// 直接启用"租户余额不足即拒"会让整站瞬间停摆 —— 一次升级就把所有人挡在门外。
+	// 只有明确要按租户结算的 SaaS 部署才打开 enforce, 并且打开前必须先给租户充值。
+	// off 模式下租户钱包仍然记录冻结/结算(账目完整), 只是不作为拒绝理由。
+	SettingKeyTenantBillingMode SettingKey = "tenant_billing_mode"
 
 	// SettingKeyAntigravityClientVersion 是向 Google Code Assist 声明的 Antigravity 客户端版本号。
 	//
@@ -261,6 +275,8 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyBalanceReserveCap, Value: "4096"}, // 预扣估算默认输出上限
 		{Key: SettingKeyBalanceReserveImages, Value: "4"}, // 生图预扣保守张数, 4 张覆盖 dall-e-3 / gpt-image-1 n=4 上限
 		{Key: SettingKeyMinBalance, Value: "0"},           // 不允许透支
+		// 租户资金闸门默认关: 存量部署的默认租户钱包是 0, 打开会把全部用户挡在门外。
+		{Key: SettingKeyTenantBillingMode, Value: "off"}, // off | enforce
 		// 内置默认与 relay 的兜底版本一致; 留空同样回落到该默认值。
 		{Key: SettingKeyAntigravityClientVersion, Value: "1.200.0"}, // Antigravity 客户端版本(上游按它做闸门)
 		{Key: SettingKeyAllowPrivateUpstream, Value: "false"},       // SSRF 防护默认开: 私网上游需管理员显式放行
@@ -404,6 +420,13 @@ func (s *Setting) Validate() error {
 			return fmt.Errorf("min balance must be a finite non-negative number")
 		}
 		return nil
+	case SettingKeyTenantBillingMode:
+		// 只认两个值: 拼错的模式名会静默退化成"关闭", 而关闭意味着租户欠费也能继续调用。
+		switch s.Value {
+		case TenantBillingModeOff, TenantBillingModeEnforce:
+			return nil
+		}
+		return fmt.Errorf("%s must be %q or %q", s.Key, TenantBillingModeOff, TenantBillingModeEnforce)
 	case SettingKeyAntigravityClientVersion:
 		// 形如 1.200.0 的语义化版本; 上游按版本号做客户端闸门, 乱写等于把自己拦死。
 		// 允许空值: 空表示用内置默认, 不该因为清空一个可选覆盖项就让保存失败。

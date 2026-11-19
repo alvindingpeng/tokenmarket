@@ -11,12 +11,14 @@ const (
 	RateScopeChannel      string = "channel"       // 按渠道。
 	RateScopeChannelKey   string = "channel_key"   // 按渠道凭据(上游侧)。
 	RateScopeChannelModel string = "channel_model" // 按渠道模型(上游侧)。
+	// RateScopeTenant 按租户: 配额池的统计口径; ScopeID 是 tenants.id, 与用户 ID 空间无关。
+	RateScopeTenant string = "tenant"
 )
 
 // IsValidRateScope 判断限流范围标识是否受支持。
 func IsValidRateScope(scope string) bool {
 	switch scope {
-	case RateScopeSystem, RateScopeUser, RateScopeAPIKey, RateScopeGroup, RateScopeChannel, RateScopeChannelKey, RateScopeChannelModel:
+	case RateScopeSystem, RateScopeUser, RateScopeAPIKey, RateScopeGroup, RateScopeChannel, RateScopeChannelKey, RateScopeChannelModel, RateScopeTenant:
 		return true
 	}
 	return false
@@ -25,8 +27,9 @@ func IsValidRateScope(scope string) bool {
 // RateLimitPolicy 限流策略: RPM(请求/分钟)与 TPM(token/分钟), 0 表示不限。
 type RateLimitPolicy struct {
 	ID         uint      `json:"id" gorm:"primaryKey"`
-	ScopeType  string    `json:"scope_type" gorm:"index:idx_rate_policy_scope,priority:1;size:32"`
-	ScopeID    int       `json:"scope_id" gorm:"index:idx_rate_policy_scope,priority:2"`
+	TenantID   uint      `json:"tenant_id" gorm:"index:idx_rate_policy_scope,priority:1"`
+	ScopeType  string    `json:"scope_type" gorm:"index:idx_rate_policy_scope,priority:2;size:32"`
+	ScopeID    int       `json:"scope_id" gorm:"index:idx_rate_policy_scope,priority:3"`
 	ModelName  string    `json:"model_name" gorm:"index:idx_rate_policy_scope,priority:3;size:128"` // 空表示全部模型。
 	RPM        int64     `json:"rpm"`
 	TPM        int64     `json:"tpm"`
@@ -42,8 +45,9 @@ func (RateLimitPolicy) TableName() string { return "rate_limit_policies" }
 // RateLimitUsageHourly 限流用量聚合(按小时): 供监控页面展示触顶情况。
 type RateLimitUsageHourly struct {
 	ID           uint      `json:"id" gorm:"primaryKey"`
-	ScopeType    string    `json:"scope_type" gorm:"index:idx_rate_usage,priority:1;size:32"`
-	ScopeID      int       `json:"scope_id" gorm:"index:idx_rate_usage,priority:2"`
+	TenantID     uint      `json:"tenant_id" gorm:"index:idx_rate_usage,priority:1"`
+	ScopeType    string    `json:"scope_type" gorm:"index:idx_rate_usage,priority:2;size:32"`
+	ScopeID      int       `json:"scope_id" gorm:"index:idx_rate_usage,priority:3"`
 	Hour         time.Time `json:"hour" gorm:"index:idx_rate_usage,priority:3"`
 	Requests     int64     `json:"requests"`
 	InputTokens  int64     `json:"input_tokens"`

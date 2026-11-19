@@ -201,7 +201,12 @@ func resetChannelBreaker(c *gin.Context) {
 // scopeOf 从上下文取访问者作用域。
 func scopeOf(c *gin.Context) model.Scope {
 	userID, role := middleware.CurrentUser(c)
-	return model.Scope{ID: userID, Role: role}
+	user, err := op.UserGetByID(userID)
+	tenantID := uint(0)
+	if err == nil && user.ID != 0 {
+		tenantID = user.TenantID
+	}
+	return model.Scope{ID: userID, Role: role, TenantID: tenantID}
 }
 
 // publishChannel 发布或取消发布渠道到用户侧; 发布自动生成唯一编码。
@@ -643,12 +648,11 @@ func probeModelsForRequest(client *http.Client, request model.ChannelFetchModelR
 	if channelID == 0 {
 		return nil, fmt.Errorf("订阅渠道拉取模型必须指定 channel_id: 凭据在库里而不在表单里")
 	}
-	userID, role := middleware.CurrentUser(c)
 	channel, err := op.ChannelGet(channelID)
 	if err != nil {
 		return nil, fmt.Errorf("渠道不存在")
 	}
-	if !(model.Scope{ID: userID, Role: role}).Owns(channel.UserID) {
+	if !scopeOf(c).OwnsChannelValue(channel) {
 		return nil, fmt.Errorf("渠道不存在")
 	}
 	keys := op.ChannelKeysByChannel(channelID)

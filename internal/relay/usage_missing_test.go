@@ -31,7 +31,7 @@ func TestSucceededRequestWithoutUsageRaisesAlertAndReleases(t *testing.T) {
 	if err := db.GetDB().Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	request := newRequestState(context.Background(), "gpt-test", "", 1, model.ProtocolOpenAIChatCompletion, "", 0, user.ID, "127.0.0.1", "", 60)
+	request := newRequestState(context.Background(), "gpt-test", "", 1, model.ProtocolOpenAIChatCompletion, "", 0, user.ID, user.TenantID, "127.0.0.1", "", 60)
 	reservationID, err := op.BillingReserve(user.ID, request.ID, 0.01)
 	if err != nil {
 		t.Fatalf("reserve: %v", err)
@@ -65,7 +65,7 @@ func TestFailedRequestWithoutUsageStaysSilent(t *testing.T) {
 	if err := db.GetDB().Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	request := newRequestState(context.Background(), "gpt-test", "", 1, model.ProtocolOpenAIChatCompletion, "", 0, user.ID, "127.0.0.1", "", 60)
+	request := newRequestState(context.Background(), "gpt-test", "", 1, model.ProtocolOpenAIChatCompletion, "", 0, user.ID, user.TenantID, "127.0.0.1", "", 60)
 	reservationID, err := op.BillingReserve(user.ID, request.ID, 0.01)
 	if err != nil {
 		t.Fatalf("reserve: %v", err)
