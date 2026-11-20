@@ -139,6 +139,17 @@ func upstreamBillOwnerRevenue(ctx context.Context, channelID int, period, modelN
 		return 0, fmt.Errorf("sum owner revenue: %w", err)
 	}
 	if total == nil {
+		// 区间内一笔明细都没有: 可能是真的没用量, 也可能是明细已被留存归档清掉。
+		// 后者若当成 0 返回, 对单页会给出一个凭空的"差额全亏/全赚", 人再把它定性为已解释,
+		// 错误结论就留在了对账单上。所以这里先问一次汇总表: 有汇总行说明数据是被清掉的,
+		// 明确报错让人去看归档, 比给一个假数字安全。
+		archived, checkErr := billingWindowArchived(ctx, model.BillingRollupChannel, uint(channelID), start, end)
+		if checkErr != nil {
+			return 0, checkErr
+		}
+		if archived {
+			return 0, fmt.Errorf("channel %d period %s (%s): %w", channelID, period, modelName, ErrBillingWindowArchived)
+		}
 		return 0, nil
 	}
 	return *total, nil

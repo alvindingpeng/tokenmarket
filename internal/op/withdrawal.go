@@ -99,6 +99,19 @@ func maturedRevenueIn(q *gorm.DB, userID uint, cooldownDays int, totalRevenue fl
 		Select("COALESCE(SUM(owner_revenue), 0)").Scan(&matured).Error; err != nil {
 		return 0, fmt.Errorf("failed to calculate matured revenue: %w", err)
 	}
+	// 并上已固化的日汇总(只计未退款部分): 明细按留存期清理后, 超期那部分收益只能从汇总表读,
+	// 否则"可提现额度"会随清理缩水 —— 用户已经赚到的钱不能因为系统清理旧记录就消失。
+	// 汇总表带日期, 所以 created_at <= cutoff 这个"只有成熟的部分才可提"的语义仍然成立。
+	//
+	// 汇总表的 day 是 YYYYMMDD 定长字符串, 与 cutoff 的同类格式做字典序比较等价于日期比较,
+	// 三种数据库通用 —— 不引入 STR_TO_DATE/DATE() 这类只在单一方言里存在的函数。
+	var rollupMatured float64
+	if err := q.Model(&model.BillingRollup{}).
+		Where("dimension = ? AND dimension_id = ? AND day <= ?", model.BillingRollupOwner, userID, cutoff.Format("20060102")).
+		Select("COALESCE(SUM(owner_revenue - refunded_owner_revenue), 0)").Scan(&rollupMatured).Error; err != nil {
+		return 0, fmt.Errorf("failed to calculate matured rollup revenue: %w", err)
+	}
+	matured += rollupMatured
 	// 兜底上界: 成熟收益不该超过收益池总额(历史数据/人工调账偏差时按池子封顶, 不多放钱)。
 	if matured > totalRevenue {
 		matured = totalRevenue

@@ -202,6 +202,51 @@ export function useRunAuditLifecycle() {
     });
 }
 
+// BillingRetentionResult 资金表留存清理的回执(与 op.BillingRetentionResult 对齐)。
+// 把「归档了几条」和「删了几条」分开报: 两者不等时一眼能看出本轮停在哪一步。
+export type BillingRetentionResult = {
+    cutoff: string;
+    retention_days: number;
+    archive_enabled: boolean;
+    archive_file?: string;
+    archived: number;
+    archive_error?: string;
+    sealed_days: number;
+    deleted_records: number;
+    retained_records: number;
+    deleted_ledgers: number;
+    deleted_reservations: number;
+    deleted_settlement_tasks: number;
+    truncated?: boolean;
+};
+
+// BillingLifecycleList 资金账归档文件清单 + 留存配置 + 四张表的现有行数。
+export type BillingLifecycleList = {
+    items: ArchiveFile[];
+    retention_days: number;
+    archive_enabled: boolean;
+    cutoff: string;
+    counts: Record<string, number>;
+};
+
+// useBillingLifecycle 资金表留存状态(只读)。
+export function useBillingLifecycle() {
+    return useQuery({
+        queryKey: ['ops', 'billing-lifecycle'],
+        queryFn: () => apiRequest<BillingLifecycleList>('/api/v1/ops/billing-lifecycle/list'),
+    });
+}
+
+// useRunBillingLifecycle 立即归档并清理超期资金记录。该接口会不可逆地删除明细,
+// 因此后端挂了 RequireStepUp: apiRequest 撞上 428 会弹密码确认并自动重发。
+export function useRunBillingLifecycle() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: () => apiRequest<BillingRetentionResult>('/api/v1/ops/billing-lifecycle/run', { method: 'POST', timeoutMs: 600000 }),
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['ops', 'billing-lifecycle'] }),
+    });
+}
+
 export function useBackups() {
     return useQuery({
         queryKey: ['ops', 'backups'],

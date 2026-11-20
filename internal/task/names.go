@@ -28,6 +28,7 @@ const (
 	TaskWebhookCleanup          = "webhook_cleanup"            // Webhook 队列/日志容量控制: 保留期清理 + 每订阅容量收敛。
 	TaskRateLimitUsageRetention = "rate_limit_usage_retention" // 清理超期的限流小时用量汇总。
 	TaskArchiveRetention        = "archive_retention"          // 清理超期的日志/审计归档 NDJSON 文件。
+	TaskBillingRetention        = "billing_retention"          // 归档并清理超期的四张资金表(明细/流水/预扣/结算任务)。
 	TaskWatchdogAlert           = "watchdog_alert"             // 外部看门狗日志巡检。
 	TaskFxRateUpdate            = "fx_rate_update"             // 采集牌价并落 fx_rates 快照(结算折算依据)。
 	TaskAccountTokenRefresh     = "account_token_refresh"      // 刷新导入的上游账号令牌(仅 oauth 类; cookie 类无续期能力)。

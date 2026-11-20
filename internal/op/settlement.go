@@ -351,6 +351,26 @@ func ProfitMarginGet(ctx context.Context, filter ProfitMarginQuery) (*model.Prof
 	var overall sumResult
 	_ = build().Select("COALESCE(SUM(user_cost),0) as user_cost, COALESCE(SUM(owner_revenue),0) as owner_revenue, COALESCE(SUM(platform_revenue),0) as platform_revenue, COUNT(*) as request_count").Scan(&overall).Error
 
+	// 并上已固化到汇总表的那部分(平台维度): 明细按留存期清理后, "全期毛利"只能从汇总表补齐。
+	// 只取 platform 维度而不是把四个维度都加起来 —— 平台维度已经是全体合计, 再加 user/owner/channel
+	// 就是把同一笔钱算四遍。
+	// 区间端点按自然日取整: 汇总行的粒度是天, 时间戳的时分秒无法映射到"部分一天"的汇总。
+	rollupFrom, rollupTo := "", ""
+	if !filter.From.IsZero() {
+		rollupFrom = dayKey(filter.From)
+	}
+	if !filter.To.IsZero() {
+		rollupTo = dayKey(filter.To)
+	}
+	rollupSum, err := billingRollupTotalRange(ctx, model.BillingRollupPlatform, 0, false, rollupFrom, rollupTo)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to aggregate billing rollups: %w", err)
+	}
+	overall.UserCost += rollupSum.UserCost
+	overall.OwnerRevenue += rollupSum.OwnerRevenue
+	overall.PlatformRevenue += rollupSum.PlatformRevenue
+	overall.RequestCount += rollupSum.RequestCount
+
 	// 看板口径的退款是"退给用户的现金"(user_cost, GMV 的回冲), 与结算单按供应商应收份额
 	// (owner_revenue)冲回是两个不同口径, 不要混用: 毛利看板对用户侧, 日结单对渠道商侧。
 	var refundSum float64
@@ -401,6 +421,49 @@ func ProfitMarginGet(ctx context.Context, filter ProfitMarginQuery) (*model.Prof
 	// 使用 strftime (sqlite) 或通用格式按日切片
 	_ = build().Select("strftime('%Y%m%d', created_at) as day, COALESCE(SUM(user_cost),0) as user_cost, COALESCE(SUM(owner_revenue),0) as owner_revenue, COALESCE(SUM(platform_revenue),0) as platform_revenue, COUNT(*) as request_count").
 		Group("day").Order("day DESC").Limit(30).Scan(&days).Error
+
+	// 趋势同样并上汇总表: 它按天取近 30 天, 只要留存天数被调小(可配 1..3650)就会露出明细缺口。
+	// 汇总表补回那几天, 图上不会出现"那天没有收入"这种假空洞。
+	since := filter.From
+	if since.IsZero() {
+		since = time.Unix(0, 0)
+	}
+	rollupDays, err := billingRollupAggregates(ctx, model.BillingRollupPlatform, 0, since, "day")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to aggregate billing rollup trend: %w", err)
+	}
+	if !filter.To.IsZero() {
+		// 上界同样按自然日裁剪: 汇总行只能代表整天, 不能塞进一个"截止到某个时分秒"的窗口里。
+		toKey := dayKey(filter.To)
+		kept := rollupDays[:0]
+		for _, d := range rollupDays {
+			if d.Date <= toKey {
+				kept = append(kept, d)
+			}
+		}
+		rollupDays = kept
+	}
+	if len(rollupDays) > 0 {
+		liveRows := make([]BillingAggregate, 0, len(days))
+		for _, d := range days {
+			liveRows = append(liveRows, BillingAggregate{
+				Date: d.Date, UserCost: d.UserCost, OwnerRevenue: d.OwnerRevenue,
+				PlatformRevenue: d.PlatformRevenue, RequestCount: d.RequestCount,
+			})
+		}
+		merged := mergeBillingAggregates(liveRows, rollupDays)
+		// 明细侧原本是 "ORDER BY day DESC LIMIT 30"; 合并后再截一次, 保持"最多 30 天"的对外契约。
+		if len(merged) > 30 {
+			merged = merged[len(merged)-30:]
+		}
+		days = days[:0]
+		for i := len(merged) - 1; i >= 0; i-- {
+			days = append(days, dayRow{
+				Date: merged[i].Date, UserCost: merged[i].UserCost, OwnerRevenue: merged[i].OwnerRevenue,
+				PlatformRevenue: merged[i].PlatformRevenue, RequestCount: merged[i].RequestCount,
+			})
+		}
+	}
 
 	trends := make([]model.ProfitMarginSummary, 0, len(days))
 	for _, d := range days {

@@ -127,7 +127,13 @@ func TestBreakerCacheFailedWritesDoNotChangeCache(t *testing.T) {
 			if err := conn.Callback().Update().Before("gorm:update").Register(callback, func(tx *gorm.DB) { tx.AddError(fmt.Errorf("injected update failure")) }); err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { conn.Callback().Update().Remove(callback) })
+			// 先排空在途告警派发再摘掉回调: RecordChannelKeyError 会异步起一个派发协程写库,
+			// 而 gorm 的回调注册表是全局结构 —— 协程还在里头执行时把它 Remove 掉就是数据竞争
+			// (测试清理顺序在后, 所以这里必须显式等)。
+			t.Cleanup(func() {
+				AlertDispatchDrain()
+				conn.Callback().Update().Remove(callback)
+			})
 			if reset {
 				ResetChannelKeyErrors(key.ID)
 				ResetChannelModelErrors(cm.ID)

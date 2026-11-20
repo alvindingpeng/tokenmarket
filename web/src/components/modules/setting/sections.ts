@@ -15,6 +15,7 @@ export type SettingCardID =
     | 'log'
     | 'ops'
     | 'auditArchive'
+    | 'billingRetention'
     | 'tierPolicies'
     | 'backup'
     | 'channel';
@@ -35,6 +36,7 @@ export const SETTING_CARD_IDS: SettingCardID[] = [
     'log',
     'ops',
     'auditArchive',
+    'billingRetention',
     'tierPolicies',
     'backup',
     'channel',
@@ -64,7 +66,7 @@ export const SETTING_SECTIONS: SettingSection[] = [
     { id: 'site', icon: Globe, adminOnly: true, cards: ['systemInfo', 'info'], views: [] },
     { id: 'system', icon: Monitor, adminOnly: true, cards: ['system', 'platform'], views: [] },
     { id: 'billing', icon: CreditCard, adminOnly: true, cards: ['payment', 'llmPrice'], views: [] },
-    { id: 'ops', icon: HeartPulse, adminOnly: true, cards: ['log', 'ops', 'auditArchive', 'tierPolicies', 'backup', 'channel'], views: [] },
+    { id: 'ops', icon: HeartPulse, adminOnly: true, cards: ['log', 'ops', 'auditArchive', 'billingRetention', 'tierPolicies', 'backup', 'channel'], views: [] },
 ];
 
 // sectionsFor 按角色返回可见分组: 普通用户只看到个人设置, 渠道商与管理员看全量。

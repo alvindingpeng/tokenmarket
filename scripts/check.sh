@@ -46,7 +46,9 @@ step "后端: 单测"
 ok "go test"
 
 step "资金核心: 并发与退款回归（race）"
-(cd "$ROOT" && go test -race -count=1 ./internal/op)
+# -timeout 显式给到 30 分钟: go test 默认单包 10 分钟, 而整个 op 包在 -race 下实测约 11 分钟
+# (530 个用例 + 每个用例独占一个 SQLite 库), 默认值会把一次正常的全绿跑判成超时 panic。
+(cd "$ROOT" && go test -race -count=1 -timeout 30m ./internal/op)
 ok "financial regression + race"
 
 step "预扣续租生命周期: 并发回归（race）"

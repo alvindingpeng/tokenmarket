@@ -14,6 +14,7 @@ import { SettingInfo } from './Info';
 import { SettingLog } from './Log';
 import { SettingOps } from './Ops';
 import { SettingAudit } from './Audit';
+import { SettingBilling } from './Billing';
 import { SettingTierPolicies } from './TierPolicies';
 import { SettingBackup } from './Backup';
 import { SettingChannel } from './Channel';
@@ -33,6 +34,7 @@ const SETTING_CARDS: Record<SettingCardID, () => ReactNode> = {
     log: () => <SettingLog />,
     ops: () => <SettingOps />,
     auditArchive: () => <SettingAudit />,
+    billingRetention: () => <SettingBilling />,
     tierPolicies: () => <SettingTierPolicies />,
     backup: () => <SettingBackup />,
     channel: () => <SettingChannel />,

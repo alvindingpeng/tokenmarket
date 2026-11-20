@@ -226,6 +226,20 @@ func getAdminFxReconciliation(c *gin.Context) {
 	start := startDay
 	end := endDay.AddDate(0, 0, 1) // created_at < to+1d, 含 end 当日全天
 
+	// 窗口内明细已被留存清理时明确报错: 对账面板的契约是"按 fx_day 分桶统计明细",
+	// 汇总表没有存 fx_day/汇率快照, 补不出来。返回空桶会被读成"这段时间没有任何账单需要关注",
+	// 而在留存边界之后这正是最需要人去查的区间 —— 假零值比报错危险。
+	archived, archErr := op.BillingWindowArchived(ctx, model.BillingRollupPlatform, 0, startDay, endDay)
+	if archErr != nil {
+		resp.Error(c, http.StatusInternalServerError, "failed to verify billing retention state")
+		return
+	}
+	if archived {
+		resp.Error(c, http.StatusBadRequest,
+			"billing detail for the requested window has been archived by the retention policy; FX reconciliation needs the original records")
+		return
+	}
+
 	type row struct {
 		Bucket       string  `json:"bucket"`
 		Count        int64   `json:"count"`
@@ -313,6 +327,20 @@ func getAdminFxRevaluation(c *gin.Context) {
 	if err := baseQuery().Select("COUNT(*) as count, COALESCE(SUM(user_cost),0) as user_cost, COALESCE(SUM(owner_revenue),0) as owner_revenue").Scan(&base).Error; err != nil {
 		resp.Error(c, http.StatusInternalServerError, "failed to aggregate monthly billing")
 		return
+	}
+	// 明细已被留存清理的月份无法重估: 重估要逐行按原始快照汇率折算, 而汇总表没有存汇率。
+	// 这类月份必须显式报错, 不能让下面的 0 行查询给出"这个月没有需要重估的账单"的假结论 ——
+	// 财务看板上的假零值和假差额一样有害。
+	if base.Count == 0 {
+		archived, chanErr := op.BillingWindowArchived(ctx, model.BillingRollupPlatform, 0, monthStart, monthEnd.AddDate(0, 0, -1))
+		if chanErr != nil {
+			resp.Error(c, http.StatusInternalServerError, "failed to verify billing retention state")
+			return
+		}
+		if archived {
+			resp.Error(c, http.StatusBadRequest, "billing detail for "+month+" has been archived by the retention policy; FX revaluation needs the original records")
+			return
+		}
 	}
 	var excluded int64
 	if err := db.GetDB().WithContext(ctx).Model(&model.BillingRecord{}).

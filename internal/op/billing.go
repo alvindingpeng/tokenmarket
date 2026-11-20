@@ -437,8 +437,10 @@ func BillingHourly(ctx context.Context, kind string, id uint, since time.Time) (
 // UserCost = OwnerRevenue + PlatformRevenue 的账面恒等式在两侧同样成立(差值同源同量级)。
 func BillingTotal(ctx context.Context, kind string, id uint) (BillingAggregate, error) {
 	column := "user_id"
+	dimension := model.BillingRollupUser
 	if kind == "owner" {
 		column = "owner_id"
+		dimension = model.BillingRollupOwner
 	}
 	total := BillingAggregate{}
 	err := db.GetDB().WithContext(ctx).Model(&model.BillingRecord{}).
@@ -455,6 +457,22 @@ func BillingTotal(ctx context.Context, kind string, id uint) (BillingAggregate, 
 	if err != nil {
 		return BillingAggregate{}, err
 	}
+	// 并上已固化的日汇总: 明细表按留存期(默认 180 天)清理后, 终身口径只能靠汇总表补齐,
+	// 否则"用户累计消费"会随清理一天天变少 —— 那是把已经发生过的消费从账上抹掉。
+	// 明细与汇总不会重复计数: 删除某天的明细之前, 那一天的可删明细已经整体固化进汇总表;
+	// 因申诉保护而未删的明细不进汇总(见 billingDayRollups 的读取条件), 仍在明细表里被算上。
+	rollup, err := billingRollupTotal(ctx, dimension, id, false)
+	if err != nil {
+		return BillingAggregate{}, err
+	}
+	total.InputToken += rollup.InputToken
+	total.OutputToken += rollup.OutputToken
+	total.CacheReadToken += rollup.CacheReadToken
+	total.CacheWriteToken += rollup.CacheWriteToken
+	total.RequestCount += rollup.RequestCount
+	total.UserCost += rollup.UserCost
+	total.OwnerRevenue += rollup.OwnerRevenue
+	total.PlatformRevenue += rollup.PlatformRevenue
 	return total, nil
 }
 
@@ -609,15 +627,36 @@ func billingAggregateByBucket(ctx context.Context, kind string, id uint, since t
 	return rows, nil
 }
 
+// billingAggregateMerged 把"明细桶"与"已固化的汇总桶"并成一条连续曲线。
+//
+// 为什么曲线也要并: 留存只有 180 天, 而曲线的时间窗可以是"近 1 年"(stats 页面就是 AddDate(-1)).
+// 只读明细会让半年前那段直接消失 —— 用户看到的不是"更长的历史", 而是"今年比去年少了很多"。
+// 汇总表按天存, 天然能补回被删掉的每一天; 两者不重叠(见 mergeBillingAggregates 的说明)。
+func billingAggregateMerged(ctx context.Context, kind string, id uint, since time.Time, granularity string) ([]BillingAggregate, error) {
+	live, err := billingAggregateByBucket(ctx, kind, id, since, granularity)
+	if err != nil {
+		return nil, err
+	}
+	dimension := model.BillingRollupUser
+	if kind == "owner" {
+		dimension = model.BillingRollupOwner
+	}
+	rollups, err := billingRollupAggregates(ctx, dimension, id, since, granularity)
+	if err != nil {
+		return nil, err
+	}
+	return mergeBillingAggregates(live, rollups), nil
+}
+
 // BillingDaily 按日聚合计费明细; kind 取 "user" 或 "owner", id 为对应用户主键。
 // 输出按日期升序, Date 为 YYYYMMDD 的本地挂钟日期。
 func BillingDaily(ctx context.Context, kind string, id uint, since time.Time) ([]BillingAggregate, error) {
-	return billingAggregateByBucket(ctx, kind, id, since, "day")
+	return billingAggregateMerged(ctx, kind, id, since, "day")
 }
 
 // BillingMonthly 按"月"聚合计费明细, 口径与 BillingDaily 完全一致: 同一时间窗、同一组聚合字段、
 // 同一时区归一规则, 只是桶换成当月 1 日(YYYYMMDD, 如 20261101)。日期升序, 空结果为非 nil 空切片。
 // 月的边界同样按本地挂钟判定, 跨月的那笔请求不会因为 UTC 归一滑到上个月。
 func BillingMonthly(ctx context.Context, kind string, id uint, since time.Time) ([]BillingAggregate, error) {
-	return billingAggregateByBucket(ctx, kind, id, since, "month")
+	return billingAggregateMerged(ctx, kind, id, since, "month")
 }

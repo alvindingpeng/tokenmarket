@@ -1,5 +1,79 @@
 # 更新说明
 
+## v1.10.14 — 2026-11-21
+
+**四张核心资金表开始有留存策略(180 天), 且清理不会让任何终身数字缩水**
+
+### 一、问题: 四张表只增不减
+
+`billing_records` / `balance_reservations` / `balance_ledgers` / `billing_settlement_tasks`
+从来没有清理策略。自动备份是 `VACUUM INTO` 物理快照, 存量会被每份备份整份复制 ——
+明细越多, 备份越大越慢, 而其中绝大部分是半年前的死数据。
+
+但**直接删会算错钱**, 三处硬约束(每处都在 `internal/op/billing_retention.go` 顶部写明):
+
+- `billing_records` 是"用户累计消费""可提现额度""平台全期毛利"的唯一数据源, 删了这些数字会缩水;
+- 某一行可能正被 `disputes` 引用: 批准退款时 `tx.First(&record, dispute.RecordID)` 找不到行就退不了款;
+- `balance_reservations` / `billing_settlement_tasks`: `BillingReleaseStale` 用
+  `NOT EXISTS (SELECT 1 FROM billing_settlement_tasks WHERE reservation_id = ...)` 判断"有没有结算意图"。
+  删掉任务行, 一笔仍在等结算的预扣会被当成泄漏释放 —— 冻结额退了, 结算再落账就是同一笔钱既退又扣。
+
+### 二、做法: 先固化日汇总, 再删明细
+
+新增 `billing_rollups` 表, 粒度 = **自然日 × 维度(user / owner / channel / platform)**。
+
+- 删某一天的明细之前, 在同一事务里把这一天的聚合值写进汇总表, 再删这一天的明细;
+- 终身口径查询 = 汇总表 ∪ 明细表;
+- 汇总行带 `day`(YYYYMMDD), 所以"只有 `created_at <= cutoff` 的部分才成熟"这个语义仍然成立;
+- 汇总行带 `refunded_*` 一组列: `BillingTotal` 计全部行, `maturedRevenueIn` / `ChannelProfit`
+  只计未退款行, 只存一份合计必有一方算错。
+
+被改成"汇总 ∪ 明细"的读口: `BillingTotal`、`BillingDaily`/`BillingMonthly`、`maturedRevenueIn`、
+`ProfitMarginGet`(overall + trends)、`ChannelProfit`。
+
+### 三、删除前的四个硬条件
+
+1. **归档先行**: 先把要删的行原样写成 NDJSON(`data/archives/billing/billing-YYYYMMDD.ndjson`),
+   `file.Sync()` 落盘后才进入删除; **归档失败 ⇒ 本轮一条都不删**。
+2. **归档上界**: 归档时记录四张表各自覆盖到的最大主键, 删除只允许落在 `id <= 该上界` 的范围内 ——
+   只按 `created_at` 划界, 归档读与删除之间新写入的行会被"没归档就删掉"。
+3. **申诉保护**: 只删没有任何 `status <> 'rejected'` 的 dispute 引用的明细。
+4. **结算意图保护**: 预扣只删 `settled = true` 且无结算任务行的; 结算任务只删 `completed` 且
+   对应预扣已结算的。`pending` / `retry` / `manual` 一行不删。
+
+### 四、补上"假零值"风险
+
+汇总表没有逐行的 `fx_day` / 汇率快照, 补不出对账与重估所需的数据。这类读口改为**显式报错**
+而不是返回 0(假零值会被读成"这段时间没问题", 人一旦据此定性, 错误结论就进了对账单):
+
+- `upstreamBillOwnerRevenue`: 区间无明细但存在汇总行 ⇒ `ErrBillingWindowArchived`;
+- `GET /api/v1/admin/fx/revaluation`: 该月明细已归档 ⇒ 400;
+- `GET /api/v1/admin/fx/reconciliation`: 窗口内明细已归档 ⇒ 400。
+
+### 五、配置与运维
+
+| 设置键 | 默认 | 范围 |
+| --- | --- | --- |
+| `billing_retention_days` | 180 | 1–3650 |
+| `billing_archive_enabled` | true | 布尔 |
+
+- 后台任务 `billing_retention`: 24 小时一次, 启动即跑, 单轮 10 分钟超时, 内部逐日分批事务;
+- 设置改完经 `task.ApplySetting` 立即热更新;
+- 运维页新增 `/api/v1/ops/billing-lifecycle/{run,list}`(run 需二次验证), 设置页新增「资金表留存」卡片
+  (五张表当前行数 + 归档文件清单 + 立即清理);
+- 归档文件纳入 `archive_retention_days` 的清理(前缀 `billing-`), 最近 3 份始终保留。
+
+### 六、明确不做: 租约式选主
+
+多实例 leader election 不在本次范围。本次只解决单实例下"四张表无限膨胀 + 清理不能算错钱";
+多实例遗留问题(进程级缓存、内存限流桶、进程内定时器)按现状保留。
+
+### 七、顺带修的一处测试竞争
+
+`TestBreakerCacheFailedWritesDoNotChangeCache` 在 `-race` 下报数据竞争: 用例在清理阶段摘掉
+gorm 更新回调时, `RecordChannelKeyError` 起的告警派发协程还在同一个全局回调表里执行 `Updates`。
+现在先 `AlertDispatchDrain()` 再摘回调。
+
 ## v1.10.13 — 2026-11-17
 
 **修复: 上游 429 后的重试不退避, 把"偶发限流"放大成"整段请求必然失败"**

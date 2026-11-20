@@ -128,6 +128,12 @@ func ArchiveRetentionRun(ctx context.Context) (ArchivePruneResult, error) {
 	result.Kept += kept
 	result.Pruned += pruned
 	result.FreedB += freed
+	// 资金账归档同样纳入文件留存: 它是明细被删之后唯一的离线副本, 删早了补不回来,
+	// 因此与审计归档共用「最近几份始终保留 + 按天数」这套规则, 不另立一套。
+	kept, pruned, freed = pruneArchiveDir(BillingArchiveDir(), "billing-", result.Cutoff)
+	result.Kept += kept
+	result.Pruned += pruned
+	result.FreedB += freed
 	if result.Pruned > 0 {
 		log.Infof("archive retention: cutoff=%s pruned=%d freed=%dB", result.Cutoff.Format("2006-01-02"), result.Pruned, result.FreedB)
 	}

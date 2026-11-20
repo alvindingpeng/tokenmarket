@@ -35,10 +35,12 @@ var settingTasks = map[model.SettingKey][]string{
 	model.SettingKeyAuditRetentionDays:      {TaskAuditArchive},
 	model.SettingKeyAuditArchiveEnabled:     {TaskAuditArchive},
 	model.SettingKeyArchiveRetentionDays:    {TaskArchiveRetention},
+	model.SettingKeyBillingRetentionDays:    {TaskBillingRetention},
+	model.SettingKeyBillingArchiveEnabled:   {TaskBillingRetention},
 	model.SettingKeyFxRateUpdateEnabled:     {TaskFxRateUpdate},
 	model.SettingKeyFxRateUpdateInterval:    {TaskFxRateUpdate},
-	model.SettingKeyAccountRefreshEnabled:  {TaskAccountTokenRefresh},
-	model.SettingKeyAccountRefreshMinutes:  {TaskAccountTokenRefresh},
+	model.SettingKeyAccountRefreshEnabled:   {TaskAccountTokenRefresh},
+	model.SettingKeyAccountRefreshMinutes:   {TaskAccountTokenRefresh},
 }
 
 // ApplySetting 重算某项设置影响到的全部任务周期。
@@ -208,6 +210,36 @@ func Init() {
 	// 归档文件留存: 数据库里的超期记录已经被归档后删除, 归档 NDJSON 自身也必须过期回收,
 	// 否则 data/archives 只增不减(与部署备份一起成为唯一随运维动作增长的目录)。
 	// 每天一次即可; 无论多老都保留最近几份, 长期停机后不会一次清空历史。
+	// 资金表留存: 归档 + 固化日汇总 + 再删超期记录。为什么必须"先固化再删"见 op.billing_retention.go:
+	// 明细是若干终身口径读口的唯一来源, 直接删会让累计消费/可提现额度/全期毛利随清理缩水。
+	// RunOnStart 让"改了留存天数"或"服务刚启动"就能立刻收敛, 而不是等满一个周期。
+	Define(Spec{
+		Name:       TaskBillingRetention,
+		Interval:   fixedInterval(24 * time.Hour),
+		RunOnStart: true,
+		Fn: func() error {
+			// 单轮给足时间: 首次启用留存要补清理存量(可能几十万行), 但内部仍是逐日分批事务,
+			// 不会长时间占住写锁; 超时则本轮停下, 下一轮从断点继续(billing_retention 幂等)。
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			result, err := op.BillingRetentionRun(ctx)
+			if err != nil {
+				return err
+			}
+			if result.ArchiveError != "" {
+				// 归档失败时本轮一条都没删: 这是保护动作不是任务失败, 用 Warn 而非 error,
+				// 避免把"磁盘暂时写不进"升级成任务连败告警; 真正的信号已由 op 侧告警发出。
+				log.Warnf("billing retention: archive failed, nothing deleted: %s", result.ArchiveError)
+				return nil
+			}
+			log.Infof("billing retention: cutoff=%s retention=%dd sealed_days=%d records=%d ledgers=%d reservations=%d tasks=%d protected=%d truncated=%v",
+				result.Cutoff.Format("2006-01-02"), result.RetentionDays, result.SealedDays,
+				result.DeletedRecords, result.DeletedLedgers, result.DeletedReserves, result.DeletedTasks,
+				result.RetainedRecords, result.Truncated)
+			return nil
+		},
+	})
+
 	Define(Spec{
 		Name:       TaskArchiveRetention,
 		Interval:   fixedInterval(24 * time.Hour),

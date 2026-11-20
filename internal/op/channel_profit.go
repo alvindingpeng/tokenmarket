@@ -98,6 +98,30 @@ func ChannelProfit(ctx context.Context, channelID int, startDate, endDate string
 			ChannelProfitTotals: channelProfitTotals(row.Requests, row.UserCost, row.OwnerRevenue, row.PlatformRevenue),
 		})
 	}
+	// 并上已固化的日汇总(渠道维度, 只取未退款部分): 明细按留存期清理后, 半年前那段渠道毛利
+	// 只能从汇总表读。不并的话, 把留存天数调小就会让"近一年渠道收益"凭空少一截。
+	// 口径必须与上面那条查询一致 —— 上面筛了 status = settled, 所以这里也用"合计 - 退款"。
+	rollupRows, err := billingRollupSettledDaily(ctx, model.BillingRollupChannel, uint(channelID), start, end)
+	if err != nil {
+		return model.ChannelProfit{}, fmt.Errorf("failed to load channel profit rollups: %w", err)
+	}
+	if len(rollupRows) > 0 {
+		liveRows := make([]BillingAggregate, 0, len(rows))
+		for _, row := range rows {
+			liveRows = append(liveRows, BillingAggregate{
+				Date: row.Date, RequestCount: row.Requests, UserCost: row.UserCost,
+				OwnerRevenue: row.OwnerRevenue, PlatformRevenue: row.PlatformRevenue,
+			})
+		}
+		merged := mergeBillingAggregates(liveRows, rollupRows)
+		result.Daily = result.Daily[:0]
+		for _, day := range merged {
+			result.Daily = append(result.Daily, model.ChannelProfitDaily{
+				Date:                day.Date,
+				ChannelProfitTotals: channelProfitTotals(day.RequestCount, day.UserCost, day.OwnerRevenue, day.PlatformRevenue),
+			})
+		}
+	}
 	// 汇总由逐日结果累加而来, 保证 totals 与 daily 严丝合缝, 不会出现两套查询对不上的情况。
 	for _, day := range result.Daily {
 		result.Totals.Requests += day.Requests

@@ -149,6 +149,7 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.Dispute{},
 		&model.SettlementStatement{},
 		&model.SettlementRun{},
+		&model.BillingRollup{}, // 明细被留存清理后, 终身口径读口改从这张日汇总表补齐。
 		&migrate.MigrationRecord{},
 	); err != nil {
 		return err

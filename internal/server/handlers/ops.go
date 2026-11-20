@@ -74,6 +74,17 @@ func init() {
 				Handle(listAuditArchives),
 		).
 		AddRoute(
+			router.NewRoute("/billing-lifecycle/run", http.MethodPost).
+				Allow(model.RoleAdmin).
+				Use(middleware.RequireStepUp()).
+				Handle(runBillingLifecycle),
+		).
+		AddRoute(
+			router.NewRoute("/billing-lifecycle/list", http.MethodGet).
+				Allow(model.RoleAdmin).
+				Handle(listBillingLifecycle),
+		).
+		AddRoute(
 			router.NewRoute("/backup/run", http.MethodPost).
 				Allow(model.RoleAdmin).
 				Use(middleware.RequireStepUp()).
@@ -305,6 +316,46 @@ func runAuditLifecycle(c *gin.Context) {
 	}
 	audit(c, "audit.lifecycle", "", "archived="+strconv.Itoa(result.Archived)+" deleted="+strconv.FormatInt(result.Deleted, 10))
 	resp.Success(c, result)
+}
+
+// runBillingLifecycle 立即执行一次资金表归档与清理(与定时任务同一实现, 幂等可重入)。
+// 走 step-up: 这个动作会**不可逆地删除**资金明细, 必须和备份/审计归档一样要求二次验证。
+func runBillingLifecycle(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	result, err := op.BillingRetentionRun(ctx)
+	if err != nil {
+		op.RaiseAlertFacts(c.Request.Context(), op.AlertFacts{
+			Kind:   "billing_archive_failed",
+			Reason: "manual billing archive failed",
+			Fields: []alert.Field{
+				{Label: "触发方式", Value: "运维页手动执行"},
+				{Label: "操作者", Value: operatorName(c)},
+				{Label: "错误", Value: err.Error()},
+				{Label: "影响", Value: "资金表继续膨胀, 归档未推进"},
+			},
+		})
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	audit(c, "billing.lifecycle", "", "archived="+strconv.Itoa(result.Archived)+" deleted="+strconv.FormatInt(result.DeletedRecords, 10))
+	resp.Success(c, result)
+}
+
+// listBillingLifecycle 返回资金账归档文件清单与留存配置(只读)。
+func listBillingLifecycle(c *gin.Context) {
+	files, err := op.BillingArchiveList()
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	status, err := op.BillingRetentionStatus(c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	status["items"] = files
+	resp.Success(c, status)
 }
 
 // listAuditArchives 返回审计归档文件与当前留存配置。
