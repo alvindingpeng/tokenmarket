@@ -11,7 +11,13 @@ readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}" || exit 1
 
 readonly VERSION="$(bash scripts/version.sh)" || exit 1
-readonly LOG="${REPO_ROOT}/.git/publish-release.log"
+# 日志落 git common dir 而不是 .git: 在 git worktree 里 .git 是文件, 写 $REPO_ROOT/.git/... 会失败。
+# 同时清掉 git 传进来的 GIT_DIR / GIT_WORK_TREE, 否则下面的 rev-parse / push 会解析到
+# common dir 上的分支而不是当前工作树(见 auto-push.sh 文件头的说明)。
+unset GIT_DIR GIT_WORK_TREE
+COMMON_DIR="$(cd "${REPO_ROOT}" && git rev-parse --git-common-dir)"
+case "${COMMON_DIR}" in /*) ;; *) COMMON_DIR="${REPO_ROOT}/${COMMON_DIR}" ;; esac
+readonly LOG="${COMMON_DIR}/publish-release.log"
 say() { echo "$(date -Iseconds) $*" | tee -a "${LOG}" >&2; }
 
 # 目标仓库: 优先 GITHUB_REPOSITORY 环境变量, 否则解析 github 远端 URL。

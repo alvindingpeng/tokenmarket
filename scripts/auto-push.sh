@@ -23,9 +23,17 @@ BRANCH="$2"
 [ -n "$REPO" ] || exit 1
 cd "$REPO" || exit 1
 
-GIT_DIR="$(git rev-parse --git-common-dir)"
-[ -d "$GIT_DIR" ] || GIT_DIR="$REPO/.git"
-LOG="$GIT_DIR/auto-push.log"
+# 变量名不能叫 GIT_DIR: 钩子是被 git 调起的, GIT_DIR 是 git 自己的环境变量,
+# 在这里重新赋值会把它**指向 common dir**, 随后的 git rev-parse HEAD / git push HEAD
+# 全都解析成 common dir 上的那个分支 —— 输出的不是当前工作树的提交。
+# 这条恰好把 SaaS 树的提交当成基线版推了上去(与文件头警告的历史事故同一个形态)。
+COMMON_DIR="$(git rev-parse --git-common-dir)"
+[ -d "$COMMON_DIR" ] || COMMON_DIR="$REPO/.git"
+case "$COMMON_DIR" in /*) ;; *) COMMON_DIR="$REPO/$COMMON_DIR" ;; esac
+LOG="$COMMON_DIR/auto-push.log"
+
+# 显式清掉 git 传进来的 GIT_DIR, 保证下面所有 git 命令都按**当前工作树**解析。
+unset GIT_DIR GIT_WORK_TREE
 
 # 分离头指针时拿不到分支名: 回落到 master, 而不是推出一个名为 HEAD 的分支。
 TARGET="${BRANCH:-master}"

@@ -30,6 +30,10 @@ cat > "$HOOKS_DIR/post-commit" <<'EOS'
 # post-commit: 每次提交后实时推送到 GitHub tokenmarket, 版本号变化时顺带发布 Release。
 # 异步执行不阻塞 commit; 失败只写 git common dir 下的 auto-push.log 与 publish-release.log,
 # 不阻断提交。钩子路径用 git rev-parse 解析, 以兼容 git worktree。
+# 钩子里必须先把 git 自己传进来的 GIT_DIR / GIT_WORK_TREE 清掉: 它们指向 common dir,
+# 留着会让下面每一处 git rev-parse / git push 都解析成 common dir 上的分支,
+# 而不是当前工作树 —— 曾把 SaaS 树的提交当成基线版推了上去。
+unset GIT_DIR GIT_WORK_TREE
 REPO="$(git rev-parse --show-toplevel)"
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 HOOKS_DIR="$(git rev-parse --git-path hooks)"
