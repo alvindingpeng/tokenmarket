@@ -165,12 +165,15 @@ export function Market() {
     // 让服务端多一个 favorites_only 参数只为过滤这点数据, 反而多一处需要同步的口径。
     const [onlyFavorites, setOnlyFavorites] = useState(false);
 
+    // 收藏集合的 useMemo 必须在下面那个提前 return **之前**: hook 的调用顺序不能因渲染分支
+    // 而改变(出错时少调一个, 恢复后再多调一个, React 会直接崩, 不是"偶尔少算一次"的问题)。
+    const favoriteSet = useMemo(() => new Set(favorites), [favorites]);
+
     if (isError) {
         return <ListErrorState onRetry={() => void refetch()} retrying={isRefetching} />;
     }
 
     const allModels: MarketModel[] = data?.models ?? [];
-    const favoriteSet = useMemo(() => new Set(favorites), [favorites]);
     // 先按收藏过滤再进对比: 对比下标基于过滤后的数组, 否则勾选会指到看不见的行。
     const models = onlyFavorites ? allModels.filter((model) => favoriteSet.has(model.name)) : allModels;
 

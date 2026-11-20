@@ -27,6 +27,13 @@ export default defineConfig([
       // 未被 await 的 Promise 会让失败静默消失(前端最常见的「点了没反应」来源)。
       // 有意不等待时显式写 void, 让「我知道这是 fire-and-forget」成为代码里的事实。
       '@typescript-eslint/no-floating-promises': 'error',
+      // 以 _ 开头的形参/变量是「有意不用」的记号(mock 的 fetch 签名、解构占位),
+      // 关掉这条对它们的报错, 否则只能改签名或加 disable 注释, 两种都比前缀约定差。
+      '@typescript-eslint/no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+      }],
       // 变体样式、共享 store 与组件同文件导出是既有约定，这些导出不参与 Fast Refresh 组件替换。
       'react-refresh/only-export-components': ['error', {
         allowExportNames: [
@@ -37,6 +44,11 @@ export default defineConfig([
           'usePageActionsStore',
           'useRuntimeClock',
           'useTheme',
+          // 纯函数导出与组件同文件是既有约定: 它们被单测直接断言(不经过渲染),
+          // 抽到别处只会多一个文件, 而 Fast Refresh 的顾虑只针对"导出组件又导出组件"。
+          'validateAccountJSON',
+          'addPreview',
+          'MAX_COMPARE',
         ],
       }],
     },

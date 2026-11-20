@@ -51,7 +51,9 @@ export function Accounts() {
         refetchInterval: 60_000,
     });
 
-    const rows = query.data ?? [];
+    // rows 包一层 useMemo: query.data ?? [] 每次渲染都会产生新的空数组字面量,
+    // 下游两个 useMemo 的依赖因此每次都变, 过滤与汇总等于每帧重算一遍(列表越大越明显)。
+    const rows = useMemo(() => query.data ?? [], [query.data]);
 
     // 搜索按渠道名/凭据名/平台/邮箱匹配。账号少的时候用不上, 但渠道一多就是刚需 ——
     // 而"渠道一多"正是需要这个页面的时期。

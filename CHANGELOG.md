@@ -1,5 +1,31 @@
 # 更新说明
 
+## v1.10.15 — 2026-11-21
+
+**前端 lint 清零, 并修掉三条被 lint 挡住的真缺陷**
+
+`pnpm run lint` 在 v1.10.13 上就是红的(18 errors / 3 warnings), `scripts/check.sh` 的 lint 阶段
+因此从来没能通过过。逐个看, 其中三条是真缺陷而不是规则噪音:
+
+1. **`useMemo` 写在提前 return 之后(`market/index.tsx`)** —— 出错分支比正常分支少调用一个
+   hook, 恢复时多调一个, 这是 React 的 hook 顺序违规(会直接崩)。收藏集合的 useMemo 提到 return 之前。
+2. **组件体内定义组件(`CliHint.tsx` 的 `CopyButton`)** —— 每次渲染都是新的组件类型, React 整棵
+   子树重建, 复制后的对勾状态随之丢失, 父组件每敲一个字符还会重建一次。提成文件级组件。
+3. **`rows = query.data ?? []`(`accounts/index.tsx`)** —— 每次渲染产生新的空数组字面量,
+   下游两个 useMemo 的依赖每次都变, 过滤与汇总等于每帧重算。包一层 useMemo。
+
+其余为未用导入/未用变量/`any`/Fast-Refresh 导出约定:
+
+- `eslint.config.mjs`: `no-unused-vars` 放开 `_` 前缀(mock 的 fetch 签名本就是占位);
+  `react-refresh/only-export-components` 的 allowExportNames 补上三个被单测直接断言的纯函数导出;
+- `AccountImport.tsx` / `AccountImportBatch.tsx`: `any` 换成 `Record<string, unknown>`, 并把 name
+  收窄成 string —— 直接贴凭据 JSON 时 `item.name` 可能是对象, 取出来会得到 `[object Object]` 条目名;
+- `AddToGroup.tsx`: 排序 useMemo 的依赖写全, `missingCount` 改在 useMemo 内就地算
+  (外层函数每次渲染都是新引用, 放进依赖数组等于关掉记忆化);
+- `analytics/index.test.tsx`: 删掉未用的 `todayRange` 绑定。
+
+验证: `eslint .` 退出 0(0 error / 0 warning); `tsc -b --noEmit` 通过; `pnpm test` 62 文件 549 用例全绿。
+
 ## v1.10.14 — 2026-11-21
 
 **四张核心资金表开始有留存策略(180 天), 且清理不会让任何终身数字缩水**

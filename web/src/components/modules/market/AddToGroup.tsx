@@ -4,7 +4,6 @@ import { toast } from 'sonner';
 import { ArrowRight, Check, Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
     MorphingDialog,
     MorphingDialogClose,
@@ -18,7 +17,6 @@ import {
 import { useAddGroupItems, useGroupList, type Group } from '@/api/group';
 import type { MarketChannelListing, MarketModel } from '@/api/market';
 import { useAppStore } from '@/stores/app';
-import { cn } from '@/lib/utils';
 
 /**
  * AddToGroup 让用户把该模型下的可用挂牌加进自己已有的模型配置(分组)。
@@ -128,10 +126,13 @@ function Panel({ model, addable, ownedGroups }: { model: MarketModel; addable: M
 
     // sortedGroups 按"这个模型在该配置里还缺几条渠道"降序: 缺得多的排前面。
     // 只是展示顺序, 不影响提交内容; 让用户不必在二十多行里逐个比对哪条还没配过。
-    const sortedGroups = useMemo(
-        () => [...ownedGroups].sort((a, b) => missingCount(b) - missingCount(a)),
-        [ownedGroups]
-    );
+    //
+    // 缺额在 useMemo 里就地算, 不调用外面的 missingCount: 后者每次渲染都是新函数,
+    // 放进依赖数组等于关掉记忆化, 不放又会被 lint 判成缺依赖。addable 进依赖数组即可。
+    const sortedGroups = useMemo(() => {
+        const missing = (group: Group) => addable.filter((listing) => !groupHasListing(group, listing)).length;
+        return [...ownedGroups].sort((a, b) => missing(b) - missing(a));
+    }, [ownedGroups, addable]);
     function missingCount(group: Group): number {
         return addable.filter((listing) => !groupHasListing(group, listing)).length;
     }

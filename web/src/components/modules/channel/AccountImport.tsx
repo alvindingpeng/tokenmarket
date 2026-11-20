@@ -36,13 +36,16 @@ import { AccountSignIn } from './AccountSignIn';
 // 与后端 model.AccountJSONParse 的解析分支保持一致: 同一份 JSON
 // 在这边能发现的缺字段, 就不必等后端返回 400 再告诉用户。
 // 返回空数组表示通过; 否则返回缺失/错误字段的文案列表。
+/** AccountFields 是账号 JSON 的宽松形状: 只做字段存在性检查, 不约束具体类型。 */
+type AccountFields = Record<string, unknown>;
+
 export function validateAccountJSON(platform: AccountPlatform, raw: string): string[] {
     const errors: string[] = [];
     if (!raw.trim()) {
         errors.push('JSON 不能为空');
         return errors;
     }
-    let fields: any;
+    let fields: AccountFields;
     try {
         fields = JSON.parse(raw);
     } catch {
@@ -51,7 +54,7 @@ export function validateAccountJSON(platform: AccountPlatform, raw: string): str
     }
     // 兼容 Codex CLI 导出的外层 tokens 封装
     if (fields.tokens && typeof fields.tokens === 'object') {
-        fields = fields.tokens;
+        fields = fields.tokens as AccountFields;
     }
 
     switch (platform) {
@@ -61,7 +64,7 @@ export function validateAccountJSON(platform: AccountPlatform, raw: string): str
             break;
         }
         case 'claude': {
-            const nested = fields.claudeAiOauth ?? fields;
+            const nested = (fields.claudeAiOauth ?? fields) as AccountFields;
             if (!nested.accessToken && !nested.access_token) errors.push('缺少 accessToken (Claude Code 凭据文件应为 claudeAiOauth.accessToken)');
             if (!nested.refreshToken && !nested.refresh_token) errors.push('缺少 refreshToken, 该账号无法自动续期');
             break;

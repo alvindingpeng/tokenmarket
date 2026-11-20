@@ -253,7 +253,6 @@ describe('AnalyticsPage 新增数据维度', () => {
         // 把种子数据的覆盖起点放到"今天"之后不可能, 故直接验证 today 下不误报, 再以纯函数断言跨日行为。
         const html = renderSSR(<AnalyticsPage />, (client) => seedAll(client));
         expect(html).not.toContain('data-testid="success-coverage"'); // 单日区间无缺口, 不误报
-        const todayRange = getDateRange('today');
         // 跨日场景用纯函数直证: 30 天起点在今天之前, 覆盖起点(4 天前)严格晚于它 → 有缺口。
         expect(isCoverageLimited(coverageStart, monthRange.start_date)).toBe(true);
         // 留存天数在种子数据里是 7, 覆盖提示逻辑由 isCoverageLimited 驱动(见下方多日用例)。

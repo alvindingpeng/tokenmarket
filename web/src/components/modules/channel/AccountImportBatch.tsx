@@ -3,7 +3,6 @@ import { useTranslations } from 'use-intl';
 import { toast } from 'sonner';
 import { Loader2, Upload, CheckCircle, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -59,10 +58,16 @@ export function AccountImportBatch({ channelId, onImported, channels }: {
         try {
             const parsed = JSON.parse(trimmed);
             if (Array.isArray(parsed)) {
-                return parsed.map((item: any, i: number) => ({
-                    name: item.name || `${t('batchItem')}${i + 1}`,
-                    raw: JSON.stringify(item.raw ?? item), // 兼容 {name, raw} 与直接贴凭据 JSON 两种写法
-                }));
+                return parsed.map((item: Record<string, unknown>, i: number) => {
+                    // 只认字符串类型的 name: 直接贴凭据 JSON 时 item.name 可能是别的类型,
+                    // 取出来当名字会得到 "[object Object]" 这样的条目名。
+                    const named = typeof item.name === 'string' && item.name.trim() !== '' ? item.name.trim() : '';
+                    return {
+                        name: named || `${t('batchItem')}${i + 1}`,
+                        // 兼容 {name, raw} 与直接贴凭据 JSON 两种写法
+                        raw: JSON.stringify(item.raw ?? item),
+                    };
+                });
             }
         } catch { /* 忽略, 当作逐行解析 */ }
         // 逐行解析: 每行一个 JSON 对象

@@ -17,6 +17,30 @@ import type { AccountPlatform } from '@/api/channel';
  * 只对有 CLI 引导的平台渲染。kiro/grok 返回 undefined, 这里直接不渲染任何东西 ——
  * 摆一块「暂无 CLI」的空框会被当成加载失败。
  */
+/**
+ * CopyButton 是文件级组件, 不写在 CliHint 内部: 内联定义每次渲染都会产生一个新的组件类型,
+ * React 因此整棵子树重建 —— 复制后的对勾状态、焦点都会随之丢失, 而且父组件每敲一次键盘
+ * 就重建一次。
+ */
+function CopyButton({ value, id, copied, label, onCopy }: {
+    value: string;
+    id: string;
+    copied: string | null;
+    label: string;
+    onCopy: (value: string, id: string) => void;
+}) {
+    return (
+        <button
+            type="button"
+            aria-label={label}
+            className="ml-1 inline-flex shrink-0 items-center rounded p-0.5 text-muted-foreground hover:text-foreground"
+            onClick={() => onCopy(value, id)}
+        >
+            {copied === id ? <Check className="size-3" /> : <Copy className="size-3" />}
+        </button>
+    );
+}
+
 export function CliHint({ platform }: { platform: AccountPlatform }) {
     const t = useTranslations('channel.account.cliHint');
     const hint = cliImportHint(platform);
@@ -35,17 +59,6 @@ export function CliHint({ platform }: { platform: AccountPlatform }) {
         }
     };
 
-    const CopyButton = ({ value, id }: { value: string; id: string }) => (
-        <button
-            type="button"
-            aria-label={t('copy')}
-            className="ml-1 inline-flex shrink-0 items-center rounded p-0.5 text-muted-foreground hover:text-foreground"
-            onClick={() => void copy(value, id)}
-        >
-            {copied === id ? <Check className="size-3" /> : <Copy className="size-3" />}
-        </button>
-    );
-
     return (
         <div className="mt-1 space-y-1 rounded-lg border bg-muted/30 p-2.5 text-xs text-muted-foreground">
             <div className="font-medium text-foreground">{t('title')}</div>
@@ -58,14 +71,14 @@ export function CliHint({ platform }: { platform: AccountPlatform }) {
                     </span>
                     <span className="mx-1 inline-flex items-center rounded bg-background px-1 py-0.5 font-mono text-[11px] text-foreground">
                         {hint.command}
-                        <CopyButton value={hint.command} id="cmd" />
+                        <CopyButton value={hint.command} id="cmd" copied={copied} label={t('copy')} onCopy={(value, id) => void copy(value, id)} />
                     </span>
                 </div>
                 <div>
                     <span>2. {t('openFile')}</span>
                     <span className="mx-1 inline-flex items-center rounded bg-background px-1 py-0.5 font-mono text-[11px] text-foreground">
                         {hint.path}
-                        <CopyButton value={hint.path} id="path" />
+                        <CopyButton value={hint.path} id="path" copied={copied} label={t('copy')} onCopy={(value, id) => void copy(value, id)} />
                     </span>
                     <span className="block opacity-80">{t('windowsPath', { path: hint.windowsPath })}</span>
                 </div>
