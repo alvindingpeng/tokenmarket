@@ -457,6 +457,8 @@ func TestAutoAddScopeName(t *testing.T) {
 // 所以必须断言 flagged 只取渠道级开关打开的, approved 才覆盖全部已过审,
 // 且两种范围都排除已收回渠道。
 func TestAutoAddScopeQuerySelection(t *testing.T) {
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "scope.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}
@@ -525,6 +527,8 @@ func TestAutoAddScopeQuerySelection(t *testing.T) {
 // TestAutoAddChannelsRunProbesScope 验证 AutoAddChannelsRun 真的按 scope 去探测,
 // 而不只是查询条件写对了: 抓 ProbeClientFactory 的入参, 看哪些渠道进了探测循环。
 func TestAutoAddChannelsRunProbesScope(t *testing.T) {
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "probe.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}
@@ -592,6 +596,8 @@ func TestAutoAddChannelsRunProbesScope(t *testing.T) {
 // 每轮都扫到空集。这时必须 ① 返回 nil(不能把空集算成任务失败, 否则会一路飙到告警阈值),
 // ② 一个上游请求都不发(探测要花上游配额), ③ 打出可排查的日志(见 AutoAddChannelsRun)。
 func TestAutoAddChannelsRunEmptyScope(t *testing.T) {
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "empty.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}

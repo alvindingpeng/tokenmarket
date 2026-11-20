@@ -15,6 +15,7 @@ import (
 )
 
 func TestUpdateUserBalanceDoesNotSkipCachedEqualTarget(t *testing.T) {
+	handlerTestResetCaches(t)
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "admin-balance.db"), false); err != nil {
 		t.Fatal(err)
 	}

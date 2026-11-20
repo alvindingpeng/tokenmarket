@@ -24,6 +24,7 @@ import (
 
 func webhookHandlersTestSetup(t *testing.T) {
 	t.Helper()
+	handlerTestResetCaches(t)
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "webhook-handlers.db"), false); err != nil {
 		t.Fatal(err)
 	}

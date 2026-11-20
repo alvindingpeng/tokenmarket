@@ -14,6 +14,8 @@ import (
 // 观察期评估走 db.GetDB() 全局句柄与 channelCache, 故两者都要初始化。
 func trustTestEnv(t *testing.T) {
 	t.Helper()
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "channel_quality.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}

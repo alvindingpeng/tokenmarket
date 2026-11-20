@@ -18,6 +18,7 @@ import (
 func apikeyHandlerTestDB(t *testing.T) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
+	handlerTestResetCaches(t)
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "apikey-handler.db"), false); err != nil {
 		t.Fatal(err)
 	}

@@ -22,6 +22,7 @@ import (
 // 默认私网防护会把它拦掉 —— 那是生产环境的正确行为, 测试里要显式放开。
 func setupEgressTestEnv(t *testing.T) {
 	t.Helper()
+	handlerTestResetCaches(t)
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "egress.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}

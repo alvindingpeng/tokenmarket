@@ -18,6 +18,8 @@ import (
 func catchupTestDB(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "catchup.db")
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", path, false); err != nil {
 		t.Fatal(err)
 	}
@@ -61,6 +63,8 @@ func TestSettlementCatchupFailureRestartCrossDay(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", path, false); err != nil {
 		t.Fatal(err)
 	}

@@ -24,6 +24,8 @@ var settlementRequestSeq uint64 = 900000
 // settlementTestDB 初始化隔离库, 建买家/渠道商/管理员各一个。
 func settlementTestDB(t *testing.T, name string) (buyer, owner, admin model.User) {
 	t.Helper()
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "settlement.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}

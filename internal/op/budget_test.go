@@ -13,6 +13,8 @@ import (
 // budgetTestDB 临时库。CheckUserBudget 读 db.GetDB(), 必须走 InitDB。
 func budgetTestDB(t *testing.T) {
 	t.Helper()
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "budget.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}

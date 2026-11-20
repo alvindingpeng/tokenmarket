@@ -12,6 +12,8 @@ import (
 // reviewTestEnv 建独立库并预热缓存, 返回渠道商与管理员作用域; 每个测试用独立 TempDir, 缓存由 InitCache 清空重建。
 func reviewTestEnv(t *testing.T) (ctx context.Context, reseller model.Scope, admin model.Scope) {
 	t.Helper()
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "review.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}

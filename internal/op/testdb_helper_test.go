@@ -19,6 +19,9 @@ func opTestDBSetup(t *testing.T, dbFileName string) {
 	t.Helper()
 	NotificationDispatchDrain()
 	AlertDispatchDrain()
+	// 换库前必须清空进程级缓存: 它们活在进程里, 不属于任何一个库,
+	// 换库后就是"旧库的数据"。不清的话 -shuffle=on 下用例顺序一变就互相污染。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), dbFileName), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}
@@ -26,6 +29,7 @@ func opTestDBSetup(t *testing.T, dbFileName string) {
 		// 先排空在途投递: 迟到的 goroutine 要么落进本库, 要么明确失败, 不带悬念跨用例。
 		NotificationDispatchDrain()
 		AlertDispatchDrain()
+		resetProcessCaches()
 		_ = db.Close()
 	})
 }

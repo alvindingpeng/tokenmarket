@@ -11,6 +11,8 @@ import (
 
 func balanceAlertSetup(t *testing.T) {
 	t.Helper()
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "balance_alert.db"), false); err != nil {
 		t.Fatal(err)
 	}

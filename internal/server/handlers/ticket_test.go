@@ -21,6 +21,7 @@ import (
 // ticketAPIEnv 最小环境: 临时 sqlite、签名密钥、两名用户与两名管理员(均返回登录令牌)。
 func ticketAPIEnv(t *testing.T) (userToken, otherToken, adminToken, admin2Token string, user1, user2, admin1, admin2 model.User) {
 	t.Helper()
+	handlerTestResetCaches(t)
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "ticket-api.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}

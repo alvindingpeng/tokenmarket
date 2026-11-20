@@ -1,6 +1,8 @@
 package db
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"strings"
@@ -17,7 +19,32 @@ import (
 
 var db *gorm.DB
 
+// fingerprint 标识"当前这个库", 用于让进程级缓存在换库后自动失效。
+//
+// 为什么需要它: 进程级缓存键通常只用业务主键(如 user:1), 而不同库里的 user 1
+// 是两条无关记录。测试逐用例建临时库、运维切换到恢复副本, 都会让同一个键指向
+// 不同的数据 —— 缓存于是把 A 库的结果给了 B 库。把库的身份并入缓存键,
+// 就不必依赖"换库时记得清缓存"这种口头约定(那种约定在 -shuffle 下必然破功)。
+var fingerprint string
+
+// Fingerprint 返回当前库的标识; 未初始化时返回 "nosql", 不会与真实库冲突。
+//
+// 只用 DSN 的**哈希**而不是原文: DSN 里可能含口令(MySQL/Postgres), 而缓存键
+// 会被写进日志或指标。sha256 前 8 字节足够区分同进程内的几个库, 又不可逆。
+func Fingerprint() string {
+	if fingerprint == "" {
+		return "nosql"
+	}
+	return fingerprint
+}
+
+func setFingerprint(dbType, dsn string) {
+	sum := sha256.Sum256([]byte(dbType + "|" + dsn))
+	fingerprint = hex.EncodeToString(sum[:8])
+}
+
 func InitDB(dbType, dsn string, debug bool) error {
+	setFingerprint(dbType, dsn)
 	var err error
 	gormConfig := gorm.Config{Logger: logger.Discard}
 	if debug {

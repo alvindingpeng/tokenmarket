@@ -15,6 +15,7 @@ import (
 
 func modelPriceTestDB(t *testing.T) {
 	t.Helper()
+	handlerTestResetCaches(t)
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "model_price.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}

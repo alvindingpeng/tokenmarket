@@ -42,6 +42,8 @@ func TestReconcileDoesNotFlagLiveLongRequestLease(t *testing.T) {
 }
 
 func TestReconcilePreservesMissingEvidenceAfterLogRetention(t *testing.T) {
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "evidence.db"), false); err != nil {
 		t.Fatal(err)
 	}
@@ -69,6 +71,8 @@ func TestReconcilePreservesMissingEvidenceAfterLogRetention(t *testing.T) {
 }
 
 func TestReconcileCanResolveMissingWithRetainedEvidence(t *testing.T) {
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "resolved.db"), false); err != nil {
 		t.Fatal(err)
 	}
@@ -92,6 +96,8 @@ func TestReconcileCanResolveMissingWithRetainedEvidence(t *testing.T) {
 
 // 差异处置说明: 只改说明与状态, 数字一个都不动, 且重算不会把它抹掉。
 func TestReconcileNoteRecordsWithoutTouchingFigures(t *testing.T) {
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "note.db"), false); err != nil {
 		t.Fatal(err)
 	}
@@ -139,6 +145,8 @@ func TestReconcileNoteRecordsWithoutTouchingFigures(t *testing.T) {
 
 // 差异真的变了就落回对账自己算出的状态: 说明描述的是当时的差异, 不是永久豁免。
 func TestReconcileNoteDropsWhenFiguresChange(t *testing.T) {
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "note-change.db"), false); err != nil {
 		t.Fatal(err)
 	}
@@ -170,6 +178,8 @@ func TestReconcileNoteDropsWhenFiguresChange(t *testing.T) {
 
 // 撤销说明把状态交回对账自己算; 没有差异的日子不许挂说明。
 func TestReconcileNoteClearAndGuard(t *testing.T) {
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "note-clear.db"), false); err != nil {
 		t.Fatal(err)
 	}
@@ -214,6 +224,8 @@ func TestReconcileDayUsesCalendarDayAcrossDST(t *testing.T) {
 	t.Cleanup(func() { time.Local = original })
 	for _, day := range []time.Time{time.Date(2026, 3, 8, 12, 0, 0, 0, zone), time.Date(2026, 11, 1, 12, 0, 0, 0, zone)} {
 		t.Run(day.Format("20060102"), func(t *testing.T) {
+			// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+			resetProcessCaches()
 			if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "reconcile.db"), false); err != nil {
 				t.Fatal(err)
 			}

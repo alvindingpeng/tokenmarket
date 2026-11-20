@@ -13,6 +13,8 @@ import (
 
 func quotaTestSetup(t *testing.T) model.APIKey {
 	t.Helper()
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "quota.db"), false); err != nil {
 		t.Fatal(err)
 	}

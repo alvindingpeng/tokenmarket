@@ -21,6 +21,7 @@ import (
 // 广场的核心受众就是普通用户, 故用例一律用它, 顺带覆盖"登录即可、无角色白名单"这条鉴权口径。
 func marketAPIEnv(t *testing.T) (model.User, string) {
 	t.Helper()
+	handlerTestResetCaches(t)
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "market-api.db"), false); err != nil {
 		t.Fatal(err)
 	}

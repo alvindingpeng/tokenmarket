@@ -11,6 +11,8 @@ import (
 // routePersistTestDB 建 SQLite 测试库并预置两个渠道模型各自的成员与指标行。
 func routePersistTestDB(t *testing.T) (groupID, goodModelID, badModelID, goodItemID, badItemID int) {
 	t.Helper()
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "persist.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}

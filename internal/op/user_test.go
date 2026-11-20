@@ -14,6 +14,8 @@ import (
 // 缓存是单例, 不清会把上个测试库的同 ID 用户副本带进来, UserDelete 的前置校验就查错了对象。
 func userDeleteTestSetup(t *testing.T) {
 	t.Helper()
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "user-delete.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}

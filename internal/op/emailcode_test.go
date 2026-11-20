@@ -14,6 +14,8 @@ import (
 // 这里直接调底层写码路径前先绕开发信——MailSend 未配置时报错, 故只测校验侧)。
 func emailCodeTestSetup(t *testing.T) {
 	t.Helper()
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "emailcode.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}

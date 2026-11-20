@@ -19,6 +19,8 @@ var userStatsCST = time.FixedZone("+08:00", 8*3600)
 // userStatsTestSetup 初始化隔离测试库并创建两个用户。
 func userStatsTestSetup(t *testing.T) (payer, other model.User) {
 	t.Helper()
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "user_stats.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}
@@ -633,6 +635,8 @@ const (
 
 func userStatsBenchSetup(b *testing.B) userStatsBenchBase {
 	b.Helper()
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(b.TempDir(), "user_stats_bench.db"), false); err != nil {
 		b.Fatalf("init db: %v", err)
 	}

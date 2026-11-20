@@ -12,6 +12,8 @@ import (
 // costAggTestDB 临时库: 兜底聚合直接读 db.GetDB()。
 func costAggTestDB(t *testing.T) {
 	t.Helper()
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "costagg.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}

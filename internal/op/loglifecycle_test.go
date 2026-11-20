@@ -65,6 +65,8 @@ func TestLogRetentionDaysDefault(t *testing.T) {
 // logLifecycleTestEnv 初始化隔离库, 并把工作目录切到临时目录(归档目录是相对路径 data/archives)。
 func logLifecycleTestEnv(t *testing.T, archiveEnabled bool) {
 	t.Helper()
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "logs.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}

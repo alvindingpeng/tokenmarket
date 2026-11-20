@@ -1,10 +1,8 @@
-
 package op
 
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -19,10 +17,16 @@ import (
 
 func accountTestDB(t *testing.T) {
 	t.Helper()
-	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "account.db"), false); err != nil {
-		t.Fatalf("init db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	// 委托给 opTestDBSetup, 不要在这里自己 InitDB。
+	//
+	// 这个用例会触发后台刷新协程, 而后台协程写库是异步的。自己写 setup 少了
+	// "收尾先排空投递再关库" 这一步, 于是协程可能在本用例结束后继续往
+	// 已删掉的 TempDir 里写, 表现为:
+	//   TempDir RemoveAll cleanup: ... directory not empty
+	// 或迟到的写撞上已关闭的库(sq l: database is closed / disk I/O error 522)。
+	// opTestDBSetup 已经把 drain -> InitDB ... drain -> Close 这个顺序固定下来了,
+	// 所有用例走同一个入口比逐处补更可靠。
+	opTestDBSetup(t, "account.db")
 	channelKeyCache.Clear()
 }
 
@@ -30,7 +34,7 @@ func accountTestDB(t *testing.T) {
 func seedAccountKey(t *testing.T, platform, rawJSON string, expiresAt *time.Time) model.ChannelKey {
 	t.Helper()
 	channel := model.Channel{
-		UserID: 1,
+		UserID:        1,
 		ChannelConfig: model.ChannelConfig{Name: "acc-channel-" + fmt.Sprint(time.Now().UnixNano()), Enabled: true, BaseURL: "https://api.example.com"},
 	}
 	if err := db.GetDB().Create(&channel).Error; err != nil {
@@ -42,7 +46,7 @@ func seedAccountKey(t *testing.T, platform, rawJSON string, expiresAt *time.Time
 			Name: "acc-key", Key: rawJSON, Enabled: true,
 			AccountKind:     model.AccountKindOAuth,
 			AccountPlatform: platform,
-			TokenExpiresAt:   expiresAt,
+			TokenExpiresAt:  expiresAt,
 		},
 	}
 	if err := db.GetDB().Create(&key).Error; err != nil {
@@ -93,7 +97,7 @@ func TestAccountNeedsRefreshIgnoresStaticKeys(t *testing.T) {
 // 账号 JSON 坏掉时: 刷新集合不应把它当成"到期待刷新"而反复打上游, 但也不能当成普通 Key 静默放行。
 func TestAccountCredentialOfRejectsBrokenJSON(t *testing.T) {
 	key := model.ChannelKey{ChannelKeyConfig: model.ChannelKeyConfig{
-		Key: "not-json",
+		Key:         "not-json",
 		AccountKind: model.AccountKindOAuth, AccountPlatform: model.AccountPlatformCodex,
 	}}
 	if _, ok := AccountCredentialOf(key); ok {
@@ -172,7 +176,7 @@ func TestAccountRefreshWritesPlatformFieldNames(t *testing.T) {
 		t.Fatalf("parse roundtrip: %v", err)
 	}
 	if credential.RefreshToken != "new-refresh" || credential.AccessToken != "new-access" {
-			t.Fatalf("roundtrip = %+v", credential)
+		t.Fatalf("roundtrip = %+v", credential)
 	}
 }
 

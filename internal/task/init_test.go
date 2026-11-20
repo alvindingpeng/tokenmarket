@@ -14,7 +14,24 @@ func taskTestSetup(t *testing.T) {
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "task.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}
-	t.Cleanup(func() { _ = db.Close() })
+	// 任务注册表是进程级全局 map, 不跟着库走: 用例注册的假任务(如 snap-ok/snap-off)
+	// 会残留给下一个用例, 于是 "names.go 常量与定义必须一一对应" 这条断言
+	// 在多注册了几个假任务后失败 —— 只在 -shuffle=on 时暴露。
+	resetTaskRegistry()
+	t.Cleanup(func() {
+		_ = db.Close()
+		resetTaskRegistry()
+	})
+}
+
+// resetTaskRegistry 清空进程级任务注册表, 让每个用例都从干净状态开始。
+// 集中在这里而不是逐用例 t.Cleanup: 后者正是问题反复复发的原因 ——
+// 默认顺序下全绿, 失败信号极弱, 下一次加用例时又会漏。
+func resetTaskRegistry() {
+	tasksMu.Lock()
+	tasks = make(map[string]*taskEntry)
+	specs = make(map[string]Spec)
+	tasksMu.Unlock()
 }
 
 // TestBillingRecoveryRegistered 计费结算恢复任务必须登记为"启动即跑 + 有界周期跑":

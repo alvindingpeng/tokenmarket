@@ -14,6 +14,8 @@ import (
 // ChannelUpdate 是逐列点名的(不是整行覆盖), 漏列不会报错, 只会让开关「看上去打开了、实际没打开」——
 // 后台复查按这一列挑渠道, 于是自动添加和刚上线的模型级条件都无从触发, 而界面上开关明明是开的。
 func TestChannelUpdatePersistsModelAutoAdd(t *testing.T) {
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "persist.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}

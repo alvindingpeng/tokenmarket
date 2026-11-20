@@ -93,6 +93,8 @@ func TestSelectChannelKeyFailsWhenAllUnavailable(t *testing.T) {
 // 渠道名逐个不同: channels 上有 (user_id, name) 唯一索引, 重用同名会让第二个用例建渠道失败。
 func makeKeyTestChannel(t *testing.T, name string) []int {
 	t.Helper()
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), fmt.Sprintf("%s.db", name)), false); err != nil {
 		t.Fatalf("初始化测试库: %v", err)
 	}

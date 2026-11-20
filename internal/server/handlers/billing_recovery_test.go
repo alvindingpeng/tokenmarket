@@ -18,6 +18,7 @@ import (
 )
 
 func TestBillingRecoveryRoutesRequireAdministrator(t *testing.T) {
+	handlerTestResetCaches(t)
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "recovery-api.db"), false); err != nil {
 		t.Fatal(err)
 	}

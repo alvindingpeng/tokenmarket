@@ -131,6 +131,8 @@ func initSubPlatformDB(t *testing.T) {
 	t.Helper()
 	// 用户名按用例名派生: 同一个测试库被多个子用例共用会撞唯一约束。
 	username := "subadmin-" + strings.ToLower(strings.ReplaceAll(t.Name(), "/", "-"))
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "sub.db"), false); err != nil {
 		t.Fatalf("初始化测试库: %v", err)
 	}

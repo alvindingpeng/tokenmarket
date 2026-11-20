@@ -18,6 +18,8 @@ import (
 // webhookTestSetup 独立内存 SQLite + 真实主密钥: 覆盖信封加解密与生产同一条路径。
 func webhookTestSetup(t *testing.T) {
 	t.Helper()
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "webhook.db"), false); err != nil {
 		t.Fatal(err)
 	}

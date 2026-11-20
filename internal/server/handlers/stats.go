@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/server/middleware"
@@ -16,9 +17,26 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var activityMaxRequestCount int64     // 最近 54 周每日请求量的最大值。
-var activityMaxCalculatedAt time.Time // 最大值上次计算时间。
-var activityMaxMu sync.Mutex          // 保护最大值及计算时间的并发更新。
+// activityMaxCache 热力图上界缓存, **按访问者作用域分开**。
+//
+// 这里曾经是三个全局变量(一个值 + 一个时间 + 一把锁), 于是"谁先访问, 谁的上界就被所有人复用":
+// 管理员的热力图用某个普通用户的数据当基准(显示错误), 而普通用户拿到的是别人的上界。
+// 后者不只是算错 —— "别人那天最多打了多少请求"本身就是不该给他看到的信息。
+//
+// 上界是从调用方**自己可见的那份 statsDaily** 里算出来的, 因此它天然属于该作用域,
+// 不能跨作用域共享。键取 <数据库指纹>/platform 或 <数据库指纹>/user:<id>。
+var activityMaxCache = struct {
+	mu      sync.Mutex
+	entries map[string]activityMaxEntry
+}{entries: make(map[string]activityMaxEntry)}
+
+type activityMaxEntry struct {
+	requestCount int64
+	calculatedAt time.Time
+}
+
+// activityMaxTTL 上界缓存有效期: 全量扫描 54 周日行较贵, 24 小时内复用。
+const activityMaxTTL = 24 * time.Hour
 
 type statsDailyResponse struct {
 	MaxRequestCount int64              `json:"max_request_count"` // 最近 54 周每日请求量的最大值。
@@ -196,22 +214,53 @@ func viewerTotalStats(c *gin.Context) (model.StatsTotal, error) {
 }
 
 // activityMax 返回热力图的请求量上界; 全量扫描 54 周日行只做一次, 24 小时内复用。
-func activityMax(now time.Time, statsDaily []model.StatsDaily) int64 {
-	activityMaxMu.Lock()
-	if activityMaxCalculatedAt.IsZero() || now.Sub(activityMaxCalculatedAt) >= 24*time.Hour {
-		maxRequestCount := int64(0)
-		for _, daily := range statsDaily {
-			requestCount := daily.RequestSuccess + daily.RequestFailed
-			if requestCount > maxRequestCount {
-				maxRequestCount = requestCount
-			}
-		}
-		activityMaxRequestCount = maxRequestCount
-		activityMaxCalculatedAt = now
+//
+// scopeKey 必须来自请求方身份, 不能是常量: 缓存的是"某份 statsDaily 的最大值",
+// 而 statsDaily 本身按访问者身份取(管理员读全站, 普通用户读本人)。
+func activityMax(now time.Time, scopeKey string, statsDaily []model.StatsDaily) int64 {
+	activityMaxCache.mu.Lock()
+	defer activityMaxCache.mu.Unlock()
+
+	if entry, ok := activityMaxCache.entries[scopeKey]; ok && now.Sub(entry.calculatedAt) < activityMaxTTL {
+		return entry.requestCount
 	}
-	maxRequestCount := activityMaxRequestCount
-	activityMaxMu.Unlock()
+	maxRequestCount := int64(0)
+	for _, daily := range statsDaily {
+		requestCount := daily.RequestSuccess + daily.RequestFailed
+		if requestCount > maxRequestCount {
+			maxRequestCount = requestCount
+		}
+	}
+	activityMaxCache.entries[scopeKey] = activityMaxEntry{requestCount: maxRequestCount, calculatedAt: now}
 	return maxRequestCount
+}
+
+// resetActivityMaxCacheForTest 清空上界缓存。
+//
+// 放在非测试文件里: *_test.go 里的符号对其他包的测试不可见, 而换库的工具函数
+// 需要在多处被调用。清空是必要的 —— 一个测试里算出的上界会留在进程里,
+// 下一个测试若用同作用域键就会读到旧值(这正是修复前 -shuffle 下随机失败的原因)。
+func resetActivityMaxCacheForTest() {
+	activityMaxCache.mu.Lock()
+	activityMaxCache.entries = make(map[string]activityMaxEntry)
+	activityMaxCache.mu.Unlock()
+}
+
+// activityMaxScopeKey 上界缓存的作用域键: <数据库指纹>/<访问者作用域>。
+//
+// 数据库指纹是必要的, 不只是测试洁癖。键里只有 user:<id> 时, 一旦进程换库
+// (测试逐用例建临时库, 或运维切换到恢复副本), 不同库里的 user 1 会共用同一条缓存,
+// 于是 A 库算出的上界被 B 库拿去用。生产单库时它恒为同一个值, 代价可忽略;
+// 换库时它让缓存自然失效, 不必依赖"记得手动清缓存"这种约定。
+//
+// 管理员 : platform(其 statsDaily 就是全站数据)
+// 普通用户 : user:<id>(各人一份, 互不复用)
+func activityMaxScopeKey(c *gin.Context) string {
+	scope := "user:" + strconv.FormatUint(uint64(currentUserID(c)), 10)
+	if isViewerAdmin(c) {
+		scope = "platform"
+	}
+	return db.Fingerprint() + "/" + scope
 }
 
 func getStatsDaily(c *gin.Context) {
@@ -221,7 +270,7 @@ func getStatsDaily(c *gin.Context) {
 		return
 	}
 	resp.Success(c, statsDailyResponse{
-		MaxRequestCount: activityMax(time.Now(), statsDaily),
+		MaxRequestCount: activityMax(time.Now(), activityMaxScopeKey(c), statsDaily),
 		Items:           statsDaily,
 	})
 }
@@ -320,7 +369,7 @@ func getStatsHome(c *gin.Context) {
 
 	resp.Success(c, statsHomeResponse{
 		Total:    total,
-		Daily:    statsDailyResponse{MaxRequestCount: activityMax(now, daily), Items: daily},
+		Daily:    statsDailyResponse{MaxRequestCount: activityMax(now, activityMaxScopeKey(c), daily), Items: daily},
 		Hourly:   hourly,
 		Channels: channels,
 	})

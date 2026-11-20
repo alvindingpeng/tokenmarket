@@ -16,6 +16,7 @@ import (
 )
 
 func TestNotificationHandlersUseAuthenticatedIntegerIdentity(t *testing.T) {
+	handlerTestResetCaches(t)
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "notification-identity.db"), false); err != nil {
 		t.Fatal(err)
 	}

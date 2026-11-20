@@ -124,6 +124,22 @@ func TestStatsHomeUserScope(t *testing.T) {
 	if payload.Daily.MaxRequestCount < 1 {
 		t.Fatalf("max_request_count not derived: %+v", payload.Daily)
 	}
+	// 上界必须来自**本次调用方自己**的日曲线。
+	//
+	// 这里曾经是三个全局变量(一个值+一个时间+一把锁), 于是第一个访问者算出的上界
+	// 被后续所有调用复用: 管理员的热力图用某个普通用户的数据做归一化,
+	// 而普通用户拿到别人的上界 —— 那不只是算错, "别人那天最多打了多少请求"
+	// 本身就是不该给他看到的信息。断言"上界恰等于自己日曲线的最大值"能同时
+	// 覆盖这两个方向: 既不能偏小(复用了他人的空数据), 也不能偏大(泄漏他人规模)。
+	wantMax := int64(0)
+	for _, item := range payload.Daily.Items {
+		if item.RequestSuccess > wantMax {
+			wantMax = item.RequestSuccess
+		}
+	}
+	if payload.Daily.MaxRequestCount != wantMax {
+		t.Fatalf("max_request_count must equal own daily max: got %d want %d", payload.Daily.MaxRequestCount, wantMax)
+	}
 
 	// 他人看不到这位用户的任何数据。
 	other, _ := homeFetch(t, engine, otherToken)
@@ -357,4 +373,33 @@ func mustMap(t *testing.T, value any) map[string]any {
 		t.Fatalf("not an object: %#v", value)
 	}
 	return row
+}
+
+// TestActivityMaxIsScopedPerViewer 上界缓存按访问者作用域隔离。
+//
+// 直接调用 activityMax 而不是走 HTTP: 要验的是缓存键本身, 不是路由或鉴权。
+// 两个作用域用**不同**的日曲线, 若缓存共用则第二个作用域会拿到第一个的值 ——
+// 这正是修复前 TestStatsHomeUserScope 在 -shuffle 下随机失败的原因(谁先跑谁污染)。
+func TestActivityMaxIsScopedPerViewer(t *testing.T) {
+	resetActivityMaxCacheForTest()
+
+	now := time.Now()
+	small := []model.StatsDaily{{StatsMetrics: model.StatsMetrics{RequestSuccess: 3}}}
+	large := []model.StatsDaily{{StatsMetrics: model.StatsMetrics{RequestSuccess: 900}}}
+
+	if got := activityMax(now, "user:1", small); got != 3 {
+		t.Fatalf("user:1 got %d want 3", got)
+	}
+	// 另一个作用域必须自己算, 不能命中 user:1 的缓存。
+	if got := activityMax(now, "user:2", large); got != 900 {
+		t.Fatalf("user:2 got %d want 900 (cache leaked across scopes)", got)
+	}
+	// 同一作用域 24 小时内复用: 传不同的数据也返回缓存值。
+	if got := activityMax(now.Add(time.Hour), "user:1", large); got != 3 {
+		t.Fatalf("user:1 cache must be reused within TTL, got %d want 3", got)
+	}
+	// 超过 TTL 后重算。
+	if got := activityMax(now.Add(25*time.Hour), "user:1", large); got != 900 {
+		t.Fatalf("user:1 cache must expire after TTL, got %d want 900", got)
+	}
 }

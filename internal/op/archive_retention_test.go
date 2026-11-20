@@ -20,6 +20,8 @@ import (
 // archiveRetentionTestEnv 初始化隔离库、设定留存天数, 并把工作目录切到临时目录。
 func archiveRetentionTestEnv(t *testing.T, days int) {
 	t.Helper()
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "archive.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}

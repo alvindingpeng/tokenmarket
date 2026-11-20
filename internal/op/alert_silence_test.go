@@ -14,6 +14,8 @@ import (
 // silenceTestDB 与 raiseTestDB 相同的临时库初始化: 静默判定读 db.GetDB(), 必须走 InitDB。
 func silenceTestDB(t *testing.T) {
 	t.Helper()
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "silence.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}

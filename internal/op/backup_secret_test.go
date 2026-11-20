@@ -28,6 +28,8 @@ func backupSecretTestDB(t *testing.T, kek []byte) *secretstore.MasterKey {
 	if err := secretstore.Init(secretstore.KEKConfig{Inline: hex.EncodeToString(kek)}); err != nil {
 		t.Fatalf("init secret store: %v", err)
 	}
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "backup-secret.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}

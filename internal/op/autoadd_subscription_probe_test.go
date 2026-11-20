@@ -20,6 +20,8 @@ import (
 // db.InitDB 换掉真实连接来测(与 internal/relay 的既有做法一致)。
 func setupAutoAddGlobalDB(t *testing.T) {
 	t.Helper()
+	// 换库前清空进程级缓存, 否则 -shuffle 下会读到上一个用例的旧库数据。
+	resetProcessCaches()
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "autoadd.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}

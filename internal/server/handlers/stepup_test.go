@@ -21,6 +21,7 @@ import (
 // auth_gate_test 专门覆盖)、初始化签名密钥、自建一个非默认口令的管理员。
 func stepupTestEnv(t *testing.T) (model.User, string) {
 	t.Helper()
+	handlerTestResetCaches(t)
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "stepup-api.db"), false); err != nil {
 		t.Fatal(err)
 	}
@@ -407,6 +408,7 @@ func TestStepUpRoleDenialPrecedesStepUpGate(t *testing.T) {
 // gateTestEnvNoMarker 一套「默认口令尚未修改」的环境: 不翻 admin_default_pwd_changed 标记。
 func gateTestEnvNoMarker(t *testing.T) (model.User, string) {
 	t.Helper()
+	handlerTestResetCaches(t)
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "stepup-gate.db"), false); err != nil {
 		t.Fatal(err)
 	}
