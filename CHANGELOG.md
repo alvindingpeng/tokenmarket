@@ -1,5 +1,24 @@
 # 更新说明
 
+## v1.10.17 — 2026-11-21
+
+**修掉一处 `-shuffle` 顺序依赖: 「默认值」被上一个用例改过**
+
+`-shuffle=on` 连跑 6 个随机种子时 `TestLogRetentionDaysDefault` 红了 1 次。它断言的是
+**出厂默认**(留存 7 天), 而同一个包里的日志生命周期用例会把 `log_retention_days` 写成 1;
+设置读取走进程级 `settingCache`, 而**缓存寿命跟着进程、不跟着库** —— 默认顺序下它排在前面
+所以一直绿, shuffle 下谁先跑谁定, 于是"默认值"变成了"上一个用例留下的值"。
+
+修法: 给 `TestLogRetentionDaysDefault` 与同族的 `TestShouldStoreBody` 加 `logSettingsDefaultEnv(t)`,
+换库前连同 `resetProcessCaches()` 一起重置(只换库没用, 缓存不跟着库走)。
+
+验证: 该族用例 10 次 shuffle 零失败; `internal/op` 整包 8 个随机种子全绿(每轮约 90s)。
+顺带确认 v1.10.16 的改动在 shuffle 下同样稳定。
+
+文档: `docs/dev-next-2026-11-20.md` 的 §A2「部署脚本 `pre-*` 副本无轮转」经复核**归属记错**
+且已由 `scripts/releases-retention.py` 解决(真正的副本在 `data/releases/`, 不经 `swap_deploy.sh`),
+已标为不需再做; §D 的 shuffle 缺口同步标为已清零。
+
 ## v1.10.16 — 2026-11-21
 
 **SQLite 并发写入"抖动"的根因治理: 短事务在读后写之前先取写锁, 日结不再靠重试硬扛**

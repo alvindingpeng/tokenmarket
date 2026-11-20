@@ -45,13 +45,30 @@ func TestMaskJSONBody(t *testing.T) {
 	}
 }
 
+// logSettingsDefaultEnv 为"断言默认值"的用例准备一个刚初始化的库。
+//
+// 这两个用例断言的是**出厂默认**, 而设置读取走进程级 settingCache: 同一个包里的日志
+// 生命周期用例会把 log_retention_days 写成 1。默认顺序下它们排在前面所以一直绿,
+// -shuffle 下谁先跑谁定, 于是"默认值"变成"上一个用例留下的值"(实测跑 6 个种子红 1 个)。
+// 换库前必须连同缓存一起重置, 光换库没用 —— 缓存不跟着库走。
+func logSettingsDefaultEnv(t *testing.T) {
+	t.Helper()
+	resetProcessCaches()
+	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "defaults.db"), false); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+}
+
 func TestShouldStoreBody(t *testing.T) {
+	logSettingsDefaultEnv(t)
 	if !ShouldStoreBody() {
 		t.Error("default should store body")
 	}
 }
 
 func TestLogRetentionDaysDefault(t *testing.T) {
+	logSettingsDefaultEnv(t)
 	days := LogRetentionDays()
 	if days != 7 {
 		t.Errorf("default retention should be 7, got %d", days)
