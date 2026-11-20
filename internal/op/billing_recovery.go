@@ -142,12 +142,18 @@ func BillingSettle(id uint64, record *model.BillingRecord) error {
 	}
 	err = billingRecoveryAttempt(ctx, task.ID)
 	if err != nil {
-		// Another worker may have completed between our observation and claim.
-		var reservation model.BalanceReservation
-		if readErr := db.GetDB().WithContext(ctx).First(&reservation, id).Error; readErr == nil && reservation.Settled {
-			if replayErr := billingSettleReplay(id, &snapshot); replayErr == nil {
-				return nil
-			}
+		// 另一个 worker 可能已经抢到执行租约, 或者恰好在我们的读与抢之间完成了落账。
+		//
+		// 这里曾经只做**一次**快照读就放弃, 于是同一笔预扣被并发重复结算时, 输家会
+		// 立刻拿到 ErrSettlementQueued —— 而赢家通常只慢几毫秒就落账。调用方本想
+		// "重复投递应幂等成功", 实际拿到的是"意图已持久化, 结果不确定"。
+		// 实测 8 个 worker 同抢一笔预扣, 约 3% 的运行里有输家踩在这个窗口里。
+		//
+		// 因此改成有界等待: 在很短的时间预算内轮询预扣终态, 一旦赢家落账就按幂等重放
+		// 收场。预算必须小 —— 这只发生在"同一笔预扣被重复结算"的罕见路径上,
+		// 不能把正常请求路径拖慢。
+		if replayErr := billingAwaitConcurrentSettle(ctx, id, &snapshot); replayErr == nil {
+			return nil
 		}
 		return fmt.Errorf("%w: %w", ErrSettlementQueued, err)
 	}
@@ -158,6 +164,51 @@ func BillingSettle(id uint64, record *model.BillingRecord) error {
 		return nil
 	}
 	return fmt.Errorf("%w: task awaits scheduled execution", ErrSettlementQueued)
+}
+
+// billingConcurrentSettleBudget 等待"另一个 worker 完成同一笔结算"的时间预算。
+//
+// 取值理由: 赢家的落账是同一个进程里的一个事务, 实测几十毫秒量级; 预算太小会白等,
+// 太大则把"duplicate settle"这条罕见路径的最坏延迟放大到用户可感知。200ms 足够覆盖
+// 正常落账, 又不会让重复投递变成一次慢请求。
+const billingConcurrentSettleBudget = 200 * time.Millisecond
+
+// billingConcurrentSettlePoll 轮询间隔。取 5ms: 足够密以贴近赢家提交时刻,
+// 又不会在 200ms 预算内打出上百次查询。
+const billingConcurrentSettlePoll = 5 * time.Millisecond
+
+// billingAwaitConcurrentSettle 在有限预算内等待并发结算落地, 成功后按幂等重放判定收场。
+//
+// 三条收敛路径都要处理, 不能只看 settled:
+//   - 赢家已结算且用量一致 → nil(同一笔结算的重复投递);
+//   - 赢家已结算但用量不同 → ErrSettlementMismatch, 拒绝静默接受另一笔账;
+//   - 预扣被释放(未计费) → ErrReservationReleased, 不能再补扣一遍。
+//
+// 超预算仍未见终态就返回错误, 由调用方包装成 ErrSettlementQueued ——
+// 这条路径的语义不变: 意图已持久化, 结果尚未确认。
+func billingAwaitConcurrentSettle(ctx context.Context, reservationID uint64, snapshot *model.BillingRecord) error {
+	deadline := time.Now().Add(billingConcurrentSettleBudget)
+	var lastErr error
+	for {
+		var reservation model.BalanceReservation
+		if err := db.GetDB().WithContext(ctx).First(&reservation, reservationID).Error; err == nil && reservation.Settled {
+			// 读到终态后再确认账目: 事务已提交, 重放判定看到的是完整结果。
+			return billingSettleReplay(reservationID, snapshot)
+		} else if err != nil {
+			lastErr = err
+		}
+		if time.Now().After(deadline) {
+			if lastErr != nil {
+				return lastErr
+			}
+			return ErrSettlementIntentPending
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(billingConcurrentSettlePoll):
+		}
+	}
 }
 
 func billingRecoveryAttempt(ctx context.Context, id uint64) error {
