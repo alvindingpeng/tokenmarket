@@ -198,6 +198,11 @@ func RedemptionRedeem(ctx context.Context, userID uint, code, clientIP string) (
 
 	var claimed model.RedemptionCode
 	err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 先拿写锁: 短事务的"读后写"升级会撞 SQLITE_BUSY_SNAPSHOT(517, busy_timeout 不覆盖),
+		// 取锁后并发方在本事务的写锁上按 busy_timeout 排队。见 db.AcquireWriteLock。
+		if err := db.AcquireWriteLock(tx); err != nil {
+			return err
+		}
 		var found model.RedemptionCode
 		if err := tx.Where("code = ?", code).Take(&found).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {

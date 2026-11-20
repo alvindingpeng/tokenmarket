@@ -415,6 +415,11 @@ func RechargeNotify(ctx context.Context, provider string, req *pay.CallbackReque
 	}
 	var order model.RechargeOrder
 	err = db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 先拿写锁: 短事务的"读后写"升级会撞 SQLITE_BUSY_SNAPSHOT(517, busy_timeout 不覆盖),
+		// 取锁后并发方在本事务的写锁上按 busy_timeout 排队。见 db.AcquireWriteLock。
+		if err := db.AcquireWriteLock(tx); err != nil {
+			return err
+		}
 		if err := tx.Where("order_no = ?", orderNo).Take(&order).Error; err != nil {
 			return fmt.Errorf("order not found")
 		}
@@ -588,6 +593,11 @@ func RechargeExportCount(ctx context.Context, query RechargeExportQuery, total *
 func RechargeManualComplete(ctx context.Context, orderNo string, actorID uint, actorName string) error {
 	var order model.RechargeOrder
 	err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 先拿写锁: 短事务的"读后写"升级会撞 SQLITE_BUSY_SNAPSHOT(517, busy_timeout 不覆盖),
+		// 取锁后并发方在本事务的写锁上按 busy_timeout 排队。见 db.AcquireWriteLock。
+		if err := db.AcquireWriteLock(tx); err != nil {
+			return err
+		}
 		if err := tx.Where("order_no = ?", orderNo).Take(&order).Error; err != nil {
 			return fmt.Errorf("order not found")
 		}

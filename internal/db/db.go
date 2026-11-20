@@ -150,6 +150,7 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.SettlementStatement{},
 		&model.SettlementRun{},
 		&model.BillingRollup{}, // 明细被留存清理后, 终身口径读口改从这张日汇总表补齐。
+		&model.WriteAnchor{},   // 空锚点表: 短事务读后写的写锁把手, 由 db.AcquireWriteLock 使用。
 		&migrate.MigrationRecord{},
 	); err != nil {
 		return err

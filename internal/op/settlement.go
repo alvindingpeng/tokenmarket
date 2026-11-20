@@ -93,7 +93,7 @@ func settlementRowDiffer(old, next model.SettlementStatement) bool {
 		!settlementAmountEqual(old.NetRevenue, next.NetRevenue)
 }
 
-// SettlementGenerateDay 为指定日期生成/刷新渠道商结算单 (幂等 upsert, 一次事务原子提交)。
+// SettlementGenerateDay 为指定日期生成/刷新渠道商结算单 (幂等 upsert; 聚合读在事务外, 写入在一个短事务里原子提交)。
 //
 // 账目口径(交易事件口径, 见 docs/financial-hardening-phase1.md 的"日结退款口径"):
 //   - 毛额: 原调用的供应商应收(owner_revenue)计入调用发生日; 事后退款不改写当日毛额,
@@ -124,76 +124,133 @@ func SettlementGenerateDay(ctx context.Context, day string) error {
 	}, settlementRetryWait)
 }
 
-// settlementGenerateDayOnce 每次都开启新事务、重新聚合，绝不复用失败事务的快照或结果。
+// settlementOwnerAgg 是"某渠道商在某一天"的毛额聚合行。
+//
+// 定义在包级而不是函数内: 聚合与写入现在是两步(见 settlementGenerateDayOnce), 类型要跨两步共用。
+type settlementOwnerAgg struct {
+	OwnerID      uint    `gorm:"column:owner_id"`
+	RequestCount int64   `gorm:"column:request_count"`
+	InputToken   int64   `gorm:"column:input_token"`
+	OutputToken  int64   `gorm:"column:output_token"`
+	GrossRevenue float64 `gorm:"column:gross_revenue"`
+}
+
+// settlementAggregateSnapshot 在只读事务里读三个来源: 毛额聚合、当日批准退款、退款单的原账单。
+//
+// 包在事务里只为了"同一个快照": 三条查询若各走各的隐式事务, 之间就可能夹进一次退款审批,
+// 出现"退款项里算进去了、原账单却读成另一版"这种自相矛盾的中间态。只读事务在 WAL 下只持
+// 读快照、永不需要"读升级写", 因此既不会撞 SQLITE_BUSY_SNAPSHOT(517), 也不会挡住任何写入者
+// (只会在事务存续期间短暂推迟 WAL checkpoint, 耗时与不带事务时同级)。
+func settlementAggregateSnapshot(ctx context.Context, tx *gorm.DB, start, end time.Time) (map[uint]settlementOwnerAgg, map[uint]float64, error) {
+	// 1) 毛额: 供应商应收按调用发生日归集(含事后被退款的账单, 退款另有批准日的冲回调整)。
+	var aggs []settlementOwnerAgg
+	if err := tx.WithContext(ctx).Model(&model.BillingRecord{}).
+		Select("owner_id, COUNT(*) as request_count, COALESCE(SUM(input_token),0) as input_token, COALESCE(SUM(output_token),0) as output_token, COALESCE(SUM(owner_revenue),0) as gross_revenue").
+		Where("created_at >= ? AND created_at < ? AND owner_id > 0", start, end).
+		Group("owner_id").
+		Scan(&aggs).Error; err != nil {
+		return nil, nil, fmt.Errorf("failed to aggregate billing records: %w", err)
+	}
+	aggByOwner := make(map[uint]settlementOwnerAgg, len(aggs))
+	for _, agg := range aggs {
+		aggByOwner[agg.OwnerID] = agg
+	}
+
+	// 2) 退款调整: 按批准日冲回原账单的供应商应收份额(owner_revenue), 金额与毛额同源同口径。
+	var disputes []model.Dispute
+	if err := tx.WithContext(ctx).
+		Where("status = ? AND reviewed_at >= ? AND reviewed_at < ?", model.DisputeStatusApproved, start, end).
+		Find(&disputes).Error; err != nil {
+		return nil, nil, fmt.Errorf("failed to load approved refunds: %w", err)
+	}
+	refundMap := map[uint]float64{}
+	if len(disputes) == 0 {
+		return aggByOwner, refundMap, nil
+	}
+	recordIDs := make([]uint64, 0, len(disputes))
+	seen := map[uint64]bool{}
+	for _, dispute := range disputes {
+		if !seen[dispute.RecordID] {
+			seen[dispute.RecordID] = true
+			recordIDs = append(recordIDs, dispute.RecordID)
+		}
+	}
+	var rows []model.BillingRecord
+	if err := tx.WithContext(ctx).Where("id IN ?", recordIDs).Find(&rows).Error; err != nil {
+		return nil, nil, fmt.Errorf("failed to load refunded billing records: %w", err)
+	}
+	records := make(map[uint64]model.BillingRecord, len(rows))
+	for _, row := range rows {
+		records[row.ID] = row
+	}
+	if len(records) != len(recordIDs) {
+		missing := make([]string, 0)
+		for _, id := range recordIDs {
+			if _, ok := records[id]; !ok {
+				missing = append(missing, fmt.Sprintf("%d", id))
+			}
+		}
+		return nil, nil, fmt.Errorf("approved refund(s) reference missing billing record(s): %s", strings.Join(missing, ", "))
+	}
+	counted := map[uint64]bool{}
+	for _, dispute := range disputes {
+		// 同一账单最多冲回一次: 重复冲回会把同一笔应收扣两遍。
+		if counted[dispute.RecordID] {
+			continue
+		}
+		counted[dispute.RecordID] = true
+		record := records[dispute.RecordID]
+		if record.OwnerID == 0 {
+			continue // 无渠道归属的账单本来就没记供应商应收, 无可冲回
+		}
+		refundMap[record.OwnerID] += record.OwnerRevenue
+	}
+	return aggByOwner, refundMap, nil
+}
+
+// settlementAggregateDay 读出某天的毛额与退款冲回; 只读, 不持有写锁, 不开读写事务。
+//
+// 返回 aggByOwner(毛额按渠道商归集) 与 refundMap(该日应冲回的供应商应收)。
+func settlementAggregateDay(ctx context.Context, database *gorm.DB, start, end time.Time) (map[uint]settlementOwnerAgg, map[uint]float64, error) {
+	var aggByOwner map[uint]settlementOwnerAgg
+	var refundMap map[uint]float64
+	err := database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+		aggByOwner, refundMap, err = settlementAggregateSnapshot(ctx, tx, start, end)
+		return err
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return aggByOwner, refundMap, nil
+}
+
+// settlementGenerateDayOnce 每次都重新聚合, 绝不复用失败事务的快照或结果。
+//
+// 分两步: 先在事务外做"长读"(settlementAggregateDay), 再开一个只做"读几行已有单据 +
+// 写几行结算单"的短写事务。
+//
+// 为什么不能仍然一个事务到底: 聚合读取是整表级的(按日 GROUP BY owner_id, 几十万到上百万行,
+// 耗时几十毫秒到几秒)。事务里的第一条语句若是它, 事务就只持有一个读快照; 之后写结算单那一刻
+// 必须把快照"升级"成写事务, 而窗口期内只要有任何一个计费明细落库, SQLite 就拒绝升级并直接
+// 返回 SQLITE_BUSY_SNAPSHOT(517) —— busy_timeout 对这条路径无效, 唯一出路是整事务回滚重来。
+// 窗口宽度 = 聚合读取的耗时, 所以并发下几乎必然失败: 实测(6 路转发写 + 2 路日结)26 次生成
+// 里 24 次失败, 每次都要靠重试救。把聚合挪到事务外之后, 事务里只剩毫秒级读写, 那条升级窗口
+// 基本消失; 同时写锁只被持有那几毫秒, 日结不再把转发路径的 p99 拖到秒级(实测 1.9s → 62ms)。
+//
+// 原子性没有损失: 结算单的不可变性由 settlementWriteRow 的状态守卫保证, 已审核单的差异校验
+// 也在写事务内(持写锁)重新读当前行 —— "校验用的旧值"与"写入时的现值"始终是同一时刻的。
 func settlementGenerateDayOnce(ctx context.Context, database *gorm.DB, day string, start, end time.Time) error {
-	// 查询与写入同处一个事务: 生成过程原子提交, 读写看到的是同一时刻的账, 任何查询/写入失败
-	// 都整体回滚并向调用方报错(不再像旧实现那样吞掉错误继续跑)。
-	if err := database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	aggByOwner, refundMap, err := settlementAggregateDay(ctx, database, start, end)
+	if err != nil {
+		return err
+	}
 
-		// 1) 毛额: 供应商应收按调用发生日归集(含事后被退款的账单, 退款另有批准日的冲回调整)。
-		type ownerAgg struct {
-			OwnerID      uint    `gorm:"column:owner_id"`
-			RequestCount int64   `gorm:"column:request_count"`
-			InputToken   int64   `gorm:"column:input_token"`
-			OutputToken  int64   `gorm:"column:output_token"`
-			GrossRevenue float64 `gorm:"column:gross_revenue"`
-		}
-		var aggs []ownerAgg
-		if err := tx.Model(&model.BillingRecord{}).
-			Select("owner_id, COUNT(*) as request_count, COALESCE(SUM(input_token),0) as input_token, COALESCE(SUM(output_token),0) as output_token, COALESCE(SUM(owner_revenue),0) as gross_revenue").
-			Where("created_at >= ? AND created_at < ? AND owner_id > 0", start, end).
-			Group("owner_id").
-			Scan(&aggs).Error; err != nil {
-			return fmt.Errorf("failed to aggregate billing records: %w", err)
-		}
-
-		// 2) 退款调整: 按批准日冲回原账单的供应商应收份额(owner_revenue), 金额与毛额同源同口径。
-		var disputes []model.Dispute
-		if err := tx.
-			Where("status = ? AND reviewed_at >= ? AND reviewed_at < ?", model.DisputeStatusApproved, start, end).
-			Find(&disputes).Error; err != nil {
-			return fmt.Errorf("failed to load approved refunds: %w", err)
-		}
-		refundMap := map[uint]float64{}
-		if len(disputes) > 0 {
-			recordIDs := make([]uint64, 0, len(disputes))
-			seen := map[uint64]bool{}
-			for _, dispute := range disputes {
-				if !seen[dispute.RecordID] {
-					seen[dispute.RecordID] = true
-					recordIDs = append(recordIDs, dispute.RecordID)
-				}
-			}
-			var rows []model.BillingRecord
-			if err := tx.Where("id IN ?", recordIDs).Find(&rows).Error; err != nil {
-				return fmt.Errorf("failed to load refunded billing records: %w", err)
-			}
-			records := make(map[uint64]model.BillingRecord, len(rows))
-			for _, row := range rows {
-				records[row.ID] = row
-			}
-			if len(records) != len(recordIDs) {
-				missing := make([]string, 0)
-				for _, id := range recordIDs {
-					if _, ok := records[id]; !ok {
-						missing = append(missing, fmt.Sprintf("%d", id))
-					}
-				}
-				return fmt.Errorf("approved refund(s) reference missing billing record(s): %s", strings.Join(missing, ", "))
-			}
-			counted := map[uint64]bool{}
-			for _, dispute := range disputes {
-				// 同一账单最多冲回一次: 重复冲回会把同一笔应收扣两遍。
-				if counted[dispute.RecordID] {
-					continue
-				}
-				counted[dispute.RecordID] = true
-				record := records[dispute.RecordID]
-				if record.OwnerID == 0 {
-					continue // 无渠道归属的账单本来就没记供应商应收, 无可冲回
-				}
-				refundMap[record.OwnerID] += record.OwnerRevenue
-			}
+	return database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 写事务的第一条语句就取写锁。事务很短(读几行已有单据 + 写几行结算单), 提前拿锁让
+		// 并发的日结/审核在锁上排队, 而不是让本事务的读-写升级去撞 SQLITE_BUSY_SNAPSHOT。
+		if err := db.AcquireWriteLock(tx); err != nil {
+			return err
 		}
 
 		// 3) 目标集合 = 当日毛额渠道商 ∪ 当日退款渠道商 ∪ 已有结算单渠道商:
@@ -206,11 +263,9 @@ func settlementGenerateDayOnce(ctx context.Context, database *gorm.DB, day strin
 		for _, stmt := range existing {
 			existingByOwner[stmt.OwnerID] = stmt
 		}
-		aggByOwner := make(map[uint]ownerAgg, len(aggs))
 		ownerSet := map[uint]bool{}
-		for _, agg := range aggs {
-			aggByOwner[agg.OwnerID] = agg
-			ownerSet[agg.OwnerID] = true
+		for ownerID := range aggByOwner {
+			ownerSet[ownerID] = true
 		}
 		for ownerID := range refundMap {
 			ownerSet[ownerID] = true
@@ -270,10 +325,7 @@ func settlementGenerateDayOnce(ctx context.Context, database *gorm.DB, day strin
 			}
 		}
 		return nil
-	}); err != nil {
-		return err
-	}
-	return nil
+	})
 }
 
 // settlementWriteRow 在事务内落一张结算单(新建或刷新), 是结算单唯一的写入口。

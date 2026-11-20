@@ -145,6 +145,10 @@ func DisputeList(ctx context.Context, filter DisputeQuery) ([]model.Dispute, int
 func DisputeReview(ctx context.Context, disputeID uint64, approve bool, reviewNote string, reviewerID uint, reviewerName string) error {
 	var reviewed model.Dispute
 	err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 事务很短且先读后写: 先拿写锁, 让并发方在锁上排队而不是让本事务的读-写升级去撞 SQLITE_BUSY_SNAPSHOT.
+		if err := db.AcquireWriteLock(tx); err != nil {
+			return err
+		}
 		var dispute model.Dispute
 		if err := tx.First(&dispute, disputeID).Error; err != nil {
 			return fmt.Errorf("dispute not found: %w", err)

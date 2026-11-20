@@ -171,6 +171,11 @@ func WebhookCreate(ctx context.Context, userID uint, req model.WebhookCreateRequ
 
 	var view model.WebhookView
 	err = db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 先拿写锁: 短事务的"读后写"升级会撞 SQLITE_BUSY_SNAPSHOT(517, busy_timeout 不覆盖),
+		// 取锁后并发方在本事务的写锁上按 busy_timeout 排队。见 db.AcquireWriteLock。
+		if err := db.AcquireWriteLock(tx); err != nil {
+			return err
+		}
 		var count int64
 		if err := tx.Model(&model.Webhook{}).Where("user_id = ?", userID).Count(&count).Error; err != nil {
 			return fmt.Errorf("count webhooks: %w", err)
@@ -297,6 +302,11 @@ func WebhookUpdate(ctx context.Context, userID uint, id uint64, req model.Webhoo
 
 	var view model.WebhookView
 	err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 先拿写锁: 短事务的"读后写"升级会撞 SQLITE_BUSY_SNAPSHOT(517, busy_timeout 不覆盖),
+		// 取锁后并发方在本事务的写锁上按 busy_timeout 排队。见 db.AcquireWriteLock。
+		if err := db.AcquireWriteLock(tx); err != nil {
+			return err
+		}
 		hook, err := webhookGetRow(ctx, tx, userID, id)
 		if err != nil {
 			return err
@@ -386,6 +396,11 @@ func WebhookDelete(ctx context.Context, userID uint, id uint64) error {
 func WebhookTest(ctx context.Context, userID uint, id uint64) (model.WebhookTestResult, error) {
 	var result model.WebhookTestResult
 	err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 先拿写锁: 短事务的"读后写"升级会撞 SQLITE_BUSY_SNAPSHOT(517, busy_timeout 不覆盖),
+		// 取锁后并发方在本事务的写锁上按 busy_timeout 排队。见 db.AcquireWriteLock。
+		if err := db.AcquireWriteLock(tx); err != nil {
+			return err
+		}
 		hook, err := webhookGetRow(ctx, tx, userID, id)
 		if err != nil {
 			return err
@@ -515,6 +530,11 @@ func webhookReplayPayload(rawPayload, deliveryID string, now time.Time) (string,
 func WebhookReplayDelivery(ctx context.Context, userID uint, webhookID uint64, deliveryID string) (model.WebhookDeliveryLogView, error) {
 	var view model.WebhookDeliveryLogView
 	err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 先拿写锁: 短事务的"读后写"升级会撞 SQLITE_BUSY_SNAPSHOT(517, busy_timeout 不覆盖),
+		// 取锁后并发方在本事务的写锁上按 busy_timeout 排队。见 db.AcquireWriteLock。
+		if err := db.AcquireWriteLock(tx); err != nil {
+			return err
+		}
 		hook, err := webhookGetRow(ctx, tx, userID, webhookID)
 		if err != nil {
 			return err

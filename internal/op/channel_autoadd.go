@@ -312,6 +312,11 @@ func AutoAddChannelModels(ctx context.Context, channelID int, config model.Chann
 	truncated := false
 	if len(results) > 0 {
 		if err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// 先拿写锁: 短事务的"读后写"升级会撞 SQLITE_BUSY_SNAPSHOT(517, busy_timeout 不覆盖),
+			// 取锁后并发方在本事务的写锁上按 busy_timeout 排队。见 db.AcquireWriteLock。
+			if err := db.AcquireWriteLock(tx); err != nil {
+				return err
+			}
 			newCount := 0
 			for _, result := range results {
 				keyID, ok := keyIDByName[result.keyName]

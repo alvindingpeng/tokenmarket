@@ -311,6 +311,11 @@ func WithdrawReview(ctx context.Context, id uint, approve bool, note string, act
 	if approve {
 		var order model.Withdrawal
 		err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// 先拿写锁: 短事务的"读后写"升级会撞 SQLITE_BUSY_SNAPSHOT(517, busy_timeout 不覆盖),
+			// 取锁后并发方在本事务的写锁上按 busy_timeout 排队。见 db.AcquireWriteLock。
+			if err := db.AcquireWriteLock(tx); err != nil {
+				return err
+			}
 			if err := tx.Where("id = ?", id).Take(&order).Error; err != nil {
 				return fmt.Errorf("withdrawal not found")
 			}
@@ -354,6 +359,11 @@ func withdrawUnfreeze(ctx context.Context, id uint, fromStatus, toStatus model.W
 	noteFormat string, guard func(*model.Withdrawal) error, actorName string) error {
 	var order model.Withdrawal
 	return db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 先拿写锁: 短事务的"读后写"升级会撞 SQLITE_BUSY_SNAPSHOT(517, busy_timeout 不覆盖),
+		// 取锁后并发方在本事务的写锁上按 busy_timeout 排队。见 db.AcquireWriteLock。
+		if err := db.AcquireWriteLock(tx); err != nil {
+			return err
+		}
 		if err := tx.Where("id = ?", id).Take(&order).Error; err != nil {
 			return fmt.Errorf("withdrawal not found")
 		}
@@ -410,6 +420,11 @@ func WithdrawMarkPaid(ctx context.Context, id uint, paidRef, actualCurrency, act
 	}
 	var order model.Withdrawal
 	err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 先拿写锁: 短事务的"读后写"升级会撞 SQLITE_BUSY_SNAPSHOT(517, busy_timeout 不覆盖),
+		// 取锁后并发方在本事务的写锁上按 busy_timeout 排队。见 db.AcquireWriteLock。
+		if err := db.AcquireWriteLock(tx); err != nil {
+			return err
+		}
 		if err := tx.Where("id = ?", id).Take(&order).Error; err != nil {
 			return fmt.Errorf("withdrawal not found")
 		}
@@ -466,6 +481,11 @@ func WithdrawMarkPaid(ctx context.Context, id uint, paidRef, actualCurrency, act
 func WithdrawRollback(ctx context.Context, id uint, actorName string) error {
 	var order model.Withdrawal
 	err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 先拿写锁: 短事务的"读后写"升级会撞 SQLITE_BUSY_SNAPSHOT(517, busy_timeout 不覆盖),
+		// 取锁后并发方在本事务的写锁上按 busy_timeout 排队。见 db.AcquireWriteLock。
+		if err := db.AcquireWriteLock(tx); err != nil {
+			return err
+		}
 		if err := tx.Where("id = ?", id).Take(&order).Error; err != nil {
 			return fmt.Errorf("withdrawal not found")
 		}

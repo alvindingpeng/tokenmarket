@@ -9,8 +9,27 @@ import (
 	sqlite "github.com/glebarez/go-sqlite"
 )
 
-// Five attempts total (including the first), with at most 150ms of backoff.
-const settlementMaxAttempts = 5
+// settlementMaxAttempts 是结算完整流程(聚合读 + 写事务)的最大尝试次数(含首次)。
+//
+// 从 5 提到 8: 结算撞的不是"忙一会儿就好"的锁等待, 而是 WAL 下的读快照失效
+// (SQLITE_BUSY_SNAPSHOT, 517) 与普通 BUSY —— busy_timeout 对前一条路径完全无效,
+// 唯一出路是整轮重来。碰撞的一方往往是另一个日结或一次审核, 它自己就要几百毫秒,
+// 而 5 次 × 150ms 的总退避窗口比对手还短, 于是重试全部落在对方的持锁区间里, 五次全废
+// (实测并发压测下 24/26 次仍然失败)。8 次 × 1.6s 让最后一次重试落在对手提交之后。
+//
+// 注意这**只是兜底**: v1.10.16 把聚合读挪出了写事务、写事务开头就取写锁之后, 同样的
+// 负载下失败数已经是 0。单靠拉长重试窗口实测仍然救不回来(8 次里失败 6 次) —— 真正
+// 起作用的是锁的获取顺序(见 db.AcquireWriteLock 与 settlementGenerateDayOnce)。
+//
+// 为什么不再往上加: 结算的调用方是定时任务与管理员手动重算, 都有分钟级的时间预算,
+// 1.6s 的等待可以接受; 而重试窗口长到分钟级就变成"锁等待放大", 出问题时更难定位。
+const settlementMaxAttempts = 8
+
+// settlementRetryBaseDelay / settlementRetryMaxDelay 是退避区间(指数增长后截顶)。
+const (
+	settlementRetryBaseDelay = 10 * time.Millisecond
+	settlementRetryMaxDelay  = 500 * time.Millisecond
+)
 
 // run must finish/roll back its entire transaction before returning. The injected
 // wait keeps retry policy testable without process-wide hooks or sleeping tests.
@@ -29,10 +48,35 @@ func settlementRetry(ctx context.Context, dialect string, run func() error, wait
 		if dialect != "sqlite" || !settlementSQLiteLock(err) || attempt+1 >= settlementMaxAttempts {
 			return err
 		}
-		if err := wait(ctx, (10*time.Millisecond)<<attempt); err != nil {
+		delay := settlementRetryDelay(attempt)
+		if err := wait(ctx, delay); err != nil {
 			return err
 		}
 	}
+}
+
+// settlementRetryDelay 返回第 attempt 次失败后的等待时长: 指数退避的上界, 再加 [0, 上界/2) 的
+// 正向抖动。
+//
+// 抖动是为了拆开"同时开始的重试": 定时任务与管理员手动重算可能在同一毫秒撞上同一把锁,
+// 固定退避会让它们每一轮都同步重来(明明只要错开一点就能一前一后成功)。抖动只向上取,
+// 保证第 n 次的等待永远不小于 2^n × 10ms —— 否则抖动会把退避退化成上一轮的长度。
+//
+// 用 attempt 做确定性混合而不是全局随机源: 重试策略要可重现, 否则测试只能断言"大概"。
+func settlementRetryDelay(attempt int) time.Duration {
+	ceiling := settlementRetryBaseDelay
+	for i := 0; i < attempt && ceiling < settlementRetryMaxDelay; i++ {
+		ceiling *= 2
+	}
+	if ceiling > settlementRetryMaxDelay {
+		ceiling = settlementRetryMaxDelay
+	}
+	span := int64(ceiling / 2)
+	if span <= 0 {
+		return ceiling
+	}
+	offset := int64((attempt*2654435761)>>3) % span
+	return ceiling + time.Duration(offset)
 }
 
 func settlementRetryWait(ctx context.Context, delay time.Duration) error {

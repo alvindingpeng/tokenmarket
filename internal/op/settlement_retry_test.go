@@ -23,8 +23,8 @@ func TestSettlementRetryPolicy(t *testing.T) {
 		err           error
 		attempts      int
 	}{
-		{"busy", "sqlite", busy, 5},
-		{"locked", "sqlite", fmt.Errorf("outer: %w", errors.New("database table is locked: records")), 5},
+		{"busy", "sqlite", busy, settlementMaxAttempts},
+		{"locked", "sqlite", fmt.Errorf("outer: %w", errors.New("database table is locked: records")), settlementMaxAttempts},
 		{"postgres", "postgres", busy, 1},
 		{"mysql", "mysql", busy, 1},
 		{"semantic", "sqlite", errors.New("statement database is locked has immutable status"), 1},
@@ -41,8 +41,23 @@ func TestSettlementRetryPolicy(t *testing.T) {
 			if got != tc.err || calls != tc.attempts || len(delays) != tc.attempts-1 {
 				t.Fatalf("err=%v calls=%d delays=%v", got, calls, delays)
 			}
-			if tc.attempts == 5 && !reflect.DeepEqual(delays, []time.Duration{10 * time.Millisecond, 20 * time.Millisecond, 40 * time.Millisecond, 80 * time.Millisecond}) {
-				t.Fatalf("delays=%v", delays)
+			if tc.attempts == settlementMaxAttempts {
+				// 退避必须单调增长且落在 [2^n×10ms, 2^n×10ms × 1.5) 区间内:
+				// 单调是"越等越久"的承诺, 上界是"不会等到分钟级"的承诺。
+				want := []time.Duration{10, 20, 40, 80, 160, 320, 500}
+				if len(delays) != len(want) {
+					t.Fatalf("delays=%v", delays)
+				}
+				for i, base := range want {
+					floor := base * time.Millisecond
+					limit := floor + floor/2
+					if delays[i] < floor || delays[i] >= limit {
+						t.Fatalf("第 %d 次退避 %v 不在 [%v, %v)", i, delays[i], floor, limit)
+					}
+					if i > 0 && delays[i] < delays[i-1] {
+						t.Fatalf("退避必须单调增长: %v", delays)
+					}
+				}
 			}
 		})
 	}
@@ -86,132 +101,128 @@ func TestSettlementRetryCancellation(t *testing.T) {
 	}
 }
 
-type settlementRetryContextKey struct{}
+// 日结的写事务必须在开头就取写锁: 并发写入者会"在锁上排队", 而不是让日结的读-写升级去撞
+// SQLITE_BUSY_SNAPSHOT(517)。本用例用一个真实持有写事务的第二连接来钉这条语义:
+//   - 日结在对方持锁期间既不失败也不写脏数据, 而是在锁上等待;
+//   - 对方提交后日结正常完成, 全程没有出现 517;
+//   - 聚合读取发生在取锁之前, 因此"取锁前刚提交的明细"会落在本次之外 —— 这是有意的时间窗,
+//     由下一次重算(幂等 upsert)补齐, 用例把这条语义也钉住, 免得将来被误认为 bug。
+func TestSettlementGenerateQueuesOnWriterLockAndRefreshes(t *testing.T) {
+	buyer, owner, _ := settlementTestDB(t, "queue")
+	database := db.GetDB()
+	pool, err := database.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Close() })
+	pool.SetMaxOpenConns(4)
+	var mode string
+	if err := database.Raw("PRAGMA journal_mode=WAL").Scan(&mode).Error; err != nil || mode != "wal" {
+		t.Fatalf("WAL: %s %v", mode, err)
+	}
+	start, _, err := settlementDayWindow("20260920")
+	if err != nil {
+		t.Fatal(err)
+	}
+	settlementRecord(t, buyer.ID, owner.ID, start.Add(time.Hour), 10, 8, 0)
 
-// The generator has read its WAL snapshot before the callback signals. Another
-// connection commits before it is allowed to write: this deterministically forces
-// SQLITE_BUSY_SNAPSHOT, rather than relying on scheduler timing or sleeps.
-func TestSettlementRetryWALSnapshot(t *testing.T) {
-	for _, audit := range []bool{false, true} {
-		t.Run(fmt.Sprintf("audit=%v", audit), func(t *testing.T) {
-			buyer, owner, _ := settlementTestDB(t, "retry")
-			database := db.GetDB()
-			pool, err := database.DB()
-			if err != nil {
-				t.Fatal(err)
+	var conflicts atomic.Int32
+	observe := func(tx *gorm.DB) {
+		if tx.Error == nil {
+			return
+		}
+		var e *sqlite.Error
+		if errors.As(tx.Error, &e) && e.Code() == 517 {
+			conflicts.Add(1)
+		}
+	}
+	if err := database.Callback().Create().After("gorm:create").Register("queue_snapshot", observe); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Callback().Update().After("gorm:update").Register("queue_snapshot", observe); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		database.Callback().Create().Remove("queue_snapshot")
+		database.Callback().Update().Remove("queue_snapshot")
+	})
+
+	// 第二个连接持有一个真实写事务(已 INSERT, 未提交), 把写锁握住。
+	hold := make(chan struct{})
+	holding := make(chan struct{})
+	writerDone := make(chan error, 1)
+	go func() {
+		writerDone <- database.Transaction(func(tx *gorm.DB) error {
+			// 必须用事务自己的连接写入, 否则 gorm 会因为"事务内没有任何语句"直接不开事务,
+			// 这条用例就退化成"没持锁也能过"的假绿。
+			extra := model.BillingRecord{
+				RequestID:       settlementRequestSeq,
+				UserID:          buyer.ID,
+				OwnerID:         owner.ID,
+				ModelName:       "gpt-4o",
+				GroupModel:      "gpt-4o",
+				UserCost:        20,
+				OwnerRevenue:    16,
+				PlatformRevenue: 4,
+				InputToken:      10,
+				OutputToken:     20,
+				Status:          model.BillingStatusSettled,
+				CreatedAt:       start.Add(2 * time.Hour),
 			}
-			t.Cleanup(func() { pool.Close() })
-			pool.SetMaxOpenConns(4)
-			var mode string
-			if err := database.Raw("PRAGMA journal_mode=WAL").Scan(&mode).Error; err != nil || mode != "wal" {
-				t.Fatalf("WAL: %s %v", mode, err)
+			if err := tx.Create(&extra).Error; err != nil {
+				return err
 			}
-			start, _, err := settlementDayWindow("20260920")
-			if err != nil {
-				t.Fatal(err)
-			}
-			record := settlementRecord(t, buyer.ID, owner.ID, start.Add(time.Hour), 10, 8, 0)
-			if audit {
-				if err := SettlementGenerateDay(context.Background(), "20260920"); err != nil {
-					t.Fatal(err)
-				}
-			}
-			ready := make(chan struct{})
-			resume := make(chan struct{})
-			var writes atomic.Int32
-			var conflicts atomic.Int32
-			before := func(tx *gorm.DB) {
-				if tx.Statement.Context.Value(settlementRetryContextKey{}) != true || tx.Statement.Table != "settlement_statements" {
-					return
-				}
-				if writes.Add(1) == 1 {
-					close(ready)
-					select {
-					case <-resume:
-					case <-tx.Statement.Context.Done():
-						tx.AddError(tx.Statement.Context.Err())
-					}
-				}
-			}
-			after := func(tx *gorm.DB) {
-				if tx.Statement.Context.Value(settlementRetryContextKey{}) != true || tx.Error == nil {
-					return
-				}
-				var e *sqlite.Error
-				if errors.As(tx.Error, &e) && e.Code() == 517 {
-					conflicts.Add(1)
-				}
-			}
-			if err := database.Callback().Create().Before("gorm:create").Register("retry_snapshot_before", before); err != nil {
-				t.Fatal(err)
-			}
-			if err := database.Callback().Create().After("gorm:create").Register("retry_snapshot_after", after); err != nil {
-				t.Fatal(err)
-			}
-			if err := database.Callback().Update().Before("gorm:update").Register("retry_snapshot_before", before); err != nil {
-				t.Fatal(err)
-			}
-			if err := database.Callback().Update().After("gorm:update").Register("retry_snapshot_after", after); err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() {
-				database.Callback().Create().Remove("retry_snapshot_before")
-				database.Callback().Create().Remove("retry_snapshot_after")
-				database.Callback().Update().Remove("retry_snapshot_before")
-				database.Callback().Update().Remove("retry_snapshot_after")
-			})
-			ctx, cancel := context.WithTimeout(context.WithValue(context.Background(), settlementRetryContextKey{}, true), 5*time.Second)
-			defer cancel()
-			result := make(chan error, 1)
-			go func() { result <- SettlementGenerateDay(ctx, "20260920") }()
-			select {
-			case <-ready:
-			case err := <-result:
-				t.Fatalf("generator returned before synchronization: %v", err)
-			case <-ctx.Done():
-				t.Fatal(ctx.Err())
-			}
-			// Commit fresh source data and a competing generation on the second connection.
-			writerErr := database.Model(&model.BillingRecord{}).Where("id = ?", record.ID).Update("owner_revenue", 9).Error
-			if writerErr == nil {
-				writerErr = SettlementGenerateDay(context.Background(), "20260920")
-			}
-			if writerErr == nil && audit {
-				writerErr = database.Model(&model.SettlementStatement{}).Where("owner_id = ?", owner.ID).Update("status", settlementStatusAudited).Error
-			}
-			var audited model.SettlementStatement
-			if audit && writerErr == nil {
-				writerErr = database.Where("owner_id = ?", owner.ID).First(&audited).Error
-			}
-			close(resume)
-			err = <-result
-			if writerErr != nil {
-				t.Fatalf("writer: %v", writerErr)
-			}
-			if err != nil {
-				t.Fatalf("retry generation: %v", err)
-			}
-			if conflicts.Load() != 1 {
-				t.Fatalf("expected real typed BUSY_SNAPSHOT (517), got %d", conflicts.Load())
-			}
-			var rows []model.SettlementStatement
-			if err := database.Find(&rows).Error; err != nil {
-				t.Fatal(err)
-			}
-			if len(rows) != 1 || rows[0].GrossRevenue != 9 || rows[0].RequestCount != 1 {
-				t.Fatalf("not freshly aggregated/idempotent: %+v", rows)
-			}
-			if audit {
-				if !reflect.DeepEqual(rows[0], audited) {
-					t.Fatalf("audited row changed: got %+v want %+v", rows[0], audited)
-				}
-			} else if writes.Load() != 2 {
-				t.Fatalf("expected fresh transaction write, got %d", writes.Load())
-			}
-			if err := SettlementGenerateDay(context.Background(), "20260920"); err != nil {
-				t.Fatal(err)
-			}
+			close(holding)
+			<-hold
+			return nil
 		})
+	}()
+	<-holding
+
+	genDone := make(chan error, 1)
+	go func() { genDone <- SettlementGenerateDay(context.Background(), "20260920") }()
+	// 对方还握着写锁: 日结不许抢先完成(那意味着它绕过了锁), 也不许以锁错误失败。
+	select {
+	case err := <-genDone:
+		t.Fatalf("generation finished while a writer held the lock: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(hold)
+	if err := <-writerDone; err != nil {
+		t.Fatalf("writer: %v", err)
+	}
+	select {
+	case err := <-genDone:
+		if err != nil {
+			t.Fatalf("generation after writer commit: %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("generation did not resume after the writer committed")
+	}
+	if conflicts.Load() != 0 {
+		t.Fatalf("expected no SQLITE_BUSY_SNAPSHOT (517) once the write lock is taken first, got %d", conflicts.Load())
+	}
+
+	// 第一次日结的聚合读取早于对方的提交: 它看到的是 1 条明细。重算必须补齐到 2 条。
+	var first model.SettlementStatement
+	if err := database.Where("owner_id = ? AND period = ?", owner.ID, "20260920").First(&first).Error; err != nil {
+		t.Fatal(err)
+	}
+	if first.RequestCount != 1 || first.GrossRevenue != 8 {
+		t.Fatalf("first generation should reflect the pre-lock snapshot, got %+v", first)
+	}
+	if err := SettlementGenerateDay(context.Background(), "20260920"); err != nil {
+		t.Fatal(err)
+	}
+	var refreshed model.SettlementStatement
+	if err := database.Where("owner_id = ? AND period = ?", owner.ID, "20260920").First(&refreshed).Error; err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.RequestCount != 2 || refreshed.GrossRevenue != 24 {
+		t.Fatalf("regeneration must pick up the late record, got %+v", refreshed)
+	}
+	if conflicts.Load() != 0 {
+		t.Fatalf("unexpected 517 during regeneration: %d", conflicts.Load())
 	}
 }
 

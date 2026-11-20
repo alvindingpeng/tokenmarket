@@ -197,6 +197,11 @@ func GroupUpdate(id int, req *model.GroupUpdateRequest, scope model.Scope, ctx c
 
 	var group model.Group
 	err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 先拿写锁: 短事务的"读后写"升级会撞 SQLITE_BUSY_SNAPSHOT(517, busy_timeout 不覆盖),
+		// 取锁后并发方在本事务的写锁上按 busy_timeout 排队。见 db.AcquireWriteLock。
+		if err := db.AcquireWriteLock(tx); err != nil {
+			return err
+		}
 		if len(selectFields) > 0 {
 			if err := tx.Model(&model.Group{}).Where("id = ?", id).Select(selectFields).Updates(&updates).Error; err != nil {
 				return fmt.Errorf("failed to update group: %w", err)
@@ -361,6 +366,11 @@ func GroupAddItems(req *model.GroupAddItemsRequest, scope model.Scope, ctx conte
 		}
 		var group model.Group
 		err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// 先拿写锁: 短事务的"读后写"升级会撞 SQLITE_BUSY_SNAPSHOT(517, busy_timeout 不覆盖),
+			// 取锁后并发方在本事务的写锁上按 busy_timeout 排队。见 db.AcquireWriteLock。
+			if err := db.AcquireWriteLock(tx); err != nil {
+				return err
+			}
 			// 在事务内重新读当前成员, 而不是用缓存里的 oldGroup.Items:
 			// 缓存与本事务之间可能已经插入过一次并发追加, 用缓存算差集会漏成员(即本函数要解决的 bug)。
 			var existing []model.GroupItem

@@ -155,7 +155,14 @@ export default function Ops() {
             </h2>
             <OpsOverviewCards />
             <Tabs value={tab} onValueChange={setTab}>
-                <TabsList className='h-auto shrink-0 flex-wrap'>
+                {/*
+                  窄屏必须让页签换行: 基础样式给页签列表写死了 h-9(36px), 14 个页签在 390px 下
+                  只放得下第一行, 其余行溢出到列表之外、盖住下面的操作按钮 —— 点击会被
+                  别的页签按钮拦掉(真实浏览器 e2e 抓到的)。h-auto! 解掉固定高度,
+                  [&>button]:h-8! 把触发器从 "100%-1px" 改成固定行高, 换行后每行才登高。
+                  w-full 只在窄屏生效, 宽屏维持原来的 w-fit 外观。
+                */}
+                <TabsList className='h-auto! w-full shrink-0 flex-wrap sm:w-fit [&>button]:h-8!'>
                     {TABS.map((item) => {
                         const Icon = item.icon;
                         return (

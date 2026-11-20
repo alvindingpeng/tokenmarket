@@ -261,6 +261,11 @@ func webhookClaimDelivery(ctx context.Context, id uint64) (webhookClaim, bool, e
 	var out webhookClaim
 	owned := false
 	err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 先拿写锁: 短事务的"读后写"升级会撞 SQLITE_BUSY_SNAPSHOT(517, busy_timeout 不覆盖),
+		// 取锁后并发方在本事务的写锁上按 busy_timeout 排队。见 db.AcquireWriteLock。
+		if err := db.AcquireWriteLock(tx); err != nil {
+			return err
+		}
 		var d model.WebhookDelivery
 		if err := tx.First(&d, id).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
