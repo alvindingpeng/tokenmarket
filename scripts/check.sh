@@ -29,6 +29,10 @@ step "第二批安全发布工具: 停机备份与数据验收"
 (cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p test_security_batch2_tools.py -v)
 ok "security batch-2 release tools"
 
+step "发布记录留存: 证据目录永不轮转"
+(cd "$ROOT" && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p test_releases_retention.py -v)
+ok "releases retention"
+
 step "后端: 编译"
 (cd "$ROOT" && go build ./...)
 ok "go build"

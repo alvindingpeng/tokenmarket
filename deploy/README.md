@@ -43,6 +43,43 @@ python3 deploy/ssh_auto.py <host> '<pwd>' /tmp/swap.sh 300
 `systemctl start` 失败也会走回滚（否则 `set -e` 会把新二进制留在原地、服务却停着）。
 同名备份不覆盖：已存在 `switchyard.prev-v1.5.19` 时会追加时间戳，避免备份名与内容不符。
 
+## 服务器布局
+
+```
+/opt/switchyard/
+├── bin/switchyard          # 运行二进制（备份: switchyard.prev-vN）
+├── data/config.json        # 服务配置（SQLite: data/data.db）
+├── data/backups/           # 自动备份（Go 任务轮转, keep=3）
+├── data/releases/          # 发布/恢复点记录（见下节, 需手动轮转）
+├── keys/                   # 密钥
+└── src/switchyard/         # 源码（git clone，供编译）
+/usr/local/go/              # Go 工具链（go1.26.4，与 go.mod 对齐）
+```
+
+## data/releases 留存（`scripts/releases-retention.py`）
+
+`data/releases` 随**发布次数**增长，与业务量无关：每个目录含一份整库副本 + 旧二进制。
+三个脚本往这里写，内容价值不同，**不能一刀切轮转**：
+
+| 目录后缀 | 标记文件 | 内容 | 留存策略 |
+|---|---|---|---|
+| `*-financial` | `release.json` | 整库副本 + 审计报告 | **永不轮转**（`financial-release-handoff.md` 要求豁免日常清理） |
+| `*-security-batch2` | `backup.json` | 迁移前整库 + 旧二进制 | **永不轮转**（回退到迁移前 schema 的唯一途径） |
+| `*-security-batch2-deploy` | `deploy.json` | nginx 原配置 + 部署日志 | 保留最近 5 份（`--keep` 可调） |
+
+```bash
+python3 scripts/releases-retention.py --dry-run     # 先看计划，不删
+python3 scripts/releases-retention.py --keep 5
+```
+
+安全规则（每条都有测试反证）：
+
+- **只删完成态**：`deploy.json` 的 `result` 必须**恰好**是 `deployed`。前缀匹配会把
+  `deployed-ingress-manual-recovery` 当成功 —— 那正是服务起来了但入口还是 503、需要人工介入的状态。
+- **读不到就留**：没有 `deploy.json`、JSON 损坏、`manual_recovery_required=true` 一律保留。
+- **不认识的目录不动**：手工副本或未来脚本的命名只报告不删除。
+- **有锁就不跑**：`data/releases/.releases.lock` 存在时直接退出，避免两次发布互相剪掉对方的在途目录。
+
 ## 验证
 
 `verify_db.sh`：用 Python sqlite3 模块验证迁移列（服务器无 sqlite3 CLI 时适用）。
