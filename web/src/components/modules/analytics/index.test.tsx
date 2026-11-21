@@ -47,6 +47,14 @@ const overviewData: UserStatsOverview = {
     // 与 request_coverage_start 是两个独立边界(一个受日志留存期限制, 一个受迁移 45 之前的固化形态限制),
     // 所以刻意取不同的值 —— 谁被谁覆盖都会被断言抓到。
     model_breakdown_coverage_start: shiftDate(monthRange.start_date as string, 10),
+    // 三个时区字段默认给"已对齐": 两个时区偏移相同 —— 这是绝大多数用户的状态,
+    // 默认 fixture 保持它, 页面就不该多出一行提示(错误提示比漏提示更烦人)。
+    // 需要错开场景的用例自己改 offset。
+    stats_timezone: 'Asia/Shanghai',
+    stats_calendar_timezone: 'Asia/Shanghai',
+    stats_timezone_offset_minutes: 480,
+    stats_calendar_timezone_offset_minutes: 480,
+    stats_timezone_source: 'server',
 };
 const trendData: UserStatsTrend[] = [
     // 有日志样本的一天: 成功率是真值。
@@ -386,6 +394,68 @@ describe('AnalyticsPage 新增数据维度', () => {
         expect(html).not.toContain('Model breakdown available from');
         // 概览的总额仍在页面上 —— 这正是"有金额但拆不到模型"的样子。
         expect(html).toContain('1,234');
+    });
+
+    it('两个时区偏移相同时不显示任何时区提示', () => {
+        // 偏移相同 = 挂钟一致 = 用户看到的日期与分组完全一样, 这里多一行说明只是噪声。
+        // 关键: 也要覆盖"名字不同但偏移相同"的情形, 否则按名字判会给一大批人误报。
+        const html = renderSSR(<AnalyticsPage />, (client) => {
+            seedAll(client);
+            client.setQueryData(keys().overview, {
+                ...overviewData,
+                // 同偏移不同名: 用户偏好是 Asia/Macau, 服务器是 Asia/Shanghai —— 都是 +08:00。
+                stats_timezone: 'Asia/Macau',
+                stats_calendar_timezone: 'Asia/Shanghai',
+                stats_timezone_source: 'user',
+                stats_timezone_offset_minutes: 480,
+                stats_calendar_timezone_offset_minutes: 480,
+            });
+        });
+        expect(html).not.toContain('data-testid="timezone-notice"');
+        expect(html).not.toContain('Range boundaries follow');
+        // 页面其它部分照常。
+        expect(html).toContain('Total Requests');
+    });
+
+    it('两个时区偏移不同时, 提示里同时出现两个时区名与偏移', () => {
+        // 用户选了纽约(-05:00), 服务器在上海(+08:00): 区间边界按纽约算, 分桶按上海算。
+        const html = renderSSR(<AnalyticsPage />, (client) => {
+            seedAll(client);
+            client.setQueryData(keys().overview, {
+                ...overviewData,
+                stats_timezone: 'America/New_York',
+                stats_timezone_source: 'user',
+                stats_timezone_offset_minutes: -300,
+                stats_calendar_timezone: 'Asia/Shanghai',
+                stats_calendar_timezone_offset_minutes: 480,
+            });
+        });
+        expect(html).toContain('data-testid="timezone-notice"');
+        // 两个时区都必须点名并带偏移: 只说"时区不同"用户无从判断差在哪、影响哪部分。
+        expect(html).toContain('America/New_York');
+        expect(html).toContain('UTC-05:00');
+        expect(html).toContain('Asia/Shanghai');
+        expect(html).toContain('UTC+08:00');
+        // 文案只说事实, 并说明这种分工是刻意的 —— 不暗示它是缺陷。
+        expect(html).toContain('Range boundaries follow');
+        expect(html).toContain('This is intentional');
+    });
+
+    it('老后端没有时区字段时不渲染提示, 也不把 undefined 拼进文案', () => {
+        // 部署里很可能还是旧版本: 拿不到事实就不说, 更不能印出 "Range boundaries follow UTC+00:00 undefined"。
+        const html = renderSSR(<AnalyticsPage />, (client) => {
+            seedAll(client);
+            const stale: Record<string, unknown> = { ...overviewData };
+            delete stale.stats_timezone;
+            delete stale.stats_calendar_timezone;
+            delete stale.stats_timezone_offset_minutes;
+            delete stale.stats_calendar_timezone_offset_minutes;
+            delete stale.stats_timezone_source;
+            client.setQueryData(keys().overview, stale as unknown as UserStatsOverview);
+        });
+        expect(html).not.toContain('data-testid="timezone-notice"');
+        expect(html).not.toContain('undefined');
+        expect(html).toContain('Total Requests'); // 页面本身照常
     });
 
     it('无延迟样本时走空态而不是显示极快的 0', () => {

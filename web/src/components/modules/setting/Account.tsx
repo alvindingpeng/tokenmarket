@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { useChangeUsername, useChangePassword, useAuth } from '@/api/user';
 import { toast } from 'sonner';
 import { SettingTOTP } from './TOTP';
+import { TimezoneSetting } from './Timezone';
 
 /** 密码输入框，附带显示/隐藏切换 */
 function PasswordInput({
@@ -262,6 +263,9 @@ export function SettingAccount() {
                     <Pencil className="size-4" />
                 </motion.button>
             </div>
+
+            {/* 时区偏好 */}
+            <TimezoneSetting />
 
             {/* 退出登录 */}
             <div className="flex items-center justify-between gap-4">

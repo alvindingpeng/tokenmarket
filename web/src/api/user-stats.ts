@@ -39,6 +39,30 @@ export type UserStatsOverview = {
     cache_write_tokens: number;
     // cache_hit_rate = cacheRead/(cacheRead+input), 输出不计入分母。
     cache_hit_rate: number;
+
+    // ---- 时区口径(task-58 新增) ----
+    // 统计页里存在两个时区, 不能混为一谈:
+    //   stats_timezone          —— 查询【区间边界】所用时区: 用户偏好生效时是该 IANA 名, 否则是服务器时区名。
+    //   stats_calendar_timezone —— 服务器时区: 日/周/月【分组】与【数据留存】日历所依据的时区。
+    // 两者名字可能不同而当前偏移相同(+08:00 的 Asia/Shanghai 与 Asia/Shanghai 之外的等价时区):
+    // 挂钟一致时用户看到的日期与分组完全一致, 此时【不需要任何提示】—— 按名字比会误报。
+    // 日/周/月桶恒按 stats_calendar_timezone, 不随区间时区变: 汇总行按服务器自然日固化,
+    // 换一套日历会让统计页与账单页/留存口径对不上, 这是设计而非缺陷。
+    //
+    // 全部标成可选是刻意的, 不是偷懒: 后端 task-58 上线之前, 这个响应里确实没有这几个字段,
+    // 而页面在那时也必须正常工作(走 legacy, 不提示)。把类型写成必填等于对运行时撒谎,
+    // 还会逼着每一个测试 fixture 去填假值 —— 那才是真正的失真。
+    // 读取方一律按 unknown 做运行时校验(见 analytics/timezone.ts), 拿不到就走 legacy。
+    stats_timezone?: string;
+    // 服务器时区名: 日/周/月【分组】与【数据留存】日历依据的时区。
+    // 与 stats_timezone 可以不同名而同偏移 —— 那种情况挂钟一致, 不该提示。
+    stats_calendar_timezone?: string;
+    // 上面两个时区【当前】的 UTC 偏移(分钟, 东正西负)。判"是否需要提示"只比这两个数值:
+    // 名字不参与判定(不同名可能同偏移), 偏移相同即用户看到的日期与分组完全一致。
+    stats_timezone_offset_minutes?: number;
+    stats_calendar_timezone_offset_minutes?: number;
+    // stats_timezone 的来源: "user" = 用户偏好生效, "server" = 回落到服务器时区。
+    stats_timezone_source?: 'user' | 'server';
 };
 
 // UserStatsTrend 用户调用趋势数据点。

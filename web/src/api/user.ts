@@ -38,6 +38,9 @@ export type UserView = {
     total_revenue: number;
     total_recharged: number;
     created_at: string;
+    // timezone 时区偏好(IANA 名, 如 Asia/Shanghai)。空串或字段缺省 = 跟随服务器时区,
+    // 后端对从未设置过的老账号返回的就是这个值 —— 界面据此把第一项显示为"跟随服务器"。
+    timezone?: string;
 };
 
 /**
@@ -90,6 +93,9 @@ interface AuthState {
     token: string | null;
     role: Role | null; // 当前登录用户角色，用于按角色裁剪导航与页面。
     userId: number; // 当前用户 id，钱包页查本人流水与管理层引用用。
+    // timezone 当前账号的时区偏好(空串 = 跟随服务器)。账号在界面上选完立刻写这里,
+    // 免得先乐观改本地再等下一次 checkAuth —— 设置项是受控的, 显示值必须只有一个来源。
+    timezone: string;
 
     // Actions
     setAuth: (user: UserView) => void;
@@ -112,6 +118,7 @@ export const useAuthStore = create<AuthState>()(
             token: null,
             role: null,
             userId: 0,
+            timezone: '',
 
             setAuth: (user: UserView) => {
                 setAPIKey(null);
@@ -122,6 +129,7 @@ export const useAuthStore = create<AuthState>()(
                     token: null,
                     role: user.role,
                     userId: user.id,
+                    timezone: user.timezone ?? '',
                     isLoading: false
                 });
             },
@@ -135,6 +143,7 @@ export const useAuthStore = create<AuthState>()(
                     token: apiKey,
                     role: null,
                     userId: 0,
+                    timezone: '',
                     isLoading: false
                 });
             },
@@ -163,7 +172,10 @@ export const useAuthStore = create<AuthState>()(
                         isLoading: false,
                         token: isAPIKeyAuth ? token : null,
                         role: profile?.role ?? null,
-                        userId: profile?.id ?? 0
+                        userId: profile?.id ?? 0,
+                        // 每次 checkAuth 都以服务端为准。老账号(或后端尚未下发该字段时)拿到空串,
+                        // 语义就是"跟随服务器", 与界面的第一项一致。
+                        timezone: profile?.timezone ?? ''
                     });
                 } catch {
                     if (isCurrent()) get().logout();
@@ -179,6 +191,7 @@ export const useAuthStore = create<AuthState>()(
                     token: null,
                     role: null,
                     userId: 0,
+                    timezone: '',
                     isLoading: false
                 });
                 if (typeof document !== 'undefined') {
@@ -193,6 +206,9 @@ export const useAuthStore = create<AuthState>()(
         }),
         {
             name: 'auth-storage',
+            // timezone 有意**不**进 partialize: 它是账号侧事实, 每次 checkAuth 都会从服务端刷新,
+            // 持久化只会留下过期值 —— 用户在另一台设备改完时区后, 这台设备会一直显示旧选择。
+            // 只持久化恢复会话必须的三项(token/isAPIKeyAuth/role)。
             partialize: (state) => ({
                 token: state.token,
                 isAPIKeyAuth: state.isAPIKeyAuth,
@@ -315,6 +331,36 @@ export function useChangeUsername() {
                 method: 'POST',
                 body: { new_username: data.newUsername },
             }),
+    });
+}
+
+/**
+ * 时区偏好 Hook
+ *
+ * 改时区**不影响** token: 与改用户名(会吊销旧会话、迫使重登)不同, 这里就地更新 store,
+ * 用户选完立刻看到结果, 不必重新登录。
+ *
+ * @example
+ * const updateTimezone = useUpdateTimezone();
+ * updateTimezone.mutate({ timezone: 'Asia/Shanghai' });
+ */
+export function useUpdateTimezone() {
+    return useMutation({
+        mutationFn: (data: { timezone: string }) =>
+            apiRequest<string>('/api/v1/user/timezone', {
+                method: 'POST',
+                body: { timezone: data.timezone },
+            }),
+        onSuccess: (normalized, variables) => {
+            // 就地在 store 上生效, 不重新登录、不等下一次 checkAuth: 否则界面会先回跳旧值再跳回来。
+            //
+            // 有服务端回显时以回显为准: 后端会把时区名归一(asia/shanghai -> Asia/Shanghai)再回传,
+            // 直接存提交值会让界面显示 "asia/shanghai" 而库里是 "Asia/Shanghai",
+            // 到下一次 checkAuth 又"莫名其妙地变了个写法"。回显缺失(旧后端)时退回提交值。
+            useAuthStore.setState({
+                timezone: typeof normalized === 'string' ? normalized : variables.timezone,
+            });
+        },
     });
 }
 

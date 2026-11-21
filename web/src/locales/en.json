@@ -476,6 +476,15 @@
                 "hint": "Sign out of the current session",
                 "button": "Sign Out",
                 "toast": "Signed out"
+            },
+            "timezone": {
+                "label": "Time zone",
+                "hint": "Affects only the analytics range boundaries and hour axis labels. Billing, settlement, and day/week/month grouping stay on the server calendar.",
+                "server": "Follow server",
+                "browser": "Browser: {tz}",
+                "custom": "Saved: {tz}",
+                "saved": "Time zone saved",
+                "failed": "Could not save time zone"
             }
         },
         "info": {
@@ -3372,6 +3381,9 @@
             "upstreamTtfb": "Upstream TTFB",
             "hint": "First token: first byte for streaming, full response otherwise; includes upstream queueing.",
             "empty": "No latency samples in this range"
+        },
+        "timezone": {
+            "calendarNotice": "Range boundaries follow {window}; day/week/month grouping and retention follow {calendar}. This is intentional: daily rollups are materialized per server day, so both views keep the same calendar."
         }
     },
     "quota": {

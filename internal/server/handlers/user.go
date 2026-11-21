@@ -57,6 +57,10 @@ func init() {
 				Handle(changeUsername),
 		).
 		AddRoute(
+			router.NewRoute("/timezone", http.MethodPost).
+				Handle(changeTimezone),
+		).
+		AddRoute(
 			router.NewRoute("/status", http.MethodGet).
 				Handle(status),
 		).
@@ -304,6 +308,31 @@ func changePassword(c *gin.Context) {
 		}
 	}
 	resp.Success(c, "password changed successfully")
+}
+
+// changeTimezone 改本人的时区偏好; 空串表示恢复"跟随服务器时区"。
+//
+// 与 change-username 的关键差别: 改时区**不需要重新登录**, 也**不影响 token**。
+// 用户体验上这是设置项的一次就地切换(选完立刻要看到结果), 而改用户名会自增
+// token_version 吊销全部会话 —— 那个代价对应的是身份变更, 时区只影响展示口径,
+// 不该付同样的代价。所以这里既不 bump token_version, 也不要求客户端重新认证。
+//
+// 校验统一走 op.UserUpdateTimezone(内核 model.NormalizeTimezone), handler 不做第二套
+// 判断: 两处各判一次迟早分叉, 而"哪一处才算准"这种问题会在加新调用方时才暴露。
+func changeTimezone(c *gin.Context) {
+	var req model.UserChangeTimezone
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	userID, _ := middleware.CurrentUser(c)
+	if err := op.UserUpdateTimezone(userID, req.Timezone); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	// 回显归一后的值: 客户端提交 "asia/shanghai" 时存的是 "Asia/Shanghai",
+	// 界面显示的必须与库里一致, 否则下一次 checkAuth 会"莫名其妙地变了个写法"。
+	resp.Success(c, op.UserTimezoneByID(userID))
 }
 
 func changeUsername(c *gin.Context) {

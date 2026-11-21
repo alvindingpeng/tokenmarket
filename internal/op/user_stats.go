@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/db"
@@ -19,7 +21,11 @@ import (
 //   - 成功率走 relay_requests 的终态: 失败的调用根本不产生计费行(没有用量就没有结算),
 //     用计费行算成功率会在没有任何退费时恒等于 100% —— 那不是"稳定", 是把失败整段吞掉了。
 func UserStatsOverview(ctx context.Context, userID uint, startDate, endDate string) (model.UserStatsOverview, error) {
-	start, end := parseStatsDateRange(startDate, endDate)
+	// 窗口边界按用户日历解释(见 parseStatsDateRange), 而日/周/月分组与留存仍是服务器日历。
+	// 两套日历的差异在下面 5 个时区字段里如实披露, 不靠调用方猜。
+	// loc 与 tzSource 取自同一次计算: 响应标称的时区必须就是实际算窗口用的那个。
+	loc, tzSource := statsUserTimezone(userID)
+	start, end := parseStatsDateRange(startDate, endDate, loc)
 
 	// 费用与词元读「明细 ∪ 日汇总」, 不再只读明细。
 	//
@@ -45,6 +51,9 @@ func UserStatsOverview(ctx context.Context, userID uint, startDate, endDate stri
 		return model.UserStatsOverview{}, err
 	}
 
+	// 时区口径字段: 一次性算齐(同一个"当前时刻"), 免得两个偏移各自取时撞上 DST 切换那一刻。
+	tz := statsTimezones(loc, tzSource, time.Now())
+
 	// 词元四项之和恒等于 total_tokens: 两侧(明细/汇总)都按同一组列相加, 不混用别的口径。
 	totalTokens := billing.InputToken + billing.OutputToken + billing.CacheReadToken + billing.CacheWriteToken
 
@@ -67,6 +76,14 @@ func UserStatsOverview(ctx context.Context, userID uint, startDate, endDate stri
 		BillingCoverageStart:        coverageStart,
 		BillingRollupCoveredUntil:   rollupUntil,
 		ModelBreakdownCoverageStart: modelCoverage,
+
+		// 时区口径: 5 个字段一次性算齐, 与上面实际使用的 loc 同源, 不许另算一遍 ——
+		// 两处各判一次时区就会出现"标着 user 却用服务器窗口"的响应, 且不会有任何报错。
+		StatsTimezone:                      tz.windowName,
+		StatsTimezoneOffsetMinutes:         tz.windowOffsetMinutes,
+		StatsTimezoneSource:                tz.source,
+		StatsCalendarTimezone:              tz.calendarName,
+		StatsCalendarTimezoneOffsetMinutes: tz.calendarOffsetMinutes,
 	}, nil
 }
 
@@ -76,7 +93,9 @@ func UserStatsOverview(ctx context.Context, userID uint, startDate, endDate stri
 // 两个源分别聚合后按桶合并: 超出日志留存期的桶只有计费数据, 成功率留 0 由前端断线, 不能补 100。
 // 周桶以周一为一周起点, Date 标签为当周周一(YYYY-MM-DD)。
 func UserStatsTrend(ctx context.Context, userID uint, startDate, endDate, granularity string) ([]model.UserStatsTrend, error) {
-	start, end := parseStatsDateRange(startDate, endDate)
+	// 区间边界与概览同一套时区, 否则四个接口会各自解释同一个 start_date, 前端把两组数字并排一放就矛盾。
+	loc := statsUserLocation(userID)
+	start, end := parseStatsDateRange(startDate, endDate, loc)
 	if granularity == "" {
 		granularity = "day"
 	}
@@ -171,6 +190,19 @@ func UserStatsTrend(ctx context.Context, userID uint, startDate, endDate, granul
 
 	// 补进来的桶可能插在中间, 统一按日期排序以保证趋势线连续。
 	sort.SliceStable(result, func(i, j int) bool { return result[i].Date < result[j].Date })
+
+	// 排序**之后**再把小时标签换算到用户时区: 排序依赖标签的字典序=时间序, 而换算后的标签
+	// 在 DST 切换那周可能与相邻桶逆序(本地那一小时重复)。先排序再换算, 顺序仍由服务器挂钟决定,
+	// 曲线不会因为夏时制而出现"时间倒流"。
+	//
+	// 日/周/月标签不动: 它们的桶与 billing_rollups 的服务器自然日同源(见 UserStatsOverview 的
+	// stats_calendar_timezone), 换到用户日历会让"统计页金额 = 账单页金额"这条约束失效。
+	// 小时桶是唯一例外, 因为它不参与任何汇总/留存口径, 只是单日区间里的 X 轴刻度。
+	if granularity == "hour" {
+		for i := range result {
+			result[i].Date = statsHourLabelIn(result[i].Date, loc)
+		}
+	}
 	return result, nil
 }
 
@@ -320,7 +352,8 @@ func queryRequestOutcomeBuckets(ctx context.Context, userID uint, start, end tim
 // "此日期之前无模型数据", 前端据此提示而不是把缺失读成 0 用量(概览里同语义字段是
 // model_breakdown_coverage_start)。绝不按比例摊: 编出来的数字会被用户拿去对账, 比缺数据更有害。
 func UserStatsModelBreakdown(ctx context.Context, userID uint, startDate, endDate string) ([]model.UserStatsModel, error) {
-	start, end := parseStatsDateRange(startDate, endDate)
+	loc := statsUserLocation(userID)
+	start, end := parseStatsDateRange(startDate, endDate, loc)
 
 	var rows []struct {
 		ModelName        string
@@ -447,25 +480,228 @@ type userStatsModelAcc struct {
 // 拼接出来的脏模型名。截断只影响展示, 不影响上面已经算完的合计。
 const userStatsModelBreakdownLimit = 50
 
+// statsUserLocation 返回该用户统计用的时区; 未设置或非法时回落到服务器时区。
+//
+// 「未设置」有两种等价形态: 偏好为空串(老账号与从未改过的账号), 或偏好值不是一个能被
+// time.LoadLocation 解析的 IANA 名。两种都必须安静回落到服务器时区而不是报错:
+// 一个存坏的偏好值不该让整个统计页 500 —— 那会把"账号设置有问题"变成"数据看不了"。
+//
+// 注意这里**只**用于窗口边界与小时标签; 日/周/月分组、日汇总与留存日历一律仍是服务器时区
+// (见 parseStatsDateRange 与 UserStatsOverview 的时区字段说明)。
+func statsUserLocation(userID uint) *time.Location {
+	loc, _ := statsUserTimezone(userID)
+	return loc
+}
+
+// statsUserTimezone 一次算出窗口该用的时区**与**它的来源, 让"用了哪个时区"和"标称哪个来源"
+// 不可能分叉 —— 两处各判一次时区(一处 TrimSpace 一处不 Trim, 一处查 LoadLocation 一处不查)
+// 就会出现"标着 user 却用服务器窗口"的响应: 前端据此不提示, 而窗口其实是错的,
+// 这种错不报错、不 panic, 只让用户看到一个月的账对不上。
+func statsUserTimezone(userID uint) (*time.Location, string) {
+	name := strings.TrimSpace(UserTimezoneByID(userID))
+	if name == "" {
+		return time.Local, statsTimezoneSourceServer
+	}
+	loc, err := time.LoadLocation(name)
+	if err != nil || loc == nil {
+		// 存坏了(拼错、写了个偏移串、或该版本 tzdata 里没有这个区)一律回落, 不报错。
+		return time.Local, statsTimezoneSourceServer
+	}
+	return loc, statsTimezoneSourceUser
+}
+
+// statsTimezoneFacts 是概览响应里那 5 个时区字段的计算结果。
+//
+// 打包成一个结构而不是 5 个各自计算的函数: 偏移必须来自**同一个当前时刻**(DST 切换那一刻
+// 前后偏移会变, 分两次取 time.Now 就会给出"名字不同但偏移本该相等"的假差异),
+// 而且 5 个字段必须与窗口实际使用的 loc 同源, 否则前端会收到"标着 user 却是服务器窗口"的响应。
+type statsTimezoneFacts struct {
+	windowName            string // 窗口边界所用的时区名。
+	windowOffsetMinutes   int    // 该时区在 at 时刻的 UTC 偏移分钟数。
+	calendarName          string // 日/周/月分组与日汇总所用(服务器)时区名。
+	calendarOffsetMinutes int    // 服务器时区在 at 时刻的 UTC 偏移分钟数。
+	source                string // "user" / "server"。
+}
+
+// statsTimezones 算出概览要披露的时区事实。
+//
+// loc 与 source 必须是调用方实际用于解析窗口的那一对(取自同一个 statsUserTimezone 返回值),
+// 不是这里另查一遍 —— 否则响应里的"是什么时区"与"实际按哪个时区算"会分叉,
+// 而前端据此判断是否提示, 于是错的窗口被静悄悄地说成"没问题"。
+func statsTimezones(loc *time.Location, source string, at time.Time) statsTimezoneFacts {
+	if loc == nil {
+		loc = time.Local
+		source = statsTimezoneSourceServer
+	}
+	facts := statsTimezoneFacts{
+		windowName:            statsLocationName(loc),
+		windowOffsetMinutes:   statsOffsetMinutes(loc, at),
+		calendarName:          serverTimezoneName(),
+		calendarOffsetMinutes: statsOffsetMinutes(time.Local, at),
+		source:                source,
+	}
+	// 回落到服务器时区时, 窗口名必须与日历名字面一致: 前端有"两个名字相同 ⇒ 一定不提示"的判据,
+	// 这里若填了 Local 的偏移名而日历填的是 IANA 名, 偏移相同却名字不同, 会触发毫无意义的提示。
+	if source == statsTimezoneSourceServer {
+		facts.windowName = facts.calendarName
+	}
+	return facts
+}
+
+// statsLocationName 返回时区名: 能用 IANA 名就用, 否则退化为 "UTC+08:00" 形态, 绝不返回 "Local"。
+func statsLocationName(loc *time.Location) string {
+	if loc == nil {
+		loc = time.Local
+	}
+	if name := loc.String(); name != "" && name != "Local" {
+		return name
+	}
+	return serverTimezoneFallbackName(loc)
+}
+
+// statsTimezoneSource 返回窗口边界所用时区是"用户选的"还是"跟随服务器";
+// 判据与 statsUserTimezone 完全同一份实现(故不会分叉), 仅供测试与调用方自检使用。
+func statsTimezoneSource(userID uint) string {
+	_, source := statsUserTimezone(userID)
+	return source
+}
+
+const (
+	statsTimezoneSourceUser   = "user"   // 用户偏好生效: 窗口边界按用户本地日历解释。
+	statsTimezoneSourceServer = "server" // 偏好为空/非法: 窗口边界跟随服务器时区。
+)
+
+// serverTimezoneName 返回服务器时区名: TZ 环境变量优先, 否则读 /etc/localtime 软链取 IANA 名,
+// 再退化为 "UTC+08:00" 形态; 绝不返回 "Local"(它不是一个时区名, 无法在另一台机器上复现)。
+func serverTimezoneName() string {
+	// TZ 显式指定时它就是进程实际生效的时区(Go 的 time.Local 会先看它)。
+	if tz := strings.TrimSpace(os.Getenv("TZ")); tz != "" {
+		if loc, err := time.LoadLocation(tz); err == nil && loc != nil {
+			return tz
+		}
+	}
+
+	// /etc/localtime 通常是 zoneinfo 的软链, 软链路径末段即 IANA 名(也可能是 /usr/share/zoneinfo/... )。
+	if target, err := os.Readlink("/etc/localtime"); err == nil {
+		if name, ok := zoneinfoNameFromPath(target); ok {
+			return name
+		}
+	}
+	// 有些发行版把时区名写在这里(/etc/localtime 是拷贝而非软链时只能靠它)。
+	if raw, err := os.ReadFile("/etc/timezone"); err == nil {
+		if name := strings.TrimSpace(string(raw)); name != "" {
+			if loc, err := time.LoadLocation(name); err == nil && loc != nil {
+				return name
+			}
+		}
+	}
+
+	// 都拿不到(或时区是写死的偏移)时退化为偏移名: "Local" 不可复现, 偏移名至少能自证。
+	return serverTimezoneFallbackName(time.Local)
+}
+
+// zoneinfoNameFromPath 从 zoneinfo 路径里取出 IANA 名。
+// 只接受在最后一个 "zoneinfo/" 之后的整段(如 /usr/share/zoneinfo/Asia/Shanghai → Asia/Shanghai),
+// 前缀部分可能是任何安装路径, 不去猜。返回的文件名不在 IANA 形态时 ok=false。
+func zoneinfoNameFromPath(target string) (string, bool) {
+	const marker = "zoneinfo/"
+	idx := strings.LastIndex(target, marker)
+	if idx < 0 {
+		return "", false
+	}
+	name := strings.Trim(target[idx+len(marker):], "/")
+	if name == "" || strings.Contains(name, "..") {
+		return "", false
+	}
+	// 必须真的能被解析, 否则它只是个文件名而不是时区名(zone.tab/learcut 之类会落进来)。
+	if loc, err := time.LoadLocation(name); err != nil || loc == nil {
+		return "", false
+	}
+	return name, true
+}
+
+// serverTimezoneFallbackName 把时区退化成 "UTC+08:00"/"UTC-05:30" 形态的名字; 拿不到偏移时返回 "UTC"。
+func serverTimezoneFallbackName(loc *time.Location) string {
+	if loc == nil {
+		return "UTC"
+	}
+	_, offsetSeconds := time.Now().In(loc).Zone()
+	if offsetSeconds == 0 {
+		return "UTC"
+	}
+	sign := "+"
+	if offsetSeconds < 0 {
+		sign = "-"
+		offsetSeconds = -offsetSeconds
+	}
+	hours, minutes := offsetSeconds/3600, (offsetSeconds%3600)/60
+	return fmt.Sprintf("UTC%s%02d:%02d", sign, hours, minutes)
+}
+
+// statsOffsetMinutes 返回时区在当前时刻的 UTC 偏移分钟数(东正西负)。
+//
+// 用一个公共的"当前时刻"取偏移而不是各算一遍: DST 切换前后同一天里偏移会变,
+// 响应里两个偏移必须来自同一时刻才能比较, 否则会出现"名字不同但偏移本应相等"的假提示。
+func statsOffsetMinutes(loc *time.Location, at time.Time) int {
+	if loc == nil {
+		return 0
+	}
+	_, offsetSeconds := at.In(loc).Zone()
+	return offsetSeconds / 60
+}
+
 // parseStatsDateRange 解析统计日期区间; 空值默认最近 30 天。
-func parseStatsDateRange(startDate, endDate string) (time.Time, time.Time) {
-	now := time.Now()
-	end := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local).AddDate(0, 0, 1)
+//
+// loc 是**窗口边界**的日历(通常是用户时区, 见 statsUserLocation), 于是用户说的「11-21」被解释成
+// 他本地 11-21 00:00 → 11-22 00:00, 而不是服务器的那 24 小时。
+//
+// 但返回值在返回前统一 .In(time.Local): 下游的整日裁剪(userStatsRollupDayRange)、日键生成(dayKey)
+// 与 SQL 比较全部建立在服务器挂钟上 —— 尤其 SQLite 按挂钟文本比较时间串。传一个别的时区下去
+// 会让边界与既有的整日裁剪错位, 反而制造出"半个服务器日"的错算窗口。
+// 换算成同一瞬时、同一服务器挂钟表示之后, 下游代码一行都不用改。
+//
+// 「最近 30 天」的默认值也按 loc 的今天算: 用户在自己时区里说的"今天"不该由服务器日历决定。
+func parseStatsDateRange(startDate, endDate string, loc *time.Location) (time.Time, time.Time) {
+	if loc == nil {
+		loc = time.Local
+	}
+	now := time.Now().In(loc)
+	end := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, 1)
 	start := end.AddDate(0, 0, -30)
 
 	if startDate != "" {
-		if t, err := time.ParseInLocation("2006-01-02", startDate, time.Local); err == nil {
+		if t, err := time.ParseInLocation("2006-01-02", startDate, loc); err == nil {
 			start = t
 		}
 	}
 	if endDate != "" {
-		if t, err := time.ParseInLocation("2006-01-02", endDate, time.Local); err == nil {
+		if t, err := time.ParseInLocation("2006-01-02", endDate, loc); err == nil {
 			// endDate 是包含的最后一天, 查询到次日 00:00
 			end = t.AddDate(0, 0, 1)
 		}
 	}
 
-	return start, end
+	return start.In(time.Local), end.In(time.Local)
+}
+
+// statsHourLabelIn 把服务器挂钟的小时桶标签(YYYY-MM-DD HH:MM)换算到 loc 时区。
+//
+// 只换算展示标签, 不重算分桶: 桶本身是服务器挂钟的整点切片, 平移到用户时区后
+// 起点可能是 :30/:45(如 Asia/Kathmandu +05:45), 此时如实显示分钟位, 不要四舍五入 ——
+// 四舍五入会让标签与它代表的那个桶错位。
+//
+// DST 切换周里可能出现两个桶得到同一标签: 这是真实的(本地那一小时重复了),
+// 照实保留, 不要因此去改桶或去重(去重会吞掉一个小时的量)。
+// 解析失败时原样返回: 标签是展示用的, 宁可显示旧标签也不要把整条曲线丢掉。
+func statsHourLabelIn(label string, loc *time.Location) string {
+	if loc == nil {
+		return label
+	}
+	parsed, err := time.ParseInLocation("2006-01-02 15:04", label, time.Local)
+	if err != nil {
+		return label
+	}
+	return parsed.In(loc).Format("2006-01-02 15:04")
 }
 
 // ── 计费口径的「明细 ∪ 日汇总」读取 ──────────────────────────────────────────────
@@ -742,7 +978,8 @@ func userStatsDayToDate(day string) string {
 // 早于它的金额仍在概览里(由 user 维度汇总补), 但拆分不出来。前端据此提示,
 // 千万不要用"按比例摊到现有模型"之类的办法伪造数据, 那会让用户拿着假数字去对账。
 func UserStatsModelCoverageStart(ctx context.Context, userID uint, startDate, endDate string) (string, error) {
-	start, end := parseStatsDateRange(startDate, endDate)
+	loc := statsUserLocation(userID)
+	start, end := parseStatsDateRange(startDate, endDate, loc)
 	_, _, modelCoverageStart, err := userStatsBillingCoverage(ctx, userID, start, end)
 	if err != nil {
 		return "", err
@@ -840,7 +1077,8 @@ func cacheHitRate(cacheRead, input int64) float64 {
 // 查询窗口可能只有末尾几天有数据 —— 所以返回值必须带 CoverageStart 与 RetentionDays,
 // 让前端把"只有最近 3 天数据"讲清楚, 而不是拿 3 天均值冒充 30 天结论。
 func UserStatsLatency(ctx context.Context, userID uint, startDate, endDate string) (model.UserStatsLatency, error) {
-	start, end := parseStatsDateRange(startDate, endDate)
+	loc := statsUserLocation(userID)
+	start, end := parseStatsDateRange(startDate, endDate, loc)
 
 	var rows []struct {
 		SampleCount       int64

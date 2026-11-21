@@ -9,6 +9,12 @@ export type Preset = typeof PRESETS[number];
 // 不能用 toISOString().slice(0, 10): toISOString 输出的是 UTC 时刻,
 // UTC+8 的早上 8 点前「今天」会算成前一天, UTC-8 的傍晚 4 点后「今天」会算成明天 ——
 // 统计范围就悄悄偏了一天。本地日期用本地字段取。
+//
+// 这里是**浏览器**的本地日期, 而后端按 `stats_timezone`(账号时区偏好, 默认跟随服务器)解释它。
+// 两者可能不是同一个时区 —— 这正是概览响应要带上 `stats_timezone_offset_minutes` 与
+// `stats_calendar_timezone_offset_minutes` 的原因: 偏移不同时页面会如实说明「区间边界按哪个时区、
+// 日/周/月分组与留存按哪个时区」。不要在这里偷偷改成服务器时区: 用户输入的是他自己的日子,
+// 换掉它等于替用户重新定义「今天」。
 export function formatDate(date: Date): string {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');

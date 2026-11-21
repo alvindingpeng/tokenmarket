@@ -44,3 +44,29 @@
 可用 `python3 scripts/benchmark-analytics-index.py` 复现独立 SQLite 内存实验：30 万条模拟记录、10 个用户、选取一周命中 535 条，20 次测量中位数从约 20.28 ms 降到 0.36 ms，COUNT/SUM 结果一致。此为选择性范围的算法验证，不代表生产全范围查询或页面端到端耗时。
 
 回归检查包含真实 HTTP 路由鉴权/用户隔离、日期边界及周分桶、空集、EXPLAIN QUERY PLAN，以及前端 API 路径和失败/加载状态。生产验收不生成付费调用或修改业务数据。
+
+## 时区口径（v1.10.21）
+
+统计页同时存在**两套日历**，这是刻意的，不是遗留缺陷：
+
+| 用途 | 时区 | 为什么 |
+|---|---|---|
+| 查询区间边界（`start_date`/`end_date` 指哪 24 小时） | 用户时区偏好（`users.timezone`，空串 = 跟随服务器） | 用户说的「11-21」是他本地的一天 |
+| 小时桶 X 轴刻度 | 同上（只换算展示标签，不重算分桶） | 刻度是给用户看的 |
+| 日/周/月分组、日汇总、数据留存 | **服务器时区** | `billing_rollups` 按服务器自然日固化，一天合计无法还原它在用户日历里被切开的两半；留存截止与 `ReconcileDay` 共用同一套日键 |
+
+若把分组也切到用户日历，同一账户同一区间在统计页与账单页会给出**不同的钱** —— 对不上账无法向用户解释。
+因此概览响应用 5 个字段如实披露：`stats_timezone` / `stats_timezone_offset_minutes` / `stats_timezone_source`
+（`user`/`server`）/ `stats_calendar_timezone` / `stats_calendar_timezone_offset_minutes`。
+前端**只比较 offset**：相等即两套挂钟一致（绝大多数部署），不渲染任何提示；不等才说明分工。
+按名字比会误报 —— `time.LoadLocation` 不归一大小写与别名，`Asia/Calcutta` 与 `Asia/Kolkata` 是两个独立条目。
+
+两个实现要点：
+
+- `parseStatsDateRange(startDate, endDate, loc)` 用用户日历构造区间，**返回前统一 `.In(time.Local)`**。下游的整日裁剪、
+  日键生成与 SQL 比较全在服务器挂钟上（SQLite 还按挂钟文本比较），传别的时区下去会制造「半个服务器日」的错算窗口。
+- 小时标签换算发生在 `sort.SliceStable` **之后**：排序依赖标签字典序=时间序，先换算会让 DST 切换那周出现「时间倒流」。
+  非整点偏移（`Asia/Kathmandu` +05:45）如实显示 `:45`，不四舍五入；DST 重复标签照实保留（去重会吞掉一小时真实用量）。
+
+非整日对齐的窗口（用户时区导致）会让 `userStatsRollupDayRange` 返回空、只用明细 —— 覆盖率变小，但绝不会错算。
+完整设计与取舍见 [stats-user-timezone.md](stats-user-timezone.md)。

@@ -170,6 +170,52 @@ func UserUpdateEmail(id uint, email string) error {
 	return nil
 }
 
+// UserUpdateTimezone 改账号的时区偏好; 空串表示恢复"跟随服务器时区", 合法。
+//
+// 校验在写入前做(见 model.NormalizeTimezone): 存进一个 time.LoadLocation 解析不了的值
+// 不会当场报错, 而是等用户打开统计页才静默回落 —— 用户以为设了 +07, 看到的是 +08 的数字,
+// 界面上还没有任何提示。把非法值挡在库外, 是这条链路唯一能给出明确错误的位置。
+//
+// 只写这一列, **不动 token_version**: 改时区只影响展示口径, 不涉及身份或权限,
+// 强迫用户重新登录没有意义(与改用户名/改密码必须吊销会话是两回事)。
+//
+// 失败信息只给"能不能改", 不把底层 SQL 报错原样抛给调用方: 那条错误串里可能带着
+// 表名与语句片段, 而它最终会出现在 HTTP 响应体里。
+func UserUpdateTimezone(id uint, timezone string) error {
+	tz, ok := model.NormalizeTimezone(timezone)
+	if !ok {
+		return fmt.Errorf("invalid timezone: expected an IANA name like Asia/Shanghai, or empty to follow the server timezone")
+	}
+	user, err := UserGetByID(id)
+	if err != nil {
+		return err
+	}
+	if err := db.GetDB().Model(&model.User{}).Where("id = ?", id).Update("timezone", tz).Error; err != nil {
+		log.Errorf("update user %d timezone failed: %v", id, err)
+		return fmt.Errorf("failed to update timezone")
+	}
+	// 缓存里存的是 model.User 的副本, 不更新它会让改完立刻查的 View() 读回旧值
+	// (设置页是"改完就地刷新显示值", 第一步就是 /user/status)。
+	user.Timezone = tz
+	userCache.Set(int(id), user)
+	return nil
+}
+
+// UserTimezoneByID 返回该账号的时区偏好(空串 = 跟随服务器时区)。
+//
+// 只读进程内缓存, **取不到就返回空串而不会去查库**: 这个函数在统计链路里逐请求调用,
+// 多一次 DB 往返不值当; 更重要的是"缓存里没有这个账号"意味着缓存尚未初始化(或在换库),
+// 那不是"用户没设时区", 而是"现在还不知道" —— 查库也只会得到同样的未知,
+// 却把这层时序问题藏进一次看似成功的查询里。调用方(统计页)对空串的处理本就是
+// "跟随服务器", 与"未知"的降级方向一致, 所以返回空串是安全的那一侧。
+func UserTimezoneByID(id uint) string {
+	user, ok := userCache.Get(int(id))
+	if !ok {
+		return ""
+	}
+	return user.Timezone
+}
+
 // UserForgotPassword 邮箱验证码通过后重设密码(不需旧密码), 吊销其全部既有会话。
 func UserForgotPassword(email, password string) error {
 	user, err := userGetByEmail(email)

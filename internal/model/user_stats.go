@@ -55,6 +55,38 @@ type UserStatsOverview struct {
 	// 那段时间真的没用过任何模型。
 	ModelBreakdownCoverageStart string `json:"model_breakdown_coverage_start"`
 
+	// ── 时区口径 ───────────────────────────────────────────────────────────────
+	//
+	// 统计页有两套日历, 这里的 5 个字段就是把它披露给前端的那句话。为什么会有两套:
+	// 用户说的「11-21 这一天」是他本地的一天, 而日/周/月分组、日汇总(留存表)与结算日键
+	// 都锚在服务器自然日上 —— 汇总行只代表服务器整天, 一天的合计无法还原它在用户日历里
+	// 被切开的两半。若把分组也切到用户日历, 同一账户同一区间在统计页与账单页会给出不同的钱,
+	// 而且留存截止会与汇总固化的边界错位(见 docs/stats-user-timezone.md 第 2 节)。
+	// 所以最终形态是: 窗口边界按用户日历解释, 分组按服务器日历, 差异如实披露。
+
+	// StatsTimezone 窗口边界所用时区名: 用户偏好已设置且合法 → 该 IANA 名, 否则服务器时区名。
+	//
+	// 它回答的是"你输入的那个 11-21 指的是哪 24 小时", 与下面的 StatsCalendarTimezone 不是一回事。
+	// 绝不会返回 "Local"(那不是一个能在另一台机器上复现的时区名)。
+	StatsTimezone string `json:"stats_timezone"`
+	// StatsTimezoneOffsetMinutes 上面那个时区在当前时刻的 UTC 偏移分钟数(东正西负)。
+	// 前端用它和日历偏移比较: 相等 ⇒ 两套挂钟一致 ⇒ 不渲染"两套时区"提示
+	// (名字不同但偏移相同, 如 Asia/Shanghai 与 Asia/Chongqing, 对用户毫无差别)。
+	StatsTimezoneOffsetMinutes int `json:"stats_timezone_offset_minutes"`
+	// StatsTimezoneSource 窗口边界的时区来源: "user"(用户偏好生效) / "server"(跟随服务器)。
+	// 偏好为空串或非法时回落到 server —— 前端据此区分"你自己选的"与"系统默认", 不要把后者说成用户的设置。
+	StatsTimezoneSource string `json:"stats_timezone_source"`
+	// StatsCalendarTimezone 日/周/月分组与日汇总所用的时区名, 恒为服务器时区。
+	//
+	// 为什么它不跟着用户走: billing_rollups 按服务器自然日固化(迁移 45 的 model 维度同理),
+	// 留存截止 billingRetentionCutoff 按服务器自然日对齐, 结算对账共用同一套日键。
+	// 把分组切到用户日历, 会让"明细 ∪ 日汇总"的可加性前提失效 —— 半天的明细与整天的汇总
+	// 无法相加, 而按比例摊回去等于编造数字。
+	StatsCalendarTimezone string `json:"stats_calendar_timezone"`
+	// StatsCalendarTimezoneOffsetMinutes 服务器时区在当前时刻的 UTC 偏移分钟数。
+	// 与 StatsTimezoneOffsetMinutes 相等即表示两套挂钟一致(此时前端不提示)。
+	StatsCalendarTimezoneOffsetMinutes int `json:"stats_calendar_timezone_offset_minutes"`
+
 	// 词元构成: 缓存读写此前被合并进 TotalTokens 后不可见, 用户无法判断"贵在输入还是缓存"。
 	// 四项之和等于 TotalTokens, 拆分只为展示, 口径不变。
 	InputTokens      int64 `json:"input_tokens"`       // 输入 token（未命中缓存的按量输入）

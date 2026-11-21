@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useTranslations } from 'use-intl';
-import { BarChart3, Calendar, Loader2, RefreshCw, Timer, TrendingUp, TriangleAlert } from 'lucide-react';
+import { BarChart3, Calendar, Globe, Loader2, RefreshCw, Timer, TrendingUp, TriangleAlert } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -16,6 +16,7 @@ import { getDateRange, PRESETS, type Preset } from './dates';
 // 而这些规则正是最该被单测钉死的部分。
 import { buildTrendChartData, hasSuccessSamples, isCoverageLimited, summarizeCacheHitRate, summarizeSuccess } from './success';
 import { modelCoverageOf } from './modelCoverage';
+import { formatOffset, hourTickLabel, timezoneNotice } from './timezone';
 
 // PanelQuery 区块只依赖查询的这三个字段: 加载/失败/重试彼此独立, 谁慢谁转圈, 谁错谁重试。
 type PanelQuery = {
@@ -113,6 +114,11 @@ export function AnalyticsPage({ initialPreset = 'today' }: { initialPreset?: Pre
     // 必须如实说明边界 —— 把那段缺失画成 0 用量, 用户会以为那段时间真的没用过任何模型。
     const modelCoverage = modelCoverageOf(overview.data, dateRange.start_date);
 
+    // 时区口径: 区间边界按"窗口时区"算, 日/周/月分组与留存按"日历时区"算。
+    // 两者偏移相同时用户看不到任何差别(绝大多数人), 也就不该看到任何提示。
+    // 只在真的错开时说明一行, 并讲清这是刻意的(汇总按服务器自然日固化), 不暗示它是缺陷。
+    const tzNotice = timezoneNotice(overview.data);
+
     // 模型分布前 10 + 其他聚合
     const topModels = modelRows.slice(0, 10);
     const otherModels = modelRows.slice(10);
@@ -154,6 +160,20 @@ export function AnalyticsPage({ initialPreset = 'today' }: { initialPreset?: Pre
                     </Select>
                 </div>
             </div>
+
+            {/* 时区口径说明: 只陈述事实(边界按哪个时区、分组按哪个时区), 并说明这种分工是刻意的。
+                只在两个时区当前偏移不同时出现 —— 挂钟一致时多一行说明只是噪声。 */}
+            {tzNotice.kind === 'calendar' && (
+                <div className="flex shrink-0 items-start gap-1 text-xs text-muted-foreground" data-testid="timezone-notice">
+                    <Globe className="mt-px size-3 shrink-0" aria-hidden="true" />
+                    <span>
+                        {t('timezone.calendarNotice', {
+                            window: formatOffset(overview.data?.stats_timezone_offset_minutes ?? 0) + ' ' + tzNotice.windowTimezone,
+                            calendar: formatOffset(overview.data?.stats_calendar_timezone_offset_minutes ?? 0) + ' ' + tzNotice.calendarTimezone,
+                        })}
+                    </span>
+                </div>
+            )}
 
             {/* 概览卡片: 数值是查询给的真值 —— 零就是零; 加载/失败由 PanelBody 显式区分 */}
             <PanelBody query={overview}>
@@ -258,8 +278,9 @@ export function AnalyticsPage({ initialPreset = 'today' }: { initialPreset?: Pre
                         <LineChart data={trendChartData}>
                             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                             <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))"
-                            /* 小时桶标签太长(YYYY-MM-DD HH:00), 刻度只留 HH:00; 悬浮提示仍走全量标签。 */
-                            tickFormatter={(value: string) => (value.length === 16 ? value.slice(11) : value)} />
+                            /* 小时桶标签太长(YYYY-MM-DD HH:MM), 刻度只留 HH:MM; 悬浮提示仍走全量标签。
+                               非整点偏移(+05:45)的桶会落在 :45 —— 那是真实时间点, 不抹成 :00。 */
+                            tickFormatter={hourTickLabel} />
                             <YAxis yAxisId="left" tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" />
                             <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" />
                             {/* 成功率是百分比, 必须有自己的 0-100 右轴; 和费用共轴会把它压成贴底的一条直线。 */}
