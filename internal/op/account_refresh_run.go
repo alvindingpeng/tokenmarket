@@ -1,4 +1,3 @@
-
 package op
 
 // 账号令牌刷新任务的批量执行体。
@@ -123,9 +122,9 @@ func raiseAccountInvalidatedAlert(channelKey model.ChannelKey, reason string) {
 	}
 	RaiseAlertFacts(context.Background(), AlertFacts{
 		ChannelID: channelKey.ChannelID,
-		Kind:      "account_invalidated",
-		Subject: subject,
-		Reason:  fmt.Sprintf("上游账号续期令牌已失效, 需要重新导入 (平台=%s)", channelKey.AccountPlatform),
+		Kind:      AlertKindAccountInvalidated,
+		Subject:   subject,
+		Reason:    fmt.Sprintf("上游账号续期令牌已失效, 需要重新导入 (平台=%s)", channelKey.AccountPlatform),
 		Fields: []alert.Field{
 			{Label: "渠道凭据", Value: channelKey.Name},
 			{Label: "平台", Value: channelKey.AccountPlatform},

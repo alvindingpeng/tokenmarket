@@ -54,6 +54,16 @@ const (
 	EventTest                  Event = "test"                    // 告警通道连通性测试。
 	EventSystemAlert           Event = "system_alert"            // 未归类的系统告警。
 	EventFxRateRefreshFailed   Event = "fx_rate_refresh_failed"  // 牌价源连续采集失败(快照停留在旧日)。
+	// 资金安全两类: 都关系到钱已经动过但流程不对, 消费端值得单独分流到资金值班群。
+	EventWithdrawalApproveTimeout Event = "withdrawal_approve_timeout" // 已审批提现超过打款时限被自动撤销。
+	EventPaymentAfterExpiry       Event = "payment_after_expiry"       // 过期充值单仍收到成功回调并补入账。
+	// 第二批: 这些 kind 一直在发却没登记事件名, 外发时一律掉成 system_alert —
+	// 消费端分不出"计费口径缺失"和"审计表没落地"。事件名与 kind 同名, 分流最直接。
+	EventUsageMissing         Event = "usage_missing"          // 成功请求却没有用量回传(疑似免费调用)。
+	EventAccountInvalidated   Event = "account_invalidated"    // 上游账号令牌失效, 需重新导入。
+	EventBillingArchiveFailed Event = "billing_archive_failed" // 资金表归档失败。
+	EventAuditArchiveFailed   Event = "audit_archive_failed"   // 审计表归档失败。
+	EventFxRateStale          Event = "fx_rate_stale"          // 牌价采集失败且快照已陈旧, 折算按旧价进行。
 )
 
 // Alert 表示一个待发送的告警。

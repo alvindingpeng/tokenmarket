@@ -39,3 +39,14 @@ export function buildTrendChartData(points: UserStatsTrend[]): (Omit<UserStatsTr
 export function hasSuccessSamples(points: UserStatsTrend[]): boolean {
     return points.some((point) => point.request_success + point.request_failed > 0);
 }
+// summarizeCacheHitRate 缓存命中率卡片的展示口径, 与 summarizeSuccess 同一套哨兵规则。
+// 分母取后端 internal/op/user_stats.go 的 cacheHitRate(cacheRead, input):
+//   cache_hit_rate = cache_read_tokens / (cache_read_tokens + input_tokens)   —— 输出不进分母。
+// 分母 <= 0 时后端只能返回 0(否则就是 0/0 的 NaN), 这个 0 是哨兵不是真值:
+// 界面必须显示 "—" 而不是 0.0% —— 0.0% 会被读成"所有请求都没命中缓存",
+// 真相却是这一段区间压根没有可计量的词元样本。
+// 无样本的判据用三项之和(输入/缓存读/缓存写): 三项全零才是"这段区间没数据", 与后端给哨兵 0 的情形对齐。
+export function summarizeCacheHitRate(overview: UserStatsOverview): string {
+    const samples = overview.input_tokens + overview.cache_read_tokens + overview.cache_write_tokens;
+    return samples > 0 ? `${overview.cache_hit_rate.toFixed(1)}%` : '—';
+}

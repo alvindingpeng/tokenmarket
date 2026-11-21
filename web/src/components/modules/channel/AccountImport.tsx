@@ -16,9 +16,16 @@ import {
     MorphingDialogTitle,
     MorphingDialogTrigger,
 } from '@/components/ui/morphing-dialog';
-import { accountImport, accountRefreshKey, type AccountImportResult, type AccountPlatform } from '@/api/channel';
+import {
+    accountImport,
+    accountRefreshKey,
+    type AccountImportResult,
+    type AccountPlatform,
+    type Dialect,
+} from '@/api/channel';
 import { CliHint } from './CliHint';
 import { AccountSignIn } from './AccountSignIn';
+import { ACCOUNT_PLATFORMS, accountPlatformMismatch, defaultAccountPlatform } from './accountPlatform';
 
 /**
  * AccountImport 导入上游账号 JSON 作为渠道凭据。
@@ -89,22 +96,39 @@ export function validateAccountJSON(platform: AccountPlatform, raw: string): str
             if (!fields.sso) errors.push('缺少 sso');
             break;
         }
+        case 'antigravity': {
+            // 与后端 AccountJSONParse 的 antigravity 分支逐条对齐(internal/model/account_json.go)。
+            // 这个平台只有 OAuth 一种形态: Cookie 形态上游不认, 后端会直接报错, 不必等到那一轮往返。
+            // 反过来, 有 refresh_token 却没有 access_token 时后端也拒绝 —— 因为续期是定时任务的活,
+            // 而首刷可能排队, 其间转发要用的正是这个 access_token, 缺了就是每请求必失败。
+            if (!fields.refresh_token) {
+                errors.push('缺少 refresh_token: antigravity 只接受带 refresh_token 的 OAuth 凭据(来自 Antigravity 授权流程), 不支持 Cookie 形态');
+                break;
+            }
+            if (!fields.access_token) errors.push('有 refresh_token 但缺少 access_token');
+            break;
+        }
     }
     return errors;
 }
 
-export function AccountImport({ channelId, onImported, channels }: {
+export function AccountImport({ channelId, dialect, onImported, channels }: {
     // channelId 有值时是"渠道内导入": 目标固定, 不再让使用者选。
     // 无值时是"独立导入": 从渠道列表页或其它入口进来, 此时必须让他选目标渠道 ——
     // 凭据在数据模型上必须属于某个渠道(ChannelKey.ChannelID 非空), 所以"先选渠道"
     // 是绕不开的, 但至少不必先钻进某个渠道的编辑表单再回来。
     channelId?: number;
+    // dialect 是该渠道的方言, 只在渠道内导入模式下给得出(独立导入的目标来自渠道列表,
+    // 那边没有方言字段)。它用来做平台↔方言的前置校验, 见 accountPlatformMismatch。
+    dialect?: Dialect;
     onImported?: () => void;
     // channels 只在独立导入模式下需要: 列出可选的目标渠道。
     channels?: { id: number; name: string }[];
 }) {
     const t = useTranslations('channel.account');
-    const [platform, setPlatform] = useState<AccountPlatform>('codex');
+    // 订阅/gemini_cli 渠道只有一个合法平台, 打开时就预选它 —— 见 defaultAccountPlatform 的说明。
+    // 用惰性初值而不是 effect: 方言在弹层生命周期内不变(它来自已保存的渠道), 不需要跟着改。
+    const [platform, setPlatform] = useState<AccountPlatform>(() => defaultAccountPlatform(dialect));
     const [name, setName] = useState('');
     const [raw, setRaw] = useState('');
     const [busy, setBusy] = useState(false);
@@ -114,6 +138,14 @@ export function AccountImport({ channelId, onImported, channels }: {
     // 本地预检结果: 用户在 Textarea 里贴 JSON 时即时跑, 不等后端。
     // 这是第 6 项: 避免一轮 30 秒往返才发现 "缺 refresh_token"。
     const [validateErrors, setValidateErrors] = useState<string[]>([]);
+    // 平台↔方言与平台↔字段的两类问题各算各的: 前者是"这个平台进不了这个渠道",
+    // 后者是"这份 JSON 缺字段"。合成一个数组会让使用者分不清该改哪一边。
+    const platformMismatch = accountPlatformMismatch(dialect, platform);
+    // 校验是 (平台, JSON) 的函数, 平台一换旧结论就作废 —— 在平台按钮上重跑一遍,
+    // 否则打了 codex 的平台再看 claude 的 JSON, 屏幕上留着上一轮的红字。
+    const revalidate = (next: AccountPlatform, nextRaw: string) => {
+        setValidateErrors(validateAccountJSON(next, nextRaw));
+    };
 
     const submit = async () => {
         if (!name.trim()) {
@@ -122,6 +154,15 @@ export function AccountImport({ channelId, onImported, channels }: {
         }
         if (!raw.trim()) {
             toast.error(t('rawRequired'));
+            return;
+        }
+        // 平台与方言对不上时挡住提交并说清原因。不静默阻止: 按钮可用, 点下去给出的是
+        // "为什么不能这么导"而不是"点了没反应", 后者会让人以为界面坏了。
+        if (platformMismatch) {
+            toast.error(t('platformNotAllowed', {
+                required: platformMismatch.required,
+                selected: platformMismatch.selected,
+            }));
             return;
         }
         setBusy(true);
@@ -169,13 +210,21 @@ export function AccountImport({ channelId, onImported, channels }: {
                     <div className="mt-3">
                         <AccountSignIn
                             channelId={channelId ?? targetChannel}
+                            // 方言只在渠道内导入时已知(独立导入的目标来自渠道列表, 没有方言字段),
+                            // 与粘贴 JSON 那条路径共用同一套前置校验, 见 accountPlatform。
+                            dialect={channelId === undefined ? undefined : dialect}
                             onSuccess={() => setResult(null)}
                         />
                     </div>
 
                     <div className="mt-4 space-y-3">
                         {/* 目标渠道只在独立导入模式下出现: 渠道内导入时目标已经确定, 再摆一个不可改的
-                            下拉只会让人以为可以改。 */}
+                            下拉只会让人以为可以改。
+                            这条路径**做不了**平台↔方言的前置校验, 而且不是漏了: 这里的候选来自
+                            渠道列表(后端 model.ChannelStats), 那份 DTO 里没有 dialect / sub_platform。
+                            为了一个下拉去拉整份渠道详情也不划算 —— 详情带凭据明文, 列表页不该碰它。
+                            于是这里保持宽松, 由 rawHint.antigravity 之类的说明文字承担指路责任;
+                            真正的硬校验在渠道内导入路径上(此时 dialect 是已知的)。 */}
                         {channelId === undefined && (
                             <div className="space-y-1.5">
                                 <Label>{t('targetChannel')}</Label>
@@ -201,21 +250,35 @@ export function AccountImport({ channelId, onImported, channels }: {
                         <div className="space-y-1.5">
                             <Label>{t('platform')}</Label>
                             <div className="flex flex-wrap gap-2">
-                                {(['codex', 'kiro', 'gemini', 'grok', 'claude'] as AccountPlatform[]).map((item) => (
+                                {ACCOUNT_PLATFORMS.map((item) => (
                                     <Button
                                         key={item}
                                         type="button"
                                         size="sm"
                                         variant={platform === item ? 'default' : 'outline'}
                                         className="rounded-lg"
-                                        onClick={() => setPlatform(item)}
+                                        onClick={() => {
+                                            setPlatform(item);
+                                            revalidate(item, raw);
+                                        }}
                                     >
                                         {item}
                                     </Button>
                                 ))}
                             </div>
+                            {/* 平台与渠道方言对不上时当场说清, 而且说**为什么**不是通用措辞:
+                                这条错误的后果在转发期才发作(每次请求 403 并熔断 30 分钟),
+                                只说"不允许"会让人换个渠道继续贴, 问题原样复现。 */}
+                            {platformMismatch && (
+                                <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+                                    {t('platformNotAllowed', {
+                                        required: platformMismatch.required,
+                                        selected: platformMismatch.selected,
+                                    })}
+                                </div>
+                            )}
                             {/* 选了有官方 CLI 的平台时, 告诉使用者去哪跑命令、文件在哪。
-                                无 CLI 引导的平台(kiro/gemini/grok)不渲染任何东西。 */}
+                                无 CLI 引导的平台(kiro/gemini/grok/antigravity)不渲染任何东西。 */}
                             <CliHint platform={platform} />
                         </div>
                         <div className="space-y-1.5">
@@ -236,7 +299,7 @@ export function AccountImport({ channelId, onImported, channels }: {
                                 onChange={(event) => {
                                     const v = event.target.value;
                                     setRaw(v);
-                                    setValidateErrors(validateAccountJSON(platform, v));
+                                    revalidate(platform, v);
                                 }}
                                 placeholder={t('rawPlaceholder')}
                                 rows={8}
@@ -289,6 +352,8 @@ export function AccountImport({ channelId, onImported, channels }: {
                                 {t('refreshNow')}
                             </Button>
                         )}
+                        {/* 平台与方言对不上时按钮**不**置灰: 点下去弹出带原因的错误,
+                            比一个点不动的按钮好排查 —— 后者会让人以为是界面坏了或权限不够。 */}
                         <Button type="button" onClick={submit} disabled={busy}>
                             {busy && <Loader2 className="size-3.5 animate-spin" />}
                             {t('submit')}

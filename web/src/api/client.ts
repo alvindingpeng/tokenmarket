@@ -321,8 +321,26 @@ async function sendWithStepUp(path: string, raw: RawRequest, allowStepUp: boolea
 // 对外请求形态: JSON API、文件下载、表单上传
 // ---------------------------------------------------------------------------
 
+// assertJSONBody 拦住「调用方自己又 stringify 一遍」这类二次序列化。
+// apiRequest 内部已经 JSON.stringify(body), 外面再 stringify 一次, 发出去的就是 JSON 字符串字面量
+// ("{...}" 而不是 {...}), 后端 ShouldBindJSON 必然回 400 —— 6 个写操作(静默窗口/花费预算增改/
+// 上游账单定性/重算/账单导入)曾因此 100% 失败, 其中静默窗口还要先输一次 step-up 密码才失败。
+// 这种错误在类型上完全合法(unknown 收得下任何东西), 编译期抓不住, 只能在出口处拦下来并报错:
+// 开发期立刻显形, 而不是等线上用户看到 400。
+// FormData 一并拦: 它必须走 apiUpload 让浏览器自己带 multipart boundary,
+// 交给 apiRequest 会被 JSON.stringify 成 "{}" 且强行带上 application/json。
+export function assertJSONBody(body: unknown): void {
+    if (typeof body === 'string') {
+        throw new Error('apiRequest body must be a plain object: apiRequest already runs JSON.stringify(body); pass the object itself, and use apiUpload for FormData');
+    }
+    if (typeof FormData !== 'undefined' && body instanceof FormData) {
+        throw new Error('apiRequest cannot send FormData: use apiUpload so the browser sets the multipart boundary');
+    }
+}
+
 // 相对于当前页面目录发送 API 请求，保留反向代理的子路径前缀。
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+    if (options.body !== undefined) assertJSONBody(options.body);
     const generation = authGeneration;
     const outcome = await sendWithStepUp(
         path,

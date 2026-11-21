@@ -14,6 +14,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/pay"
+	"github.com/charmbracelet/log"
 	"gorm.io/gorm"
 )
 
@@ -414,6 +415,9 @@ func RechargeNotify(ctx context.Context, provider string, req *pay.CallbackReque
 		}
 	}
 	var order model.RechargeOrder
+	// creditedAfterExpiry 标记"这单已过期但第三方确认付款, 本轮补入账":
+	// 事务提交后才据此告警 —— 告警必须在入账成为事实之后发, 不能反过来。
+	creditedAfterExpiry := false
 	err = db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 先拿写锁: 短事务的"读后写"升级会撞 SQLITE_BUSY_SNAPSHOT(517, busy_timeout 不覆盖),
 		// 取锁后并发方在本事务的写锁上按 busy_timeout 排队。见 db.AcquireWriteLock。
@@ -427,7 +431,10 @@ func RechargeNotify(ctx context.Context, provider string, req *pay.CallbackReque
 			// 幂等: 已入账的订单重复投递直接算成功, 绝不二次入账。
 			return nil
 		}
-		if order.Status != model.RechargeStatusPending {
+		// expired 也接受: "钱优先"。订单被超时关闭只说明我们等回调等过了 TTL,
+		// 不代表用户没付 —— 第三方确认收款了就必须入账, 否则钱付了入不了账,
+		// 用户只能走人工补单。金额仍然照核: 放宽的是"单子还开着吗", 不是"金额对不对"。
+		if order.Status != model.RechargeStatusPending && order.Status != model.RechargeStatusExpired {
 			return fmt.Errorf("order is %s", order.Status)
 		}
 		// 金额核对按渠道实付额; 商品定价渠道(PayCents=0)只核商品不核金额。
@@ -435,8 +442,12 @@ func RechargeNotify(ctx context.Context, provider string, req *pay.CallbackReque
 			return fmt.Errorf("amount mismatch: order %d, callback %d", order.PayCents, amountCents)
 		}
 		// 抢占: 状态条件更新, 并发重复回调至多一个事务改到行。
+		// 条件里同时放 pending 与 expired: 与"定时关闭任务"并发时, 关闭先拿到写锁则本事务
+		// 读到 expired 仍可入账; 本事务先拿到写锁则这笔单已经是 paid, 关闭任务的
+		// status='pending' 条件自然不再匹配。两条路径互斥, 不会出现"关闭了还入账两次"。
 		result := tx.Model(&model.RechargeOrder{}).
-			Where("order_no = ? AND status = ?", orderNo, model.RechargeStatusPending).
+			Where("order_no = ? AND status IN ?", orderNo,
+				[]string{model.RechargeStatusPending, model.RechargeStatusExpired}).
 			Updates(map[string]any{
 				"status":     model.RechargeStatusPaid,
 				"trade_no":   tradeNo,
@@ -447,8 +458,10 @@ func RechargeNotify(ctx context.Context, provider string, req *pay.CallbackReque
 			return fmt.Errorf("failed to mark order paid: %w", result.Error)
 		}
 		if result.RowsAffected != 1 {
+			// 并发下已被另一路回调/人工补单抢先改到 paid: 幂等成功, 不二次入账。
 			return nil
 		}
+		creditedAfterExpiry = order.Status == model.RechargeStatusExpired
 		// 入账拆两笔: 充值额进累计充值口径, 满赠只进余额, 口径不会混。
 		if order.Credits > 0 {
 			if err := walletCreditTx(tx, order.UserID, order.Credits, model.LedgerKindTopup, "充值 "+order.OrderNo, 0, ""); err != nil {
@@ -483,6 +496,21 @@ func RechargeNotify(ctx context.Context, provider string, req *pay.CallbackReque
 	notifyAsync(ctx, order.UserID, model.NotificationTypeRecharge, "充值成功",
 		fmt.Sprintf("您的账户已成功充值 %.2f 元，订单号：%s。", order.Credits+order.Bonus, order.OrderNo),
 		"", 0)
+	// 过期后补入账是异常时序(我们这边关了单, 第三方却确认收款), 必须留事故痕:
+	// 它说明 TTL/回调链路存在系统性延迟, 单看这一笔"入账成功"永远发现不了。
+	// Reason 不含每笔变化的单号, 保留同事件的去重效果; 单号进 Fields。
+	if creditedAfterExpiry {
+		RaiseAlertFacts(ctx, AlertFacts{
+			Kind:   "payment_after_expiry",
+			Reason: "订单已超时关闭后才收到第三方付款确认, 已补入账",
+			Fields: []alert.Field{
+				{Label: "订单号", Value: order.OrderNo},
+				{Label: "第三方流水", Value: tradeNo},
+				{Label: "入账金额", Value: fmt.Sprintf("%.2f", order.Credits+order.Bonus)},
+				{Label: "说明", Value: "该单已过期但仍收到付款确认, 已按实付额补入账(未二次入账); 请检查回调延迟与订单 TTL"},
+			},
+		})
+	}
 	return nil
 }
 
@@ -504,15 +532,33 @@ func RechargeOrderStatus(ctx context.Context, orderNo string) string {
 	return order.Status
 }
 
-// RechargeCloseExpired 关闭超时未支付订单; 下单与列表时懒执行, 不额外起定时器。
-func RechargeCloseExpired(ctx context.Context) error {
+// RechargeCloseExpired 关闭超时未支付订单, 返回本轮关闭的笔数。
+//
+// 以前只在"下单"与"订单列表/导出"时懒执行: 没人打开那一页, 到期的单就一直是 pending,
+// 管理端的待支付统计、渠道对账都跟着失真。现在另有周期任务(见 RechargeExpireRun 与
+// internal/task 的 recharge_expire)按固定节拍跑, 懒执行作为"恰好路过"的加速路径保留 ——
+// 两处都走同一条条件更新, 并发重复跑至多把每笔关一次。
+func RechargeCloseExpired(ctx context.Context) (int64, error) {
 	result := db.GetDB().WithContext(ctx).Model(&model.RechargeOrder{}).
 		Where("status = ? AND expired_at < ?", model.RechargeStatusPending, time.Now()).
 		Update("status", model.RechargeStatusExpired)
 	if result.Error != nil {
-		return fmt.Errorf("failed to close expired orders: %w", result.Error)
+		return 0, fmt.Errorf("failed to close expired orders: %w", result.Error)
 	}
-	return nil
+	return result.RowsAffected, nil
+}
+
+// RechargeExpireRun 周期任务入口: 关闭超时未支付订单, 有变化时记一行日志。
+// 单轮不限量也够用 —— 条件更新是一条语句, 存量积压一次就能收敛。
+func RechargeExpireRun(ctx context.Context) (int64, error) {
+	closed, err := RechargeCloseExpired(ctx)
+	if err != nil {
+		return closed, err
+	}
+	if closed > 0 {
+		log.Infof("recharge expire: closed=%d orders", closed)
+	}
+	return closed, nil
 }
 
 // RechargeList 查询充值订单; userID 非零查指定用户, 为零查全部(管理员)。
@@ -520,7 +566,7 @@ func RechargeList(ctx context.Context, userID uint, limit int) ([]model.Recharge
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	if err := RechargeCloseExpired(ctx); err != nil {
+	if _, err := RechargeCloseExpired(ctx); err != nil {
 		return nil, err
 	}
 	statement := db.GetDB().WithContext(ctx).Model(&model.RechargeOrder{})
@@ -544,7 +590,7 @@ type RechargeExportQuery struct {
 
 // RechargeExport 导出查询: 与列表同口径但无 200 上限(调用方负责上限), created_at 倒序。
 func RechargeExport(ctx context.Context, query RechargeExportQuery, limit int) ([]model.RechargeOrder, error) {
-	if err := RechargeCloseExpired(ctx); err != nil {
+	if _, err := RechargeCloseExpired(ctx); err != nil {
 		return nil, err
 	}
 	statement := db.GetDB().WithContext(ctx).Model(&model.RechargeOrder{})
@@ -604,11 +650,14 @@ func RechargeManualComplete(ctx context.Context, orderNo string, actorID uint, a
 		if order.Status == model.RechargeStatusPaid {
 			return fmt.Errorf("order is already paid")
 		}
-		if order.Status != model.RechargeStatusPending {
+		// expired 也允许人工补单: 员工核对第三方账单后确认客人付了钱, 单子却因超时关闭——
+		// 这正是"钱付了入不了账"的手工兜底场景, 卡在 pending 只会让人去改库。
+		if order.Status != model.RechargeStatusPending && order.Status != model.RechargeStatusExpired {
 			return fmt.Errorf("order is %s", order.Status)
 		}
 		result := tx.Model(&model.RechargeOrder{}).
-			Where("order_no = ? AND status = ?", orderNo, model.RechargeStatusPending).
+			Where("order_no = ? AND status IN ?", orderNo,
+				[]string{model.RechargeStatusPending, model.RechargeStatusExpired}).
 			Updates(map[string]any{"status": model.RechargeStatusPaid, "paid_at": time.Now()})
 		if result.Error != nil {
 			return fmt.Errorf("failed to mark order paid: %w", result.Error)

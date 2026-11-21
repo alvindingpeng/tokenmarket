@@ -302,7 +302,7 @@ func runAuditLifecycle(c *gin.Context) {
 	result, err := op.AuditLifecycleRun(context.Background())
 	if err != nil {
 		op.RaiseAlertFacts(c.Request.Context(), op.AlertFacts{
-			Kind:   "audit_archive_failed",
+			Kind:   op.AlertKindAuditArchiveFailed,
 			Reason: "manual audit archive failed",
 			Fields: []alert.Field{
 				{Label: "触发方式", Value: "运维页手动执行"},
@@ -326,7 +326,7 @@ func runBillingLifecycle(c *gin.Context) {
 	result, err := op.BillingRetentionRun(ctx)
 	if err != nil {
 		op.RaiseAlertFacts(c.Request.Context(), op.AlertFacts{
-			Kind:   "billing_archive_failed",
+			Kind:   op.AlertKindBillingArchiveFailed,
 			Reason: "manual billing archive failed",
 			Fields: []alert.Field{
 				{Label: "触发方式", Value: "运维页手动执行"},

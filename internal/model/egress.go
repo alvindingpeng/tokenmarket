@@ -31,10 +31,21 @@ type ChannelEgress struct {
 	Kind      EgressKind `json:"kind" gorm:"size:16;not null;default:direct"`                // 接入方式: direct|http|socks5。
 	// 代理地址含 user:pass, 落库走信封加密(与 channel_keys.key 同一套机制):
 	// 读出来仍是明文, 但库文件与自动备份(VACUUM INTO 物理快照)里只有密文。
-	URL     string `json:"url" gorm:"serializer:switchyard_secret_channel_egress"` // 代理地址, kind=direct 时留空。
-	Region  string `json:"region" gorm:"size:16;default:''"`                       // 出口所在地区码, 用于区域亲和; 留空表示不参与匹配。
-	Weight  int    `json:"weight" gorm:"default:0"`                                // 同分时的优先权重, 数值越大越先被选中; 也是冷出口的采样顺序。
-	Enabled bool   `json:"enabled" gorm:"default:true"`                            // 是否启用; 停用后不参与选路, 但保留配置。
+	URL    string `json:"url" gorm:"serializer:switchyard_secret_channel_egress"` // 代理地址, kind=direct 时留空。
+	Region string `json:"region" gorm:"size:16;default:''"`                       // 出口所在地区码, 用于区域亲和; 留空表示不参与匹配。
+	// Weight 是**仅在同分时**生效的优先权重, 不是流量配比。
+	//
+	// 比"权重"两个字暗示的范围窄得多: 选择器先按实测耗时(EMA 等待毫秒)排序, 只有两个出口
+	// 分数**完全相等**时才比较权重。真实流量下两条线路的 EMA 不可能恰好相等, 所以填 80/20
+	// 并不等于八二开 —— 慢 0.1ms 的那条就是不会被选中。它真正起作用的场景是出口池刚建好、
+	// 一个样本都还没有的时候: 此时所有出口分数同为初始值、天然并列, 权重决定"先探哪一条",
+	// 即冷出口的采样顺序。
+	//
+	// 为什么保留这个语义而不改成分流: 选路首要目标是走最快的那条线路, 按权重分流等于主动把
+	// 请求分给已知更慢的出口, 直接违背目标; 且会让"为什么选中了它"从确定可复现变成随机不可复现,
+	// 线上排查成本陡增, 而收益只是让一个标签更"名副其实"。界面随即将标签改为「同分优先」。
+	Weight  int  `json:"weight" gorm:"default:0"`
+	Enabled bool `json:"enabled" gorm:"default:true"` // 是否启用; 停用后不参与选路, 但保留配置。
 }
 
 // Normalize 清洗并校验出口配置, 返回可直接落库的副本。

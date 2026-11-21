@@ -120,7 +120,11 @@ type ArchiveResult struct {
 // 运行中的请求不在清理范围内, 避免删除仍在写入的行。
 func LogLifecycleRun(ctx context.Context) (ArchiveResult, error) {
 	retention := LogRetentionDays()
-	cutoff := time.Now().AddDate(0, 0, -retention)
+	// cutoff 对齐自然日 00:00, 与 billingRetentionCutoff 同一套规则。
+	// 若直接用 time.Now().AddDate(0, 0, -retention), 留存末日只留下"此刻之后"的半天样本:
+	// 成功率、延迟这类按日汇总的指标会随本轮运行时刻漂移, 而前端覆盖率提示只到日粒度,
+	// 用户会把那半天当成一整天。对齐到 00:00 后, 每次清理都以整天为单位, 结果与运行时刻无关。
+	cutoff := dayStart(time.Now()).AddDate(0, 0, -retention)
 	result := ArchiveResult{Cutoff: cutoff}
 	archiveEnabled, err := SettingGetBool(model.SettingKeyLogArchiveEnabled)
 	result.Enabled = err == nil && archiveEnabled

@@ -7,8 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alvindingpeng/switchyard/internal/alert"
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/charmbracelet/log"
 	"gorm.io/gorm"
 )
 
@@ -475,6 +477,120 @@ func WithdrawMarkPaid(ctx context.Context, id uint, paidRef, actualCurrency, act
 	}
 	UserTouchBalance(order.UserID)
 	return nil
+}
+
+// WithdrawApproveTimeout 已审批但超时未打款的提现单自动撤销的等待期。
+//
+// 这是一个写死在代码里的常量, 不是新增设置项: why 见下。
+// 为什么需要它: approved 是单向门 —— 审批只把 pending 改成 approved, 冻结额一动不动;
+// 唯一解冻路径是 WithdrawMarkPaid(approved→paid 时把冻结转累计已提) 或 WithdrawRollback
+// (paid→approved, 那是打款失败纠错, 不是"取消")。管理员点了"通过"但忘了打款(离职、
+// 换班、忘了这笔), 用户的钱就一直挂在 withdraw_frozen 上: 既提不走(已冻结), 又不会回可提,
+// 用户自己也没法撤销(WithdrawCancel 只认 pending)。只要管理员不回头, 这笔钱永远冻结。
+//
+// 为什么选周期任务扫描(而非放开用户撤销 approved):
+//  1. 放开用户撤销 approved 会与"管理员已经核过款、正在走银行打款"这段真实窗口冲突 ——
+//     用户一撤销, 管理员手上的打款指令就成了打一笔已经撤销的单, 只能靠对账事后发现。
+//     要安全就得再加"管理员可关闭开关"或"距审批 N 小时内不可撤销"的规则, 等于两条新设置
+//     项 + 前端设置页 + 校验, 而这套系统里已有大量同类"周期任务兜底"的先例
+//     (工单自动关闭、预扣回滚、告警补发), 兜底本就是这个仓库的既有风格。
+//  2. 用常量而不是设置项: 这条阈值是资金安全的下界, 不是业务口味。做成设置项意味着可以
+//     被调成 1000 天(等于关闭)或被误设为 0(审批完立刻撤销, 管理员永远打不了款),
+//     两种极端都制造资损/投诉。写死成 72 小时把"足够打款"与"不至于永久冻结"钉在一起,
+//     真要调就改代码走一次评审 —— 与 TicketAutoCloseAfter 同一取舍。
+//
+// 72 小时: 人工打款是工作日内完成的动作, 3 天覆盖"周五审批、周一打款"的周末空档;
+// 再长会让"审批后忘了"的钱在用户视角里长期不可用, 再短会误撤正在走流程的单。
+const WithdrawApproveTimeout = 72 * time.Hour
+
+// withdrawSystemActor 系统自动撤销时记在流水里的操作者名(审计的 actorID 记 0 = 系统)。
+const withdrawSystemActor = "系统"
+
+// WithdrawTimeoutRevoke 撤销审批超时未打款的提现单, 返回本轮实际撤销的笔数。
+//
+// 语义: approved 且 reviewed_at 早于 now-WithdrawApproveTimeout 的单子 → cancelled(解冻)。
+// 选用 cancelled 而不是 rejected: rejected 是"管理员审核不通过"的语义, 这个单管理员是
+// 审过了的, 只是没在时限内打款; cancelled 表示"这笔申请作废、未实际出款", 与用户主动
+// 取消同一终点, 提现列表/导出里也不会把管理员记成拒绝过。
+//
+// 并发与幂等:
+//   - 判定与更新在同一条带 status/reviewed_at 守卫的条件 UPDATE 里, 与管理员此刻点
+//     "打款"(WithdrawMarkPaid) 并发时, 谁先拿到写锁谁赢, 输的一方 RowsAffected=0 直接跳过,
+//     绝不会出现"既撤销解冻、又打款出池"的双重记账。
+//   - 用 withdrawUnfreeze 复用既有解冻路径: 条件更新 + 冻结额断言 + withdraw_unfreeze 流水
+//     一次到位, 不另写一套资金迁移。
+//   - 重复跑安全: 已撤销的单不再匹配 status='approved', 第二轮扫不到。
+//
+// 留痕: 每笔写一条审计(audit_logs, actorID=0 系统) 与 withdraw_unfreeze 流水,
+// 聚合成一条站内告警(withdrawal_approve_timeout) + 逐笔通知用户。
+func WithdrawTimeoutRevoke(ctx context.Context) (int64, error) {
+	cutoff := time.Now().Add(-WithdrawApproveTimeout)
+	var stale []model.Withdrawal
+	if err := db.GetDB().WithContext(ctx).
+		Where("status = ? AND reviewed_at IS NOT NULL AND reviewed_at <= ?", model.WithdrawStatusApproved, cutoff).
+		Find(&stale).Error; err != nil {
+		return 0, fmt.Errorf("failed to load stale approved withdrawals: %w", err)
+	}
+
+	var revoked int64
+	var totalAmount float64
+	var auditFailures []uint
+	for i := range stale {
+		order := stale[i]
+		// 先解冻、再写审计。顺序理由: withdrawUnfreeze 是原子且权威的资金迁移 —— 它同时落
+		// 状态、冻结额与 withdraw_unfreeze 流水, 而流水本身就是钱这条线的账。审计记的是
+		// "为什么撤", 必须只对真正撤成功的单写一次: 反过来先写审计, 就会在并发下留下一批
+		// "我没抢到但审计说我撤了"的假记录, 事后对账比没有审计更误导。
+		// 审计失败不回滚已完成的资金迁移(冻结额退回是可逆的人工动作, 伪造状态不是),
+		// 而是记下来继续处理其余单, 最后并进返回值让任务失败告警出口接管:
+		// 漏审计是要人去补的运维问题, 不能顺手把剩下的钱继续冻着。
+		err := withdrawUnfreeze(ctx, order.ID, model.WithdrawStatusApproved, model.WithdrawStatusCancelled,
+			"提现单 #%d 审批超时未打款自动撤销解冻", nil, withdrawSystemActor)
+		if err != nil {
+			// "is not approved" 表示并发下已被打款或已被别处撤销: 这不是错误, 只是本轮没抢到,
+			// 不能因为这一笔就放弃剩余的单(每笔都是独立的资金事实)。
+			if strings.Contains(err.Error(), "is not approved") {
+				log.Infof("withdrawal #%d timeout revoke skipped: status changed concurrently", order.ID)
+				continue
+			}
+			return revoked, fmt.Errorf("failed to revoke stale withdrawal #%d: %w", order.ID, err)
+		}
+		revoked++
+		totalAmount += order.Amount
+		if err := AuditLogAdd(ctx, 0, "withdrawal.timeout_revoke",
+			fmt.Sprintf("withdrawal#%d", order.ID),
+			fmt.Sprintf("approved 超过 %d 小时未打款, 自动撤销并解冻 %.6f (申请人 #%d, 审批人 #%d)",
+				int(WithdrawApproveTimeout.Hours()), order.Amount, order.UserID, order.ReviewedBy)); err != nil {
+			log.Errorf("withdrawal #%d timeout revoke audit failed: %v", order.ID, err)
+			auditFailures = append(auditFailures, order.ID)
+		}
+		// 通知用户在入账提交之后发: 通知失败不能影响已生效的资金事实(见 notifyAsync)。
+		notifyAsync(ctx, order.UserID, model.NotificationTypeWithdrawal,
+			fmt.Sprintf("提现申请 #%d 已自动撤销", order.ID),
+			fmt.Sprintf("您的提现申请 #%d（金额 %.2f 元）审核通过后已超过 %d 小时仍未打款，系统已自动撤销并把金额退回可提现额度；如需提现请重新提交申请。",
+				order.ID, order.Amount, int(WithdrawApproveTimeout.Hours())),
+			"", uint64(order.ID))
+	}
+	if revoked > 0 {
+		// 聚合告警: 逐笔各发一条会刷屏, 且去重窗口内的第二条起本来就会被吞掉。
+		// Reason 不含量化数字(去重键), 具体笔数金额进 Fields。
+		RaiseAlertFacts(ctx, AlertFacts{
+			Kind:   "withdrawal_approve_timeout",
+			Reason: "已审批的提现单超过打款时限未出款, 已自动撤销并解冻, 请核对打款流程",
+			Fields: []alert.Field{
+				{Label: "撤销笔数", Value: fmt.Sprintf("%d 笔", revoked)},
+				{Label: "解冻金额", Value: fmt.Sprintf("%.2f", totalAmount)},
+				{Label: "审批时限", Value: fmt.Sprintf("%d 小时", int(WithdrawApproveTimeout.Hours()))},
+				{Label: "影响", Value: "资金已退回用户可提现额度; 若本应打款请重新申请或核对审核流程"},
+			},
+		})
+	}
+	if len(auditFailures) > 0 {
+		// 资金已退回(事实), 审计没写进去(证据缺失): 两类问题都要暴露, 但失败要计到任务上,
+		// 否则这批单将来没人能解释"为什么少了钱"。
+		return revoked, fmt.Errorf("timeout revoke audit failed for %d withdrawal(s): %v", len(auditFailures), auditFailures)
+	}
+	return revoked, nil
 }
 
 // WithdrawRollback 打款回滚: paid → approved, 累计已提转回冻结(打款失败纠错用)。

@@ -4,7 +4,7 @@ import { useStatsHome } from '@/api/stats';
 import { useAuthStore } from '@/api/user';
 import { useHomeViewStore, type MetricKey } from './store';
 import { MetricTabs } from './metric-tabs';
-import { addMetrics, rankItems, type RankItem } from './rankMetrics';
+import { addMetrics, formatRankSuccessRate, rankItems, type RankItem } from './rankMetrics';
 
 // RankCard 渲染单个排行榜: 标题, 维度切换和榜单列表。
 function RankCard({
@@ -57,9 +57,9 @@ function RankCard({
                                         </p>
                                     )}
                                     {sortMode === 'count' && (
-                                        <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+                                        <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1" data-testid="rank-success-rate">
                                             <span>{t('successRate')}:</span>
-                                            <span>{(totalCount > 0 ? (successCount / totalCount) * 100 : 0).toFixed(1)}%</span>
+                                            <span>{formatRankSuccessRate(successCount, totalCount)}</span>
                                         </div>
                                     )}
                                 </div>

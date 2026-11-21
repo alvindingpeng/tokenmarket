@@ -14,7 +14,7 @@ import { formatAmount, formatTokenCount } from '@/lib/format';
 import { getDateRange, PRESETS, type Preset } from './dates';
 // 展示口径的纯函数单独成文件: 组件文件只导出组件才能保住 Fast Refresh,
 // 而这些规则正是最该被单测钉死的部分。
-import { buildTrendChartData, hasSuccessSamples, isCoverageLimited, summarizeSuccess } from './success';
+import { buildTrendChartData, hasSuccessSamples, isCoverageLimited, summarizeCacheHitRate, summarizeSuccess } from './success';
 
 // PanelQuery 区块只依赖查询的这三个字段: 加载/失败/重试彼此独立, 谁慢谁转圈, 谁错谁重试。
 type PanelQuery = {
@@ -96,6 +96,9 @@ export function AnalyticsPage() {
 
     // 成功率与样本量成对出现在界面里: 只有百分比没有样本量, 用户无法判断这个数字值不值得信。
     const success = overview.data ? summarizeSuccess(overview.data) : null;
+    // 缓存命中率同理: 无词元样本时后端给的是哨兵 0, 界面显示 "—" 而非 0.0%(判据与哨兵值都在 success.ts)。
+    const cacheHitRate = overview.data ? summarizeCacheHitRate(overview.data) : null;
+
     // 调用日志留存 7 天时选"最近 30 天": 覆盖起点会晚于查询起点, 必须把这段差异讲出来。
     const coverageLimited = overview.data
         ? isCoverageLimited(overview.data.request_coverage_start, dateRange.start_date)
@@ -202,7 +205,7 @@ export function AnalyticsPage() {
                         <div className="rounded-3xl border border-border bg-card px-4 py-3">
                             <div className="text-xs text-muted-foreground">{t('card.cacheHitRate')}</div>
                             <div className="mt-1 text-2xl font-semibold tabular-nums" data-testid="cache-hit-rate">
-                                {overview.data.cache_hit_rate.toFixed(1)}%
+                                {cacheHitRate}
                             </div>
                         </div>
                     </div>

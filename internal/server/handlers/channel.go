@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -452,10 +453,32 @@ func channelWriteErrorStatus(err error) int {
 
 func createChannel(c *gin.Context) {
 	var req model.ChannelDetail
-	if err := c.ShouldBindJSON(&req); err != nil {
+	// 读一次裸字节再自己解两遍, 而不是 ShouldBindJSON:
+	// 创建渠道需要知道"提交体里到底写了哪些键", 才能区分"没说 enabled"(按默认值建)
+	// 与"说了 enabled=false"(必须写 false 进去)。GORM 对带 default 的列在零值时会用 DB 默认值,
+	// 两者的差别只存在于 JSON 层, 绑定到结构体之后就分辨不出来了 —— 零值即零值。
+	// 解两遍的成本可以忽略: 一份到结构体, 一份到键集合。
+	raw, err := c.GetRawData()
+	if err != nil || len(raw) == 0 {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
+	if err := json.Unmarshal(raw, &req); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	var topLevel map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &topLevel); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	// ChannelConfig 是嵌入式结构体, 所以配置字段与 id/keys/egresses 平铺在同一层;
+	// 因此顶层键集合就是"用户说了哪些配置字段"的集合, 直接交给 op 处理。
+	explicit := make(map[string]bool, len(topLevel))
+	for key := range topLevel {
+		explicit[key] = true
+	}
+	req.ExplicitColumns = explicit
 	channel, err := op.ChannelCreate(&req, scopeOf(c), c.Request.Context())
 	if err != nil {
 		logChannelWriteRejection("create", req.ID, err)

@@ -346,6 +346,9 @@ func AutoAddChannelModels(ctx context.Context, channelID int, config model.Chann
 			}
 			// 回写探测解析出的 project: 转发信封要用它, 而用户通常不填。
 			// 只在渠道当前为空时写 —— 用户手填的值优先, 自动分配不得覆盖人工配置。
+			// 缓存由事务外的回读统一跟上: 这里只写库, 而转发与详情页读的都是缓存, 不同步的话
+			// "库里有了 project, 缓存里还是空", 下一次请求照样 403 SUBSCRIPTION_REQUIRED,
+			// 一直要等到重启(InitCache 重读整行)才生效 —— 用户看到的就是"探测成功了但报错, 重启又好了"。
 			for _, result := range results {
 				if strings.TrimSpace(result.project) == "" {
 					continue
@@ -363,6 +366,10 @@ func AutoAddChannelModels(ctx context.Context, channelID int, config model.Chann
 			return err
 		}
 
+		// 渠道自身的配置缓存也要跟上(至少 project 可能刚被回写): 回读整行, 免得只有库对、缓存错。
+		if _, err := reloadChannelRowCache(ctx, channelID); err != nil {
+			return err
+		}
 		// 子表缓存与分组路由都要跟上新并入的模型与授权。
 		if err := reloadChannelChildren(ctx, channelID); err != nil {
 			return err

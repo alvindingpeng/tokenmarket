@@ -75,7 +75,13 @@ func pickEgress(channel model.Channel, clientCountry string) (model.ChannelEgres
 			continue
 		}
 		score := egressScoreLocked(egress, state, neutral, clientCountry)
-		// 同分时权重大的先上: 权重就是"我给这条线路的偏好", 冷出口的采样顺序也由它决定。
+		// 权重**只在分数完全相等时**参与, 是 tie-breaker 而不是流量配比。
+		// 真实流量下两条线路的 EMA 耗时几乎不可能恰好相等, 所以"权重 80/20"并不会变成八二开 ——
+		// 慢 0.1ms 的那条就是不会被选中: 它的分数更差, 根本走不到比较权重这一步。
+		// 权重真正起作用的是冷出口: 没有样本时分数一律等于 neutral(全部并列), 于是它决定
+		// "先拿哪条去采样", 也就是出口池建成后的探测顺序。
+		// 刻意不做加权分流: 选路首要目标是走最快的那条线路, 按权重分流等于主动把请求分给已知
+		// 更慢的出口, 直接违背目标; 而且会让选择结果从确定可复现变成随机, 线上无从解释。
 		if !hasBest || score < bestScore || (score == bestScore && egress.Weight > best.Weight) {
 			best, bestScore, hasBest = egress, score, true
 		}

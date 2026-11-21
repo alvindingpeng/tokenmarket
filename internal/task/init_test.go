@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/op"
 )
 
 // taskTestSetup 初始化隔离测试库, 让 Init() 里的设置读取(周期计算)有库可查。
@@ -80,6 +81,63 @@ func TestSettlementCatchupRegistered(t *testing.T) {
 	}
 	if err := spec.Fn(); err == nil {
 		t.Fatal("settlement task swallowed catchup error")
+	}
+}
+
+// TestWithdrawApproveTimeoutRegistered 提现审批超时撤销任务必须登记:
+// 启动即跑(补上停机期间跨过阈值的单), 周期有界(不能一年跑一次, 否则钱照样冻结很久)。
+// 阈值走 op.WithdrawApproveTimeout 常量而不是新增设置项, 因此 settingTasks 里没有它 ——
+// 这条用例同时钉住"没有为了它偷偷加设置键": 加了而不登记会让周期热更新静默失效。
+func TestWithdrawApproveTimeoutRegistered(t *testing.T) {
+	taskTestSetup(t)
+
+	Init()
+
+	tasksMu.Lock()
+	spec, ok := specs[TaskWithdrawApproveTimeout]
+	tasksMu.Unlock()
+	if !ok {
+		t.Fatalf("task %s is not defined", TaskWithdrawApproveTimeout)
+	}
+	if spec.Fn == nil {
+		t.Fatal("withdraw approve timeout has no task body")
+	}
+	if !spec.RunOnStart {
+		t.Fatal("withdraw approve timeout must run on start to release orders stuck across downtime")
+	}
+	// 周期必须小于时限本身: 否则超时单要等下一代阈值才被撤销。
+	if d := spec.Interval(); d <= 0 || d >= op.WithdrawApproveTimeout {
+		t.Fatalf("withdraw approve timeout interval = %v, want a bounded period inside (0, %v)", d, op.WithdrawApproveTimeout)
+	}
+	if TaskWithdrawApproveTimeout != "withdraw_approve_timeout" {
+		t.Fatalf("TaskWithdrawApproveTimeout = %q, want %q", TaskWithdrawApproveTimeout, "withdraw_approve_timeout")
+	}
+}
+
+// TestRechargeExpireRegistered 充值单定时关闭任务必须登记: 启动即跑 + 分钟级周期。
+// 以前只在"下单"和"订单列表/导出"时懒执行, 没人翻那页到期的单就一直是 pending。
+func TestRechargeExpireRegistered(t *testing.T) {
+	taskTestSetup(t)
+
+	Init()
+
+	tasksMu.Lock()
+	spec, ok := specs[TaskRechargeExpire]
+	tasksMu.Unlock()
+	if !ok {
+		t.Fatalf("task %s is not defined", TaskRechargeExpire)
+	}
+	if spec.Fn == nil {
+		t.Fatal("recharge expire has no task body")
+	}
+	if !spec.RunOnStart {
+		t.Fatal("recharge expire must run on start to close orders that expired during downtime")
+	}
+	if d := spec.Interval(); d <= 0 || d > time.Hour {
+		t.Fatalf("recharge expire interval = %v, want a bounded periodic interval in (0, 1h]", d)
+	}
+	if TaskRechargeExpire != "recharge_expire" {
+		t.Fatalf("TaskRechargeExpire = %q, want %q", TaskRechargeExpire, "recharge_expire")
 	}
 }
 
@@ -165,6 +223,8 @@ func TestTaskNamesAndDefinitionsInSync(t *testing.T) {
 		TaskWatchdogAlert,
 		TaskFxRateUpdate,
 		TaskAccountTokenRefresh,
+		TaskWithdrawApproveTimeout,
+		TaskRechargeExpire,
 	}
 
 	tasksMu.Lock()

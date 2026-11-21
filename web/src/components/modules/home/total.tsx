@@ -20,38 +20,43 @@ export function Total() {
     const { data } = useStatsHome();
     const stats = data?.total;
     const t = useTranslations('home.total');
+    // 口径说明单独挂在 home.stats.* 下: 它描述的是数字的来源, 不是这一格的标题。
+    const tStats = useTranslations('home.stats');
 
     const cards = [
         {
             title: t('requestStats'),
             headerIcon: Activity,
             items: [
-                { label: t('requestCount'), metric: stats?.request_count, icon: MessageSquare, bgColor: 'bg-primary/10' },
-                { label: t('timeConsumed'), metric: stats?.wait_time, icon: Clock, bgColor: 'bg-accent/10' },
+                // 这一格是请求口径: 成功与失败都各算一次, 失败请求也计入。
+                // 同页的词元/费用只来自产生了用量的调用(失败的调用没有用量), 两者天然不等;
+                // 不写清楚的话, 用户会拿"请求数"去除"词元数"或与趋势图对账, 得出"少算了一大截"的错误结论。
+                { label: t('requestCount'), metric: stats?.request_count, icon: MessageSquare, bgColor: 'bg-primary/10', hint: tStats('requestCountHint') },
+                { label: t('timeConsumed'), metric: stats?.wait_time, icon: Clock, bgColor: 'bg-accent/10', hint: undefined },
             ],
         },
         {
             title: t('totalStats'),
             headerIcon: ChartColumnBig,
             items: [
-                { label: t('totalToken'), metric: stats?.total_token, icon: Bot, bgColor: 'bg-chart-1/10' },
-                { label: t('totalCost'), metric: stats?.total_cost, icon: DollarSign, bgColor: 'bg-chart-2/10' },
+                { label: t('totalToken'), metric: stats?.total_token, icon: Bot, bgColor: 'bg-chart-1/10', hint: undefined },
+                { label: t('totalCost'), metric: stats?.total_cost, icon: DollarSign, bgColor: 'bg-chart-2/10', hint: undefined },
             ],
         },
         {
             title: t('inputStats'),
             headerIcon: ArrowDownToLine,
             items: [
-                { label: t('inputTokens'), metric: stats?.input_token, icon: Rewind, bgColor: 'bg-chart-3/10' },
-                { label: t('inputCost'), metric: stats?.input_cost, icon: DollarSign, bgColor: 'bg-chart-3/10' },
+                { label: t('inputTokens'), metric: stats?.input_token, icon: Rewind, bgColor: 'bg-chart-3/10', hint: undefined },
+                { label: t('inputCost'), metric: stats?.input_cost, icon: DollarSign, bgColor: 'bg-chart-3/10', hint: undefined },
             ],
         },
         {
             title: t('outputStats'),
             headerIcon: ArrowUpFromLine,
             items: [
-                { label: t('outputTokens'), metric: stats?.output_token, icon: FastForward, bgColor: 'bg-chart-4/10' },
-                { label: t('outputCost'), metric: stats?.output_cost, icon: DollarSign, bgColor: 'bg-chart-4/10' },
+                { label: t('outputTokens'), metric: stats?.output_token, icon: FastForward, bgColor: 'bg-chart-4/10', hint: undefined },
+                { label: t('outputCost'), metric: stats?.output_cost, icon: DollarSign, bgColor: 'bg-chart-4/10', hint: undefined },
             ],
         },
     ];
@@ -76,6 +81,12 @@ export function Total() {
                                 </div>
                                 <div className="flex flex-col min-w-0">
                                     <span className="text-xs text-muted-foreground">{item.label}</span>
+                                    {/* 口径说明紧跟标题、字号更小: 让人先看数字, 需要时再确认这一格代表什么。 */}
+                                    {item.hint && (
+                                        <span className="text-[10px] leading-tight text-muted-foreground/70" data-testid="request-count-scope">
+                                            {item.hint}
+                                        </span>
+                                    )}
                                     <div className="flex items-baseline gap-1">
                                         <span className="text-xl">
                                             <AnimatedNumber value={item.metric?.formatted.value} />

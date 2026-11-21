@@ -50,6 +50,11 @@ export function FormEgresses({ state, setState }: {
             </div>
 
             <p className="text-xs text-muted-foreground shrink-0">{t('egressesHint')}</p>
+            {/* 权重一栏此前只写 placeholder「权重」, 使用者普遍理解成流量比例(80/20 就该分八成过来)。
+                实际语义是**同分时的先后顺序**: 后端 egress.go 先比实测得分(score), 只有两条出口得分
+                完全相同时才比 weight, 大的先上。这个误解没有代价的时候还好, 有代价的时候是"印象里配了
+                八二分流, 实际流量全走一条"。故把口径写在行外一处, 而不是逐行各写一遍。 */}
+            <p className="text-xs text-muted-foreground shrink-0">{t('egressWeightHint')}</p>
 
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-2">
                 {state.egresses.length === 0 && (
@@ -72,9 +77,12 @@ export function FormEgresses({ state, setState }: {
                                     <SelectItem value="socks5">{t('egressKindSocks5')}</SelectItem>
                                 </SelectContent>
                             </Select>
+                            {/* 列头只有 5rem, 塞不下「同分优先」的完整说明, 故占位符用短标签,
+                                语义由上方那行 hint 兜住; aria-label 供读屏用同一个短标签。 */}
                             <Input
                                 className="h-9 rounded-xl"
                                 type="number"
+                                aria-label={t('egressWeight')}
                                 placeholder={t('egressWeight')}
                                 value={egress.weight}
                                 onChange={(event) => update(index, { weight: Number(event.target.value) || 0 })}

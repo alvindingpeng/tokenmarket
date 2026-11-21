@@ -105,10 +105,13 @@ func TestStatsHomeUserScope(t *testing.T) {
 	engine := ticketEngine(t)
 
 	seedBillableFixtures(t, user.ID, time.Now())
+	// 请求数来自调用日志而不是计费行(计费表只为产生了用量的请求落行): 首页必须能看见失败。
+	seedRelayOutcome(t, user.ID, relaySeedSuccess, time.Now())
 
 	payload, raw := homeFetch(t, engine, userToken)
-	// 口径必须与 /stats/total 的计费聚合一致: 1000 = 净读500 + 缓存读300 + 缓存写200。
-	if payload.Total.InputToken != 1000 || payload.Total.OutputToken != 500 || payload.Total.RequestSuccess != 1 {
+	// 金额与词元必须与 /stats/total 的计费聚合一致: 1000 = 净读500 + 缓存读300 + 缓存写200。
+	// 请求数则由调用日志出数(下面单独断言), 与计费行数不是同一个量。
+	if payload.Total.InputToken != 1000 || payload.Total.OutputToken != 500 {
 		t.Fatalf("user total: got %+v", payload.Total)
 	}
 	if !jsonArrayEmpty(raw["channels"]) {
@@ -145,6 +148,43 @@ func TestStatsHomeUserScope(t *testing.T) {
 	other, _ := homeFetch(t, engine, otherToken)
 	if other.Total.InputToken != 0 || other.Total.RequestSuccess != 0 {
 		t.Fatalf("other user sees foreign stats: %+v", other.Total)
+	}
+}
+
+// TestStatsHomeUserRequestCountsFromRelayLogs 非管理员首页的请求数必须来自调用日志:
+// 一条成功 + 一条失败 → request_success=1 且 request_failed=1。
+//
+// 这里曾经把计费行数塞进 RequestSuccess 且从不赋值 RequestFailed, 于是"请求数 = 成功 + 失败"
+// 恒等于计费行数, 失败请求一条都看不见 —— 数字看着正常, 但结构性失明。
+func TestStatsHomeUserRequestCountsFromRelayLogs(t *testing.T) {
+	userToken, _, _, _, user, _, _, _ := ticketAPIEnv(t)
+	engine := ticketEngine(t)
+	now := time.Now()
+	// 计费行只落了一条: 若请求数仍取计费行数, success 会是 1 而 failed 恒为 0, 断言即失败。
+	seedBillableFixtures(t, user.ID, now)
+	seedRelayOutcome(t, user.ID, relaySeedSuccess, now.Add(-time.Minute))
+	seedRelayOutcome(t, user.ID, relaySeedFailed, now)
+
+	payload, raw := homeFetch(t, engine, userToken)
+	if payload.Total.RequestSuccess != 1 {
+		t.Fatalf("request_success = %d, want 1 (调用日志里的成功数, 不是计费行数)", payload.Total.RequestSuccess)
+	}
+	// 关键断言: 计费行数为 1, 而失败的调用不产生计费行 —— 只有走调用日志才看得到这条失败。
+	if total, ok := raw["total"].(map[string]any); ok {
+		if failed, ok := total["request_failed"].(float64); !ok || failed != 1 {
+			t.Fatalf("request_failed = %v, want 1 (失败请求不进计费表, 必须由调用日志出数)", total["request_failed"])
+		}
+	} else {
+		t.Fatalf("total missing: %v", raw["total"])
+	}
+
+	// 小时曲线只到当前小时: 未发生的小时不该补零贴底, 否则"今天"曲线在当前时刻之后
+	// 看起来像流量突然归零。管理员侧 StatsHourlyGet 本来就是同一规则。
+	if len(payload.Hourly) > now.Hour()+1 {
+		t.Fatalf("hourly has %d buckets, want <= %d (当前小时之后的桶必须裁掉)", len(payload.Hourly), now.Hour()+1)
+	}
+	if len(payload.Hourly) != 0 && payload.Hourly[len(payload.Hourly)-1].Hour > now.Hour() {
+		t.Fatalf("last hourly bucket = %d, want <= current hour %d", payload.Hourly[len(payload.Hourly)-1].Hour, now.Hour())
 	}
 }
 

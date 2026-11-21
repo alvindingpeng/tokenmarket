@@ -161,6 +161,13 @@ func TestAlertValidKindCoversDeterminableKinds(t *testing.T) {
 		"backup_failed", "archive_failed", "watchdog_alert",
 		"route_persist_failed", "route_persist_recovered",
 		"task_failed", "task_recovered",
+		// 资金安全两类: 出这类告警时通常要先人工处理再恢复流程, 维护期间更需要能建静默窗口。
+		"withdrawal_approve_timeout", "payment_after_expiry",
+		// 牌价采集连续失败: 这条 kind 由 fxrate.go 长期发出却漏登记, 静默窗口创建一直被拒。
+		"fx_rate_refresh_failed",
+		// 第二批同类: 同样是真实发出但漏登记, 管理员为它们建静默窗口一律 400。
+		"usage_missing", "account_invalidated",
+		"billing_archive_failed", "audit_archive_failed", "fx_rate_stale",
 	} {
 		if !AlertValidKind(kind) {
 			t.Errorf("kind %q is a known alert kind but rejected by AlertValidKind", kind)

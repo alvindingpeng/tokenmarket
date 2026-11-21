@@ -16,6 +16,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { KeyRotationStrategy } from '@/api/channel';
 import { FormEgresses } from './FormEgresses';
 import { FormGrants } from './FormGrants';
 import { FormKeys } from './FormKeys';
@@ -388,6 +390,28 @@ function ChannelFormFields({ channel, onBack, onChannelRefetch }: {
                                     <div className="text-sm leading-tight">{t('modelAutoAdd')}</div>
                                     <div className="text-xs text-muted-foreground leading-tight">{t('modelAutoAddHint')}</div>
                                 </div>
+                            </div>
+
+                            {/* 凭据轮换策略此前只在 OpenAPI 文档里出现, 界面上没有任何入口 ——
+                                于是这个能力的事实上的默认值永远是 roundrobin, 而"想改成故障切换"的人
+                                只能去改库。三者语义见后端 op.SelectChannelKey: failover 固定用第一份、
+                                只有它被熔断禁用后才换下一份; random 与 roundrobin 都是分摊但一个有顺序。 */}
+                            <div className="space-y-1.5">
+                                <Label htmlFor={`${idPrefix}-key-rotation`}>{t('keyRotation')}</Label>
+                                <Select
+                                    value={state.key_rotation_strategy}
+                                    onValueChange={(value) => setState({ ...state, key_rotation_strategy: value as KeyRotationStrategy })}
+                                >
+                                    <SelectTrigger id={`${idPrefix}-key-rotation`} className="rounded-xl">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="roundrobin">{t('keyRotationRoundrobin')}</SelectItem>
+                                        <SelectItem value="random">{t('keyRotationRandom')}</SelectItem>
+                                        <SelectItem value="failover">{t('keyRotationFailover')}</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-xs text-muted-foreground">{t('keyRotationHint')}</p>
                             </div>
 
                             <div className="space-y-2">

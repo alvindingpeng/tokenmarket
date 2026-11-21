@@ -19,6 +19,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/utils/cache"
 	"github.com/charmbracelet/log"
 	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 )
 
 var (
@@ -103,6 +104,11 @@ func ChannelStatsList(scope model.Scope) []model.ChannelStats {
 			ErrorCount:    channelModel.ErrorCount,
 			LastErrorAt:   channelModel.LastErrorAt,
 			DisabledUntil: channelModel.DisabledUntil,
+			// 探测状态随列表外露: 探到上限后熔断不再自动恢复, 界面要能区分"坏了"与"探不动了"。
+			// ProbeLimited 由后端算好给出, 免得前端各自硬编码上限。
+			ProbeCount:   channelModel.ProbeCount,
+			ProbeAt:      channelModel.ProbeAt,
+			ProbeLimited: channelModel.ProbeCount >= BreakerProbeLimit,
 		})
 	}
 	stats := make([]model.ChannelStats, 0, channelCache.Len())
@@ -167,6 +173,33 @@ func ChannelCreate(detail *model.ChannelDetail, scope model.Scope, ctx context.C
 		if err := tx.Create(&channel).Error; err != nil {
 			return fmt.Errorf("failed to create channel: %w", err)
 		}
+		// 拿主键之后, 把**提交体里明确出现过**的配置列按提交值原样写回去一遍。
+		//
+		// 为什么不能只靠 Create: model 上带 default 标签的列(enabled / markup_ratio /
+		// openai_*_path / model_auto_add / key_rotation_strategy / sub_platform / dialect ...)
+		// 在 Create 遇到**零值**时, GORM 会把 DB 默认值写进库, 并把该默认值回填到结构体。
+		// 于是"新建一个先不启用(enabled=false)的渠道"和"新建一个明确不加价
+		// (markup_ratio=0)的渠道"都做不到 —— 提交什么都被悄悄换成默认值, 接口返回成功、
+		// 库里却是别的值, 全程没有任何报错。这不是风格问题: 管理员没法表达"先建好但先别启用",
+		// 也没法表达"这个渠道按供货价卖、不加价", 两者都只能建完再改一次。
+		//
+		// 只回写**明确给出**的列, 而不是全部可写列: 两者的差别在"没说"与"说了零值"上。
+		// 只提交 name + base_url 的调用方(老客户端、脚本、OpenAPI 使用者)从没说过 enabled,
+		// 那它就必须按默认值建; 若一律回写, 它们会得到一批"默认停用"的渠道 —— 那只是把一个
+		// 静默错误换成另一个更危险的静默错误(渠道建好了却不接流量, 排查方向完全不同)。
+		//
+		// 列集合仍由 schema 派生并挖掉运行期统计列, 所以漏一列不会静默发生, 刚建好的行
+		// 也不会被抹上统计值。
+		columns, err := channelExplicitConfigColumns(tx, detail.ExplicitColumns)
+		if err != nil {
+			return err
+		}
+		if len(columns) > 0 {
+			if err := tx.Model(&model.Channel{}).Where("id = ?", channel.ID).Select(columns).
+				Updates(&model.Channel{ChannelConfig: detail.ChannelConfig}).Error; err != nil {
+				return fmt.Errorf("failed to write channel config: %w", err)
+			}
+		}
 		if err := syncChannelChildren(tx, channel.ID, detail); err != nil {
 			return err
 		}
@@ -181,13 +214,14 @@ func ChannelCreate(detail *model.ChannelDetail, scope model.Scope, ctx context.C
 		return nil, err
 	}
 
-	var trustFields model.Channel
-	if err := db.GetDB().WithContext(ctx).Select("trust_level", "observation_start", "observation_until").First(&trustFields, channel.ID).Error; err == nil {
-		channel.TrustLevel = trustFields.TrustLevel
-		channel.ObservationStart = trustFields.ObservationStart
-		channel.ObservationUntil = trustFields.ObservationUntil
+	// 缓存同样按库内回读重建, 而不是拿上面这份结构体去 Set: 那份里的零值列已被 GORM 用默认值
+	// 回填过(见事务内的说明), 直接 Set 会让缓存与库再次分叉 —— 而且分叉方向恰好是"库对缓存错",
+	// 转发按缓存工作, 用户看到的就是"新建的渠道禁用状态不对"。顺带这一次回读也带上了
+	// ChannelTrustStart 刚写进去的信任分级三列, 不必再单独查一遍。
+	channel, err := reloadChannelRowCache(ctx, channel.ID)
+	if err != nil {
+		return nil, err
 	}
-	channelCache.Set(channel.ID, channel)
 	// 凭据, 模型, 出口与授权的主键都在事务内分配, 此刻只在库里; 重载子表缓存以让授权候选与转发都能查到。
 	if err := reloadChannelChildren(ctx, channel.ID); err != nil {
 		return nil, err
@@ -216,16 +250,18 @@ func ChannelUpdate(detail *model.ChannelDetail, scope model.Scope, ctx context.C
 	}
 
 	if err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 逐列点名而不整行覆盖: 全量提交下 enabled 置假与被清空的可选字段都必须落库, 按零值跳过会写不进去;
+		// 只写配置列而不整行覆盖: 全量提交下 enabled 置假与被清空的可选字段都必须落库, 按零值跳过会写不进去;
 		// 而统计列由转发累加, 不在提交范围内, 整行覆盖会把它抹回提交时的旧值。
-		// 上浮覆盖值在白名单内: <0 视为跟随全局, 其余必须落在常识区间(0 = 不加价, 10 = 1000% 已到荒谬边界)。
+		// 上浮覆盖值在提交范围内: <0 视为跟随全局, 其余必须落在常识区间(0 = 不加价, 10 = 1000% 已到荒谬边界)。
 		if markup := detail.ChannelConfig.MarkupRatio; markup < ChannelMarkupFollowGlobal || markup > 10 {
 			return &InvalidInputError{Reason: fmt.Errorf("markup_ratio must be -1 (follow global) or between 0 and 10")}
 		}
+		columns, err := channelConfigUpdateColumns(tx)
+		if err != nil {
+			return err
+		}
 		if err := tx.Model(&model.Channel{}).Where("id = ?", detail.ID).
-			Select("name", "dialect", "enabled", "base_url", "markup_ratio",
-				"openai_chat_completion_path", "openai_response_path", "openai_image_generation_path", "openai_image_edit_path", "anthropic_message_path",
-				"proxy", "channel_proxy", "custom_header", "param_override", "match_regex", "model_auto_add").
+			Select(columns).
 			Updates(&model.Channel{ChannelConfig: detail.ChannelConfig}).Error; err != nil {
 			return fmt.Errorf("failed to update channel: %w", err)
 		}
@@ -234,28 +270,14 @@ func ChannelUpdate(detail *model.ChannelDetail, scope model.Scope, ctx context.C
 		return nil, err
 	}
 
-	// 缓存条目由提交的配置重建, 统计从原条目搬过来: 它含本轮尚未落库的累加, 比库内的行更新。
-	// 归属与发布状态同样从原条目搬: 提交不含这三者, 不搬会在缓存里丢掉归属与共享编码。
-	channelStatsNeedUpdateLock.Lock()
-	channel := model.Channel{ID: detail.ID, ChannelConfig: detail.ChannelConfig}
-	if cached, ok := channelCache.Get(detail.ID); ok {
-		channel.StatsMetrics = cached.StatsMetrics
-		channel.DisabledUntil = cached.DisabledUntil
-		channel.UserID = cached.UserID
-		channel.Shared = cached.Shared
-		channel.ShareCode = cached.ShareCode
-		channel.ReviewStatus = cached.ReviewStatus
-		channel.ReviewNote = cached.ReviewNote
-		channel.SubmittedAt = cached.SubmittedAt
-		channel.ReviewedBy = cached.ReviewedBy
-		channel.ReviewedAt = cached.ReviewedAt
-		channel.ConfigFingerprint = cached.ConfigFingerprint
-		channel.TrustLevel = cached.TrustLevel
-		channel.ObservationStart = cached.ObservationStart
-		channel.ObservationUntil = cached.ObservationUntil
+	// 缓存条目按库内回读重建, 而不是从提交与旧条目拼一份: 拼接意味着又一次手抄字段,
+	// 与上面那份白名单同一种漏法 —— 漏掉的字段在库里对, 在缓存里错, 转发读缓存就按旧值工作,
+	// 直到重启才恢复(用户看到的就是"保存成功, 重启后又回空")。回读之后所有非提交字段一律以库为准,
+	// 其中 gemini_project / sub_platform 这类字段直接决定出站信封, 差一个就 403。
+	channel, err := reloadChannelRowCache(ctx, detail.ID)
+	if err != nil {
+		return nil, err
 	}
-	channelCache.Set(detail.ID, channel)
-	channelStatsNeedUpdateLock.Unlock()
 
 	// 凭据, 模型与授权的增删都会改变可选路由集合, 重载该渠道的三类缓存并刷新分组。
 	if err := reloadChannelChildren(ctx, detail.ID); err != nil {
@@ -282,6 +304,150 @@ func ChannelUpdate(detail *model.ChannelDetail, scope model.Scope, ctx context.C
 	}
 	updated := channelDetail(channel)
 	return &updated, nil
+}
+
+// channelRuntimeColumns 是 channels 表上由运行期写入、不属于提交范围的列。
+//
+// 派生白名单本已排除它们(它们定义在 model.Channel 或子结构上, 不在 ChannelConfig 里),
+// 这里再显式列一遍是防"以后把统计熔断字段嵌进 ChannelConfig"这类改动:
+// 一旦有人这么做, 派生全集会悄悄把这些列拉进提交范围, 一次 ChannelUpdate 就把转发累加的统计
+// 抹回提交时的零值 —— 那是查不出原因的"统计莫名归零"。显式名单让这种改动当场撞墙而不是线上丢数据。
+var channelRuntimeColumns = map[string]struct{}{
+	"input_token":       {},
+	"output_token":      {},
+	"input_cost":        {},
+	"output_cost":       {},
+	"wait_time":         {},
+	"request_success":   {},
+	"request_failed":    {},
+	"error_count":       {},
+	"last_error_at":     {},
+	"breaker_trips":     {},
+	"disabled_until":    {},
+	"probe_count":       {},
+	"probe_at":          {},
+	"observation_until": {},
+}
+
+// channelConfigUpdateColumns 返回 ChannelUpdate 要写的列: ChannelConfig 的全部可写列, 挖掉运行期列。
+//
+// 为什么派生而不是手抄清单: GORM 对 Select 里未识别的列名不报错也不告警 —— 名字只是被记进
+// selectColumns, 更新时找不到对应字段就当没有这一列(statement.go SelectAndOmitColumns 之后
+// callbacks/update.go 只按命中的字段赋值)。于是手抄清单漏一列既不失败也不回滚, 那一列永远停在
+// 旧值: 保存返回成功, 重启后(InitCache 重读整行)才显示新值, 用户看到的是"改了没生效, 重启又回空"。
+// 项目里 gemini_project / sub_platform / openai_video_base_path / key_rotation_strategy 各漏过一次。
+// 派生自 schema 后, 以后再往 ChannelConfig 加字段自动跟上, 不必记得同步改这里。
+func channelConfigUpdateColumns(tx *gorm.DB) ([]string, error) {
+	stmt := &gorm.Statement{DB: tx}
+	if err := stmt.Parse(&model.ChannelConfig{}); err != nil {
+		return nil, fmt.Errorf("parse channel config schema: %w", err)
+	}
+	columns := make([]string, 0, len(stmt.Schema.Fields))
+	for _, field := range stmt.Schema.Fields {
+		if !field.Updatable {
+			continue
+		}
+		if _, runtime := channelRuntimeColumns[field.DBName]; runtime {
+			continue
+		}
+		columns = append(columns, field.DBName)
+	}
+	// 排序只为让生成的 SQL 稳定: 同一次提交落在日志与慢查询里应是同一条语句。
+	sort.Strings(columns)
+	return columns, nil
+}
+
+// channelExplicitConfigColumns 返回"提交体里明确出现过的配置列"对应的 DB 列名集合。
+//
+// 输入是 ChannelDetail 上由处理器填好的 key 集合(JSON 字段名), 输出是 channels 表的列名:
+// 两者不在同一个命名空间上(例如 json 名 key_rotation_strategy 与列名同名, 但也有
+// openai_chat_completion_path 这种靠 gorm:column 显式指定的), 所以必须经 schema 翻译,
+// 不能拿 JSON 名直接拼 SQL。
+//
+// 按 JSON 名而不是列名做判据的理由: 判据的来源是"请求里写了哪些键", 那是 JSON 层的事实;
+// 列名是落库层的实现细节。让判据停在 JSON 层, 加字段时只需要 model 上加一个 json tag,
+// 派生的可写列集合会自动跟上(与 channelConfigUpdateColumns 同一个理由)。
+//
+// 未知键一律忽略: 提交体里可能有客户端自造的字段, 它们不该让建渠道失败。运行期列即使被
+// 显式提交也会被 channelRuntimeColumns 挖掉 —— 那是"由转发累加"的列, 建渠道时提交它们
+// 只会把一个假的零值盖上去。
+func channelExplicitConfigColumns(tx *gorm.DB, explicit map[string]bool) ([]string, error) {
+	if len(explicit) == 0 {
+		return nil, nil
+	}
+	stmt := &gorm.Statement{DB: tx}
+	if err := stmt.Parse(&model.ChannelConfig{}); err != nil {
+		return nil, fmt.Errorf("parse channel config schema: %w", err)
+	}
+	columns := make([]string, 0, len(explicit))
+	for _, field := range stmt.Schema.Fields {
+		if !field.Updatable {
+			continue
+		}
+		if _, runtime := channelRuntimeColumns[field.DBName]; runtime {
+			continue
+		}
+		// 判据用 JSON 名(即 tag 里的名字), 不拿 Go 字段名也不拿列名去猜:
+		// 提交体里的键就是 json tag 决定的那个名字, 三者只是当前恰好重合。
+		// 拿 tag 现解而不是另存一张映射表, 是因为映射表本身就会漂移(那正是本项目
+		// 反复出问题的"手抄清单"模式)。
+		if !explicit[jsonFieldName(field)] {
+			continue
+		}
+		columns = append(columns, field.DBName)
+	}
+	sort.Strings(columns)
+	return columns, nil
+}
+
+// jsonFieldName 取字段 json tag 里的名字(去掉 omitempty 之类的选项);
+// 没有 tag 时退回 Go 字段名 —— 与 encoding/json 的默认行为一致。
+//
+// 注意别从 field.TagSettings 里取: GORM 解析 tag 时只认它自己认识的那些键
+// (column/default/size/index/...), json 不在其中, 于是 TagSettings 里永远没有 JSON 这一项,
+// 取到的会是 Go 字段名(MarkupRatio 而不是 markup_ratio), 判据就整体失配 —— 表现为
+// "明确提交了 enabled=false 仍然按默认值建"。原始 tag 在 field.Tag 上, 用它解。
+func jsonFieldName(field *schema.Field) string {
+	name := field.Tag.Get("json")
+	if comma := strings.IndexByte(name, ','); comma >= 0 {
+		name = name[:comma]
+	}
+	if name == "" || name == "-" {
+		return field.Name
+	}
+	return name
+}
+
+// reloadChannelRowCache 按主键把 channels 行读回并写进缓存, 返回缓存里这一份。
+//
+// 这是"谁写库谁读回来"的统一修法: 缓存条目不再由提交值与旧条目拼装 —— 拼装就是又一次手抄字段,
+// 与白名单同一种漏法, 而漏掉的字段在库里对、在缓存里错, 转发读缓存就按旧值工作, 直到重启才恢复。
+// 调用方写完全部配置列之后调用它, 非提交字段(归属/发布/审核/信任/指纹/gemini_project/sub_platform)
+// 一律以库为准; 其中直接决定出站信封的字段差一个, 上游就回 403。
+//
+// 三个字段例外, 仍从旧条目搬, 都是"缓存里的那份比刚读回的这一行更新"或"不属于这一行":
+//   - 统计累加含本轮尚未落库的部分, 比库内的行更新(与 reloadChannelChildren 保统计同一个理由);
+//   - 额度暂停取库内与缓存中更晚的一个, 免得一次配置保存把刚写入的暂停抹掉
+//     (与 setChannelCachePreservingQuota 同一口径);
+//   - 出口池是子表, 这一行读不到它; 保留旧条目那份, 等 reloadChannelChildren 整份替换。
+//     不保留会在两次写入之间留下一段"缓存里没有出口池"的窗口, 转发此时退回渠道自身的代理配置,
+//     等于用错了出站线路 —— 调用方紧接着会重载子表, 但窗口期内的请求已经发出去了。
+func reloadChannelRowCache(ctx context.Context, channelID int) (model.Channel, error) {
+	var channel model.Channel
+	if err := db.GetDB().WithContext(ctx).First(&channel, channelID).Error; err != nil {
+		return model.Channel{}, fmt.Errorf("reload channel %d: %w", channelID, err)
+	}
+	channelStatsNeedUpdateLock.Lock()
+	defer channelStatsNeedUpdateLock.Unlock()
+	if cached, ok := channelCache.Get(channelID); ok {
+		channel.StatsMetrics = cached.StatsMetrics
+		channel.Egresses = cached.Egresses
+		if cached.DisabledUntil != nil && (channel.DisabledUntil == nil || cached.DisabledUntil.After(*channel.DisabledUntil)) {
+			channel.DisabledUntil = cached.DisabledUntil
+		}
+	}
+	channelCache.Set(channelID, channel)
+	return channel, nil
 }
 
 // normalizeChannelConfig 补齐提交配置中的默认值并校验协议路径。
@@ -1118,6 +1284,9 @@ func channelDetail(channel model.Channel) model.ChannelDetail {
 			cfg := channelKey.ChannelKeyConfig
 			cfg.Key = maskChannelSecret(cfg.Key)
 			cfg.APISecret = maskChannelSecret(cfg.APISecret)
+			// 探测态是只读运行时状态, 不参与提交(提交侧按名称匹配, 不会写回这几列);
+			// 派生标志在这里算好, 前端才不必自己判断"是否已探到上限"。
+			cfg.ProbeLimited = cfg.ProbeCount >= BreakerProbeLimit
 			detail.Keys = append(detail.Keys, cfg)
 			keyNameByID[channelKey.ID] = channelKey.Name
 		}
@@ -1608,6 +1777,11 @@ func RecordChannelKeyError(channelKeyID int, errorType string) {
 // ResetChannelKeyErrors 重置某个 key 的错误计数（成功请求时调用）。
 // breaker_trips 一并清零: 成功就是"它又能用了"的唯一证据, 不清零则恢复的成员会被
 // 之前攒下的熔断次数继续压着, 下次偶发失败直接跳到很长的熔断时长。
+//
+// probe_count / probe_at 同样必须清: 自动探测的准入是 probe_count < BreakerProbeLimit(见 breaker_recovery.go),
+// 只有探测成功才清零。留着旧计数等于"这个人以后再也不许被自动探测" —— 探了 3 次没探通的成员
+// 一旦再次崩溃, 熔断时长按 trips 指数翻到 60 分钟上限, 而且没有探活帮它提前恢复,
+// 只能等人来手动解锁。而"成功一次"就是这个成员已经恢复的直接证据, 更没理由留着探测计数。
 func ResetChannelKeyErrors(channelKeyID int) {
 	channelBreakerWriteMu.Lock()
 	defer channelBreakerWriteMu.Unlock()
@@ -1615,6 +1789,8 @@ func ResetChannelKeyErrors(channelKeyID int) {
 		"error_count":    0,
 		"breaker_trips":  0,
 		"disabled_until": nil,
+		"probe_count":    0,
+		"probe_at":       nil,
 	})
 	if result.Error != nil || result.RowsAffected == 0 {
 		return
@@ -1623,6 +1799,8 @@ func ResetChannelKeyErrors(channelKeyID int) {
 		cached.ErrorCount = 0
 		cached.BreakerTrips = 0
 		cached.DisabledUntil = nil
+		cached.ProbeCount = 0
+		cached.ProbeAt = nil
 	})
 }
 
@@ -1781,6 +1959,8 @@ func RecordChannelModelError(channelModelID int, errorType string) {
 }
 
 // ResetChannelModelErrors 重置某个渠道模型的错误计数(成功请求时调用); 熔断次数同理清零。
+// probe_count / probe_at 一并清零, 理由与 ResetChannelKeyErrors 相同: 探测准入是
+// probe_count < BreakerProbeLimit, 只有探测成功才回零, 留着它等于永久放弃对这个模型的自动探活。
 func ResetChannelModelErrors(channelModelID int) {
 	channelBreakerWriteMu.Lock()
 	defer channelBreakerWriteMu.Unlock()
@@ -1788,6 +1968,8 @@ func ResetChannelModelErrors(channelModelID int) {
 		"error_count":    0,
 		"breaker_trips":  0,
 		"disabled_until": nil,
+		"probe_count":    0,
+		"probe_at":       nil,
 	})
 	if result.Error != nil || result.RowsAffected == 0 {
 		return
@@ -1796,5 +1978,7 @@ func ResetChannelModelErrors(channelModelID int) {
 		cached.ErrorCount = 0
 		cached.BreakerTrips = 0
 		cached.DisabledUntil = nil
+		cached.ProbeCount = 0
+		cached.ProbeAt = nil
 	})
 }

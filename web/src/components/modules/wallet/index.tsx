@@ -33,11 +33,15 @@ import {
 import { quoteSnapshotOf } from '@/api/recharge';
 import { useAuthStore } from '@/api/user';
 import { formatAmount, formatDateTime } from '@/lib/format';
+import { canSubmitWithdraw, withdrawAmountIssue } from '@/lib/withdraw-min';
+import { ledgerKindOptions } from '@/lib/ledger-kinds';
 import { BalanceAlertSettings } from './BalanceAlertSettings';
 import { MyBudgetsCard } from './MyBudgetsCard';
 
 // KINDS 流水筛选项; 空串表示全部。
-const KINDS = ['', 'topup', 'bonus', 'redemption', 'reserve', 'settle', 'release', 'adjust'];
+// 类型全集收口在 lib/ledger-kinds: 曾在这里写死短名单, 结果退款与提现四态根本选不到,
+// 列表里却会渲染出它们(缺文案时 use-intl 回退成 wallet.kind.refund 这种路径串)。
+const KINDS = ledgerKindOptions;
 
 // submitToGateway 完成收银台跳转: 表单渠道(易支付/支付宝)自动提交表单,
 // 链接渠道(Stripe/Creem)直接跳转; 都是浏览器跳转而非接口调用。
@@ -272,13 +276,31 @@ function WithdrawDialogContent({ onApplied }: { onApplied: () => void }) {
     const [submitting, setSubmitting] = useState(false);
     const value = Number(amount) || 0;
     const rules = summary.data;
+    // 金额前置校验: 低于最低额/超过可提余额时按钮不可点, 并给出具体差额。
+    // 不这样做的话, 用户输完金额、再输一遍 step-up 密码, 才从后端拿到"低于最低额"。
+    // 拿不到 min_amount 或 available 时 issue 为 undefined —— **不拦**(见 lib/withdraw-min 的说明)。
+    const amountIssue = withdrawAmountIssue({
+        amount: value,
+        raw: amount,
+        minAmount: rules?.min_amount,
+        available: rules?.available,
+    });
     // 费用预览: fee = max(最低费, 金额×费率), 打款按申请时汇率折算为所选币种。
     // 打款币种只影响展示口径, 申请单本身仍按收益池 USD 记账, 不破坏旧接口兼容。
     const fee = rules ? Math.min(value, Math.max(rules.fee_min, value * rules.fee_rate)) : 0;
     const actual = value - fee;
     const payoutFx = cashflowFxRate(fxRates.data?.items, payoutCurrency, rules?.rate);
     const payoutAmount = payoutFx ? actual * payoutFx.rate : undefined;
-    const canSubmit = (rules?.can_apply ?? false) && value > 0 && accountName.trim() !== '' && accountNo.trim() !== '' && !submitting;
+    // 组合逻辑在 lib/withdraw-min 里(canSubmitWithdraw): 修前这里漏了 min_amount, 只看 value > 0,
+    // 于是「填 10 提现、最低额 50」也能点提交 —— 输完 step-up 密码才被后端拒。
+    const canSubmit = canSubmitWithdraw({
+        canApply: rules?.can_apply,
+        amount: value,
+        issue: amountIssue,
+        accountName,
+        accountNo,
+        submitting,
+    });
 
     // handleApply 申请提现; 失败留在弹窗透出原因(低于最低/可提不足/限额)。
     const handleApply = async () => {
@@ -299,12 +321,25 @@ function WithdrawDialogContent({ onApplied }: { onApplied: () => void }) {
         <div className="w-screen max-w-full md:max-w-md">
             <MorphingDialogDescription>
                 <div className="space-y-4">
-                    {!(rules?.can_apply ?? false) && (
+                    {/* 口径取不到时**必须**说清楚, 而不是走"不可提现"那条文案。
+                        can_apply 在取数失败时是 undefined, 于是 ?? false 会让界面显示
+                        「只有渠道商收益可提现」—— 那是一句关于账号身份的断言, 而真实原因只是这次请求挂了。
+                        用户会据此去查自己是不是渠道商, 方向完全错了。 */}
+                    {summary.isError && !rules ? (
+                        <div role="alert" className="flex flex-wrap items-center gap-2 rounded-2xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                            <span className="min-w-0 flex-1">{t('summaryFailed')}</span>
+                            <Button variant="outline" size="sm" className="h-7 rounded-lg px-2 text-xs" onClick={() => void summary.refetch()} disabled={summary.isRefetching}>
+                                {t('retry')}
+                            </Button>
+                        </div>
+                    ) : !(rules?.can_apply ?? false) && (
                         <p className="rounded-2xl border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">{t('withdraw.notAllowed')}</p>
                     )}
                     <div className="flex items-center justify-between rounded-2xl border border-border bg-muted/40 px-3 py-2 text-sm">
                         <span className="text-muted-foreground">{t('withdraw.available')}</span>
-                        <span className="tabular-nums font-medium">{formatAmount(rules?.available ?? 0)}</span>
+                        {/* 与上面五格卡片同样的口径: 取不到时显「—」, 不显 0。
+                            这里是提现弹窗里最显眼的数字, 显 0 等于告诉用户"你没钱可提"。 */}
+                        <span className="tabular-nums font-medium">{rules ? formatAmount(rules.available) : '—'}</span>
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="withdraw-amount">{t('withdraw.amount')}</Label>
@@ -320,6 +355,32 @@ function WithdrawDialogContent({ onApplied }: { onApplied: () => void }) {
                         <p className="text-xs text-muted-foreground">
                             {t('withdraw.feeHint', { min: rules?.fee_min ?? 1, rate: Math.round((rules?.fee_rate ?? 0.01) * 1000) / 10 })}
                         </p>
+                        {/* 最低额常驻显示(不只在填错时才出现): 让人在输入之前就知道门槛。
+                            拿不到 min_amount 时不显示 —— 写死一个数字会与后台可配值分叉。 */}
+                        {rules?.min_amount !== undefined && rules.min_amount > 0 && (
+                            <p className="text-xs text-muted-foreground">{t('withdraw.minAmountHint', { min: formatAmount(rules.min_amount) })}</p>
+                        )}
+                        {/* 三档原因分别给句子, 不合并成一句「金额不合法」:
+                            输入非法要改输入, 低于最低额要加钱, 超过余额要减钱 —— 三种下一步完全不同。
+                            都带 role="alert": 这几行不是静态说明, 会随输入变化而出现。 */}
+                        {amountIssue?.kind === 'invalid' && (
+                            <p role="alert" className="text-xs text-destructive">
+                                {amountIssue.reason === 'tooManyDecimals' ? t('withdraw.tooManyDecimals') : t('withdraw.amountInvalid')}
+                            </p>
+                        )}
+                        {amountIssue?.kind === 'belowMin' && (
+                            <p role="alert" className="text-xs text-destructive">
+                                {/* 只传文案里真有的占位符 {short}: 多传的参数会被忽略, 但留着会让人以为 |
+                                    那个键里有 {min}, 下次改文案就会照着不存在的占位符写。最低额本身
+                                    在上面的 minAmountHint 里已经常驻显示了, 这里只补"还差多少"。 */}
+                                {t('withdraw.belowMin', { short: formatAmount(amountIssue.short) })}
+                            </p>
+                        )}
+                        {amountIssue?.kind === 'belowAvailable' && (
+                            <p role="alert" className="text-xs text-destructive">
+                                {t('withdraw.belowAvailable', { available: formatAmount(amountIssue.available) })}
+                            </p>
+                        )}
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="withdraw-method">{t('withdraw.method')}</Label>
@@ -499,6 +560,9 @@ export default function Wallet() {
     const items = ledger.data?.items ?? [];
     const orderItems = orders.data?.items ?? [];
     const withdrawItems = withdrawals.data?.items ?? [];
+    // 五格余额卡片的取值一律是 number | undefined —— **不给 0 兜底**。
+    // 兜底会把"这一次没取到"渲染成"你的余额是 0", 而资金页上这是最危险的一种假象:
+    // 用户会以为钱被清零了。undefined 走下面的占位符分支, 显示「—」。
     const cards = [
         { key: 'balance', value: summary.data?.balance },
         { key: 'frozen', value: summary.data?.frozen },
@@ -537,12 +601,24 @@ export default function Wallet() {
                 </div>
             </div>
 
+            {/* 摘要取数失败时: 顶部一条错误条 + 重试, 五格全部显示「—」。
+                只做前者不够 —— 用户可能只扫一眼数字就走, 看到 0 就以为账户空了。 */}
+            {summary.isError && (
+                <div role="alert" className="flex flex-wrap items-center gap-2 rounded-2xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                    <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+                    <span className="min-w-0 flex-1">{t('summaryFailed')}</span>
+                    <Button variant="outline" size="sm" className="h-7 rounded-lg px-2 text-xs" onClick={() => void summary.refetch()} disabled={summary.isRefetching}>
+                        {t('retry')}
+                    </Button>
+                </div>
+            )}
             <div className="grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
                 {cards.map((card) => (
                     <div key={card.key} className="rounded-3xl border border-border bg-card px-4 py-3">
                         <div className="text-xs text-muted-foreground">{t('card.' + card.key)}</div>
-                        <div className="mt-1 truncate text-xl font-semibold tabular-nums" title={formatAmount(card.value ?? 0)}>
-                            {formatAmount(card.value ?? 0)}
+                        {/* undefined 显占位符, 0 显真实的 0: 两者在数据上是不同的事实, 在界面上也必须不同。 */}
+                        <div className="mt-1 truncate text-xl font-semibold tabular-nums" title={card.value === undefined ? '—' : formatAmount(card.value)}>
+                            {card.value === undefined ? '—' : formatAmount(card.value)}
                         </div>
                     </div>
                 ))}

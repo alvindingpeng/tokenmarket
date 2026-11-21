@@ -400,8 +400,20 @@ func ProfitMarginGet(ctx context.Context, filter ProfitMarginQuery) (*model.Prof
 		PlatformRevenue float64 `gorm:"column:platform_revenue"`
 		RequestCount    int64   `gorm:"column:request_count"`
 	}
+	// 净额口径: 已退款的明细不再计入 GMV / 毛利 —— 那笔钱已经退回用户, 平台没有真实收入。
+	// 与渠道毛利(channel_profit.go 的 status = settled)对齐, 否则同一笔退款在两张看板上
+	// 一边冲减、一边全额, 毛利率会永远偏高。CASE WHEN 是三种数据库通用的写法, 不引方言函数。
+	// 请求数保持全量: 请求确实发生过, 退款是资金口径, 不是"这笔调用没发生"。
+	refundedFlag := model.BillingStatusRefunded
 	var overall sumResult
-	_ = build().Select("COALESCE(SUM(user_cost),0) as user_cost, COALESCE(SUM(owner_revenue),0) as owner_revenue, COALESCE(SUM(platform_revenue),0) as platform_revenue, COUNT(*) as request_count").Scan(&overall).Error
+	if err := build().Select(
+		"COALESCE(SUM(user_cost) - SUM(CASE WHEN status = ? THEN user_cost ELSE 0 END),0) as user_cost, "+
+			"COALESCE(SUM(owner_revenue) - SUM(CASE WHEN status = ? THEN owner_revenue ELSE 0 END),0) as owner_revenue, "+
+			"COALESCE(SUM(platform_revenue) - SUM(CASE WHEN status = ? THEN platform_revenue ELSE 0 END),0) as platform_revenue, "+
+			"COUNT(*) as request_count",
+		refundedFlag, refundedFlag, refundedFlag).Scan(&overall).Error; err != nil {
+		return nil, nil, fmt.Errorf("failed to aggregate billing margin: %w", err)
+	}
 
 	// 并上已固化到汇总表的那部分(平台维度): 明细按留存期清理后, "全期毛利"只能从汇总表补齐。
 	// 只取 platform 维度而不是把四个维度都加起来 —— 平台维度已经是全体合计, 再加 user/owner/channel
@@ -418,9 +430,18 @@ func ProfitMarginGet(ctx context.Context, filter ProfitMarginQuery) (*model.Prof
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to aggregate billing rollups: %w", err)
 	}
-	overall.UserCost += rollupSum.UserCost
-	overall.OwnerRevenue += rollupSum.OwnerRevenue
-	overall.PlatformRevenue += rollupSum.PlatformRevenue
+	// 汇总侧同样要净额: 汇总行存的是"合计 + 其中退款"两组列(见 billingDayRollups 的说明),
+	// 所以再读一次 refundedOnly 拿到"其中已退款", 相减即与明细侧的 status = 'refunded' 过滤同口径。
+	// 不改 billingRollupTotalRange 本身: 它还给 BillingTotal(billing.go:464 的累计消费)这类
+	// 全额口径的读口用, 把契约改成净额会把那些"终身累计"口径一起改错。
+	rollupRefunded, err := billingRollupTotalRange(ctx, model.BillingRollupPlatform, 0, true, rollupFrom, rollupTo)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to aggregate billing rollup refunds: %w", err)
+	}
+	overall.UserCost += rollupSum.UserCost - rollupRefunded.UserCost
+	overall.OwnerRevenue += rollupSum.OwnerRevenue - rollupRefunded.OwnerRevenue
+	overall.PlatformRevenue += rollupSum.PlatformRevenue - rollupRefunded.PlatformRevenue
+	// 请求数仍按全额: 与明细侧 COUNT(*) 一致(退款不改写"请求发生过"这个事实)。
 	overall.RequestCount += rollupSum.RequestCount
 
 	// 看板口径的退款是"退给用户的现金"(user_cost, GMV 的回冲), 与结算单按供应商应收份额
@@ -470,9 +491,20 @@ func ProfitMarginGet(ctx context.Context, filter ProfitMarginQuery) (*model.Prof
 		RequestCount    int64   `gorm:"column:request_count"`
 	}
 	var days []dayRow
-	// 使用 strftime (sqlite) 或通用格式按日切片
-	_ = build().Select("strftime('%Y%m%d', created_at) as day, COALESCE(SUM(user_cost),0) as user_cost, COALESCE(SUM(owner_revenue),0) as owner_revenue, COALESCE(SUM(platform_revenue),0) as platform_revenue, COUNT(*) as request_count").
-		Group("day").Order("day DESC").Limit(30).Scan(&days).Error
+	// 日桶用 billingBucketExpr 而不是 strftime: 后者只有 sqlite 认, 在 MySQL/PG 上这条查询直接
+	// 报错, 趋势表就恒为空 —— 管理员看到的是"最近没流量", 而不是一个明确的错误。
+	// 桶的返回值是 YYYYMMDD, 与后面汇总桶、BillingAggregate.Date 同一契约。
+	// 金额同 overall 一样是净额, 否则趋势上每天的 GMV 都比合计高出一截退款。
+	dateExpr := billingBucketExpr("day")
+	if err := build().Select(dateExpr+" as day, "+
+		"COALESCE(SUM(user_cost) - SUM(CASE WHEN status = ? THEN user_cost ELSE 0 END),0) as user_cost, "+
+		"COALESCE(SUM(owner_revenue) - SUM(CASE WHEN status = ? THEN owner_revenue ELSE 0 END),0) as owner_revenue, "+
+		"COALESCE(SUM(platform_revenue) - SUM(CASE WHEN status = ? THEN platform_revenue ELSE 0 END),0) as platform_revenue, "+
+		"COUNT(*) as request_count",
+		refundedFlag, refundedFlag, refundedFlag).
+		Group(dateExpr).Order("day DESC").Limit(30).Scan(&days).Error; err != nil {
+		return nil, nil, fmt.Errorf("failed to aggregate billing margin trend: %w", err)
+	}
 
 	// 趋势同样并上汇总表: 它按天取近 30 天, 只要留存天数被调小(可配 1..3650)就会露出明细缺口。
 	// 汇总表补回那几天, 图上不会出现"那天没有收入"这种假空洞。
@@ -480,20 +512,14 @@ func ProfitMarginGet(ctx context.Context, filter ProfitMarginQuery) (*model.Prof
 	if since.IsZero() {
 		since = time.Unix(0, 0)
 	}
-	rollupDays, err := billingRollupAggregates(ctx, model.BillingRollupPlatform, 0, since, "day")
+	// 上界按自然日裁剪: 汇总行只能代表整天, 不能塞进一个"截止到某个时分秒"的窗口里。
+	toKey := ""
+	if !filter.To.IsZero() {
+		toKey = dayKey(filter.To)
+	}
+	rollupDays, err := marginRollupNetDaily(ctx, since, toKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to aggregate billing rollup trend: %w", err)
-	}
-	if !filter.To.IsZero() {
-		// 上界同样按自然日裁剪: 汇总行只能代表整天, 不能塞进一个"截止到某个时分秒"的窗口里。
-		toKey := dayKey(filter.To)
-		kept := rollupDays[:0]
-		for _, d := range rollupDays {
-			if d.Date <= toKey {
-				kept = append(kept, d)
-			}
-		}
-		rollupDays = kept
 	}
 	if len(rollupDays) > 0 {
 		liveRows := make([]BillingAggregate, 0, len(days))
@@ -534,4 +560,43 @@ func ProfitMarginGet(ctx context.Context, filter ProfitMarginQuery) (*model.Prof
 	}
 
 	return total, trends, nil
+}
+
+// marginRollupNetDaily 读平台维度在 [since, toKey] 的"未退款部分"逐日聚合(日期键 YYYYMMDD)。
+//
+// 不能直接用 billingRollupAggregates: 它给的是全额(累计消费口径), 而毛利看板要净额。
+// 汇总侧的做法与明细侧严格对齐 —— 每一行都用"合计减其中退款", 差额正是已退款那部分。
+// 请求数保持全额: 与明细侧的 COUNT(*) 一致, 退款不改写"请求发生过"这个事实。
+//
+// toKey 为空表示"不限上界"; 汇总行的 day 是 YYYYMMDD 定长串, 与 dayKey 的字典序比较
+// 等价于日期比较, 三种数据库通用 —— 不用 STR_TO_DATE/DATE() 这类方言函数。
+func marginRollupNetDaily(ctx context.Context, since time.Time, toKey string) ([]BillingAggregate, error) {
+	rows := make([]model.BillingRollup, 0)
+	query := db.GetDB().WithContext(ctx).Model(&model.BillingRollup{}).
+		Where("dimension = ? AND dimension_id = ? AND day >= ?", model.BillingRollupPlatform, 0, dayKey(since))
+	if toKey != "" {
+		query = query.Where("day <= ?", toKey)
+	}
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]BillingAggregate, 0, len(rows))
+	for i := range rows {
+		row := &rows[i]
+		if len(row.Day) != 8 {
+			continue
+		}
+		out = append(out, BillingAggregate{
+			Date:            row.Day,
+			InputToken:      row.InputToken,
+			OutputToken:     row.OutputToken,
+			CacheReadToken:  row.CacheReadToken,
+			CacheWriteToken: row.CacheWriteToken,
+			RequestCount:    row.RequestCount,
+			UserCost:        row.UserCost - row.RefundedUserCost,
+			OwnerRevenue:    row.OwnerRevenue - row.RefundedOwnerRevenue,
+			PlatformRevenue: row.PlatformRevenue - row.RefundedPlatformRevenue,
+		})
+	}
+	return out, nil
 }

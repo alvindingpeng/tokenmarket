@@ -119,6 +119,11 @@ func openAPIAdminSchemas() gin.H {
 			"error_count":    fieldNumber("integer", "累计错误次数"),
 			"last_error_at":  gin.H{"type": "string", "format": "date-time", "nullable": true, "description": "最后错误时间; 从未出错为 null"},
 			"disabled_until": gin.H{"type": "string", "format": "date-time", "nullable": true, "description": "故障熔断的自动禁用截止时间; 未熔断为 null"},
+			// 探测态是只读运行时状态: 提交侧按名称匹配、不写回这几列, 但读出来要能看出
+			// "这个凭据是坏了, 还是自动探测已放弃它"。probe_limited 由后端算好, 免得前端抄上限。
+			"probe_count":   fieldNumber("integer", "已消耗的自动探测次数; 探测成功或人工重置后归零"),
+			"probe_at":      gin.H{"type": "string", "format": "date-time", "nullable": true, "description": "上次自动探测时间; 从未探测为 null"},
+			"probe_limited": fieldBool("已探到上限, 不再自动探测(只能人工解锁或等一次成功)"),
 		}),
 
 		"ChannelEgress": object(gin.H{
@@ -127,7 +132,7 @@ func openAPIAdminSchemas() gin.H {
 			"kind":    gin.H{"type": "string", "enum": []string{"direct", "http", "socks5"}, "description": "接入方式; direct 时 url 恒为空"},
 			"url":     fieldString("代理地址; kind=http 时 http/https, kind=socks5 时 socks5/socks5h, kind=direct 时留空"),
 			"region":  fieldString("出口所在地区码(如 HK), 用于区域亲和; 留空表示不参与匹配"),
-			"weight":  fieldNumber("integer", "同分时的优先权重, 数值越大越先被选中; 也是冷出口的采样顺序"),
+			"weight":  fieldNumber("integer", "仅在同分时生效的优先权重(不是流量配比): 选路先按实测耗时排序, 只有分数完全相等时才比较它; 冷出口无样本时并列为同分, 故它决定先探哪条"),
 			"enabled": fieldBool("停用后不参与选路但保留配置"),
 		}, "name", "kind"),
 
@@ -276,6 +281,9 @@ func openAPIAdminSchemas() gin.H {
 			"error_count":    fieldNumber("integer", "累计错误次数(渠道模型级熔断)"),
 			"last_error_at":  gin.H{"type": "string", "format": "date-time", "nullable": true, "description": "最后错误时间; 从未出错为 null"},
 			"disabled_until": gin.H{"type": "string", "format": "date-time", "nullable": true, "description": "渠道模型级熔断截止时间; 未熔断为 null"},
+			"probe_count":    fieldNumber("integer", "已消耗的自动探测次数; 探测成功或人工重置后归零"),
+			"probe_at":       gin.H{"type": "string", "format": "date-time", "nullable": true, "description": "上次自动探测时间; 从未探测为 null"},
+			"probe_limited":  fieldBool("已探到上限(3 次), 不再自动探测; 界面据此显示「自动探测已放弃」"),
 		}),
 
 		"ChannelGrantCandidate": withStatsFlatten(gin.H{

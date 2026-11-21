@@ -136,10 +136,21 @@ func isViewerAdmin(c *gin.Context) bool {
 	return role == model.RoleAdmin
 }
 
-// userBillableStats 非管理员的统计口径: 全部来自本人的计费明细, 支出按上浮后价格。
+// userBillableStats 非管理员的统计口径: 金额与词元来自本人的计费明细(支出按上浮后价格),
+// 而**请求笔数**来自调用日志。
+//
+// 为什么请求数不能取计费行数: billing_records 只为"产生了用量"的请求落行, 失败请求(上游报错、
+// 被限流、参数不合法)根本不会在计费表里留下行。曾经这里把 row.RequestCount 塞进 RequestSuccess,
+// 于是首页的"请求数 = 成功 + 失败"恒等于计费行数、失败数永远是 0 —— 一栏看起来正常的数字,
+// 实际结构性地看不见任何失败。改用 op.RequestOutcomeTotals(与统计页同一条件、同一终态过滤),
+// 两处的成功率与请求数才不会再对不上。
+//
+// 日/小时曲线仍按计费明细出数(热力图的 y 轴就是这个量), 故它们的 RequestSuccess 语义是
+// "当天/该小时的计费笔数"; 前端在首页标注了这层口径, 见 web 首页请求数卡片的说明。
 func userBillableStats(c *gin.Context) (daily []model.StatsDaily, hourly []model.StatsHourly, total model.StatsTotal, err error) {
 	userID, _ := middleware.CurrentUser(c)
-	since := time.Now().AddDate(-1, 0, 0)
+	now := time.Now()
+	since := now.AddDate(-1, 0, 0)
 	billable := func(row op.BillingAggregate) model.StatsMetrics {
 		return model.StatsMetrics{
 			// 毛输入 + 输出即总词元(计费明细没有独立净读桶): 与管理员侧 usageMetrics 同口径,
@@ -162,15 +173,31 @@ func userBillableStats(c *gin.Context) (daily []model.StatsDaily, hourly []model
 	if err != nil {
 		return nil, nil, total, err
 	}
-	hourly = make([]model.StatsHourly, 0, 24)
+	// 小时曲线只到当前小时为止: 未到的小时没有"数据", 把 24 个桶全返回会让"今天"曲线在
+	// 当前时刻之后贴底, 看起来像流量突然归零 —— 而管理员侧(StatsHourlyGet)本来就只到当前小时,
+	// 两侧口径也不该在这里分叉。
+	today := now.Format("20060102")
+	hourly = make([]model.StatsHourly, 0, now.Hour()+1)
 	for hour, row := range hourlyRows {
-		hourly = append(hourly, model.StatsHourly{Hour: hour, Date: time.Now().Format("20060102"), StatsMetrics: billable(row)})
+		if hour > now.Hour() {
+			continue
+		}
+		hourly = append(hourly, model.StatsHourly{Hour: hour, Date: today, StatsMetrics: billable(row)})
 	}
 	totalRow, err := op.BillingTotal(c.Request.Context(), "user", userID)
 	if err != nil {
 		return nil, nil, total, err
 	}
 	total = model.StatsTotal{StatsMetrics: billable(totalRow)}
+	// 累计请求数改由调用日志出数: 词元与金额仍取计费聚合(计费表才有), 但成功/失败必须来自
+	// relay_requests —— 详见函数头部注释。区间与每日曲线一致(近一年, 截止当前), 免得首页
+	// 的"累计请求数"比下方日曲线覆盖的时间范围还长。
+	outcome, err := op.RequestOutcomeTotals(c.Request.Context(), userID, since, now.Add(time.Second))
+	if err != nil {
+		return nil, nil, total, err
+	}
+	total.RequestSuccess = outcome.Success
+	total.RequestFailed = outcome.Failed
 	return daily, hourly, total, nil
 }
 

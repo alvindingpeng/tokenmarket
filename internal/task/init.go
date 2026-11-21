@@ -280,7 +280,7 @@ func Init() {
 				}
 				if age > op.FxRateMaxAgeDays {
 					op.RaiseAlertFacts(ctx, op.AlertFacts{
-						Kind:    "fx_rate_stale",
+						Kind:    op.AlertKindFxRateStale,
 						Subject: op.FxRateSourceName(),
 						Reason:  fmt.Sprintf("牌价采集失败且快照已 %d 天未更新, 折算按旧价进行", age),
 						Fields: []alert.Field{
@@ -502,6 +502,47 @@ func Init() {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
 			return op.WebhookDispatchRun(ctx, op.WebhookDispatchBatch)
+		},
+	})
+
+	// 提现审批超时: approved 是单向门 —— 审批只改状态、不动冻结额, 而解冻只发生在
+	// "打款成功"或"管理员打款回滚"两条路径上。管理员点过通过却忘了打款, 用户的钱就永久
+	// 挂在 withdraw_frozen 上: 提不走, 也退不回可提, 用户自己还撤销不了(WithdrawCancel
+	// 只认 pending)。这里每 6 小时扫一遍超过 WithdrawApproveTimeout 仍停在 approved 的单,
+	// 自动撤销解冻并留审计 + 告警。周期 6 小时: 时限是 72 小时, 6 小时粒度对"最迟 78 小时
+	// 内必被撤销"足够, 又不必每分钟扫一张几乎不动的表。启动即跑: 停机期间跨过阈值的单
+	// 重启后立刻收敛, 不用再等一个周期。
+	Define(Spec{
+		Name:       TaskWithdrawApproveTimeout,
+		Interval:   fixedInterval(6 * time.Hour),
+		RunOnStart: true,
+		Fn: func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			revoked, err := op.WithdrawTimeoutRevoke(ctx)
+			if err != nil {
+				return err
+			}
+			if revoked > 0 {
+				log.Infof("withdraw approve timeout: revoked=%d", revoked)
+			}
+			return nil
+		},
+	})
+
+	// 充值单超时关闭: TTL 到点就把 pending 置 expired。以前只在"下单"和"订单列表/导出"
+	// 时懒执行, 没人翻那一页就一直是 pending —— 管理端待支付统计与渠道对账跟着失真。
+	// 5 分钟一轮(TTL 是 30 分钟, 更细的粒度没有意义); 启动即跑, 补上停机期间到期的单。
+	// 关闭只是"我们不再等回调", 不阻断入账: 第三方真付了钱, 回调仍会补入账(见 RechargeNotify)。
+	Define(Spec{
+		Name:       TaskRechargeExpire,
+		Interval:   fixedInterval(5 * time.Minute),
+		RunOnStart: true,
+		Fn: func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			_, err := op.RechargeExpireRun(ctx)
+			return err
 		},
 	})
 

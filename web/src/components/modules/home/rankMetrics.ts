@@ -40,3 +40,11 @@ export function rankItems(items: RankItem[], sortMode: MetricKey): RankItem[] {
     const sortField = sortMode === 'cost' ? 'total_cost' : sortMode === 'count' ? 'request_count' : 'total_token';
     return [...items].sort((a, b) => b.formatted[sortField].raw - a.formatted[sortField].raw);
 }
+
+// formatRankSuccessRate 榜单行的成功率文本, 与统计页 summarizeSuccess 同一哨兵规则。
+// 成功+失败为 0 表示这个渠道/模型在区间内一次真实转发样本都没有(渠道榜不过滤零调用,
+// 刚接入、还没流量的渠道会出现在榜上)。此时显示 "—": 显示 0.0% 会被读成"刚上线就全挂",
+// 而这恰恰是最需要区分开的两种状态 —— 没有样本 vs 全部失败。
+export function formatRankSuccessRate(successCount: number, totalCount: number): string {
+    return totalCount > 0 ? `${((successCount / totalCount) * 100).toFixed(1)}%` : '—';
+}

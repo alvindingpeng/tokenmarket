@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { LEDGER_KINDS, ledgerKindTone } from '@/lib/ledger-kinds';
 import { MorphingDialog, MorphingDialogContainer, MorphingDialogContent, useMorphingDialog } from '@/components/ui/morphing-dialog';
 
 // 计费金额可能不足 0.001, 固定 6 位小数再截尾零（与 share 模块同一口径, 实现见 lib/money）。
@@ -463,8 +464,9 @@ function RevenueTrend() {
     );
 }
 
-// LEDGER_KINDS 余额流水的类型选项, 与后端 model.LedgerKind* 一致。
-const LEDGER_KINDS = ['reserve', 'settle', 'release', 'adjust'] as const;
+// LEDGER_KINDS 余额流水的类型选项, 与后端 model.LedgerKind* 全量一致(定义收口在 lib/ledger-kinds)。
+// 此处曾只列 reserve/settle/release/adjust 四种计费类: 退款与提现四态既选不到,
+// 又会以 billing.ledger.kind.refund 这种原始 i18n 路径显示在表格里。
 
 // formatDelta 有符号金额: 正数带 +, 负数保留 -, 零显示 0。
 function formatDelta(value: number): string {
@@ -475,7 +477,7 @@ function formatDelta(value: number): string {
 }
 
 // BalanceLedgerTable 渲染余额流水: 每一笔冻结/解冻/扣费/调账逐条留痕, 是余额变动的唯一解释口径。
-function BalanceLedgerTable() {
+export function BalanceLedgerTable() {
     const t = useTranslations('billing');
     const [page, setPage] = useState(1);
     const [kind, setKind] = useState('');
@@ -526,11 +528,9 @@ function BalanceLedgerTable() {
                             <div key={row.id} className="grid items-center gap-3 border-b border-border/40 py-2.5 text-sm hover:bg-muted/40" style={{ gridTemplateColumns: gridTemplate }}>
                                 <span className="whitespace-nowrap tabular-nums text-muted-foreground">{dayjs(row.created_at).format('YYYY-MM-DD HH:mm')}</span>
                                 <span>
-                                    <Badge variant="outline" className={cn('px-1.5 py-0 text-[10px] font-medium',
-                                        row.kind === 'settle' && 'border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400',
-                                        row.kind === 'reserve' && 'border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-400',
-                                        row.kind === 'release' && 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-                                        row.kind === 'adjust' && 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400')}>
+                                    {/* 配色按资金方向收口在 lib/ledger-kinds: 原先这里只认四种计费类, */}
+                                    {/* 新增的退款/提现四态在表格里全是无色的默认徽章, 一眼看不出是进账还是出账。 */}
+                                    <Badge variant="outline" className={cn('px-1.5 py-0 text-[10px] font-medium', ledgerKindTone(row.kind))}>
                                         {t('ledger.kind.' + row.kind)}
                                     </Badge>
                                 </span>
@@ -636,9 +636,78 @@ function SettlementTable() {
 }
 
 // MarginDashboard 管理员经营毛利看板；充值金额仅作现金流参考，不混入应收毛利。
-function MarginDashboard() {
-    const t = useTranslations('billing'); const { data, isLoading } = useProfitMargin(); const total = data?.overall; const rows = data?.trends ?? [];
-    return <section className="space-y-4"><div className="grid grid-cols-2 gap-3 md:grid-cols-4"><AccountCard label={t('margin.userCost')} icon={CreditCard} iconBg="bg-blue-500/10" value={total ? formatMoney(total.user_cost) : ''} /><AccountCard label={t('margin.ownerRevenue')} icon={ArrowUpFromLine} iconBg="bg-purple-500/10" value={total ? formatMoney(total.owner_revenue) : ''} /><AccountCard label={t('margin.platformRevenue')} icon={TrendingUp} iconBg="bg-emerald-500/10" value={total ? formatMoney(total.platform_revenue) : ''} /><AccountCard label={t('margin.marginRate')} icon={PiggyBank} iconBg="bg-amber-500/10" value={total ? total.margin_rate.toFixed(1) + '%' : ''} /></div><div className="rounded-3xl bg-card border-border border p-4"><h2 className="mb-2 flex items-center gap-2 text-base font-semibold"><TrendingUp className="size-4 text-muted-foreground" />{t('margin.trendTitle')}</h2>{isLoading ? <Skeleton /> : rows.length === 0 ? <p className="py-10 text-center text-sm text-muted-foreground">{t('margin.empty')}</p> : <div className="overflow-x-auto"><div className="min-w-[650px]"><div className="grid grid-cols-[80px_100px_100px_100px_100px_90px] gap-3 border-b py-2 text-xs text-muted-foreground"><span>{t('margin.column.date')}</span><span className="text-right">{t('margin.column.gmv')}</span><span className="text-right">{t('margin.column.cost')}</span><span className="text-right">{t('margin.column.profit')}</span><span className="text-right">{t('margin.column.marginRate')}</span><span className="text-right">{t('margin.column.requests')}</span></div>{rows.map(row => <div key={row.period} className="grid grid-cols-[80px_100px_100px_100px_100px_90px] gap-3 border-b py-2.5 text-xs"><span>{dayjs(row.period, 'YYYYMMDD').format('MM/DD')}</span><span className="text-right tabular-nums">{formatMoney(row.user_cost)}</span><span className="text-right tabular-nums">{formatMoney(row.owner_revenue)}</span><span className="text-right font-medium tabular-nums">{formatMoney(row.platform_revenue)}</span><span className="text-right tabular-nums">{row.margin_rate.toFixed(1)}%</span><span className="text-right tabular-nums">{row.request_count}</span></div>)}</div></div>}</div></section>;
+// 口径(见 internal/op/settlement.go ProfitMarginGet): user_cost / owner_revenue / platform_revenue
+// 都是**净额**, 即已扣掉 status=refunded 的那部分计费记录; margin_rate 的分母也是净额。
+// refund_amount 按争议批准日汇总, recharge_amount 按充值单支付日汇总 —— 两者是独立的资金流指标,
+// 既不参与本金计算, 也不能与净额做加减等式(退款按账单日扣减, 与按批准日的 refund_amount 跨日就不等)。
+export function MarginDashboard() {
+    const t = useTranslations('billing');
+    const { data, isLoading } = useProfitMargin();
+    const total = data?.overall;
+    const rows = data?.trends ?? [];
+
+    // 六张卡: 净额三张(消费/成本/毛利) + 毛利率一张 + 资金流两张(退款/充值)。
+    // 退款与充值刻意排在净额卡片之后并带口径提示: 它们解释"为什么 GMV 变小、现金从哪来",
+    // 但不是毛利的一部分, 混进同一行会被读成"退款冲减毛利"。
+    const cards = [
+        { key: 'userCost', label: t('margin.userCost'), hint: t('margin.userCostHint'), icon: CreditCard, iconBg: 'bg-blue-500/10', value: total ? formatMoney(total.user_cost) : '' },
+        { key: 'ownerRevenue', label: t('margin.ownerRevenue'), hint: t('margin.ownerRevenueHint'), icon: ArrowUpFromLine, iconBg: 'bg-purple-500/10', value: total ? formatMoney(total.owner_revenue) : '' },
+        { key: 'platformRevenue', label: t('margin.platformRevenue'), icon: TrendingUp, iconBg: 'bg-emerald-500/10', value: total ? formatMoney(total.platform_revenue) : '' },
+        { key: 'marginRate', label: t('margin.marginRate'), hint: t('margin.marginRateHint'), icon: PiggyBank, iconBg: 'bg-amber-500/10', value: total ? total.margin_rate.toFixed(1) + '%' : '' },
+        { key: 'refundAmount', label: t('margin.refundAmount'), hint: t('margin.refundHint'), icon: ArrowDownToLine, iconBg: 'bg-rose-500/10', value: total ? formatMoney(total.refund_amount) : '' },
+        { key: 'rechargeAmount', label: t('margin.rechargeAmount'), hint: t('margin.rechargeHint'), icon: CreditCard, iconBg: 'bg-sky-500/10', value: total ? formatMoney(total.recharge_amount) : '' },
+    ];
+
+    return (
+        <section className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+                {cards.map((card) => (
+                    <AccountCard
+                        key={card.key}
+                        label={card.label}
+                        hint={card.hint}
+                        icon={card.icon}
+                        iconBg={card.iconBg}
+                        value={isLoading ? '' : card.value}
+                    />
+                ))}
+            </div>
+            {/* 口径说明: 一句话讲清三张净额卡与两张资金流卡的关系, 且明确不构成等式。 */}
+            <p className="px-1 text-xs leading-relaxed text-muted-foreground">{t('margin.flowNote')}</p>
+            <div className="rounded-3xl border border-border bg-card p-4">
+                <h2 className="mb-2 flex items-center gap-2 text-base font-semibold">
+                    <TrendingUp className="size-4 text-muted-foreground" />
+                    {t('margin.trendTitle')}
+                </h2>
+                {isLoading ? <Skeleton /> : rows.length === 0 ? (
+                    <p className="py-10 text-center text-sm text-muted-foreground">{t('margin.empty')}</p>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <div className="min-w-[650px]">
+                            <div className="grid grid-cols-[80px_100px_100px_100px_100px_90px] gap-3 border-b py-2 text-xs text-muted-foreground">
+                                <span>{t('margin.column.date')}</span>
+                                <span className="text-right">{t('margin.column.gmv')}</span>
+                                <span className="text-right">{t('margin.column.cost')}</span>
+                                <span className="text-right">{t('margin.column.profit')}</span>
+                                <span className="text-right">{t('margin.column.marginRate')}</span>
+                                <span className="text-right">{t('margin.column.requests')}</span>
+                            </div>
+                            {rows.map((row) => (
+                                <div key={row.period} className="grid grid-cols-[80px_100px_100px_100px_100px_90px] gap-3 border-b py-2.5 text-xs">
+                                    <span>{dayjs(row.period, 'YYYYMMDD').format('MM/DD')}</span>
+                                    <span className="text-right tabular-nums">{formatMoney(row.user_cost)}</span>
+                                    <span className="text-right tabular-nums">{formatMoney(row.owner_revenue)}</span>
+                                    <span className="text-right font-medium tabular-nums">{formatMoney(row.platform_revenue)}</span>
+                                    <span className="text-right tabular-nums">{row.margin_rate.toFixed(1)}%</span>
+                                    <span className="text-right tabular-nums">{row.request_count}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </section>
+    );
 }
 
 

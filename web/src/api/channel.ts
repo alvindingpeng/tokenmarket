@@ -39,7 +39,9 @@ export type ChannelKey = {
     // 导入的上游账号(见 model/account_json.go)。非账号凭据这些字段全空,
     // 因此界面据 account_kind 决定"显示成普通 Key 还是显示成账号"。
     account_kind?: '' | 'oauth' | 'cookie';
-    account_platform?: '' | 'codex' | 'kiro' | 'gemini' | 'grok' | 'claude';
+    // 引用 AccountPlatform 而不是再抄一份联合类型: 抄一份的代价是后端加了平台之后
+    // 这里漏改, 而漏改只会在渲染账号徽标时才暴露(见 state.ts 里对同一件事的说明)。
+    account_platform?: '' | AccountPlatform;
     account_email?: string;
     // token_expires_at 是当前访问令牌的到期时间; cookie 类账号没有这个字段(它们无法续期)。
     token_expires_at?: string;
@@ -151,7 +153,19 @@ export type ChannelDetail = {
     markup_ratio?: number;
     /** GCP Project ID for gemini_cli dialect (optional, auto-assigned for personal accounts). */
     gemini_project?: string;
+    /**
+     * key_rotation_strategy 是同一渠道内多份凭据按请求如何挑选。
+     * 取值与后端 model.Channel 的同名列、OpenAPI 的 enum、op.SelectChannelKey 的 switch 三处一致:
+     * roundrobin(轮询, 落库默认值) / random(随机) / failover(故障切换)。
+     * 读侧可能缺省(历史渠道走列默认值), 故为可选; 归一由 fromChannel 负责。
+     */
+    key_rotation_strategy?: KeyRotationStrategy;
 };
+
+// KeyRotationStrategy 见 ChannelDetail.key_rotation_strategy。
+// 抽成独立类型是为了让它同时被表单状态引用 —— 两处抄一份联合类型的话,
+// 后端加一个策略时漏改的那一处只会在运行时暴露。
+export type KeyRotationStrategy = 'roundrobin' | 'random' | 'failover';
 
 // ChannelModelStats 是单个渠道模型的累计统计，自带名称与熔断状态。
 // 熔断字段来自渠道模型自身（不是统计表）：count 与熔断共用同一列，熔断触发时清零，

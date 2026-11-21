@@ -77,6 +77,13 @@ func getUserStatsModels(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// 按模型拆分只有明细能算: 汇总表没有 model 维度, 超出留存期(默认 180 天)的拆分不可得。
+	// 这条边界不放进 JSON 体(响应是数组, 加字段会破坏既有契约), 改用响应头如实告知 ——
+	// 前端据此提示"此区间之前无模型明细", 而不是把缺失的模型读成 0 用量。
+	// 概览响应里同名语义的字段是 model_breakdown_coverage_start。
+	if coverageStart, err := op.UserStatsModelCoverageStart(c.Request.Context(), userID, query.StartDate, query.EndDate); err == nil && coverageStart != "" {
+		c.Header("X-Model-Coverage-Start", coverageStart)
+	}
 	resp.Success(c, models)
 }
 

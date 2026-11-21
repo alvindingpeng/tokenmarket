@@ -124,8 +124,21 @@ func TestDetermineAlertEvent(t *testing.T) {
 		"route_persist_recovered": "route_persist_recovered",
 		"task_failed":             "task_failed",
 		"task_recovered":          "task_recovered",
-		"test":                    "test",
-		"some_new_kind":           "system_alert",
+		// 资金安全两类: kind 与 event 同名, 但必须走显式 case —— 掉进 default 变 system_alert
+		// 就等于把"钱动了但流程不对"混进系统杂项, 外发标题看不出是资金异常。
+		"withdrawal_approve_timeout": "withdrawal_approve_timeout",
+		"payment_after_expiry":       "payment_after_expiry",
+		// 牌价采集连续失败: 这条 kind 一直在发, 却漏登记了很久 —— 补上显式 case,
+		// 否则外发事件名是 system_alert, 消费端分不出是牌价停更还是别的系统杂项。
+		"fx_rate_refresh_failed": "fx_rate_refresh_failed",
+		// 第二批同类: 每条的 event 名与 kind 同名, 都不许掉成 system_alert。
+		"usage_missing":          "usage_missing",
+		"account_invalidated":    "account_invalidated",
+		"billing_archive_failed": "billing_archive_failed",
+		"audit_archive_failed":   "audit_archive_failed",
+		"fx_rate_stale":          "fx_rate_stale",
+		"test":                   "test",
+		"some_new_kind":          "system_alert",
 	}
 	for kind, want := range cases {
 		if got := determineAlertEvent(kind); got != want {
@@ -142,6 +155,10 @@ func TestDetermineAlertEvent(t *testing.T) {
 		alert.EventRoutePersistFailed, alert.EventRoutePersistRecovered,
 		alert.EventTaskFailed,
 		alert.EventTaskRecovered, alert.EventUpdateAvailable, alert.EventTest, alert.EventSystemAlert,
+		alert.EventWithdrawalApproveTimeout, alert.EventPaymentAfterExpiry,
+		alert.EventFxRateRefreshFailed,
+		alert.EventUsageMissing, alert.EventAccountInvalidated,
+		alert.EventBillingArchiveFailed, alert.EventAuditArchiveFailed, alert.EventFxRateStale,
 	} {
 		known[string(e)] = true
 	}

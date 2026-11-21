@@ -197,6 +197,9 @@
             "model": "模型",
             "noData": "暫無排行數據",
             "successRate": "成功率"
+        },
+        "stats": {
+            "requestCountHint": "含失敗請求"
         }
     },
     "setting": {
@@ -641,7 +644,11 @@
             "withdrawDailyCountLimit": "單日筆數上限",
             "withdrawDailyAmountLimit": "單日總額上限",
             "withdrawAccountLockDays": "帳戶鎖定天數",
-            "withdrawHint": "0 表示不限/不冷卻/不鎖; 冷卻期內的新收益暫不可提(防刷單套利)。僅渠道商收益可提, 儲值餘額不可提現。"
+            "withdrawHint": "0 表示不限/不冷卻/不鎖; 冷卻期內的新收益暫不可提(防刷單套利)。僅渠道商收益可提, 儲值餘額不可提現。",
+            "partialFailed": "已儲存 {saved}/{total} 項。未儲存: {keys}。輸入內容已保留, 再點一次儲存即可重試。",
+            "unsavedMark": "未儲存",
+            "nothingToSave": "沒有需要儲存的內容 —— 沒有任何一項被改動。",
+            "unsavedDismiss": "知道了"
         },
         "billing": {
             "title": "資金表留存",
@@ -670,8 +677,10 @@
             "loadFailed": "歸檔檔案載入失敗",
             "colName": "檔案",
             "colSize": "大小",
-            "colTime": "修改時間"
-        }
+            "colTime": "修改時間",
+            "countsFailed": "行數取不到。數值顯示為「—」而不是 0。"
+        },
+        "saveFailedReverted": "儲存失敗 —— 該輸入已回退到上次真正儲存成功的值。"
     },
     "group": {
         "toast": {
@@ -1298,7 +1307,7 @@
             "egressKindDirect": "直連",
             "egressKindHttp": "HTTP 代理",
             "egressKindSocks5": "SOCKS5 代理",
-            "egressWeight": "權重",
+            "egressWeight": "同分優先",
             "egressRegion": "地區碼(如 HK, 可留空)",
             "stepGrants": "模型",
             "stepAdvanced": "進階",
@@ -1364,7 +1373,13 @@
             "geminiProjectPlaceholder": "留空則自動分配",
             "geminiProjectHint": "可選覆蓋。留空則由 Google 在 Antigravity 路徑上自動分配專案。",
             "geminiProxyHint": "直連被攔截的地區需配置代理：拉模型與轉發均走渠道代理。",
-            "geminiCredentialHint": "該渠道需使用 Antigravity 授權的憑據。舊 Gemini CLI 憑據會 403 (缺少 scope)。"
+            "geminiCredentialHint": "該渠道需使用 Antigravity 授權的憑據。舊 Gemini CLI 憑據會 403 (缺少 scope)。",
+            "egressWeightHint": "權重只在兩條出口的實測得分完全相同時決定先後(大的先上), 不是流量比例。",
+            "keyRotation": "憑據輪換策略",
+            "keyRotationHint": "同一渠道內多份憑據按請求如何挑選。輪詢: 按順序分攤, 負載最均勻。隨機: 同樣分攤但沒有順序, 上游按憑據限流時更合適。故障切換: 固定先用第一份, 只有在它被熔斷停用後才換下一份。",
+            "keyRotationRoundrobin": "輪詢",
+            "keyRotationRandom": "隨機",
+            "keyRotationFailover": "故障切換"
         },
         "review": {
             "tabChannels": "渠道列表",
@@ -1495,7 +1510,8 @@
                 "kiro": "需要 camelCase 的 refreshToken、clientId、clientSecret。權杖端點要求 camelCase 的請求欄位, 不要改名。",
                 "gemini": "接受兩種形式。Gemini CLI 的 OAuth 權杖: access_token + refresh_token(+ expiry_date, 毫秒), 即 ~/.gemini/oauth_creds.json 的內容 —— 可自動續期。Cookie 會話: 需要 c_ses(可選 c_oses、csesidx、config_id) —— 無法續期, 失效後必須重新匯入。",
                 "grok": "基於 Cookie: 需要 sso。sso-rw 不參與鑑權。",
-                "claude": "Claude Code 憑證檔: 權杖在 claudeAiOauth 下, 鍵名是 camelCase 的 accessToken / refreshToken / expiresAt(毫秒)。也接受平鋪的 access_token + refresh_token。"
+                "claude": "Claude Code 憑證檔: 權杖在 claudeAiOauth 下, 鍵名是 camelCase 的 accessToken / refreshToken / expiresAt(毫秒)。也接受平鋪的 access_token + refresh_token。",
+                "antigravity": "Antigravity 的 OAuth 憑據: 需要 access_token + refresh_token(可選 email、expiry_date 毫秒), 來自 Antigravity 授權流程。它與 Gemini CLI 的 oauth_creds.json 並不通用: 後者的權杖缺少 cclog 與 experimentsandconfigs 兩個 scope, 拉模型與轉發都會 403。不支援 Cookie 形態。"
             },
             "nameRequired": "請填寫憑證名稱",
             "rawRequired": "請貼上帳號 JSON",
@@ -1576,7 +1592,8 @@
                 "geminiNotice": "本次登入使用內建的 Gemini CLI OAuth 用戶端：授權頁將顯示為 \"Gemini CLI\" 正在申請權限。可在設定中配置自己的用戶端。",
                 "needChannel": "請先在上面選擇目標渠道",
                 "antigravityNotice": "以 Antigravity 應用程式的身分登入。需要部署方先設定環境變數 SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_ID 與 _CLIENT_SECRET（Antigravity 的 client 不內建）。它的憑據與 Gemini CLI 的**不通用**：Gemini CLI 的權杖缺少 cclog 與 experimentsandconfigs 兩個 scope，用它拉模型或轉發都會 403。另外 Google 已停用 Gemini CLI 的免費層（UNSUPPORTED_CLIENT），個人訂閱帳號只能走這個平台。"
-            }
+            },
+            "platformNotAllowed": "這個渠道只接受 {required} 平台的憑據。{selected} 的憑據與它不通用: 缺少 cclog 與 experimentsandconfigs 兩個 scope, 拉模型與轉發都會 403, 憑據還會被隔離 30 分鐘。請改選 {required} 再導入。"
         }
     },
     "share": {
@@ -1695,7 +1712,15 @@
                 "reserve": "預扣",
                 "settle": "結算",
                 "release": "釋放",
-                "adjust": "調賬"
+                "adjust": "調賬",
+                "topup": "儲值",
+                "redemption": "兌換",
+                "bonus": "滿贈",
+                "refund": "退款返還",
+                "withdraw_freeze": "提現凍結",
+                "withdraw_unfreeze": "提現解凍",
+                "withdraw_paid": "提現已打款",
+                "withdraw_rollback": "提現打款回滾"
             },
             "column": {
                 "time": "時間",
@@ -1851,8 +1876,11 @@
             "ownerRevenue": "通路供貨成本",
             "platformRevenue": "平台淨毛利",
             "marginRate": "綜合毛利率",
-            "refundAmount": "累計退款沖正",
-            "rechargeAmount": "現金儲值流入",
+            "refundAmount": "期間退款",
+            "rechargeAmount": "期間儲值",
+            "userCostHint": "已扣退款",
+            "ownerRevenueHint": "已扣退款",
+            "marginRateHint": "按淨額計",
             "trendTitle": "毛利每日趨勢 (近 30 天)",
             "empty": "暫無經營資料",
             "column": {
@@ -1862,7 +1890,10 @@
                 "profit": "平台毛利",
                 "marginRate": "毛利率",
                 "requests": "請求數"
-            }
+            },
+            "refundHint": "資金流, 不計毛利",
+            "rechargeHint": "資金流, 不計毛利",
+            "flowNote": "使用者消費、通路成本與平台毛利均為淨額（已扣減狀態為退款的計費記錄）。退款與儲值是獨立的資金流指標：退款按爭議核准日彙總，淨額按帳單日扣減，兩者跨日時不必相等，不構成加減等式。"
         }
     },
     "users": {
@@ -2354,6 +2385,17 @@
             "kindRoutePersist": "路由狀態落庫失敗",
             "kindRoutePersistRecovered": "路由狀態已恢復",
             "kindFxRefreshFailed": "匯率牌價採集連續失敗",
+            "kindWithdrawTimeout": "提現逾時撤銷",
+            "kindPaymentAfterExpiry": "逾期單補入帳",
+            "kindUsageMissing": "用量缺失",
+            "kindAccountInvalidated": "帳號權杖失效",
+            "kindBillingArchiveFailed": "計費表歸檔失敗",
+            "kindAuditArchiveFailed": "審計表歸檔失敗",
+            "kindFxRateStale": "牌價陳舊",
+            "kindKeyDegraded": "憑據降級",
+            "kindModelDegraded": "模型降級",
+            "kindPaymentAmountMismatch": "支付金額不符",
+            "kindReserve": "預扣異常",
             "kindTest": "測試"
         },
         "settings": {
@@ -2531,7 +2573,9 @@
             "deleted": "已取消靜默",
             "deleteFailed": "取消失敗",
             "none": "暫無靜默窗口",
-            "timeRequired": "請填寫開始與結束時間"
+            "timeRequired": "請填寫開始與結束時間",
+            "staleWarning": "以下是上一次成功取到的資料, 可能已不是最新 —— 告警的靜默狀態可能已經變了。",
+            "loadFailed": "靜默窗口載入失敗。"
         },
         "budgets": {
             "desc": "按使用者或 Key 設定週期花費上限。warn 在接近上限時通知, block 直接拒絕新請求。",
@@ -2564,7 +2608,16 @@
             "none": "暫無預算",
             "inputInvalid": "請填寫範圍 ID 與正數上限",
             "userScope": "使用者 #{id}",
-            "keyScope": "Key #{id}"
+            "keyScope": "Key #{id}",
+            "loadFailed": "預算載入失敗。這與「還沒建過預算」不是一回事。",
+            "deleteConfirm": "刪除這條預算? 它此前發出的告警會留在告警歷史裡, 不會隨之回滾。",
+            "confirmDelete": "確認刪除",
+            "confirmCancel": "取消",
+            "disableConfirm": "停用這條預算? 之後不再執行攔截, 本來會被它擋下的請求會放行。",
+            "enableConfirm": "重新啟用這條預算? 達到上限後會重新攔截請求。",
+            "confirmDisable": "確認停用",
+            "confirmEnable": "確認啟用",
+            "staleWarning": "顯示的是上次成功載入的預算 —— 本次重新整理失敗，清單可能已過期。"
         },
         "upstream": {
             "pickChannel": "選擇渠道",
@@ -2588,7 +2641,9 @@
                 "matched": "已對平",
                 "mismatch": "有差異",
                 "explained": "已定性"
-            }
+            },
+            "empty": "該渠道在此期間還沒有匯入過帳單。",
+            "loadFailed": "帳單載入失敗。這與「還沒有匯入帳單」不是一回事。"
         }
     },
     "landing": {
@@ -2706,13 +2761,18 @@
             "kindAll": "全部類型"
         },
         "kind": {
-            "topup": "儲值",
-            "redemption": "兌換",
             "reserve": "預扣",
             "settle": "結算",
             "release": "釋放",
             "adjust": "調帳",
-            "bonus": "滿贈"
+            "topup": "儲值",
+            "redemption": "兌換",
+            "bonus": "滿贈",
+            "refund": "退款返還",
+            "withdraw_freeze": "提現凍結",
+            "withdraw_unfreeze": "提現解凍",
+            "withdraw_paid": "提現已打款",
+            "withdraw_rollback": "提現打款回滾"
         },
         "table": {
             "time": "時間",
@@ -2792,7 +2852,12 @@
             "failed": "提現失敗",
             "cancelOrder": "取消申請",
             "empty": "暫無提現記錄",
-            "notAllowed": "僅渠道商收益可提現: 普通用戶的儲值餘額不可提現(防套現)。"
+            "notAllowed": "僅渠道商收益可提現: 普通用戶的儲值餘額不可提現(防套現)。",
+            "minAmountHint": "最低提現金額 {min}。",
+            "belowMin": "還差 {short} 才到最低提現金額。",
+            "belowAvailable": "當前最多可提 {available}。",
+            "amountInvalid": "請輸入大於 0 的金額。",
+            "tooManyDecimals": "最多兩位小數。"
         },
         "wtable": {
             "id": "單號",
@@ -2855,7 +2920,8 @@
             "inputInvalid": "請填寫正數上限",
             "enabled": "啟用",
             "disabled": "停用"
-        }
+        },
+        "summaryFailed": "餘額載入失敗。數值顯示為「—」而不是 0, 免得把取數失敗讀成帳戶被清零。"
     },
     "redemption": {
         "title": "兌換碼",

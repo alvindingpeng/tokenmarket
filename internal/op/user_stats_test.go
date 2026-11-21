@@ -442,8 +442,9 @@ func TestUserStatsBucketExprDialects(t *testing.T) {
 		{"sqlite", "day", "DATE(SUBSTR(created_at, 1, 10))"},
 		{"sqlite", "week", "DATE(SUBSTR(created_at, 1, 10), '-6 days', 'weekday 1')"},
 		{"sqlite", "month", "DATE(SUBSTR(created_at, 1, 10), 'start of month')"},
-		// 小时桶: 只用于单日区间, 标签带 HH:00。
-		{"sqlite", "hour", "STRFTIME('%Y-%m-%d %H:00', created_at)"},
+		// 小时桶: 只用于单日区间, 标签带 HH:00。必须切**挂钟前缀**而不是 STRFTIME:
+		// SQLite 的 date 函数会先把带偏移的时间串归一到 UTC, 那样正条 X 轴会整体偏 8 小时。
+		{"sqlite", "hour", "REPLACE(SUBSTR(created_at, 1, 13), 'T', ' ') || ':00'"},
 		{"mysql", "day", "DATE_FORMAT(created_at, '%Y-%m-%d')"},
 		{"mysql", "week", "DATE_FORMAT(created_at - INTERVAL WEEKDAY(created_at) DAY, '%Y-%m-%d')"},
 		{"mysql", "month", "DATE_FORMAT(created_at, '%Y-%m-01')"},
@@ -754,5 +755,46 @@ func BenchmarkUserStatsHistoricalWindows(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+// TestUserStatsTrendHourBucketKeepsWallClock 小时桶必须按**写入挂钟**切, 而不是先归一到 UTC。
+//
+// SQLite 的 STRFTIME/DATE 会先把带偏移的时间串转成 UTC 再做日历运算:
+// "2026-11-21 10:16:00+08:00" 会被算成 02:00, 本地 07:30 的请求甚至落到前一天 23:00 ——
+// 整条 X 轴偏 8 小时。而同日桶走 SUBSTR 保留挂钟, 于是小时图与日图根本不是同一时区,
+// 同一天的数据在两个图里对不上。旧用例只断言表达式字符串形态(那种断言换了写法照样过),
+// 这条直接造 10:16 与 07:30 两条记录, 钉住语义。
+func TestUserStatsTrendHourBucketKeepsWallClock(t *testing.T) {
+	payer, _ := userStatsTestSetup(t)
+	userStatsInsert(t,
+		userStatsRow(payer.ID, "m", model.BillingStatusSettled, time.Date(2026, 11, 21, 10, 16, 0, 0, userStatsCST), 1, 1),
+		userStatsRow(payer.ID, "m", model.BillingStatusSettled, time.Date(2026, 11, 21, 7, 30, 0, 0, userStatsCST), 2, 2),
+	)
+	ctx := context.Background()
+
+	hours, err := UserStatsTrend(ctx, payer.ID, "2026-11-21", "2026-11-21", "hour")
+	if err != nil {
+		t.Fatalf("trend hour: %v", err)
+	}
+	if len(hours) != 2 {
+		t.Fatalf("小时桶数 = %d, want 2 (10:16 与 07:30 各一桶): %+v", len(hours), hours)
+	}
+	// 标签必须是写入的挂钟小时。被 UTC 归一时它们会变成 "2026-11-21 02:00" 与
+	// "2026-11-20 23:00"(后者连日期都跑到前一天), 断言会同时抓住这两个错法。
+	if hours[0].Date != "2026-11-21 07:00" || hours[0].Requests != 1 {
+		t.Fatalf("首个小时桶 = %q(requests=%d), want \"2026-11-21 07:00\"(本地 07:30 那条)", hours[0].Date, hours[0].Requests)
+	}
+	if hours[1].Date != "2026-11-21 10:00" || hours[1].Requests != 1 {
+		t.Fatalf("第二个小时桶 = %q(requests=%d), want \"2026-11-21 10:00\"(本地 10:16 那条)", hours[1].Date, hours[1].Requests)
+	}
+
+	// 同一批数据的日桶必须仍在 2026-11-21: 小时图与日图不能按两个时区切片。
+	days, err := UserStatsTrend(ctx, payer.ID, "2026-11-21", "2026-11-21", "day")
+	if err != nil {
+		t.Fatalf("trend day: %v", err)
+	}
+	if len(days) != 1 || days[0].Date != "2026-11-21" || days[0].Requests != 2 {
+		t.Fatalf("日桶 = %+v, want 单桶 2026-11-21/requests=2 (与小时桶同一时区)", days)
 	}
 }

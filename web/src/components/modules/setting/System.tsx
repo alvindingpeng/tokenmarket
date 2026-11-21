@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useSettingList, useSetSetting, SettingKey } from '@/api/setting';
+import { failedSave } from './settingSave';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -116,14 +117,28 @@ export function SettingSystem() {
         }
     }, [settings]);
 
-    const handleSave = (key: string, value: string, initialValue: string) => {
+    // handleSave 提交单项设置。
+    //
+    // initialValue 同时承担两个角色: "要不要发这次请求"的比较基准, 和"失败后回滚到哪"。
+    // 两者能共用一个值, 是因为它只在 onSuccess 里更新 —— 也就是**服务端已确认落库的值**。
+    // 这正是回滚该回的地方: 不是用户敲进去的值, 也不是查询缓存里可能还没刷新的值。
+    //
+    // apply 由调用方给出: 每个控件绑的是不同的 state, 在这里按 key 分发会变成一张易漏的映射表。
+    const handleSave = (key: string, value: string, initialValue: string, apply: (next: string) => void) => {
         if (value === initialValue) return;
 
         setSetting.mutate({ key, value }, {
-            // 失败必须提示: 此前只有 onSuccess, 保存失败时输入框仍显示新值、后端却还是旧值,
-            // 而 initial 基准也没回滚 —— 界面与现实就此分叉, 管理员以为已生效。
-            // (不在此处回滚输入框: 用户可能只是网络抖动, 保留输入让他能重试。)
-            onError: (error) => toast.error(t('saveFailed'), { description: error.message }),
+            // 失败必须提示, 且必须把输入框改回基准值。
+            // 此前只做了前者(还带着"保留输入让他能重试"的考虑), 结果界面停在用户敲的新值上、
+            // 服务端仍是旧值 —— 管理员按界面判断"已经改了", 直到刷新或下次进来才发现没有。
+            // 两者的取舍是明确的: 让用户重新输入一次, 好过让他在错误的认知下离开。
+            onError: (error) => {
+                // 回滚决策走 failedSave(纯函数, 单测直接断言): 它有基准就回基准, 没基准就不动输入框。
+                // 这里的基准恒存在(initialX ref 由初始化 effect 从设置列表灌入, 且只在 onSuccess 更新),
+                // 所以实际总是走「回基准」那一支 —— 但仍经同一段被测逻辑, 免得三张卡片各写一套。
+                apply(failedSave({ [key]: initialValue }, key, value).input);
+                toast.error(t('saveFailedReverted'), { description: error.message });
+            },
             onSuccess: () => {
                 toast.success(t('saved'));
                 if (key === SettingKey.ProxyURL) {
@@ -163,7 +178,13 @@ export function SettingSystem() {
         const parsed = Number.parseInt(trimmed, 10);
         const normalized = Number.isFinite(parsed) ? String(Math.min(Math.max(parsed, 0), 100)) : '0';
         setScoreWeights(prev => ({ ...prev, [dimension]: normalized }));
-        handleSave(key, normalized, initialScoreWeights.current[dimension]);
+        // 回滚时三个权重格要各自回自己的基准: 统一回滚成同一个值会把另外两个改掉。
+        const apply = (next: string) => setScoreWeights(prev => {
+            if (dimension === 'price') return { ...prev, price: next };
+            if (dimension === 'latency') return { ...prev, latency: next };
+            return { ...prev, success: next };
+        });
+        handleSave(key, normalized, initialScoreWeights.current[dimension], apply);
     };
 
     // saveUpdateCheckMinutes 归一化后落库: 后端已限制 1-1440 分钟, 这里同样夹住,
@@ -172,7 +193,7 @@ export function SettingSystem() {
         const parsed = Number.parseInt(raw.trim(), 10);
         const normalized = String(Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 1440) : 60);
         setUpdateCheckMinutes(normalized);
-        handleSave(SettingKey.UpdateCheckMinutes, normalized, initialUpdateCheckMinutes.current);
+        handleSave(SettingKey.UpdateCheckMinutes, normalized, initialUpdateCheckMinutes.current, setUpdateCheckMinutes);
     };
 
     const corsAllowOriginsList = useMemo(() => {
@@ -200,7 +221,8 @@ export function SettingSystem() {
         ));
         const normalizedValue = normalizedOrigins.includes('*') ? '*' : normalizedOrigins.join(',');
         setCorsAllowOrigins(normalizedValue);
-        handleSave(SettingKey.CORSAllowOrigins, normalizedValue, initialCorsAllowOrigins.current);
+        // CORS 的回滚要回到"展示字符串"这一层, 而不是某一项 origin: 界面显示的是整串。
+        handleSave(SettingKey.CORSAllowOrigins, normalizedValue, initialCorsAllowOrigins.current, setCorsAllowOrigins);
     };
 
     const handleAddCorsOrigin = () => {
@@ -245,7 +267,7 @@ export function SettingSystem() {
                 <Input
                     value={proxyUrl}
                     onChange={(e) => setProxyUrl(e.target.value)}
-                    onBlur={() => handleSave('proxy_url', proxyUrl, initialProxyUrl.current)}
+                    onBlur={() => handleSave('proxy_url', proxyUrl, initialProxyUrl.current, setProxyUrl)}
                     placeholder={t('proxyUrl.placeholder')}
                     className="w-48 rounded-xl"
                 />
@@ -261,7 +283,7 @@ export function SettingSystem() {
                     type="number"
                     value={statsSaveInterval}
                     onChange={(e) => setStatsSaveInterval(e.target.value)}
-                    onBlur={() => handleSave('stats_save_interval', statsSaveInterval, initialStatsSaveInterval.current)}
+                    onBlur={() => handleSave('stats_save_interval', statsSaveInterval, initialStatsSaveInterval.current, setStatsSaveInterval)}
                     placeholder={t('statsSaveInterval.placeholder')}
                     className="w-48 rounded-xl"
                 />
@@ -332,7 +354,7 @@ export function SettingSystem() {
                 <Input
                     value={modelFilter}
                     onChange={(e) => setModelFilter(e.target.value)}
-                    onBlur={() => handleSave('model_filter', modelFilter, initialModelFilter.current)}
+                    onBlur={() => handleSave('model_filter', modelFilter, initialModelFilter.current, setModelFilter)}
                     placeholder={t('modelFilter.placeholder')}
                     className="w-48 rounded-xl"
                 />
@@ -417,7 +439,7 @@ export function SettingSystem() {
                     type="password"
                     value={githubToken}
                     onChange={(e) => setGithubToken(e.target.value)}
-                    onBlur={() => handleSave(SettingKey.GithubToken, githubToken, initialGithubToken.current)}
+                    onBlur={() => handleSave(SettingKey.GithubToken, githubToken, initialGithubToken.current, setGithubToken)}
                     placeholder={t('githubToken.placeholder')}
                     autoComplete="off"
                     className="w-48 rounded-xl"
@@ -446,7 +468,7 @@ export function SettingSystem() {
                     <Input
                         value={geminiOAuthClientID}
                         onChange={(e) => setGeminiOAuthClientID(e.target.value)}
-                        onBlur={() => handleSave(SettingKey.GeminiOAuthClientID, geminiOAuthClientID, initialGeminiOAuthClientID.current)}
+                        onBlur={() => handleSave(SettingKey.GeminiOAuthClientID, geminiOAuthClientID, initialGeminiOAuthClientID.current, setGeminiOAuthClientID)}
                         placeholder={t('geminiOAuth.clientId.placeholder')}
                         autoComplete="off"
                         className="w-72 rounded-xl"
@@ -470,7 +492,7 @@ export function SettingSystem() {
                             type="password"
                             value={geminiOAuthClientSecret}
                             onChange={(e) => setGeminiOAuthClientSecret(e.target.value)}
-                            onBlur={() => handleSave(SettingKey.GeminiOAuthClientSecret, geminiOAuthClientSecret, initialGeminiOAuthClientSecret.current)}
+                            onBlur={() => handleSave(SettingKey.GeminiOAuthClientSecret, geminiOAuthClientSecret, initialGeminiOAuthClientSecret.current, setGeminiOAuthClientSecret)}
                             placeholder={t('geminiOAuth.clientSecret.placeholder')}
                             autoComplete="new-password"
                             className="w-72 rounded-xl pr-10"
@@ -508,7 +530,7 @@ export function SettingSystem() {
                     checked={updateCheckEnabled}
                     onCheckedChange={(checked) => {
                         setUpdateCheckEnabled(checked);
-                        handleSave(SettingKey.UpdateCheckEnabled, String(checked), initialUpdateCheckEnabled.current);
+                        handleSave(SettingKey.UpdateCheckEnabled, String(checked), initialUpdateCheckEnabled.current, (next) => setUpdateCheckEnabled(next === 'true'));
                     }}
                 />
             </div>

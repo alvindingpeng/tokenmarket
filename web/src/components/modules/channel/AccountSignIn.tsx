@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { accountSignInBegin, accountSignInComplete, type SignInBegin } from '@/api/account-signin';
-import type { AccountPlatform } from '@/api/channel';
+import type { AccountPlatform, Dialect } from '@/api/channel';
+import { accountPlatformMismatch, defaultAccountPlatform } from './accountPlatform';
 
 /**
  * AccountSignIn 网页 OAuth 登录导入账号。
@@ -33,16 +34,25 @@ const SUPPORTED: AccountPlatform[] = ['claude', 'codex', 'gemini', 'antigravity'
 
 export function AccountSignIn({
     channelId,
+    dialect,
     onSuccess,
 }: {
     // 可为 undefined: 独立导入模式下用户还没选目标渠道时, 入口也要可见 ——
     // 否则他根本不知道有这条路。此时展开面板只提示先选渠道, 不生成授权 URL。
     channelId?: number;
+    // dialect 只在渠道内导入时给得出。它与「粘贴 JSON」那条路径用同一套前置校验:
+    // 授权登录同样是把凭据挂到某个渠道上, 平台选错的后果一模一样 ——
+    // 所以不能只有粘贴路径拦、登录路径放。见 accountPlatform 的说明。
+    dialect?: Dialect;
     onSuccess?: () => void;
 }) {
     const t = useTranslations('channel.account.signIn');
+    // 平台↔方言的文案与「粘贴 JSON」入口共用同一个键(channel.account.platformNotAllowed):
+    // 两条入口的错因完全相同, 措辞分叉只会让人以为遇上了两种不同的问题。
+    const tAccount = useTranslations('channel.account');
     const [expanded, setExpanded] = useState(false);
-    const [platform, setPlatform] = useState<AccountPlatform>('claude');
+    // 订阅/gemini_cli 渠道只有 antigravity 一个合法平台, 打开就预选它。
+    const [platform, setPlatform] = useState<AccountPlatform>(() => defaultAccountPlatform(dialect));
     const [name, setName] = useState('');
     const [begin, setBegin] = useState<SignInBegin | null>(null);
     const [pasted, setPasted] = useState('');
@@ -52,6 +62,10 @@ export function AccountSignIn({
     // 这条错误必须如实显示在面板里 —— 只弹一下 toast 会被滚走/错过,
     // 而用户看到的就是"点了没反应", 于是又跑去问为什么打不开。
     const [startError, setStartError] = useState('');
+
+    // 与粘贴 JSON 同样的平台↔方言校验: 选错平台的凭据在转发期会被 relay 硬拒并熔断 30 分钟,
+        // 而登录这一步"看起来完全成功"。不静默阻止 —— start 按钮照常可点, 点下去给出原因。
+    const platformMismatch = accountPlatformMismatch(dialect, platform);
 
     const reset = () => {
         setBegin(null);
@@ -66,6 +80,16 @@ export function AccountSignIn({
     // 用 window.open 而不是同页跳转: 授权页会离开本站, 同页跳转等于把用户带走了;
     // 而贴 code 这一步还得回到本页面, 所以必须在同一个标签页里完成。
     const start = async () => {
+        // 平台与渠道方言对不上时不发授权请求: 走完整个授权流程再拿到一把用不了的凭据,
+        // 比其他任何失败都更浪费时间 —— 用户会以为是授权出问题, 反复重试。
+        if (platformMismatch) {
+            const message = tAccount('platformNotAllowed', {
+                required: platformMismatch.required,
+                selected: platformMismatch.selected,
+            });
+            setStartError(message);
+            return;
+        }
         setStarting(true);
         setStartError('');
         try {
@@ -160,6 +184,15 @@ export function AccountSignIn({
                             </div>
                             {/* 合规说明必须在点授权之前可见, 而不是藏在文档里:
                                 授权页上显示的是上游 CLI 在申请权限, 用户有权在授权前就知道。 */}
+                            {/* 平台选错时先在这里说清, 免得走完整个授权流程才失败。 */}
+                            {platformMismatch && (
+                                <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-xs text-destructive">
+                                    {tAccount('platformNotAllowed', {
+                                        required: platformMismatch.required,
+                                        selected: platformMismatch.selected,
+                                    })}
+                                </p>
+                            )}
                             {platform === 'gemini' ? (
                                 <p className="rounded-md border border-blue-500/40 bg-blue-500/10 p-2.5 text-xs text-blue-900 dark:text-blue-200">
                                     {t('geminiNotice')}

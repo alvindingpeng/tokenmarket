@@ -99,8 +99,10 @@ export function FormKeys({ state, setState, channelId, onAccountImported }: {
                     {/* 导入账号只在编辑已存在的渠道时出现: 新建渠道还没有可写的凭据表。 */}
                     {channelId !== undefined && (
                         <div className="flex items-center gap-1">
-                            <AccountImport channelId={channelId} onImported={onAccountImported} />
-                            <AccountImportBatch channelId={channelId} onImported={onAccountImported} />
+                            {/* 方言一并传下去: 导入弹层据此在选平台时就拦住"这个渠道不收这个平台"的错误,
+                                而不是让它在转发期以 403 + 30 分钟熔断的形式发作。 */}
+                            <AccountImport channelId={channelId} dialect={state.dialect} onImported={onAccountImported} />
+                            <AccountImportBatch channelId={channelId} dialect={state.dialect} onImported={onAccountImported} />
                         </div>
                     )}
                     <IconButton onClick={add} className="size-9" tip={t('keyAdd')}>

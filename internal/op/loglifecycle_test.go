@@ -192,3 +192,63 @@ func TestLogLifecycleWithoutArchiveStillCleans(t *testing.T) {
 		t.Fatalf("expected cleanup without archive: %+v", result)
 	}
 }
+
+// TestLogLifecycleCutoffAlignedToDay 清理截止必须对齐自然日 00:00。
+//
+// 用 time.Now().AddDate(0, 0, -retention) 时, 留存末日只剩"本轮运行时刻之后"的半天样本:
+// 成功率、延迟这类按日汇总的指标会随运行时刻漂移, 而前端覆盖率提示只到日粒度,
+// 用户会把那半天当成一整天。对齐到 00:00 后每轮都以整天为单位, 结果与运行时刻无关。
+func TestLogLifecycleCutoffAlignedToDay(t *testing.T) {
+	logLifecycleTestEnv(t, false)
+
+	result, err := LogLifecycleRun(context.Background())
+	if err != nil {
+		t.Fatalf("LogLifecycleRun: %v", err)
+	}
+	want := dayStart(time.Now()).AddDate(0, 0, -LogRetentionDays())
+	if !result.Cutoff.Equal(want) {
+		t.Fatalf("cutoff = %s, want %s (自然日 00:00, 与 billingRetentionCutoff 同规则)",
+			result.Cutoff.Format(time.RFC3339), want.Format(time.RFC3339))
+	}
+	// 时分秒毫秒都必须为 0 —— 只比较日期会放过"带时分秒但日期正确"的实现。
+	year, month, day := result.Cutoff.Date()
+	hour, minute, second := result.Cutoff.Clock()
+	if hour != 0 || minute != 0 || second != 0 || result.Cutoff.Nanosecond() != 0 {
+		t.Fatalf("cutoff 时分秒非零: %04d-%02d-%02d %02d:%02d:%02d.%d",
+			year, month, day, hour, minute, second, result.Cutoff.Nanosecond())
+	}
+	if result.Cutoff.Location() != time.Local {
+		t.Fatalf("cutoff 时区 = %s, want 本地挂钟", result.Cutoff.Location())
+	}
+}
+
+// TestLogLifecycleCutoffBoundaryDeletesStrictlyBefore 对齐天后, 删除条件仍是 created_at < cutoff:
+// 截止日前一天的日志删, 截止日当天 00:00 的日志留(边界那一秒属于留存期)。
+func TestLogLifecycleCutoffBoundaryDeletesStrictlyBefore(t *testing.T) {
+	logLifecycleTestEnv(t, false)
+	cutoff := dayStart(time.Now()).AddDate(0, 0, -LogRetentionDays())
+	seed := func(id uint64, at time.Time, status string) {
+		row := model.RelayRequest{ID: id, UserID: 1, Model: "gpt-4o", Status: status, StartedAt: at}
+		if err := db.GetDB().Create(&row).Error; err != nil {
+			t.Fatalf("seed row %d: %v", id, err)
+		}
+	}
+	seed(2001, cutoff.Add(-time.Second), "success") // 截止前一秒: 删
+	seed(2002, cutoff, "success")                   // 截止那一刻: 留(条件严格小于)
+	seed(2003, cutoff.Add(24*time.Hour), "success") // 留存期内: 留
+
+	result, err := LogLifecycleRun(context.Background())
+	if err != nil {
+		t.Fatalf("LogLifecycleRun: %v", err)
+	}
+	if result.RequestsDel != 1 {
+		t.Fatalf("requests_deleted = %d, want 1 (只有严格早于 cutoff 的那条)", result.RequestsDel)
+	}
+	var left int64
+	if err := db.GetDB().Model(&model.RelayRequest{}).Count(&left).Error; err != nil {
+		t.Fatal(err)
+	}
+	if left != 2 {
+		t.Fatalf("剩余 %d 行, want 2 (cutoff 当刻与留存期内的两条都必须留下)", left)
+	}
+}

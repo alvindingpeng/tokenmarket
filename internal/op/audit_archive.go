@@ -70,7 +70,7 @@ func AuditLifecycleRun(ctx context.Context) (AuditArchiveResult, error) {
 		if err != nil {
 			result.ArchiveError = err.Error()
 			RaiseAlertFacts(ctx, AlertFacts{
-				Kind:   "audit_archive_failed",
+				Kind:   AlertKindAuditArchiveFailed,
 				Reason: "audit archive failed",
 				Fields: []alert.Field{
 					{Label: "清理截止", Value: cutoff.Format("2006-01-02")},

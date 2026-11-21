@@ -67,7 +67,7 @@ func (s *Stripe) CreatePayment(order *model.RechargeOrder, notifyURL, returnURL 
 	form.Set("cancel_url", returnURL)
 	form.Set("line_items[0][quantity]", "1")
 	form.Set("line_items[0][price_data][currency]", currency)
-	form.Set("line_items[0][price_data][unit_amount]", strconv.FormatInt(order.AmountCents, 10))
+	form.Set("line_items[0][price_data][unit_amount]", strconv.FormatInt(s.stripeUnitAmount(order), 10))
 	form.Set("line_items[0][price_data][product_data][name]", order.Subject)
 	request, err := http.NewRequest(http.MethodPost, s.stripeAPIBase()+"/v1/checkout/sessions", strings.NewReader(form.Encode()))
 	if err != nil {
@@ -92,6 +92,25 @@ func (s *Stripe) CreatePayment(order *model.RechargeOrder, notifyURL, returnURL 
 		return nil, fmt.Errorf("stripe checkout response is invalid")
 	}
 	return &Form{RedirectURL: session.URL}, nil
+}
+
+// stripeUnitAmount 决定报给 Stripe 收银台的金额。
+//
+// 单位陷阱: Stripe 的 unit_amount 是**收款币种的最小单位**(ChargeCurrency 的分), 不是订单的
+// CNY 分。下单向 op 层已按渠道牌价把 CNY 面额折算成渠道实付额存进 order.PayCents
+// (channelPayAmount: CNY 渠道按面值, 其他币种按同一份牌价换算), 回调也按 PayCents 核对金额
+// (RechargeNotify)。所以收银台必须报同一个 PayCents —— 拿 AmountCents(CNY 分)开单会让
+// ¥70 的单变成 $70.00: 用户多付几十倍, 且回调 amount_total 与 order.PayCents 必然不等,
+// 订单永远核不过金额, 网关持续重投而余额永不入账。
+//
+// PayCents == 0 是商品定价渠道(如 Creem 档位)的约定: 表示"不按金额核对, 只按商品匹配",
+// 这类订单没有渠道实付额可报, 回退到 AmountCents, 免得开出一张 0 元收银台。
+// 币种由 ChargeCurrency 声明, PayCents 正是它的最小单位 —— 两者同源, 不会错配。
+func (s *Stripe) stripeUnitAmount(order *model.RechargeOrder) int64 {
+	if order.PayCents > 0 {
+		return order.PayCents
+	}
+	return order.AmountCents
 }
 
 // stripeSignature 验证 Stripe-Signature: v1 = HMAC-SHA256(whsec, "t.原始报文")。

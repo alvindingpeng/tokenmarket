@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { useSettingList, useSetSetting, SettingKey } from '@/api/setting';
 import { toast } from 'sonner';
+import { confirmedFromSettings, saveWithRollback } from './settingSave';
 
 // InfoRow 一行系统信息: 左侧图标与说明, 右侧控件; 控件由调用方决定。
 function InfoRow({ icon, label, hint, children }: {
@@ -49,6 +50,7 @@ export function SettingSystemInfo() {
     useEffect(() => {
         if (!settings || initialized.current) return;
         initialized.current = true;
+        confirmed.current = confirmedFromSettings(settings);
         const find = (key: string) => settings.find((s) => s.key === key)?.value ?? '';
         setSiteName(find(SettingKey.SiteName));
         setSiteDescription(find(SettingKey.SiteDescription));
@@ -59,11 +61,30 @@ export function SettingSystemInfo() {
         setMaintenanceNotice(find(SettingKey.MaintenanceNotice));
     }, [settings]);
 
-    const saveValue = (key: string, value: string) => {
-        setSetting.mutate({ key, value }, {
-            onSuccess: () => toast.success(t('saved')),
-            onError: (error) => toast.error(error.message),
+    // confirmed 记"服务端已确认落库的值", 它是回滚的唯一基准(理由见 settingSave.ts)。
+    const confirmed = useRef<Record<string, string>>({});
+
+    // saveValue 提交单项; 成功时把新值记进基准, 失败时回滚到基准值。
+    //
+    // 为什么必须回滚: 输入框是受控的, 显示的就是"刚敲进去的新值"。保存失败后若不回滚,
+    // 界面停在那个值上而服务端仍是旧值 —— 管理员会按界面判断"站点名称已经改了",
+    // 直到刷新页面才发现没有。apply 由调用方传入, 因为每个控件绑的不是同一个 state。
+    // 回滚逻辑在 settingSave.saveWithRollback 里(纯函数, 单测直接断言「失败时 apply 收到的是基准值」)。
+    // 这里只负责把它的结果翻译成提示语: 真的还原了才说「已还原」。
+    const saveValue = async (key: string, value: string, apply: (next: string) => void) => {
+        const result = await saveWithRollback({
+            key,
+            value,
+            confirmed: confirmed.current,
+            currentInput: value,
+            apply,
+            submit: (k, v) => setSetting.mutateAsync({ key: k, value: v }),
         });
+        if (result.ok) {
+            toast.success(t('saved'));
+            return;
+        }
+        toast.error(result.reverted ? t('saveFailedReverted') : result.message, { description: result.reverted ? result.message : undefined });
     };
 
     return (
@@ -76,7 +97,7 @@ export function SettingSystemInfo() {
                     placeholder={t('systemInfo.siteNamePlaceholder')}
                     value={siteName}
                     onChange={(e) => setSiteName(e.target.value)}
-                    onBlur={() => saveValue(SettingKey.SiteName, siteName)}
+                    onBlur={() => saveValue(SettingKey.SiteName, siteName, setSiteName)}
                 />
             </InfoRow>
             <InfoRow icon={<Mail className="size-4" />} label={t('systemInfo.siteContact')} hint={t('systemInfo.siteContactHint')}>
@@ -85,7 +106,7 @@ export function SettingSystemInfo() {
                     placeholder={t('systemInfo.siteContactPlaceholder')}
                     value={siteContact}
                     onChange={(e) => setSiteContact(e.target.value)}
-                    onBlur={() => saveValue(SettingKey.SiteContact, siteContact)}
+                    onBlur={() => saveValue(SettingKey.SiteContact, siteContact, setSiteContact)}
                 />
             </InfoRow>
             <InfoRow icon={<Info className="size-4" />} label={t('systemInfo.siteDescription')} hint={t('systemInfo.siteDescriptionHint')}>
@@ -95,7 +116,7 @@ export function SettingSystemInfo() {
                     placeholder={t('systemInfo.siteDescriptionPlaceholder')}
                     value={siteDescription}
                     onChange={(e) => setSiteDescription(e.target.value)}
-                    onBlur={() => saveValue(SettingKey.SiteDescription, siteDescription)}
+                    onBlur={() => saveValue(SettingKey.SiteDescription, siteDescription, setSiteDescription)}
                 />
             </InfoRow>
             <Separator className="my-2" />
@@ -104,7 +125,7 @@ export function SettingSystemInfo() {
                     checked={announcementEnabled}
                     onCheckedChange={(checked) => {
                         setAnnouncementEnabled(checked);
-                        saveValue(SettingKey.SiteAnnouncementEnabled, String(checked));
+                        void saveValue(SettingKey.SiteAnnouncementEnabled, String(checked), (next) => setAnnouncementEnabled(next === 'true'));
                     }}
                 />
             </InfoRow>
@@ -115,7 +136,7 @@ export function SettingSystemInfo() {
                     placeholder={t('systemInfo.announcementPlaceholder')}
                     value={announcement}
                     onChange={(e) => setAnnouncement(e.target.value)}
-                    onBlur={() => saveValue(SettingKey.SiteAnnouncement, announcement)}
+                    onBlur={() => saveValue(SettingKey.SiteAnnouncement, announcement, setAnnouncement)}
                 />
             </InfoRow>
             <Separator className="my-2" />
@@ -124,7 +145,7 @@ export function SettingSystemInfo() {
                     checked={maintenanceMode}
                     onCheckedChange={(checked) => {
                         setMaintenanceMode(checked);
-                        saveValue(SettingKey.MaintenanceMode, String(checked));
+                        void saveValue(SettingKey.MaintenanceMode, String(checked), (next) => setMaintenanceMode(next === 'true'));
                     }}
                 />
             </InfoRow>
@@ -135,7 +156,7 @@ export function SettingSystemInfo() {
                     placeholder={t('systemInfo.maintenanceNoticePlaceholder')}
                     value={maintenanceNotice}
                     onChange={(e) => setMaintenanceNotice(e.target.value)}
-                    onBlur={() => saveValue(SettingKey.MaintenanceNotice, maintenanceNotice)}
+                    onBlur={() => saveValue(SettingKey.MaintenanceNotice, maintenanceNotice, setMaintenanceNotice)}
                 />
             </InfoRow>
         </section>

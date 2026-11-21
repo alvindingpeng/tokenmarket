@@ -9,6 +9,7 @@ import (
 
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"gorm.io/gorm"
 )
 
 // 本文件钉死日结结算单的账目口径(docs/financial-hardening-phase1.md "日结退款口径"):
@@ -368,5 +369,212 @@ func TestSettlementLocalDayBoundaryMatchesReconcile(t *testing.T) {
 	settlementAssertAmounts(t, next, 7, 0, 7)
 	if next.RequestCount != 1 {
 		t.Fatalf("request_count = %d, want 1", next.RequestCount)
+	}
+}
+
+// 本文件末尾新增: 经营毛利看板的净额口径(已退款不计入 GMV/毛利)与趋势桶的方言无关性。
+// 对应 task-34: A 退款冲减、B 利润趋势硬编码 strftime。
+
+// marginApprox 浮点比较(金额来自 SQL 的 SUM, 末位可能有 1e-12 级误差)。
+func marginApprox(t *testing.T, label string, got, want float64) {
+	t.Helper()
+	if got < want-1e-9 || got > want+1e-9 {
+		t.Fatalf("%s = %v, want %v", label, got, want)
+	}
+}
+
+// TestProfitMarginNetExcludesRefunds 看板金额必须是"未退款净额":
+// 退了款的那笔钱已经回到用户手里, 平台既没收到 GMV 也没有毛利, 只能出现在 refund_amount 里。
+// 与渠道毛利(channel_profit.go 的 status = settled)同口径, 两张看板才不会对不上。
+func TestProfitMarginNetExcludesRefunds(t *testing.T) {
+	buyer, owner, admin := settlementTestDB(t, "margin-net")
+	ctx := context.Background()
+	day := time.Date(2026, 3, 5, 12, 0, 0, 0, time.Local)
+
+	settlementRecord(t, buyer.ID, owner.ID, day, 10, 6, 0.5)
+	refunded := settlementRecord(t, buyer.ID, owner.ID, day, 10, 6, 0.5)
+	settlementRefund(t, buyer.ID, admin.ID, refunded, day)
+
+	overall, trends, err := ProfitMarginGet(ctx, ProfitMarginQuery{})
+	if err != nil {
+		t.Fatalf("ProfitMarginGet: %v", err)
+	}
+	// 只留 settled 那条: 10/6/4;退款那条(同为 10/6/4)必须整体消失。
+	marginApprox(t, "overall.UserCost", overall.UserCost, 10)
+	marginApprox(t, "overall.OwnerRevenue", overall.OwnerRevenue, 6)
+	marginApprox(t, "overall.PlatformRevenue", overall.PlatformRevenue, 4)
+	// 请求数不随退款减少: 调用确实发生过, 退款改的是资金口径。
+	if overall.RequestCount != 2 {
+		t.Fatalf("overall.RequestCount = %d, want 2 (退款不改变请求发生过的事实)", overall.RequestCount)
+	}
+	marginApprox(t, "overall.RefundAmount", overall.RefundAmount, 10)
+	// 毛利率分母也是净额: 4/10 = 40%, 若仍用毛额 20 会算成 20%。
+	marginApprox(t, "overall.MarginRate", overall.MarginRate, 40)
+
+	if len(trends) != 1 {
+		t.Fatalf("trends = %d, want 1 (同日两条明细只有一个日桶)", len(trends))
+	}
+	if trends[0].Period != day.Format("20060102") {
+		t.Fatalf("trend day = %q, want YYYYMMDD %q", trends[0].Period, day.Format("20060102"))
+	}
+	// 趋势侧与合计侧口径必须一致, 否则图上每天的柱子加起来不等于合计。
+	marginApprox(t, "trend.UserCost", trends[0].UserCost, 10)
+	marginApprox(t, "trend.PlatformRevenue", trends[0].PlatformRevenue, 4)
+	marginApprox(t, "trend.MarginRate", trends[0].MarginRate, 40)
+}
+
+// TestProfitMarginNetEqualsGrossWithoutRefunds 对照用例: 没有退款时净额必须与全额完全相同,
+// 保证"减一次退款"没有变成"减两次"或"漏算"。
+func TestProfitMarginNetEqualsGrossWithoutRefunds(t *testing.T) {
+	buyer, owner, _ := settlementTestDB(t, "margin-gross")
+	ctx := context.Background()
+	day := time.Date(2026, 3, 6, 12, 0, 0, 0, time.Local)
+
+	settlementRecord(t, buyer.ID, owner.ID, day, 10, 6, 0.5)
+	settlementRecord(t, buyer.ID, owner.ID, day, 20, 12, 0.5)
+
+	overall, _, err := ProfitMarginGet(ctx, ProfitMarginQuery{})
+	if err != nil {
+		t.Fatalf("ProfitMarginGet: %v", err)
+	}
+	marginApprox(t, "overall.UserCost", overall.UserCost, 30)
+	marginApprox(t, "overall.OwnerRevenue", overall.OwnerRevenue, 18)
+	marginApprox(t, "overall.PlatformRevenue", overall.PlatformRevenue, 12)
+	marginApprox(t, "overall.RefundAmount", overall.RefundAmount, 0)
+	marginApprox(t, "overall.MarginRate", overall.MarginRate, 40)
+	if overall.RequestCount != 2 {
+		t.Fatalf("overall.RequestCount = %d, want 2", overall.RequestCount)
+	}
+}
+
+// TestProfitMarginTrendBucketsAreDialectNeutral 趋势只断言"行为"不断言 SQL 字符串:
+// 两天数据必须出两个 YYYYMMDD 桶 —— 硬编码 strftime 的旧写法在 MySQL/PG 上会直接失败,
+// 那时这里拿到的是空切片(而不是两个桶), 用例就会红。
+func TestProfitMarginTrendBucketsAreDialectNeutral(t *testing.T) {
+	buyer, owner, admin := settlementTestDB(t, "margin-trend")
+	ctx := context.Background()
+	day1 := time.Date(2026, 3, 7, 12, 0, 0, 0, time.Local)
+	day2 := day1.AddDate(0, 0, 1)
+
+	settlementRecord(t, buyer.ID, owner.ID, day1, 10, 6, 0.5)
+	settlementRecord(t, buyer.ID, owner.ID, day2, 10, 6, 0.5)
+	refunded := settlementRecord(t, buyer.ID, owner.ID, day2, 10, 6, 0.5)
+	settlementRefund(t, buyer.ID, admin.ID, refunded, day2)
+
+	overall, trends, err := ProfitMarginGet(ctx, ProfitMarginQuery{})
+	if err != nil {
+		t.Fatalf("ProfitMarginGet: %v", err)
+	}
+	if len(trends) != 2 {
+		t.Fatalf("trends = %d, want 2 (两天各一个日桶; 空切片说明日桶表达式在该方言下失败了)", len(trends))
+	}
+	// 趋势按日倒序(沿用旧契约): 最新的在前。
+	if trends[0].Period != day2.Format("20060102") || trends[1].Period != day1.Format("20060102") {
+		t.Fatalf("trend periods = [%q %q], want [%q %q] (倒序, YYYYMMDD)",
+			trends[0].Period, trends[1].Period, day2.Format("20060102"), day1.Format("20060102"))
+	}
+	for i, trend := range trends {
+		if _, err := time.Parse("20060102", trend.Period); err != nil {
+			t.Fatalf("trend[%d].Period = %q 不是 YYYYMMDD: %v", i, trend.Period, err)
+		}
+	}
+	// 日桶也要净额: day2 有两条记录但退了其中一条。
+	marginApprox(t, "trend[0].UserCost", trends[0].UserCost, 10)
+	marginApprox(t, "trend[1].UserCost", trends[1].UserCost, 10)
+	// 两个日桶相加 == 合计(趋势与合计同口径的硬约束)。
+	marginApprox(t, "sum(trend.UserCost)", trends[0].UserCost+trends[1].UserCost, overall.UserCost)
+	marginApprox(t, "sum(trend.PlatformRevenue)", trends[0].PlatformRevenue+trends[1].PlatformRevenue, overall.PlatformRevenue)
+}
+
+// TestProfitMarginNetSurvivesRetention 留存清理把超期明细归档删除之后, 净额不能缩水:
+// 汇总表存"合计 + 其中退款"两组列, 读口用 full - refunded 还原净额, 加法在留存边界上才成立。
+func TestProfitMarginNetSurvivesRetention(t *testing.T) {
+	buyer, owner, admin := settlementTestDB(t, "margin-retention")
+	_ = chdirTemp(t)
+	withBillingSettings(t, 30, true)
+	ctx := context.Background()
+	now := time.Now()
+	old := now.AddDate(0, 0, -400)
+
+	// 超期的一条 settled + 一条已退款(退款行受申诉保护, 明细不会被删, 留在明细侧算净额 0)。
+	settlementRecord(t, buyer.ID, owner.ID, old, 10, 6, 0.5)
+	oldRefunded := settlementRecord(t, buyer.ID, owner.ID, old, 10, 6, 0.5)
+	settlementRefund(t, buyer.ID, admin.ID, oldRefunded, old)
+	// 近期的一条留在明细里, 与汇总侧拼成同一条曲线。
+	settlementRecord(t, buyer.ID, owner.ID, now, 5, 3, 0.5)
+
+	before, _, err := ProfitMarginGet(ctx, ProfitMarginQuery{})
+	if err != nil {
+		t.Fatalf("ProfitMarginGet before retention: %v", err)
+	}
+	marginApprox(t, "before.UserCost", before.UserCost, 15) // 10(settled) + 0(退款净额) + 5
+
+	result, err := BillingRetentionRun(ctx)
+	if err != nil {
+		t.Fatalf("BillingRetentionRun: %v", err)
+	}
+	if result.DeletedRecords != 1 {
+		t.Fatalf("DeletedRecords = %d, want 1 (只有超期 settled 那条可删; 退款行有申诉保护)", result.DeletedRecords)
+	}
+
+	after, trends, err := ProfitMarginGet(ctx, ProfitMarginQuery{})
+	if err != nil {
+		t.Fatalf("ProfitMarginGet after retention: %v", err)
+	}
+	marginApprox(t, "after.UserCost", after.UserCost, before.UserCost)
+	marginApprox(t, "after.OwnerRevenue", after.OwnerRevenue, before.OwnerRevenue)
+	marginApprox(t, "after.PlatformRevenue", after.PlatformRevenue, before.PlatformRevenue)
+	if after.RequestCount != before.RequestCount {
+		t.Fatalf("RequestCount shrank: before=%d after=%d (汇总侧没有补上被删的明细)", before.RequestCount, after.RequestCount)
+	}
+	// 归档掉的那一天必须仍在趋势里(汇总桶补回), 否则图上会出现"那天没有收入"的假空洞。
+	found := false
+	for _, trend := range trends {
+		if trend.Period == dayKey(old) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("trend 里缺少已归档的 %s; trends=%v", dayKey(old), trends)
+	}
+}
+
+// TestProfitMarginRollupSubtractsRefundedColumns 定点验证汇总侧的组合算法:
+// 汇总行存 "合计 10 + 其中退款 4", 毛利看板必须读到 6 —— 用生产侧同一个写入口
+// (sealBillingRollup) 造行, 而不是手写 SQL, 保证列的含义与真实固化路径一致。
+func TestProfitMarginRollupSubtractsRefundedColumns(t *testing.T) {
+	settlementTestDB(t, "margin-rollup")
+	ctx := context.Background()
+	day := time.Date(2026, 3, 8, 0, 0, 0, 0, time.Local)
+
+	row := model.BillingRollup{
+		Dimension:               model.BillingRollupPlatform,
+		DimensionID:             0,
+		Day:                     day.Format("20060102"),
+		RequestCount:            2,
+		UserCost:                10,
+		OwnerRevenue:            6,
+		PlatformRevenue:         4,
+		RefundedRecords:         1,
+		RefundedUserCost:        4,
+		RefundedOwnerRevenue:    2.4,
+		RefundedPlatformRevenue: 1.6,
+	}
+	if err := db.GetDB().Transaction(func(tx *gorm.DB) error {
+		return sealBillingRollup(tx, &row)
+	}); err != nil {
+		t.Fatalf("seal rollup: %v", err)
+	}
+
+	overall, _, err := ProfitMarginGet(ctx, ProfitMarginQuery{})
+	if err != nil {
+		t.Fatalf("ProfitMarginGet: %v", err)
+	}
+	marginApprox(t, "overall.UserCost", overall.UserCost, 6)
+	marginApprox(t, "overall.OwnerRevenue", overall.OwnerRevenue, 3.6)
+	marginApprox(t, "overall.PlatformRevenue", overall.PlatformRevenue, 2.4)
+	// 请求数读全额(与明细侧 COUNT(*) 一致), 不按 RefundedRecords 扣。
+	if overall.RequestCount != 2 {
+		t.Fatalf("overall.RequestCount = %d, want 2 (汇总侧请求数为全额)", overall.RequestCount)
 	}
 }

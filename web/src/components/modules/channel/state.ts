@@ -1,4 +1,4 @@
-import type { ChannelDetail, ChannelKey } from '@/api/channel';
+import type { ChannelDetail, ChannelKey, KeyRotationStrategy } from '@/api/channel';
 
 // ChannelFormState 是渠道表单的全部可编辑内容。
 // 全按名称组织而不存主键: 后端凭据与模型都按名称匹配增删改, 而新建渠道和新加模型时主键尚不存在。
@@ -60,6 +60,13 @@ export type ChannelFormState = {
     match_regex: string;
     model_auto_add: boolean;
     markup_ratio: string; // 表单里以字符串承载, 空串 = 跟随全局; 提交时解析。
+    /**
+     * key_rotation_strategy 是同一渠道内多份凭据的挑选方式。
+     * 表单里恒有值而不像 markup_ratio 那样用空串表达"继承": 后端列有 NOT NULL 默认值
+     * 'roundrobin', 读侧缺省时按它归一, 所以界面上不必再造一个"未设置"态
+     * —— 三选一的选择器比"三选一 + 一个未设置"更少歧义。
+     */
+    key_rotation_strategy: KeyRotationStrategy;
 };
 
 // grantKey 生成授权在状态里的键; 分隔符取 \0, 模型名与凭据名都不会含它。
@@ -89,6 +96,8 @@ export const emptyFormState: ChannelFormState = {
     match_regex: '',
     model_auto_add: false,
     markup_ratio: '',
+    // 默认值与后端列默认值一致: 界面首开看到的就是"实际会生效的那个", 不是空。
+    key_rotation_strategy: 'roundrobin',
 };
 
 // fromChannel 把渠道完整配置还原为表单状态; 授权读写都按名称, 直接建索引即可。
@@ -124,6 +133,8 @@ export function fromChannel(channel: ChannelDetail): ChannelFormState {
         match_regex: channel.match_regex,
         model_auto_add: channel.model_auto_add,
         markup_ratio: channel.markup_ratio !== undefined && channel.markup_ratio >= 0 ? String(channel.markup_ratio) : '',
+        // 读侧缺省时回落到列默认值, 与后端 migration 018 的 NOT NULL DEFAULT 'roundrobin' 一致。
+        key_rotation_strategy: channel.key_rotation_strategy ?? 'roundrobin',
     };
 }
 
@@ -152,6 +163,10 @@ export function toChannelConfig(state: ChannelFormState) {
             const parsed = Number(state.markup_ratio.trim());
             return Number.isFinite(parsed) && parsed >= 0 ? parsed : -1;
         })(),
+        // 恒带值提交: 后端列 NOT NULL, 缺省提交会被当作空串覆盖掉现有策略。
+        // 落库侧由 channelConfigUpdateColumns 从 model.ChannelConfig 的 schema 派生列集合保证,
+        // 不再手抄白名单 —— 手抄漏一列既不报错也不回滚, 表现为"保存成功但这一项不生效"。
+        key_rotation_strategy: state.key_rotation_strategy,
     };
 }
 

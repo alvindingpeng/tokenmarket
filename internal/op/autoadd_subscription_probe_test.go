@@ -117,6 +117,22 @@ func TestAutoAddChannelModelsUnwrapsSubscriptionAccountJSON(t *testing.T) {
 	if saved.GeminiProject != "proj-1" {
 		t.Fatalf("gemini_project = %q, want proj-1(探测解析出的 project 未回写)", saved.GeminiProject)
 	}
+	// 更关键的是缓存: 转发与详情页都读缓存, 只写库的话下一次请求照旧 403 SUBSCRIPTION_REQUIRED,
+	// 要等到重启(InitCache 重读整行)才生效 —— 生产上表现为"探测明明成功了, 重启后又好了"。
+	cached, ok := channelCache.Get(channel.ID)
+	if !ok {
+		t.Fatalf("channel %d 不在缓存里", channel.ID)
+	}
+	if cached.GeminiProject != "proj-1" {
+		t.Fatalf("缓存里 gemini_project = %q, want proj-1(库里有、缓存没有, 转发仍会 403)", cached.GeminiProject)
+	}
+	// 重启形态: 重建缓存后仍是这个值(库内已落上, 重建自然正确; 这里守住"没有被写回冲掉")。
+	if err := InitCache(); err != nil {
+		t.Fatalf("init cache: %v", err)
+	}
+	if rebuilt, ok := channelCache.Get(channel.ID); !ok || rebuilt.GeminiProject != "proj-1" {
+		t.Fatalf("InitCache 后 gemini_project = %q, want proj-1", rebuilt.GeminiProject)
+	}
 }
 
 // 用户手填的 project 优先: 自动分配不得覆盖人工配置。

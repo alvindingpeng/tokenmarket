@@ -197,6 +197,9 @@
             "model": "Model",
             "noData": "No ranking data",
             "successRate": "Success Rate"
+        },
+        "stats": {
+            "requestCountHint": "Includes failed calls"
         }
     },
     "setting": {
@@ -641,7 +644,11 @@
             "withdrawDailyCountLimit": "Daily count limit",
             "withdrawDailyAmountLimit": "Daily amount limit",
             "withdrawAccountLockDays": "Account lock (days)",
-            "withdrawHint": "0 means unlimited / no cooldown / no lock. Fresh revenue is not withdrawable during cooldown. Reseller revenue only."
+            "withdrawHint": "0 means unlimited / no cooldown / no lock. Fresh revenue is not withdrawable during cooldown. Reseller revenue only.",
+            "partialFailed": "Saved {saved} of {total}. Not saved: {keys}. Your input is kept, so you can press save again to retry.",
+            "unsavedMark": "Not saved",
+            "nothingToSave": "Nothing to save — no field has been changed.",
+            "unsavedDismiss": "Dismiss"
         },
         "billing": {
             "title": "Billing table retention",
@@ -670,8 +677,10 @@
             "loadFailed": "Failed to load archive files",
             "colName": "File",
             "colSize": "Size",
-            "colTime": "Modified"
-        }
+            "colTime": "Modified",
+            "countsFailed": "Table counts unavailable. The numbers show \"—\" rather than 0."
+        },
+        "saveFailedReverted": "Save failed — the field has been reverted to the last value that was actually saved."
     },
     "group": {
         "toast": {
@@ -1298,7 +1307,7 @@
             "egressKindDirect": "Direct",
             "egressKindHttp": "HTTP proxy",
             "egressKindSocks5": "SOCKS5 proxy",
-            "egressWeight": "Weight",
+            "egressWeight": "Tie-break weight",
             "egressRegion": "Region code (e.g. HK, optional)",
             "stepGrants": "Models",
             "stepAdvanced": "Advanced",
@@ -1364,7 +1373,13 @@
             "geminiProjectPlaceholder": "Leave empty for auto-assignment",
             "geminiProjectHint": "Optional override. Leave empty and Google assigns a project automatically on the Antigravity path.",
             "geminiProxyHint": "Proxy is required for regions where direct access is blocked: both model fetch and forwarding go through the channel proxy.",
-            "geminiCredentialHint": "This channel requires credentials authorized with the Antigravity client. Old Gemini CLI credentials return 403 (missing scope)."
+            "geminiCredentialHint": "This channel requires credentials authorized with the Antigravity client. Old Gemini CLI credentials return 403 (missing scope).",
+            "egressWeightHint": "Weight is only a tie-breaker: it decides the order when two egresses have exactly the same measured score (the higher one goes first). It does not split traffic by ratio.",
+            "keyRotation": "Credential rotation",
+            "keyRotationHint": "How this channel picks among its credentials per request. Round-robin: in order, spreads load evenly. Random: same spread without ordering, better when upstream throttles per credential. Failover: always the first credential, and the next only after the current one is disabled by the breaker.",
+            "keyRotationRoundrobin": "Round-robin",
+            "keyRotationRandom": "Random",
+            "keyRotationFailover": "Failover"
         },
         "review": {
             "tabChannels": "Channels",
@@ -1495,7 +1510,8 @@
                 "kiro": "Needs camelCase refreshToken, clientId and clientSecret. The token endpoint expects camelCase request fields, so do not rename them.",
                 "gemini": "Two accepted forms. Gemini CLI OAuth token: access_token + refresh_token (+ expiry_date, milliseconds) from ~/.gemini/oauth_creds.json — this renews automatically. Cookie: needs c_ses (optionally c_oses, csesidx, config_id) — no refresh, so it must be re-imported when it expires.",
                 "grok": "Cookie-based: needs sso. sso-rw is not used for auth.",
-                "claude": "Claude Code credential file: the tokens live under claudeAiOauth as camelCase accessToken / refreshToken / expiresAt (milliseconds). A flat access_token + refresh_token object also works."
+                "claude": "Claude Code credential file: the tokens live under claudeAiOauth as camelCase accessToken / refreshToken / expiresAt (milliseconds). A flat access_token + refresh_token object also works.",
+                "antigravity": "Antigravity OAuth credential: access_token + refresh_token (plus email, expiry_date in milliseconds) from the Antigravity sign-in flow. It is not interchangeable with Gemini CLI oauth_creds.json: that token lacks the cclog and experimentsandconfigs scopes, so pulling models or relaying returns 403. Cookie form is not supported."
             },
             "nameRequired": "Enter a credential name",
             "rawRequired": "Paste the account JSON",
@@ -1576,7 +1592,8 @@
                 "geminiNotice": "This sign-in uses the built-in Gemini CLI OAuth client: the authorization page will show \"Gemini CLI\" requesting access. You can configure your own client in settings.",
                 "needChannel": "Select the target channel above first",
                 "antigravityNotice": "Login as the Antigravity app. Requires the deployment to configure SWITCHYARD_ANTIGRAVITY_OAUTH_CLIENT_ID and _CLIENT_SECRET first (the Antigravity client is not built in). Its credential is NOT interchangeable with the Gemini CLI one: the Gemini CLI token lacks the cclog and experimentsandconfigs scopes, so pulling models or relaying returns 403. Google has also retired the Gemini CLI free tier for individuals (UNSUPPORTED_CLIENT), so personal subscriptions must use this platform."
-            }
+            },
+            "platformNotAllowed": "This channel only accepts {required} credentials. {selected} credentials are not interchangeable: they lack the cclog and experimentsandconfigs scopes, so pulling models and relaying return 403 and the credential is isolated for 30 minutes. Switch to {required} before importing."
         }
     },
     "share": {
@@ -1695,7 +1712,15 @@
                 "reserve": "Hold",
                 "settle": "Settle",
                 "release": "Release",
-                "adjust": "Adjust"
+                "adjust": "Adjust",
+                "topup": "Top-up",
+                "redemption": "Redemption",
+                "bonus": "Bonus",
+                "refund": "Refund",
+                "withdraw_freeze": "Withdraw hold",
+                "withdraw_unfreeze": "Withdraw released",
+                "withdraw_paid": "Withdraw paid",
+                "withdraw_rollback": "Withdrawal rolled back"
             },
             "column": {
                 "time": "Time",
@@ -1851,8 +1876,11 @@
             "ownerRevenue": "Reseller supply cost",
             "platformRevenue": "Platform net margin",
             "marginRate": "Blended margin rate",
-            "refundAmount": "Cumulative refunds",
-            "rechargeAmount": "Cash top-ups",
+            "refundAmount": "Refunds in period",
+            "rechargeAmount": "Top-ups in period",
+            "userCostHint": "Net of refunds",
+            "ownerRevenueHint": "Net of refunds",
+            "marginRateHint": "Over net spend",
             "trendTitle": "Daily margin trend (last 30 days)",
             "empty": "No operating data",
             "column": {
@@ -1862,7 +1890,10 @@
                 "profit": "Platform margin",
                 "marginRate": "Margin rate",
                 "requests": "Requests"
-            }
+            },
+            "refundHint": "Cash flow, not margin",
+            "rechargeHint": "Cash flow, not margin",
+            "flowNote": "The spend, cost and margin cards are net: already net of refunded billing records. Refunds and top-ups are separate cash-flow figures - refunds are dated by approval while the netting is dated by billing day, so the two need not add up."
         }
     },
     "users": {
@@ -2354,6 +2385,17 @@
             "kindRoutePersist": "Route state persist failed",
             "kindRoutePersistRecovered": "Route state recovered",
             "kindFxRefreshFailed": "FX rate refresh failing repeatedly",
+            "kindWithdrawTimeout": "Withdrawal approval timed out",
+            "kindPaymentAfterExpiry": "Payment after expiry",
+            "kindUsageMissing": "Missing usage",
+            "kindAccountInvalidated": "Account token invalidated",
+            "kindBillingArchiveFailed": "Billing table archive failed",
+            "kindAuditArchiveFailed": "Audit table archive failed",
+            "kindFxRateStale": "FX rate stale",
+            "kindKeyDegraded": "Key degraded",
+            "kindModelDegraded": "Model degraded",
+            "kindPaymentAmountMismatch": "Payment amount mismatch",
+            "kindReserve": "Reservation issue",
             "kindTest": "Test"
         },
         "settings": {
@@ -2531,7 +2573,9 @@
             "deleted": "Silence cancelled",
             "deleteFailed": "Failed to cancel",
             "none": "No silence windows",
-            "timeRequired": "Start and end time are required"
+            "timeRequired": "Start and end time are required",
+            "staleWarning": "Showing the last successful load. It may be out of date, so an alert may already be silenced or no longer silenced.",
+            "loadFailed": "Failed to load silence windows."
         },
         "budgets": {
             "desc": "Periodic per-user or per-key spend caps. 'warn' notifies near the limit; 'block' rejects new requests.",
@@ -2564,7 +2608,16 @@
             "none": "No budgets yet",
             "inputInvalid": "Scope ID and a positive limit are required",
             "userScope": "User #{id}",
-            "keyScope": "Key #{id}"
+            "keyScope": "Key #{id}",
+            "loadFailed": "Failed to load budgets. This is not the same as \"no budget has been created yet\".",
+            "deleteConfirm": "Delete this budget? Its past alerts stay in the alert history and are not rolled back.",
+            "confirmDelete": "Delete",
+            "confirmCancel": "Cancel",
+            "disableConfirm": "Disable this budget? Limits stop being enforced, so requests it used to block will go through.",
+            "enableConfirm": "Enable this budget again? Requests will be blocked once the limit is reached.",
+            "confirmDisable": "Yes, disable",
+            "confirmEnable": "Yes, enable",
+            "staleWarning": "Showing the last successfully loaded budgets — this refresh failed, so the list may be out of date."
         },
         "upstream": {
             "pickChannel": "Pick channel",
@@ -2588,7 +2641,9 @@
                 "matched": "Matched",
                 "mismatch": "Mismatch",
                 "explained": "Explained"
-            }
+            },
+            "empty": "No bills imported for this channel and period yet.",
+            "loadFailed": "Failed to load bills. This is not the same as \"no bills imported\"."
         }
     },
     "landing": {
@@ -2706,13 +2761,18 @@
             "kindAll": "All types"
         },
         "kind": {
-            "topup": "Top-up",
-            "redemption": "Redemption",
             "reserve": "Hold",
             "settle": "Settle",
             "release": "Release",
             "adjust": "Adjust",
-            "bonus": "Bonus"
+            "topup": "Top-up",
+            "redemption": "Redemption",
+            "bonus": "Bonus",
+            "refund": "Refund",
+            "withdraw_freeze": "Withdraw hold",
+            "withdraw_unfreeze": "Withdraw released",
+            "withdraw_paid": "Withdraw paid",
+            "withdraw_rollback": "Withdrawal rolled back"
         },
         "table": {
             "time": "Time",
@@ -2792,7 +2852,12 @@
             "failed": "Withdrawal failed",
             "cancelOrder": "Cancel",
             "empty": "No withdrawals yet",
-            "notAllowed": "Only reseller revenue is withdrawable. Recharged balance cannot be withdrawn (anti-cash-out)."
+            "notAllowed": "Only reseller revenue is withdrawable. Recharged balance cannot be withdrawn (anti-cash-out).",
+            "minAmountHint": "Minimum withdrawal is {min}.",
+            "belowMin": "{short} short of the minimum withdrawal amount.",
+            "belowAvailable": "{available} is the most you can withdraw right now.",
+            "amountInvalid": "Enter an amount greater than 0.",
+            "tooManyDecimals": "At most 2 decimal places."
         },
         "wtable": {
             "id": "No",
@@ -2855,7 +2920,8 @@
             "inputInvalid": "A positive limit is required",
             "enabled": "Enabled",
             "disabled": "Disabled"
-        }
+        },
+        "summaryFailed": "Balance could not be loaded. Amounts show \"—\" instead of 0, so a failed request is not read as an emptied account."
     },
     "redemption": {
         "title": "Redemption codes",

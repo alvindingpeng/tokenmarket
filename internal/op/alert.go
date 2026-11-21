@@ -585,6 +585,28 @@ func determineAlertEvent(kind string) string {
 		return "task_recovered"
 	case "update_available":
 		return "update_available"
+	// 资金安全两类走显式 case 而不是 default: 掉进 system_alert 会让外发标题
+	// 看不出是资金异常, 消费端也没法把"钱动了但流程不对"单独分流到资金值班群。
+	case "withdrawal_approve_timeout":
+		return "withdrawal_approve_timeout"
+	case "payment_after_expiry":
+		return "payment_after_expiry"
+	// 牌价采集连续失败同理: 掉进 default 会让外发标题看不出是牌价问题,
+	// 而这条告警的本意正是提醒"折算已经在用旧价"。
+	case AlertKindFxRateRefreshFailed:
+		return "fx_rate_refresh_failed"
+	// 第二批同类: 事件名与 kind 同名, 消费端可据此把"计费口径缺失 / 账号失效 /
+	// 资金与审计未落地 / 牌价陈旧"分别分流, 而不是一律当成系统杂项。
+	case AlertKindUsageMissing:
+		return "usage_missing"
+	case AlertKindAccountInvalidated:
+		return "account_invalidated"
+	case AlertKindBillingArchiveFailed:
+		return "billing_archive_failed"
+	case AlertKindAuditArchiveFailed:
+		return "audit_archive_failed"
+	case AlertKindFxRateStale:
+		return "fx_rate_stale"
 	case "test":
 		return "test"
 	default:

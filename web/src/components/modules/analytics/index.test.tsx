@@ -312,3 +312,35 @@ describe('AnalyticsPage 新增数据维度', () => {
         expect(html).not.toContain('0 ms');
     });
 });
+// 缓存命中率的零样本空态: 后端在所有词元桶都为 0 时给的是哨兵 0(cache_hit_rate),
+// 直接渲染成 "0.0%" 会被读成"所有请求都没命中缓存"。与成功率同一规则 —— 显示 "—"。
+describe('AnalyticsPage 缓存命中率零样本', () => {
+    const seedNoTokens = (client: QueryClient) => {
+        const k = keys();
+        // 保留成功率那份样本(它与词元无关), 只把词元四桶与命中率清零。
+        client.setQueryData(k.overview, {
+            ...overviewData,
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+            cache_hit_rate: 0,
+        });
+        client.setQueryData(k.trend, trendData);
+        client.setQueryData(k.models, modelsData);
+        client.setQueryData(k.latency, latencyData);
+    };
+
+    it('无词元样本时显示 "—", 不是 0.0%', () => {
+        const html = renderSSR(<AnalyticsPage />, seedNoTokens);
+        expect(html).toContain('data-testid="cache-hit-rate"');
+        expect(html).toContain('—'); // 哨兵值本身
+        expect(html).not.toContain('0.0%');
+    });
+
+    it('有词元样本时仍展示真实命中率', () => {
+        // 已有 fixture(300000 命中 / 100000 输入)算出来是 75.0%。
+        const html = renderSSR(<AnalyticsPage />, (client) => seedAll(client));
+        expect(html).toContain('75.0');
+    });
+});

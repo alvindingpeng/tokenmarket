@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useSetSetting, useSettingList, SettingKey } from '@/api/setting';
 import { useBillingLifecycle, useRunBillingLifecycle } from '@/api/ops';
+import { formatTableCount } from './billingCounts';
 
 // 资金表留存配置卡片。
 // 与「审计归档」分开成一张卡的三个理由:
@@ -36,10 +37,7 @@ function formatTime(value: string): string {
     return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-// formatCount 行数千分位; 大数字不带分隔符基本读不出来。
-function formatCount(value: number): string {
-    return Number.isFinite(value) ? value.toLocaleString() : '—';
-}
+
 
 export function SettingBilling() {
     const t = useTranslations('setting.billing');
@@ -119,7 +117,9 @@ export function SettingBilling() {
     };
 
     const files = lifecycle.data?.items ?? [];
-    // 四张表 + 汇总表的现有行数; 后端按表名给, 缺失按 0 显示(不让一处缺字段整块塌掉)。
+    // 四张表 + 汇总表的现有行数; 后端按表名给。
+    // 这里**不做 ?? {} 之外的兜底**: 缺某个键就让 formatCount 显「—」,
+    // 而不是补一个 0 —— 一张表的真实行数是 5 万还是"这次没读到", 决定了管理员要不要点「立即清理」。
     const counts = lifecycle.data?.counts ?? {};
     const countRows: { key: string; label: string }[] = [
         { key: 'billing_records', label: t('tableRecords') },
@@ -167,13 +167,19 @@ export function SettingBilling() {
                     <Label className="text-sm font-medium">{t('countsTitle')}</Label>
                     <p className="text-xs text-muted-foreground">{t('countsHint')}</p>
                 </div>
+                {/* 取数失败时整列「—」并顶一条说明: 只把数字换成 — 而不解释, 会被读成"数据还在算"。 */}
+                {lifecycle.isError && (
+                    <p role="alert" className="rounded-2xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                        {t('countsFailed')}
+                    </p>
+                )}
                 <div className="overflow-x-auto rounded-2xl border border-border">
                     <table className="w-full min-w-[20rem] text-sm">
                         <tbody>
                             {countRows.map((row) => (
                                 <tr key={row.key} className="border-b border-border/60 last:border-0">
                                     <td className="px-4 py-2 text-muted-foreground">{row.label}</td>
-                                    <td className="px-4 py-2 text-right font-mono tabular-nums">{formatCount(counts[row.key] ?? 0)}</td>
+                                    <td className="px-4 py-2 text-right font-mono tabular-nums">{formatTableCount(counts[row.key])}</td>
                                 </tr>
                             ))}
                         </tbody>

@@ -16,8 +16,16 @@ import {
     MorphingDialogTitle,
     MorphingDialogTrigger,
 } from '@/components/ui/morphing-dialog';
-import { accountImportBatch, type AccountBatchItem, type AccountBatchResult, type AccountBatchResponse, type AccountPlatform } from '@/api/channel';
+import {
+    accountImportBatch,
+    type AccountBatchItem,
+    type AccountBatchResult,
+    type AccountBatchResponse,
+    type AccountPlatform,
+    type Dialect,
+} from '@/api/channel';
 import { validateAccountJSON } from './AccountImport';
+import { ACCOUNT_PLATFORMS, accountPlatformMismatch, defaultAccountPlatform } from './accountPlatform';
 
 /**
  * AccountImportBatch 批量导入多个上游账号 JSON 作为渠道凭据。
@@ -30,16 +38,20 @@ import { validateAccountJSON } from './AccountImport';
  * - 预检在前端即时跑: 用户贴上去立刻看到哪些行缺字段, 不必等后端返回。
  */
 
-export function AccountImportBatch({ channelId, onImported, channels }: {
+export function AccountImportBatch({ channelId, dialect, onImported, channels }: {
     // channelId 有值时是"渠道内批量导入": 目标固定, 不再让使用者选。
     // 无值时是"独立批量导入": 从渠道列表页或其它入口进来, 此时必须让他选目标渠道。
     channelId?: number;
+    // dialect 同 AccountImport: 只在渠道内导入时给得出, 用于平台↔方言前置校验。
+    // 批量一次灌几十个账号, 平台选错就是几十把凭据同时熔断, 这里的前置校验比单条更要紧。
+    dialect?: Dialect;
     onImported?: () => void;
     // channels 只在独立导入模式下需要: 列出可选的目标渠道。
     channels?: { id: number; name: string }[];
 }) {
     const t = useTranslations('channel.account');
-    const [platform, setPlatform] = useState<AccountPlatform>('codex');
+    // 同单条导入: 订阅/gemini_cli 渠道预选唯一的合法平台。
+    const [platform, setPlatform] = useState<AccountPlatform>(() => defaultAccountPlatform(dialect));
     const [text, setText] = useState('');
     const [enabled, setEnabled] = useState(true);
     const [busy, setBusy] = useState(false);
@@ -47,6 +59,9 @@ export function AccountImportBatch({ channelId, onImported, channels }: {
     const [targetChannel, setTargetChannel] = useState<string | undefined>(channelId ? String(channelId) : channels?.[0]?.id ? String(channels[0].id) : undefined);
     // 预检结果: 每行一个错误数组, 对应 Textarea 里的行号。
     const [validateErrors, setValidateErrors] = useState<string[][]>([]);
+    // 平台↔方言的校验独立于逐行字段校验: 它挡的是整批, 不是某一行。
+    // 批量的后果是乘法的 —— 单条贴错只是这一把凭据熔断 30 分钟, 一批贴错就是几十把一起熔断。
+    const platformMismatch = accountPlatformMismatch(dialect, platform);
 
     // 解析文本为条目数组: 支持两种格式
     // 1) 每行一个 JSON 对象(紧凑模式, 最常见, 方便从 Excel/文本粘贴)
@@ -98,6 +113,14 @@ export function AccountImportBatch({ channelId, onImported, channels }: {
         const items = parseItems(text);
         if (items.length === 0) {
             toast.error(t('batchEmpty'));
+            return;
+        }
+        // 平台与方言对不上时先挡住, 并说清原因(与单条导入同一套文案)。
+        if (platformMismatch) {
+            toast.error(t('platformNotAllowed', {
+                required: platformMismatch.required,
+                selected: platformMismatch.selected,
+            }));
             return;
         }
         // 有任何预检错误就不提交
@@ -154,9 +177,12 @@ export function AccountImportBatch({ channelId, onImported, channels }: {
                         {channelId === undefined && (
                             <div className="space-y-1.5">
                                 <Label>{t('targetChannel')}</Label>
-                                <Select value={targetChannel} onValueChange={setTargetChannel}>
+                                <Select value={targetChannel} onValueChange={setTargetChannel} disabled={!channels || channels.length === 0}>
                                     <SelectTrigger className="w-full">
-                                        <SelectValue placeholder={t('selectChannel')} />
+                                        {/* 此前这里写的是 t('selectChannel'), 而这个键从来不存在 ——
+                                            界面于是直接印出 "channel.account.selectChannel" 这串路径。
+                                            与单条导入共用同一个占位符键, 两条入口的话术也就统一了。 */}
+                                        <SelectValue placeholder={t('targetChannelPlaceholder')} />
                                     </SelectTrigger>
                                     <SelectContent>
                                         {channels?.map(ch => (
@@ -164,15 +190,21 @@ export function AccountImportBatch({ channelId, onImported, channels }: {
                                         ))}
                                     </SelectContent>
                                 </Select>
+                                {(!channels || channels.length === 0) && (
+                                    <p className="text-xs text-muted-foreground">{t('targetChannelEmpty')}</p>
+                                )}
                             </div>
                         )}
 
                         <div className="space-y-1.5">
                             <Label>{t('platform')}</Label>
                             <div className="flex flex-wrap gap-1">
-                                {(['codex', 'kiro', 'claude', 'gemini', 'grok'] as AccountPlatform[]).map(item => (
+                                {ACCOUNT_PLATFORMS.map(item => (
                                     <Button
                                         key={item}
+                                        // type="button" 必须写: 这个弹层挂在 ChannelForm 的 <form> 里,
+                                        // 少了它点平台等于点提交, 会带着半截配置去保存。
+                                        type="button"
                                         variant={platform === item ? 'default' : 'outline'}
                                         className="rounded-lg"
                                         onClick={() => { setPlatform(item); runValidation(text); }}
@@ -181,6 +213,15 @@ export function AccountImportBatch({ channelId, onImported, channels }: {
                                     </Button>
                                 ))}
                             </div>
+                            {/* 与单条导入同一套文案: 两条入口的错因相同, 措辞就不该分叉。 */}
+                            {platformMismatch && (
+                                <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+                                    {t('platformNotAllowed', {
+                                        required: platformMismatch.required,
+                                        selected: platformMismatch.selected,
+                                    })}
+                                </div>
+                            )}
                         </div>
 
                         <div className="space-y-1.5">
@@ -248,11 +289,14 @@ export function AccountImportBatch({ channelId, onImported, channels }: {
                                             <div key={i} className={`flex items-center gap-2 ${r.ok ? 'text-green-600 dark:text-green-500' : 'text-destructive'}`}>
                                                 <span>{r.ok ? '✓' : '✗'}</span>
                                                 <span className="truncate">{r.name}</span>
+                                                {/* 这两处原先是 `${...}` 写法, 在 JSX 里 `$` 是普通字符,
+                                                    于是界面上印出的是 "id: $123" 与 "— $<错误原文>" ——
+                                                    一个不该出现的美元符号, 看着像模板没展开。去掉它。 */}
                                                 {r.ok && r.channel_key_id && (
-                                                    <span className="text-muted-foreground">id: ${r.channel_key_id}</span>
+                                                    <span className="text-muted-foreground">id: {r.channel_key_id}</span>
                                                 )}
                                                 {!r.ok && r.error && (
-                                                    <span className="text-destructive">— ${r.error}</span>
+                                                    <span className="text-destructive">— {r.error}</span>
                                                 )}
                                             </div>
                                         ))}

@@ -8,7 +8,9 @@ import type { AccountPlatform } from '@/api/channel';
 // 命令写错(例如只写 claude 而不是 claude auth login), 他跑起来也看不到登录。
 // 所以每条都要钉死, 且**来源要留在测试里**, 将来别人改的时候知道为什么是这个值。
 
-const ALL: AccountPlatform[] = ['codex', 'kiro', 'gemini', 'grok', 'claude'];
+// 必须覆盖 AccountImport 里的全部平台(ACCOUNT_PLATFORMS), 否则"清单与实际返回一致"
+// 这条只在旧平台集上成立 —— 新加的平台没有被纳入漂移检查, 成了检查里的盲区。
+const ALL: AccountPlatform[] = ['codex', 'kiro', 'gemini', 'grok', 'claude', 'antigravity'];
 
 describe('cliImportHint', () => {
     it('claude 给出官方命令与凭据路径', () => {
@@ -51,6 +53,12 @@ describe('cliImportHint', () => {
 
     it('grok 没有引导(未核实官方 CLI)', () => {
         expect(cliImportHint('grok')).toBeUndefined();
+    });
+
+    // Antigravity 的授权只能从客户端界面里走, 没有可复制的 oauth_creds.json 路径;
+    // 编一条命令出来会让人跑完发现凭据形状不对。
+    it('antigravity 没有引导(授权在客户端内完成, 没有 CLI)', () => {
+        expect(cliImportHint('antigravity')).toBeUndefined();
     });
 
     it('CLI_GUIDED_PLATFORMS 与实际返回一致', () => {

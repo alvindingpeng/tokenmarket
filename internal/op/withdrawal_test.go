@@ -2,7 +2,9 @@ package op
 
 import (
 	"context"
+	"fmt"
 	"math"
+	"sync"
 	"testing"
 	"time"
 
@@ -45,6 +47,236 @@ func withdrawalSpec(userID uint, role model.Role, amount float64) WithdrawSpec {
 		UserID: userID, Role: role, Amount: amount,
 		Method: model.WithdrawMethodAlipay, AccountName: "张三", AccountNo: "6222021234567890",
 		PayoutCurrency: "CNY", // 默认存量口径; 显式传 USD 的行为在专门用例覆盖。
+	}
+}
+
+// TestWithdrawTimeoutRevoke 审批超时未打款的提现单必须被自动撤销并把冻结额精确退回可提。
+//
+// 这是"approved 单向门"的回归: 审批只改状态不动 withdraw_frozen, 而解冻只发生在打款成功
+// 或打款回滚两条路径上, 于是管理员点过"通过"忘了打款的单会把用户的钱永久冻住 ——
+// 用户提不走(已冻结)、退不回(没有取消入口)、管理员不回头就再也不会解冻。
+func TestWithdrawTimeoutRevoke(t *testing.T) {
+	reseller, _ := withdrawalTestSetup(t, "approve-timeout", 100)
+	order, err := WithdrawApply(context.Background(), withdrawalSpec(reseller.ID, model.RoleReseller, 100))
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if err := WithdrawReview(context.Background(), order.ID, true, "ok", 1, "admin"); err != nil {
+		t.Fatalf("review: %v", err)
+	}
+	// 审批时间推到时限之外: 这是唯一让任务认定"超时"的量。用 reviewed_at 而不是 applied_at
+	// 或 updated_at 计时, 后续任何写操作都不会把它意外重置。
+	stale := time.Now().Add(-WithdrawApproveTimeout - time.Hour)
+	if err := db.GetDB().Model(&model.Withdrawal{}).Where("id = ?", order.ID).Update("reviewed_at", stale).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	revoked, err := WithdrawTimeoutRevoke(context.Background())
+	if err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	if revoked != 1 {
+		t.Fatalf("revoked=%d, want 1", revoked)
+	}
+	var fresh model.Withdrawal
+	if err := db.GetDB().First(&fresh, order.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	// cancelled 而不是 rejected: 管理员是审过了的, 只是没在时限内打款, 不该被记成"拒绝过"。
+	if fresh.Status != model.WithdrawStatusCancelled {
+		t.Fatalf("status=%s, want cancelled", fresh.Status)
+	}
+	// 冻结额必须精确减回: 多减是白送钱, 少减是钱还冻着。
+	var user model.User
+	if err := db.GetDB().First(&user, reseller.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if user.WithdrawFrozen != 0 {
+		t.Fatalf("frozen=%v, want 0 after revoke", user.WithdrawFrozen)
+	}
+	summary, err := WithdrawSummaryGet(context.Background(), reseller.ID, model.RoleReseller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Available != 100 || summary.Frozen != 0 || summary.Withdrawn != 0 {
+		t.Fatalf("available=%v frozen=%v withdrawn=%v, want 100/0/0", summary.Available, summary.Frozen, summary.Withdrawn)
+	}
+	// 解冻流水必须留痕: 资金迁移没有流水等于对不上账。
+	var unfreeze int64
+	if err := db.GetDB().Model(&model.BillingLedger{}).
+		Where("user_id = ? AND kind = ?", reseller.ID, model.LedgerKindWithdrawUnfreeze).Count(&unfreeze).Error; err != nil {
+		t.Fatal(err)
+	}
+	if unfreeze != 1 {
+		t.Fatalf("withdraw_unfreeze rows=%d, want 1", unfreeze)
+	}
+}
+
+// TestWithdrawTimeoutRevokeKeepsFreshApproved 未超时的 approved 单不许动: 管理员可能正在打款。
+func TestWithdrawTimeoutRevokeKeepsFreshApproved(t *testing.T) {
+	reseller, _ := withdrawalTestSetup(t, "approve-fresh", 100)
+	order, err := WithdrawApply(context.Background(), withdrawalSpec(reseller.ID, model.RoleReseller, 100))
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if err := WithdrawReview(context.Background(), order.ID, true, "ok", 1, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	// 时限内(刚审批): 任务必须一笔都不撤。
+	if _, err := WithdrawTimeoutRevoke(context.Background()); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	var fresh model.Withdrawal
+	if err := db.GetDB().First(&fresh, order.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if fresh.Status != model.WithdrawStatusApproved {
+		t.Fatalf("status=%s, want approved (inside the window)", fresh.Status)
+	}
+	var user model.User
+	if err := db.GetDB().First(&user, reseller.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if user.WithdrawFrozen != 100 {
+		t.Fatalf("frozen=%v, want 100 untouched", user.WithdrawFrozen)
+	}
+	// 管理员仍可手动打款: 兜底撤销绝不能把正常路径堵掉。
+	if err := WithdrawMarkPaid(context.Background(), order.ID, "TX900", "", "admin"); err != nil {
+		t.Fatalf("manual mark paid must still work: %v", err)
+	}
+}
+
+// TestWithdrawTimeoutRevokeSkipsPaid 已打款的单不撤: 钱已出池, 再撤就是凭空多退一笔。
+func TestWithdrawTimeoutRevokeSkipsPaid(t *testing.T) {
+	reseller, _ := withdrawalTestSetup(t, "approve-paid", 100)
+	order, err := WithdrawApply(context.Background(), withdrawalSpec(reseller.ID, model.RoleReseller, 100))
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if err := WithdrawReview(context.Background(), order.ID, true, "ok", 1, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := WithdrawMarkPaid(context.Background(), order.ID, "TX901", "", "admin"); err != nil {
+		t.Fatalf("mark paid: %v", err)
+	}
+	// 故意把审批时间推到时限之外: 唯一拦住撤销的是 status 已是 paid, 不是时间。
+	stale := time.Now().Add(-WithdrawApproveTimeout - time.Hour)
+	if err := db.GetDB().Model(&model.Withdrawal{}).Where("id = ?", order.ID).Update("reviewed_at", stale).Error; err != nil {
+		t.Fatal(err)
+	}
+	revoked, err := WithdrawTimeoutRevoke(context.Background())
+	if err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	if revoked != 0 {
+		t.Fatalf("revoked=%d, want 0 (paid orders are out of scope)", revoked)
+	}
+	var user model.User
+	if err := db.GetDB().First(&user, reseller.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	// 打款后冻结已转累计已提; 撤销若能改到它, 这两个数会同时被动。
+	if user.WithdrawFrozen != 0 || user.TotalWithdrawn != 100 {
+		t.Fatalf("frozen=%v withdrawn=%v, want 0 and 100", user.WithdrawFrozen, user.TotalWithdrawn)
+	}
+}
+
+// TestWithdrawTimeoutRevokeConcurrentNoDoubleUnfreeze 并发重复跑任务至多解冻一次:
+// 每笔解冻都是真金白银, 双解冻等于把同一笔钱退两遍。
+func TestWithdrawTimeoutRevokeConcurrentNoDoubleUnfreeze(t *testing.T) {
+	reseller, _ := withdrawalTestSetup(t, "approve-race", 100)
+	order, err := WithdrawApply(context.Background(), withdrawalSpec(reseller.ID, model.RoleReseller, 100))
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if err := WithdrawReview(context.Background(), order.ID, true, "ok", 1, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	stale := time.Now().Add(-WithdrawApproveTimeout - time.Hour)
+	if err := db.GetDB().Model(&model.Withdrawal{}).Where("id = ?", order.ID).Update("reviewed_at", stale).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var total int64
+	for round := 0; round < 4; round++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			// 允许报错(SQLite 写锁竞争/并发下 RowsAffected=0): 终态不变量兜底。
+			if n, err := WithdrawTimeoutRevoke(context.Background()); err == nil {
+				mu.Lock()
+				total += n
+				mu.Unlock()
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	// 四轮合计最多撤一笔: 谁先抢到谁解冻, 其余轮次扫不到 status='approved'。
+	if total != 1 {
+		t.Fatalf("total revoked across rounds=%d, want exactly 1", total)
+	}
+	var user model.User
+	if err := db.GetDB().First(&user, reseller.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if user.WithdrawFrozen != 0 {
+		t.Fatalf("frozen=%v, want 0 (single unfreeze)", user.WithdrawFrozen)
+	}
+	// 双解冻的直接证据: 冻结额被减成负数, 或者流水出现两条。
+	var unfreeze int64
+	if err := db.GetDB().Model(&model.BillingLedger{}).
+		Where("user_id = ? AND kind = ?", reseller.ID, model.LedgerKindWithdrawUnfreeze).Count(&unfreeze).Error; err != nil {
+		t.Fatal(err)
+	}
+	if unfreeze != 1 {
+		t.Fatalf("withdraw_unfreeze rows=%d, want exactly 1", unfreeze)
+	}
+	// 审计也只能有一条: 只有"真撤成功"的那一轮才许写, 没抢到的轮次写假记录会让事后
+	// 对账变成"多撤销了一笔我找不到"的死胡同。
+	var audits int64
+	if err := db.GetDB().Model(&model.AuditLog{}).
+		Where("action = ?", "withdrawal.timeout_revoke").Count(&audits).Error; err != nil {
+		t.Fatal(err)
+	}
+	if audits != 1 {
+		t.Fatalf("timeout_revoke audit rows=%d, want exactly 1", audits)
+	}
+}
+
+// TestWithdrawTimeoutRevokeAuditsEachOrder 撤销必须逐笔留审计:
+// 这是无人值守的资金迁移, 事后只能靠审计回答"哪笔、为什么、谁撤的"。
+func TestWithdrawTimeoutRevokeAuditsEachOrder(t *testing.T) {
+	reseller, _ := withdrawalTestSetup(t, "approve-audit", 100)
+	order, err := WithdrawApply(context.Background(), withdrawalSpec(reseller.ID, model.RoleReseller, 100))
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if err := WithdrawReview(context.Background(), order.ID, true, "ok", 1, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	stale := time.Now().Add(-WithdrawApproveTimeout - time.Hour)
+	if err := db.GetDB().Model(&model.Withdrawal{}).Where("id = ?", order.ID).Update("reviewed_at", stale).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := WithdrawTimeoutRevoke(context.Background()); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	var audits []model.AuditLog
+	if err := db.GetDB().Where("action = ?", "withdrawal.timeout_revoke").Find(&audits).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(audits) != 1 {
+		t.Fatalf("audit rows=%d, want 1", len(audits))
+	}
+	// actorID=0 表示系统发起(不是某个管理员手动操作的)。
+	if audits[0].UserID != 0 || audits[0].Target != fmt.Sprintf("withdrawal#%d", order.ID) {
+		t.Fatalf("audit actor=%d target=%q", audits[0].UserID, audits[0].Target)
 	}
 }
 

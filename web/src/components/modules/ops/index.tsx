@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState } from 'react';
 import BillingRecovery from './BillingRecovery';
 import { UpstreamBillsSection } from './UpstreamBillsSection';
 import { MetricsSection } from './MetricsSection';
@@ -27,6 +27,9 @@ import {
     useLatencyBreakdown, useOpsOverview, useReconcileList, useRunAlertRedeliver, useRunBackup, useRunHealthCheck, useRunLogLifecycle, useRunReconcile, useRequeueAlert, useSetReconcileNote, useTaskStatus, useUndeliveredAlerts,
     type AlertSilenceWindow, type BalanceFlow, type ChannelAlert, type ChannelHealth, type LatencyRow, type ReconcileRow, type SpendBudget, type TaskStatus, type UndeliveredAlert,
 } from '@/api/ops';
+import { LoadError, OpsTable, StaleWarning, type Col } from './OpsTable';
+import { opsDataState } from './opsDataState';
+import { BudgetRowActions } from './BudgetRowActions';
 import { useRateUsageTop } from '@/api/ratelimit';
 import { useAdminFxRateStatus, useRefreshAdminFxRates, useAdminFxRateHistory, useAdminFxReconciliation, fxHistoryChangePct, fxReconciliationBucketOf, CASHFLOW_CURRENCIES, type AdminFxRateHistoryQuery } from '@/api/fx';
 
@@ -50,38 +53,6 @@ function formatBytes(size: number): string {
 function formatMoney(value: number): string {
     const fixed = Number(value ?? 0).toFixed(6);
     return fixed.includes('.') ? fixed.replace(/0+$/, '').replace(/\.$/, '') : fixed;
-}
-
-// OpsTable 是运维页通用表格: 空态、横向滚动、行悬停统一处理。
-type Col<T> = { key: string; label: string; render?: (row: T) => ReactNode };
-function OpsTable<T>({ columns, rows, empty, rowKey }: { columns: Col<T>[]; rows: T[]; empty: string; rowKey: (row: T) => string }) {
-    if (rows.length === 0) {
-        return <div className='rounded-3xl border border-border bg-card p-10 text-center text-sm text-muted-foreground'>{empty}</div>;
-    }
-    return (
-        <div className='overflow-x-auto rounded-3xl border border-border bg-card'>
-            <table className='w-full min-w-[760px] text-sm'>
-                <thead>
-                    <tr className='border-b border-border text-left text-xs text-muted-foreground'>
-                        {columns.map((column) => (
-                            <th key={column.key} className='whitespace-nowrap px-4 py-3 font-medium'>{column.label}</th>
-                        ))}
-                    </tr>
-                </thead>
-                <tbody>
-                    {rows.map((row) => (
-                        <tr key={rowKey(row)} className='border-b border-border/60 last:border-0 hover:bg-muted/40'>
-                            {columns.map((column) => (
-                                <td key={column.key} className='px-4 py-2.5 align-middle'>
-                                    {column.render ? column.render(row) : String((row as Record<string, unknown>)[column.key] ?? '-')}
-                                </td>
-                            ))}
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
-    );
 }
 
 // RefreshButton 通用刷新按钮, 转圈跟随 isRefetching。
@@ -804,6 +775,23 @@ function AlertsSection() {
             route_persist_recovered: { label: t('alerts.kindRoutePersistRecovered'), className: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
             // 汇率采集连续失败: 牌价停更会让原币报价的折算逐步变陈旧, 与计费正确性强相关, 用橙档提醒。
             fx_rate_refresh_failed: { label: t('alerts.kindFxRefreshFailed'), className: 'bg-orange-500/15 text-orange-600 dark:text-orange-500' },
+            // 资金安全两类: 提现超时撤销是"钱卡在流程里"(橙档, 要跟进打款); 过期单补入账是
+            // "本该失败却成功"(红档, 回调链路/TTL 有系统性延迟, 必须人工核对那笔钱)。
+            withdrawal_approve_timeout: { label: t('alerts.kindWithdrawTimeout'), className: 'bg-orange-500/15 text-orange-600 dark:text-orange-500' },
+            payment_after_expiry: { label: t('alerts.kindPaymentAfterExpiry'), className: 'bg-red-500/15 text-red-600 dark:text-red-400' },
+            // 第二批补登记的 5 类: 都是"发得出但原先登记不全"的 kind, 此前在列表里显示裸英文。
+            // 橙档=需要跟进但不丢命(计费口径缺失/账号可修复/牌价陈旧), 红档=数据没落地(资金与审计归档失败)。
+            usage_missing: { label: t('alerts.kindUsageMissing'), className: 'bg-orange-500/15 text-orange-600 dark:text-orange-500' },
+            account_invalidated: { label: t('alerts.kindAccountInvalidated'), className: 'bg-orange-500/15 text-orange-600 dark:text-orange-500' },
+            billing_archive_failed: { label: t('alerts.kindBillingArchiveFailed'), className: 'bg-red-500/15 text-red-600 dark:text-red-400' },
+            audit_archive_failed: { label: t('alerts.kindAuditArchiveFailed'), className: 'bg-red-500/15 text-red-600 dark:text-red-400' },
+            fx_rate_stale: { label: t('alerts.kindFxRateStale'), className: 'bg-orange-500/15 text-orange-600 dark:text-orange-500' },
+            // 补上原先漏映射的 4 个闭集内 kind(其余三个 input_tokens/output_tokens/requests
+            // 是配额子类型, 不会独立成为告警 kind, 故不建徽章)。
+            key_degraded: { label: t('alerts.kindKeyDegraded'), className: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },
+            model_degraded: { label: t('alerts.kindModelDegraded'), className: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },
+            payment_amount_mismatch: { label: t('alerts.kindPaymentAmountMismatch'), className: 'bg-red-500/15 text-red-600 dark:text-red-400' },
+            reserve: { label: t('alerts.kindReserve'), className: 'bg-sky-500/15 text-sky-600 dark:text-sky-400' },
             test: { label: t('alerts.kindTest'), className: 'bg-muted text-muted-foreground' },
         };
         const item = map[kind] ?? { label: kind, className: 'bg-muted text-muted-foreground' };
@@ -936,9 +924,9 @@ function AlertsSection() {
 
 // SilenceWindowsSection 告警静默窗口: 计划内维护期间告警照常落库但不外发。
 // 有截止时间, 到点自动恢复 —— 不做无期限开关, 忘了关的静默比吵闹更危险。
-function SilenceWindowsSection() {
+export function SilenceWindowsSection() {
     const t = useTranslations('ops');
-    const { data, isLoading, refetch, isRefetching } = useAlertSilence();
+    const { data, isLoading, isError, refetch, isRefetching } = useAlertSilence();
     const create = useCreateAlertSilence();
     const remove = useDeleteAlertSilence();
     const now = new Date();
@@ -1036,19 +1024,39 @@ function SilenceWindowsSection() {
                 </label>
                 <Button size='sm' disabled={create.isPending} onClick={submit}>{create.isPending ? t('silence.creating') : t('silence.create')}</Button>
             </div>
-            <OpsTable columns={columns} rows={windows} empty={isLoading ? t('loading') : t('silence.none')} rowKey={(row) => String(row.id)} />
+            {/* 三态显式分开: 失败 + 无旧数据 = 报错; 失败 + 有旧数据 = 保留表格但顶一条"可能不是最新";
+                都没失败才是正常渲染。此前只有 isLoading 一条判断, 于是刷新失败会继续显示上一次的清单,
+                屏幕上没有任何东西提示它已经过期 —— 而这一页的"是否静默中"直接决定告警会不会外发。 */}
+            {(() => {
+                const state = opsDataState({ isError, isLoading, count: windows.length });
+                if (state === 'error') {
+                    return <LoadError message={t('silence.loadFailed')} onRetry={() => void refetch()} retrying={isRefetching} />;
+                }
+                if (state === 'stale') {
+                    return (
+                        <>
+                            <StaleWarning message={t('silence.staleWarning')} onRetry={() => void refetch()} retrying={isRefetching} />
+                            <OpsTable columns={columns} rows={windows} empty={t('silence.none')} rowKey={(row) => String(row.id)} />
+                        </>
+                    );
+                }
+                return <OpsTable columns={columns} rows={windows} empty={isLoading ? t('loading') : t('silence.none')} rowKey={(row) => String(row.id)} />;
+            })()}
         </div>
     );
 }
 
 // BudgetsSection 用户花费预算: 周期上限, warn/block 两档。
 // block 在请求预扣前拒绝, warn 只发去重通知 —— 预算应"接近"就提醒, 不是到 100% 才从失败请求里得知。
-function BudgetsSection() {
+export function BudgetsSection() {
     const t = useTranslations('ops');
-    const { data, isLoading, refetch } = useBudgets();
+    const { data, isLoading, isError, refetch, isRefetching } = useBudgets();
     const create = useCreateBudget();
     const update = useUpdateBudget();
     const remove = useDeleteBudget();
+    // pending 记录"哪一行正在等二次确认", 而不是一个布尔 —— 表格里同时有多行,
+    // 一个布尔会让点第二行时第一行的确认态也跟着亮起来。
+    const [pending, setPending] = useState<{ id: number; kind: 'delete' | 'toggle' } | null>(null);
     const [scope, setScope] = useState('user');
     const [scopeId, setScopeId] = useState('');
     const [period, setPeriod] = useState('day');
@@ -1092,21 +1100,33 @@ function BudgetsSection() {
                 {row.enabled ? t('budgets.enabled') : t('budgets.disabled')}
             </Badge>
         ) },
+        // 破坏性操作一律两次点击: 第一次只把这一行切进确认态, 不会发出任何请求。
+        // 删除与启停都算破坏性 —— 停用一条 block 级预算等于当天放行本该被拦下的请求,
+        // 而「点错了」这件事在生产上一定会发生, 且不会自己恢复。
+        //
+        // 确认态由 BudgetRowActions 渲染(拆出去是为了让「第一次点击不发请求」这句可被单测断言)。
         { key: 'ops', label: '', render: (row) => (
-            <span className='flex gap-1'>
-                <Button size='sm' variant='ghost' className='h-7 px-2 text-xs'
-                    onClick={() => update.mutate({ id: row.id, period: row.period, action: row.action, limit_amount: row.limit_amount, warn_ratio: row.warn_ratio, enabled: !row.enabled },
-                        { onSuccess: () => void refetch(), onError: () => toast.error(t('budgets.updateFailed')) })}>
-                    {row.enabled ? t('budgets.disable') : t('budgets.enable')}
-                </Button>
-                <Button size='sm' variant='ghost' className='h-7 px-2 text-xs text-red-600 dark:text-red-400' disabled={remove.isPending}
-                    onClick={() => remove.mutate(row.id, {
-                        onSuccess: () => toast.success(t('budgets.deleted')),
-                        onError: (error) => toast.error(error instanceof Error ? error.message : t('budgets.deleteFailed')),
-                    })}>
-                    {t('budgets.delete')}
-                </Button>
-            </span>
+            <BudgetRowActions
+                rowId={row.id}
+                enabled={row.enabled}
+                pending={pending}
+                deleting={remove.isPending}
+                toggling={update.isPending}
+                onAsk={setPending}
+                onCancel={() => setPending(null)}
+                onDelete={() => remove.mutate(row.id, {
+                    onSuccess: () => { setPending(null); toast.success(t('budgets.deleted')); },
+                    onError: (error) => { setPending(null); toast.error(error instanceof Error ? error.message : t('budgets.deleteFailed')); },
+                })}
+                onToggle={() => update.mutate(
+                    // 不在此处本地改 row.enabled: 徽标读的是服务端数据, 请求失败时它自然还是旧值。
+                    // 所谓「失败后显示成功」只会来自乐观更新, 而这里没有乐观更新 —— 也就不需要回滚。
+                    { id: row.id, period: row.period, action: row.action, limit_amount: row.limit_amount, warn_ratio: row.warn_ratio, enabled: !row.enabled },
+                    {
+                        onSuccess: () => { setPending(null); void refetch(); },
+                        onError: () => { setPending(null); toast.error(t('budgets.updateFailed')); },
+                    })}
+            />
         ) },
     ];
 
@@ -1158,7 +1178,23 @@ function BudgetsSection() {
                 </label>
                 <Button size='sm' disabled={create.isPending} onClick={submit}>{create.isPending ? t('budgets.creating') : t('budgets.create')}</Button>
             </div>
-            <OpsTable columns={columns} rows={data ?? []} empty={isLoading ? t('loading') : t('budgets.none')} rowKey={(row) => String(row.id)} />
+            {/* 失败必须有独立分支: 此前只有 isLoading, 于是取数失败会落进「还没有建过预算」的文案。
+                管理员据此以为预算被人删了, 而真相是这次请求挂了 —— 两者的处置完全不同。 */}
+            {(() => {
+                const state = opsDataState({ isError, isLoading, count: data?.length ?? 0 });
+                if (state === 'error') {
+                    return <LoadError message={t('budgets.loadFailed')} onRetry={() => void refetch()} retrying={isRefetching} />;
+                }
+                if (state === 'stale') {
+                    return (
+                        <>
+                            <StaleWarning message={t('budgets.staleWarning')} onRetry={() => void refetch()} retrying={isRefetching} />
+                            <OpsTable columns={columns} rows={data ?? []} empty={t('budgets.none')} rowKey={(row) => String(row.id)} />
+                        </>
+                    );
+                }
+                return <OpsTable columns={columns} rows={data ?? []} empty={isLoading ? t('loading') : t('budgets.none')} rowKey={(row) => String(row.id)} />;
+            })()}
         </div>
     );
 }

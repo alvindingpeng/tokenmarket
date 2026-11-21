@@ -140,6 +140,16 @@ func ChannelRepriceApply(channelID int, scope model.Scope, multiplier float64, n
 
 // ChannelBreakerReset 手动解除渠道下的熔断: 按名称清零错误计数并清掉熔断截止时间。
 // 自动熔断只按时间自愈, 上游修好(换 Key、补额度)后管理员需要能立刻恢复, 否则只能干等熔断到期。
+//
+// 这里连 breaker_trips / probe_count / probe_at 一并清零, 与两条"成功即重置"路径
+// (ResetChannelKeyErrors / ResetChannelModelErrors)保持同一份"从零开始"语义:
+// 管理员点这个按钮, 表达的是"人已经确认修好了", 而不是"再给它一次机会"。
+//   - breaker_trips 不清的后果: 熔断时长按 trips 指数翻倍, 人工解锁后下一次偶发失败
+//     直接从很长的时长起步(上限 60 分钟), 解锁等于没解;
+//   - probe_count 不清的后果: 探测准入是 probe_count < BreakerProbeLimit, 只有探测成功才回零,
+//     于是探了 3 次都没探通的成员**永远**不会再被自动探测 —— 一旦再崩, 只能靠人再点一次。
+//
+// 旧实现两处都只写 error_count + disabled_until, 正是上面两个后果的来源。
 func ChannelBreakerReset(channelID int, keyNames, modelNames []string, scope model.Scope, ctx context.Context) (int, error) {
 	channel, ok := channelCache.Get(channelID)
 	if !ok || !scope.Owns(channel.UserID) {
@@ -155,11 +165,14 @@ func ChannelBreakerReset(channelID int, keyNames, modelNames []string, scope mod
 			continue
 		}
 		if err := conn.Model(&model.ChannelKey{}).Where("id = ?", channelKey.ID).
-			Updates(map[string]any{"error_count": 0, "disabled_until": nil}).Error; err != nil {
+			Updates(map[string]any{"error_count": 0, "breaker_trips": 0, "disabled_until": nil, "probe_count": 0, "probe_at": nil}).Error; err != nil {
 			return reset, fmt.Errorf("failed to reset channel key %s: %w", channelKey.Name, err)
 		}
 		channelKey.ErrorCount = 0
+		channelKey.BreakerTrips = 0
 		channelKey.DisabledUntil = nil
+		channelKey.ProbeCount = 0
+		channelKey.ProbeAt = nil
 		channelKeyCache.Set(channelKey.ID, channelKey)
 		reset++
 	}
@@ -168,11 +181,14 @@ func ChannelBreakerReset(channelID int, keyNames, modelNames []string, scope mod
 			continue
 		}
 		if err := conn.Model(&model.ChannelModel{}).Where("id = ?", channelModel.ID).
-			Updates(map[string]any{"error_count": 0, "disabled_until": nil}).Error; err != nil {
+			Updates(map[string]any{"error_count": 0, "breaker_trips": 0, "disabled_until": nil, "probe_count": 0, "probe_at": nil}).Error; err != nil {
 			return reset, fmt.Errorf("failed to reset channel model %s: %w", channelModel.Name, err)
 		}
 		channelModel.ErrorCount = 0
+		channelModel.BreakerTrips = 0
 		channelModel.DisabledUntil = nil
+		channelModel.ProbeCount = 0
+		channelModel.ProbeAt = nil
 		channelModelCacheWriteMu.Lock()
 		channelModelCache.Set(channelModel.ID, channelModel)
 		channelModelCacheWriteMu.Unlock()

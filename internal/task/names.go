@@ -32,4 +32,6 @@ const (
 	TaskWatchdogAlert           = "watchdog_alert"             // 外部看门狗日志巡检。
 	TaskFxRateUpdate            = "fx_rate_update"             // 采集牌价并落 fx_rates 快照(结算折算依据)。
 	TaskAccountTokenRefresh     = "account_token_refresh"      // 刷新导入的上游账号令牌(仅 oauth 类; cookie 类无续期能力)。
+	TaskWithdrawApproveTimeout  = "withdraw_approve_timeout"   // 撤销审批通过后超时仍未打款的提现单(解冻回可提)。
+	TaskRechargeExpire          = "recharge_expire"            // 关闭超时未支付的充值单, 不再只靠下单/列表时懒执行。
 )

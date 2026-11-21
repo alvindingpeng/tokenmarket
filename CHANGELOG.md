@@ -1,5 +1,132 @@
 # 更新说明
 
+## v1.10.19 — 2026-11-21
+
+**v1.10.19 重检批次: 可用性与"失败不许伪装成成功"**
+
+本轮把非 SaaS 版的**功能流程**整体重检了一遍, 判据只有一条: **用户看到的状态和他真正能做的事, 不能因为一次请求失败而变样**。产出都是"看得见的错误被当成成功/空/零"这一类静默缺陷, 外加两个后端一致性缺陷(金额口径与落库缓存)。全部带用例; 每一条都先证明"修前会红"。
+
+### 一、P0: Stripe 收银台把 CNY 分当美元分报给 Stripe
+
+`unit_amount` 是**收款币种的最小单位**, 而代码报的是订单的 CNY 分。¥70 的单会开出 $70.00 的收银台: 用户多付约 7 倍, 且回调 `amount_total` 与 `order.PayCents` 必然不等 —— 订单永远核不过金额, 网关持续重投而余额永不入账。
+
+修法: `stripeUnitAmount` 在 `PayCents > 0` 时报 `PayCents`(下单项已按牌价折算出的渠道实付额, 回调也是按它核对), `PayCents == 0`(商品定价渠道按商品匹配、不核金额)才回退到 `AmountCents`, 免得开出一张 0 元收银台。币种由 `ChargeCurrency` 声明, 与 `PayCents` 同源, 不会错配。
+
+### 二、P1: 新建渠道时 GORM 的 DB 默认值静默覆盖零值
+
+`model.Channel` 上不少列带 `default:` 标签。GORM 在 `Create` 遇到**零值**时会写 DB 默认值并把默认值**回填**到结构体 (`callbacks/create.go` 的 `ConvertToCreateValues`), 且**不受 `Select` 约束** —— 实测 `Select("name","base_url","enabled","markup_ratio").Create(...)` 提交 `enabled=false / markup=0`, 库里仍是 `true / -1`。后果:
+
+- 管理员无法「先建好但先别启用」(`enabled=false` 变成 `true`);
+- 无法「按供货价卖、不加价」(`markup_ratio=0` 变成 `-1` = 跟随全局);
+- 接口返回成功, 库里是别的值, 全程无报错, 只能建完再改一次。
+
+修法(零 schema 变更, 因为老库的 DEFAULT 已写在表结构里, 去掉 tag 会让新旧库行为分叉): `tx.Create` 拿到主键后, 在**同一事务内**把「提交体里真的出现过的那几列」按提交值回写一遍。
+
+- 列集合由 `channelExplicitConfigColumns` 从 `model.ChannelConfig` 的 schema 派生(与 `channelConfigUpdateColumns` 同一机制), 并挖掉运行期统计列 —— 加字段不会静默漏, 刚建的行也不会被抹上统计零值;
+- 判据是**"请求里说过哪些键"**而不是"零值即显式"(Go 结构体上两者不可区分), 故 `model.ChannelDetail` 加 `ExplicitColumns map[string]bool`(`json:"-"`), 由 `createChannel` 读裸字节填好 —— "说了哪些键"这个事实只存在于 JSON 层;
+- **只回写明确给出的列, 不一律回写全部可写列**: 只发 `name + base_url` 的老客户端从没说过 `enabled`, 它必须按默认值建; 一律回写会得到一批"默认停用"的渠道 —— 那是把一个静默错误换成更危险的静默错误。反向用例专门钉这一条。
+- 缓存侧一并收口: `ChannelCreate` 结尾不再 `channelCache.Set(channel)`(那份结构体已被 GORM 回填, Set 就是"库对缓存错"), 改用 `reloadChannelRowCache` 从库回读, 顺带带回 `ChannelTrustStart` 写的信任三列。
+
+**踩到的坑(值得记下来)**: JSON 名→列名要走 schema 翻译, 而 `jsonFieldName` 必须读 `field.Tag`, **不能**读 `field.TagSettings` —— 后者里根本没有 `JSON` 这一项(GORM 只解析它自己认识的键), 取到的会是 Go 字段名 `MarkupRatio`, 于是判据整体失配, 表现为"明确提交了 `enabled=false` 仍然按默认值建"。这个错误连"测试失败"都不容易定位, 因为列集合看起来是空的而不是错的。
+
+### 三、P1: GORM `Select` 会**静默忽略不存在的列名** —— 渠道编辑丢掉 4 个字段
+
+`ChannelUpdate` 过去按手抄的可写列白名单 `Select(columns)`。GORM 对 `Select` 里拼错的列名不报错, 直接跳过 —— 于是 `gemini_project / sub_platform / openai_video_base_path / key_rotation_strategy` 四个字段**从未落库**。现象: 表单里填了、保存显示成功、刷新又在(提交值回显), 重启后变空, 转发报 403 `SUBSCRIPTION_REQUIRED`。
+
+修法: 可写列改为从 `model.ChannelConfig` 的 schema 派生并排除 14 个运行期列(`channelRuntimeColumns`), 不再手抄; `ChannelUpdate` 写完后用 `reloadChannelRowCache` 从库回读重建缓存条目, 而不是从提交值与旧条目拼一份(拼接 = 又一次手抄字段)。
+
+### 四、P1: 熔断的自动探测探满 3 次后**永远**不再探
+
+`probe_count` 只增不减, 而三条"重置"出口(`ResetChannelKeyErrors` / `ResetChannelModelErrors` / `ChannelBreakerReset` 人工解锁)都只写 `error_count + disabled_until`, 都不清 `probe_count`。后果有两层:
+
+1. 自动探测准入是 `probe_count < 3`, 探了 3 次没探通的成员**再也拿不到自动探测** —— 只能靠人再点一次解锁;
+2. `breaker_trips` 不清, 熔断时长按 trips 指数翻倍, 人工解锁后下一次偶发失败直接从很长的时长起步(上限 60 分钟), **解锁等于没解**。
+
+修法: 三条重置出口统一清零 `breaker_trips / probe_count / probe_at`, 与"成功即重置"路径同一份"从零开始"语义(管理员点解锁 = "人已确认修好", 不是"再给一次机会"); 判据常量 `BreakerProbeLimit = 3` 导出, 三处准入与界面显示共用, 免得前端再写一个 3。
+
+### 五、P1: 已审批未打款的提现单**永久冻结**; 充值单只靠懒关闭
+
+`approved` 是单向门: 审批只把 `pending` 改成 `approved`, 冻结额一动不动, 唯一解冻路径是打款或打款失败回滚。管理员点了通过但忘了打款(离职/换班/漏看), 用户的钱就一直挂在 `withdraw_frozen` 上 —— 既提不走, 又不会回可提, 用户自己也无法撤销(`WithdrawCancel` 只认 `pending`)。
+
+修法: 周期任务 `withdraw_approve_timeout`(6h 一轮, 启动即跑一次)撤销 `approved` 且审批超过 **72 小时**未打款的单: 先 `withdrawUnfreeze`(原子资金迁移 + `withdraw_unfreeze` 流水), 成功后再写审计(`actorID=0` 系统), 逐笔通知用户, 聚合成一条 `withdrawal_approve_timeout` 告警。选 `cancelled` 而非 `rejected`: 管理员审过了, 只是没在时限内打款。并发安全靠条件 UPDATE 的 `status/reviewed_at` 守卫, 与 `WithdrawMarkPaid` 抢同一把写锁, 输的一方 `RowsAffected=0` 直接跳过 —— 不会"既撤销解冻、又打款出池"。
+
+为什么阈值写成常量而不是设置项: 这是资金安全的下界, 不是业务口味; 做成设置项意味着可以被调成 1000 天(等于关闭)或被误设为 0(审批完立刻撤销, 管理员永远打不了款), 两种极端都制造资损/投诉。72 小时的理由是覆盖"周五审批、周一打款"的周末空档。
+
+充值的同类问题: 过期单原本只在下单/列表时**懒关闭**, 没有兜底。新增 `recharge_expire` 任务(5m 一轮)。同时修掉一个更糟的洞: **过期单仍收到第三方付款确认时必须入账**("钱优先") —— 订单被超时关闭只说明我们等回调等过了 TTL, 不代表用户没付。金额仍照核(放宽的是"单子还开着吗", 不是"金额对不对"), 状态条件更新同时接受 `pending` 与 `expired` 两条路径互斥, 不会重复入账; 并在提交后发 `payment_after_expiry` **红色**告警 —— 这个时序说明回调链路/TTL 有系统性延迟, 单看这一笔"入账成功"永远发现不了。
+
+### 六、P1: 经营毛利含已退款金额; 趋势硬编码 `strftime` 在 MySQL/PG 上恒空
+
+`ProfitMarginGet` 的 GMV/毛利/平台收入三列都按全额 `SUM(user_cost)`, 已退款的明细仍算收入 —— 钱已经退回用户, 平台没有真实收入。同一笔退款在渠道毛利看板(按 `status = settled`)上冲减、在经营毛利上看全额, 两张看板毛利率永远不一致。
+
+修法: 明细侧用 `SUM(user_cost) - SUM(CASE WHEN status = 'refunded' THEN user_cost ELSE 0 END)`(三种数据库通用的写法), 汇总侧再读一次 `refunded_*` 拿"其中已退款"相减(汇总行存的是"合计 + 其中退款"两组列)。**不改 `billingRollupTotalRange` 本身**: 它还给 `BillingTotal`(终身累计消费)这类全额口径读口用, 把契约改成净额会把那些"累计"口径一起改错。请求数保持全额(退款是资金口径, 不是"这笔调用没发生")。三处 `_ =` 吞错误的写法一并改成返回 error。
+
+趋势侧: 日桶原用 `strftime('%Y%m%d', created_at)`, 只有 SQLite 认, MySQL/PG 上这条查询直接报错、趋势表恒为空 —— 管理员看到的是"最近没流量"而不是一个明确的错误。改用 `billingBucketExpr("day")`(与汇总桶、`BillingAggregate.Date` 同一契约), 金额同样净额。
+
+### 七、P1: 统计页的费用/词元/请求数被留存清理**一天天变小**
+
+统计页只读 `billing_records`, 而明细按留存期(`billing_retention_days`, 默认 180 天 —— 本轮钉死为 180)清理。清理之后, 同一账户同一区间在统计页显示的金额/词元/请求数会随清理一天天变小, 而账单页(`BillingTotal`)并了 `billing_rollups` —— 两页数字对不上, 且没有任何提示。用户拿它导出对账时, 差额无法解释。
+
+修法: 费用与词元读「明细 ∪ 日汇总」, 合并规则见 `userStatsBillingAggregate`。三条硬约束:
+
+- **同一自然日绝不既在明细又在汇总里**: 固化是"整天"为单位、先固化再删明细, 所以按日期桶相加精确;
+- **小时粒度只读明细**: `billing_rollups` 按天存, 一天的聚合行无法还原"哪几个小时有量", 硬并进来只能伪造出同一时刻的大额桶; 而 `hour` 只用于单日区间(前端限制), 单日必然落在留存期内;
+- **因申诉保护而留存的明细不进汇总**, 仍在明细表里被算上。
+
+**覆盖边界写进文档、不伪造数值**: 本版本之前归档的明细没有 `apikey` 维度汇总, 更早的历史无法补回; `billing_coverage_start` / `billing_rollup_covered_until` / `model_breakdown_coverage_start` 如实给出边界(`model_breakdown_coverage_start` 是因为 `billing_rollups` **没有 model 维度** —— 早于它的部分是"金额有、拆分无", 前端要提示而不是画成 0)。`coverage_start` 跨窗口计算, 不随 `from` 收窄而漂移(否则查近 7 天会被误读成"之前没用量")。
+
+顺带修两处口径:
+
+- **小时桶被 UTC 归一**: SQLite 上 `SUBSTR` 取挂钟前缀再拼 `:00`, 不用 `strftime`(后者会先归一到 UTC, 清晨的请求被算到前一天/前一小时);
+- **日志清理 cutoff 不对齐天**: 原 `time.Now().AddDate(0,0,-retention)` 让留存末日只留下"此刻之后"的半天样本, 成功率/延迟按日汇总会随运行时刻漂移; 改为对齐自然日 00:00(与 `billingRetentionCutoff` 同一规则);
+- **首页请求数结构性看不见失败**: 非管理员口径原把 `row.RequestCount`(计费行数)塞进 `RequestSuccess`, 于是"请求数 = 成功 + 失败"恒等于计费行数、失败数永远是 0 —— 一栏看起来正常的数字, 实际结构性地看不见任何失败。改用 `RequestOutcomeTotals`(与统计页同一条件、同一终态过滤); 小时曲线只到当前小时为止(返回全 24 桶会让"今天"曲线在当前时刻之后贴底, 看起来像流量突然归零)。
+
+### 八、P1: 告警 kind 闭集与事件映射各漏一批 —— 静默窗口建不起来、外发标题全是 system_alert
+
+`AlertValidKind` 是静默窗口的校验闭集, `determineAlertEvent` 是外发事件的映射。两处都存在"**一直在发但没登记**"的 kind:
+
+- `fx_rate_refresh_failed` 早就在发却没进闭集 —— 管理员为它建静默窗口时创建直接 **400** 被拒, 而牌价停更恰恰是最需要"维护期间先别刷屏"的那一类;
+- 第二批 5 类同理: `usage_missing`(成功请求却没有用量回传, 疑似免费调用)、`account_invalidated`(上游账号令牌失效, 需重新导入)、`billing_archive_failed`、`audit_archive_failed`、`fx_rate_stale`(牌价陈旧, 折算按旧价进行);
+- 这些 kind 掉进 `determineAlertEvent` 的 default 会让外发一律成 `system_alert`, 消费端分不出"计费口径缺失"和"审计表没落地"。
+
+修法: 闭集补到 **33 类**, 事件映射逐条显式 `case`(与 kind 同名, 分流最直接), `internal/alert` 补 7 个 `Event` 常量; 直接写字面量的 8 处调用改引常量(`AlertKindFxRateRefreshFailed` 等), 免得下次再"发得出但登记不全"。前端徽章表补 13 项(此前 4 个闭集内 kind 在列表里显示裸英文, 三个配额子类型 `input_tokens/output_tokens/requests` 不会独立成为告警 kind, 故不建徽章)。
+
+### 九、P1(前端): 7 处"失败被渲染成 0 / 空 / 成功"
+
+统一的开场白: **失败不能伪装成正常状态**。没有旧数据时给明确错误 + 重试; 有旧数据时保留旧值**并明说"可能已过期"** —— 保留旧值而不说明, 就是静默展示过期数据; 整块盖成错误页, 则把手边的资料一起收走。
+
+| 项 | 改前症状与后果 | 改法 |
+|---|---|---|
+| 预算列表 | 只看 `data` 不看 `isError` → 失败时表格为空 → 写「还没有建过预算」; 管理员以为预算被删光, **去重建(建出两条同名)** | `opsDataState` 四态: 无旧数据→`LoadError`+重试; 有旧数据→`StaleWarning`+保留表格。新增 `BudgetRowActions`: 空闲态按钮只 `setPending`, **确认态才渲染真正 mutate 的那颗** |
+| 静默窗口 | 刷新失败继续显示上次清单, 屏幕上没有任何提示它过期; 而"是否静默中"直接决定维护期告警会不会外发 | 同一三态: 失败+有旧数据→保留表格 + 「可能已过期」 |
+| 钱包余额 | 五格 `formatAmount(card.value ?? 0)` → 失败时全 `0.00`, 用户以为钱被清零; `can_apply` undefined 时 `?? false` 显示「只有渠道商收益可提现」—— 那是关于账号身份的断言, 真实原因只是请求挂了 | `undefined → '—'`(**0 仍显 0**); 失败态不入"不可提现"文案; `available` 取不到就显示 `—` |
+| 提现校验 | `canSubmit` 只看 `value > 0`, 填 10(最低 50)也能点提交 | 新增 `lib/withdraw-min.ts`: 三档判定(输入非法 > 低于最低额 > 超过余额), **最低额优先于余额**, 按后端 `spec.Amount` 的**原始申请额**比较(不是到手额, 否则「填 51、手续费 1.5」会被无辜拦住) |
+| 三处保存 | 输入框失败后停在用户敲的新值上而服务端仍是旧值, 只弹一句 toast, 管理员按界面判断「已经改了」 | `settingSave.ts` 纯函数: 基准 = **最近一次确认落库的值**(不查设置列表缓存, 否则连续两次编辑后第二次失败会退到更早的值); 有基准→回滚, 无基准→**不动输入框** |
+| 支付配置 | 整表全量重提交(含没改的项), 中途失败只弹一句「保存失败」, 界面仍全绿 —— 配置停在"一半新一半旧" | 只提交**改动过**的键(无改动→`nothingToSave`, 不假装执行); 串行、失败处停; `paymentSave.ts` 算出哪几项成了、哪几项没成, 未保存项**按 key 精确标红**(整表标红等于没标), 常驻提示条列出未保存键, 输入全部保留 |
+| 上游账单 | 只有"有数据"一个分支: 失败时**什么都不渲染**, 与"该期间还没导入"完全一样 → 渠道商以为没导成功,**重导一遍把同一批账单又写进去** | 四态显式分开; 错误文案自带「这不等于没导入」 |
+| 表行数 | `?? 0` → 取数失败五个计数全显 0 → 管理员认为表已空, **跳过"立即清理"**, 而超期资金明细还在库里 | `formatTableCount`: `undefined/NaN/Infinity → '—'`, **0 → 0**, 负数照实显(那是后端算错, 藏起来更糟) |
+
+前端另补: 二次确认文案必须与空闲态按钮**措辞不同**(重复同一句话会让用户以为第一下没点上); 提现只禁用提交按钮、**不锁输入框**(用户要继续改数字)。
+
+### 十、P1(前端): 账号导入平台缺 `antigravity` 与另两处"能配但配不出来"
+
+- 账号导入三条路径(单条/批量/登录)的平台下拉都只列 5 个, 新增的 `antigravity` 缺位 —— 选了它的账号被后端按平台校验拒收。新增纯模块 `accountPlatform.ts`(`ACCOUNT_PLATFORMS` 6 项 + `accountPlatformMismatch` + `defaultAccountPlatform`), 三条路径按同一判据放行/拦下;
+- **出口 `weight` 的标签误导**: 它只在分数**完全相等**时参与比较, 是 tie-breaker 而不是流量配比 —— 真实流量下两条线路的 EMA 耗时几乎不可能恰好相等, 所以填 80/20 **不会**变成八二开, 慢 0.1ms 的那条就是不会被选中。它真正起作用的是冷出口(没有样本时分数一律并列, 权重决定"先探哪一条")。文案与 OpenAPI 描述都改为「同分优先」, 并写清**刻意不做加权分流**的理由(分流等于主动把请求分给已知更慢的出口, 且让选择从可复现变随机);
+- **`key_rotation_strategy` 能配但界面无入口**(同渠道多凭据如何挑选: 轮询/随机/故障切换)。补 Select, 类型抽成 `KeyRotationStrategy` 供 `ChannelDetail` 与表单状态共用 —— 两处各抄一份联合类型, 后端加了取值就会静默漏。
+
+### 十一、`-shuffle` 顺序依赖: 换库必须同时清进程级缓存
+
+重检时发现 `internal/relay` 整包在 `-shuffle` 下会红 6 个用例(单跑全绿), 报错是 `group "grp-..." has no upstream members configured` —— 指向分组配置, 真正原因是**上一个用例留在 `channelCache` 里的 `DisabledUntil`**(额度暂停/熔断)被继承到本用例同号渠道上。`op` 的进程级缓存按主键记账, 而每个用例的 sqlite 主键都从 1 开始, 于是旧快照套在新库上。
+
+修法: `relayRetryTestDB`(以及同族的换库助手)在 `db.InitDB` 之后补 `op.ResetProcessCachesForTest()`。**这不是"让测试变绿"**, 而是让本包的测试信号可信: 不清的话默认顺序下全绿、`-shuffle` 下随机红, 测试就从回归保护退化成噪声。
+
+### 验证
+
+`bash scripts/check.sh` 全绿(含 python 四个安全套件、`go build ./...`、`linux/386`+`linux/arm` 交叉编译、`go vet`、`go test ./internal/...`、`-race ./internal/op`、`tsc -b --noEmit`、`eslint`、`vitest`、`test:public`)。`internal/op` 在 `-race` + `-shuffle=31337 / 424242` 两个种子下各约 10 分钟, 全绿; `internal/relay` 在 6 个种子(1/7/99/2026/31337/424242)下全绿。前端 `vitest` **88 文件 764 用例**(本批次前 76 文件 664 用例)。
+
+新增用例的形态偏"证据"而非"覆盖率": 每条修复都先证明修前会红(报错原文写在上面的各节), 且断言点落在**用户真正看得到的那一处**(接口返回值 / 库内行 / 从 `/channel/stats` 读到的缓存值三处同时断言, 因为转发读缓存)。
+
+**本次不含**: 多实例(租约式选主)按用户明确要求**不做**, 原设计笔记保留在 `docs/billing-retention-180d.md` §7 与 `docs/dev-next-2026-11-20.md` §B1/§E; 四张表留存按用户要求钉在 **180 天**; `op.AccountImport` 的 `dialect` 校验、`WithdrawSummary` 下发收益池币种、`channelConfigFingerprint` 纳入 `sub_platform`、`openai_video_base_path` 的前端入口列为后续批次。本版本未部署到任何运行中的服务。
+
 ## v1.10.18 — 2026-11-21
 
 **按 API Key 的持久化用量报表: 明细被留存清理后, 这把 Key 的历史仍然查得到**

@@ -140,7 +140,7 @@ func recordFxRefreshFailure(source string, err error) {
 	}
 	RaiseAlertFacts(context.Background(), AlertFacts{
 		Subject: "系统",
-		Kind:    "fx_rate_refresh_failed",
+		Kind:    AlertKindFxRateRefreshFailed,
 		Reason:  fmt.Sprintf("fx rate refresh failed %d consecutive times", consecutive),
 		Fields: []alert.Field{
 			{Label: "最后尝试源", Value: source},
@@ -169,7 +169,7 @@ func recordFxRefreshFailure(source string, err error) {
 		sendCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		sendErr := alert.SendOnce(sendCtx, channel, alert.Alert{
 			Event:     alert.EventFxRateRefreshFailed,
-			Kind:      "fx_rate_refresh_failed",
+			Kind:      AlertKindFxRateRefreshFailed,
 			Scope:     "系统",
 			Severity:  "warning",
 			Title:     "汇率牌价采集连续失败",

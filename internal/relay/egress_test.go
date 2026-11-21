@@ -234,3 +234,56 @@ func TestResolveUpstreamClientUsesEgress(t *testing.T) {
 		t.Fatalf("直连出口应使用共享直连客户端")
 	}
 }
+
+// TestPickEgressWeightIsTieBreakerNotTrafficRatio 钉死权重的**语义边界**:
+// 它只在分数完全相等时参与, 分数不同时再大的权重也压不过 0.1ms 的差距。
+//
+// 这条用例存在的理由: 界面标签写着「权重」, 管理员填 80/20 会以为在做流量配比。
+// 它并不是 —— 选路先按实测 EMA 耗时排序, 权重只是同分时的次序(以及冷出口的采样顺序)。
+// 若将来有人把这里改成真正的加权分流, 这条会立刻失败, 逼他先解释清楚为什么值得
+// 把请求主动分给已知更慢的线路。
+func TestPickEgressWeightIsTieBreakerNotTrafficRatio(t *testing.T) {
+	resetEgressStates()
+
+	// 同分: 除权重外完全一致的两个出口 → 权重大的先上。
+	lowWeight, highWeight := testEgress(11, "low", 1), testEgress(12, "high", 99)
+	picked, _, err := pickEgress(egressFixture(lowWeight, highWeight), "")
+	if err != nil {
+		t.Fatalf("同分选择失败: %v", err)
+	}
+	if picked.ID != highWeight.ID {
+		t.Fatalf("同分时应选权重大的 %d, 实得 %d", highWeight.ID, picked.ID)
+	}
+
+	// 分数不同: 权重 0 的出口快 1ms, 权重 1000 的慢 → 仍然选快的那个。
+	// 这就是"80/20 不是八二开"的直接证据: 差一点点就完全不看权重。
+	fastNoWeight, slowHugeWeight := testEgress(13, "fast", 0), testEgress(14, "slow", 1000)
+	recordEgressSample(fastNoWeight.ID, 20, 150, true)
+	recordEgressSample(slowHugeWeight.ID, 20, 151, true)
+	picked, _, err = pickEgress(egressFixture(fastNoWeight, slowHugeWeight), "")
+	if err != nil {
+		t.Fatalf("分差选择失败: %v", err)
+	}
+	if picked.ID != fastNoWeight.ID {
+		t.Fatalf("应选实际更快的出口 %d(哪怕权重为 0), 实得 %d —— 权重不该变成流量配比", fastNoWeight.ID, picked.ID)
+	}
+
+	// 反向再确认一次: 分数相同时权重确实能翻转结果, 排除上一条"恰好总是选第一个"的可能。
+	slowFirst, fastSecond := testEgress(15, "slow-first", 500), testEgress(16, "fast-second", 0)
+	recordEgressSample(slowFirst.ID, 20, 300, true)
+	recordEgressSample(fastSecond.ID, 20, 300, true)
+	picked, _, err = pickEgress(egressFixture(slowFirst, fastSecond), "")
+	if err != nil {
+		t.Fatalf("同分反向选择失败: %v", err)
+	}
+	if picked.ID != slowFirst.ID {
+		t.Fatalf("同分(300ms)时应选权重大的 %d, 实得 %d", slowFirst.ID, picked.ID)
+	}
+
+	// 单出口场景不受权重影响: 加权分流最容易在这里误伤既有行为。
+	only := testEgress(17, "only", 7)
+	picked, _, err = pickEgress(egressFixture(only), "")
+	if err != nil || picked.ID != only.ID {
+		t.Fatalf("单出口应恒选它, err=%v picked=%d", err, picked.ID)
+	}
+}

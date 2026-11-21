@@ -91,3 +91,23 @@
 `internal/server/handlers` 的进程级缓存、内存限流桶、进程内定时器)按现状保留,
 详见 `docs/feature-analysis-v1.10.13.md` §2.2。
 
+
+## 8. 留存固化事务为什么在开头就取写锁
+
+按天固化的事务是典型的"先读后写": 读当天明细 → 固化汇总 → 删明细。首条语句是 `SELECT`,
+只拿读快照; 随后那条写语句要把读快照升级成写锁, 而 WAL 下这次升级在有人并发提交时**必失败** ——
+报 `SQLITE_BUSY_SNAPSHOT`(扩展码 517), `busy_timeout` 对这条路径完全无效, 唯一出路是整轮重来。
+
+线上与 CI 都复现过: 留存任务与日结/审核同时跑时, 单测 `-shuffle=31337` 下报
+`create billing rollup user/1/20251017: database is locked (517)`。
+
+修法是在事务第一条语句先取写锁(`db.AcquireWriteLock`), 让并发方在本事务的写锁上按
+`busy_timeout` 排队, 而不是让自己的读-写升级去撞 517。这条修法之所以安全, 是因为该事务
+**一天一批**, 天然短小, 不会长占写锁; 也正因为如此, 长事务(整轮归档)不取锁, 只读事务永不取锁。
+
+回归用例 `TestBillingRetentionSurvivesConcurrentWriter` 在留存事务运行期间持续提交新明细,
+断言留存能跑完且终身口径不变; 把取锁那行删掉立即变红(`SQLITE_BUSY`)。
+
+**计量**: 2000 次取锁 = 0 WAL 字节、0 行写入 —— 锚点表的空更新只用来拿锁, 不改任何数据;
+`TestAcquireWriteLockAnchorTableStaysEmpty` 守住这条。
+

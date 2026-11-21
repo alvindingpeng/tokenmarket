@@ -738,7 +738,7 @@ func (r *RequestState) settleBillingLocked(usage *llm.Usage) {
 		// 渠道商自供自用时是可被主动利用的漏洞; 告警进对账视野, 由人工决定换渠道或补计费。
 		if r.Status == StatusSuccess {
 			op.RaiseAlertFacts(context.Background(), op.AlertFacts{
-				Kind:   "usage_missing",
+				Kind:   op.AlertKindUsageMissing,
 				Reason: "succeeded request returned no usage",
 				Fields: []alert.Field{
 					{Label: "调用请求", Value: fmt.Sprintf("#%d", r.ID)},

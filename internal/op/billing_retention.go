@@ -149,7 +149,7 @@ func BillingRetentionRun(ctx context.Context) (BillingRetentionResult, error) {
 		if err != nil {
 			result.ArchiveError = err.Error()
 			RaiseAlertFacts(ctx, AlertFacts{
-				Kind:   "billing_archive_failed",
+				Kind:   AlertKindBillingArchiveFailed,
 				Reason: "billing table archive failed",
 				Fields: []alert.Field{
 					{Label: "清理截止", Value: cutoff.Format("2006-01-02")},
@@ -249,6 +249,15 @@ func sealAndDeleteExpiredRecords(ctx context.Context, cutoff time.Time, archiveL
 func sealAndDeleteBillingDay(ctx context.Context, day, cutoff time.Time, archiveLimit uint64) (int64, error) {
 	var deleted int64
 	err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 先拿写锁: 这是个"先读后写"的短事务(读当天明细 -> 固化汇总 -> 删明细), 首条语句是
+		// SELECT 只会拿读快照, 之后的写要把它升级成写锁 —— 而 WAL 下这次升级在有人并发提交时
+		// 直接是 SQLITE_BUSY_SNAPSHOT(517), busy_timeout 对这条路径完全无效, 只能整轮重来。
+		// 实测形态: 留存任务与日结/审核并发时卡在这里报 "database is locked (517)"。
+		// 取锁后并发方改为在本事务的写锁上按 busy_timeout 排队(见 db.AcquireWriteLock)。
+		// 事务仍按"一天一批"保持短小, 所以可以在开头就取锁, 不会长占写锁。
+		if err := db.AcquireWriteLock(tx); err != nil {
+			return err
+		}
 		days := day.AddDate(0, 0, 1)
 		rows := make([]model.BillingRecord, 0)
 		rowQuery := tx.Model(&model.BillingRecord{}).

@@ -195,7 +195,9 @@ func TestRechargeManualComplete(t *testing.T) {
 	}
 }
 
-// TestRechargeCloseExpired 超时订单自动关闭, 关闭后不能再入账。
+// TestRechargeCloseExpired 超时订单自动关闭; 关闭后"没有回调"就不该有任何入账。
+// 注意关闭本身不等于放弃这笔钱: 第三方事后确认付款仍会补入账(见
+// TestRechargeNotifyCreditsExpiredOrder), 这里断言的是"没人确认付款就不动余额"。
 func TestRechargeCloseExpired(t *testing.T) {
 	user := rechargeTestSetup(t, "expired")
 	order, _, err := RechargeCreate(context.Background(), user.ID, 7000, "epay", "alipay", "https://api/n", "https://api/r")
@@ -206,12 +208,17 @@ func TestRechargeCloseExpired(t *testing.T) {
 	if err := db.GetDB().Model(&model.RechargeOrder{}).Where("order_no = ?", order.OrderNo).Update("expired_at", past).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := RechargeCloseExpired(context.Background()); err != nil {
+	if _, err := RechargeCloseExpired(context.Background()); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	if err := RechargeNotify(context.Background(), "epay", &pay.CallbackRequest{Form: rechargeTestQuery(order.OrderNo, "T400", "70.00")}); err == nil {
-		t.Fatal("expired order must not credit")
+	var closed model.RechargeOrder
+	if err := db.GetDB().Where("order_no = ?", order.OrderNo).First(&closed).Error; err != nil {
+		t.Fatal(err)
 	}
+	if closed.Status != model.RechargeStatusExpired {
+		t.Fatalf("status=%s, want expired", closed.Status)
+	}
+	// 没有回调 = 没人付款确认: 余额必须一分不动。
 	balance, _ := redemptionTestBalance(t, user.ID)
 	if balance != 0 {
 		t.Fatalf("balance=%v, want 0", balance)
@@ -256,5 +263,200 @@ func TestRechargeOrderPersistsRateProvenance(t *testing.T) {
 	}
 	if order.Rate != 7 || order.Currency != "CNY" || order.RateDay != "" || order.RateSource != "static" {
 		t.Fatalf("order rate=%v currency=%q day=%q source=%q, want 7/CNY/empty/static", order.Rate, order.Currency, order.RateDay, order.RateSource)
+	}
+}
+
+// TestRechargeNotifyCreditsExpiredOrder 钱优先: 订单已超时关闭但第三方确认收款, 必须入账。
+//
+// 这是"钱付了入不了账"的回归。"expired"只表示我们等回调等过了 TTL, 不代表用户没付;
+// 若死守 pending, 用户的钱就卡在第三方, 只能走人工补单。
+func TestRechargeNotifyCreditsExpiredOrder(t *testing.T) {
+	user := rechargeTestSetup(t, "expired-credit")
+	order, _, err := RechargeCreate(context.Background(), user.ID, 7000, "epay", "alipay", "https://api/n", "https://api/r")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// 把单子真正跑成 expired: 收紧 expired_at 再跑关闭, 与线上到期路径完全一致。
+	past := time.Now().Add(-time.Minute)
+	if err := db.GetDB().Model(&model.RechargeOrder{}).Where("order_no = ?", order.OrderNo).Update("expired_at", past).Error; err != nil {
+		t.Fatal(err)
+	}
+	closed, err := RechargeExpireRun(context.Background())
+	if err != nil {
+		t.Fatalf("expire run: %v", err)
+	}
+	if closed != 1 {
+		t.Fatalf("closed=%d, want 1", closed)
+	}
+	var expired model.RechargeOrder
+	if err := db.GetDB().Where("order_no = ?", order.OrderNo).First(&expired).Error; err != nil {
+		t.Fatal(err)
+	}
+	if expired.Status != model.RechargeStatusExpired {
+		t.Fatalf("status=%s, want expired before the callback", expired.Status)
+	}
+	// 第三方确认付款(金额正确): 必须入账。
+	if err := RechargeNotify(context.Background(), "epay", &pay.CallbackRequest{Form: rechargeTestQuery(order.OrderNo, "T500", "70.00")}); err != nil {
+		t.Fatalf("notify on expired order must credit: %v", err)
+	}
+	var fresh model.RechargeOrder
+	if err := db.GetDB().Where("order_no = ?", order.OrderNo).First(&fresh).Error; err != nil {
+		t.Fatal(err)
+	}
+	if fresh.Status != model.RechargeStatusPaid || fresh.TradeNo == nil || *fresh.TradeNo != "T500" {
+		t.Fatalf("status=%s trade=%v, want paid/T500", fresh.Status, fresh.TradeNo)
+	}
+	balance, recharged := redemptionTestBalance(t, user.ID)
+	if balance != 10 || recharged != 10 {
+		t.Fatalf("balance=%v recharged=%v, want 10 and 10", balance, recharged)
+	}
+}
+
+// TestRechargeNotifyExpiredStillChecksAmount 放宽状态不等于放宽金额:
+// 过期单照样按渠道实付额核对, 金额不符仍然拒绝入账(资损防线不能因为"过期"被绕过)。
+func TestRechargeNotifyExpiredStillChecksAmount(t *testing.T) {
+	user := rechargeTestSetup(t, "expired-mismatch")
+	order, _, err := RechargeCreate(context.Background(), user.ID, 7000, "epay", "alipay", "https://api/n", "https://api/r")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	past := time.Now().Add(-time.Minute)
+	if err := db.GetDB().Model(&model.RechargeOrder{}).Where("order_no = ?", order.OrderNo).Update("expired_at", past).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RechargeExpireRun(context.Background()); err != nil {
+		t.Fatalf("expire run: %v", err)
+	}
+	if err := RechargeNotify(context.Background(), "epay", &pay.CallbackRequest{Form: rechargeTestQuery(order.OrderNo, "T501", "0.01")}); err == nil {
+		t.Fatal("amount mismatch on an expired order must still be rejected")
+	}
+	balance, _ := redemptionTestBalance(t, user.ID)
+	if balance != 0 {
+		t.Fatalf("balance=%v, want 0", balance)
+	}
+	var fresh model.RechargeOrder
+	if err := db.GetDB().Where("order_no = ?", order.OrderNo).First(&fresh).Error; err != nil {
+		t.Fatal(err)
+	}
+	if fresh.Status != model.RechargeStatusExpired {
+		t.Fatalf("status=%s, want expired (not credited)", fresh.Status)
+	}
+}
+
+// TestRechargeNotifyExpiredIdempotent 过期补入账也只能入一次:
+// 重复回调走既有 paid 幂等分支, 余额不再增加 —— 绝不允许同一单二次入账。
+func TestRechargeNotifyExpiredIdempotent(t *testing.T) {
+	user := rechargeTestSetup(t, "expired-idempotent")
+	order, _, err := RechargeCreate(context.Background(), user.ID, 7000, "epay", "alipay", "https://api/n", "https://api/r")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	past := time.Now().Add(-time.Minute)
+	if err := db.GetDB().Model(&model.RechargeOrder{}).Where("order_no = ?", order.OrderNo).Update("expired_at", past).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RechargeExpireRun(context.Background()); err != nil {
+		t.Fatalf("expire run: %v", err)
+	}
+	query := rechargeTestQuery(order.OrderNo, "T502", "70.00")
+	if err := RechargeNotify(context.Background(), "epay", &pay.CallbackRequest{Form: query}); err != nil {
+		t.Fatalf("notify #1: %v", err)
+	}
+	// 第二次: 订单已是 paid, 命中幂等分支(返回 nil) 且不再入账。
+	if err := RechargeNotify(context.Background(), "epay", &pay.CallbackRequest{Form: query}); err != nil {
+		t.Fatalf("notify #2 must be idempotent: %v", err)
+	}
+	balance, recharged := redemptionTestBalance(t, user.ID)
+	if balance != 10 || recharged != 10 {
+		t.Fatalf("balance=%v recharged=%v, want 10 and 10 (credited once)", balance, recharged)
+	}
+	var topupRows int64
+	if err := db.GetDB().Model(&model.BillingLedger{}).
+		Where("user_id = ? AND kind = ?", user.ID, model.LedgerKindTopup).Count(&topupRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if topupRows != 1 {
+		t.Fatalf("topup ledger rows=%d, want exactly 1", topupRows)
+	}
+}
+
+// TestRechargeManualCompleteAcceptsExpired 人工补单必须接受 expired:
+// 管理员核对第三方账单确认收款后, 不该因为"单子已关闭"被迫改库。
+func TestRechargeManualCompleteAcceptsExpired(t *testing.T) {
+	user := rechargeTestSetup(t, "expired-manual")
+	order, _, err := RechargeCreate(context.Background(), user.ID, 7000, "epay", "alipay", "https://api/n", "https://api/r")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	past := time.Now().Add(-time.Minute)
+	if err := db.GetDB().Model(&model.RechargeOrder{}).Where("order_no = ?", order.OrderNo).Update("expired_at", past).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RechargeExpireRun(context.Background()); err != nil {
+		t.Fatalf("expire run: %v", err)
+	}
+	if err := RechargeManualComplete(context.Background(), order.OrderNo, 1, "admin"); err != nil {
+		t.Fatalf("manual complete on expired order: %v", err)
+	}
+	// 二次补单仍然拒绝(条件更新 + paid 短路), 余额只加一次。
+	if err := RechargeManualComplete(context.Background(), order.OrderNo, 1, "admin"); err == nil {
+		t.Fatal("double manual complete must be rejected")
+	}
+	balance, _ := redemptionTestBalance(t, user.ID)
+	if balance != 10 {
+		t.Fatalf("balance=%v, want 10", balance)
+	}
+}
+
+// TestRechargeExpireRunClosesOnlyDuePending 周期任务只关到期的 pending, 不碰其它状态。
+func TestRechargeExpireRunClosesOnlyDuePending(t *testing.T) {
+	user := rechargeTestSetup(t, "expire-run")
+	due, _, err := RechargeCreate(context.Background(), user.ID, 7000, "epay", "alipay", "https://api/n", "https://api/r")
+	if err != nil {
+		t.Fatalf("create due: %v", err)
+	}
+	fresh, _, err := RechargeCreate(context.Background(), user.ID, 7000, "epay", "alipay", "https://api/n", "https://api/r")
+	if err != nil {
+		t.Fatalf("create fresh: %v", err)
+	}
+	past := time.Now().Add(-time.Minute)
+	if err := db.GetDB().Model(&model.RechargeOrder{}).Where("order_no = ?", due.OrderNo).Update("expired_at", past).Error; err != nil {
+		t.Fatal(err)
+	}
+	closed, err := RechargeExpireRun(context.Background())
+	if err != nil {
+		t.Fatalf("expire run: %v", err)
+	}
+	if closed != 1 {
+		t.Fatalf("closed=%d, want 1 (only the due one)", closed)
+	}
+	var freshRow model.RechargeOrder
+	if err := db.GetDB().Where("order_no = ?", fresh.OrderNo).First(&freshRow).Error; err != nil {
+		t.Fatal(err)
+	}
+	// 未到期的单必须仍是 pending: 提前关闭会白白吃掉用户还在付款中的订单。
+	if freshRow.Status != model.RechargeStatusPending {
+		t.Fatalf("fresh order status=%s, want pending", freshRow.Status)
+	}
+	var dueRow model.RechargeOrder
+	if err := db.GetDB().Where("order_no = ?", due.OrderNo).First(&dueRow).Error; err != nil {
+		t.Fatal(err)
+	}
+	if dueRow.Status != model.RechargeStatusExpired {
+		t.Fatalf("due order status=%s, want expired", dueRow.Status)
+	}
+}
+
+// TestRechargeCloseExpiredReturnsCount 关闭函数返回本轮关闭笔数: 周期任务靠它判断"有没有事发生",
+// 返回固定 nil 会让任务永远无法发现"我其实一笔都没关"(阈值写错/TTL 配反都表现成静默)。
+func TestRechargeCloseExpiredReturnsCount(t *testing.T) {
+	_ = rechargeTestSetup(t, "close-count")
+	// 没有到期的单时必须是 0 而不是报错。
+	closed, err := RechargeCloseExpired(context.Background())
+	if err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if closed != 0 {
+		t.Fatalf("closed=%d, want 0 on an empty table", closed)
 	}
 }

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     ApiError,
     apiRequest,
+    assertJSONBody,
     clearStepUpToken,
     isStepUpRequired,
     setStepUpHandler,
@@ -167,5 +168,82 @@ describe('step-up 重试契约(安全边界)', () => {
         const error = await apiRequest('/api/v1/thing', { method: 'POST', body: { a: 1 } }).catch((caught: unknown) => caught);
         expect(isStepUpRequired(error)).toBe(true);
         expect(calls).toHaveLength(1); // 一次都没有补发
+    });
+});
+
+// 请求体序列化是 P0 回归: apiRequest 内部已经 JSON.stringify(body), 调用方若再 stringify 一次,
+// 发出去的就是 JSON 字符串字面量("{...}"), 后端 ShouldBindJSON 必回 400 —— 6 个写操作
+// (静默窗口/花费预算增改/上游账单定性/重算/导入)曾因此 100% 不可用, 且静默窗口要先输一次 step-up 密码才失败。
+// 这里既钉住「对象只序列化一层」的正向行为, 也钉住「传字符串或 FormData 直接报错且不发请求」。
+describe('apiRequest 请求体序列化', () => {
+    const originalDocument = (globalThis as { document?: unknown }).document;
+    type Call = { url: string; init: RequestInit | undefined };
+    let calls: Call[] = [];
+
+    beforeEach(() => {
+        (globalThis as { document?: unknown }).document = { baseURI: 'http://localhost/' };
+        calls = [];
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        (globalThis as { document?: unknown }).document = originalDocument;
+    });
+
+    const ok = (data: unknown) => new Response(JSON.stringify({ code: 200, message: 'success', data }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+    });
+
+    const stub = (respond: () => Response) => {
+        vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+            calls.push({ url: String(url), init });
+            return respond();
+        });
+    };
+
+    it('对象 body 只序列化一层, 并带 application/json', async () => {
+        stub(() => ok({ done: true }));
+        await apiRequest('/api/v1/ops/silence/create', { method: 'POST', body: { start_at: 'a', end_at: 'b' } });
+        expect(calls).toHaveLength(1);
+        // 单层: 解析一次就得到原对象, 不会解析出字符串。
+        expect(JSON.parse(String(calls[0].init?.body))).toEqual({ start_at: 'a', end_at: 'b' });
+        // 二次 stringify 的典型症状: 解析结果本身是字符串。
+        expect(typeof JSON.parse(String(calls[0].init?.body))).toBe('object');
+        expect(new Headers(calls[0].init?.headers).get('Content-Type')).toBe('application/json');
+    });
+
+    it('body 传字符串直接抛错, 一次请求都不发', async () => {
+        stub(() => ok({}));
+        const error = await apiRequest('/api/v1/ops/silence/create', { method: 'POST', body: JSON.stringify({ start_at: 'a' }) })
+            .catch((caught: unknown) => caught);
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toContain('JSON.stringify');
+        expect(calls).toHaveLength(0); // 宁可不发, 也不发一个注定 400 的请求
+    });
+
+    it('body 传 FormData 直接抛错并指向 apiUpload, 一次请求都不发', async () => {
+        stub(() => ok({}));
+        const form = new FormData();
+        form.append('channel_id', '7');
+        const error = await apiRequest('/api/v1/upstream-bills/import', { method: 'POST', body: form })
+            .catch((caught: unknown) => caught);
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toContain('apiUpload');
+        expect(calls).toHaveLength(0);
+    });
+
+    it('assertJSONBody 放行普通对象与 undefined, 拦下字符串/FormData/数组字符串化', () => {
+        expect(() => assertJSONBody({ a: 1 })).not.toThrow();
+        expect(() => assertJSONBody(undefined)).not.toThrow();
+        expect(() => assertJSONBody('{"a":1}')).toThrow();
+        expect(() => assertJSONBody(new FormData())).toThrow();
+    });
+
+    it('GET 无 body 时不发 Content-Type: 空 body 不该装成 JSON 请求', async () => {
+        stub(() => ok({ items: [] }));
+        await apiRequest('/api/v1/ops/silence/list');
+        expect(calls[0].init?.body).toBeUndefined();
+        expect(new Headers(calls[0].init?.headers).get('Content-Type')).toBeNull();
     });
 });

@@ -33,6 +33,13 @@ func relayRetryTestDB(t *testing.T) {
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "relay_retry.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)
 	}
+	// op 的进程级缓存(渠道/凭据/模型/授权/分组)按主键记账, 而每个用例的 sqlite 主键都从 1 开始,
+	// 于是上一条用例留下的快照会套在本条用例的同号渠道上。最典型的一种表现是
+	// channelCache 里那条 DisabledUntil(额度暂停或熔断)被继承下来: 新建的渠道在库里 Enabled=true、
+	// 缓存里却带着别人的冷却截止时间, 转发直接判"不可用", 报成
+	// 「group has no upstream members configured」 —— 报错指向分组配置, 真正原因是上个用例的缓存。
+	// 换库必须同时清缓存, 否则本包的测试信号整体不可信(单跑绿、-shuffle 随机红)。
+	op.ResetProcessCachesForTest()
 	if err := op.SettingUpsert(model.SettingKeyMarkupRatio, "0"); err != nil {
 		t.Fatalf("seed markup setting: %v", err)
 	}

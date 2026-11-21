@@ -131,6 +131,9 @@ type ChannelKeyConfig struct {
 	BreakerTrips  int        `json:"breaker_trips" gorm:"default:0"` // 自上次成功以来累计熔断次数; 熔断时长按它翻倍, 成功即清零。
 	ProbeCount    int        `json:"probe_count" gorm:"default:0"`   // 熔断恢复探测尝试次数; 超过上限则不再自动探测。
 	ProbeAt       *time.Time `json:"probe_at,omitempty"`             // 上次探测时间。
+	// ProbeLimited 是派生值(probe_count >= op.BreakerProbeLimit), 不入库: 上限是后端常量,
+	// 界面拿它直接显示"自动探测已放弃", 不必自己再抄一个上限数字, 调上限时也不会失配。
+	ProbeLimited bool `json:"probe_limited" gorm:"-"`
 	// 上游账号(导入的 OAuth 账号 JSON)。
 	//
 	// 为什么整包 JSON 放进已有的 Key 列而不是新开一张表: Key 列本来就是「这把凭据的全部秘密」,
@@ -202,6 +205,11 @@ type ChannelDetail struct {
 	Egresses      []ChannelEgress      `json:"egresses"` // 渠道的出口池; 空表示沿用渠道自身的代理配置(向后兼容)。
 	Models        []string             `json:"models"`   // 渠道提供的上游模型名称。
 	Grants        []ChannelGrantConfig `json:"grants"`   // 渠道下的授权。
+	// ExplicitColumns 记录提交体里**真的出现过**的配置字段(JSON 字段名 → true)。
+	// 不进 JSON: 它描述的是"这次请求说过什么", 不是渠道的配置, 读取侧无从给值。
+	// 唯一用途是创建渠道时判断哪些零值该覆盖 DB 默认值(见 ChannelCreate 的说明) ——
+	// 没出现过的字段必须按默认值建, 否则只提交 name + base_url 的老客户端会建出"默认停用"的渠道。
+	ExplicitColumns map[string]bool `json:"-"`
 }
 
 // 渠道授权的可编辑形状, 两侧按名称引用。
@@ -251,6 +259,12 @@ type ChannelModelStats struct {
 	ErrorCount    int        `json:"error_count"`              // 熔断计数(与熔断共用同一列, 熔断后清零)。
 	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`  // 最后错误时间, 从未出错不给出。
 	DisabledUntil *time.Time `json:"disabled_until,omitempty"` // 熔断截止时间, 未熔断不给出。
+	// 自动探测状态同样外露: 探测有次数上限, 到顶后熔断转由人工解锁,
+	// 界面必须能看出"这个成员是坏了, 还是探到上限不再探了"。上限是 op.BreakerProbeLimit,
+	// 由 ProbeLimited 这一派生标志给出结论 —— 前端不该自己再抄一个上限数字。
+	ProbeCount   int        `json:"probe_count"`        // 已消耗的自动探测次数; 探测成功或人工重置后归零。
+	ProbeAt      *time.Time `json:"probe_at,omitempty"` // 上次自动探测时间, 从未探测不给出。
+	ProbeLimited bool       `json:"probe_limited"`      // 已探到上限, 不再自动探测(只能人工解锁或等成功一次)。
 }
 
 // 审核队列条目: 审核决策所需的最小字段集, 不外露路径、代理与凭据。

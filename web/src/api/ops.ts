@@ -1,6 +1,7 @@
 import { queryOptions, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from './client';
 import { POLL_SLOW } from '@/lib/polling';
+import type { AnyAlertKind } from '@/lib/alert-kinds';
 
 export type BillingRecoveryRow = {
     id: number; reservation_id: number; request_id: string; user_id: number;
@@ -53,13 +54,10 @@ export type ChannelHealth = {
 // detail: 逐行 "标签: 值" 的结构化明细, 展开查看用; 外部通知正文取自同一批字段。
 export type ChannelAlert = {
     id: number; channel_id: number; channel_code: string; subject: string; detail: string;
-    kind: 'down' | 'recovered' | 'degraded' | 'key_disabled' | 'model_disabled'
-        | 'mismatch' | 'billing_failed' | 'backup_failed' | 'archive_failed'
-        | 'low_balance' | 'quota_exceeded' | 'task_failed' | 'task_recovered'
-        | 'update_available' | 'watchdog_alert'
-        | 'route_persist_failed' | 'route_persist_recovered'
-        | 'fx_rate_refresh_failed'
-        | 'test';
+    // kind 取 lib/alert-kinds 的全集: 原先这里手抄了 19 项联合类型, 与后端闭集长期不同步
+    // (fx_rate_refresh_failed 早就在发却不在类型里, 两个资金安全 kind 同样漏掉)。
+    // 因为 kindBadge 入参是 string, 编译器不会报错, 于是在需要穷举 kind 的地方静默漏分支。
+    kind: AnyAlertKind;
     reason: string;
     notified: boolean; created_at: string;
 };
@@ -490,12 +488,21 @@ export function useAlertSilence() {
     });
 }
 
-// useCreateAlertSilence 新建窗口。后端校验时长(最长 72h)与类型闭集, 失败直接 toast。
+// AlertSilenceInput 静默窗口的提交载荷。
+export type AlertSilenceInput = { start_at: string; end_at: string; kind?: string; note?: string };
+
+// createAlertSilence 新建窗口。后端校验时长(最长 72h)与类型闭集, 失败直接 toast。
+// 抽成普通函数(与 balance-alert 的 saveBalanceAlert 同一写法)是为了让测试能直接断言请求体形状:
+// hook 在没有 QueryClientProvider 的环境里调不起来, 而请求体被二次 stringify 过一次曾让这里 100% 回 400。
+export function createAlertSilence(input: AlertSilenceInput) {
+    return apiRequest<{ item: AlertSilenceWindow }>('/api/v1/ops/silence/create', { method: 'POST', body: input });
+}
+
+// useCreateAlertSilence 新建窗口。
 export function useCreateAlertSilence() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: (input: { start_at: string; end_at: string; kind?: string; note?: string }) =>
-            apiRequest<{ item: AlertSilenceWindow }>('/api/v1/ops/silence/create', { method: 'POST', body: JSON.stringify(input) }),
+        mutationFn: createAlertSilence,
         onSuccess: () => void qc.invalidateQueries({ queryKey: ['ops', 'alert-silence'] }),
     });
 }
@@ -531,20 +538,33 @@ export function useBudgets() {
     });
 }
 
+// SpendBudgetInput / SpendBudgetUpdateInput 花费预算的新建与修改载荷。
+export type SpendBudgetInput = { user_id?: number; api_key_id?: number; period: string; action: string; limit_amount: number; warn_ratio: number };
+export type SpendBudgetUpdateInput = { id: number; period: string; action: string; limit_amount: number; warn_ratio: number; enabled: boolean };
+
+// createBudget 新建花费预算。请求体整体交给 apiRequest 序列化 —— 再包一层 JSON.stringify
+// 会让后端收到字符串字面量并回 400, 这项功能此前就是这样整个不可用的。
+export function createBudget(input: SpendBudgetInput) {
+    return apiRequest<{ item: SpendBudget }>('/api/v1/budgets', { method: 'POST', body: input });
+}
+
 export function useCreateBudget() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: (input: { user_id?: number; api_key_id?: number; period: string; action: string; limit_amount: number; warn_ratio: number }) =>
-            apiRequest<{ item: SpendBudget }>('/api/v1/budgets', { method: 'POST', body: JSON.stringify(input) }),
+        mutationFn: createBudget,
         onSuccess: () => void qc.invalidateQueries({ queryKey: ['ops', 'budgets'] }),
     });
+}
+
+// updateBudget 修改花费预算。id 同时出现在路径与请求体里(后端按 body.id 校验归属)。
+export function updateBudget(input: SpendBudgetUpdateInput) {
+    return apiRequest<{ item: SpendBudget }>('/api/v1/budgets/' + input.id, { method: 'PUT', body: input });
 }
 
 export function useUpdateBudget() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: (input: { id: number; period: string; action: string; limit_amount: number; warn_ratio: number; enabled: boolean }) =>
-            apiRequest<{ item: SpendBudget }>('/api/v1/budgets/' + input.id, { method: 'PUT', body: JSON.stringify(input) }),
+        mutationFn: updateBudget,
         onSuccess: () => void qc.invalidateQueries({ queryKey: ['ops', 'budgets'] }),
     });
 }

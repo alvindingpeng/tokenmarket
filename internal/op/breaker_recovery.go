@@ -17,6 +17,13 @@ var ProbeBreakerTarget func(ctx context.Context, channelID, keyID, modelID int) 
 const breakerProbeTimeout = 20 * time.Second
 const breakerProbeDelay = 5 * time.Minute
 
+// BreakerProbeLimit 自动探测的次数上限: 探满就不再自动探测, 转由人工解锁或等一次成功。
+//
+// 导出是为了让界面能显示"探到上限已放弃自动探测": 上限若只在 SQL 里硬编码, 前端只能自己
+// 再写一个 3, 一处调另一处就失配。准入条件与自增都用它, 三条重置出口把它归零
+// (见 ResetChannelKeyErrors / ResetChannelModelErrors / ChannelBreakerReset)。
+const BreakerProbeLimit = 3
+
 type breakerProbeSnapshot struct {
 	ID, ChannelID, ErrorCount, BreakerTrips, ProbeCount int
 	DisabledUntil, LastErrorAt, ProbeAt                 *time.Time
@@ -49,7 +56,7 @@ func BreakerRecoveryProbe(ctx context.Context) error {
 		now := time.Now()
 		if key {
 			var items []model.ChannelKey
-			if err := db.GetDB().WithContext(ctx).Where("disabled_until IS NOT NULL AND disabled_until < ? AND probe_count < ? AND (probe_at IS NULL OR probe_at < ?)", now, 3, now.Add(-2*time.Minute)).Find(&items).Error; err != nil {
+			if err := db.GetDB().WithContext(ctx).Where("disabled_until IS NOT NULL AND disabled_until < ? AND probe_count < ? AND (probe_at IS NULL OR probe_at < ?)", now, BreakerProbeLimit, now.Add(-2*time.Minute)).Find(&items).Error; err != nil {
 				return err
 			}
 			for _, item := range items {
@@ -62,7 +69,7 @@ func BreakerRecoveryProbe(ctx context.Context) error {
 			}
 		} else {
 			var items []model.ChannelModel
-			if err := db.GetDB().WithContext(ctx).Where("disabled_until IS NOT NULL AND disabled_until < ? AND probe_count < ? AND (probe_at IS NULL OR probe_at < ?)", now, 3, now.Add(-2*time.Minute)).Find(&items).Error; err != nil {
+			if err := db.GetDB().WithContext(ctx).Where("disabled_until IS NOT NULL AND disabled_until < ? AND probe_count < ? AND (probe_at IS NULL OR probe_at < ?)", now, BreakerProbeLimit, now.Add(-2*time.Minute)).Find(&items).Error; err != nil {
 				return err
 			}
 			for _, item := range items {
@@ -94,7 +101,7 @@ func recoverBreakerTarget(ctx context.Context, entity interface{}, key bool, row
 		return nil
 	}
 	result := breakerProbeCAS(db.GetDB().WithContext(ctx).Model(entity), row).
-		Where("disabled_until < ? AND probe_count < 3 AND (probe_at IS NULL OR probe_at < ?)", now, now.Add(-2*time.Minute)).
+		Where("disabled_until < ? AND probe_count < ? AND (probe_at IS NULL OR probe_at < ?)", now, BreakerProbeLimit, now.Add(-2*time.Minute)).
 		Updates(map[string]interface{}{"disabled_until": until, "probe_at": now, "probe_count": row.ProbeCount + 1})
 	if result.Error != nil || result.RowsAffected == 0 {
 		channelBreakerWriteMu.Unlock()
