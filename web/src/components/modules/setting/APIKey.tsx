@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import { useTranslations } from 'use-intl';
-import { KeyRound, Plus, Loader, Trash2, Check, X, Info, CalendarDays, Pencil, Maximize2 } from 'lucide-react';
+import { KeyRound, Plus, Loader, Trash2, Check, X, Info, CalendarDays, Pencil, Maximize2, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Input } from '@/components/ui/input';
 import { Calendar } from '@/components/ui/calendar';
@@ -20,7 +20,10 @@ import {
     useCreateAPIKey,
     useUpdateAPIKey,
     useDeleteAPIKey,
+    useAPIKeyUsage,
+    apiKeyUsageTokens,
     type APIKey,
+    type APIKeyUsageTotals,
 } from '@/api/apikey';
 import { useGroupList } from '@/api/group';
 import { maskAPIKey, toAPIKeyCreatePayload, toAPIKeyUpdatePayload, type APIKeyFormState } from '@/lib/apikey';
@@ -28,6 +31,9 @@ import { useStatsAPIKey } from '@/api/stats';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { CopyIconButton } from '@/components/common/CopyButton';
+import { billingExportUrl } from '@/api/billing';
+import { downloadFile, isStepUpRequired } from '@/api/client';
+import { formatPlainMoney } from '@/lib/money';
 
 function toExpireAt(date: Date, time: string): number {
     const t = /^\d{2}:\d{2}$/.test(time) ? time : '00:00';
@@ -414,6 +420,102 @@ function APIKeyFormOverlay({
     );
 }
 
+// formatPlainMoney 计费金额可能不足 0.001, 与计费页同一口径(固定 6 位小数再截尾零)。
+const formatUsageCost = formatPlainMoney;
+
+// formatUsageCount 词元与请求数是整数, 只加千位分隔符。
+function formatUsageCount(value: number): string {
+    return value.toLocaleString('en-US');
+}
+
+// exportAPIKeyRecords 导出该 Key 的计费明细 CSV。
+// 与计费页同一套下载方式: 走 api/client 的 downloadFile 才能带上验证头并处理 step-up。
+// 不用 a 标签/window.open —— 那样越权校验与二次确认都带不上。
+async function exportAPIKeyRecords(apiKeyID: number, onFailed: (message: string) => void) {
+    const filter = { api_key_id: apiKeyID };
+    try {
+        await downloadFile(billingExportUrl(filter), `switchyard-apikey-${apiKeyID}.csv`);
+    } catch (error) {
+        // 用户取消密码确认 = 请求没发出去, 不必再报错。
+        if (!isStepUpRequired(error)) onFailed(error instanceof Error ? error.message : String(error));
+    }
+}
+
+// APIKeyUsageSection 渲染该 Key 的持久化用量: 最近 30 天 / 累计 / 退费提示 / 留存脚注 / 明细导出。
+// 单独成组件的理由有二:
+//   1. 只有在这里 hook 的 data 才是局部变量, TS 能把"有数据"这一支收窄——放在父组件用布尔别名收窄不了;
+//   2. 内存实时计数(父组件上方 6 格)与这段的加载/失败状态互不相干, 一个失败不该让另一个消失。
+function APIKeyUsageSection({ apiKey }: { apiKey: APIKey }) {
+    const t = useTranslations('setting');
+    const usageQuery = useAPIKeyUsage(apiKey.id);
+    const usage = usageQuery.data;
+
+    // usageRow 渲染一个窗口的用量。卡片只有 320px 宽, 三列并排会把数字挤成难读的一串,
+    // 因此按"标签在左、数值在右"逐行排: 三行固定高度, 两个窗口叠起来高度也可预期。
+    // 调用方保证 totals 存在; 缺失的整段数据走下面的三态分支, 绝不在这里补 0。
+    const usageRow = (label: string, totals: APIKeyUsageTotals) => (
+        <div className="rounded-xl bg-muted/40 p-2.5">
+            <div className="mb-1 text-xs text-muted-foreground">{label}</div>
+            <dl className="space-y-0.5 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                    <dt className="text-muted-foreground">{t('apiKey.usage.requests')}</dt>
+                    <dd className="font-medium tabular-nums">{formatUsageCount(totals.request_count)}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                    <dt className="text-muted-foreground">{t('apiKey.usage.tokens')}</dt>
+                    <dd className="font-medium tabular-nums">{formatUsageCount(apiKeyUsageTokens(totals))}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                    <dt className="text-muted-foreground">{t('apiKey.usage.cost')}</dt>
+                    <dd className="font-medium tabular-nums">${formatUsageCost(totals.user_cost)}</dd>
+                </div>
+            </dl>
+        </div>
+    );
+
+    return (
+        <div className="mt-4 border-t border-border/60 pt-3">
+            <div className="mb-2 text-xs font-medium text-card-foreground">{t('apiKey.usage.title')}</div>
+            {usageQuery.isPending ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader className="size-3.5 animate-spin" />
+                    {t('apiKey.usage.loading')}
+                </div>
+            ) : usageQuery.isError ? (
+                <div className="text-xs text-destructive">{t('apiKey.usage.loadFailed')}</div>
+            ) : !usage || usage.coverage_start === '' ? (
+                // coverage_start 为空 = 窗口内没有任何记录。这与"用量为 0"是两件事, 必须分开表达。
+                <div className="text-xs text-muted-foreground">{t('apiKey.usage.noData')}</div>
+            ) : (
+                <div className="space-y-2">
+                    {usageRow(t('apiKey.usage.recent'), usage.recent)}
+                    {usageRow(t('apiKey.usage.total'), usage.total)}
+                    {usage.total.refunded_records > 0 && (
+                        <div className="text-[11px] text-muted-foreground">
+                            {t('apiKey.usage.refunded', {
+                                count: usage.total.refunded_records,
+                                amount: formatUsageCost(usage.total.refunded_user_cost),
+                            })}
+                        </div>
+                    )}
+                    <div className="text-[11px] text-muted-foreground/80">
+                        {t('apiKey.usage.retention', { days: usage.retention_days })}
+                    </div>
+                </div>
+            )}
+            <button
+                type="button"
+                onClick={() => void exportAPIKeyRecords(apiKey.id, (message) =>
+                    toast.error(t('apiKey.usage.exportFailed'), { description: message }))}
+                className="mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-xl bg-muted text-muted-foreground text-xs font-medium transition-colors hover:bg-muted/80 active:scale-[0.98]"
+            >
+                <Download className="size-3.5" />
+                {t('apiKey.usage.export')}
+            </button>
+        </div>
+    );
+}
+
 function APIKeyStatsCard({
     layoutId,
     apiKey,
@@ -494,6 +596,9 @@ function APIKeyStatsCard({
                     </div>
                 </div>
             )}
+
+            {/* 持久化用量: 上面 6 格是内存实时计数, 进程重启会丢一段; 这一段来自落库报表, 有留存口径。 */}
+            <APIKeyUsageSection apiKey={apiKey} />
         </motion.div>
     );
 }

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
@@ -33,6 +34,12 @@ func init() {
 		AddRoute(
 			router.NewRoute("/delete/:id", http.MethodDelete).
 				Handle(deleteAPIKey),
+		).
+		AddRoute(
+			// 持久化用量报表: 与 /stats 不同, 这一条吃会话登录态而不是 Bearer Key,
+			// 因为它要按 api_key_id 查任意一把自有的 Key(前端设置页用), 而不是"当前这把"。
+			router.NewRoute("/usage", http.MethodGet).
+				Handle(getAPIKeyUsage),
 		)
 	router.NewGroupRouter("/api/v1/apikey").
 		Use(middleware.APIKeyAuth()).
@@ -154,4 +161,67 @@ func getStatsAPIKeyById(c *gin.Context) {
 
 func loginAPIKey(c *gin.Context) {
 	resp.Success(c, nil)
+}
+
+// getAPIKeyUsage 返回某把 API Key 的持久化用量报表。
+//
+// 为什么单独一条而不用 /stats: /stats 走的是 APIKeyAuth(Bearer), 只能答"当前这把 Key 的
+// 内存实时计数", 重启即归零; 本接口走会话鉴权, 读的是 billing_records ∪ billing_rollups,
+// 所以明细被留存清理后该 Key 的历史仍然查得到。
+//
+// 归属铁律: 先取 Key 档案, 再判归属。非管理员查别人的 Key 一律按 404 处理(不是 403) ——
+// 403 会泄露"这把 Key 存在", 而 Key 主键是连续整数, 遍历即可枚举他人 Key 的存在性。
+// 归属只来自登录身份 + 库里的档案, 绝不信任请求参数里的任何归属声明。
+func getAPIKeyUsage(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	raw := strings.TrimSpace(c.Query("api_key_id"))
+	apiKeyID, err := strconv.Atoi(raw)
+	if err != nil || apiKeyID <= 0 {
+		resp.Error(c, http.StatusBadRequest, "invalid api_key_id")
+		return
+	}
+	from, ok := parseUsageDate(c.Query("from"), false)
+	if !ok {
+		resp.Error(c, http.StatusBadRequest, "invalid from: want YYYY-MM-DD")
+		return
+	}
+	to, ok := parseUsageDate(c.Query("to"), true)
+	if !ok {
+		resp.Error(c, http.StatusBadRequest, "invalid to: want YYYY-MM-DD")
+		return
+	}
+	apiKey, err := op.APIKeyGet(apiKeyID, c.Request.Context())
+	if err != nil || !scopeOf(c).Owns(apiKey.UserID) {
+		resp.Error(c, http.StatusNotFound, "API key not found")
+		return
+	}
+	report, err := op.APIKeyUsageReport(c.Request.Context(), apiKeyID, from, to)
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	resp.Success(c, report)
+}
+
+// parseUsageDate 解析报表的日期参数(YYYY-MM-DD)。
+//
+// 为什么 to 要加一天: 用户说的"到 11-20"是**含当天**的自然日, 而 op 层窗口是左闭右开的
+// [from, until), 所以让 to 指向次日零点。加一天也就让整天的明细与整天固化的汇总同口径,
+// 不会出现"最后一天只算到某个时刻"的半天错位。
+//
+// 为什么不用 time.Parse 直接落成时间: 那样解析出的是 UTC 零点, 与"本地挂钟自然日"差一个时区,
+// 报表最后一天会被截掉几个小时。这里显式用 time.Local 造日界。
+func parseUsageDate(raw string, exclusiveEnd bool) (time.Time, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, true
+	}
+	parsed, err := time.ParseInLocation("2006-01-02", raw, time.Local)
+	if err != nil {
+		return time.Time{}, false
+	}
+	if exclusiveEnd {
+		parsed = parsed.AddDate(0, 0, 1)
+	}
+	return parsed, true
 }

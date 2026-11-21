@@ -37,6 +37,15 @@ step "后端: 编译"
 (cd "$ROOT" && go build ./...)
 ok "go build"
 
+# 发布产物矩阵里有 linux/386 与 linux/arm 两档 32 位目标, 其中 int 是 32 位:
+# "2654435761 (untyped int constant) overflows int" 这类错在 amd64 上编译永远看不到,
+# 直到 GitHub Actions 打产物时才失败(release-assets 因此连续失败、v1.10.16/17 的 Release
+# 一直是空产物)。本机补一档 32 位编译, 让这类错在交付前就暴露。
+step "后端: 32 位交叉编译（发布矩阵含 linux/386 与 linux/arm）"
+(cd "$ROOT" && GOOS=linux GOARCH=386 CGO_ENABLED=0 go build ./... \
+    && GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build ./...)
+ok "go build (linux/386, linux/arm)"
+
 step "后端: vet"
 (cd "$ROOT" && go vet ./internal/... ./cmd/...)
 ok "go vet"

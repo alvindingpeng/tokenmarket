@@ -305,9 +305,9 @@ func openAPIAdminSchemas() gin.H {
 				"description": "该模型下的各渠道挂牌; 定序为可用优先, 再按用户价升序, 最后按渠道编码"},
 			"in_groups": gin.H{"type": "array", "items": gin.H{"type": "integer"},
 				"description": "当前身份已把该模型加进了哪些自有分组(分组严格按用户私有, 管理员也只看到自己的)"},
-			"wait_ms":        gin.H{"type": "number", "description": "各渠道样本加权后的首响应耗时(毫秒); 无样本时省略"},
-			"success":        gin.H{"type": "number", "description": "各渠道样本加权后的成功率(0..1); 无样本时省略"},
-			"samples":        fieldNumber("integer", "归并后的观测样本数; 为 0 表示冷启动(或进程重启后尚未恢复), 界面须显示占位"),
+			"wait_ms": gin.H{"type": "number", "description": "各渠道样本加权后的首响应耗时(毫秒); 无样本时省略"},
+			"success": gin.H{"type": "number", "description": "各渠道样本加权后的成功率(0..1); 无样本时省略"},
+			"samples": fieldNumber("integer", "归并后的观测样本数; 为 0 表示冷启动(或进程重启后尚未恢复), 界面须显示占位"),
 			"metrics_source": gin.H{"type": "string", "enum": []string{"live", "none"},
 				"description": "指标来源标注: live=进程内滑动平均; none=无样本。界面必须据此决定显示数字还是占位, 不许把没样本渲染成 100% 成功"},
 		}),
@@ -318,15 +318,15 @@ func openAPIAdminSchemas() gin.H {
 			"available":        fieldBool("当前能否转发: 牌价折算成功且渠道/凭据/渠道模型均启用且都不在熔断窗口内"),
 			"status_reason": gin.H{"type": "string", "enum": []string{"", "fx_missing", "disabled", "key_disabled", "breaker", "unpriced"},
 				"description": "状态原因, 多因并存时按 fx_missing > disabled > key_disabled > breaker > unpriced 取一条; 空串表示无异常"},
-			"user_price":      refWithDesc("LLMPrice", "用户价(已折算并上浮), 与分组页和计费同口径"),
-			"user_media":      refWithDesc("MediaPrice", "媒体用户价; 文本模型为零值并省略"),
-			"kind":            gin.H{"type": "string", "enum": []string{"", "image", "video"}, "description": "模型媒体形态; 文本模型留空"},
-			"price_currency":  fieldString("供货报价币种; 非 USD 表示价格已折算, 空或 USD 为零折算"),
-			"fx_missing":      fieldBool("声明了非 USD 报价但牌价不可用: 价格未折算, 该行已判不可用"),
-			"unpriced":        fieldBool("文本价与媒体价全为零: 不是错误(免费模型照常可跑), 但价格位应显示未定价而不是 0 元"),
-			"wait_ms":         gin.H{"type": "number", "description": "该渠道模型的首响应耗时滑动平均(毫秒); 无样本时省略"},
-			"success":         gin.H{"type": "number", "description": "该渠道模型的成功率滑动平均(0..1); 无样本时省略"},
-			"samples":         fieldNumber("integer", "该渠道模型的观测样本数; 为 0 表示冷启动"),
+			"user_price":     refWithDesc("LLMPrice", "用户价(已折算并上浮), 与分组页和计费同口径"),
+			"user_media":     refWithDesc("MediaPrice", "媒体用户价; 文本模型为零值并省略"),
+			"kind":           gin.H{"type": "string", "enum": []string{"", "image", "video"}, "description": "模型媒体形态; 文本模型留空"},
+			"price_currency": fieldString("供货报价币种; 非 USD 表示价格已折算, 空或 USD 为零折算"),
+			"fx_missing":     fieldBool("声明了非 USD 报价但牌价不可用: 价格未折算, 该行已判不可用"),
+			"unpriced":       fieldBool("文本价与媒体价全为零: 不是错误(免费模型照常可跑), 但价格位应显示未定价而不是 0 元"),
+			"wait_ms":        gin.H{"type": "number", "description": "该渠道模型的首响应耗时滑动平均(毫秒); 无样本时省略"},
+			"success":        gin.H{"type": "number", "description": "该渠道模型的成功率滑动平均(0..1); 无样本时省略"},
+			"samples":        fieldNumber("integer", "该渠道模型的观测样本数; 为 0 表示冷启动"),
 		}),
 
 		"ChannelDailyStats": object(gin.H{
@@ -486,6 +486,44 @@ func openAPIAdminSchemas() gin.H {
 		}, "name"),
 
 		// ---------- API Key ----------
+		"APIKeyUsageTotals": object(gin.H{
+			"input_token":        fieldNumber("integer", "输入 token 合计, **含已退费行**: 用量确实发生过, 退的是钱不是流量"),
+			"output_token":       fieldNumber("integer", "输出 token 合计, 含已退费行"),
+			"cache_read_token":   fieldNumber("integer", "缓存读 token 合计, 含已退费行"),
+			"cache_write_token":  fieldNumber("integer", "缓存写 token 合计, 含已退费行"),
+			"request_count":      fieldNumber("integer", "请求笔数, 含已退费行"),
+			"user_cost":          fieldNumber("number", "未退费部分金额, 即实付 = 窗口合计 - refunded_user_cost"),
+			"refunded_records":   fieldNumber("integer", "其中已退费的笔数"),
+			"refunded_user_cost": fieldNumber("number", "其中已退费的金额"),
+		}, "input_token", "output_token", "cache_read_token", "cache_write_token", "request_count", "user_cost", "refunded_records", "refunded_user_cost"),
+
+		"APIKeyUsageDay": object(gin.H{
+			"date": fieldString("本地挂钟日 YYYYMMDD, 与日汇总表的 day 列同一口径; 逐日条目按此升序"),
+			// 内嵌结构在 JSON 里是展平的, 故照展平写, 不套一个并不存在的 totals 键。
+			"input_token":        fieldNumber("integer", "当天输入 token, 含已退费行"),
+			"output_token":       fieldNumber("integer", "当天输出 token, 含已退费行"),
+			"cache_read_token":   fieldNumber("integer", "当天缓存读 token, 含已退费行"),
+			"cache_write_token":  fieldNumber("integer", "当天缓存写 token, 含已退费行"),
+			"request_count":      fieldNumber("integer", "当天请求笔数, 含已退费行"),
+			"user_cost":          fieldNumber("number", "当天未退费部分金额"),
+			"refunded_records":   fieldNumber("integer", "当天已退费笔数"),
+			"refunded_user_cost": fieldNumber("number", "当天已退费金额"),
+		}, "date", "input_token", "output_token", "cache_read_token", "cache_write_token", "request_count", "user_cost", "refunded_records", "refunded_user_cost"),
+
+		"APIKeyUsageReport": object(gin.H{
+			"api_key_id": fieldNumber("integer", "API Key 主键; 响应不含明文 api_key 与指纹 key_hash"),
+			"from":       fieldString("实际窗口起点(含), YYYY-MM-DD; 请求未给 from 时回填到最早有数据的那天"),
+			"to":         fieldString("实际窗口末日(**含当天**), YYYY-MM-DD"),
+			"coverage_start": fieldString("最早有数据的日期 YYYY-MM-DD, 完全没有数据时为空串。" +
+				"本版本之前已归档的明细没有 apikey 维度汇总行, 更早的 Key 历史无法补回, 这里如实给出最早可见的一天, 不用估算值填平"),
+			"retention_days": fieldNumber("integer", "计费明细当前留存天数(默认 180)。报表本身不受留存影响, 该值用于提示明细还能查多久"),
+			"total":          refWithDesc("APIKeyUsageTotals", "整个窗口的合计"),
+			"recent":         refWithDesc("APIKeyUsageTotals", "窗口内最后 30 天的合计"),
+			"recent_from":    fieldString("最近 30 天窗口的起点 YYYY-MM-DD(以 to 往前推 30 天)"),
+			"days": gin.H{"type": "array", "items": ref("APIKeyUsageDay"),
+				"description": "逐日用量, 日期升序; 无数据时是非 nil 空数组"},
+		}, "api_key_id", "from", "to", "coverage_start", "retention_days", "total", "recent", "recent_from", "days"),
+
 		"APIKey": object(gin.H{
 			"id":      fieldNumber("integer", "主键"),
 			"user_id": fieldNumber("integer", "归属用户, 计费与数据隔离的依据; 服务端强制覆盖为当前登录账号"),

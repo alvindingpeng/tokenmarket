@@ -198,7 +198,7 @@ func BillingRetentionRun(ctx context.Context) (BillingRetentionResult, error) {
 
 // sealAndDeleteExpiredRecords 逐日固化并删除超期明细, 返回固化天数、删除行数、因申诉保留的行数、是否被单轮上限截断。
 //
-// 一天一个事务: 读当天明细 → 算四个维度的汇总 → 写汇总表 → 删这些明细, 四步同进同退。
+// 一天一个事务: 读当天明细 → 算五个维度的汇总 → 写汇总表 → 删这些明细, 四步同进同退。
 // 事务边界选"天"而不是"整轮", 是为了让转发路径的写入能在天与天之间插进来。
 //
 // archiveLimit 是本次归档覆盖到的最大明细主键(0 表示不设上界, 即归档关闭);
@@ -289,17 +289,20 @@ func sealAndDeleteBillingDay(ctx context.Context, day, cutoff time.Time, archive
 	return deleted, nil
 }
 
-// billingDayRollups 把一天的明细按四个维度(user / owner / channel / platform)聚合成汇总行。
+// billingDayRollups 把一天的明细按五个维度(user / owner / channel / apikey / platform)聚合成汇总行。
 //
-// 为什么四个维度各自成行: 各维度的口径不同 —— 用户维度看自己花了多少, 渠道维度看这个渠道
-// 贡献了多少毛利, 平台维度是全体合计。混成一行就说不清"这行是谁的和", 而把四个维度分别存,
-// 每个读口只取自己那一维, 语义单义。
+// 为什么五个维度各自成行: 各维度的口径不同 —— 用户维度看自己花了多少, 渠道维度看这个渠道
+// 贡献了多少毛利, API Key 维度看某把密钥的持久化用量, 平台维度是全体合计。混成一行就说不清
+// "这行是谁的和", 而把五个维度分别存, 每个读口只取自己那一维, 语义单义。
+//
+// apikey 维度的存在理由: billing_records 虽有 api_key_id 列, 但明细按留存期清理后该 Key 的历史
+// 就永久消失。多了这一维, "某把 Key 的累计用量"才能和用户/渠道一样变成终身口径。
 //
 // 退款拆成单独一组列: 有的读口计全部明细(累计消费), 有的只计未退款部分(提现可提额度、渠道毛利)。
 // 只存一个合计, 必有一方算错; 存了"合计 + 其中退款", 另一方用减法即可, 且加法仍然精确。
 func billingDayRollups(rows []model.BillingRecord, day time.Time) []model.BillingRollup {
-	keys := make([]string, 0, 4)
-	byKey := make(map[string]*model.BillingRollup, 4)
+	keys := make([]string, 0, 5)
+	byKey := make(map[string]*model.BillingRollup, 5)
 	ref := func(dimension string, id uint) *model.BillingRollup {
 		key := fmt.Sprintf("%s/%d", dimension, id)
 		if row, ok := byKey[key]; ok {
@@ -339,6 +342,11 @@ func billingDayRollups(rows []model.BillingRecord, day time.Time) []model.Billin
 		}
 		if record.ChannelID != 0 {
 			accumulate(ref(model.BillingRollupChannel, uint(record.ChannelID)), record)
+		}
+		// api_key_id 为 0 同样跳过: 与 user/owner/channel 的 id=0 同构 —— 那是没有归属的
+		// 历史脏数据或内部计数器, 给它建汇总行会制造一个语义不明的桶。
+		if record.APIKeyID != 0 {
+			accumulate(ref(model.BillingRollupAPIKey, uint(record.APIKeyID)), record)
 		}
 		accumulate(ref(model.BillingRollupPlatform, 0), record)
 	}
@@ -677,7 +685,7 @@ func billingRollupTotalRange(ctx context.Context, dimension string, id uint, ref
 
 // billingRollupAggregates 从汇总表读某维度在 since 之后的日/月聚合, 供曲线类读口与明细并集。
 //
-// 在 Go 侧归月桶而不是在 SQL 里拼: 汇总表一天最多 4 行(四个维度), 一年也就一千多行,
+// 在 Go 侧归月桶而不是在 SQL 里拼: 汇总表一天最多 5 行(五个维度), 一年也就一千多行,
 // 取回成本可忽略; 而"日期归桶"的字符串拼接在 SQLite(||) 与 MySQL(CONCAT) 上写法不同,
 // 为省这点数据去引一条方言分支, 收益远小于维护成本。
 func billingRollupAggregates(ctx context.Context, dimension string, id uint, since time.Time, granularity string) ([]BillingAggregate, error) {

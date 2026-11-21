@@ -75,7 +75,11 @@ func settlementRetryDelay(attempt int) time.Duration {
 	if span <= 0 {
 		return ceiling
 	}
-	offset := int64((attempt*2654435761)>>3) % span
+	// 乘法必须先转 int64: 2654435761 大于 int32 上限, 直接在 int 上乘会在 386/arm 目标上
+	// 以"constant overflows int"编译失败 —— 而发布矩阵里恰好有 linux/386 与 linux/arm 两档,
+	// 于是 release 产物整批打不出来(GitHub Actions 的 release-assets 因此连续失败)。
+	// 64 位平台上的取值不变(只是把隐式拓宽写成显式), 退避时序与测试断言完全一致。
+	offset := (int64(attempt) * 2654435761 >> 3) % span
 	return ceiling + time.Duration(offset)
 }
 

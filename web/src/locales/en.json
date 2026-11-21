@@ -359,6 +359,21 @@
                 "requestSuccess": "Request Success",
                 "requestFailed": "Request Failed"
             },
+            "usage": {
+                "title": "Persistent usage",
+                "recent": "Last 30 days",
+                "total": "Lifetime",
+                "requests": "Requests",
+                "tokens": "Tokens",
+                "cost": "Paid",
+                "refunded": "{count} refunded · ${amount}",
+                "retention": "Detail kept for {days} days; older usage is completed by the daily summary",
+                "export": "Export this key’s records (CSV)",
+                "exportFailed": "Export failed",
+                "noData": "No usage in this window",
+                "loadFailed": "Failed to load usage",
+                "loading": "Loading usage…"
+            },
             "toast": {
                 "createSuccess": "API key created",
                 "createError": "Failed to create API key",

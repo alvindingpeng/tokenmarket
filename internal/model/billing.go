@@ -11,7 +11,7 @@ type BillingRecord struct {
 	// 复合索引 (user_id, created_at) 服务用户统计的按时间范围聚合(user_stats), 让范围过滤在索引内完成;
 	// 单列索引保留供按 user_id 的全量查询。本次只优化用户调用分析, 暂不新增 owner 复合索引。
 	UserID     uint   `json:"user_id" gorm:"index;index:idx_billing_records_user_created,priority:1"` // 付费方: API Key 归属用户。
-	APIKeyID   int    `json:"api_key_id"`
+	APIKeyID   int    `json:"api_key_id" gorm:"index:idx_billing_records_apikey_created,priority:1"`
 	GroupID    int    `json:"group_id"`
 	GroupModel string `json:"group_model"`                                                            // 客户端模型名, 即分组名。
 	ChannelID  int    `json:"channel_id" gorm:"index:idx_billing_records_channel_created,priority:1"` // 落地渠道; 渠道利润分析按 (channel_id, created_at) 做范围聚合。
@@ -48,7 +48,7 @@ type BillingRecord struct {
 	Status string `json:"status"` // settled | refunded
 	// 两条复合索引的第二列(用户统计 (user_id, created_at)、渠道利润分析 (channel_id, created_at)); 单列索引保留。
 	// 同一列挂多个索引时 tag 用分号并列声明, 少写一条会静默丢掉前一条复合索引。
-	CreatedAt time.Time `json:"created_at" gorm:"index;index:idx_billing_records_user_created,priority:2;index:idx_billing_records_channel_created,priority:2"`
+	CreatedAt time.Time `json:"created_at" gorm:"index;index:idx_billing_records_user_created,priority:2;index:idx_billing_records_channel_created,priority:2;index:idx_billing_records_apikey_created,priority:2"`
 }
 
 // BalanceReservation 余额预扣记录; 请求结束时结算, 超时未结算由定时任务回滚冻结额。

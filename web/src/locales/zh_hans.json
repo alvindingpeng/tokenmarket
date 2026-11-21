@@ -359,6 +359,21 @@
                 "requestSuccess": "成功请求",
                 "requestFailed": "失败请求"
             },
+            "usage": {
+                "title": "持久化用量",
+                "recent": "最近 30 天",
+                "total": "累计",
+                "requests": "请求数",
+                "tokens": "词元",
+                "cost": "实付",
+                "refunded": "其中已退费 {count} 笔 · ${amount}",
+                "retention": "明细留存 {days} 天, 更早的用量由每日汇总补全",
+                "export": "导出该 Key 明细 CSV",
+                "exportFailed": "导出失败",
+                "noData": "该窗口内暂无用量",
+                "loadFailed": "用量加载失败",
+                "loading": "用量加载中…"
+            },
             "toast": {
                 "createSuccess": "API 密钥创建成功",
                 "createError": "API 密钥创建失败",

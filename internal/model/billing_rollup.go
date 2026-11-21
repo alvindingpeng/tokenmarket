@@ -19,8 +19,8 @@ import "time"
 // 与渠道利润只计未退款部分。只存一份合计会让其中一个读口算错; 存两组即可用"全部 - 退款"还原两者。
 type BillingRollup struct {
 	ID uint64 `json:"id" gorm:"primaryKey"`
-	// Dimension 维度: user(付费方) / owner(收入方) / channel(渠道) / platform(全平台)。
-	// 四个维度各自成行, 而不是一行带四个 id: 各维度的聚合列含义不同, 混在一行说不清"这行是谁的和"。
+	// Dimension 维度: user(付费方) / owner(收入方) / channel(渠道) / apikey(访问密钥) / platform(全平台)。
+	// 五个维度各自成行, 而不是一行带五个 id: 各维度的聚合列含义不同, 混在一行说不清"这行是谁的和"。
 	Dimension   string `json:"dimension" gorm:"size:8;not null;uniqueIndex:idx_billing_rollup_key,priority:1"`
 	DimensionID uint   `json:"dimension_id" gorm:"not null;uniqueIndex:idx_billing_rollup_key,priority:2;index:idx_billing_rollup_dim_day,priority:1"`
 	// Day 自然日 YYYYMMDD(本地挂钟), 与 BillingDaily 的桶口径完全一致。
@@ -54,5 +54,6 @@ const (
 	BillingRollupUser     = "user"     // 付费方维度, 对应 billing_records.user_id。
 	BillingRollupOwner    = "owner"    // 收入方维度, 对应 billing_records.owner_id。
 	BillingRollupChannel  = "channel"  // 渠道维度, 对应 billing_records.channel_id。
+	BillingRollupAPIKey   = "apikey"   // API Key 维度, 对应 billing_records.api_key_id。
 	BillingRollupPlatform = "platform" // 全平台维度, DimensionID 恒为 0。
 )

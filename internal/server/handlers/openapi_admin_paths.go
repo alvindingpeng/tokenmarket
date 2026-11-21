@@ -532,6 +532,26 @@ func openAPIAdminPathsAuth() gin.H {
 					"本表里少数不吃会话 Cookie 的接口之一: 它服务于转发侧, 不需要登录态。", "",
 				bearerProbe("鉴权通过"), false),
 		},
+		"/api/v1/apikey/usage": gin.H{
+			"get": adminPath("apikey", "API Key 持久化用量报表",
+				"某把 Key 的逐日与合计用量, 数据来自计费明细与已固化的日汇总并集, 因此明细被留存清理后历史仍然可读"+
+					adminNewLine+adminNewLine+
+					"**登录态接口**(会话鉴权), 与走 Bearer 的 /apikey/stats 不同: 后者只答当前这把 Key 的内存实时计数, 重启即归零。"+
+					adminNewLine+adminNewLine+
+					"归属: 非管理员只能查自己的 Key, 查他人 Key 一律按 404 处理(不区分不存在与无权限, 避免枚举他人 Key)。"+
+					adminNewLine+adminNewLine+
+					"留存边界: 本报表只按 **apikey 维度** 固化过汇总行。本版本之前已归档的明细没有这一维(当时只固化 user/owner/channel/platform), "+
+					"更早的 Key 历史无法补回, coverage_start 如实给出最早可见的那一天, 不会用 0 或估算值填平。"+
+					adminNewLine+adminNewLine+
+					"响应不含明文 api_key, 也不含指纹 key_hash。"+
+					adminNewLine+adminNewLine+
+					"from/to 为本地挂钟自然日 YYYY-MM-DD, to 含当天; 省略 from 表示从最早一条起(此时 from 回填到 coverage_start), 省略 to 表示到今天。",
+				"", adminItem("API Key 用量报表", "APIKeyUsageReport"), false,
+				query("api_key_id", "API Key 主键, 必填; 缺失或非法返回 400", "int", true, nil),
+				query("from", "窗口起点(含), 本地自然日 YYYY-MM-DD; 省略表示不限, 从最早一条起", "string", false, nil),
+				query("to", "窗口末日(含当天), 本地自然日 YYYY-MM-DD; 省略表示到今天", "string", false, nil),
+			),
+		},
 		"/api/v1/apikey/stats": gin.H{
 			"get": adminPath("apikey", "按当前 Key 统计",
 				"该 Key 的累计用量与档案。"+adminNewLine+adminNewLine+
