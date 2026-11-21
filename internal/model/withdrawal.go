@@ -54,6 +54,38 @@ type Withdrawal struct {
 	PaidRef        string         `json:"paid_ref" gorm:"size:128;not null;default:''"`
 	PaidAt         *time.Time     `json:"paid_at"`
 	AppliedAt      time.Time      `json:"applied_at"`
+
+	// 下面两个是**派生字段**, 不是数据库列(gorm:"-": AutoMigrate 不建列, Create/Updates 不写库)。
+	// 存在理由只有一个: 前端按"有没有 payout_currency"决定走「按到账币种展示」还是回落
+	// legacy ¥ 口径(web/src/api/withdrawal.ts 的 withdrawalPayoutOf)。后端此前从不发这两个键,
+	// 于是**每一张提现单**都走了 ¥ 分支 —— EUR 到账 53.10 显示成 ¥53.10(符号全错), JPY 数值
+	// 对但被当人民币读。这是"标错"而不是"少标注"。
+	//
+	// 取值口径(见 DerivePayout): 都从**已有列**派生, 不新增列、不改任何资金语义。
+	//   PayoutCurrency = Currency(申请时钉住的到账币种); Currency 为空串(历史旧行)时**保持空串**,
+	//     绝不用 "CNY" 填充 —— 前端靠空串继续走 legacy 分支并附"旧单"提示; 填成 CNY 会把
+	//     "库里有记录"和"库里没记录"混为一谈, 等于为旧行伪造历史到账币种。
+	//   PayoutAmount   = float64(ActualCents)/100 (到账币种最小单位→金额), 与前端自己的兜底
+	//     "payout_amount ?? actual_cents/100" 是同一算法, 所以两者永远不会自相矛盾。
+	PayoutCurrency string  `json:"payout_currency" gorm:"-"`
+	PayoutAmount   float64 `json:"payout_amount" gorm:"-"`
+}
+
+// DerivePayout 由已有列派生 payout_currency / payout_amount(只读计算, 不落库)。
+// 调用点只有两处: WithdrawApply(申请接口直接回吐单据) 与 WithdrawList(用户/管理端列表
+// 共用同一个口)。导出 CSV 不调用 —— 它走自己的列口径, 已在 cashflow_export.go 里写明。
+// 历史旧行(Currency 空串): 两个派生字段都留零值 —— 前端据此回落 ¥ + actual_cents。
+func (w *Withdrawal) DerivePayout() {
+	if w == nil {
+		return
+	}
+	if w.Currency == "" {
+		w.PayoutCurrency = ""
+		w.PayoutAmount = 0
+		return
+	}
+	w.PayoutCurrency = w.Currency
+	w.PayoutAmount = float64(w.ActualCents) / 100
 }
 
 // WithdrawFee 手续费 = max(最低费, 申请额×费率), 且不超过申请额(实付不为负)。

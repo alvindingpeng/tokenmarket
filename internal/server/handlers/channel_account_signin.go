@@ -134,12 +134,10 @@ func completeAccountSignIn(c *gin.Context) {
 		return
 	}
 
-	tokens, err := browserSignIn.Exchange(flow, provider, code)
-	if err != nil {
-		resp.Error(c, http.StatusBadRequest, err.Error())
-		return
-	}
-
+	// 渠道归属与"平台能不能进这个渠道"都在**换令牌之前**判定, 顺序不能反:
+	// Exchange 会消耗掉用户刚拿到的授权码, 并且要打一次上游。而"渠道不归你"或
+	// "平台与方言不符"这两件事与那次授权本身毫无关系 —— 先拒掉, 用户只需改平台重来,
+	// 不会先白授权一遍再被拒。
 	channel, err := op.ChannelGet(request.ChannelID)
 	if err != nil {
 		resp.Error(c, http.StatusNotFound, "渠道不存在")
@@ -147,7 +145,21 @@ func completeAccountSignIn(c *gin.Context) {
 	}
 	userID, role := middleware.CurrentUser(c)
 	if !(model.Scope{ID: userID, Role: role}).Owns(channel.UserID) {
+		// 不归属时按 404 处理: 不暴露渠道存在性。
 		resp.Error(c, http.StatusNotFound, "渠道不存在")
+		return
+	}
+	// 平台与渠道方言不匹配时立刻回 400(与 /import 同一个 op 层校验, 同一个错误文案)。
+	// 少了这一步, 登录能成功换到令牌、凭据也能落库, 而失败要等到转发那一刻才暴露 ——
+	// 那时它表现为凭据被熔断 30 分钟, 使用者完全想不到问题出在"渠道方言"上。
+	if err := op.ValidateAccountPlatformForChannel(c.Request.Context(), channel.ID, flow.Platform); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	tokens, err := browserSignIn.Exchange(flow, provider, code)
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
 

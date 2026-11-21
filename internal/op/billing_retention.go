@@ -198,7 +198,7 @@ func BillingRetentionRun(ctx context.Context) (BillingRetentionResult, error) {
 
 // sealAndDeleteExpiredRecords 逐日固化并删除超期明细, 返回固化天数、删除行数、因申诉保留的行数、是否被单轮上限截断。
 //
-// 一天一个事务: 读当天明细 → 算五个维度的汇总 → 写汇总表 → 删这些明细, 四步同进同退。
+// 一天一个事务: 读当天明细 → 算六个维度的汇总 → 写汇总表 → 删这些明细, 四步同进同退。
 // 事务边界选"天"而不是"整轮", 是为了让转发路径的写入能在天与天之间插进来。
 //
 // archiveLimit 是本次归档覆盖到的最大明细主键(0 表示不设上界, 即归档关闭);
@@ -298,26 +298,31 @@ func sealAndDeleteBillingDay(ctx context.Context, day, cutoff time.Time, archive
 	return deleted, nil
 }
 
-// billingDayRollups 把一天的明细按五个维度(user / owner / channel / apikey / platform)聚合成汇总行。
+// billingDayRollups 把一天的明细按六个维度(user / owner / channel / apikey / platform / model)聚合成汇总行。
 //
-// 为什么五个维度各自成行: 各维度的口径不同 —— 用户维度看自己花了多少, 渠道维度看这个渠道
+// 为什么各维度各自成行: 各维度的口径不同 —— 用户维度看自己花了多少, 渠道维度看这个渠道
 // 贡献了多少毛利, API Key 维度看某把密钥的持久化用量, 平台维度是全体合计。混成一行就说不清
-// "这行是谁的和", 而把五个维度分别存, 每个读口只取自己那一维, 语义单义。
+// "这行是谁的和", 而把各维度分别存, 每个读口只取自己那一维, 语义单义。
 //
 // apikey 维度的存在理由: billing_records 虽有 api_key_id 列, 但明细按留存期清理后该 Key 的历史
 // 就永久消失。多了这一维, "某把 Key 的累计用量"才能和用户/渠道一样变成终身口径。
 //
+// model 维度(迁移 45 补的第六维)的存在理由与之同构: 明细清理后, 统计页"按模型"那一栏原本整段消失,
+// 而同一区间的总金额因为有 user 维度兜底仍然有数 —— 用户看到"总金额有, 拆分没了", 且无从解释。
+// 它的 DimensionID 记**付费方 user_id**、模型名记 ModelName 列, 这样"某用户某天的按模型用量"
+// 仍是一次 (dimension_id, day) 索引区间扫描; 若反过来把模型名当 id, 用户维度的过滤就得扫全表。
+//
 // 退款拆成单独一组列: 有的读口计全部明细(累计消费), 有的只计未退款部分(提现可提额度、渠道毛利)。
 // 只存一个合计, 必有一方算错; 存了"合计 + 其中退款", 另一方用减法即可, 且加法仍然精确。
 func billingDayRollups(rows []model.BillingRecord, day time.Time) []model.BillingRollup {
-	keys := make([]string, 0, 5)
-	byKey := make(map[string]*model.BillingRollup, 5)
-	ref := func(dimension string, id uint) *model.BillingRollup {
-		key := fmt.Sprintf("%s/%d", dimension, id)
+	keys := make([]string, 0, 6)
+	byKey := make(map[string]*model.BillingRollup, 6)
+	ref := func(dimension string, id uint, modelName string) *model.BillingRollup {
+		key := fmt.Sprintf("%s/%d/%s", dimension, id, modelName)
 		if row, ok := byKey[key]; ok {
 			return row
 		}
-		row := &model.BillingRollup{Dimension: dimension, DimensionID: id, Day: day.Format("20060102")}
+		row := &model.BillingRollup{Dimension: dimension, DimensionID: id, Day: day.Format("20060102"), ModelName: modelName}
 		byKey[key] = row
 		keys = append(keys, key)
 		return row
@@ -344,20 +349,31 @@ func billingDayRollups(rows []model.BillingRecord, day time.Time) []model.Billin
 		// user/owner/channel 的 id 为 0 表示"没有归属"(计数器/历史脏数据), 给它建汇总行
 		// 只会在全平台合计里制造一个语义不明的桶; 平台维度已经单独统计全体, 故跳过。
 		if record.UserID != 0 {
-			accumulate(ref(model.BillingRollupUser, record.UserID), record)
+			accumulate(ref(model.BillingRollupUser, record.UserID, ""), record)
 		}
 		if record.OwnerID != 0 {
-			accumulate(ref(model.BillingRollupOwner, record.OwnerID), record)
+			accumulate(ref(model.BillingRollupOwner, record.OwnerID, ""), record)
 		}
 		if record.ChannelID != 0 {
-			accumulate(ref(model.BillingRollupChannel, uint(record.ChannelID)), record)
+			accumulate(ref(model.BillingRollupChannel, uint(record.ChannelID), ""), record)
 		}
 		// api_key_id 为 0 同样跳过: 与 user/owner/channel 的 id=0 同构 —— 那是没有归属的
 		// 历史脏数据或内部计数器, 给它建汇总行会制造一个语义不明的桶。
 		if record.APIKeyID != 0 {
-			accumulate(ref(model.BillingRollupAPIKey, uint(record.APIKeyID)), record)
+			accumulate(ref(model.BillingRollupAPIKey, uint(record.APIKeyID), ""), record)
 		}
-		accumulate(ref(model.BillingRollupPlatform, 0), record)
+		// model 维度挂在付费方身上: user_id 为 0 的行没有"谁花了多少"可言, 模型名也就无处归属。
+		// model_name 为空的行同样跳过 —— 空串在"按模型"结果里是一个没有名字的桶, 对账时
+		// 既无法对应到任何模型, 又会把别的模型用量并进去(读侧按 model_name 分组, 空串自成一组)。
+		//
+		// 只固化 **settled** 行, 与 UserStatsModelBreakdown 明细侧的 status='settled' 过滤对齐:
+		// 退款行的钱已经退回, 模型页历来不计它; 若按"合计"固化, 明细被删之后同一个区间会突然
+		// 多出一笔退款额 —— 用户看到的按模型费用在留存期边界上凭空跳变, 且与总额对不上。
+		// 也不能靠读侧减 refunded_* 修正: 那组列只有金额, 没有退款行的词元/笔数, 减完词元仍然偏大。
+		if record.UserID != 0 && record.Status == model.BillingStatusSettled && strings.TrimSpace(record.ModelName) != "" {
+			accumulate(ref(model.BillingRollupModel, record.UserID, record.ModelName), record)
+		}
+		accumulate(ref(model.BillingRollupPlatform, 0, ""), record)
 	}
 	rollups := make([]model.BillingRollup, 0, len(keys))
 	for _, key := range keys {
@@ -377,12 +393,16 @@ func billingDayRollups(rows []model.BillingRecord, day time.Time) []model.Billin
 // 多实例部署时要靠唯一索引 + ON CONFLICT 才安全 —— 那属于多活改造, 当前明确不做。
 func sealBillingRollup(tx *gorm.DB, row *model.BillingRollup) error {
 	var existing model.BillingRollup
-	err := tx.Where("dimension = ? AND dimension_id = ? AND day = ?", row.Dimension, row.DimensionID, row.Day).First(&existing).Error
+	// 匹配条件必须含 model_name: model 维度下"同一用户同一天"会有多个模型行,
+	// 只按 (dimension, dimension_id, day) 查就会把 A 模型的数累加进 B 模型那一行 —— 拆分仍然失真。
+	// 其余五个维度的 model_name 恒为空串, 所以这条条件对它们等价于原来的三列条件。
+	err := tx.Where("dimension = ? AND dimension_id = ? AND day = ? AND model_name = ?",
+		row.Dimension, row.DimensionID, row.Day, row.ModelName).First(&existing).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		now := time.Now()
 		row.SealedAt = now
 		if err := tx.Create(row).Error; err != nil {
-			return fmt.Errorf("create billing rollup %s/%d/%s: %w", row.Dimension, row.DimensionID, row.Day, err)
+			return fmt.Errorf("create billing rollup %s/%d/%s/%s: %w", row.Dimension, row.DimensionID, row.Day, row.ModelName, err)
 		}
 		return nil
 	}
@@ -404,7 +424,7 @@ func sealBillingRollup(tx *gorm.DB, row *model.BillingRollup) error {
 	existing.SourceRecords += row.SourceRecords
 	existing.SealedAt = time.Now()
 	if err := tx.Save(&existing).Error; err != nil {
-		return fmt.Errorf("update billing rollup %s/%d/%s: %w", row.Dimension, row.DimensionID, row.Day, err)
+		return fmt.Errorf("update billing rollup %s/%d/%s/%s: %w", row.Dimension, row.DimensionID, row.Day, row.ModelName, err)
 	}
 	return nil
 }
@@ -694,7 +714,7 @@ func billingRollupTotalRange(ctx context.Context, dimension string, id uint, ref
 
 // billingRollupAggregates 从汇总表读某维度在 since 之后的日/月聚合, 供曲线类读口与明细并集。
 //
-// 在 Go 侧归月桶而不是在 SQL 里拼: 汇总表一天最多 5 行(五个维度), 一年也就一千多行,
+// 在 Go 侧归月桶而不是在 SQL 里拼: 汇总表一天最多几行(每个维度一行), 一年也就一千多行,
 // 取回成本可忽略; 而"日期归桶"的字符串拼接在 SQLite(||) 与 MySQL(CONCAT) 上写法不同,
 // 为省这点数据去引一条方言分支, 收益远小于维护成本。
 func billingRollupAggregates(ctx context.Context, dimension string, id uint, since time.Time, granularity string) ([]BillingAggregate, error) {

@@ -295,20 +295,30 @@ func queryRequestOutcomeBuckets(ctx context.Context, userID uint, start, end tim
 	return rows, nil
 }
 
-// UserStatsModelBreakdown 查询用户调用按模型分组统计。
+// UserStatsModelBreakdown 查询用户调用按模型分组统计, 口径是「明细 ∪ model 日汇总」。
 //
-// 已知上限: 这里**只**读 billing_records 明细, 不并 billing_rollups —— 汇总表只有
-// user/owner/channel/apikey/platform 五个维度, 没有 model 维度, 一天的金额被固化后
-// 就无法再按模型拆开。也就是说超出留存期(默认 180 天)的区间里:
-// 概览的 total_cost 有数(汇总补齐), 这里却查不到对应的模型行 —— 这是数据本身没保留, 不是漏查。
+// 为什么必须并上汇总(迁移 45 之前的形态是只读明细): 明细按留存期(默认 180 天)逐日清理,
+// 只读明细时, 超出留存期的区间里概览的 total_cost 有数(由 user 维度汇总补齐), 这里却一行都查不到 ——
+// 用户看到"总金额有, 按模型的拆分没了", 而且没有任何字段能解释这个缺口。
+// 汇总表新增 model 维度后, 两者才活得一样久。
 //
-// 处理方式:
-//   - 绝不按比例把汇总金额摊到现存模型上: 编出来的数字会被用户拿去对账, 比缺数据更有害。
-//   - 覆盖起点由 UserStatsModelCoverageStart 单独返回, handler 用响应头告知前端"此日期之前无模型明细",
-//     前端据此提示而不是把缺失读成 0 用量; 概览里同一语义的字段是 model_breakdown_coverage_start。
+// 合并规则(与 userStatsBillingAggregate 同一套不变量, 违反任一条就会算错钱):
+//   - 只在**整天**上并汇总: 窗口首尾若不是自然日边界, 那一天只按明细算(见 userStatsRollupDayRange)。
+//     否则窗口外的半天会被整天的汇总行带进来。
+//   - 明细与 model 汇总**不会包含同一笔**明细: 某天的明细被删之前, 那天"可删的"明细已整日固化;
+//     因未驳回申诉留下的明细不进汇总, 所以两段可以相加, 是加法而不是去重。
+//   - 按模型分桶**不跨天求和之外的任何折算**: 逐日桶相加, 不按比例摊、不把某天的汇总摊给现存模型。
 //
-// 注意这里保留 status='settled' 过滤(退款行不计入模型拆分), 与概览的全额口径不同 ——
+// 口径仍是 status='settled'(退款行不计入模型拆分), 与概览的全额口径不同 ——
 // TestUserStatsRefundKeepsBillingScope 锁的是"模型页只算已结算"这个既有行为, 不要顺手改。
+// 为了在明细被删之后仍然精确, model 维度的汇总行**只累加 settled 行**(见 billingDayRollups 里
+// 对 model 维度的判断): 汇总行在 model 维度上的 refunded_* 列恒为 0, 因为退款行本来就不进模型拆分。
+// 若改成按"合计"固化, 明细一删, 同一区间会突然多出一笔退款额 —— 按模型费用会在留存期边界上跳变。
+//
+// 已知上限(数据本身没保留, 不是漏查): 迁移 45 之前就已固化的日子没有 model 维度行, 那段的按模型
+// 拆分补不回来。覆盖起点由 UserStatsModelCoverageStart 如实返回, handler 用响应头告知前端
+// "此日期之前无模型数据", 前端据此提示而不是把缺失读成 0 用量(概览里同语义字段是
+// model_breakdown_coverage_start)。绝不按比例摊: 编出来的数字会被用户拿去对账, 比缺数据更有害。
 func UserStatsModelBreakdown(ctx context.Context, userID uint, startDate, endDate string) ([]model.UserStatsModel, error) {
 	start, end := parseStatsDateRange(startDate, endDate)
 
@@ -336,29 +346,106 @@ func UserStatsModelBreakdown(ctx context.Context, userID uint, startDate, endDat
 		Where("user_id = ? AND created_at >= ? AND created_at < ? AND status = ?",
 			userID, start, end, model.BillingStatusSettled).
 		Group("model_name").
-		Order("cost DESC").
-		Limit(50). // 最多 50 个模型
 		Scan(&rows).Error
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to query user stats model breakdown: %w", err)
 	}
 
-	result := make([]model.UserStatsModel, len(rows))
-	for i, row := range rows {
-		result[i] = model.UserStatsModel{
-			ModelName:        row.ModelName,
-			Requests:         row.Requests,
-			Cost:             row.Cost,
-			Tokens:           row.Tokens,
-			CacheReadTokens:  row.CacheReadTokens,
-			CacheWriteTokens: row.CacheWriteTokens,
-			CacheHitRate:     cacheHitRate(row.CacheReadTokens, row.InputTokens),
+	// 两侧用同一个累加器累加后再产出结果: 明细侧与汇总侧的口径不同(SQL 聚合 vs 汇总列),
+	// 但"按模型"要的四个数字是一样的, 用中间结构才能保证两边的加法完全对称。
+	byModel := make(map[string]*userStatsModelAcc, len(rows))
+	keys := make([]string, 0, len(rows))
+	ref := func(name string) *userStatsModelAcc {
+		entry, ok := byModel[name]
+		if !ok {
+			entry = &userStatsModelAcc{name: name}
+			byModel[name] = entry
+			keys = append(keys, name)
+		}
+		return entry
+	}
+	for _, row := range rows {
+		entry := ref(row.ModelName)
+		entry.requests += row.Requests
+		entry.cost += row.Cost
+		entry.tokens += row.Tokens
+		entry.cacheRead += row.CacheReadTokens
+		entry.cacheWrite += row.CacheWriteTokens
+		// 明细侧 SQL 直接把 input_token 求和带回来了, 不必再减。
+		entry.input += row.InputTokens
+	}
+
+	// 汇总侧: 只取整个自然日都落在窗口内的那段, 且只取 model 维度(其余维度不是"按模型")。
+	// 明细与汇总同一天不会同时有数(见函数注释), 所以这里是加法而不是去重。
+	fromKey, toKey := userStatsRollupDayRange(start, end)
+	if fromKey != "" {
+		rollupRows := make([]model.BillingRollup, 0)
+		if err := db.GetDB().WithContext(ctx).Model(&model.BillingRollup{}).
+			Where("dimension = ? AND dimension_id = ? AND day >= ? AND day <= ?",
+				model.BillingRollupModel, userID, fromKey, toKey).
+			Find(&rollupRows).Error; err != nil {
+			return nil, fmt.Errorf("failed to query user stats model rollups: %w", err)
+		}
+		for i := range rollupRows {
+			row := &rollupRows[i]
+			entry := ref(row.ModelName)
+			entry.requests += row.RequestCount
+			entry.cost += row.UserCost
+			entry.tokens += row.InputToken + row.OutputToken + row.CacheReadToken + row.CacheWriteToken
+			entry.cacheRead += row.CacheReadToken
+			entry.cacheWrite += row.CacheWriteToken
+			// 汇总行同样有 input_token 列(与明细同名列同语义), 直接累加即可, 不必用
+			// "总量减其余三项"去还原 —— 那个还原虽然也精确, 但多一层推导就多一处可能算错的地方。
+			entry.input += row.InputToken
 		}
 	}
 
+	sort.Strings(keys)
+	result := make([]model.UserStatsModel, 0, len(keys))
+	for _, key := range keys {
+		entry := byModel[key]
+		result = append(result, model.UserStatsModel{
+			ModelName:        entry.name,
+			Requests:         entry.requests,
+			Cost:             entry.cost,
+			Tokens:           entry.tokens,
+			CacheReadTokens:  entry.cacheRead,
+			CacheWriteTokens: entry.cacheWrite,
+			// 命中率在两侧都加完之后才算: 中途算出来的值会被后续累加作废。
+			CacheHitRate: cacheHitRate(entry.cacheRead, entry.input),
+		})
+	}
+	// Cost 排序与既有行为一致(前端按费用从高到低展示); 同额时按模型名保证稳定顺序。
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].Cost != result[j].Cost {
+			return result[i].Cost > result[j].Cost
+		}
+		return result[i].ModelName < result[j].ModelName
+	})
+	if len(result) > userStatsModelBreakdownLimit {
+		result = result[:userStatsModelBreakdownLimit]
+	}
 	return result, nil
 }
+
+// userStatsModelAcc 是"按模型"两侧合并时的中间累加器。
+// 不复用 model.UserStatsModel 的理由: 那个结构没有 input_token 字段(它靠 CacheHitRate 呈现),
+// 而命中率的分母在合并过程中必须一直带着; 硬塞进导出结构等于为了内部实现改 API 形状。
+type userStatsModelAcc struct {
+	name       string
+	requests   int64
+	cost       float64
+	tokens     int64
+	input      int64
+	cacheRead  int64
+	cacheWrite int64
+}
+
+// userStatsModelBreakdownLimit 是"按模型"结果的条数上限(与改造前一致)。
+// 保留上限的理由不是性能: 前端那张表超过 50 行就没有可读性, 且长尾模型多半来自
+// 拼接出来的脏模型名。截断只影响展示, 不影响上面已经算完的合计。
+const userStatsModelBreakdownLimit = 50
 
 // parseStatsDateRange 解析统计日期区间; 空值默认最近 30 天。
 func parseStatsDateRange(startDate, endDate string) (time.Time, time.Time) {
@@ -398,8 +485,9 @@ func parseStatsDateRange(startDate, endDate string) (time.Time, time.Time) {
 //     (TestUserStatsRefundKeepsBillingScope 锁的就是这个行为), 故这里读 refundedOnly=false 的全额列,
 //     不能改读净额, 否则同一份明细在两页之间反而对不上。
 //
-// 已知上限: 汇总表只有 user/owner/channel/apikey/platform 五个维度, **没有 model 维度**,
-// 因此超出留存期的「按模型拆分」不可得(UserStatsModelBreakdown 仍只读明细, 并如实返回覆盖起点)。
+// 已知上限: 这层(概览/趋势)读的是 user 维度, 与「按模型」是两条独立的合并线 ——
+// 按模型那条走 model 维度(迁移 45 之后才有), 且只在 settled 口径上合并, 见 UserStatsModelBreakdown。
+// 两条线的覆盖起点不同(模型维度上线晚于 user 维度), 不能互相推断, 也不能把 user 的边界当模型的边界。
 
 // userStatsRollupDayRange 算出查询窗口内可安全使用日汇总的「整天」范围(闭区间日键 YYYYMMDD)。
 // 返回空串表示窗口内没有任何一整天完全落在区间内(例如只查半天), 此时只能用明细。
@@ -474,7 +562,7 @@ func userStatsBillingAggregate(ctx context.Context, userID uint, start, end time
 //
 // 为什么不直接用 billingRollupAggregates: 它只截下界(since), 不裁尾也不裁首日的半天, 会把窗口外
 // 的汇总算进来(见 userStatsRollupDayRange 的说明)。这里按日键闭区间精确取, 并在 Go 侧归桶 ——
-// 汇总表一天最多 5 行, 一年也就一千多行, 取回成本可忽略, 不值得为此引一处分方言的日期拼接。
+// 汇总表一天最多几行(每个维度一行), 一年也就一千多行, 取回成本可忽略, 不值得为此引一处分方言的日期拼接。
 //
 // 归桶规则必须与 statsBucketExprOn 完全一致(周桶取当周周一, 月桶取当月 1 日), 否则同一张图上
 // "明细段"与"汇总段"会按不同的日期切片, 接缝处的桶对不上。
@@ -586,6 +674,22 @@ func userStatsBillingCoverage(ctx context.Context, userID uint, start, end time.
 		}
 	}
 
+	// 按模型的覆盖起点要单独看 model 维度: 它和 user 维度不是同时上线的 —— 迁移 45 之前固化的
+	// 日子只有 user 维度行, 那些天的"总额"有数、"按模型拆分"补不回来。若直接拿 user 维度的
+	// 边界当模型边界, 前端会把"确实没有模型数据"的那段当"有数据但为 0"展示, 等于把缺失画成 0。
+	var modelRollup struct {
+		Earliest string
+	}
+	if fromKey != "" {
+		if err := db.GetDB().WithContext(ctx).Model(&model.BillingRollup{}).
+			Select("COALESCE(MIN(day), '') AS earliest").
+			Where("dimension = ? AND dimension_id = ? AND day >= ? AND day <= ? AND model_name <> ''",
+				model.BillingRollupModel, userID, fromKey, toKey).
+			Scan(&modelRollup).Error; err != nil {
+			return "", "", "", fmt.Errorf("failed to query user stats model rollup coverage: %w", err)
+		}
+	}
+
 	liveStart := statsDateOnly(live.Earliest)
 	rollupStart := userStatsDayToDate(rollup.Earliest)
 	switch {
@@ -599,9 +703,22 @@ func userStatsBillingCoverage(ctx context.Context, userID uint, start, end time.
 		coverageStart = liveStart
 	}
 	rollupCoveredUntil = userStatsDayToDate(rollup.Latest)
-	// 按模型拆分只有明细能算(汇总表没有 model 维度), 所以它的覆盖起点就是区间内最早的一条明细。
+	// 按模型的覆盖起点 = min(最早明细, 最早的 model 维度汇总日): 两者都是"按模型能算得出来"的数据。
+	// 但**不是** min(user 维度汇总): model 维度上线前的汇总是没有拆分的, 那段即便有钱也得算缺失。
 	// 返回这条边界而不是假装全覆盖: 早于它的金额有数、按模型的拆分无数据, 前端据此提示而不是画成 0。
-	modelCoverageStart = liveStart
+	// 两者都为空(区间内既无明细也无 model 汇总)= 该区间按模型确实无数据, 仍返回空串由前端提示。
+	modelLiveStart := liveStart
+	modelRollupStart := userStatsDayToDate(modelRollup.Earliest)
+	switch {
+	case modelLiveStart == "":
+		modelCoverageStart = modelRollupStart
+	case modelRollupStart == "":
+		modelCoverageStart = modelLiveStart
+	case modelRollupStart < modelLiveStart:
+		modelCoverageStart = modelRollupStart
+	default:
+		modelCoverageStart = modelLiveStart
+	}
 	return coverageStart, rollupCoveredUntil, modelCoverageStart, nil
 }
 
@@ -616,9 +733,13 @@ func userStatsDayToDate(day string) string {
 // UserStatsModelCoverageStart 返回「按模型拆分」在查询区间内的覆盖起点(YYYY-MM-DD, 空串表示无明细),
 // 供 handler 在 models 响应里如实标注数据边界。
 //
-// 为什么单独暴露这条边界: 汇总表只有 user/owner/channel/apikey/platform 五个维度, **没有 model 维度**,
-// 所以超过留存期的按模型拆分**不可得** —— 这不是没做, 是数据本身没保留。可得的只有区间内最早一天的
-// 明细; 早于它那段的金额仍在概览里(由汇总补), 但拆分不出来。前端据此提示"此区间之前无模型明细",
+// 为什么单独暴露这条边界: 按模型拆分现在读「明细 ∪ model 日汇总」, 所以它能比明细留存期活得更久 ——
+// 但它活得比"总额"晚: 迁移 45 之前固化的日子只有 user 维度行, 没有 model 维度行, 那些天的总额有数、
+// 拆分补不回来(明细当时就删了)。这条边界的两种空值语义必须分清:
+//   - 区间内既无明细也无 model 汇总 ⇒ 返回空串, 前端显示"暂无按模型数据";
+//   - 区间前段只有总额没有拆分 ⇒ 返回那时的分界日, 前端提示"此日期之前无按模型数据"。
+//
+// 早于它的金额仍在概览里(由 user 维度汇总补), 但拆分不出来。前端据此提示,
 // 千万不要用"按比例摊到现有模型"之类的办法伪造数据, 那会让用户拿着假数字去对账。
 func UserStatsModelCoverageStart(ctx context.Context, userID uint, startDate, endDate string) (string, error) {
 	start, end := parseStatsDateRange(startDate, endDate)

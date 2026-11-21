@@ -8,6 +8,10 @@ export type WithdrawSummary = {
     withdrawn: number;
     revenue: number;
     rate: number;
+    // currency/quote_currency 是 **rate 的目标币种**(恒 CNY, 语义是"1 USD 折多少 CNY"),
+    // 不是金额单位。金额(available/frozen/withdrawn/revenue/fee_min/min_amount)的单位是
+    // pool_currency(账面币种, 恒 USD)。用 currency 标金额会把 USD 读成 CNY。
+    pool_currency?: string;
     currency?: string;
     quote_currency?: string;
     rate_day?: string;

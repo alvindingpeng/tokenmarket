@@ -7,12 +7,19 @@ import { POLL_MINUTE, POLL_SLOW } from '@/lib/polling';
 
 // Protocol 是渠道支持的上游线协议位掩码，位值与后端 model.Protocol 一致，不可变更。
 // 一条授权可同时支持多个协议，按位或组合；1 << 0 由后端保留待用。
+//
+// 这里每位都必须与后端 internal/model/channel.go 的 Protocol 常量对齐: 缺一位的后果是
+// 「这个协议在界面上不存在」—— 后端能落库、能转发, 但管理员既看不见也取消不了。
 export const Protocol = {
     OpenAIChatCompletion: 1 << 1,
     OpenAIResponse: 1 << 2,
     AnthropicMessage: 1 << 3,
-    OpenAIImage: 1 << 4, // 生图协议(generations / edits); P2 视频为 1 << 5。
-    XunfeiSpark: 1 << 6, // 讯飞星火协议。1 << 0 保留、1 << 5 已被视频占坑, 新位只能顺延; 落库后与后端 model.Protocol 一致, 同样不可再变更。
+    OpenAIImage: 1 << 4, // 生图协议(generations / edits)。
+    // 视频协议: /videos 创建、/videos/{id} 查询与删除, 基路径见 ChannelDetail.openai_video_base_path。
+    // 后端 ProtocolOpenAIVideo 早已启用(路由与计费都在), 探测到输出视频的模型会自动预勾这一位;
+    // 常量缺了它, 预勾上的位就没有任何一列能显示、能取消 —— 正是 FormGrants 注释里说的暗格。
+    OpenAIVideo: 1 << 5,
+    XunfeiSpark: 1 << 6, // 讯飞星火协议。1 << 0 保留, 新位只能顺延; 落库后与后端 model.Protocol 一致, 同样不可再变更。
     GeminiCLI: 1 << 7, // Gemini CLI 订阅信封协议(v1internal:generateContent); 与后端 model.ProtocolGeminiCLI 对齐。
 } as const;
 
@@ -137,6 +144,13 @@ export type ChannelDetail = {
     openai_chat_completion_path: string;
     openai_response_path: string;
     anthropic_message_path: string;
+    /**
+     * openai_video_base_path 是视频协议的**基路径**（不是完整路径）：
+     * 出站转换器在它后面拼 /videos 与 /videos/{id}，见 internal/relay/channel.go。
+     * 后端列默认 /v1，且保存时 TrimSuffix('/')；只填 "/" 表示视频挂在域名根下，落库后是空串
+     * —— 所以「空串」与「字段缺省」是两种含义，读侧归一由 fromChannel 负责（见 state.ts）。
+     */
+    openai_video_base_path?: string;
     keys: ChannelKey[];
     // egresses 是渠道的出口池：每条出口描述"从哪条线路出去"，转发时按实测耗时择优。
     // 留空表示沿用渠道自身的代理配置（proxy / channel_proxy），保持旧行为。

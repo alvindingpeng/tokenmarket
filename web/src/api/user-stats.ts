@@ -25,6 +25,13 @@ export type UserStatsOverview = {
     // (超出留存期, 或者确实没有调用)。早于查询起点说明成功率只覆盖末尾几天, 必须如实提示。
     request_coverage_start: string;
     request_retention_days: number;
+    // 按模型拆分在区间内的覆盖起点 YYYY-MM-DD。两种空值语义完全不同(后端 internal/model/user_stats.go 同此约定):
+    //   空串   = 区间内按模型完全没有数据;
+    //   有日期 = 该日期之前「金额有, 但拆不到模型」(迁移 45 之前固化的日子没有 model 维度行)。
+    // 后端恒下发该字段, 所以这里是必填; 但页面仍按「拿不到就不提示」处理 ——
+    // 老后端没有这个字段时不许凭空编一条覆盖提示(见 analytics/modelCoverage.ts)。
+    // 早于这条边界的金额仍在 total_cost 里, 只是拆不出模型: 绝不能补 0 或按比例摊, 那是编数字。
+    model_breakdown_coverage_start: string;
     // 词元构成: 四项之和等于 total_tokens(后端同源查询保证)。
     input_tokens: number;
     output_tokens: number;

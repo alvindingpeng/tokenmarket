@@ -22,6 +22,13 @@ export type ChannelFormState = {
     openai_chat_completion_path: string;
     openai_response_path: string;
     anthropic_message_path: string;
+    /**
+     * openai_video_base_path 是视频协议的基路径: 转换器在它后面自行追加 /videos 与 /videos/{id}
+     * (见 internal/relay/channel.go), 所以这里填 /v1 而不是 /v1/videos。
+     * 空串有确切含义 —— 视频挂在域名根下(后端 TrimSuffix('/') 之后就是空) —— 不是"未填",
+     * 故 fromChannel 只把**缺省**归一为 /v1, 空串原样保留; 提交侧见 toChannelConfig。
+     */
+    openai_video_base_path: string;
     /** GCP Project ID for gemini_cli dialect (optional, auto-assigned for personal accounts). */
     gemini_project?: string;
     keys: {
@@ -85,6 +92,8 @@ export const emptyFormState: ChannelFormState = {
     openai_chat_completion_path: '/v1/chat/completions',
     openai_response_path: '/v1/responses',
     anthropic_message_path: '/v1/messages',
+    // 与后端列默认值(gorm default:/v1)一致: 首开看到的就是实际会生效的那个值。
+    openai_video_base_path: '/v1',
     gemini_project: '',
     keys: [],
     egresses: [],
@@ -114,6 +123,9 @@ export function fromChannel(channel: ChannelDetail): ChannelFormState {
         openai_chat_completion_path: channel.openai_chat_completion_path,
         openai_response_path: channel.openai_response_path,
         anthropic_message_path: channel.anthropic_message_path,
+        // 只把**缺省**归一为 /v1: 历史渠道没有这一列。空串是"视频挂域名根下"的既有配置,
+        // 若一并归一成 /v1, 这条渠道下次保存就会被人不知情地挪到 /v1 —— 静默改动线上转发路径。
+        openai_video_base_path: channel.openai_video_base_path ?? '/v1',
         gemini_project: channel.gemini_project ?? '',
         // 讯飞三项读侧可能缺省, 归一为空串: 表单里处处少判一次 undefined。
         keys: channel.keys.map(({ name, key, enabled, app_id, api_secret, domain,
@@ -152,6 +164,14 @@ export function toChannelConfig(state: ChannelFormState) {
         openai_chat_completion_path: state.openai_chat_completion_path.trim(),
         openai_response_path: state.openai_response_path.trim(),
         anthropic_message_path: state.anthropic_message_path.trim(),
+        // 恒带值提交: 后端列 NOT NULL 且保存时做归一, 少带一项会被当作"未填"而回落到 /v1,
+        // 把用户配好的 /v2 悄悄改回默认值。
+        //
+        // 空串在这里是**有含义**的(视频挂域名根下), 而后端 normalizedPath 把空串当"未填"填成 /v1;
+        // 所以空串必须提交成 "/" —— 它经后端 TrimSuffix('/') 之后正好落回空串, 原值因此不丢。
+        // 反过来若把空串直接提交, 一条原本挂根路径的渠道会在下次保存时被挪到 /v1。
+        // 前端**不**自己做 TrimSuffix: 那是后端的归一职责(它还要处理只填 "/" 的情况), 两边都做会漂。
+        openai_video_base_path: state.openai_video_base_path.trim() === '' ? '/' : state.openai_video_base_path.trim(),
         proxy: state.proxy,
         custom_header: state.custom_header.filter((h) => h.header_key.trim() && h.header_value !== ''),
         channel_proxy: state.channel_proxy.trim(),
@@ -227,7 +247,10 @@ export function channelSaveBlockers(
 	// 只按方言放开, 不按"看起来像订阅"判断: 靠猜会让普通渠道悄悄失去必填。
 	const isSubscription = state.dialect === 'subscription';
 	if (!isSubscription && state.base_url.trim() === '') blockers.push({ reason: 'base_url' });
-	if ([state.openai_chat_completion_path, state.openai_response_path, state.anthropic_message_path]
+	// 视频基路径同属"协议路径", 校验口径一致(非空则须以 / 开头)。
+	// 空串在这里不算错: 它的含义是"视频挂在域名根下"(见 ChannelFormState.openai_video_base_path),
+	// 与后端的归一结果一致 —— 若把空串当"未填"拦下来, 那条渠道一旦被重新保存就再也存不回去。
+	if ([state.openai_chat_completion_path, state.openai_response_path, state.anthropic_message_path, state.openai_video_base_path]
 		.some((p) => p !== '' && !p.startsWith('/'))) blockers.push({ reason: 'paths' });
 	// 订阅渠道的凭据要登录后导入, 建渠道时必然没有 —— 要求非空会让建渠道永远走不通。
 	if (!isSubscription && state.keys.length === 0) blockers.push({ reason: 'no_keys' });

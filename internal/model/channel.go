@@ -13,7 +13,7 @@ const (
 	ProtocolOpenAIResponse       Protocol = 1 << 2 // OpenAI Responses 协议。
 	ProtocolAnthropicMessage     Protocol = 1 << 3 // Anthropic Messages 协议。
 	ProtocolOpenAIImage          Protocol = 1 << 4 // OpenAI Images 协议(generations / edits / variations)。
-	ProtocolOpenAIVideo          Protocol = 1 << 5 // OpenAI Videos 协议(P2 异步任务, 当前未启用)。
+	ProtocolOpenAIVideo          Protocol = 1 << 5 // OpenAI Videos 协议: 创建用 POST /videos, 后续用 GET/DELETE /videos/:id; 出站见 internal/relay/video.go。
 	ProtocolXunfeiSparkWS        Protocol = 1 << 6 // 科大讯飞星火原生 WebSocket 协议。
 	ProtocolGeminiCLI            Protocol = 1 << 7 // Gemini CLI 订阅渠道: v1internal:generateContent 信封协议。
 )

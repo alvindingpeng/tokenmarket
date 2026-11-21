@@ -20,6 +20,8 @@ function mkOverview(tokens: { input: number; cacheRead: number; cacheWrite: numb
         request_canceled: 0,
         request_coverage_start: '',
         request_retention_days: 7,
+        // 与 request_coverage_start 同理的空串语义(区间内按模型无数据); 本文件的纯函数都不读它。
+        model_breakdown_coverage_start: '',
         input_tokens: tokens.input,
         output_tokens: 0,
         cache_read_tokens: tokens.cacheRead,

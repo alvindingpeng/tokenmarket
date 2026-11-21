@@ -1331,6 +1331,7 @@
             "subPlatformPlaceholder": "选择平台",
             "baseUrlOptional": "渠道地址（选填，留空则用平台默认值）",
             "saveBlockedPaths": "路径需以 / 开头",
+            "openaiVideoBasePathHint": "这里只填基路径: /videos 与「按 id 查询/删除」的子路径由服务端自己拼接, 填 /v1 即可, 不要填 /v1/videos。",
             "saveBlockedNoKeys": "至少添加一份凭据",
             "saveBlockedKeySecret": "凭据 {name} 未填 Key",
             "saveBlockedSparkCreds": "凭据 {name} 的 Spark 授权需要 App ID 与 API Secret",
@@ -1338,6 +1339,7 @@
             "keySecretKeep": "留空保持原值",
             "grantProtocols": "chat / response / message / image",
             "grantProtocolSpark": "spark",
+            "grantProtocolVideo": "video",
             "keyEmpty": "未填写",
             "keysRequiredFirst": "请先添加凭据",
             "detailLoading": "正在加载渠道配置",
@@ -2877,7 +2879,7 @@
         },
         "alert": {
             "title": "余额预警",
-            "placeholder": "阈值(元)",
+            "placeholder": "阈值(账面币种 USD)",
             "invalidAmount": "请输入有效金额",
             "saved": "预警设置已保存",
             "saveFailed": "保存失败",
@@ -3348,7 +3350,10 @@
             "modelRequests": "模型调用量"
         },
         "model": {
-            "other": "其他"
+            "other": "其他",
+            "coverageFrom": "按模型数据从 {start} 起(此前只有总额, 无按模型拆分)",
+            "coverageNone": "该区间没有按模型数据",
+            "coverageHint": "早于该日期的金额仍可查, 但无法拆分到模型; 不会用 0 或按比例分摊填充。"
         },
         "tokenBreakdown": {
             "title": "Token 构成",

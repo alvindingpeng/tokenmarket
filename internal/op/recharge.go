@@ -494,7 +494,9 @@ func RechargeNotify(ctx context.Context, provider string, req *pay.CallbackReque
 	UserTouchBalance(order.UserID)
 	// 充值到账通知: 在入账提交之后发, 失败只记日志, 绝不影响已入账的资金事实。
 	notifyAsync(ctx, order.UserID, model.NotificationTypeRecharge, "充值成功",
-		fmt.Sprintf("您的账户已成功充值 %.2f 元，订单号：%s。", order.Credits+order.Bonus, order.OrderNo),
+		// Credits/Bonus 都是入账余额(账面 USD), 不是下单面额(面额可能是 CNY/JPY/... 的 amount_cents)。
+		// 标「元」会让用户拿面额去对账, 两边永远对不上。
+		fmt.Sprintf("您的账户已成功充值 %.2f %s（账面币种），订单号：%s。", order.Credits+order.Bonus, model.LedgerCurrency, order.OrderNo),
 		"", 0)
 	// 过期后补入账是异常时序(我们这边关了单, 第三方却确认收款), 必须留事故痕:
 	// 它说明 TTL/回调链路存在系统性延迟, 单看这一笔"入账成功"永远发现不了。

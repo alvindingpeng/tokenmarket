@@ -43,6 +43,10 @@ const overviewData: UserStatsOverview = {
     // 请求口径: 9850/10000 = 98.5%, 与 success_rate 对得上; 取消单独计, 不进分母。
     request_total: 10012, request_success: 9850, request_failed: 150, request_canceled: 12,
     request_coverage_start: coverageStart, request_retention_days: 7,
+    // 按模型拆分只回到区间第 11 天: 前 10 天"金额有、拆不到模型"。
+    // 与 request_coverage_start 是两个独立边界(一个受日志留存期限制, 一个受迁移 45 之前的固化形态限制),
+    // 所以刻意取不同的值 —— 谁被谁覆盖都会被断言抓到。
+    model_breakdown_coverage_start: shiftDate(monthRange.start_date as string, 10),
 };
 const trendData: UserStatsTrend[] = [
     // 有日志样本的一天: 成功率是真值。
@@ -57,6 +61,18 @@ const latencyData: UserStatsLatency = {
     sample_count: 42, avg_first_token_ms: 850, p95_first_token_ms: 2400,
     avg_duration_ms: 6200, avg_upstream_ttfb_ms: 700,
     coverage_start: '2026-01-12', retention_days: 7,
+};
+
+// keysFor 按预设取查询键: 页面默认"今天", 而覆盖边界只在多日区间才可能出现,
+// 那些用例要用 initialPreset="month" 渲染, 种子也必须落在 month 的键上, 否则页面读到的是空查询。
+const keysFor = (preset: 'today' | 'week' | 'month') => {
+    const range = getDateRange(preset);
+    return {
+        overview: userStatsOverviewQueryOptions(range).queryKey,
+        trend: userStatsTrendQueryOptions({ ...range, granularity: preset === 'today' ? 'hour' : 'day' }).queryKey,
+        models: userStatsModelsQueryOptions(range).queryKey,
+        latency: userStatsLatencyQueryOptions(range).queryKey,
+    };
 };
 
 // keys 与组件取数用同一套查询定义; 日期范围是「运行当天」, 与渲染时刻同一天, 查询键一致。
@@ -102,6 +118,17 @@ const seedAll = (client: QueryClient, patch: Partial<Record<'overview' | 'trend'
     else client.setQueryData(k.models, modelsData);
     if (patch.latency === 'error') seedError(client, k.latency);
     else client.setQueryData(k.latency, latencyData);
+};
+
+// seedAllFor 按预设种下全部四份数据: 多日用例与页面实际发出的查询键保持一致。
+// 直接收 client(不再 curry): curry 过一次的种子函数很容易被写成"只调用外层就以为种下了",
+// 结果页面停在加载态、用例断言的却是空查询。
+const seedAllFor = (preset: 'today' | 'week' | 'month', client: QueryClient) => {
+    const k = keysFor(preset);
+    client.setQueryData(k.overview, overviewData);
+    client.setQueryData(k.trend, trendData);
+    client.setQueryData(k.models, modelsData);
+    client.setQueryData(k.latency, latencyData);
 };
 
 describe('AnalyticsPage 页面状态(mock SSR)', () => {
@@ -298,6 +325,67 @@ describe('AnalyticsPage 新增数据维度', () => {
         // 分母为 0 必须给 "—"; 有样本时才给一位小数的百分比。
         expect(summarizeSuccess({ ...overviewData, request_success: 0, request_failed: 0 }).value).toBe('—');
         expect(summarizeSuccess({ ...overviewData, success_rate: 98.5, request_success: 9850, request_failed: 150 })).toEqual({ attempts: 10000, value: '98.5%' });
+    });
+
+    it('选了 30 天但按模型只覆盖末尾几天时, 明确提示从哪天起有拆分', () => {
+        // 这是本次缺陷的正面场景: 默认区间是"今天"(单日不可能有缺口), 必须切到多日范围才看得见。
+        // 区间起点在今天前 29 天, 覆盖起点在第 11 天 —— 前 10 天"金额有、拆不到模型"。
+        const html = renderSSR(<AnalyticsPage initialPreset="month" />, (client) => seedAllFor('month', client));
+        expect(html).toContain('data-testid="model-coverage"');
+        // 提示里必须带上真实覆盖起点, 不能只说"覆盖不全"而不说从哪天起。
+        expect(html).toContain(shiftDate(monthRange.start_date as string, 10));
+        // 并且解释这段缺口的性质: 金额还在, 只是拆不出来, 不会补 0 也不摊派。
+        expect(html).toContain('never zero-filled or pro-rated');
+    });
+
+    it('按模型覆盖整个区间时不多嘴(不出现覆盖提示)', () => {
+        const html = renderSSR(<AnalyticsPage initialPreset="month" />, (client) => {
+            seedAllFor('month', client);
+            client.setQueryData(keysFor('month').overview, {
+                ...overviewData,
+                // 覆盖起点就是区间起点 = 整段都有拆分, 没有缺口可讲。
+                model_breakdown_coverage_start: monthRange.start_date as string,
+            });
+        });
+        expect(html).not.toContain('data-testid="model-coverage"');
+        // 图照常画: recharts 的 ResponsiveContainer 在 SSR 里量不到宽度(>0 的轴文本不会出现),
+        // 所以断言落在面板标题上 —— 面板本身必须还在, 不能被"没有提示"顺带弄没。
+        expect(html).toContain('Model Cost Distribution');
+        expect(html).toContain('Model Requests');
+    });
+
+    it('字段缺失时不出现任何覆盖提示(不许伪造缺失)', () => {
+        // 后端未升级 / 旧缓存: 拿不到边界就不能硬报"覆盖不全", 那与漏报一样是编事实。
+        const html = renderSSR(<AnalyticsPage initialPreset="month" />, (client) => {
+            seedAllFor('month', client);
+            // 模拟"后端未升级 / 旧缓存": 运行时确实没有这个字段, 而类型上它是必填 ——
+            // 这正是 modelCoverageOf 收 unknown 入参 + 运行时校验要吸收的状态。
+            const stale: Record<string, unknown> = { ...overviewData };
+            delete stale.model_breakdown_coverage_start;
+            client.setQueryData(keysFor('month').overview, stale as unknown as UserStatsOverview);
+        });
+        expect(html).not.toContain('data-testid="model-coverage"');
+        expect(html).not.toContain('Model breakdown available from');
+        expect(html).not.toContain('No per-model data in this range');
+        expect(html).toContain('Model Cost Distribution'); // 图表本身不受影响
+    });
+
+    it('区间内完全没有按模型数据时, 明说"拆不出来"而不是笼统的"无数据"', () => {
+        // 空串 = 区间内按模型完全没有数据。此时模型列表为空, 面板会走空态分支 ——
+        // 但通用空态("No data in this range")会把"拆不出来"说成"没发生过", 必须换成专门的文案。
+        const html = renderSSR(<AnalyticsPage initialPreset="month" />, (client) => {
+            const k = keysFor('month');
+            client.setQueryData(k.overview, { ...overviewData, model_breakdown_coverage_start: '' });
+            client.setQueryData(k.trend, trendData);
+            client.setQueryData(k.models, [] as UserStatsModel[]);
+            client.setQueryData(k.latency, latencyData);
+        });
+        expect(html).toContain('No per-model data in this range');
+        // 不能同时冒出一句"本区间无数据": 那会与"金额其实有"自相矛盾。
+        expect(html).not.toContain('data-testid="model-coverage"');
+        expect(html).not.toContain('Model breakdown available from');
+        // 概览的总额仍在页面上 —— 这正是"有金额但拆不到模型"的样子。
+        expect(html).toContain('1,234');
     });
 
     it('无延迟样本时走空态而不是显示极快的 0', () => {

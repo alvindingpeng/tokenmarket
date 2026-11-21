@@ -2,10 +2,7 @@ package op
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -18,27 +15,17 @@ import (
 // 渠道准入审核(P1): 提交 → 审批 → 发布闸口 + 关键配置指纹复审。
 // 门禁只管「新暴露」(发布、进公开候选), 已在分组里跑的成员不受审核状态影响。
 
-// channelConfigFingerprint 计算渠道关键配置指纹: 只对「会改变供给行为」的字段取值 ——
-// dialect + base_url + 五个协议路径 + 排序后的模型清单。
-// 价格变动不入指纹: 改价已有 models/reprice 审计链路, 且高频调价不应反复卡审核;
-// 代理/自定义 Header/参数覆盖属运维配置, 同样不入指纹。模型清单排序后哈希, 避免无序抖动误报。
+// channelConfigFingerprint 是审核口径指纹在 op 层的入口: 实现只有一份, 在 model.ChannelConfigFingerprint。
+//
+// 为什么留这个转调而不直接调 model: 这里承载的是"审核按什么判"这个业务判断, op 内十几处调用点
+// 都以它为准; 之后口径若再要变(例如某些方言下路径并不同等重要), 改的是这一层的语义,
+// 而"怎么算"始终留在 model 层与迁移共用。
+//
+// 分开的理由是硬约束: 迁移要重算基线, 而 internal/db/migrate 不能 import internal/op
+// (op -> db -> migrate -> op 成环)。审计口径只能有一份实现 —— 两处各写一份必然漂移,
+// 而漂移的表现是"迁移算出的基线与运行期算出的指纹不等", 也就是所有已审渠道一次性全转 stale。
 func channelConfigFingerprint(config model.ChannelConfig, modelNames []string) string {
-	names := append([]string(nil), modelNames...)
-	sort.Strings(names)
-	// 去重: 同名模型在提交侧与缓存侧可能各有重复, 哈希前归一, 免得同内容两条路径算出不同指纹。
-	names = slices.Compact(names)
-	h := sha256.New()
-	fmt.Fprintf(h, "dialect=%s\n", config.Dialect)
-	fmt.Fprintf(h, "base=%s\n", config.BaseURL)
-	fmt.Fprintf(h, "chat=%s\n", config.OpenAIChatCompletionPath)
-	fmt.Fprintf(h, "resp=%s\n", config.OpenAIResponsePath)
-	fmt.Fprintf(h, "imggen=%s\n", config.OpenAIImageGenerationPath)
-	fmt.Fprintf(h, "imgedit=%s\n", config.OpenAIImageEditPath)
-	fmt.Fprintf(h, "anth=%s\n", config.AnthropicMessagePath)
-	for _, name := range names {
-		fmt.Fprintf(h, "model=%s\n", name)
-	}
-	return hex.EncodeToString(h.Sum(nil))
+	return model.ChannelConfigFingerprint(config, modelNames)
 }
 
 // channelModelNames 返回渠道当前模型名清单(缓存读取), 供指纹计算。

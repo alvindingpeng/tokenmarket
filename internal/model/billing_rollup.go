@@ -19,12 +19,25 @@ import "time"
 // 与渠道利润只计未退款部分。只存一份合计会让其中一个读口算错; 存两组即可用"全部 - 退款"还原两者。
 type BillingRollup struct {
 	ID uint64 `json:"id" gorm:"primaryKey"`
-	// Dimension 维度: user(付费方) / owner(收入方) / channel(渠道) / apikey(访问密钥) / platform(全平台)。
-	// 五个维度各自成行, 而不是一行带五个 id: 各维度的聚合列含义不同, 混在一行说不清"这行是谁的和"。
+	// Dimension 维度: user(付费方) / owner(收入方) / channel(渠道) / apikey(访问密钥) / platform(全平台) /
+	// model(付费方 × 模型名)。
+	// 各维度各自成行, 而不是一行带多个 id: 各维度的聚合列含义不同, 混在一行说不清"这行是谁的和"。
+	//
+	// model 维度(迁移 45 新增)的 DimensionID 记的是**付费方 user_id**, 模型名在 ModelName 列 ——
+	// 这样"某用户在某天的按模型用量"仍是一次 (dimension_id, day) 的索引区间扫描, 不必为它另建索引。
+	// 它的存在理由: 明细按留存期清理后, "按模型"的查询原本整段归零, 而同一区间的总额却还有数
+	// (user 维度兜底) —— 用户看到的是"总金额有, 拆分没了"。多了这一维, 拆分才能和总额一样活得比明细久。
 	Dimension   string `json:"dimension" gorm:"size:8;not null;uniqueIndex:idx_billing_rollup_key,priority:1"`
 	DimensionID uint   `json:"dimension_id" gorm:"not null;uniqueIndex:idx_billing_rollup_key,priority:2;index:idx_billing_rollup_dim_day,priority:1"`
 	// Day 自然日 YYYYMMDD(本地挂钟), 与 BillingDaily 的桶口径完全一致。
 	Day string `json:"day" gorm:"size:16;not null;uniqueIndex:idx_billing_rollup_key,priority:3;index:idx_billing_rollup_dim_day,priority:2"`
+	// ModelName 仅 model 维度有意义; 其余五个维度的行恒为空串。
+	//
+	// 为什么放进唯一键而不是另开一张表: 唯一键 (dimension, dimension_id, day, model_name) 在
+	// 其余维度上退化成原来的 (dimension, dimension_id, day)(它们恒为空串), 老数据的唯一性语义
+	// 一点没变 —— 迁移不需要回填, 也不会出现"同一维度同一天两行"这种歧义。
+	// 空串而不是 NULL: NULL 在唯一索引里互不冲突, 那样老维度的"一天一行"就失去了保护。
+	ModelName string `json:"model_name" gorm:"size:128;not null;default:'';uniqueIndex:idx_billing_rollup_key,priority:4"`
 
 	InputToken      int64   `json:"input_token" gorm:"bigint"`
 	OutputToken     int64   `json:"output_token" gorm:"bigint"`
@@ -56,4 +69,5 @@ const (
 	BillingRollupChannel  = "channel"  // 渠道维度, 对应 billing_records.channel_id。
 	BillingRollupAPIKey   = "apikey"   // API Key 维度, 对应 billing_records.api_key_id。
 	BillingRollupPlatform = "platform" // 全平台维度, DimensionID 恒为 0。
+	BillingRollupModel    = "model"    // 按模型维度, DimensionID 是付费方 user_id, 模型名在 ModelName 列。
 )

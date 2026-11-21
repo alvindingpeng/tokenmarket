@@ -21,6 +21,7 @@ import type { KeyRotationStrategy } from '@/api/channel';
 import { FormEgresses } from './FormEgresses';
 import { FormGrants } from './FormGrants';
 import { FormKeys } from './FormKeys';
+import { FormPaths } from './FormPaths';
 import { IconButton } from '@/components/common/IconButton';
 import { useSettingStore } from '@/stores/setting';
 import { SHELL_HEIGHT } from './layout';
@@ -270,23 +271,9 @@ function ChannelFormFields({ channel, onBack, onChannelRefetch }: {
                                     required={!isSubscription}
                                 />
                             </div>
-                            {([
-                                ['openai_chat_completion_path', 'OpenAI Chat'],
-                                ['openai_response_path', 'OpenAI Responses'],
-                                ['anthropic_message_path', 'Anthropic'],
-                            ] as const)
-                                .map(([field, label]) => (
-                                <div key={field} className="space-y-2">
-                                    <Label htmlFor={`${idPrefix}-${field}`}>{label}</Label>
-                                    <Input
-                                        id={`${idPrefix}-${field}`}
-                                        value={state[field]}
-                                        onChange={(e) => setState({ ...state, [field]: e.target.value })}
-                                        aria-invalid={state[field] !== '' && !state[field].startsWith('/')}
-                                        className="rounded-xl font-mono text-sm"
-                                    />
-                                </div>
-                            ))}
+                            {/* 协议路径组(含视频基路径)独立成组件: 整张表单要挂在弹窗 Provider 上,
+                                而弹窗正文在 SSR 里渲染不出来, 抽出来才能直接断言输入框里的值。 */}
+                            <FormPaths state={state} setState={setState} idPrefix={idPrefix} />
                             {state.dialect === 'xunfei' && (
                                 <div className="text-xs text-muted-foreground leading-relaxed">{t('xunfeiConnectionHint')}</div>
                             )}

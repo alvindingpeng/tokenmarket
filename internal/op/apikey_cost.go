@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // APIKeyCostAggregate 是 max_cost 判定的数据库兜底: 按 billing_records 聚合某 Key 的累计用户支出。
@@ -34,7 +35,16 @@ var (
 	apiKeyCostAggCache = make(map[int]apiKeyCostAggEntry)
 )
 
-// APIKeyCostSumDB 按 billing_records(user_cost, status=settled) 聚合某 Key 的累计支出。
+// APIKeyCostSumDB 按某 Key 的累计支出: 口径是「明细 ∪ apikey 日汇总」, 只计已结算。
+//
+// 为什么要并上汇总: 明细按留存期(默认 180 天)逐日清理, 只读 billing_records 时, 一把长期使用的
+// Key 的"累计支出"会随清理一天天变小 —— 而它正是 max_cost 上限的判定依据: 花得越多额度反而越高,
+// 超支的 Key 悄悄恢复可用。这里并上 apikey 维度汇总(迁移 43 就已有这一维)才是真的终身口径。
+//
+// 为什么"只计已结算"要靠减法: 汇总行存的是"合计 + 其中退款"两组列, 明细侧用 status='settled' 过滤。
+// 两者必须对齐, 否则同一把 Key 在"明细段"和"汇总段"会用不同口径相加, 接缝处凭空多出退款额。
+// 所以汇总侧取 user_cost - refunded_user_cost, 与明细侧的 settled 过滤等价。
+//
 // 查询失败返回 (0, err): 调用方决定失败时的口径(判定处按内存值放行, 不因兜底故障误杀请求)。
 func APIKeyCostSumDB(ctx context.Context, apiKeyID int) (float64, error) {
 	var total float64
@@ -44,7 +54,19 @@ func APIKeyCostSumDB(ctx context.Context, apiKeyID int) (float64, error) {
 		Select("COALESCE(SUM(user_cost), 0)").
 		Where("api_key_id = ? AND status = ?", apiKeyID, "settled").
 		Scan(&total).Error
-	return total, err
+	if err != nil {
+		return 0, err
+	}
+	// 汇总侧没有"半天"的概念, 只有"整天"的行, 而这里问的是**全期累计**(不带时间窗),
+	// 所以不存在窗口首尾被半天切开的失真: 全部汇总行都可以直接计入。
+	var rollup float64
+	if err := db.GetDB().WithContext(ctx).Model(&model.BillingRollup{}).
+		Select("COALESCE(SUM(user_cost - refunded_user_cost), 0)").
+		Where("dimension = ? AND dimension_id = ?", model.BillingRollupAPIKey, uint(apiKeyID)).
+		Scan(&rollup).Error; err != nil {
+		return 0, err
+	}
+	return total + rollup, nil
 }
 
 // APIKeyCostEffective max_cost 判定的有效花费口径: max(内存实时统计, 数据库聚合兜底)。

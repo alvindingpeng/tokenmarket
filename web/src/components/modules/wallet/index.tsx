@@ -37,6 +37,7 @@ import { canSubmitWithdraw, withdrawAmountIssue } from '@/lib/withdraw-min';
 import { ledgerKindOptions } from '@/lib/ledger-kinds';
 import { BalanceAlertSettings } from './BalanceAlertSettings';
 import { MyBudgetsCard } from './MyBudgetsCard';
+import { amountWithPoolCurrency, poolCurrencyOf } from './poolCurrency';
 
 // KINDS 流水筛选项; 空串表示全部。
 // 类型全集收口在 lib/ledger-kinds: 曾在这里写死短名单, 结果退款与提现四态根本选不到,
@@ -263,19 +264,37 @@ function RechargeButton() {
 
 
 // WithdrawDialogContent 提现表单: 可提余额 + 费用预览 + 收款账户; 仅渠道商可提(D4)。
-function WithdrawDialogContent({ onApplied }: { onApplied: () => void }) {
+//
+// 导出是为了单测能渲染弹窗正文: 真实页面里它挂在 MorphingDialogContainer 的 portal 上,
+// 页面级 mock SSR 拿不到 portal 里的内容(见 poolCurrency.test.tsx)。
+// initialAmount / initialPayoutCurrency 只给 SSR 用例当受控输入的初值 —— 服务端渲染
+// 触发不了 onChange, 不注入初值就永远只能渲染「金额 0」那一支, 也就测不到真实金额的标注。
+// 页面调用这两个 prop 时一律不传, 走下面的默认值, 行为与修前一致。
+export function WithdrawDialogContent({
+    onApplied,
+    initialAmount = '',
+    initialPayoutCurrency = 'CNY',
+}: {
+    onApplied: () => void;
+    initialAmount?: string;
+    initialPayoutCurrency?: string;
+}) {
     const t = useTranslations('wallet');
     const { setIsOpen } = useMorphingDialog();
     const summary = useWithdrawSummary();
     const fxRates = useFxRates();
-    const [amount, setAmount] = useState('');
-    const [payoutCurrency, setPayoutCurrency] = useState('CNY');
+    const [amount, setAmount] = useState(initialAmount);
+    const [payoutCurrency, setPayoutCurrency] = useState(initialPayoutCurrency);
     const [method, setMethod] = useState('alipay');
     const [accountName, setAccountName] = useState('');
     const [accountNo, setAccountNo] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const value = Number(amount) || 0;
     const rules = summary.data;
+    // 池币种: 提现口径里所有金额(可提/手续费/到手)的记账单位, 只能来自 pool_currency。
+    // **不要**用 rules.currency —— 那是汇率的目标币种(恒 CNY, 语义是「1 美元折多少人民币」),
+    // 拿它标金额等于把美元数字标成人民币。字段未下发时这里是空串, 走「不标注」分支。
+    const poolCurrency = poolCurrencyOf(rules);
     // 金额前置校验: 低于最低额/超过可提余额时按钮不可点, 并给出具体差额。
     // 不这样做的话, 用户输完金额、再输一遍 step-up 密码, 才从后端拿到"低于最低额"。
     // 拿不到 min_amount 或 available 时 issue 为 undefined —— **不拦**(见 lib/withdraw-min 的说明)。
@@ -338,8 +357,12 @@ function WithdrawDialogContent({ onApplied }: { onApplied: () => void }) {
                     <div className="flex items-center justify-between rounded-2xl border border-border bg-muted/40 px-3 py-2 text-sm">
                         <span className="text-muted-foreground">{t('withdraw.available')}</span>
                         {/* 与上面五格卡片同样的口径: 取不到时显「—」, 不显 0。
-                            这里是提现弹窗里最显眼的数字, 显 0 等于告诉用户"你没钱可提"。 */}
-                        <span className="tabular-nums font-medium">{rules ? formatAmount(rules.available) : '—'}</span>
+                            这里是提现弹窗里最显眼的数字, 显 0 等于告诉用户"你没钱可提"。
+                            后面跟的币种是池币种(pool_currency): 这个数字能不能提、提的是什么钱,
+                            只有带上单位才算说清。币种缺失时只显示数字(见 lib 注释的取舍)。 */}
+                        <span className="tabular-nums font-medium">
+                            {rules ? amountWithPoolCurrency(formatAmount(rules.available), poolCurrency) : '—'}
+                        </span>
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="withdraw-amount">{t('withdraw.amount')}</Label>
@@ -353,12 +376,14 @@ function WithdrawDialogContent({ onApplied }: { onApplied: () => void }) {
                             className="rounded-xl"
                         />
                         <p className="text-xs text-muted-foreground">
-                            {t('withdraw.feeHint', { min: rules?.fee_min ?? 1, rate: Math.round((rules?.fee_rate ?? 0.01) * 1000) / 10 })}
+                            {/* 规则里的最低费也是池币种金额: 不标单位会让人以为"最低 1 元人民币"。
+                                这里只往已有的 {min} 占位符里塞「金额+币种」, 不改文案, 所以不需要新键。 */}
+                            {t('withdraw.feeHint', { min: amountWithPoolCurrency(formatAmount(rules?.fee_min ?? 1), poolCurrency), rate: Math.round((rules?.fee_rate ?? 0.01) * 1000) / 10 })}
                         </p>
                         {/* 最低额常驻显示(不只在填错时才出现): 让人在输入之前就知道门槛。
                             拿不到 min_amount 时不显示 —— 写死一个数字会与后台可配值分叉。 */}
                         {rules?.min_amount !== undefined && rules.min_amount > 0 && (
-                            <p className="text-xs text-muted-foreground">{t('withdraw.minAmountHint', { min: formatAmount(rules.min_amount) })}</p>
+                            <p className="text-xs text-muted-foreground">{t('withdraw.minAmountHint', { min: amountWithPoolCurrency(formatAmount(rules.min_amount), poolCurrency) })}</p>
                         )}
                         {/* 三档原因分别给句子, 不合并成一句「金额不合法」:
                             输入非法要改输入, 低于最低额要加钱, 超过余额要减钱 —— 三种下一步完全不同。
@@ -373,12 +398,12 @@ function WithdrawDialogContent({ onApplied }: { onApplied: () => void }) {
                                 {/* 只传文案里真有的占位符 {short}: 多传的参数会被忽略, 但留着会让人以为 |
                                     那个键里有 {min}, 下次改文案就会照着不存在的占位符写。最低额本身
                                     在上面的 minAmountHint 里已经常驻显示了, 这里只补"还差多少"。 */}
-                                {t('withdraw.belowMin', { short: formatAmount(amountIssue.short) })}
+                                {t('withdraw.belowMin', { short: amountWithPoolCurrency(formatAmount(amountIssue.short), poolCurrency) })}
                             </p>
                         )}
                         {amountIssue?.kind === 'belowAvailable' && (
                             <p role="alert" className="text-xs text-destructive">
-                                {t('withdraw.belowAvailable', { available: formatAmount(amountIssue.available) })}
+                                {t('withdraw.belowAvailable', { available: amountWithPoolCurrency(formatAmount(amountIssue.available), poolCurrency) })}
                             </p>
                         )}
                     </div>
@@ -422,12 +447,17 @@ function WithdrawDialogContent({ onApplied }: { onApplied: () => void }) {
                     <div className="rounded-2xl border border-border bg-muted/40 px-3 py-2 text-sm">
                         <div className="flex items-center justify-between">
                             <span className="text-muted-foreground">{t('withdraw.fee')}</span>
-                            <span className="tabular-nums">{formatAmount(fee)}</span>
+                            <span className="tabular-nums">{amountWithPoolCurrency(formatAmount(fee), poolCurrency)}</span>
                         </div>
+                        {/* 一行里并排两个币种, 必须各带各的代码, 否则用户分不清哪个数是哪种钱:
+                            左边「要提多少」是**池币种**(收益池记账单位),
+                            右边「≈ 折算」是**打款币种**(用户选的到账币种)。
+                            修前两处都是裸数字, 只能靠旁边那句汇率提示猜, 而那句讲的是打款币种 ——
+                            于是把美元的可提额当成人民币读。 */}
                         <div className="flex items-center justify-between">
                             <span className="text-muted-foreground">{t('withdraw.actual')}</span>
                             <span className="tabular-nums font-medium">
-                                {formatAmount(actual)} (≈{payoutAmount === undefined ? '—' : formatAmount(payoutAmount) + ' ' + payoutCurrency})
+                                {amountWithPoolCurrency(formatAmount(actual), poolCurrency)} (≈{payoutAmount === undefined ? '—' : formatAmount(payoutAmount) + ' ' + payoutCurrency})
                             </span>
                         </div>
                     </div>
@@ -563,6 +593,9 @@ export default function Wallet() {
     // 五格余额卡片的取值一律是 number | undefined —— **不给 0 兜底**。
     // 兜底会把"这一次没取到"渲染成"你的余额是 0", 而资金页上这是最危险的一种假象:
     // 用户会以为钱被清零了。undefined 走下面的占位符分支, 显示「—」。
+    // 五格与提现弹窗是同一份账面余额口径, 所以币种也只认 pool_currency 这一个来源;
+    // 字段未下发时是空串 → 只显数字, 不猜 CNY(把美元当人民币展示比不显示更糟)。
+    const poolCurrency = poolCurrencyOf(summary.data);
     const cards = [
         { key: 'balance', value: summary.data?.balance },
         { key: 'frozen', value: summary.data?.frozen },
@@ -616,9 +649,10 @@ export default function Wallet() {
                 {cards.map((card) => (
                     <div key={card.key} className="rounded-3xl border border-border bg-card px-4 py-3">
                         <div className="text-xs text-muted-foreground">{t('card.' + card.key)}</div>
-                        {/* undefined 显占位符, 0 显真实的 0: 两者在数据上是不同的事实, 在界面上也必须不同。 */}
-                        <div className="mt-1 truncate text-xl font-semibold tabular-nums" title={card.value === undefined ? '—' : formatAmount(card.value)}>
-                            {card.value === undefined ? '—' : formatAmount(card.value)}
+                        {/* undefined 显占位符, 0 显真实的 0: 两者在数据上是不同的事实, 在界面上也必须不同。
+                            金额后面跟池币种: 用户看到的是一笔具体的钱, 没有单位就只能猜是人民币。 */}
+                        <div className="mt-1 truncate text-xl font-semibold tabular-nums" title={card.value === undefined ? '—' : amountWithPoolCurrency(formatAmount(card.value), poolCurrency)}>
+                            {card.value === undefined ? '—' : amountWithPoolCurrency(formatAmount(card.value), poolCurrency)}
                         </div>
                     </div>
                 ))}

@@ -1331,6 +1331,7 @@
             "subPlatformPlaceholder": "Select a platform",
             "baseUrlOptional": "Base URL (optional, defaults to the platform)",
             "saveBlockedPaths": "paths must start with /",
+            "openaiVideoBasePathHint": "Base path only: the server appends /videos and the per-task subpath itself, so enter /v1, not /v1/videos.",
             "saveBlockedNoKeys": "add at least one credential",
             "saveBlockedKeySecret": "credential {name} is missing its Key",
             "saveBlockedSparkCreds": "Spark grants on {name} need App ID and API Secret",
@@ -1338,6 +1339,7 @@
             "keySecretKeep": "Leave blank to keep current",
             "grantProtocols": "chat / response / message / image",
             "grantProtocolSpark": "spark",
+            "grantProtocolVideo": "video",
             "keyEmpty": "Not set",
             "keysRequiredFirst": "Add a credential first",
             "detailLoading": "Loading channel configuration",
@@ -2877,7 +2879,7 @@
         },
         "alert": {
             "title": "Balance Alert",
-            "placeholder": "Threshold",
+            "placeholder": "Threshold (USD, ledger currency)",
             "invalidAmount": "Invalid amount",
             "saved": "Alert saved",
             "saveFailed": "Save failed",
@@ -3348,7 +3350,10 @@
             "modelRequests": "Model Requests"
         },
         "model": {
-            "other": "Other"
+            "other": "Other",
+            "coverageFrom": "Model breakdown available from {start} (earlier periods have totals only)",
+            "coverageNone": "No per-model data in this range",
+            "coverageHint": "Amounts before that date are still available but cannot be split per model; they are never zero-filled or pro-rated."
         },
         "tokenBreakdown": {
             "title": "Token breakdown",

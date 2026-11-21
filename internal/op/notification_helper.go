@@ -62,10 +62,13 @@ func notifyAsync(ctx context.Context, userID uint, notifType model.NotificationT
 }
 
 // NotifyBalanceLow 发送余额不足通知。
+//
+// balance 是可用余额(Balance - Frozen), 记账口径是 model.LedgerCurrency(USD), 不能标成「元」:
+// 用户按人民币理解会以为还有几倍于真实值的购买力, 于是把「余额不足」当成误报。
 func NotifyBalanceLow(ctx context.Context, userID uint, balance float64) error {
 	return NotificationCreate(ctx, userID, model.NotificationTypeBalanceLow,
 		"余额不足",
-		fmt.Sprintf("您的账户余额已不足 %.2f 元，请及时充值以免影响服务使用。", balance),
+		fmt.Sprintf("您的账户余额已不足 %.2f %s（账面币种），请及时充值以免影响服务使用。", balance, model.LedgerCurrency),
 		"", 0)
 }
 
@@ -182,21 +185,30 @@ func NotifyChannelReview(ctx context.Context, userID uint, channelID int, channe
 }
 
 // NotifyWithdrawal 发送提现状态变更通知。
+//
+// 金额必须标账面币种(model.LedgerCurrency = USD), 不能写"元": 这个函数的 amount 是收益池口径,
+// 印成"元"会让用户按人民币理解, 差约 7 倍。提现审批/超时撤销两条真实在发的通知
+// (WithdrawReview / WithdrawTimeoutRevoke)已按同一口径标注, 这里保持一致 ——
+// 否则这个函数将来一旦被接上, 同一个缺陷就立刻复现。
+//
+// 注意: 本函数目前全仓 0 调用点(真实通知走上面那两条)。留着而不是删掉, 是因为它是提现状态通知
+// 的唯一现成入口, 删掉后下次要用就得重新写一遍并按当时的记忆猜口径; 留着的成本是它可能被
+// 当作"现有能力"直接接上 —— 所以口径必须在这里就是对的。
 func NotifyWithdrawal(ctx context.Context, userID uint, withdrawalID uint, amount float64, status string) error {
 	var title, content string
 	switch status {
 	case "approved":
 		title = "提现审核通过"
-		content = fmt.Sprintf("您的提现申请（金额 %.2f 元）已审核通过，资金将在 1-3 个工作日内到账。", amount)
+		content = fmt.Sprintf("您的提现申请（金额 %.2f %s，账面币种）已审核通过，资金将在 1-3 个工作日内到账。", amount, model.LedgerCurrency)
 	case "rejected":
 		title = "提现审核未通过"
-		content = fmt.Sprintf("您的提现申请（金额 %.2f 元）未通过审核，如有疑问请联系管理员。", amount)
+		content = fmt.Sprintf("您的提现申请（金额 %.2f %s，账面币种）未通过审核，如有疑问请联系管理员。", amount, model.LedgerCurrency)
 	case "paid":
 		title = "提现已打款"
-		content = fmt.Sprintf("您的提现（金额 %.2f 元）已完成打款，请注意查收。", amount)
+		content = fmt.Sprintf("您的提现（金额 %.2f %s，账面币种）已完成打款，请注意查收。", amount, model.LedgerCurrency)
 	default:
 		title = "提现申请已提交"
-		content = fmt.Sprintf("您的提现申请（金额 %.2f 元）已提交，请等待管理员审核。", amount)
+		content = fmt.Sprintf("您的提现申请（金额 %.2f %s，账面币种）已提交，请等待管理员审核。", amount, model.LedgerCurrency)
 	}
 	return NotificationCreate(ctx, userID, model.NotificationTypeWithdrawal,
 		title, content, "", uint64(withdrawalID))

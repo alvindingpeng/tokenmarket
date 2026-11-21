@@ -156,8 +156,15 @@ func exportWithdrawals(c *gin.Context) {
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", "attachment; filename=switchyard-withdrawal-"+time.Now().Format("20060102-150405")+".csv")
 	writer := csv.NewWriter(c.Writer)
+	// 列语义(两种币种混在一张表里, 别拼错):
+	//   amount / fee / actual  = 收益池口径, 单位恒为 pool_currency(model.LedgerCurrency, USD)
+	//   currency / actual_cents / actual_currency = **到账币种**口径(1 USD 折多少 currency 的分)
+	// 旧表头把这两组放在同一行却只写一个 currency, 财务把 amount 与 currency 拼起来就会把
+	// USD 当 CNY 入账 —— 充值导出(amount_cents+currency+pay_cents+pay_currency)本来分得清,
+	// 提现这份漏了。修法: **加列不删列、不改列序**(既有财务脚本按列别名/列序取数, 改名或挪位
+	// 会静默打歪), 只把 pool_currency 追加在末尾。
 	_ = writer.Write([]string{"id", "user_id", "amount", "fee", "actual", "currency", "actual_cents", "actual_currency",
-		"rate", "rate_day", "rate_source", "method", "status", "applied_at", "paid_at"})
+		"rate", "rate_day", "rate_source", "method", "status", "applied_at", "paid_at", "pool_currency"})
 	for _, item := range rows {
 		paidAt := ""
 		if item.PaidAt != nil {
@@ -179,10 +186,11 @@ func exportWithdrawals(c *gin.Context) {
 			sanitizeCSVCell(string(item.Status)),
 			item.AppliedAt.Format(time.RFC3339),
 			paidAt,
+			model.LedgerCurrency,
 		})
 	}
 	if len(rows) >= cashflowExportLimit {
-		_ = writer.Write([]string{"", "", "", "", "", "", "", "", "", "", "", "", "", "", fmt.Sprintf("# truncated: exported %d rows (limit %d)", len(rows), cashflowExportLimit)})
+		_ = writer.Write([]string{"", "", "", "", "", "", "", "", "", "", "", "", "", "", "", fmt.Sprintf("# truncated: exported %d rows (limit %d)", len(rows), cashflowExportLimit)})
 	}
 	writer.Flush()
 	audit(c, "withdrawal.export", fmt.Sprintf("n=%d", len(rows)),

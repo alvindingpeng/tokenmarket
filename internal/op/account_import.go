@@ -18,6 +18,7 @@ import (
 
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/subplatform"
 )
 
 // AccountImportSpec 一次导入请求。
@@ -71,6 +72,14 @@ func AccountImport(ctx context.Context, channelID int, spec AccountImportSpec, n
 
 	credential, err := model.AccountJSONParse(spec.Platform, []byte(raw))
 	if err != nil {
+		return nil, err
+	}
+
+	// 平台与渠道方言不匹配的凭据必须在写入前拦下。三个入口(单条导入、登录完成后的导入、
+	// 批量导入)都汇聚到这个函数, 所以闸门放在这里就够了 —— 接口层只负责把 InvalidInputError
+	// 翻成 400。这里查的是解析后真正要落库的 credential.Platform(而不是请求里的 spec.Platform),
+	// 因为 relay 读的是库里那一列: 两者若被解析层改写, 被拦下的必须是实际生效的值。
+	if err := ValidateAccountPlatformForChannel(ctx, channelID, credential.Platform); err != nil {
 		return nil, err
 	}
 
@@ -169,4 +178,77 @@ func isUniqueViolation(err error) bool {
 	}
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "unique constraint") || strings.Contains(message, "duplicate key")
+}
+
+// accountPlatformRequiredByChannel 返回某渠道方言**只**接受哪个平台的凭据; 空串表示不限。
+//
+// 对应关系来自转发层的硬约束, 不是这里凭空制定:
+//   - subscription: 订阅渠道的方言与出站协议由平台描述(subplatform.Platform)决定,
+//     目前唯一登记的订阅平台把 AccountPlatform 钉在 antigravity;
+//   - gemini_cli: 该方言的出站是 Gemini CLI 的 v1internal RPC 信封, relay 的
+//     ProtocolGeminiCLI 分支只认 antigravity 凭据(gemini 的凭据缺 cclog/experimentsandconfigs,
+//     数据面会 403), 所以同样是只此一家。
+//
+// 其余方言一律不限: 普通渠道挂 antigravity 凭据是能转发的合法配置(只要授权带 GeminiCLI 协议位),
+// 前端 accountPlatform.ts 也刻意只挡"订阅/gemini_cli 选了别的平台"这一个方向。
+func accountPlatformRequiredByChannel(config model.ChannelConfig) string {
+	if config.Dialect.Subscribable() {
+		if platform, ok := subplatform.Of(strings.TrimSpace(config.SubPlatform)); ok && platform.AccountPlatform != "" {
+			return platform.AccountPlatform
+		}
+		// 平台名未登记或为空(历史数据/库被手改)时按方言兜底: 订阅方言这套出站协议就是为
+		// antigravity 凭据存在的, 不能因为平台名脏了就把校验整条跳过。
+		return model.AccountPlatformAntigravity
+	}
+	if config.Dialect == model.DialectGeminiCLI {
+		return model.AccountPlatformAntigravity
+	}
+	return ""
+}
+
+// channelConfigForImport 取出渠道配置: 先查缓存(转发读的就是它, 它才是事实来源), 未命中再查库。
+//
+// 缓存缺失是真实存在的窗口(进程刚起、渠道刚建还没回填、缓存被清), 这时**不能**当作"不限平台"
+// 放行 —— 那等于"越接近冷启动越容易放进坏凭据", 而批量脚本恰好总在这个窗口里跑。因此回退到库。
+//
+// 只有库也查不到时才放弃校验(返回 false): 那种情况下渠道 ID 本身就是错的, 正确的拒绝理由
+// 是"渠道不存在"(接口层按 404 处理), 不是伪装成"平台不匹配"—— 后者会把使用者引向改平台。
+func channelConfigForImport(ctx context.Context, channelID int) (model.ChannelConfig, bool) {
+	if channel, ok := channelCache.Get(channelID); ok {
+		return channel.ChannelConfig, true
+	}
+	var channel model.Channel
+	if err := db.GetDB().WithContext(ctx).First(&channel, channelID).Error; err != nil {
+		return model.ChannelConfig{}, false
+	}
+	return channel.ChannelConfig, true
+}
+
+// ValidateAccountPlatformForChannel 确认某渠道的方言能不能吃下这个平台的凭据。
+//
+// 这是 op 层的最后一道闸: 三个入口(单条 /import、登录完成的导入、/import-batch)都从这里过。
+// 少了它, 平台与方言不匹配的凭据能"导入成功", 失败要等到转发那一刻才暴露 —— relay 的
+// ProtocolGeminiCLI 分支会按"凭据平台不对"硬拒并把该凭据熔断 30 分钟, 使用者看到的是
+// "导入成功, 一用就挂, 还要等半小时才恢复", 排查方向完全错。
+//
+// 归属与"渠道是否存在"不在这里判断(接口层已经按 404 处理), 这里只管方言与平台。
+func ValidateAccountPlatformForChannel(ctx context.Context, channelID int, platform string) error {
+	platform = strings.TrimSpace(platform)
+	if platform == "" {
+		// 平台为空说明凭据里没解析出平台, 由解析层去报更具体的错; 这里不越权判断。
+		return nil
+	}
+	config, knowable := channelConfigForImport(ctx, channelID)
+	if !knowable {
+		return nil
+	}
+	required := accountPlatformRequiredByChannel(config)
+	if required == "" || required == platform {
+		return nil
+	}
+	// 两个平台名都要说: 只说"平台不匹配"使用者不知道该改成哪个方向。
+	return &InvalidInputError{Reason: fmt.Errorf(
+		"渠道方言 %q 只接受 %s 平台的账号凭据, 当前提交的是 %s 凭据; "+
+			"平台与方言不匹配的凭据能导入但转发时会被拒绝",
+		config.Dialect, required, platform)}
 }

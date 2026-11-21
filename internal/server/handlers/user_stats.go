@@ -77,10 +77,18 @@ func getUserStatsModels(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	// 按模型拆分只有明细能算: 汇总表没有 model 维度, 超出留存期(默认 180 天)的拆分不可得。
 	// 这条边界不放进 JSON 体(响应是数组, 加字段会破坏既有契约), 改用响应头如实告知 ——
-	// 前端据此提示"此区间之前无模型明细", 而不是把缺失的模型读成 0 用量。
+	// 前端据此提示"此区间之前拆不到模型", 而不是把缺失的模型读成 0 用量。
 	// 概览响应里同名语义的字段是 model_breakdown_coverage_start。
+	//
+	// 覆盖起点 = min(区间内最早明细日, 区间内最早的 model 维度汇总日)。自迁移 45 起
+	// billing_rollups 多了 model 维度, 超出留存期(默认 180 天)的拆分**仍然有数**: 明细算不出的
+	// 部分由汇总补上。真正补不回来的只有迁移 45 之前就被清理掉的日子。
+	//
+	// **响应头只在非空时下发, 这是刻意的**: 头不存在 = "本响应没声明覆盖边界",
+	// 而空串 = "区间内确实没有任何按模型数据"。两者语义不同; 若为了"总是有头"把头写成空串,
+	// 前端与第三方消费者都会把"不知道"读成"确定没有"。JSON 体里的
+	// model_breakdown_coverage_start 是恒下发的, 需要区分这两种情况请读它。
 	if coverageStart, err := op.UserStatsModelCoverageStart(c.Request.Context(), userID, query.StartDate, query.EndDate); err == nil && coverageStart != "" {
 		c.Header("X-Model-Coverage-Start", coverageStart)
 	}

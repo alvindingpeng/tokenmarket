@@ -80,7 +80,8 @@ func updateChannelModelBreakerCache(id int, update func(*model.ChannelModel)) {
 }
 
 // 已定义的全部协议位, 用于校验提交的协议掩码。
-// ProtocolOpenAIVideo 一并列入, 管理后台勾选不会被判为非法位; 视频路由本身 P2 阶段再补。
+// 七位都已落地: 视频路由由 internal/server/handlers/relay.go 注册(POST /videos + GET/DELETE /videos/:id),
+// 授权带这一位即按 MediaKindVideo 计费(见 syncChannelModelKind)。协议位落库后不可再变更, 加新位只能顺延。
 const definedProtocols = model.ProtocolOpenAIChatCompletion | model.ProtocolOpenAIResponse | model.ProtocolAnthropicMessage | model.ProtocolOpenAIImage | model.ProtocolOpenAIVideo | model.ProtocolXunfeiSparkWS | model.ProtocolGeminiCLI
 
 // ChannelDetailGet 返回指定渠道的完整配置, 供编辑表单读取; 非归属者按不存在处理。

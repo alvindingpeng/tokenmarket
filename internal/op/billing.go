@@ -231,7 +231,9 @@ func maybeRaiseLowBalanceAlert(ctx context.Context, userID uint, estimate float6
 	})
 	// 用户侧站内通知: 管理员告警与用户通知同源触发, 用户不进钱包页也能被铃铛提醒。
 	notifyAsync(ctx, userID, model.NotificationTypeBalanceLow, "余额不足",
-		fmt.Sprintf("您的可用余额 (%.2f 元) 已接近起扣门槛，下一次调用可能会被拒绝，请及时充值。", available),
+		// available 是 Balance - Frozen 的账面余额(model.LedgerCurrency = USD), 标「元」会让用户
+		// 以为阈值差着一大截(实际差的是 1/7), 于是把这条提醒当成噪音。
+		fmt.Sprintf("您的可用余额 (%.2f %s，账面币种) 已接近起扣门槛，下一次调用可能会被拒绝，请及时充值。", available, model.LedgerCurrency),
 		"", 0)
 }
 

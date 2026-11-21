@@ -3,6 +3,10 @@ import { apiRequest } from './client';
 
 // WalletSummary 钱包摘要: 余额口径(可用/冻结)与累计口径(消费/充值/收益)一次取回。
 export type WalletSummary = {
+    // 上面所有金额的币种(账面/收益池口径, 后端 model.LedgerCurrency, 恒 USD)。
+    // **不要**用提现口径上的 currency 标这里的金额 —— 那是 rate 的目标币种(恒 CNY),
+    // 拿它标金额会把美元数字读成人民币, 差约 7 倍。缺失时不标注, 既不猜 CNY 也不猜 USD。
+    pool_currency?: string;
     balance: number;
     frozen: number;
     total_spent: number;

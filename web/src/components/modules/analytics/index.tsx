@@ -15,6 +15,7 @@ import { getDateRange, PRESETS, type Preset } from './dates';
 // 展示口径的纯函数单独成文件: 组件文件只导出组件才能保住 Fast Refresh,
 // 而这些规则正是最该被单测钉死的部分。
 import { buildTrendChartData, hasSuccessSamples, isCoverageLimited, summarizeCacheHitRate, summarizeSuccess } from './success';
+import { modelCoverageOf } from './modelCoverage';
 
 // PanelQuery 区块只依赖查询的这三个字段: 加载/失败/重试彼此独立, 谁慢谁转圈, 谁错谁重试。
 type PanelQuery = {
@@ -75,10 +76,14 @@ function formatLatency(ms: number): string {
 // AnalyticsPage 用户调用统计分析页面。
 // 概览/趋势/模型三个区块各自持有查询与四态: 一个请求慢或挂了不拖住整页,
 // 更不会把失败渲染成全零的「正常统计」。
-export function AnalyticsPage() {
+// initialPreset 只为测试可复现: 页面默认是"今天"(单日区间内不可能出现覆盖缺口),
+// 而覆盖边界的用户可见行为正是"选了 30 天但拆分只覆盖末尾几天"。
+// 没有日期输入控件, SSR 也就没法通过交互切到多日范围 —— 于是给一个可选初值来渲染那个真实场景。
+// 页面里的调用处不传它, 线上行为与修前完全一致(默认值就是原来的 useState 初值)。
+export function AnalyticsPage({ initialPreset = 'today' }: { initialPreset?: Preset } = {}) {
     const t = useTranslations('analytics');
     // 默认"今天 + 按小时": 用户打开统计页想看的是"刚才到现在发生了什么", 30 天按天是次选动作。
-    const [preset, setPreset] = useState<Preset>('today');
+    const [preset, setPreset] = useState<Preset>(initialPreset);
     const [granularity, setGranularity] = useState<'hour' | 'day' | 'week' | 'month'>('hour');
     // 今天=小时, 近7/30天=按天: 周与月桶在单日区间只会产出空桶, 切范围时把粒度带到位, 省一次"图是空的"困惑。
     const effectiveGranularity = preset === 'today' ? 'hour' : granularity === 'hour' ? 'day' : granularity;
@@ -103,6 +108,10 @@ export function AnalyticsPage() {
     const coverageLimited = overview.data
         ? isCoverageLimited(overview.data.request_coverage_start, dateRange.start_date)
         : false;
+
+    // 按模型拆分能活过明细留存期, 但活得比"总额"晚: 早于这条边界的日子只有总额、拆不出模型。
+    // 必须如实说明边界 —— 把那段缺失画成 0 用量, 用户会以为那段时间真的没用过任何模型。
+    const modelCoverage = modelCoverageOf(overview.data, dateRange.start_date);
 
     // 模型分布前 10 + 其他聚合
     const topModels = modelRows.slice(0, 10);
@@ -320,38 +329,61 @@ export function AnalyticsPage() {
             </div>
 
             {/* 模型分布 */}
-            <PanelBody query={models} empty={modelRows.length === 0}>
-                <div className="grid shrink-0 gap-2 md:grid-cols-2">
-                    <div className="rounded-3xl border border-border bg-card p-4">
-                        <h3 className="mb-3 text-sm font-medium">{t('chart.modelCost')}</h3>
-                        <ResponsiveContainer width="100%" height={240}>
-                            <PieChart>
-                                <Pie data={modelData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80}
-                                    /* 金额统一 2 位小数: 默认标签印原始浮点值, 会露出 0.30000000000000004 这类尾差。 */
-                                    label={({ value }) => (typeof value === 'number' ? value.toFixed(2) : '')}>
-                                    {modelData.map((_, index) => (
-                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                    ))}
-                                </Pie>
-                                <Tooltip
-                                    contentStyle={chartTooltipStyle}
-                                    formatter={(value) => value != null ? (value as number).toFixed(2) : ''}
-                                />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    </div>
+            <PanelBody
+                query={models}
+                empty={modelRows.length === 0}
+                /* 'none' 时用专门的空态文案: 这句区间里**确实有数据**, 只是拆不到模型 ——
+                   套用通用的"本区间无数据"会把"拆不出来"说成"没发生过", 正好是本次要修的错。 */
+                emptyText={modelCoverage.kind === 'none' ? t('model.coverageNone') : undefined}
+            >
+                {/* 提示与两张图包在同一个块里: PanelBody 的 children 直接进页面的 flex 列,
+                    若把提示留成兄弟节点, 它会按页面级 gap 与图表拉开距离, 看起来像另一个面板。 */}
+                <div className="shrink-0 space-y-2">
+                    {/* 'from': 区间前段"金额有、拆不到模型"。这行只出现一次(挂在面板顶部), 不每张图各挂一处 ——
+                        同一件事说两遍会让人以为有两个不同的问题。
+                        文案只陈述事实(哪段没有拆分), 不补 0、不摊派, 也不暗示"补得回来"。 */}
+                    {modelCoverage.kind === 'from' && (
+                        <div className="flex items-start gap-1 text-xs text-amber-600 dark:text-amber-500" data-testid="model-coverage">
+                            <TriangleAlert className="mt-px size-3 shrink-0" aria-hidden="true" />
+                            <span>
+                                {t('model.coverageFrom', { start: modelCoverage.start })}
+                                {' '}
+                                {t('model.coverageHint')}
+                            </span>
+                        </div>
+                    )}
+                    <div className="grid gap-2 md:grid-cols-2">
+                        <div className="rounded-3xl border border-border bg-card p-4">
+                            <h3 className="mb-3 text-sm font-medium">{t('chart.modelCost')}</h3>
+                            <ResponsiveContainer width="100%" height={240}>
+                                <PieChart>
+                                    <Pie data={modelData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80}
+                                        /* 金额统一 2 位小数: 默认标签印原始浮点值, 会露出 0.30000000000000004 这类尾差。 */
+                                        label={({ value }) => (typeof value === 'number' ? value.toFixed(2) : '')}>
+                                        {modelData.map((_, index) => (
+                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip
+                                        contentStyle={chartTooltipStyle}
+                                        formatter={(value) => value != null ? (value as number).toFixed(2) : ''}
+                                    />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
 
-                    <div className="rounded-3xl border border-border bg-card p-4">
-                        <h3 className="mb-3 text-sm font-medium">{t('chart.modelRequests')}</h3>
-                        <ResponsiveContainer width="100%" height={240}>
-                            <BarChart data={topModels.concat(otherModels.length > 0 ? [{ model_name: t('model.other'), requests: otherRequests, cost: 0, tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, cache_hit_rate: 0 }] : [])}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                                <XAxis dataKey="model_name" tick={{ fontSize: 10 }} angle={-45} textAnchor="end" height={80} stroke="hsl(var(--muted-foreground))" />
-                                <YAxis tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" />
-                                <Tooltip contentStyle={chartTooltipStyle} />
-                                <Bar dataKey="requests" fill="#3b82f6" />
-                            </BarChart>
-                        </ResponsiveContainer>
+                        <div className="rounded-3xl border border-border bg-card p-4">
+                            <h3 className="mb-3 text-sm font-medium">{t('chart.modelRequests')}</h3>
+                            <ResponsiveContainer width="100%" height={240}>
+                                <BarChart data={topModels.concat(otherModels.length > 0 ? [{ model_name: t('model.other'), requests: otherRequests, cost: 0, tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, cache_hit_rate: 0 }] : [])}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                                    <XAxis dataKey="model_name" tick={{ fontSize: 10 }} angle={-45} textAnchor="end" height={80} stroke="hsl(var(--muted-foreground))" />
+                                    <YAxis tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" />
+                                    <Tooltip contentStyle={chartTooltipStyle} />
+                                    <Bar dataKey="requests" fill="#3b82f6" />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
                     </div>
                 </div>
             </PanelBody>

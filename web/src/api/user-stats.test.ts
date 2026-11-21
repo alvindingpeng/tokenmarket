@@ -118,8 +118,11 @@ describe('user-stats 重试策略', () => {
 
 // overviewFixture 构造一份完整的概览响应: 类型新增了请求口径字段后,
 // 这里必须补齐, 否则 tsc 会挡住构建 —— 而"缓存不跨用户共用"这条断言不能因此被删。
+// 新增的 model_breakdown_coverage_start 同理: 空串是"区间内按模型无数据"这个真实语义,
+// 不是为了让编译器闭嘴而填的占位; 这条用例本身也不读它(只关心缓存不跨用户串)。
 const overviewFixture = (totalRequests: number): UserStatsOverview => ({
     total_requests: totalRequests,
+    model_breakdown_coverage_start: '',
     success_rate: 100,
     total_cost: 1,
     total_tokens: 2,

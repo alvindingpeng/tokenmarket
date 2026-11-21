@@ -2,8 +2,10 @@ package op
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -600,5 +602,205 @@ func TestWithdrawApplyPayoutCurrencySnapshot(t *testing.T) {
 	bad.PayoutCurrency = "BRL"
 	if _, err := WithdrawApply(context.Background(), bad); err == nil {
 		t.Fatal("unsupported payout currency must be rejected")
+	}
+}
+
+// TestWithdrawSummaryCarriesPoolCurrency 提现口径必须自报「这些数字是什么币种」。
+//
+// 为什么单独立一条用例: WithdrawSummary 里的 Available/Frozen/Withdrawn/Revenue 全是收益池
+// 口径的裸数字, 而收益池的唯一记账币种是 model.LedgerCurrency = USD(internal/model/currency.go)。
+// 同结构体里另有一个 currency 字段, 但它是 **rate 的目标币种**(1 USD 折多少 CNY), 语义完全不同 ——
+// 前端拿它标注金额就会把美元读成人民币, 差约 7 倍。所以这里同时钉死两件事:
+//  1. pool_currency 必须是 USD(金额单位);
+//  2. currency 必须仍是 CNY(汇率快照的目标币种), 不许被"顺手改成 USD"。
+//
+// 断言走 JSON 而不是结构体字段: 这条契约是给前端消费的, 只有序列化后的键名才算数
+// (字段名一改前端就读不到, 结构体断言看不出来)。
+func TestWithdrawSummaryCarriesPoolCurrency(t *testing.T) {
+	reseller, _ := withdrawalTestSetup(t, "pool-currency", 100)
+
+	summary, err := WithdrawSummaryGet(context.Background(), reseller.ID, model.RoleReseller)
+	if err != nil {
+		t.Fatalf("WithdrawSummaryGet: %v", err)
+	}
+
+	raw, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatalf("marshal summary: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("unmarshal summary: %v", err)
+	}
+
+	// 金额单位: 必须是收益池记账币种。
+	poolCurrency, ok := payload["pool_currency"]
+	if !ok {
+		t.Fatalf("JSON 缺 pool_currency 键; 前端无法标注可提金额单位, 用户会把 USD 读成 CNY; payload=%s", raw)
+	}
+	if poolCurrency != model.LedgerCurrency {
+		t.Fatalf("pool_currency = %v, want %q (收益池记账币种)", poolCurrency, model.LedgerCurrency)
+	}
+
+	// 汇率快照目标币种: 存量口径不变, 不能被改成 USD(否则 rate 的单位失去意义)。
+	if payload["currency"] != "CNY" {
+		t.Fatalf("currency = %v, want CNY (rate 的目标币种, 不是金额币种; 改成 USD 会把汇率快照口径改坏)", payload["currency"])
+	}
+	rate, ok := payload["rate"].(float64)
+	if !ok || rate != 7 {
+		t.Fatalf("rate = %v, want 7 (1 USD = 7 CNY 的静态设置价)", payload["rate"])
+	}
+
+	// 数值语义一条不动: 只有币种标注是新增的。
+	if summary.Available != 100 || summary.Revenue != 100 || summary.Frozen != 0 || summary.Withdrawn != 0 {
+		t.Fatalf("金额语义被改动: %+v", summary)
+	}
+
+	// 可选到账币种白名单不含 USD: 收益池是 USD 口径, 打款换币由 actual_currency 承担。
+	for _, code := range summary.SupportedCurrencies {
+		if code == model.LedgerCurrency {
+			t.Fatalf("supported_currencies 不该含账面币种 %s(打款换币由 actual_currency 承担): %v", model.LedgerCurrency, summary.SupportedCurrencies)
+		}
+	}
+}
+
+// TestWithdrawApplyDefaultsPayoutCurrencyToCNY 省略 payout_currency 必须落到 CNY(存量默认)。
+//
+// 修前行为: PayoutCurrency 为空时 model.NormalizeCurrency 返回的是账面币种 USD(它自己的语义是
+// "空=USD", 见 internal/model/currency.go), 于是下面那行 `if payout == "" { payout = "CNY" }`
+// 成了死代码 —— 单据被记成 Currency="USD"、rate=1 的快照, 而 handlers/withdrawal.go 的
+// JSON tag 注释与函数注释都宣称"缺省 CNY"。快照口径一旦错, 下游按 currency 判
+// 「是否 CNY 到账」「旧行/新行」的地方全部误判, mark-paid 的流水文案也会印成 "USD 59"。
+//
+// 这里钉死四件事: currency=CNY、rate 取 CNY 静态价(不是恒等 1)、actual_cents 按 CNY 折算、
+// rate_source 是 static。只断言结构体不够 —— 关键在 rate 不是 1(1 恰好是"USD 恒等"的特征值)。
+func TestWithdrawApplyDefaultsPayoutCurrencyToCNY(t *testing.T) {
+	reseller, _ := withdrawalTestSetup(t, "default-payout", 100)
+	spec := withdrawalSpec(reseller.ID, model.RoleReseller, 60)
+	spec.PayoutCurrency = "" // 省略到账币种: 老调用方/第三方脚本不发这个字段
+	order, err := WithdrawApply(context.Background(), spec)
+	if err != nil {
+		t.Fatalf("apply with empty payout currency: %v", err)
+	}
+	if order.Currency != "CNY" {
+		t.Fatalf("currency = %q, want CNY (省略 payout_currency 的存量默认)", order.Currency)
+	}
+	if order.Rate != 7 {
+		t.Fatalf("rate = %v, want 7 (CNY 静态牌价, 不是 USD 恒等 1)", order.Rate)
+	}
+	if want := int64(math.Round(order.Actual * 7 * 100)); order.ActualCents != want {
+		t.Fatalf("actual_cents = %d, want %d (按 CNY 牌价折算的分)", order.ActualCents, want)
+	}
+	if order.RateSource != "static" {
+		t.Fatalf("rate_source = %q, want static", order.RateSource)
+	}
+}
+
+// TestWithdrawApplyExplicitEURKeepsSnapshot 显式传非 CNY 币种时快照必须原样(防回归)。
+// 与上一条互为对照: 默认回落只对"空串"生效, 不能顺手把显式币种也改成 CNY。
+func TestWithdrawApplyExplicitEURKeepsSnapshot(t *testing.T) {
+	reseller, _ := withdrawalTestSetup(t, "explicit-eur", 100)
+	FxRateCacheReset() // 清进程内快照, 让牌价读取走本测试库
+	t.Cleanup(FxRateCacheReset)
+	day := time.Now().Format("20060102")
+	if err := db.GetDB().Create(&model.FxRate{From: model.LedgerCurrency, To: "EUR", Day: day, Rate: 0.9, Source: "test"}).Error; err != nil {
+		t.Fatalf("seed fx: %v", err)
+	}
+	spec := withdrawalSpec(reseller.ID, model.RoleReseller, 60)
+	spec.PayoutCurrency = "eur"
+	order, err := WithdrawApply(context.Background(), spec)
+	if err != nil {
+		t.Fatalf("apply eur: %v", err)
+	}
+	if order.Currency != "EUR" {
+		t.Fatalf("currency = %q, want EUR (显式币种不许被默认回落覆盖)", order.Currency)
+	}
+	if order.Rate != 0.9 {
+		t.Fatalf("rate = %v, want 0.9 (EUR 牌价)", order.Rate)
+	}
+	if want := int64(math.Round(order.Actual * 0.9 * 100)); order.ActualCents != want {
+		t.Fatalf("actual_cents = %d, want %d", order.ActualCents, want)
+	}
+}
+
+// withdrawNotifContent 等异步通知落库后返回指定 related_id 的通知正文。
+// 通知走 notifyDispatchGo 的独立协程: 不 drain 就查库会读到空, 且迟到的写可能落到下一个用例的库。
+func withdrawNotifContent(t *testing.T, userID uint, relatedID uint64) string {
+	t.Helper()
+	NotificationDispatchDrain()
+	var notif model.Notification
+	err := db.GetDB().Where("user_id = ? AND type = ? AND related_id = ?", userID, model.NotificationTypeWithdrawal, relatedID).
+		Order("id DESC").First(&notif).Error
+	if err != nil {
+		t.Fatalf("expected withdrawal notification for #%d: %v", relatedID, err)
+	}
+	return notif.Content
+}
+
+// TestWithdrawReviewNotifiesAmountInLedgerCurrency 审核通过的通知不许把 USD 金额写成「元」。
+//
+// order.Amount 是收益池口径, 唯一记账币种是 model.LedgerCurrency = USD。旧文案
+// 「金额 %.2f 元」让用户按人民币理解: 100 USD 的提现看起来像"100 元", 实际能换约 700 元。
+// 断言落在通知正文(用户真正看到的那一处), 不是结构体字段。
+func TestWithdrawReviewNotifiesAmountInLedgerCurrency(t *testing.T) {
+	reseller, _ := withdrawalTestSetup(t, "notify-currency", 100)
+	order, err := WithdrawApply(context.Background(), withdrawalSpec(reseller.ID, model.RoleReseller, 100))
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if err := WithdrawReview(context.Background(), order.ID, true, "ok", 1, "admin"); err != nil {
+		t.Fatalf("review: %v", err)
+	}
+	content := withdrawNotifContent(t, reseller.ID, uint64(order.ID))
+	if !strings.Contains(content, model.LedgerCurrency) {
+		t.Fatalf("通知正文没有标注金额币种 %s, 用户会把 USD 读成人民币: %q", model.LedgerCurrency, content)
+	}
+	if strings.Contains(content, "元") {
+		t.Fatalf("通知正文仍在用人民币单位「元」标注 USD 金额: %q", content)
+	}
+	// 金额数值本身不许被顺手改掉(只是加币种标注)。
+	if !strings.Contains(content, fmt.Sprintf("%.2f", order.Amount)) {
+		t.Fatalf("通知正文丢了金额 %v: %q", order.Amount, content)
+	}
+}
+
+// TestWithdrawTimeoutRevokeNotifiesAmountInLedgerCurrency 超时撤销的通知同口径修正。
+func TestWithdrawTimeoutRevokeNotifiesAmountInLedgerCurrency(t *testing.T) {
+	reseller, _ := withdrawalTestSetup(t, "notify-revoke-currency", 100)
+	order, err := WithdrawApply(context.Background(), withdrawalSpec(reseller.ID, model.RoleReseller, 100))
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if err := WithdrawReview(context.Background(), order.ID, true, "ok", 1, "admin"); err != nil {
+		t.Fatalf("review: %v", err)
+	}
+	// 通知按「类型 + 未读 + 1 小时窗口」去重: 先把审核通过那条标成已读, 否则超时撤销那条会被
+	// 静默吞掉(去重是既有语义, 与这里要验的"文案币种"无关), 查到的就永远是审核那条。
+	NotificationDispatchDrain()
+	if err := db.GetDB().Model(&model.Notification{}).
+		Where("user_id = ? AND type = ?", reseller.ID, model.NotificationTypeWithdrawal).
+		Update("status", model.NotificationStatusRead).Error; err != nil {
+		t.Fatal(err)
+	}
+	stale := time.Now().Add(-WithdrawApproveTimeout - time.Hour)
+	if err := db.GetDB().Model(&model.Withdrawal{}).Where("id = ?", order.ID).Update("reviewed_at", stale).Error; err != nil {
+		t.Fatal(err)
+	}
+	revoked, err := WithdrawTimeoutRevoke(context.Background())
+	if err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	if revoked != 1 {
+		t.Fatalf("revoked=%d, want 1", revoked)
+	}
+	content := withdrawNotifContent(t, reseller.ID, uint64(order.ID))
+	if !strings.Contains(content, model.LedgerCurrency) {
+		t.Fatalf("超时撤销通知没有标注金额币种 %s: %q", model.LedgerCurrency, content)
+	}
+	if strings.Contains(content, "元") {
+		t.Fatalf("超时撤销通知仍在用人民币单位「元」标注 USD 金额: %q", content)
+	}
+	if !strings.Contains(content, fmt.Sprintf("%.2f", order.Amount)) {
+		t.Fatalf("超时撤销通知丢了金额 %v: %q", order.Amount, content)
 	}
 }

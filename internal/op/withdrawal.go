@@ -16,19 +16,26 @@ import (
 
 // WithdrawSummary 提现口径: 可提 = 成熟收益 - 累计已提 - 提现中冻结。
 // 成熟收益 = 冷却期外且未退款的累计收益; 冷却关闭时等于 TotalRevenue(池子已净扣退款)。
+//
+// 币种有两个, 别混用:
+//   - PoolCurrency 是**金额币种**: Available/Frozen/Withdrawn/Revenue/FeeMin/MinAmount 的单位,
+//     恒等于 model.LedgerCurrency(USD)。前端标注金额单位只能用这个字段。
+//   - Currency 是**汇率目标币种**: rate(=1 USD 折多少 Currency)的计价对象, 恒为 CNY。
+//     它跟上面那几个金额没有关系 —— 拿它标注"可提余额"会把 USD 读成 CNY, 差约 7 倍。
 type WithdrawSummary struct {
-	Available  float64 `json:"available"`   // 可提余额(收益池口径)
-	Frozen     float64 `json:"frozen"`      // 提现中冻结
-	Withdrawn  float64 `json:"withdrawn"`   // 累计已提
-	Revenue    float64 `json:"revenue"`     // 累计收益
-	Rate       float64 `json:"rate"`        // 汇率快照: 1 USD = ? CNY
-	Currency   string  `json:"currency"`    // rate 的目标币种; 恒为 CNY(存量口径)
-	RateDay    string  `json:"rate_day"`    // 牌价采集日 YYYYMMDD; CNY 静态价为空
-	RateSource string  `json:"rate_source"` // static=设置价, identity=恒等, 其余=牌价源名
-	FeeRate    float64 `json:"fee_rate"`
-	FeeMin     float64 `json:"fee_min"`
-	MinAmount  float64 `json:"min_amount"`
-	CanApply   bool    `json:"can_apply"` // 角色是否允许提现(D4: 仅渠道商/管理员)
+	Available    float64 `json:"available"`     // 可提余额(收益池口径, 单位见 pool_currency)
+	Frozen       float64 `json:"frozen"`        // 提现中冻结(同上)
+	Withdrawn    float64 `json:"withdrawn"`     // 累计已提(同上)
+	Revenue      float64 `json:"revenue"`       // 累计收益(同上)
+	Rate         float64 `json:"rate"`          // 汇率快照: 1 PoolCurrency = ? Currency
+	Currency     string  `json:"currency"`      // 仅 rate 的目标币种(恒 CNY); **不要**用它标注金额单位, 用 pool_currency
+	PoolCurrency string  `json:"pool_currency"` // 金额币种: 上面四个金额与 fee_min/min_amount 的单位, 恒为 model.LedgerCurrency
+	RateDay      string  `json:"rate_day"`      // 牌价采集日 YYYYMMDD; CNY 静态价为空
+	RateSource   string  `json:"rate_source"`   // static=设置价, identity=恒等, 其余=牌价源名
+	FeeRate      float64 `json:"fee_rate"`
+	FeeMin       float64 `json:"fee_min"`
+	MinAmount    float64 `json:"min_amount"`
+	CanApply     bool    `json:"can_apply"` // 角色是否允许提现(D4: 仅渠道商/管理员)
 	// SupportedCurrencies 可选的到账币种白名单(CNY 在首): 前端据此渲染 payout 下拉, 空表示仅 CNY。
 	// 字段名与前端 supported_currencies 对齐(复数), 一次到位避免双命名兼容。
 	SupportedCurrencies []string `json:"supported_currencies,omitempty"`
@@ -143,12 +150,18 @@ func WithdrawSummaryGet(ctx context.Context, userID uint, role model.Role) (*Wit
 	}
 	rate, rateDay, rateSource, _, _ := StaticRateProvider{}.RateDetail(ctx, "CNY")
 	return &WithdrawSummary{
-		Available:           available,
-		Frozen:              user.WithdrawFrozen,
-		Withdrawn:           user.TotalWithdrawn,
-		Revenue:             user.TotalRevenue,
-		Rate:                rate,
+		Available: available,
+		Frozen:    user.WithdrawFrozen,
+		Withdrawn: user.TotalWithdrawn,
+		Revenue:   user.TotalRevenue,
+		Rate:      rate,
+		// 汇率目标币种保持 CNY。**不能**把它改成 USD 图省事: rate/Currency 是一对
+		// ("1 USD 折 rate 个 Currency"), 也是提现单 apply 时钉进 Withdrawal.Currency 的快照口径
+		// (model/withdrawal.go 里旧行默认 CNY, 读取侧空串回落 CNY 静态价)。把它们改成 USD
+		// 会让存量单与 rate=7 的语义互相矛盾(rate 变成 1 USD 折 1 USD), 提现单的
+		// actual_cents 换算也跟着错。要标金额单位, 用下面新增的 PoolCurrency。
 		Currency:            "CNY",
+		PoolCurrency:        model.LedgerCurrency,
 		RateDay:             rateDay,
 		RateSource:          rateSource,
 		FeeRate:             rules.feeRate,
@@ -186,7 +199,14 @@ func WithdrawApply(ctx context.Context, spec WithdrawSpec) (*model.Withdrawal, e
 		return nil, fmt.Errorf("amount is too small to cover the fee")
 	}
 	// 到账币种: 空=CNY(存量口径); 非白名单币种直接拒绝, 绝不把未知代码静默折算。
-	payout := model.NormalizeCurrency(spec.PayoutCurrency)
+	//
+	// 判定顺序必须"先去空白 → 空则 CNY → 再归一/校验", 不能先用 NormalizeCurrency:
+	// 它的语义是"空=账面币种 USD"(被余额/充值/牌价多处依赖, 这里不许改它), 于是
+	// NormalizeCurrency("") 返回 USD, 后面那句 `if payout == ""` 就成了永不执行的死代码 ——
+	// 省略 payout_currency 的调用方会拿到 Currency="USD"/rate=1 的快照, 而接口文档与
+	// JSON tag 都宣称缺省 CNY, 下游按 currency 判「旧行/新行」「是否 CNY 到账」全部误判。
+	// 无资损(rate=1 时 actual_cents 数值等价), 但快照口径错就是错。
+	payout := strings.ToUpper(strings.TrimSpace(spec.PayoutCurrency))
 	if payout == "" {
 		payout = "CNY"
 	}
@@ -293,6 +313,9 @@ func WithdrawApply(ctx context.Context, spec WithdrawSpec) (*model.Withdrawal, e
 	if err != nil {
 		return nil, err
 	}
+	// 申请接口直接回吐这张单: 也得带上派生到账字段, 否则用户刚提交的那一单在列表刷新前
+	// 仍会被前端当人民币(EUR 53.10 显成 ¥53.10)。
+	order.DerivePayout()
 	return order, nil
 }
 
@@ -340,8 +363,11 @@ func WithdrawReview(ctx context.Context, id uint, approve bool, note string, act
 		if err != nil {
 			return err
 		}
+		// 金额单位必须显式标注: order.Amount 是收益池口径, 唯一记账币种是 model.LedgerCurrency(USD)。
+		// 旧文案写「元」会让用户按人民币理解(100 USD 的提现看似"100 元", 实际约 700 元)。
+		// Go 侧中文字符串, 不走 web/src/locales 的 i18n 模板。
 		notifyAsync(ctx, order.UserID, model.NotificationTypeWithdrawal, "提现审核通过",
-			fmt.Sprintf("您的提现申请 #%d（金额 %.2f 元）已审核通过，等待打款。", id, order.Amount),
+			fmt.Sprintf("您的提现申请 #%d（金额 %.2f %s，账面币种）已审核通过，等待打款。", id, order.Amount, model.LedgerCurrency),
 			"", uint64(id))
 		return nil
 	}
@@ -567,8 +593,8 @@ func WithdrawTimeoutRevoke(ctx context.Context) (int64, error) {
 		// 通知用户在入账提交之后发: 通知失败不能影响已生效的资金事实(见 notifyAsync)。
 		notifyAsync(ctx, order.UserID, model.NotificationTypeWithdrawal,
 			fmt.Sprintf("提现申请 #%d 已自动撤销", order.ID),
-			fmt.Sprintf("您的提现申请 #%d（金额 %.2f 元）审核通过后已超过 %d 小时仍未打款，系统已自动撤销并把金额退回可提现额度；如需提现请重新提交申请。",
-				order.ID, order.Amount, int(WithdrawApproveTimeout.Hours())),
+			fmt.Sprintf("您的提现申请 #%d（金额 %.2f %s，账面币种）审核通过后已超过 %d 小时仍未打款，系统已自动撤销并把金额退回可提现额度；如需提现请重新提交申请。",
+				order.ID, order.Amount, model.LedgerCurrency, int(WithdrawApproveTimeout.Hours())),
 			"", uint64(order.ID))
 	}
 	if revoked > 0 {
@@ -729,6 +755,8 @@ func WithdrawList(ctx context.Context, userID uint, status string, limit int) ([
 		}
 	}
 	for _, order := range orders {
+		// 派生到账字段在这里填一次, 用户端(/list)与管理端(带 user_id 的同一口)都覆盖到。
+		order.DerivePayout()
 		views = append(views, WithdrawView{Withdrawal: order, Username: names[order.UserID]})
 	}
 	return views, nil

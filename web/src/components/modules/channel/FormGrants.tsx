@@ -15,22 +15,18 @@ import { IconButton } from '@/components/common/IconButton';
 import { ModelRuleEditor } from '@/components/modules/model/RuleEditor';
 import { useModelAutoAddRules } from '@/api/model-rule';
 import { useModelProbe } from './probe';
+import { applyGrantToggle, grantColumns, sparkColumnVisible, videoColumnVisible } from './grantColumns';
 import { grantKey, type ChannelFormState } from './state';
 
-// GrantCells 渲染一行右侧固定的协议格加一个删除格: chat, response, message, image, 讯飞渠道再加 spark。
+// GrantCells 渲染一行右侧固定的协议格加一个删除格: chat, response, message, image,
+// generic 方言再加 video, 讯飞/订阅按方言再加各自一列。
 // 表头, 模型行, 凭据子行的差别只是这一行覆盖的 (模型 × 凭据) 范围与删除动作, 勾选,
 // 三态和写入是同一套逻辑, 故三级共用此段, 列宽与对齐也因此天然一致。
-// 协议列按渠道方言固定(讯飞多一列), 凭据作为模型的子行, 故列数不随凭据数变化。
-// spark 列只在讯飞渠道出现; 老数据带着该位时也显示, 免得授权变成看不见的暗格。
-const hasSparkColumn = (state: ChannelFormState) =>
-    state.dialect === 'xunfei'
-    || [...state.grants.values()].some((protocols) => (protocols & Protocol.XunfeiSpark) !== 0);
-
-// gemini 列同理: 订阅渠道的模型探测直接落 ProtocolGeminiCLI, 必须能看见、能取消。
-// 非订阅渠道带着该位时也显示, 否则那条授权会变成无处查看的暗格。
-const hasGeminiCLIColumn = (state: ChannelFormState) =>
-    state.dialect === 'subscription'
-    || [...state.grants.values()].some((protocols) => (protocols & Protocol.GeminiCLI) !== 0);
+// 协议列按渠道方言固定(讯飞/订阅各多一列), 凭据作为模型的子行, 故列数不随凭据数变化。
+//
+// 列集合与勾选写入由 ./grantColumns 的两条纯函数给出, 不再在本文件里各写一遍:
+// 那段逻辑守的正是「已存在的位不许被隐藏」与「取消勾选必须真清位」两条,
+// 放在渲染函数里只能靠手点浏览器验证。
 function GrantCells({ state, setState, models, keyNames, remove, icon: Icon, tip }: {
     state: ChannelFormState;
     setState: (next: ChannelFormState) => void;
@@ -57,17 +53,9 @@ function GrantCells({ state, setState, models, keyNames, remove, icon: Icon, tip
                     disabled={total === 0}
                     onCheckedChange={() => {
                         // 已全开则整片取消, 否则整片打开; 协议位清空即该条授权不存在, 直接从 Map 移除。
-                        const grants = new Map(state.grants);
-                        for (const modelName of models) {
-                            for (const keyName of keyNames) {
-                                const mapKey = grantKey(modelName, keyName);
-                                const current = grants.get(mapKey) ?? 0;
-                                const protocols = value === true ? current & ~bit : current | bit;
-                                if (protocols === 0) grants.delete(mapKey);
-                                else grants.set(mapKey, protocols);
-                            }
-                        }
-                        setState({ ...state, grants });
+                        // 写入逻辑在 grantColumns.applyGrantToggle —— 取消勾选必须真的清位,
+                        // 这条要是回退(例如只改了本地展示), 界面看着取消成功, 保存后却仍生效。
+                        setState({ ...state, grants: applyGrantToggle(state.grants, models, keyNames, bit, value, grantKey) });
                     }}
                 />
             </span>
@@ -76,12 +64,9 @@ function GrantCells({ state, setState, models, keyNames, remove, icon: Icon, tip
 
     return (
         <>
-            {cell(Protocol.OpenAIChatCompletion)}
-            {cell(Protocol.OpenAIResponse)}
-            {cell(Protocol.AnthropicMessage)}
-            {cell(Protocol.OpenAIImage)}
-            {hasSparkColumn(state) && cell(Protocol.XunfeiSpark)}
-            {hasGeminiCLIColumn(state) && cell(Protocol.GeminiCLI)}
+            {/* 列顺序由 grantColumns 统一给出: 表头文案与这里共用一份判据, 才不会出现
+                "表头写了 video、下面没有那一格"的分叉。 */}
+            {grantColumns(state).map((bit) => cell(bit))}
             <span className="w-7 flex justify-center">
                 {remove && (
                     <IconButton
@@ -209,9 +194,18 @@ export function FormGrants({ state, setState }: {
                     >
                         {allExpanded ? <ChevronsDownUp className="size-3.5" /> : <ChevronsUpDown className="size-3.5" />}
                     </IconButton>
-                    {/* 协议列的表头: 语言无关的协议缩写, 故只随列数增减, 不做逐词翻译。 */}
+                    {/* 协议列的表头: 语言无关的协议缩写, 故只随列数增减, 不做逐词翻译。
+                        表头必须给**每一列**一个名字, 且顺序与列一致 —— 少一个名字, 用户看到 N 个复选框
+                        只有 N-1 个标签, 只能按位置猜, 猜错就勾到隔壁协议(视频勾成图片这类错误不会报错,
+                        只会让请求打到错的端点)。
+                        拼成**一个**字符串而不是相邻的多个表达式: 后者在 HTML 里会夹进 <!-- --> 注释标记,
+                        把表头文本切断(读取与复制都会带上它)。 */}
                     <span className="ml-auto min-w-0 truncate text-xs text-muted-foreground">
-                        {t('grantProtocols')}{hasSparkColumn(state) ? ` / ${t('grantProtocolSpark')}` : ''}
+                        {[
+                            t('grantProtocols'),
+                            videoColumnVisible(state) ? t('grantProtocolVideo') : '',
+                            sparkColumnVisible(state) ? t('grantProtocolSpark') : '',
+                        ].filter((part) => part !== '').join(' / ')}
                     </span>
                     {/* 表头覆盖全部模型全部凭据, 故勾选即批量, 删除即清空全部模型及其授权。 */}
                     <GrantCells

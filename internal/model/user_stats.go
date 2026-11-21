@@ -40,15 +40,19 @@ type UserStatsOverview struct {
 	// BillingCoverageStart 账单数据在查询区间内的实际覆盖起点(YYYY-MM-DD); 空串表示区间内没有任何计费数据。
 	//
 	// 费用与词元现在读「明细 ∪ 日汇总」: 超过留存期(默认 180 天)的部分来自 billing_rollups。
-	// 这份数据的粒度是"整天 + 五个维度", 没有原始明细也没有按模型拆分, 因此页面必须能说明
+	// 这份数据的粒度是"整天 + 维度", 没有原始明细, 因此页面必须能说明
 	// "此区间早于 BillingRollupCoveredUntil 的部分来自每日汇总" —— 否则用户按统计页金额去下钻明细,
 	// 会发现"金额有、记录没有", 却找不到任何解释。
 	BillingCoverageStart string `json:"billing_coverage_start"`
 	// BillingRollupCoveredUntil 区间内日汇总已覆盖到的最后一天(YYYY-MM-DD); 空串表示区间内没有用到汇总。
 	// 前端的提示文案据此判定"哪段是汇总补的", 不要用它推断数据是否完整。
 	BillingRollupCoveredUntil string `json:"billing_rollup_covered_until"`
-	// ModelBreakdownCoverageStart 按模型拆分(仅明细可得, 汇总表没有 model 维度)在区间内的覆盖起点
-	// (YYYY-MM-DD); 空串表示区间内没有明细。早于它的部分是"金额有、拆分无", 前端应提示而不是画成 0。
+	// ModelBreakdownCoverageStart 按模型拆分在区间内的覆盖起点(YYYY-MM-DD); 空串表示区间内按模型完全无数据。
+	//
+	// 按模型拆分读「明细 ∪ model 维度日汇总」(迁移 45 之后才有 model 维度), 因此它比明细留存期活得久,
+	// 但比"总额"晚: 迁移 45 之前固化的日子没有 model 维度行, 那些天总额有数、拆分补不回来。
+	// 早于这条边界的是"金额有、拆分无", 前端应提示而不是画成 0 —— 缺失被画成 0 会让用户以为
+	// 那段时间真的没用过任何模型。
 	ModelBreakdownCoverageStart string `json:"model_breakdown_coverage_start"`
 
 	// 词元构成: 缓存读写此前被合并进 TotalTokens 后不可见, 用户无法判断"贵在输入还是缓存"。
