@@ -181,7 +181,8 @@ describe('AnalyticsPage 页面状态(mock SSR)', () => {
 
     it('区块独立加载: 慢请求不阻塞已就绪的区块', () => {
         // 只有趋势就绪, 概览/模型还悬着 —— 全页 gate 会整体转圈(且只有 1 个加载态),
-        // 独立加载则趋势已渲染, 只剩 2 个区块在转。
+        // 独立加载则趋势已渲染, 只剩 3 个区块在转(概览/模型/延迟)。
+        // 分段成功率柱状图与趋势图共用同一份查询, 趋势就绪时它一起就绪, 不额外转圈。
         const html = renderSSR(<AnalyticsPage />, (client) => {
             client.setQueryData(keys().trend, trendData);
         });
@@ -192,29 +193,59 @@ describe('AnalyticsPage 页面状态(mock SSR)', () => {
 
     it('全部在加载时整页是加载态, 不是假零', () => {
         const html = renderSSR(<AnalyticsPage />, () => undefined);
-        expect(html.match(/Loading.../g)).toHaveLength(4);
+        // 五个区块: 概览 / 趋势 / 分段成功率 / 延迟 / 模型。
+        // 分段成功率与趋势共用同一份查询, 但各自独立渲染四态 —— 查询悬着时两处都转圈。
+        expect(html.match(/Loading.../g)).toHaveLength(5);
         expect(html).not.toContain('Retry');
         expect(html).not.toMatch(/tabular-nums">0</);
     });
 
-    it('时间范围下拉没有 custom: 没有日期输入的选项是假范围', () => {
+    it('默认预设是 today: 不出现日期输入(页面行为与修前一致)', () => {
+        // 只有选中 custom 才有两框。SelectContent 是 portal, SSR 里看不到选项, 所以这里只断言输入框。
         const html = renderSSR(<AnalyticsPage />, (client) => seedAll(client));
-        expect(html).not.toContain('Custom');
+        expect(html).not.toContain('data-testid="custom-range"');
+    });
+
+    it('选中 custom 后出现起止两个 date 输入, 且默认值合法不报错', () => {
+        // 初值都给"今天", 因此校验通过: 不该出现 invalid 提示, 也不该把半成品发出去。
+        const html = renderSSR(<AnalyticsPage initialPreset="custom" />, (client) => seedAll(client));
+        expect(html).toContain('data-testid="custom-range"');
+        // 两个框都是 type=date, 并且各自带可访问名(aria-label), 不能只靠视觉位置区分起止。
+        expect(html.match(/type="date"/g)).toHaveLength(2);
+        expect(html).toContain('aria-label="Start date"');
+        expect(html).toContain('aria-label="End date"');
+        expect(html).not.toContain('data-testid="custom-range-invalid"');
+    });
+
+    it('选中 custom 后按"单日"取数: 与今天同一份查询键(粒度保持小时)', () => {
+        // custom 单日区间与 today 同义(effectiveGranularity 规则), 因此查询键与 keys() 完全一致 ——
+        // 若规则写错(比如 custom 恒降级成 day), 这份种子就会读不到, 页面转圈而不是显示数字。
+        const html = renderSSR(<AnalyticsPage initialPreset="custom" />, (client) => seedAll(client));
+        expect(html).toContain('1,234'); // 概览读到了
+        expect(html).not.toContain('Loading...');
     });
 });
 
 describe('analytics 三语键', () => {
-    it('三语文案键位齐全且不含已移除的 range.custom', () => {
+    it('三语文案键位齐全, 含自定义区间与分段成功率的新键', () => {
         for (const [name, messages] of [['en', en], ['zh_hans', zhHans], ['zh_hant', zhHant]] as const) {
             const analytics = (messages as { analytics: Record<string, unknown> }).analytics;
             const range = analytics.range as Record<string, unknown>;
+            const custom = analytics.custom as Record<string, unknown>;
+            const chart = analytics.chart as Record<string, unknown>;
             for (const key of ['title', 'loading', 'error', 'retry', 'empty']) {
                 expect({ name, key, value: analytics[key] }).toEqual({ name, key, value: expect.any(String) });
             }
-            for (const key of ['today', 'week', 'month']) {
+            // custom 现在真的有日期控件兜着, 所以它必须有文案(修前被刻意移除过)。
+            for (const key of ['today', 'week', 'month', 'custom']) {
                 expect({ name, key, value: range[key] }).toEqual({ name, key, value: expect.any(String) });
             }
-            expect({ name, custom: range.custom }).toEqual({ name, custom: undefined });
+            for (const key of ['start', 'end', 'invalid']) {
+                expect({ name, key, value: custom[key] }).toEqual({ name, key, value: expect.any(String) });
+            }
+            for (const key of ['successByBucket', 'successByBucketHint']) {
+                expect({ name, key, value: chart[key] }).toEqual({ name, key, value: expect.any(String) });
+            }
         }
     });
 });
@@ -500,5 +531,52 @@ describe('AnalyticsPage 缓存命中率零样本', () => {
         // 已有 fixture(300000 命中 / 100000 输入)算出来是 75.0%。
         const html = renderSSR(<AnalyticsPage />, (client) => seedAll(client));
         expect(html).toContain('75.0');
+    });
+});
+
+
+// 分段成功率柱状图(§P0-3 的"独立成功率柱状图"那一半):
+// 与趋势图共用同一份查询与同一套样本语义, 所以两处对"没样本"的判断必须一致 ——
+// 趋势图断线的地方, 柱状图那里必须是一个空槽, 不能是一根 0% 的贴底柱。
+describe('AnalyticsPage 分段成功率柱状图', () => {
+    it('有样本时渲染独立图表区块, 并说明留空的含义', () => {
+        const html = renderSSR(<AnalyticsPage />, (client) => seedAll(client));
+        expect(html).toContain('data-testid="success-bar-chart"');
+        expect(html).toContain('Success rate per interval');
+        // "没有样本 = 留空"必须写出来, 否则空槽会被当成渲染故障或 0 值。
+        expect(html).toContain('never drawn as 0%');
+    });
+
+    it('整段都没有日志样本时走空态, 不画一张全空的图', () => {
+        const html = renderSSR(<AnalyticsPage />, (client) => {
+            seedAll(client);
+            const k = keys();
+            // 每一天都是"无样本"(三项计数为 0): 那是留存期边界, 不是"成功率归零"。
+            client.setQueryData(k.trend, [
+                { date: '2026-01-15', requests: 10, cost: 1, success_rate: 0, request_success: 0, request_failed: 0, request_canceled: 0 },
+            ] as UserStatsTrend[]);
+        });
+        expect(html).toContain('data-testid="success-bar-chart"');
+        // 空态文案来自 card.successNoSamples: 点出这是"没有调用日志样本", 并给出留存天数。
+        expect(html).toContain('No call-log samples in this range');
+    });
+
+    it('真·全失败(分母非零)不算空态: 0% 是真实值, 必须画出来', () => {
+        // 与上一条的区别是分母: 有 5 次失败、0 次成功 —— 这一段确实全挂, 不能当成"无样本"隐藏。
+        const html = renderSSR(<AnalyticsPage />, (client) => {
+            seedAll(client);
+            const k = keys();
+            client.setQueryData(k.trend, [
+                { date: '2026-01-15', requests: 5, cost: 0.5, success_rate: 0, request_success: 0, request_failed: 5, request_canceled: 0 },
+            ] as UserStatsTrend[]);
+        });
+        expect(html).toContain('data-testid="success-bar-chart"');
+        expect(html).not.toContain('No call-log samples in this range');
+    });
+
+    it('趋势查询失败时这张图也进失败态, 不落回空态', () => {
+        const html = renderSSR(<AnalyticsPage />, (client) => seedAll(client, { trend: 'error' }));
+        expect(html).toContain('data-testid="success-bar-chart"');
+        expect(html).toContain('Failed to load statistics');
     });
 });

@@ -3,6 +3,20 @@
 > 本文档记录**已完成**的版本流水与历史决策, 防止跨会话丢失。
 > **还没做的**事项统一记录在 `docs/backlog-unimplemented.md`(2026-10-21 建立), 两文分工: 本文记已做, 那篇记未做。
 
+## 四项纯前端待办(B4/B10/B2/B5, 2026-11-22, v1.10.22)
+
+`docs/backlog-unimplemented.md` §0.3 里被标为「后端能力已备、纯缺前端」的四条一次补齐, 后端零改动:
+
+| 编号 | 事项 | 落点 |
+|---|---|---|
+| B4 | 统计页自定义日期范围 | `web/src/components/modules/analytics/dates.ts`(`PRESETS` 重新纳入 `custom`、`isValidDate`/`rangeSpanDays`/`effectiveGranularity`) + `index.tsx` 两个原生 date 输入 |
+| B5 | 独立成功率柱状图 | `analytics/index.tsx` 新增 `success-bar-chart` 区块, 与趋势折线同一份 `buildTrendChartData` |
+| B2 | 余额不足顶部 Banner | 新增 `web/src/components/balance-low.ts` + `balance-low-banner.tsx`, 挂在 `app-shell.tsx` 横幅槽 |
+| B10 | API Key 逐日趋势图 | 新增 `setting/apiKeyUsageChart.ts` + `APIKey.tsx` 内私有 `APIKeyUsageDaysChart` |
+
+设计与取舍见 `docs/ANALYTICS.md`「自定义日期范围与分段成功率图」与 `docs/site-info-distribution.md`
+「余额不足顶部常驻横幅」两节; 版本说明见 `CHANGELOG.md` v1.10.22。
+
 ## 第二批后续(2026-10-08 审计产出的五件事)
 
 | 优先级 | 事项 | 状态 |

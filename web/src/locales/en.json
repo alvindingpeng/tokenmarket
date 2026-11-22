@@ -142,7 +142,10 @@
     "site": {
         "announcement": "Announcement",
         "maintenance": "Maintenance",
-        "dismiss": "Dismiss"
+        "dismiss": "Dismiss",
+        "balanceLow": "Low balance",
+        "balanceLowWithThreshold": "Available {available}, at or below your alert threshold {threshold}.",
+        "topUp": "Top up"
     },
     "common": {
         "copy": {
@@ -375,7 +378,8 @@
                 "exportFailed": "Export failed",
                 "noData": "No usage in this window",
                 "loadFailed": "Failed to load usage",
-                "loading": "Loading usage…"
+                "loading": "Loading usage…",
+                "daysChart": "Daily requests, last 30 days"
             },
             "toast": {
                 "createSuccess": "API key created",
@@ -3330,7 +3334,8 @@
         "range": {
             "today": "Today",
             "week": "Last 7 Days",
-            "month": "Last 30 Days"
+            "month": "Last 30 Days",
+            "custom": "Custom"
         },
         "granularity": {
             "day": "Day",
@@ -3356,7 +3361,9 @@
             "cost": "Cost",
             "successRate": "Success rate",
             "modelCost": "Model Cost Distribution",
-            "modelRequests": "Model Requests"
+            "modelRequests": "Model Requests",
+            "successByBucket": "Success rate per interval",
+            "successByBucketHint": "Intervals without call-log samples stay blank, never drawn as 0%."
         },
         "model": {
             "other": "Other",
@@ -3384,6 +3391,11 @@
         },
         "timezone": {
             "calendarNotice": "Range boundaries follow {window}; day/week/month grouping and retention follow {calendar}. This is intentional: daily rollups are materialized per server day, so both views keep the same calendar."
+        },
+        "custom": {
+            "start": "Start date",
+            "end": "End date",
+            "invalid": "Pick a start date no later than the end date"
         }
     },
     "quota": {

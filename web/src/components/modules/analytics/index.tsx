@@ -11,7 +11,7 @@ import {
     useUserStatsLatency,
 } from '@/api/user-stats';
 import { formatAmount, formatTokenCount } from '@/lib/format';
-import { getDateRange, PRESETS, type Preset } from './dates';
+import { customDateRange, effectiveGranularity, formatDate, getDateRange, isValidDateRange, PRESETS, rangeSpanDays, type Preset } from './dates';
 // 展示口径的纯函数单独成文件: 组件文件只导出组件才能保住 Fast Refresh,
 // 而这些规则正是最该被单测钉死的部分。
 import { buildTrendChartData, hasSuccessSamples, isCoverageLimited, summarizeCacheHitRate, summarizeSuccess } from './success';
@@ -86,12 +86,33 @@ export function AnalyticsPage({ initialPreset = 'today' }: { initialPreset?: Pre
     // 默认"今天 + 按小时": 用户打开统计页想看的是"刚才到现在发生了什么", 30 天按天是次选动作。
     const [preset, setPreset] = useState<Preset>(initialPreset);
     const [granularity, setGranularity] = useState<'hour' | 'day' | 'week' | 'month'>('hour');
-    // 今天=小时, 近7/30天=按天: 周与月桶在单日区间只会产出空桶, 切范围时把粒度带到位, 省一次"图是空的"困惑。
-    const effectiveGranularity = preset === 'today' ? 'hour' : granularity === 'hour' ? 'day' : granularity;
 
-    const dateRange = getDateRange(preset);
+    // 自定义区间: 输入框里的值与**已生效**的区间是两个变量。
+    // 用户改完一半(先清掉起始日再填)的中间态不能直接拿去查 —— 那会把"2026-01-01 → 空"这种
+    // 半成品变成一次全量查询, 用户看到的数字与他以为的区间对不上。只有校验通过才推进生效区间,
+    // 未通过的输入留在框里并给出提示, 不替用户改值(不自动交换起止、不悄悄回落成最近 30 天)。
+    // 初值用惰性初始化函数: 只在首次挂载算一次。写在表达式里的话每次渲染都会算一个新的"今天",
+    // 而 useState 只认第一次的值 —— 白白算一遍, 还会让"跨午夜时初值该不该变"这个已定结论看起来像活的。
+    const [customStart, setCustomStart] = useState<string>(() => formatDate(new Date()));
+    const [customEnd, setCustomEnd] = useState<string>(() => formatDate(new Date()));
+    const [appliedCustom, setAppliedCustom] = useState<{ start: string; end: string }>(() => {
+        const day = formatDate(new Date());
+        return { start: day, end: day };
+    });
+    // 起始/结束两边都可能先填好一边, 因此两个输入框共用同一条校验: 任一变化都重新判一次。
+    const customInputValid = isValidDateRange(customStart, customEnd);
+
+    // 今天=小时, 近7/30天=按天: 周与月桶在单日区间只会产出空桶, 切范围时把粒度带到位, 省一次"图是空的"困惑。
+    // 自定义区间的跨度只有用户填了才知道, 所以规则(single-day keeps hour, multi-day demotes hour)抽到 dates.ts 单测钉死。
+    // 局部变量不能叫 effectiveGranularity: 会遮蔽同名的导入函数。
+    const spanDays = preset === 'custom' ? rangeSpanDays(appliedCustom.start, appliedCustom.end) : 0;
+    const granularityForQuery = effectiveGranularity(preset, granularity, spanDays);
+
+    const dateRange = preset === 'custom'
+        ? customDateRange(appliedCustom.start, appliedCustom.end)
+        : getDateRange(preset);
     const overview = useUserStatsOverview(dateRange);
-    const trend = useUserStatsTrend({ ...dateRange, granularity: effectiveGranularity });
+    const trend = useUserStatsTrend({ ...dateRange, granularity: granularityForQuery });
     const models = useUserStatsModels(dateRange);
     const latency = useUserStatsLatency(dateRange);
 
@@ -148,8 +169,46 @@ export function AnalyticsPage({ initialPreset = 'today' }: { initialPreset?: Pre
                             ))}
                         </SelectContent>
                     </Select>
-                    {/* 今天按小时是既定组合, 粒度选择仅在多日范围有意义, 遂在此禁用整组切换。 */}
-                    <Select value={effectiveGranularity} onValueChange={(v) => setGranularity(v as typeof granularity)} disabled={preset === 'today'}>
+                    {/* 自定义区间: 两个 date 输入 + 就地校验。用原生 date input 而不是 Popover+Calendar,
+                        因为这里要的是"键盘能直接敲、能粘贴、移动端有原生滚轮"的区间输入, 而日历面板选区间
+                        在 320px 宽下会挤成两屏。输入非法时不发查询: 只提示, 不替用户改值。 */}
+                    {preset === 'custom' && (
+                        <div className="flex flex-wrap items-center gap-2" data-testid="custom-range">
+                            <input
+                                type="date"
+                                aria-label={t('custom.start')}
+                                value={customStart}
+                                onChange={(e) => {
+                                    const next = e.target.value;
+                                    setCustomStart(next);
+                                    // 只有校验通过才推进生效区间; 否则保持上一次的有效区间不动。
+                                    if (isValidDateRange(next, customEnd)) setAppliedCustom({ start: next, end: customEnd });
+                                }}
+                                className="h-9 rounded-xl border border-border bg-muted/20 px-2 text-sm text-foreground"
+                            />
+                            <span className="text-xs text-muted-foreground">~</span>
+                            <input
+                                type="date"
+                                aria-label={t('custom.end')}
+                                value={customEnd}
+                                onChange={(e) => {
+                                    const next = e.target.value;
+                                    setCustomEnd(next);
+                                    if (isValidDateRange(customStart, next)) setAppliedCustom({ start: customStart, end: next });
+                                }}
+                                className="h-9 rounded-xl border border-border bg-muted/20 px-2 text-sm text-foreground"
+                            />
+                            {/* 校验失败时把原因写出来: 光把输入框标红, 用户不知道是"起点晚于终点"还是"格式不对"。 */}
+                            {!customInputValid && (
+                                <span role="alert" className="text-xs text-destructive" data-testid="custom-range-invalid">
+                                    {t('custom.invalid')}
+                                </span>
+                            )}
+                        </div>
+                    )}
+                    {/* 今天按小时是既定组合, 粒度选择仅在多日范围有意义, 遂在此禁用整组切换。
+                        自定义单日区间与今天同义, 也一样禁用 —— 但它的跨度是运行时才知的, 所以判据用 spanDays。 */}
+                    <Select value={granularityForQuery} onValueChange={(v) => setGranularity(v as typeof granularity)} disabled={preset === 'today' || (preset === 'custom' && spanDays <= 1)}>
                         <SelectTrigger className="w-28 rounded-xl"><SelectValue /></SelectTrigger>
                         <SelectContent>
                             <SelectItem value="hour">{t('granularity.hour')}</SelectItem>
@@ -308,6 +367,33 @@ export function AnalyticsPage({ initialPreset = 'today' }: { initialPreset?: Pre
                                 />
                             )}
                         </LineChart>
+                    </ResponsiveContainer>
+                </PanelBody>
+            </div>
+
+            {/* 分段成功率柱状图: 与趋势图里那条虚线折线**同一份数据、同一个口径**(success.ts 的
+                buildTrendChartData), 只是换一种读法 —— 折线看"走势", 柱状看"哪几段在掉"。
+                没有样本的桶在数据里是 null: recharts 直接不画那根柱, 而不是画一根 0% 的贴底柱
+                (0% 会被读成"这一段全失败", 真相只是那几段已超出日志留存期)。 */}
+            <div className="shrink-0 rounded-3xl border border-border bg-card p-4" data-testid="success-bar-chart">
+                <h3 className="mb-1 flex items-center gap-2 text-sm font-medium">
+                    <BarChart3 className="size-4" aria-hidden="true" />
+                    {t('chart.successByBucket')}
+                </h3>
+                {/* 一句话讲清"留空 = 没样本": 否则空着的槽位会被当成渲染故障或 0 值。 */}
+                <p className="mb-2 text-xs text-muted-foreground">{t('chart.successByBucketHint')}</p>
+                {/* 空态文案: 概览还没回来时不能说"日志保留 0 天" —— 那是把"没取到"印成数字。
+                    有概览就给出真实留存天数, 没有就用通用空态。 */}
+                <PanelBody query={trend} empty={!trendHasSuccessSamples} emptyText={overview.data ? t('card.successNoSamples', { days: overview.data.request_retention_days }) : t('empty')}>
+                    <ResponsiveContainer width="100%" height={200}>
+                        <BarChart data={trendChartData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                            <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" tickFormatter={hourTickLabel} />
+                            {/* 百分比必须锁死 0-100 的轴: 自适应轴会把 99% 与 100% 的差别放大成天壤之别。 */}
+                            <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" />
+                            <Tooltip contentStyle={chartTooltipStyle} formatter={(value) => [`${value}%`, t('chart.successRate')]} />
+                            <Bar dataKey="success_rate" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                        </BarChart>
                     </ResponsiveContainer>
                 </PanelBody>
             </div>

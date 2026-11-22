@@ -7,6 +7,7 @@ import Logo from '@/components/modules/logo';
 import { LanguageSwitch } from '@/components/language-switch';
 import { NotificationBell } from '@/components/modules/notification/NotificationBell';
 import { SiteBanners } from '@/components/site-banners';
+import { BalanceLowBanner } from '@/components/balance-low-banner';
 import { navItemsFor, useAppStore } from '@/stores/app';
 import { useAuthStore } from '@/api/user';
 import { preloadPage } from '@/lib/page-preload';
@@ -170,8 +171,17 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                 没有内容时这是一个高度为 0 的空 div, 而不是被移出 DOM 的网格项 ——
                 否则网格行序会少一项, 把 main 挤到 auto 行上失去 1fr 高度。 */}
             <div className="flex-none px-2 md:px-0">
-                {/* 外层已负责左右留白, 这里只要纵向堆叠。 */}
-                <SiteBanners className="flex flex-col gap-2" />
+                {/* 外层已负责左右留白, 这里只要纵向堆叠。
+                    内层再套一层 flex-col 是必要的: 外层不是 flex 容器, 两个子项之间不会自动有 gap;
+                    而 SiteBanners 带了 flex-1 类的布局约定, 不能把余额横幅塞进它内部。
+                    余额不足横幅排在站点信息之后: 公告/维护模式是"系统状态", 余额是"你的账户状态",
+                    系统状态先读。横幅自己负责"不该显示时返回 null", 所以这里不额外加条件 —— */}
+                <div className="flex flex-col gap-2">
+                    <SiteBanners className="flex flex-col gap-2" />
+                    {/* 余额不足常驻提示: 通知中心那条是"推", 这条是"摆在那里", 两者互补。
+                        没有内容时它渲染 null, 上面的 div 高度仍为 0, 网格行序不变。 */}
+                    <BalanceLowBanner />
+                </div>
             </div>
 
             {/* main 是页面内容的默认滚动容器: 各页只需管好自己的高度, 无需各自再造一个滚动层。 */}

@@ -142,7 +142,10 @@
     "site": {
         "announcement": "公告",
         "maintenance": "维护模式",
-        "dismiss": "关闭公告"
+        "dismiss": "关闭公告",
+        "balanceLow": "余额不足",
+        "balanceLowWithThreshold": "可用 {available}, 已低於預警閾值 {threshold}",
+        "topUp": "去充值"
     },
     "common": {
         "copy": {
@@ -375,7 +378,8 @@
                 "exportFailed": "导出失败",
                 "noData": "该窗口内暂无用量",
                 "loadFailed": "用量加载失败",
-                "loading": "用量加载中…"
+                "loading": "用量加载中…",
+                "daysChart": "逐日请求数(最近 30 天)"
             },
             "toast": {
                 "createSuccess": "API 密钥创建成功",
@@ -3330,7 +3334,8 @@
         "range": {
             "today": "今天",
             "week": "最近7天",
-            "month": "最近30天"
+            "month": "最近30天",
+            "custom": "自定义"
         },
         "granularity": {
             "day": "按天",
@@ -3356,7 +3361,9 @@
             "cost": "费用",
             "successRate": "成功率",
             "modelCost": "模型费用分布",
-            "modelRequests": "模型调用量"
+            "modelRequests": "模型调用量",
+            "successByBucket": "分段成功率",
+            "successByBucketHint": "没有调用日志样本的时间段留空, 不画成 0%"
         },
         "model": {
             "other": "其他",
@@ -3384,6 +3391,11 @@
         },
         "timezone": {
             "calendarNotice": "区间边界按 {window} 计算；日/周/月分组与数据留存按 {calendar} 计算。这是刻意保留的：每日汇总按服务器自然日固化，两处必须使用同一套日历，否则统计页与账单页会对不上。"
+        },
+        "custom": {
+            "start": "开始日期",
+            "end": "结束日期",
+            "invalid": "开始日期不能晚于结束日期"
         }
     },
     "quota": {

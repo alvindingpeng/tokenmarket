@@ -1,6 +1,6 @@
-import { useId, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { useTranslations } from 'use-intl';
-import { KeyRound, Plus, Loader, Trash2, Check, X, Info, CalendarDays, Pencil, Maximize2, Download } from 'lucide-react';
+import { KeyRound, Plus, Loader, Trash2, Check, X, Info, CalendarDays, Pencil, Maximize2, Download, ChartColumn } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Input } from '@/components/ui/input';
 import { Calendar } from '@/components/ui/calendar';
@@ -24,6 +24,7 @@ import {
     apiKeyUsageTokens,
     type APIKey,
     type APIKeyUsageTotals,
+    type APIKeyUsageReport,
 } from '@/api/apikey';
 import { useGroupList } from '@/api/group';
 import { maskAPIKey, toAPIKeyCreatePayload, toAPIKeyUpdatePayload, type APIKeyFormState } from '@/lib/apikey';
@@ -34,6 +35,8 @@ import { CopyIconButton } from '@/components/common/CopyButton';
 import { billingExportUrl } from '@/api/billing';
 import { downloadFile, isStepUpRequired } from '@/api/client';
 import { formatPlainMoney } from '@/lib/money';
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import { buildUsageChartData, hasUsageSamples, usageDaysSince } from './apiKeyUsageChart';
 
 function toExpireAt(date: Date, time: string): number {
     const t = /^\d{2}:\d{2}$/.test(time) ? time : '00:00';
@@ -441,14 +444,60 @@ async function exportAPIKeyRecords(apiKeyID: number, onFailed: (message: string)
     }
 }
 
+// APIKeyUsageDaysChart 逐日请求数柱状图。
+//
+// 为什么单画请求数而不是请求数+费用双轴: 卡片只有 320px 宽, 双轴会把两套刻度挤到看不清;
+// 费用与词元的窗口合计已经在上面两行数字里给了, 图只回答"哪天用了多少"这一个问题。
+//
+// height 预算 160px(任务给的硬上限): 容器 p-2(上下各 8) + 标题行(11px 字约 18) + 图 120 ≈ 154, 留 6px 余量。
+// 弹窗最大 85vh, 上面已有两行数字与导出按钮, 图再高就会滚起来。
+// 宽度必须 100% + ResponsiveContainer: 父级是固定宽度弹窗, 写死像素会在窄屏上溢出。
+//
+// 空态不在这里判断: 调用方先用 hasUsageSamples 分流, 这里只负责"有样本时怎么画",
+// 免得"图表组件内部还有一个 if" 变成两处各判一次、迟早不一致。
+function APIKeyUsageDaysChart({ days }: { days: APIKeyUsageReport['days'] }) {
+    const t = useTranslations('setting');
+    // useMemo 不是性能必需(最多 30 个点), 而是为了让"同一个 days 只算一次"成为事实:
+    // 这个组件在 pending -> success 的两次渲染里会被调两次, 没必要重复加总四个词元桶。
+    const data = useMemo(() => buildUsageChartData(days), [days]);
+
+    return (
+        <div className="rounded-xl bg-muted/40 p-2" data-testid="apikey-usage-days-chart">
+            <div className="mb-1 flex items-center gap-1 text-[11px] text-muted-foreground">
+                <ChartColumn className="size-3" />
+                {t('apiKey.usage.daysChart')}
+            </div>
+            {/* 不挂 Tooltip: 图里只有请求数一条序列, 悬浮提示会把 8 个后端字段全列一遍(含退费),
+                在 320px 宽的气泡里挤成一片; 数字的准确值上面两行已经给了, 这张图只回答"哪天多"。 */}
+            <div style={{ width: '100%', height: 120 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -18 }}>
+                        {/* 只留横向细网格: 纵向网格在 30 根柱子下会变成一片竖线, 反而看不清柱。 */}
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                        {/* 标签在 buildUsageChartData 里已经转成 MM-DD(带格式校验, 见 usageDayLabel),
+                            这里直接用, 不再二次切片 —— 二次处理只会让"格式异常时原样返回"那条兜底失效。
+                            30 天全显示会挤成一团, 交给 interval 让 recharts 自动抽稀首尾。 */}
+                        <XAxis dataKey="label" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))"
+                            interval="preserveStartEnd" />
+                        <YAxis width={28} tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" allowDecimals={false} />
+                        <Bar dataKey="request_count" fill="hsl(var(--primary))" radius={[2, 2, 0, 0]} />
+                    </BarChart>
+                </ResponsiveContainer>
+            </div>
+        </div>
+    );
+}
+
 // APIKeyUsageSection 渲染该 Key 的持久化用量: 最近 30 天 / 累计 / 退费提示 / 留存脚注 / 明细导出。
 // 单独成组件的理由有二:
 //   1. 只有在这里 hook 的 data 才是局部变量, TS 能把"有数据"这一支收窄——放在父组件用布尔别名收窄不了;
 //   2. 内存实时计数(父组件上方 6 格)与这段的加载/失败状态互不相干, 一个失败不该让另一个消失。
-function APIKeyUsageSection({ apiKey }: { apiKey: APIKey }) {
+export function APIKeyUsageSection({ apiKey }: { apiKey: APIKey }) {
     const t = useTranslations('setting');
     const usageQuery = useAPIKeyUsage(apiKey.id);
     const usage = usageQuery.data;
+    // chartDays 在 usage 存在时才有意义; 空值走下面的三态分支, 不到这里。
+    const chartDays = usage ? usageDaysSince(usage.days, usage.recent_from) : [];
 
     // usageRow 渲染一个窗口的用量。卡片只有 320px 宽, 三列并排会把数字挤成难读的一串,
     // 因此按"标签在左、数值在右"逐行排: 三行固定高度, 两个窗口叠起来高度也可预期。
@@ -490,6 +539,26 @@ function APIKeyUsageSection({ apiKey }: { apiKey: APIKey }) {
                 <div className="space-y-2">
                     {usageRow(t('apiKey.usage.recent'), usage.recent)}
                     {usageRow(t('apiKey.usage.total'), usage.total)}
+                    {/* 逐日图。
+                        窗口用 usage.recent_from 收到"最近 30 天": days 覆盖的是整个查询窗口
+                        (默认终身), 把几百个日桶塞进 320px 宽会把每根柱子压到不足 1 像素,
+                        而标题(三语)写的就是最近 30 天 —— 画出来的范围必须与标题一致。
+                        全零的最近 30 天走下面那一档"无样本"空态, 而不是画一条贴着 0 的柱子:
+                        那条柱子看起来与"这天用量很低"一模一样, 真相却是这 30 天里一次调用都没有。
+                        上方两行数字不受影响, "终身"合计仍照实显示 —— 这是真实结论, 不是把没取到画成 0。 */}
+                    {hasUsageSamples(chartDays) ? (
+                        <APIKeyUsageDaysChart days={chartDays} />
+                    ) : (
+                        // 有数据、但每一天的请求数与费用都是零: 这一档不画图, 换成一句话。
+                        //
+                        // 文案复用 noData(该窗口内暂无用量): 这一档的真相正是"窗口里有日桶、但一次调用都没有",
+                        // 与上面那档(coverage_start 为空 = 一条记录都没有)对用户是同一个结论 —— 这段时间没用过。
+                        // 不复用就得新增一个 locale 键, 而 locales 由 Lead 独占; 若 Lead 认为两档需要不同措辞,
+                        // 加一个键后把这里换掉即可, 结构与四态判定都不用动。
+                        <div className="rounded-xl bg-muted/40 p-2.5 text-[11px] text-muted-foreground" data-testid="apikey-usage-days-empty">
+                            {t('apiKey.usage.noData')}
+                        </div>
+                    )}
                     {usage.total.refunded_records > 0 && (
                         <div className="text-[11px] text-muted-foreground">
                             {t('apiKey.usage.refunded', {

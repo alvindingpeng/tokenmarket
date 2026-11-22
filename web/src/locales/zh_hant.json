@@ -142,7 +142,10 @@
     "site": {
         "announcement": "公告",
         "maintenance": "維護模式",
-        "dismiss": "關閉公告"
+        "dismiss": "關閉公告",
+        "balanceLow": "餘額不足",
+        "balanceLowWithThreshold": "可用 {available}, 已低於預警閾值 {threshold}",
+        "topUp": "去儲值"
     },
     "common": {
         "copy": {
@@ -375,7 +378,8 @@
                 "exportFailed": "匯出失敗",
                 "noData": "該窗口內暫無用量",
                 "loadFailed": "用量載入失敗",
-                "loading": "用量載入中…"
+                "loading": "用量載入中…",
+                "daysChart": "逐日請求數(最近 30 天)"
             },
             "toast": {
                 "createSuccess": "API 金鑰建立成功",
@@ -3330,7 +3334,8 @@
         "range": {
             "today": "今天",
             "week": "最近7天",
-            "month": "最近30天"
+            "month": "最近30天",
+            "custom": "自訂"
         },
         "granularity": {
             "day": "按天",
@@ -3356,7 +3361,9 @@
             "cost": "費用",
             "successRate": "成功率",
             "modelCost": "模型費用分佈",
-            "modelRequests": "模型呼叫量"
+            "modelRequests": "模型呼叫量",
+            "successByBucket": "分段成功率",
+            "successByBucketHint": "沒有呼叫日誌樣本的時間段留空, 不畫成 0%"
         },
         "model": {
             "other": "其他",
@@ -3384,6 +3391,11 @@
         },
         "timezone": {
             "calendarNotice": "區間邊界依 {window} 計算；日/週/月分組與資料留存依 {calendar} 計算。這是刻意保留的：每日彙總依伺服器自然日固化，兩處必須使用同一套行事曆，否則統計頁與帳單頁會對不上。"
+        },
+        "custom": {
+            "start": "開始日期",
+            "end": "結束日期",
+            "invalid": "開始日期不能晚於結束日期"
         }
     },
     "quota": {
