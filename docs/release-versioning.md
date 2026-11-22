@@ -39,6 +39,46 @@
 > 需要的话可在 GitHub 设置里把默认分支改成 `master`；`main` 分支本身未做删除或强制同步 ——
 > 它含有一个 `master` 上没有的提交（v1.5.3–v1.5.6 的整批落库），两边历史已分叉，贸然覆盖会丢东西。
 
+## 版本号在两棵 worktree 之间是**共享命名空间**(2026-11-22 事故)
+
+本仓库用 git worktree 并行开发两棵树：基线版（`octopus-baseline`，分支 `baseline-v1.10.13`，
+发布到 `tokenmarket`）与 SaaS 版（`octopus`，分支 `master`，发布到 `switchyard-saas`）。
+它们**共用同一个 git common dir**，因此也**共用 `refs/tags`** —— 标签命名空间是全局的，
+不是每棵树一份。
+
+事故经过：SaaS 线先在 2026-11-20 发了 `v1.11.0`（多租户 SaaS 能力）。之后基线线也把版本号写成
+`v1.11.0`，提交时 `scripts/publish-release.sh` 发现"标签已存在"就**静默复用它**，
+`git rev-parse refs/tags/v1.11.0^{commit}` 于是解析到**另一棵树上的 SaaS 提交**。结果：
+
+- 那个 SaaS 提交被当作"本次发布的提交"推给了基线仓库 `tokenmarket`；
+- `tokenmarket` 上出现了一条指向 SaaS 提交、正文却是基线 CHANGELOG 的 Release。
+
+标签是"某提交在本仓库可达"的声明；指向不可达提交时，这个声明就是假的。
+
+### 现在的守卫
+
+`publish-release.sh` 在解析出标签对应的提交后多了一道检查：
+
+```bash
+if ! git merge-base --is-ancestor "${SHA}" HEAD; then
+    say "FAIL 标签 ${VERSION} 已存在且指向当前分支之外的提交 ${SHA} —— …换一个版本号"
+    exit 1
+fi
+```
+
+即：**已存在的标签必须落在当前分支的历史里**，否则发布直接失败（而不是静默跳过）。
+失败会写进 `.git/publish-release.log`，不会像以前那样"提交成功、发布悄悄指向别处"。
+
+### 对版本号的实际影响
+
+两条产品线**不能各自从 v0 独立计数**，否则迟早再撞一次。基线版跳过已被占用的 `v1.11.0`，
+直接发 `v1.12.0`。以后发版前先查：
+
+```bash
+git tag -l 'v1.1*' | sort -V | tail -5     # 标签在两棵树之间共享
+git rev-parse --abbrev-ref HEAD            # 确认自己在哪条线上
+```
+
 ## 部署时的健康检查窗口(v1.10.22 教训)
 
 替换二进制后的健康等待**不能拍一个「差不多」的数字**, 必须按实测启动耗时给足倍数。

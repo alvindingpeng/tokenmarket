@@ -35,10 +35,21 @@ fi
 [ -n "${TOKEN}" ] || { say "SKIP 没有可用的 GITHUB_TOKEN"; exit 0; }
 
 # 1) 标签: 不存在则创建并推送。
+#
+# 关键守卫(2026-11-22 的教训): 本仓库用 git worktree 并行开发两棵树(基线 + SaaS), 它们**共用
+# refs/tags** —— 标签命名空间是全局的。SaaS 线先发了 v1.11.0, 之后基线线也把版本写成 v1.11.0,
+# 于是 `git rev-parse refs/tags/v1.11.0` 安静地解析到了**另一棵树上的提交**, 钩子把那个 SaaS 提交
+# 当成"本次发布的提交"推给了基线仓库, 还给它挂了一条基线版本的 Release。
+# 标签是"某提交在本仓库可达"的声明; 指向不可达提交时这个声明就是假的。
+# 因此: 已存在的标签必须落在**当前分支的历史**里, 否则直接失败(不静默跳过)。
 if ! git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
     git tag -a "${VERSION}" -m "release ${VERSION}" || { say "FAIL 打标签 ${VERSION}"; exit 1; }
 fi
 SHA="$(git rev-parse "refs/tags/${VERSION}^{commit}")"
+if ! git merge-base --is-ancestor "${SHA}" HEAD; then
+    say "FAIL 标签 ${VERSION} 已存在且指向当前分支之外的提交 ${SHA} —— 两棵 worktree 共用 refs/tags, 该版本号可能已被另一条产品线占用; 换一个版本号"
+    exit 1
+fi
 REMOTE_SHA="$(git ls-remote github "refs/tags/${VERSION}" 2>/dev/null | awk '{print $1}')"
 if [ -z "${REMOTE_SHA}" ]; then
     git push github "refs/tags/${VERSION}" >/dev/null 2>&1 || { say "FAIL 推送标签 ${VERSION}"; exit 1; }

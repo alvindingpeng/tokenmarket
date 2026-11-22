@@ -5,7 +5,7 @@
 ## 范围与安全决策
 
 - 仅订阅当前用户的站内通知，不广播其他用户事件。
-- 支持通用 JSON + HMAC 签名，以及**报文模板**（v1.11.0）：`generic` / `dingtalk` / `feishu` / `slack`。模板只改 body **形状**，**不做平台加签**（见下节）。
+- 支持通用 JSON + HMAC 签名，以及**报文模板**（v1.12.0）：`generic` / `dingtalk` / `feishu` / `slack`。模板只改 body **形状**，**不做平台加签**（见下节）。
 - 仅公网 HTTPS 443，禁止 userinfo/fragment、环境代理、重定向。保存时校验与实际拨号均阻断私网、环回、链路本地和元数据地址；拨号按已校验 IP 建连以防 DNS rebinding。
 - 创建提供 16–128 字节密钥；编辑留空保留。使用现有 secretstore 加密并绑定归属，API 仅返回 has_secret。
 - 不保存或回显外部响应正文，不在日志中输出 URL、密钥、原始网络错误。URL 可能含 token。
@@ -75,7 +75,7 @@ def verify(secret: bytes, timestamp: str, signature: str, raw_body: bytes) -> bo
 
 验签后，将 delivery ID 与业务处理在接收端同一事务内记账；重复 ID 返回 2xx，不重复执行。时间窗校验不代替持久去重；长任务先持久化事件再返回 2xx。
 
-## 报文模板（v1.11.0）
+## 报文模板（v1.12.0）
 
 钉钉/飞书/Slack 的机器人端点只认自己的格式：通用 JSON 丢进去会被直接拒绝（钉钉回 errcode 400，
 Slack 回 `invalid_payload`）。此前用户要么自己写一个转换服务，要么就用不了 WebHook ——
