@@ -36,6 +36,9 @@ type TierLimits struct {
 	RPM        int64 `json:"rpm"`
 	TPM        int64 `json:"tpm"`
 	Concurrent int64 `json:"concurrent"`
+	// AllowedModels contains client-requested group names; missing/null/empty is unrestricted.
+	// Names match the public group name exactly, not the provider's upstream model id.
+	AllowedModels []string `json:"allowed_models,omitempty"`
 }
 
 // Zero 判断该等级是否等于"完全不限制", 供调用方跳过无意义的兜底。
@@ -86,6 +89,9 @@ func ParseUserTierPolicies(raw string) (map[UserTier]TierLimits, error) {
 	if err := json.Unmarshal([]byte(trimmed), &wire); err != nil {
 		return nil, fmt.Errorf("user tier policies must be a JSON object: %w", err)
 	}
+	if wire == nil {
+		return map[UserTier]TierLimits{}, nil
+	}
 	policies := make(map[UserTier]TierLimits, len(wire))
 	for key, limits := range wire {
 		tier := UserTier(strings.TrimSpace(strings.ToLower(key)))
@@ -95,9 +101,34 @@ func ParseUserTierPolicies(raw string) (map[UserTier]TierLimits, error) {
 		if limits.RPM < 0 || limits.TPM < 0 || limits.Concurrent < 0 {
 			return nil, fmt.Errorf("tier %s limits must be non-negative", tier)
 		}
+		for i, name := range limits.AllowedModels {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				return nil, fmt.Errorf("tier %s allowed_models[%d] must not be empty", tier, i)
+			}
+			limits.AllowedModels[i] = name
+		}
+		limits.AllowedModels = uniqueStrings(limits.AllowedModels)
 		policies[tier] = limits
 	}
 	return policies, nil
+}
+
+// uniqueStrings 保留首次顺序去重。重复模型名没有语义, 但保留会让保存/回显看起来像配置丢失。
+func uniqueStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 // tierNames 合法等级名列表, 仅用于错误信息。

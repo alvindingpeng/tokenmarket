@@ -119,6 +119,7 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.Webhook{},
 		&model.WebhookDelivery{},
 		&model.BalanceAlert{},
+		&model.BalanceAlertHistory{},
 		&model.TrustedDevice{}, // 2FA 信任设备; 过期行由 op.TrustedDevicePruneExpired 顺带清理。
 		&model.Ticket{},
 		&model.TicketMessage{},

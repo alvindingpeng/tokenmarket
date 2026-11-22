@@ -25,6 +25,7 @@ export type TierLimits = {
     rpm: number;
     tpm: number;
     concurrent: number;
+    allowed_models?: string[];
 };
 
 // LIMIT_FIELDS 三个数值维度, 表单与序列化共用同一顺序, 避免两处漂移。
@@ -101,6 +102,13 @@ export function parseUserTierPolicies(raw: string | null | undefined): ParseResu
         }
         const limits = rawLimits as Record<string, unknown>;
         const next: TierLimits = { ...policies[tier] };
+        const allowed = limits.allowed_models;
+        if (allowed !== undefined && allowed !== null) {
+            if (!Array.isArray(allowed) || allowed.some((name) => typeof name !== 'string')) {
+                return { policies: emptyTierPolicies(), error: 'invalidShape' };
+            }
+            next.allowed_models = allowed as string[];
+        }
         for (const field of LIMIT_FIELDS) {
             const value = limits[field];
             // 缺字段沿用默认值(后端把缺省当 0/未配置, 界面需要给出可编辑的整行)
@@ -123,7 +131,7 @@ export function serializeUserTierPolicies(policies: Record<UserTier, TierLimits>
     const wire: Record<string, TierLimits> = {};
     for (const tier of USER_TIERS) {
         const limits = policies[tier];
-        wire[tier] = { rpm: limits.rpm, tpm: limits.tpm, concurrent: limits.concurrent };
+        wire[tier] = { rpm: limits.rpm, tpm: limits.tpm, concurrent: limits.concurrent, allowed_models: limits.allowed_models ?? [] };
     }
     return JSON.stringify(wire);
 }

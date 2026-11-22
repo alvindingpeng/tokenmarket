@@ -19,11 +19,11 @@ import (
 //
 // 为什么这值得一条静态用例: 读后写的事务在 WAL 下会撞 SQLITE_BUSY_SNAPSHOT(517),
 // 而 busy_timeout 对它无效; 表现只是「偶发一条事务失败」, 单机低并发下几乎看不见。
-// 以后谁在这 38 处里加一句先行 SELECT、或把开头的 AcquireWriteLock 挪到读之后, 就重新打开
+// 以后谁在这 39 处里加一句先行 SELECT、或把开头的 AcquireWriteLock 挪到读之后, 就重新打开
 // 那个窗口, 而 review 时很难看出来 —— 这类缺陷只能靠静态断言守住。
 //
 // 为什么用静态 AST 扫描而不是运行时 GORM 回调(两个方案都试过):
-//   1. 运行时方案只覆盖「被用例真正驱动过的那几个 op」, 静态覆盖全部 38 处;
+//   1. 运行时方案只覆盖「被用例真正驱动过的那几个 op」, 静态覆盖全部 39 处;
 //   2. create/update/delete 默认各包一层隐式单语句事务, 运行时按 ConnPool 是不是 *sql.Tx
 //      判「在不在显式事务里」会把单条 db.Create 也算进来, 结论就乱了;
 //   3. Before 锚点里 Statement.SQL 还是空串(实测), 断言会静默空转。
@@ -149,9 +149,9 @@ func TestTxLockFirstStatementIsWrite(t *testing.T) {
 }
 
 const (
-	wantSiteCount  = 38
+	wantSiteCount  = 39
 	wantLockFirst  = 18
-	wantWriteFirst = 18
+	wantWriteFirst = 19
 	wantReadOnly   = 1
 	wantLongTx     = 1
 )

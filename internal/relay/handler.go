@@ -150,6 +150,11 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		// 分组不存在说明模型名错误或不属于该用户, 等待也不会出现该分组。
 		// 分组主键随请求状态一并登记, 界面由此可直接按主键取分组而不必按名称回查。
 		keyUserID := uint(c.GetInt("api_key_user_id"))
+		// Match the client group name before routing rewrites and any reservation.
+		if policy, ok := op.UserTierLimitsForUser(keyUserID); ok && len(policy.AllowedModels) > 0 && !slices.Contains(policy.AllowedModels, metadata.Model) {
+			rejectRequest(c, inbound, errors.New("model not supported by this user tier"))
+			return
+		}
 		group, err := op.GroupGetByName(metadata.Model, keyUserID)
 		if err != nil {
 			rejectRequest(c, inbound, errors.New("model not found"))

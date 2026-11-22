@@ -17,6 +17,15 @@
 设计与取舍见 `docs/ANALYTICS.md`「自定义日期范围与分段成功率图」与 `docs/site-info-distribution.md`
 「余额不足顶部常驻横幅」两节; 版本说明见 `CHANGELOG.md` v1.10.22。
 
+## B3 / B11 余额预警历史与等级模型白名单(2026-11-22, v1.14.0)
+
+| 编号 | 事项 | 落点 |
+|---|---|---|
+| B3 | 最近 10 次预警历史 | AutoMigrate 新表 balance_alert_histories; 仅在去重原子获胜后写入, 与 last_triggered_at 同事务; API 当前用户 scoped newest 10; 不存余额金额 |
+| B11 | tier → model whitelist | user_tier_policies 加 allowed_models; 精确匹配客户端请求的 Group 名; 空/缺失=无限制; 与 API Key supported_models 取交集; 在限流/预留前拦截 |
+
+验证: backend full Go suite + vet, frontend 103 files / 1008 tests.
+
 ## 2FA 体验补齐与 WebHook 机器人模板(2026-11-22, v1.12.0)
 
 backlog §0.3 剩余两条 P2 一次交付, 都不占迁移号(AutoMigrate 建表/建列), 都不碰资金与路由:

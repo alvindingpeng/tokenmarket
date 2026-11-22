@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
@@ -126,6 +127,89 @@ func TestBalanceAlertCheckTriggerAndDedup(t *testing.T) {
 }
 
 // 用户隔离: A 的配置不能影响 B。
+func TestBalanceAlertHistoryOnlyRecordsDedupWinner(t *testing.T) {
+	balanceAlertSetup(t)
+	ctx := context.Background()
+	enabled := true
+	if _, err := BalanceAlertSet(ctx, 31, model.BalanceAlertUpsert{ThresholdCNY: 10, Enabled: &enabled}); err != nil {
+		t.Fatal(err)
+	}
+	triggered, err := BalanceAlertCheck(ctx, 31, 5)
+	if err != nil || !triggered {
+		t.Fatalf("first trigger: %v %v", triggered, err)
+	}
+	triggered, err = BalanceAlertCheck(ctx, 31, 4)
+	if err != nil || triggered {
+		t.Fatalf("deduped trigger: %v %v", triggered, err)
+	}
+	rows, err := BalanceAlertHistoryList(ctx, 31)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("history should contain one dedup winner: len=%d err=%v", len(rows), err)
+	}
+	if rows[0].UserID != 31 || rows[0].Source != "balance_alert" || rows[0].TriggeredAt.IsZero() {
+		t.Fatalf("bad history row: %+v", rows[0])
+	}
+}
+
+func TestBalanceAlertHistoryScopedAndLimitedToNewestTen(t *testing.T) {
+	balanceAlertSetup(t)
+	ctx := context.Background()
+	for i := 1; i <= 12; i++ {
+		at := time.Date(2026, 1, i, 0, 0, 0, 0, time.UTC)
+		row := model.BalanceAlertHistory{UserID: 41, TriggeredAt: at, Source: "balance_alert"}
+		if err := db.GetDB().Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	other := model.BalanceAlertHistory{UserID: 42, TriggeredAt: time.Now(), Source: "balance_alert"}
+	if err := db.GetDB().Create(&other).Error; err != nil {
+		t.Fatal(err)
+	}
+	rows, err := BalanceAlertHistoryList(ctx, 41)
+	if err != nil || len(rows) != 10 {
+		t.Fatalf("expected newest 10, got %d err=%v", len(rows), err)
+	}
+	if rows[0].TriggeredAt.Day() != 12 || rows[9].TriggeredAt.Day() != 3 {
+		t.Fatalf("wrong order/window: first=%v last=%v", rows[0].TriggeredAt, rows[9].TriggeredAt)
+	}
+	for _, row := range rows {
+		if row.UserID != 41 {
+			t.Fatalf("cross-user row: %+v", row)
+		}
+	}
+}
+
+func TestBalanceAlertHistoryStorageIsBoundedToTen(t *testing.T) {
+	balanceAlertSetup(t)
+	ctx := context.Background()
+	enabled := true
+	if _, err := BalanceAlertSet(ctx, 51, model.BalanceAlertUpsert{ThresholdCNY: 10, Enabled: &enabled}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 12; i++ {
+		// 让每次跨过一小时去重窗, 仍不睡眠、不改全局时钟。
+		at := time.Date(2026, 2, 1, 0, i, 0, 0, time.UTC)
+		if err := db.GetDB().Model(&model.BalanceAlert{}).Where("user_id = ?", 51).Update("last_triggered_at", at.Add(-2*time.Hour)).Error; err != nil {
+			t.Fatal(err)
+		}
+		triggered, err := BalanceAlertCheck(ctx, 51, 5)
+		if err != nil || !triggered {
+			t.Fatalf("trigger %d: %v %v", i, triggered, err)
+		}
+	}
+	var persisted int64
+	if err := db.GetDB().Model(&model.BalanceAlertHistory{}).Where("user_id = ?", 51).Count(&persisted).Error; err != nil {
+		t.Fatal(err)
+	}
+	if persisted != 10 {
+		t.Fatalf("history storage=%d, want bounded 10", persisted)
+	}
+	rows, err := BalanceAlertHistoryList(ctx, 51)
+	if err != nil || len(rows) != 10 {
+		t.Fatalf("list len=%d err=%v", len(rows), err)
+	}
+}
+
 func TestBalanceAlertCheckIsScopedToUser(t *testing.T) {
 	balanceAlertSetup(t)
 	ctx := context.Background()

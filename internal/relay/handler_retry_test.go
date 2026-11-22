@@ -190,6 +190,30 @@ func forwardRequest(format llm.APIFormat, userID uint, body string) *httptest.Re
 	return w
 }
 
+func forwardRequestWithPermissions(format llm.APIFormat, userID uint, body string, supported []string) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/relay-test", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("api_key_user_id", int(userID))
+	c.Set("api_key_id", 0)
+	c.Set("supported_models", supported)
+	Forward(format)(c)
+	return w
+}
+
+func setTierGroupPolicy(t *testing.T, allowed []string) {
+	t.Helper()
+	encoded := `{"free":{"rpm":0,"tpm":0,"concurrent":0,"allowed_models":[]}}`
+	if len(allowed) > 0 {
+		encoded = fmt.Sprintf(`{"free":{"rpm":0,"tpm":0,"concurrent":0,"allowed_models":[%q]}}`, allowed[0])
+	}
+	if err := op.SettingUpsert(model.SettingKeyUserTierPolicies, encoded); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // forwardRequestWriter 与 forwardRequest 相同, 但写到调用方给定的 ResponseWriter,
 // 用于模拟「一个字节都写不出去」的客户端故障。
 func forwardRequestWriter(format llm.APIFormat, userID uint, body string, w http.ResponseWriter) {
@@ -229,6 +253,38 @@ func limitedAttempts(t *testing.T) int64 {
 
 // TestMediaCreateSingleShotAfterDispatch 钉住媒体单发: 生视频的创建请求发出后遇上 5xx,
 // 不换成员重发 —— 上游可能已经受理了创建, 重发就是重复任务。
+func TestTierGroupPolicyEarlyRejectAndAPIKeyIntersection(t *testing.T) {
+	srv, posts := newUpstreamStub(http.StatusOK, `{"id":"ok","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+	defer srv.Close()
+	env := newRelayGroup(t, srv.URL, model.ProtocolOpenAIChatCompletion, model.MediaKindText, 1, model.DefaultGroupRelayConfigForMode(model.GroupModeFailover))
+	body := fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"hi"}]}`, env.group)
+	setTierGroupPolicy(t, []string{env.group})
+	allowed := forwardRequestWithPermissions(llm.APIFormatOpenAIChatCompletion, env.userID, body, []string{env.group})
+	if allowed.Code >= 400 || posts.Load() != 1 {
+		t.Fatalf("intersection allow: status %d posts %d body %s", allowed.Code, posts.Load(), allowed.Body.String())
+	}
+	keyDenied := forwardRequestWithPermissions(llm.APIFormatOpenAIChatCompletion, env.userID, body, []string{"other-group"})
+	if keyDenied.Code < 400 || posts.Load() != 1 {
+		t.Fatalf("API key restriction should reject before dispatch: status %d posts %d", keyDenied.Code, posts.Load())
+	}
+	setTierGroupPolicy(t, []string{"other-group"})
+	before, err := op.UserGetByID(env.userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	denied := forwardRequestWithPermissions(llm.APIFormatOpenAIChatCompletion, env.userID, body, []string{env.group})
+	after, err := op.UserGetByID(env.userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if denied.Code < 400 || posts.Load() != 1 {
+		t.Fatalf("tier restriction should reject before dispatch: status %d posts %d", denied.Code, posts.Load())
+	}
+	if before.Balance != after.Balance {
+		t.Fatalf("tier rejection changed balance: before %v after %v", before.Balance, after.Balance)
+	}
+}
+
 func TestMediaCreateSingleShotAfterDispatch(t *testing.T) {
 	srv, posts := newUpstreamStub(http.StatusInternalServerError, `{"error":{"message":"boom","type":"server_error"}}`)
 	defer srv.Close()

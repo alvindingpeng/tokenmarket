@@ -45,6 +45,22 @@ func TestParseUserTierPolicies(t *testing.T) {
 	}
 }
 
+func TestParseUserTierPoliciesAllowedModelsCompatibility(t *testing.T) {
+	for _, raw := range []string{`null`, `{"free":{"rpm":1}}`, `{"free":{"allowed_models":null}}`, `{"free":{"allowed_models":[]}}`} {
+		policies, err := ParseUserTierPolicies(raw)
+		if err != nil {
+			t.Fatalf("parse %s: %v", raw, err)
+		}
+		if len(policies[TierFree].AllowedModels) != 0 {
+			t.Fatalf("%s should be unrestricted", raw)
+		}
+	}
+	policies, err := ParseUserTierPolicies(`{"free":{"allowed_models":["public","private"]}}`)
+	if err != nil || len(policies[TierFree].AllowedModels) != 2 || policies[TierFree].AllowedModels[1] != "private" {
+		t.Fatalf("allowed models parse: %+v, %v", policies, err)
+	}
+}
+
 func TestParseUserTierPoliciesRejectsBadInput(t *testing.T) {
 	cases := map[string]string{
 		"not json":         `nope`,

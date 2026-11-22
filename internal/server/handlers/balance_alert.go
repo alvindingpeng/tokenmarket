@@ -23,6 +23,24 @@ func init() {
 	group.AddRoute(
 		router.NewRoute("", http.MethodDelete).Handle(deleteBalanceAlert),
 	)
+	group.AddRoute(
+		router.NewRoute("/history", http.MethodGet).Handle(getBalanceAlertHistory),
+	)
+}
+
+func getBalanceAlertHistory(c *gin.Context) {
+	userID, _ := middleware.CurrentUser(c)
+	rows, err := op.BalanceAlertHistoryList(c.Request.Context(), userID)
+	if err != nil {
+		// 不把 DB/索引细节回显给用户; 读历史失败只返回固定错误。
+		resp.Error(c, http.StatusInternalServerError, resp.ErrInternalServer)
+		return
+	}
+	items := make([]gin.H, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, gin.H{"triggered_at": row.TriggeredAt, "source": row.Source})
+	}
+	resp.Success(c, gin.H{"items": items})
 }
 
 // getBalanceAlert 返回当前用户的余额预警配置(未配置时返回禁用状态)。

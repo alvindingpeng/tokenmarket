@@ -21,6 +21,18 @@ export const balanceAlertQueryOptions = {
     retry: apiQueryRetry,
 };
 
+export type BalanceAlertHistoryRow = { triggered_at: string; source: string };
+
+export const balanceAlertHistoryQueryOptions = {
+    queryKey: ['balance-alert', 'history'] as const,
+    queryFn: ({ signal }: { signal: AbortSignal }) => apiRequest<{ items: BalanceAlertHistoryRow[] }>(balanceAlertPath + '/history', { signal }),
+    retry: apiQueryRetry,
+};
+
+export function useBalanceAlertHistory() {
+    return useQuery(balanceAlertHistoryQueryOptions);
+}
+
 // saveBalanceAlert 保存余额预警配置(POST 与 GET/DELETE 同一路径)。
 export function saveBalanceAlert(payload: { threshold_cny: number; enabled?: boolean }) {
     return apiRequest<BalanceAlertView>(balanceAlertPath, { method: 'POST', body: payload });

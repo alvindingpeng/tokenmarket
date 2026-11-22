@@ -4,6 +4,7 @@ import { Gauge } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useGroupList } from '@/api/group';
 import { useSetSetting, useSettingList, SettingKey } from '@/api/setting';
 import {
     LIMIT_FIELDS,
@@ -34,6 +35,8 @@ export function SettingTierPolicies() {
     const tRoot = useTranslations('setting');
     const { data: settings } = useSettingList();
     const setSetting = useSetSetting();
+    const { data: groups = [] } = useGroupList();
+    const groupNames = Array.from(new Set(groups.map((group) => group.name).filter(Boolean)));
 
     // 服务端值派生草稿起点: 空串从未配置时按后端默认配额展示, 让管理员有个可解释的起点。
     const raw = settings?.find((item) => item.key === SettingKey.UserTierPolicies)?.value ?? '';
@@ -41,6 +44,8 @@ export function SettingTierPolicies() {
 
     // 草稿以 parsed 为基准; 用户一旦编辑就切到本地草稿(record 由字符串组成, 便于中间态 "1" 之类)。
     const [draft, setDraft] = useState<Record<UserTier, Record<LimitField, string>> | null>(null);
+    const [modelDraft, setModelDraft] = useState<Record<UserTier, string[]> | null>(null);
+    const allowedModels = modelDraft ?? Object.fromEntries(USER_TIERS.map((tier) => [tier, parsed.policies[tier].allowed_models ?? []])) as Record<UserTier, string[]>;
     const baseDraft = useMemo(() => draftFromPolicies(parsed.policies), [parsed.policies]);
     const values = draft ?? baseDraft;
 
@@ -78,10 +83,13 @@ export function SettingTierPolicies() {
             toast.error(t('invalidField', { tier: t('tier.' + bad.tier), field: t('field.' + bad.field) }));
             return;
         }
-        const value = serializeUserTierPolicies(policiesFromDraft(values));
+        const policyDraft = policiesFromDraft(values);
+        for (const tier of USER_TIERS) policyDraft[tier].allowed_models = allowedModels[tier];
+        const value = serializeUserTierPolicies(policyDraft);
         setSetting.mutate({ key: SettingKey.UserTierPolicies, value }, {
             onSuccess: () => {
                 setDraft(null);
+                setModelDraft(null);
                 toast.success(tRoot('saved'));
             },
             onError: (error) => toast.error(error instanceof Error ? error.message : tRoot('saveFailed')),
@@ -147,6 +155,32 @@ export function SettingTierPolicies() {
                     </tbody>
                 </table>
             </div>
+
+            <fieldset className="space-y-3 border-t border-border/60 pt-4">
+                <legend className="text-sm font-semibold">{t('allowedModels')}</legend>
+                <p className="text-xs text-muted-foreground">{t('allowedModelsHint')}</p>
+                {USER_TIERS.map((tier) => {
+                    const selected = allowedModels[tier];
+                    const visible = groupNames.filter((name) => selected.includes(name));
+                    const missing = selected.filter((name) => !groupNames.includes(name));
+                    return (
+                        <div key={tier} className="space-y-2">
+                            <p className="text-xs font-medium">{t('tier.' + tier)}</p>
+                            <div className="flex flex-wrap gap-x-4 gap-y-2">
+                                {[...visible, ...missing, ...groupNames.filter((name) => !selected.includes(name))].map((name) => (
+                                    <label key={name} className="flex items-center gap-2 text-sm">
+                                        <input type="checkbox" checked={selected.includes(name)} onChange={(event) => {
+                                            const next = event.target.checked ? [...selected, name] : selected.filter((item) => item !== name);
+                                            setModelDraft((previous) => ({ ...(previous ?? Object.fromEntries(USER_TIERS.map((item) => [item, allowedModels[item]])) as Record<UserTier, string[]>), [tier]: next }));
+                                        }} />
+                                        {name}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })}
+            </fieldset>
 
             <p className="text-xs text-muted-foreground">{t('zeroHint')}</p>
 

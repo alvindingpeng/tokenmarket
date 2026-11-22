@@ -101,21 +101,58 @@ func BalanceAlertCheck(ctx context.Context, userID uint, available float64) (boo
 		return false, nil
 	}
 
-	// 先写触发时间再发通知: 并发结算时可能同时命中阈值, 但"记住已提醒"必须
-	// 发生在"发出提醒"之前, 否则两个并发都可能读到空的 LastTriggeredAt 而各发一条。
+	// last_triggered_at 与历史行必须在一个事务里提交:
+	// 若先提交去重时间、再独立插历史, 历史插入失败会留下"用户已被提醒过"的状态,
+	// 但 UI 永远查不到那次提醒; 这就是半成功。事务失败时两者一起回滚, 下一次余额检查还能重试。
 	now := time.Now()
-	result := db.GetDB().WithContext(ctx).Model(&model.BalanceAlert{}).
-		Where("user_id = ? AND (last_triggered_at IS NULL OR last_triggered_at < ?)",
-			userID, now.Add(-balanceAlertTriggerWindow)).
-		Update("last_triggered_at", now)
-	if result.Error != nil {
-		return false, fmt.Errorf("failed to update balance alert trigger time: %w", result.Error)
+	triggered := false
+	err = db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.BalanceAlert{}).
+			Where("user_id = ? AND (last_triggered_at IS NULL OR last_triggered_at < ?)", userID, now.Add(-balanceAlertTriggerWindow)).
+			Update("last_triggered_at", now)
+		if result.Error != nil {
+			return fmt.Errorf("failed to update balance alert trigger time: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		if err := tx.Create(&model.BalanceAlertHistory{UserID: userID, TriggeredAt: now, Source: "balance_alert"}).Error; err != nil {
+			return fmt.Errorf("failed to record balance alert history: %w", err)
+		}
+		// 不仅 API 只返回最近 10 条, 数据库也只保留最近 10 条/用户。
+		// 否则一个持续使用多年的账号每小时一条会无限增长; 历史定义本来就是"最近 10 次",
+		// 比它更早的行没有产品价值。查询与删除在同事务, 首条语句仍是上面的条件 UPDATE。
+		var staleIDs []uint
+		if err := tx.Model(&model.BalanceAlertHistory{}).Where("user_id = ?", userID).
+			Order("triggered_at DESC, id DESC").Offset(10).Pluck("id", &staleIDs).Error; err != nil {
+			return fmt.Errorf("failed to identify expired balance alert history: %w", err)
+		}
+		if len(staleIDs) > 0 {
+			if err := tx.Where("id IN ?", staleIDs).Delete(&model.BalanceAlertHistory{}).Error; err != nil {
+				return fmt.Errorf("failed to prune balance alert history: %w", err)
+			}
+		}
+		triggered = true
+		return nil
+	})
+	if err != nil {
+		return false, err
 	}
-	if result.RowsAffected == 0 {
-		// 已被并发的那一路抢先提醒过。
+	if !triggered {
 		return false, nil
 	}
 
 	NotifyBalanceLow(ctx, userID, available)
 	return true, nil
+}
+
+// BalanceAlertHistoryList returns the current user's newest actual triggers.
+func BalanceAlertHistoryList(ctx context.Context, userID uint) ([]model.BalanceAlertHistory, error) {
+	var rows []model.BalanceAlertHistory
+	err := db.GetDB().WithContext(ctx).Where("user_id = ?", userID).
+		Order("triggered_at DESC, id DESC").Limit(10).Find(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list balance alert history: %w", err)
+	}
+	return rows, nil
 }

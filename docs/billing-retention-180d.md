@@ -121,19 +121,19 @@
 
 ### 9.1 结论先行
 
-用 AST 穷举(不是行级 grep, 见 §9.4)`internal/op` 非测试文件, 共 **38 处**
+用 AST 穷举(不是行级 grep, 见 §9.4)`internal/op` 非测试文件, 共 **39 处**
 `.Transaction(func(tx *gorm.DB) error { ... })`, 按"事务首条语句 + 事务长短"分成四类:
 
 | 类别 | 处数 | 判据 | 动作 |
 | --- | --- | --- | --- |
 | A. 已在开头取写锁 | 18 | 首条是 `db.AcquireWriteLock` 的锚点 UPDATE | 已正确, 维持 |
-| B. 首条即写 | 18 | 事务第一条执行语句就是 INSERT/UPDATE/DELETE | **不需要**加锁, 也不许加 |
+| B. 首条即写 | 19 | 事务第一条执行语句就是 INSERT/UPDATE/DELETE | **不需要**加锁, 也不许加 |
 | C. 纯只读事务 | 1 | 事务内一条写语句都没有 | **绝不能**加锁 |
 | D. 长事务 | 1 | 事务体是整轮归档/整份导入, 秒级到分钟级 | **绝不能**加锁 |
 
-合计 38 = 18 + 18 + 1 + 1。**没有一处落在"短小的读后写"这一唯一需要加锁的类别里。**
+合计 39 = 18 + 19 + 1 + 1。**没有一处落在"短小的读后写"这一唯一需要加锁的类别里。**
 这句话的含义要说清: 不是"我扫了一遍没发现", 而是"四类互斥、每类都有明确判据与全量名单,
-名单总数 38 与 AST 计数相等", 所以"漏掉一处"在这里是可证伪的。
+名单总数 39 与 AST 计数相等", 所以"漏掉一处"在这里是可证伪的。
 
 一句话记住本节判据: **只有"事务很短 + 首条是读 + 后面要写"三者同时成立才需要提前取锁**;
 三者缺一 —— 首条是写(写锁已经到手)、只读(永远不写)、长(提前拿锁等于把全库写入口堵死)。
@@ -200,7 +200,7 @@ SQLite 的写锁是"第一条写语句拿到手并**一直持有到事务结束*
 | 17 | `internal/op/withdrawal.go:450` | `WithdrawMarkPaid` | :450 | `Take` 提现单 |
 | 18 | `internal/op/withdrawal.go:625` | `WithdrawRollback` | :625 | `Take` 提现单 |
 
-**B 类 — 首条即写, 不需要也不允许加锁(18 处)**
+**B 类 — 首条即写, 不需要也不允许加锁(19 处)**
 
 | # | 位置 | 函数 | 首条执行语句 | 备注 |
 | --- | --- | --- | --- | --- |
@@ -222,6 +222,7 @@ SQLite 的写锁是"第一条写语句拿到手并**一直持有到事务结束*
 | 34 | `internal/op/wallet.go:43` | `WalletCredit` | `Updates` 加余额(在 `walletCreditTx`) | 函数体是一行调用, 见 §9.4 坑 3 |
 | 35 | `internal/op/webhook.go:379` | `WebhookDelete` | `Delete` webhook | 两条 Delete |
 | 36 | `internal/op/withdrawal.go:270` | `WithdrawApply` | `UPDATE users SET total_revenue = total_revenue WHERE id = ?` | 自赋值空更新, 只为拿锁 |
+| 37 | `internal/op/balance_alert.go:107` | `BalanceAlertCheck` | `Update` `last_triggered_at` + `Create` history | 条件更新赢得去重后，在同一事务插历史；失败整体回滚 |
 
 > `notification.go:60` 顺带记录一条已经做对的模式: `NotificationCreate` 把 webhook 目标列表的
 > **只读预读放在事务外**(`webhookEnqueueTargets`), 事务里只剩两条 INSERT。这是"短小的读后写"的
@@ -232,13 +233,13 @@ SQLite 的写锁是"第一条写语句拿到手并**一直持有到事务结束*
 
 | # | 位置 | 函数 | 事务内语句 | 判定 |
 | --- | --- | --- | --- | --- |
-| 37 | `internal/op/settlement.go:217` | `settlementAggregateDay` | `Scan` + 2 × `Find`(全表按日聚合) | 零写语句; 加锁会把全库写入拖到秒级 |
+| 38 | `internal/op/settlement.go:217` | `settlementAggregateDay` | `Scan` + 2 × `Find`(全表按日聚合) | 零写语句; 加锁会把全库写入拖到秒级 |
 
 **D 类 — 长事务, 绝不能加锁(1 处)**
 
 | # | 位置 | 函数 | 事务体 | 判定 |
 | --- | --- | --- | --- | --- |
-| 38 | `internal/op/backup.go:121` | `DBImportIncremental` | 校验 API Key 后逐表 `createDoNothing`/`createUpsertAll`(13 张表, 分批 2000 行) | 见 §9.5 决策一 |
+| 39 | `internal/op/backup.go:121` | `DBImportIncremental` | 校验 API Key 后逐表 `createDoNothing`/`createUpsertAll`(13 张表, 分批 2000 行) | 见 §9.5 决策一 |
 
 **范围外但已归类(供下次审计对齐)**: `internal/db/secretmigrate.go:162` 也有一处 `.Transaction`,
 首条即写, 属 B 类; 不在 `internal/op` 也不在本次委托范围, 仅记录不动作。

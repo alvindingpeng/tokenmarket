@@ -301,7 +301,9 @@
             "invalidField": "{tier} {field} must be a non-negative integer",
             "resetDefaults": "Reset to defaults",
             "save": "Save",
-            "saving": "Saving..."
+            "saving": "Saving...",
+            "allowedModels": "Allowed models",
+            "allowedModelsHint": "Choose visible model groups for this tier. Empty means unrestricted; names are matched exactly as requested by clients."
         },
         "backup": {
             "title": "Backup / Restore",
@@ -2931,7 +2933,14 @@
                 "enable": "Enable",
                 "disable": "Disable",
                 "delete": "Delete"
-            }
+            },
+            "historyTitle": "Recent balance alerts",
+            "historyLoading": "Loading alert history…",
+            "historyError": "Could not load alert history.",
+            "historyRetry": "Retry",
+            "historyEmpty": "No balance alerts have been triggered.",
+            "historyTime": "Time",
+            "historySource": "Source"
         },
         "budget": {
             "title": "Spend budget",

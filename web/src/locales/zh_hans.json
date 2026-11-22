@@ -301,7 +301,9 @@
             "invalidField": "{tier} {field} 必须是非负整数",
             "resetDefaults": "重置为默认值",
             "save": "保存",
-            "saving": "保存中..."
+            "saving": "保存中...",
+            "allowedModels": "允许使用的模型组",
+            "allowedModelsHint": "选择该等级可用的模型组。留空表示不限制；按客户端请求的模型组名称精确匹配。"
         },
         "backup": {
             "title": "备份 / 恢复",
@@ -2931,7 +2933,14 @@
                 "enable": "启用",
                 "disable": "禁用",
                 "delete": "取消预警"
-            }
+            },
+            "historyTitle": "最近余额预警",
+            "historyLoading": "正在加载预警记录…",
+            "historyError": "无法加载预警记录。",
+            "historyRetry": "重试",
+            "historyEmpty": "尚无余额预警记录。",
+            "historyTime": "时间",
+            "historySource": "来源"
         },
         "budget": {
             "title": "花费预算",

@@ -65,6 +65,8 @@ describe('user-tier 解析设置 JSON', () => {
         expect(result.error).toBe('');
         expect(result.policies).toEqual(emptyTierPolicies());
         expect(parseUserTierPolicies(null).error).toBe('');
+        expect(parseUserTierPolicies('{"free":{"allowed_models":null}}').policies.free.allowed_models).toBeUndefined();
+        expect(parseUserTierPolicies('{"free":{"allowed_models":[]}}').policies.free.allowed_models).toEqual([]);
         expect(parseUserTierPolicies(undefined).error).toBe('');
     });
 
@@ -108,7 +110,17 @@ describe('user-tier 序列化与往返', () => {
         });
         const parsed = JSON.parse(json) as Record<string, unknown>;
         expect(Object.keys(parsed)).toEqual([...USER_TIERS]);
-        expect(JSON.stringify(parsed.free)).toBe('{"rpm":1,"tpm":2,"concurrent":3}');
+        expect(JSON.stringify(parsed.free)).toBe('{"rpm":1,"tpm":2,"concurrent":3,"allowed_models":[]}');
+    });
+
+    it('保留允许组名称, 且旧配置缺少此字段时不限组', () => {
+        const legacy = parseUserTierPolicies('{"free":{"rpm":1,"tpm":2,"concurrent":3}}');
+        expect(legacy.policies.free.allowed_models).toBeUndefined();
+        const policies = emptyTierPolicies();
+        policies.free.allowed_models = ['group-a'];
+        const roundTrip = parseUserTierPolicies(serializeUserTierPolicies(policies));
+        expect(roundTrip.error).toBe('');
+        expect(roundTrip.policies.free.allowed_models).toEqual(['group-a']);
     });
 
     it('序列化结果能被解析回原值(往返一致)', () => {
@@ -120,7 +132,11 @@ describe('user-tier 序列化与往返', () => {
         };
         const roundTrip = parseUserTierPolicies(serializeUserTierPolicies(policies));
         expect(roundTrip.error).toBe('');
-        expect(roundTrip.policies).toEqual(policies);
+        for (const tier of USER_TIERS) {
+            expect(roundTrip.policies[tier].rpm).toBe(policies[tier].rpm);
+            expect(roundTrip.policies[tier].tpm).toBe(policies[tier].tpm);
+            expect(roundTrip.policies[tier].concurrent).toBe(policies[tier].concurrent);
+        }
     });
 });
 

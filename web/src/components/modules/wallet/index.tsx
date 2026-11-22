@@ -36,6 +36,7 @@ import { formatAmount, formatDateTime } from '@/lib/format';
 import { canSubmitWithdraw, withdrawAmountIssue } from '@/lib/withdraw-min';
 import { ledgerKindOptions } from '@/lib/ledger-kinds';
 import { BalanceAlertSettings } from './BalanceAlertSettings';
+import { BalanceAlertHistory } from './BalanceAlertHistory';
 import { MyBudgetsCard } from './MyBudgetsCard';
 import { amountWithPoolCurrency, poolCurrencyOf } from './poolCurrency';
 
@@ -679,6 +680,7 @@ export default function Wallet() {
             </div>
 
             <BalanceAlertSettings />
+            <BalanceAlertHistory />
 
             <MyBudgetsCard />
 

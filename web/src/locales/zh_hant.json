@@ -301,7 +301,9 @@
             "invalidField": "{tier} {field} 必須是非負整數",
             "resetDefaults": "重設為預設值",
             "save": "儲存",
-            "saving": "儲存中..."
+            "saving": "儲存中...",
+            "allowedModels": "允許使用的模型組",
+            "allowedModelsHint": "選擇該等級可用的模型組。留空表示不限制；按用戶端請求的模型組名稱精確比對。"
         },
         "backup": {
             "title": "備份 / 復原",
@@ -2931,7 +2933,14 @@
                 "enable": "啟用",
                 "disable": "停用",
                 "delete": "取消預警"
-            }
+            },
+            "historyTitle": "最近餘額預警",
+            "historyLoading": "正在載入預警紀錄…",
+            "historyError": "無法載入預警紀錄。",
+            "historyRetry": "重試",
+            "historyEmpty": "尚無餘額預警紀錄。",
+            "historyTime": "時間",
+            "historySource": "來源"
         },
         "budget": {
             "title": "花費預算",
