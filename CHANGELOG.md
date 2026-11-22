@@ -73,6 +73,23 @@ B2 余额不足顶部横幅、B5 独立成功率柱状图。四条都在 `docs/b
 - 非有限数（NaN/Infinity）先收敛成 0 再进图表：recharts 拿到 NaN 不报错，会画出一张看起来
   「有数据」的畸形图，比空态更难察觉。
 
+### 部署(v1.10.22)
+
+- 2026-11-22 11:53 CST 上线, v1.10.21 → v1.10.22, 停机 **26.6s**, 切换时 `active_requests=0`。
+- 流程: 在线 backup API 一致性快照(integrity_check ok / 60 表) → 隔离副本跑 `verify-migration`
+  (无新迁移, max 仍 46) → 部署前六项资金不变量全 0 → 停看门狗 timer → 停服原子替换 →
+  断言 `version=v1.10.22` 与 sha256 双匹配 → 恢复看门狗 → 部署后复跑六项不变量 + schema 抽查。
+- 前后逐位比对: `users`/`api_keys`/`channels`/`migration_max`/`migration_rows` 完全相同;
+  `sum_user_cost` +0.001395 与 `sum_balance` −0.001395 **严格对称**(期间真实调用消耗, 计费与扣款互抵);
+  `sum_frozen` 前后均 `-0.000000`; ERROR/PANIC 0 条; `NRestarts=0`。
+- 外网 `https://tt.xjj.se/` 返回 200 并服务 `assets/index-BqPHmiSv.js`; 实下载三个 chunk 验证
+  `success-bar-chart` / `custom-range` / `apikey-usage-days-chart` / `balance-low-banner`
+  与全部新文案均在场; 五个新相关 API 未认证返回 401(路由存在, 非 404)。
+- **首次尝试被自动回滚, 原因是健康检查窗口太短**: 实测从 systemd `Started` 到 `Program started`
+  需 ~36s(启动期全表 secret 校验 + 路由状态恢复), 而脚本只等 30s, 第 31 秒把正在启动的进程杀掉。
+  第二次用 150s 窗口, 26s 就起来了。教训与基线已写进 `docs/release-versioning.md`
+  「部署时的健康检查窗口」。
+
 ### 验证
 
 - 前端全量 `npx vitest run`：**101 个测试文件 / 984 个用例全绿**（本轮新增 4 个测试文件、

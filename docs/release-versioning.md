@@ -39,6 +39,33 @@
 > 需要的话可在 GitHub 设置里把默认分支改成 `master`；`main` 分支本身未做删除或强制同步 ——
 > 它含有一个 `master` 上没有的提交（v1.5.3–v1.5.6 的整批落库），两边历史已分叉，贸然覆盖会丢东西。
 
+## 部署时的健康检查窗口(v1.10.22 教训)
+
+替换二进制后的健康等待**不能拍一个「差不多」的数字**, 必须按实测启动耗时给足倍数。
+
+v1.10.22 首次部署被自己的健康检查判成失败并自动回滚, 根因不是新二进制坏, 而是等待太短:
+
+| 观测项 | 实测值 |
+|---|---|
+| systemd `Started` → 进程开始输出 banner | ~0s |
+| banner → `secret master key ready` | <1s |
+| `secret master key ready` → `secret at-rest verified` | **~36s** |
+| `secret at-rest verified` → `Program started`, `/healthz` 可用 | 同一秒 |
+
+那 36 秒花在启动期的**全表 secret 校验**(生产 encrypt 行数十级)与本机路由状态恢复
+(189 组 / 176 指标 / 7 出口)。启动耗时随加密行数与路由规模增长, 不是常数。
+
+因此:
+
+- **等待窗口取实测值的 4 倍以上**(本次用 150s, 实际 26s 起来)。`deploy/swap_deploy.sh` 的
+  `HEALTH_RETRIES`(默认 20 次 × (5s curl + 1s 间隔)) 上界约 120s, 对当前规模够用,
+  但换更大库时要么调大 `SWITCHYARD_HEALTH_RETRIES`, 要么先测一次冷启动耗时。
+- **判定失败后先去日志看新进程死在哪一步**, 再决定回滚还是继续等。日志里出现
+  `Version: vX.Y.Z` + `secret master key ready` 说明新进程已经正常跑起来了 ——
+  此时回滚是误杀, 不是修复。
+- 回滚本身是安全的(原子替换 + 旧二进制留档 + 库未被破坏), 但「回滚成功」不等于
+  「新版本有问题」: 这两种结论必须由日志区分, 不能由退出码代替。
+
 ## 版本号的运行时呈现
 
 - 后端：`-ldflags -X internal/conf.Version` 注入，`switchyard version`、`/healthz` 的
