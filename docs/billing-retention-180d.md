@@ -147,7 +147,7 @@
 B 类的判据对它们同样成立 —— 这正是 §9.6 里护栏只写一条断言就能覆盖 18 处的原因。它们的首条业务语句
 是 SELECT, 但读到的是**已经持有写锁之后**的快照, 不存在读-写升级窗口。
 
-**B 类(18 处, 首条即写): 不需要加锁, 加了是纯浪费; 也不许"为了整齐"补一行。**
+**B 类(19 处, 首条即写): 不需要加锁, 加了是纯浪费; 也不许"为了整齐"补一行。**
 SQLite 的写锁是"第一条写语句拿到手并**一直持有到事务结束**"。因此事务首条是 INSERT/UPDATE/DELETE 时,
 它在第一毫秒就已经拿到写锁, 后续 SELECT 读的是自己持有的写事务快照, 升级窗口在物理上不存在。
 此时再补一句 `AcquireWriteLock` 只是把已经到手的锁再要一次, 换不来正确性, 只多一次往返
@@ -172,7 +172,7 @@ SQLite 的写锁是"第一条写语句拿到手并**一直持有到事务结束*
 
 **D 类(1 处, 长事务): 绝不能加锁, 理由见 §9.5。**
 
-### 9.3 全量清单(38 处: 文件:行 → 函数 → 首条执行语句 → 判定)
+### 9.3 全量清单(39 处: 文件:行 → 函数 → 首条执行语句 → 判定)
 
 首条语句按**实际执行顺序**记录(见 §9.4 的三个坑): 这张表是 AST 解析 + 递归展开包内 helper 之后得到的,
 不是按源码行号从上往下读出来的。
@@ -222,7 +222,7 @@ SQLite 的写锁是"第一条写语句拿到手并**一直持有到事务结束*
 | 34 | `internal/op/wallet.go:43` | `WalletCredit` | `Updates` 加余额(在 `walletCreditTx`) | 函数体是一行调用, 见 §9.4 坑 3 |
 | 35 | `internal/op/webhook.go:379` | `WebhookDelete` | `Delete` webhook | 两条 Delete |
 | 36 | `internal/op/withdrawal.go:270` | `WithdrawApply` | `UPDATE users SET total_revenue = total_revenue WHERE id = ?` | 自赋值空更新, 只为拿锁 |
-| 37 | `internal/op/balance_alert.go:107` | `BalanceAlertCheck` | `Update` `last_triggered_at` + `Create` history | 条件更新赢得去重后，在同一事务插历史；失败整体回滚 |
+| 37 | `internal/op/balance_alert.go:111` | `BalanceAlertCheck` | `Update` `last_triggered_at` + `Create` history | 条件更新赢得去重后，在同一事务插历史；失败整体回滚 |
 
 > `notification.go:60` 顺带记录一条已经做对的模式: `NotificationCreate` 把 webhook 目标列表的
 > **只读预读放在事务外**(`webhookEnqueueTargets`), 事务里只剩两条 INSERT。这是"短小的读后写"的
@@ -266,7 +266,7 @@ SQLite 的写锁是"第一条写语句拿到手并**一直持有到事务结束*
    `return walletCreditTx(tx, ...)`, 真正首条是 `wallet.go:15` 里的
    `tx.Model(&model.User{}).Updates(...)`。只看事务字面量会把这种"委托给 helper"的事务读成空事务。
 
-所以 38 处清单是这么得到的: 用 Go `ast` 解析 `internal/op` 全部非测试文件, 定位每个以
+所以 39 处清单是这么得到的: 用 Go `ast` 解析 `internal/op` 全部非测试文件, 定位每个以
 `*ast.FuncLit` 传给 `.Transaction(` 的调用点; 对函数体按**调用点顺序**记录每个 GORM finisher
 (`Create/First/Take/Find/Scan/Count/Update/Updates/UpdateColumn(s)/Delete/Exec/Save/Pluck/Rows/Row`)
 或 `db.AcquireWriteLock`; 遇到包内 helper 调用则**递归展开**并把语句插在调用点位置; 排除内建函数
@@ -309,7 +309,7 @@ AST 显示它的首条业务语句本来就是 `Updates`(`:206`), 写锁在事�
 (任何在 `AcquireWriteLock` 落地之后才改成"首条即写"的事务都长这样), 所以这条决策要当惯例用:
 **冗余的取锁不删, 只记录。**
 
-### 9.6 与已加锁 18 处的关系, 以及护栏怎么守住全部 38 处
+### 9.6 与已加锁 18 处的关系, 以及护栏怎么守住全部 39 处
 
 护栏用例 `internal/op/txlock_audit_test.go` 用**一条**核心断言覆盖上表:
 **"op 里每一处显式事务, 事务内执行的第一条语句必须要么本身是写(`INSERT/UPDATE/DELETE`),
@@ -335,7 +335,7 @@ C 类与 D 类**应该**违反这条, 所以白名单是**逐条显式列出**�
    `*sql.Tx` 指针分组再靠"组内含 SELECT 或 ≥2 条语句"反推 —— 前者随版本脆, 后者要处理异步通知；
 3. **覆盖率只有被驱动过的那几个 op**。运行时方案要每个 driver 手工准备 fixture、关掉记录窗口、
    drain 异步通知(Ticket*/NotificationCreate/RedemptionRedeem/WithdrawMarkPaid 都会派生),
-   而静态扫描一次覆盖全部 38 处, 且没有"某个 op 忘了加 driver"这种缺口。
+   而静态扫描一次覆盖全部 39 处, 且没有"某个 op 忘了加 driver"这种缺口。
 
 静态扫描必须处理三件不显然的事, 全部对应 §9.4 的三个坑, 并且都实测过:
 
@@ -344,7 +344,7 @@ C 类与 D 类**应该**违反这条, 所以白名单是**逐条显式列出**�
 - 按**执行顺序**遍历语句节点, `if` 的 Init 先于 Body(`if err := db.AcquireWriteLock(tx); err != nil`
   正是最常见的取锁写法, 只看 Body 会漏)、`return` 的表达式也算语句、`.Error` 这种选择子要穿透到接收者链;
 - 递归展开包内 helper(**只展开参数里真的用过 `tx` 的函数**, 深度上限 4 层): 事务体只有一行委托时
-  (`return walletCreditTx(tx, ...)`), 首条语句在下一层; 去掉展开, 38 处里至少 4 处会判错 ——
+  (`return walletCreditTx(tx, ...)`), 首条语句在下一层; 去掉展开, 39 处里至少 4 处会判错 ——
   其中 `ChannelDel`/`ChannelCreate`/`ChannelUpdate`/`WalletCredit` 会被读成"空事务"而漏检。
 
 失败信息指名道姓到"哪一处", 形如

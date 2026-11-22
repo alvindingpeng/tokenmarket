@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { QueryClient } from '@tanstack/react-query';
 import { renderSSR } from '@/test/ssr';
+import en from '@/locales/en.json';
 import { SettingKey } from '@/api/setting';
 import { SettingAudit } from './Audit';
 import { SettingTierPolicies } from './TierPolicies';
@@ -74,6 +75,19 @@ describe('SettingTierPolicies 等级配额卡片(mock SSR)', () => {
         expect(html.match(/data-slot="input"/g)).toHaveLength(12);
         expect(html).toContain('value="11"');
         expect(html).toContain('value="88"');
+    });
+
+    it('按当前用户可见模型组展示白名单并保留列表暂缺项', () => {
+        const html = renderSSR(<SettingTierPolicies />, (client) => {
+            seedSettings(client, { [SettingKey.UserTierPolicies]: JSON.stringify({ free: { rpm: 20, tpm: 100, concurrent: 2, allowed_models: ['Visible Group', 'Former Group'] } }) });
+            client.setQueryData(['groups', 'list'], [{ id: 1, name: 'Visible Group' }]);
+        });
+        expect(html).toContain(en.setting.tierPolicies.allowedModels);
+        expect(html).toContain(en.setting.tierPolicies.allowedModelsHint);
+        expect(html).toContain('Visible Group');
+        // 配置里现有但暂时不在可见分组列表中的名字仍保留，避免短暂列表不全导致保存时静默删除。
+        expect(html).toContain('Former Group');
+        expect(html).toContain('type="checkbox"');
     });
 
     it('设置值损坏时给出明确错误, 而不是静默显示默认值', () => {
