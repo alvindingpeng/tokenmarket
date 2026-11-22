@@ -12,8 +12,10 @@ import {
     WEBHOOK_RETRY_MIN,
     WEBHOOK_SECRET_MAX_BYTES,
     WEBHOOK_SECRET_MIN_BYTES,
+    WEBHOOK_TEMPLATES,
     WEBHOOK_URL_MAX_LEN,
     type WebhookSecretCheck,
+    type WebhookTemplate,
     type WebhookUrlCheck,
     type WebhookView,
 } from '@/api/webhook';
@@ -25,12 +27,23 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 
+// 模板值 → 文案键的映射写在组件外层(不是模块级的"纯逻辑导出"): 它只是本组件的渲染细节,
+// 同时保证 .tsx 只导出组件这一个符号, 不打断 typescript-eslint 的 projectService。
+const TEMPLATE_LABEL_KEYS: Record<WebhookTemplate, string> = {
+    generic: 'form.templateGeneric',
+    dingtalk: 'form.templateDingtalk',
+    feishu: 'form.templateFeishu',
+    slack: 'form.templateSlack',
+};
+
 // WebhookForm 创建/编辑订阅表单(对话框内容体, 也可脱离对话框独立渲染做 SSR 断言)。
 // 安全红线:
 //   - 密钥输入框永为空串、type=password、提交后即丢弃: 不回显、不缓存、不进 toast;
 //   - URL/密钥只进请求体, 报错文案经 redactWebhookError 抹除后再进 toast。
 // 校验口径与服务端同向: 地址 https 且 443, 密钥 16..128 字节(创建必填/编辑留空保留),
 // 事件至少一个, retry_count 0..3; 服务端校验才是权威, 这里只为即时反馈。
+// 报文模板只决定 body 形状, 平台自身的加签不做 —— 这句话用 form.templateNote 直接写在
+// 下拉旁边, 不能让用户以为"选了钉钉就自动帮我把 sign 加上了"(那需要他的平台密钥)。
 export function WebhookForm({ mode, initial, onSaved, onCancel }: {
     mode: 'create' | 'edit';
     initial?: WebhookView;
@@ -49,6 +62,9 @@ export function WebhookForm({ mode, initial, onSaved, onCancel }: {
     const [events, setEvents] = useState<string[]>(initial?.events ?? []);
     const [enabled, setEnabled] = useState(initial?.enabled ?? true);
     const [retryCount, setRetryCount] = useState(String(initial?.retry_count ?? 3));
+    // 存量视图理论上恒有 template; 万一缺字段(旧后端), 按 generic 起步而不是空字符串,
+    // 否则下拉会显示成"未选择", 用户一提交就把空串传上去。
+    const [template, setTemplate] = useState<WebhookTemplate>(initial?.template ?? 'generic');
     const [errors, setErrors] = useState<{ url?: WebhookUrlCheck; secret?: WebhookSecretCheck; events?: boolean }>({});
 
     const toggleEvent = (event: string, checked: boolean) => {
@@ -75,6 +91,8 @@ export function WebhookForm({ mode, initial, onSaved, onCancel }: {
             events,
             enabled,
             retry_count: Number(retryCount),
+            // template 恒上行(含 generic): 后端把省略当「不改动」, 不传就改不回 generic。
+            template,
             // 编辑留空的密钥交给 updateWebhook 按「不上行=保留」处理。
             secret,
         };
@@ -193,11 +211,29 @@ export function WebhookForm({ mode, initial, onSaved, onCancel }: {
                     <p className="text-xs text-muted-foreground">{t('form.retryHint')}</p>
                 </div>
 
-                {/* 投递约定: 5 秒超时、至少一次(按 delivery id 去重)、仅通用 JSON 签名。 */}
+                <div className="space-y-2">
+                    <Label htmlFor="webhook-template">{t('form.templateLabel')}</Label>
+                    <Select value={template} onValueChange={(value) => setTemplate(value as WebhookTemplate)}>
+                        <SelectTrigger id="webhook-template" className="w-full rounded-xl">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {WEBHOOK_TEMPLATES.map((option) => (
+                                <SelectItem key={option} value={option}>{t(TEMPLATE_LABEL_KEYS[option])}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">{t('form.templateHint')}</p>
+                    {/* 加签边界: 用户选了钉钉最容易以为"sign 也帮加了", 这句话必须在下拉旁边。 */}
+                    <p className="text-xs text-muted-foreground">{t('form.templateNote')}</p>
+                </div>
+
+                {/* 投递约定: 5 秒超时、至少一次(按 delivery id 去重)。
+                    第五条原来是 hints.jsonOnly("不支持钉钉/飞书专有格式"), 现在已是错的说法, 已删;
+                    模板与加签边界在下方 templateHint/templateNote 里说, locale 不在本任务写域。 */}
                 <ul className="space-y-1 rounded-2xl bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
                     <li>{t('hints.timeout')}</li>
                     <li>{t('hints.atLeastOnce')}</li>
-                    <li>{t('hints.jsonOnly')}</li>
                 </ul>
 
                 <div className="flex justify-end gap-2 pt-2">

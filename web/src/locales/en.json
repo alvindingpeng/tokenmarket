@@ -61,7 +61,8 @@
         "reasonPlaceholder": "Why do you want to become a reseller? (optional)",
         "registerSuccess": "Registered successfully, please sign in.",
         "registerPending": "Registration submitted, waiting for admin approval.",
-        "backToHome": "Back to landing"
+        "backToHome": "Back to landing",
+        "trustDeviceHint": "Skip the one-time code in this browser until it expires"
     },
     "apiKeyDashboard": {
         "error": "Failed to load data",
@@ -449,7 +450,25 @@
                 "recoveryWarning": "These codes are shown only once. Save them safely now. Each code can be used once. Do not refresh or close this page until you have saved them.",
                 "recoveryCodes": "One-time recovery codes",
                 "savedLogin": "I saved my codes — continue to sign in",
-                "loginAgain": "Continue to sign in"
+                "loginAgain": "Continue to sign in",
+                "trustedTitle": "Trusted devices",
+                "trustedHint": "Browsers that skip the one-time code until they expire. Revoke any you do not recognise.",
+                "trustedEmpty": "No trusted browsers",
+                "trustedAdded": "Added {when}",
+                "trustedLastUsed": "Last used {when}",
+                "trustedNeverUsed": "Never used",
+                "trustedRevoke": "Revoke",
+                "trustedRevokeAll": "Revoke all",
+                "trustedRevoked": "Trusted device revoked",
+                "trustedFailed": "Could not update trusted devices.",
+                "recoveryTitle": "Recovery codes",
+                "recoveryRemaining": "{count} unused left",
+                "recoveryRegenerate": "Regenerate",
+                "recoveryRegenerateHint": "Enter a current one-time code. Existing recovery codes stop working immediately.",
+                "recoveryRegenerateFailed": "Could not regenerate recovery codes.",
+                "regeneratedTitle": "Recovery codes regenerated",
+                "regeneratedNotice": "Every earlier recovery code stopped working. Save this new set now.",
+                "saved": "I saved my codes"
             },
             "title": "Account Settings",
             "save": "Save",
@@ -3103,8 +3122,7 @@
             "httpsOnly": "Only public HTTPS endpoints on port 443 are allowed.",
             "secretWriteOnly": "The signing secret is write-only: stored securely and never readable again.",
             "timeout": "Each delivery attempt times out after 5 seconds.",
-            "atLeastOnce": "Delivery is at least once: deduplicate by the delivery id in the payload.",
-            "jsonOnly": "Generic JSON webhooks with a signature only; DingTalk/Feishu proprietary formats are not supported."
+            "atLeastOnce": "Delivery is at least once: deduplicate by the delivery id in the payload."
         },
         "enabledBadge": {
             "on": "Enabled",
@@ -3168,7 +3186,14 @@
                 "updated": "Subscription updated",
                 "createFailed": "Failed to create subscription",
                 "updateFailed": "Failed to update subscription"
-            }
+            },
+            "templateLabel": "Payload template",
+            "templateHint": "Bot templates rewrite the body into the platform's format. Your signature headers are still sent.",
+            "templateGeneric": "Generic JSON",
+            "templateDingtalk": "DingTalk markdown",
+            "templateFeishu": "Feishu card",
+            "templateSlack": "Slack message",
+            "templateNote": "Platform-side signing (DingTalk sign / Feishu signature) is not applied; the receiver must accept unsigned bodies."
         },
         "test": {
             "pending": "Queuing...",

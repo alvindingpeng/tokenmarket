@@ -17,6 +17,19 @@
 设计与取舍见 `docs/ANALYTICS.md`「自定义日期范围与分段成功率图」与 `docs/site-info-distribution.md`
 「余额不足顶部常驻横幅」两节; 版本说明见 `CHANGELOG.md` v1.10.22。
 
+## 2FA 体验补齐与 WebHook 机器人模板(2026-11-22, v1.11.0)
+
+backlog §0.3 剩余两条 P2 一次交付, 都不占迁移号(AutoMigrate 建表/建列), 都不碰资金与路由:
+
+| 编号 | 事项 | 落点 |
+|---|---|---|
+| B9 | 2FA 信任设备(登录免码 30 天) | `internal/model/trusted_device.go`(新表) + `internal/op/trusted_device.go` + `UserTOTPLoginWithTrust` + 登录/设置页接口 |
+| B9 | 恢复码自助重生成 | `UserTOTPRegenerateRecovery` + `POST /api/v1/user/2fa/recovery-codes/regenerate` + 设置页「重新生成」块 |
+| B8 | WebHook 机器人报文模板 | `model.Webhook.Template` + `webhookBuildPayloadForTemplate`(dingtalk/feishu/slack 各自 `json.Marshal`) + 表单模板下拉 |
+
+设计取舍见 `docs/two-factor-trusted-devices.md` 与 `docs/WEBHOOKS.md`「报文模板」;
+版本说明见 `CHANGELOG.md` v1.11.0。
+
 ## 第二批后续(2026-10-08 审计产出的五件事)
 
 | 优先级 | 事项 | 状态 |

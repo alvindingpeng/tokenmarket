@@ -28,6 +28,7 @@ const row: WebhookView = {
     events: ['ticket', 'balance_low'],
     enabled: true,
     retry_count: 3,
+    template: 'generic',
     has_secret: true,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-02T00:00:00Z',
@@ -77,10 +78,26 @@ describe('Webhooks 列表(mock SSR)', () => {
         expect(html).toContain('Edit'); // 编辑入口
         expect(html).toContain('Delete'); // 删除入口
         expect(html).toContain('Ticket reply'); // 事件徽标(通知三语文案)
+        expect(html).toContain('Generic JSON'); // 行内显示报文模板: 这是排查投递失败时第一个要看的信息
         expect(html).toContain('deduplicate by the delivery id'); // 至少一次投递须知
         expect(html).toContain('Only public HTTPS endpoints on port 443 are allowed.'); // 443 须知
-        expect(html).toContain('DingTalk/Feishu proprietary formats are not supported.'); // 只做通用 JSON 签名
+        // 模板能力与新边界: 做了报文格式, 但平台加签不做(两句话都来自 form.* 键)。
+        expect(html).toContain('Bot templates rewrite the body into the platform&#x27;s format');
+        expect(html).toContain('Platform-side signing (DingTalk sign / Feishu signature) is not applied');
+        // 旧文案("不支持钉钉/飞书专有格式")必须消失: 加了模板之后它就是错的。
+        expect(html).not.toContain('DingTalk/Feishu proprietary formats are not supported.');
         expect(html).not.toContain('Loading...'); // 有数据就不再停在加载态
+    });
+
+    it('行内按订阅的模板显示对应文案(钉钉/飞书/Slack 各有各的说法)', () => {
+        for (const [template, label] of [
+            ['dingtalk', 'DingTalk markdown'],
+            ['feishu', 'Feishu card'],
+            ['slack', 'Slack message'],
+        ] as const) {
+            const html = renderSSR(<Webhooks />, (client) => seedList(client, SSR_USER_ID, [{ ...row, template }], 1));
+            expect(html).toContain(label);
+        }
     });
 
     it('空列表渲染空态提示', () => {
@@ -143,7 +160,13 @@ describe('WebhookForm(mock SSR)', () => {
         expect(html).toContain('The signing secret is write-only');
         expect(html).toContain('times out after 5 seconds');
         expect(html).toContain('deduplicate by the delivery id');
-        expect(html).toContain('DingTalk/Feishu proprietary formats are not supported.');
+        expect(html).not.toContain('DingTalk/Feishu proprietary formats are not supported.');
+        // 模板下拉与两句说明: 下拉本体 + 加签边界就在它旁边。
+        // 下拉的选项文案在闭合状态下不渲染(radix 只在展开时渲染 SelectContent),
+        // 所以四个模板名的覆盖靠 api 侧的类型与闭集用例 + 这里只验控件与说明。
+        expect(html).toContain('Payload template');
+        expect(html).toMatch(/<button[^>]*id="webhook-template"/); // 下拉触发器真的挂上了
+        expect(html).toContain('Platform-side signing (DingTalk sign / Feishu signature) is not applied');
         expect(html).toContain('>Create<'); // 提交按钮
     });
 

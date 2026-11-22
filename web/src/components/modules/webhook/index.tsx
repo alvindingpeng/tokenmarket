@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslations } from 'use-intl';
 import { Loader2, Pencil, Plus, RefreshCw, ScrollText, Trash2, Webhook, Zap } from 'lucide-react';
 import { toast } from 'sonner';
-import { redactWebhookError, useDeleteWebhook, useTestWebhook, useWebhookList, WEBHOOK_PAGE_SIZE, type WebhookView } from '@/api/webhook';
+import { isWebhookTemplate, redactWebhookError, useDeleteWebhook, useTestWebhook, useWebhookList, WEBHOOK_PAGE_SIZE, type WebhookTemplate, type WebhookView } from '@/api/webhook';
 import { useAuthStore } from '@/api/user';
 import { formatDateTime } from '@/lib/format';
 import { Button } from '@/components/ui/button';
@@ -58,9 +58,13 @@ export function Webhooks() {
                 </div>
             </div>
 
-            {/* 投递约定摘要(表单里有完整五条): 仅通用 JSON 签名、只收 HTTPS 公网 443、至少一次按 delivery id 去重。 */}
+            {/* 投递约定摘要(表单里有完整五条): 报文模板与加签边界、只收 HTTPS 公网 443、至少一次按 delivery id 去重。
+                这里**不再**引用 hints.jsonOnly —— 那句话写的是"不支持钉钉/飞书专有格式", 加了模板之后已是错的。
+                locale 文件不在本任务的写域内(Lead 并行在改), 所以改用已经备好的 form.templateHint/templateNote:
+                两句话说的正是新事实(做了报文格式、平台加签不做)。 */}
             <ul className="shrink-0 space-y-1 rounded-3xl border border-border bg-card px-4 py-3 text-xs text-muted-foreground">
-                <li>{t('hints.jsonOnly')}</li>
+                <li>{t('form.templateHint')}</li>
+                <li>{t('form.templateNote')}</li>
                 <li>{t('hints.httpsOnly')}</li>
                 <li>{t('hints.atLeastOnce')}</li>
             </ul>
@@ -113,6 +117,17 @@ export function Webhooks() {
     );
 }
 
+// 模板值 → 文案键(非导出常量, 只服务本文件的渲染):
+// 每行显示订阅用的是哪个报文模板 —— 列表里看不出模板就只能逐条点进编辑页,
+// 而"这条订阅到底发什么格式"正是排查投递失败时第一个要看的信息。
+const TEMPLATE_LABEL_KEYS: Record<WebhookTemplate, string> = {
+    generic: 'form.templateGeneric',
+    dingtalk: 'form.templateDingtalk',
+    feishu: 'form.templateFeishu',
+    slack: 'form.templateSlack',
+};
+
+
 // WebhookRow 单行订阅: 编辑(对话框) / 测试(异步入队) / 投递日志 / 删除(二次确认)。
 function WebhookRow({ item, onShowLogs }: { item: WebhookView; onShowLogs: () => void }) {
     const t = useTranslations('webhook');
@@ -133,6 +148,10 @@ function WebhookRow({ item, onShowLogs }: { item: WebhookView; onShowLogs: () =>
         <tr className="border-t border-border align-middle">
             <td className="max-w-[24rem] px-4 py-3">
                 <div className="truncate font-mono text-xs" title={item.url}>{item.url}</div>
+                {/* 认不出的模板名(后端闭集被破坏时)按 generic 展示, 不把未知字符串直接渲染出来。 */}
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                    {t(TEMPLATE_LABEL_KEYS[isWebhookTemplate(item.template) ? item.template : 'generic'])}
+                </div>
                 {item.has_secret && <div className="mt-0.5 text-xs text-muted-foreground">{t('form.secretSet')}</div>}
             </td>
             <td className="px-4 py-3">

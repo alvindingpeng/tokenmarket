@@ -96,7 +96,44 @@ func webhookNewDeliveryID() (string, error) {
 
 // webhookBuildPayload 组装投递请求体: 只有该用户自己的通知字段,
 // 不带请求原文、API Key、密钥或任何外部回显。
+//
+// 按订阅的报文模板分派(见 model.WebhookTemplates)。**generic 走的是原来那条路径,
+// 一个字节都不能动**: 既有的载荷契约锁在 docs/WEBHOOKS.md 与一批测试里, 用户也可能
+// 已经在按那个结构写解析代码。所以这里的写法是"generic 原样, 其余分支另起",
+// 而不是"统一重构成一个更漂亮的结构再兼容 generic" —— 后者只要有一个字段顺序/空值处理
+// 不同, 老接收端就静默解析失败, 而我们这边看到的是投递成功(200)。
+//
+// 所有分支都用 json.Marshal 生成 body, 绝不手拼字符串: 通知标题与正文是用户可控内容,
+// 里面一个双引号或换行就能把拼出来的 JSON 打破, 接收端只会回一个 400, 而我们在本地
+// 完全看不出来。转义交给 encoding/json 是唯一稳妥的做法。
 func webhookBuildPayload(deliveryID, event string, at time.Time, userID uint, data model.WebhookPayloadData) (string, error) {
+	return webhookBuildPayloadForTemplate(model.WebhookTemplateGeneric, deliveryID, event, at, userID, data)
+}
+
+// webhookBuildPayloadForTemplate 按模板组装 body; template 必须已归一(空串请先走
+// model.WebhookNormalizeTemplate), 非法值在这里没有兜底分支 —— 调用方在写入时就挡住了。
+func webhookBuildPayloadForTemplate(template, deliveryID, event string, at time.Time, userID uint, data model.WebhookPayloadData) (string, error) {
+	switch template {
+	case model.WebhookTemplateDingtalk:
+		body, err := json.Marshal(webhookDingtalkPayload(event, data))
+		if err != nil {
+			return "", fmt.Errorf("encode dingtalk webhook payload: %w", err)
+		}
+		return string(body), nil
+	case model.WebhookTemplateFeishu:
+		body, err := json.Marshal(webhookFeishuPayload(event, data))
+		if err != nil {
+			return "", fmt.Errorf("encode feishu webhook payload: %w", err)
+		}
+		return string(body), nil
+	case model.WebhookTemplateSlack:
+		body, err := json.Marshal(webhookSlackPayload(event, data))
+		if err != nil {
+			return "", fmt.Errorf("encode slack webhook payload: %w", err)
+		}
+		return string(body), nil
+	}
+	// generic(以及未来任何未知值): 原路径, 保持字节不变。
 	payload := model.WebhookPayload{
 		ID:        deliveryID,
 		Event:     event,
@@ -111,6 +148,82 @@ func webhookBuildPayload(deliveryID, event string, at time.Time, userID uint, da
 	return string(body), nil
 }
 
+// webhookMessageText 把通知拼成一行标题 + 空行 + 正文的纯文本, 供三种平台模板共用。
+//
+// 事件名放在最前面而不是塞进标题里: 钉钉/飞书的标题栏会被平台截断(通常 20-30 字),
+// 事件名一旦被截掉, 收到消息的人就分不清是"余额不足"还是"渠道挂了"。正文里附上
+// 事件名与标题, 即使标题栏被截, 展开后仍然自解释。
+//
+// 标题与正文都不做 HTML/markdown 转义转义处理: 钉钉 markdown 与飞书 lark_md 接受的是
+// markdown 子集, 转义反而会把用户正文里的 # 和 * 变成字面量。JSON 层面的转义由
+// json.Marshal 负责, 那才是这里真正会破格式的一层。
+func webhookMessageText(event string, data model.WebhookPayloadData) string {
+	var sb strings.Builder
+	sb.WriteString("**")
+	sb.WriteString(event)
+	sb.WriteString("** ")
+	sb.WriteString(data.Title)
+	if data.Content != "" {
+		sb.WriteString("\n\n")
+		sb.WriteString(data.Content)
+	}
+	if data.Link != "" {
+		sb.WriteString("\n\n")
+		sb.WriteString(data.Link)
+	}
+	return sb.String()
+}
+
+// webhookMessageTitle 平台模板的标题栏: 事件名 + 通知标题。
+func webhookMessageTitle(event string, data model.WebhookPayloadData) string {
+	if data.Title == "" {
+		return event
+	}
+	return event + ": " + data.Title
+}
+
+// webhookDingtalkPayload 钉钉 markdown 报文。字段名大小写照钉钉文档: msgtype / markdown。
+func webhookDingtalkPayload(event string, data model.WebhookPayloadData) model.WebhookDingtalkPayload {
+	return model.WebhookDingtalkPayload{
+		MsgType: "markdown",
+		Markdown: model.WebhookDingtalkMarkdown{
+			Title: webhookMessageTitle(event, data),
+			Text:  webhookMessageText(event, data),
+		},
+	}
+}
+
+// webhookFeishuPayload 飞书交互式卡片报文。注意是 msg_type(下划线), 与钉钉的 msgtype 不同。
+func webhookFeishuPayload(event string, data model.WebhookPayloadData) model.WebhookFeishuPayload {
+	return model.WebhookFeishuPayload{
+		MsgType: "interactive",
+		Card: model.WebhookFeishuCard{
+			Header: model.WebhookFeishuCardHeader{
+				Title: model.WebhookFeishuCardText{Tag: "plain_text", Content: webhookMessageTitle(event, data)},
+			},
+			Elements: []model.WebhookFeishuCardElement{
+				{
+					Tag:  "div",
+					Text: model.WebhookFeishuCardText{Tag: "lark_md", Content: webhookMessageText(event, data)},
+				},
+			},
+		},
+	}
+}
+
+// webhookSlackPayload Slack 报文: text 兜底 + blocks 结构化正文(见 model.WebhookSlackPayload 注释)。
+func webhookSlackPayload(event string, data model.WebhookPayloadData) model.WebhookSlackPayload {
+	return model.WebhookSlackPayload{
+		Text: webhookMessageTitle(event, data),
+		Blocks: []model.WebhookSlackBlock{
+			{
+				Type: "section",
+				Text: model.WebhookSlackText{Type: "mrkdwn", Text: webhookMessageText(event, data)},
+			},
+		},
+	}
+}
+
 // webhookEnqueueTx 入队一条投递(与业务写入同事务)。payload 字节自此不变, 签名每次重签。
 func webhookEnqueueTx(tx *gorm.DB, hook model.Webhook, event string, notificationID uint64, data model.WebhookPayloadData) (string, error) {
 	deliveryID, err := webhookNewDeliveryID()
@@ -118,7 +231,10 @@ func webhookEnqueueTx(tx *gorm.DB, hook model.Webhook, event string, notificatio
 		return "", err
 	}
 	now := time.Now()
-	payload, err := webhookBuildPayload(deliveryID, event, now, hook.UserID, data)
+	// 模板从订阅快照取: payload 在**入队时**就定型, 重试间字节不变(签名每次重签但 body 不变)。
+	// 因此投递期间改订阅模板不会追溯改写已入队的投递 —— 与改 URL 递增 Version 是同一套思路:
+	// 已入队的投递属于"当时的那个订阅", 想用新模板就重放(重放会按当前订阅重建 body)。
+	payload, err := webhookBuildPayloadForTemplate(model.WebhookNormalizeTemplate(hook.Template), deliveryID, event, now, hook.UserID, data)
 	if err != nil {
 		return "", err
 	}

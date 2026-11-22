@@ -233,6 +233,12 @@ func UserForgotPassword(email, password string) error {
 		Updates(map[string]any{"password": user.Password, "token_version": user.TokenVersion + 1}).Error; err != nil {
 		return fmt.Errorf("failed to update password: %w", err)
 	}
+	// 改密即吊销全部信任设备: 免码旁路的前提是"这台机器上持有密码的人", 改了密码前提就变了。
+	// 失败不回滚改密(密码已生效), 只留日志 —— 留着一台可免码的设备比一次清理失败严重得多,
+	// 但也不能因此把已经成功的改密操作报成失败。
+	if _, err := TrustedDeviceRevokeAll(user.ID); err != nil {
+		log.Warnf("revoke trusted devices after password change failed: user=%d err=%v", user.ID, err)
+	}
 	user.TokenVersion++
 	userCache.Set(int(user.ID), user)
 	return nil
@@ -295,6 +301,12 @@ func UserResetPassword(id uint, password string) error {
 	if err := db.GetDB().Model(&model.User{}).Where("id = ?", id).
 		Updates(map[string]any{"password": user.Password, "token_version": user.TokenVersion + 1}).Error; err != nil {
 		return fmt.Errorf("failed to reset password: %w", err)
+	}
+	// 改密即吊销全部信任设备: 免码旁路的前提是"这台机器上持有密码的人", 改了密码前提就变了。
+	// 失败不回滚改密(密码已生效), 只留日志 —— 留着一台可免码的设备比一次清理失败严重得多,
+	// 但也不能因此把已经成功的改密操作报成失败。
+	if _, err := TrustedDeviceRevokeAll(id); err != nil {
+		log.Warnf("revoke trusted devices after password change failed: user=%d err=%v", id, err)
 	}
 	user.TokenVersion++
 	userCache.Set(int(id), user)
@@ -417,6 +429,12 @@ func UserChangePassword(id uint, oldPassword, newPassword string) error {
 		return fmt.Errorf("failed to update password: %w", err)
 	}
 	user.TokenVersion++
+	// 改密即吊销全部信任设备: 免码旁路的前提是"这台机器上持有密码的人", 改了密码前提就变了。
+	// 失败不回滚改密(密码已生效), 只留日志 —— 留着一台可免码的设备比一次清理失败严重得多,
+	// 但也不能因此把已经成功的改密操作报成失败。
+	if _, err := TrustedDeviceRevokeAll(id); err != nil {
+		log.Warnf("revoke trusted devices after password change failed: user=%d err=%v", id, err)
+	}
 	userCache.Set(int(id), user)
 	return nil
 }

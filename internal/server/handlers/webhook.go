@@ -19,6 +19,7 @@ const (
 	codeWebhookDeliveryNotReplayable = "webhook_delivery_not_replayable"
 	codeInvalidWebhookStatus         = "invalid_webhook_status"
 	codeInvalidWebhookEvent          = "invalid_webhook_event"
+	codeInvalidWebhookTemplate       = "invalid_webhook_template"
 )
 
 // Webhook 出站订阅接口(P0-5)。全部要求登录态, 并按 user_id 隔离:
@@ -72,6 +73,8 @@ func webhookRespondError(c *gin.Context, err error) {
 		resp.ErrorWithCode(c, http.StatusBadRequest, "webhook secret must be 16-128 bytes", resp.CodeInvalidWebhookSecret)
 	case errors.Is(err, op.ErrWebhookRetryInvalid):
 		resp.ErrorWithCode(c, http.StatusBadRequest, "retry_count must be 0-3", resp.CodeInvalidRequest)
+	case errors.Is(err, op.ErrWebhookTemplateInvalid):
+		resp.ErrorWithCode(c, http.StatusBadRequest, "template must be generic, dingtalk, feishu or slack", codeInvalidWebhookTemplate)
 	case errors.Is(err, op.ErrWebhookQuota):
 		resp.ErrorWithCode(c, http.StatusConflict, "webhook quota exceeded (10 per user)", resp.CodeWebhookQuotaExceeded)
 	case errors.Is(err, op.ErrWebhookTestRateLimited):

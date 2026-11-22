@@ -61,7 +61,8 @@
         "reasonPlaceholder": "申请成为渠道商的理由（选填）",
         "registerSuccess": "注册成功，请登录。",
         "registerPending": "已提交注册，等待管理员审批。",
-        "backToHome": "返回首页"
+        "backToHome": "返回首页",
+        "trustDeviceHint": "本机在凭证过期前免输动态码"
     },
     "apiKeyDashboard": {
         "error": "加载数据失败",
@@ -449,7 +450,25 @@
                 "recoveryWarning": "恢复码仅展示一次，请立即妥善保存。每个恢复码只能使用一次。保存前请勿刷新或关闭本页。",
                 "recoveryCodes": "一次性恢复码",
                 "savedLogin": "我已保存恢复码，前往登录",
-                "loginAgain": "前往登录"
+                "loginAgain": "前往登录",
+                "trustedTitle": "信任设备",
+                "trustedHint": "这些浏览器在到期前免输动态码。不认识的请吊销。",
+                "trustedEmpty": "暂无信任设备",
+                "trustedAdded": "添加于 {when}",
+                "trustedLastUsed": "最近使用 {when}",
+                "trustedNeverUsed": "从未使用",
+                "trustedRevoke": "吊销",
+                "trustedRevokeAll": "全部吊销",
+                "trustedRevoked": "已吊销信任设备",
+                "trustedFailed": "信任设备操作失败",
+                "recoveryTitle": "恢复码",
+                "recoveryRemaining": "剩余可用 {count} 个",
+                "recoveryRegenerate": "重新生成",
+                "recoveryRegenerateHint": "需输入当前动态码；现有恢复码立即失效。",
+                "recoveryRegenerateFailed": "恢复码重新生成失败",
+                "regeneratedTitle": "恢复码已重新生成",
+                "regeneratedNotice": "此前所有恢复码已失效，请立即保存这一份。",
+                "saved": "我已保存恢复码"
             },
             "title": "账户设置",
             "save": "保存",
@@ -3103,8 +3122,7 @@
             "httpsOnly": "仅允许 HTTPS 公网 443 端口地址。",
             "secretWriteOnly": "签名密钥仅可写入：加密存储后无法读取回显。",
             "timeout": "每次投递 5 秒超时。",
-            "atLeastOnce": "投递语义为至少一次：请按载荷中的 delivery id 去重。",
-            "jsonOnly": "仅提供通用 JSON 签名 Webhook，不兼容钉钉/飞书等专有格式。"
+            "atLeastOnce": "投递语义为至少一次：请按载荷中的 delivery id 去重。"
         },
         "enabledBadge": {
             "on": "启用",
@@ -3168,7 +3186,14 @@
                 "updated": "订阅已更新",
                 "createFailed": "创建订阅失败",
                 "updateFailed": "更新订阅失败"
-            }
+            },
+            "templateLabel": "报文模板",
+            "templateHint": "机器人模板把报文改写成平台要求的格式，签名头仍照常发送。",
+            "templateGeneric": "通用 JSON",
+            "templateDingtalk": "钉钉 Markdown",
+            "templateFeishu": "飞书卡片",
+            "templateSlack": "Slack 消息",
+            "templateNote": "平台自身的加签（钉钉 sign / 飞书签名）不做处理；接收端必须接受未加签的报文。"
         },
         "test": {
             "pending": "入队中...",

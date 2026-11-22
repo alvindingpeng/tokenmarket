@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
@@ -132,7 +134,9 @@ func login(c *gin.Context) {
 		resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
 		return
 	}
-	account, err = op.UserTOTPLogin(account, user.TOTPCode)
+	// 信任设备凭据由浏览器自动携带(HttpOnly), 只可能来自这台机器上一次"信任本机"的成功登录。
+	trustedToken, _ := c.Cookie(model.TrustedDeviceCookieName)
+	account, usedTrustDevice, err := op.UserTOTPLoginWithTrust(account, user.TOTPCode, trustedToken)
 	if err != nil {
 		auth.LoginFailure(keyIP)
 		auth.LoginFailure(keyUser)
@@ -163,6 +167,26 @@ func login(c *gin.Context) {
 	// Secure 跟随实际协议: 上了 TLS 就只允许 HTTPS 回传, 隧道/内网 http 访问则保持可用。
 	// 恒为 false 会让会话 cookie 在明文链路上也能被读走, 恒为 true 又会让 http 访问直接登不上。
 	c.SetCookie("auth", token, maxAge, "/", "", requestIsHTTPS(c), true)
+	// 信任设备的两种结果:
+	//   1. 本次是靠信任凭据免码进来的 → 按**服务端**记录的剩余寿命续期, 不做滑动延长
+	//      (滑动过期会让一台十年不换的机器永远免码, 30 天的承诺就名存实亡);
+	//   2. 本次验了码且用户勾了"信任本机" → 签发新凭据。
+	// 注意第二种只在真的验过码时成立: 排除"已靠信任免码又要求再签发一张"这种无意义叠加。
+	if usedTrustDevice {
+		if device, ok := op.TrustedDeviceVerify(account.ID, trustedToken); ok {
+			remaining := int(time.Until(device.ExpiresAt).Seconds())
+			if remaining > 0 {
+				setTrustedDeviceCookie(c, trustedToken, remaining)
+			}
+		}
+	} else if user.TrustDevice && account.TOTPEnabled && strings.TrimSpace(user.TOTPCode) != "" {
+		if newToken, device, issueErr := op.TrustedDeviceIssue(account.ID, c.Request.UserAgent(), c.ClientIP()); issueErr == nil {
+			setTrustedDeviceCookie(c, newToken, int(time.Until(device.ExpiresAt).Seconds()))
+		} else {
+			// 签发失败不让登录失败: 用户这次本来就已经验过码, 只是下次要再输一次。
+			log.Warnf("issue trusted device failed: user=%d err=%v", account.ID, issueErr)
+		}
+	}
 	view := account.View()
 	// 默认管理员未改密时在登录响应里点名: 前端据此弹"先改密"引导, 后端同时强制收口(见 RequirePasswordChanged)。
 	view.MustChangePassword = account.Role == model.RoleAdmin && !op.AdminDefaultPasswordChanged()

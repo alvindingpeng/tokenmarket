@@ -12,9 +12,10 @@
 方法同 §0.2: **只认 grep 结果, 不认任何文档的自述, 包括本文自己**。每条「缺什么」都必须给出「找不到」的证据 —— 零命中计数、唯一命中处、或原文里主动声明不做的注释。
 档位是我给的排期建议: **P2** = 有真实用户价值且后端多半已就绪; **P3** = 增补型/需要独立工程。
 
-> **2026-11-22 更新: B4 / B10 / B2 / B5 已全部交付(v1.10.22, 纯前端)**。下表对应行的「缺什么」列已就地
-> 标注 ✅ 并保留修前证据(它记录的是「当时确实缺」, 删掉会让下一个人以为这四条从来就没人提过)。
-> 剩余未做: B1 / B3 / B6 / B7 / B8 / B9 / B11 / B12。
+> **2026-11-22 更新: B4 / B10 / B2 / B5 已全部交付(v1.10.22, 纯前端); B8 / B9 已交付(v1.11.0)**。
+> 下表对应行的「缺什么」列已就地标注 ✅ 并保留修前证据(它记录的是「当时确实缺」, 删掉会让下一个人以为
+> 这些条目从来就没人提过)。
+> 剩余未做: B1 / B3 / B6 / B7 / B11 / B12 —— 其中 **B1 自动充值有硬前置**(免密扣款授权模型不存在, 不得直接动工)。
 
 | 编号 | 事项 | 现状(已有什么) | 缺什么 | 归属模块 | 依据(grep / 代码落点) | 档位 |
 |---|---|---|---|---|---|---|
@@ -25,8 +26,8 @@
 | B5 | 独立成功率柱状图（按日/周/月） | 成功率已在趋势图里以**折线**（右轴虚线）呈现（`analytics/index.tsx:276-286` 的 `Line dataKey="success_rate"`），并且有无样本时断线的正确语义（`success.ts` 的 `buildTrendChartData`） | ✅ **已交付 (v1.10.22)** —— `analytics/index.tsx` 新增 `data-testid="success-bar-chart"` 的独立柱状图, 与趋势折线同一份 `buildTrendChartData` 数据; 无日志样本的桶是 `null`(不画柱, 绝不画 0%), Y 轴锁死 0-100 | web/src/components/modules/analytics/ | `grep -n "BarChart\|Bar " web/src/components/modules/analytics/index.tsx` → 只有 `:378` 的模型 BarChart；`dataKey="success_rate"` 仅出现在 `Line`（`:276-286`） | P3（信息已能读到，纯视觉增补） |
 | B6 | 工单附件上传 | 工单文本全链路已交付（`handlers/ticket.go`、`modules/tickets/`） | 附件功能**只有数据库字段、没有任何读写方**：无上传接口、无存储后端、前端明确不做入口 —— 字段本身在注释里就写着「JSON 数组」，但没有代码写过它 | model/ticket.go + handlers/ticket.go + tickets 前端 | `grep -rn "Attachments" --include=*.go internal` → **仅 1 处命中**（`model/ticket.go:59` 的定义行，无任何 `.Attachments` 读写）；前端 `api/ticket.ts:56` 原注释：「本期只支持文本消息: attachments 有底座之前不读不传, 界面也不做附件入口」 | P3（要配套存储/鉴权/病毒扫描，是独立工程） |
 | B7 | 工单操作历史视图 | 状态流转本身有完整状态机与 409 冲突校验（`docs/TICKETS.md`），每次操作也落审计 | 界面上没有「谁在何时把状态从 A 改到 B」的专门视图；用户只能看当前状态与对话 | tickets 前端 + handlers/ticket.go | `grep -rn "TicketHistory\|ticket_history\|操作历史\|OperationHistory" --include=*.go --include=*.tsx internal web/src` → **0 命中** | P3（审计里有数据、缺一个视图） |
-| B8 | 机器人专有报文模板（钉钉 Markdown / 飞书卡片 / Slack） | 通用签名 JSON WebHook 已全套交付（`handlers/webhook.go:27`、`op/webhook_dispatch.go`、投递重放、投递日志）；**运维告警**侧另有 dingtalk/feishu/wecom 推送（`internal/alert/alert.go:101-105,144-148`） | WebHook **订阅**侧没有任何机器人模板：发给钉钉只能收通用 JSON，不是钉钉要求的 `markdown` 报文。注意这是两套东西 —— 运维告警渠道 ≠ 用户订阅的 WebHook | internal/op/webhook_dispatch.go + model/webhook.go | `grep -rn "dingtalk\|feishu\|lark\|slack" --include=*.go internal/op/webhook*.go internal/model/webhook.go` → **0 命中**；`grep -rn "template" 同上` → **0 命中**；载荷结构 `model/webhook.go:225-239` 只有通用 `id/event/timestamp/user_id/data` | P2（集成类需求高频，但要做格式分支与测试） |
-| B9 | 2FA 信任设备（记住本机 N 天）+ 恢复码自助重生成 | TOTP 全链路已交付：setup/enable/disable（`handlers/user_totp.go:33`）、step-up 闸门（`middleware/stepup.go:15`）、10 个恢复码（`op/user_totp.go:146`）、重放防护（`TOTPLastStep`） | ① 每台设备每次登录都必须输码，没有「信任本机 30 天」的旁路；② 恢复码只能在**启用时一次性拿到**，用光后无法自助重生成，只能 disable 再 enable（`op/user_totp.go:182` 清空 `totp_recovery_hashes`） | internal/op/user_totp.go + internal/server/middleware/stepup.go | `grep -rn "trusted_device\|TrustedDevice\|remember_me\|rememberDevice" --include=*.go --include=*.tsx internal web/src` → **0 命中**；`grep -rn "RecoveryRegenerate\|regenerate.*recovery" --include=*.go internal` → **0 命中**；`user_totp.go` 的恢复码生成只在 `UserTOTPEnable`(:146) 内 | P3（体验优化；恢复码重生成是安全运维的实际痛点，可提到 P2） |
+| B8 | 机器人专有报文模板（钉钉 Markdown / 飞书卡片 / Slack） | 通用签名 JSON WebHook 已全套交付（`handlers/webhook.go:27`、`op/webhook_dispatch.go`、投递重放、投递日志）；**运维告警**侧另有 dingtalk/feishu/wecom 推送（`internal/alert/alert.go:101-105,144-148`） | ✅ **已交付 (v1.11.0)** —— `webhooks.template` 列(AutoMigrate 建列, 不占迁移号) + 四种 body 各自 `json.Marshal` 构造(generic 字节不变, 由写死字符串断言锁住); 平台自身加签(钉钉 sign / 飞书 signature)**明确不做**并写在配置下拉旁; 改模板不改写已入队投递, 重放按当前模板重建。见 `docs/WEBHOOKS.md`「报文模板」 | internal/op/webhook_dispatch.go + model/webhook.go | `grep -rn "dingtalk\|feishu\|lark\|slack" --include=*.go internal/op/webhook*.go internal/model/webhook.go` → **0 命中**；`grep -rn "template" 同上` → **0 命中**；载荷结构 `model/webhook.go:225-239` 只有通用 `id/event/timestamp/user_id/data` | P2（集成类需求高频，但要做格式分支与测试） |
+| B9 | 2FA 信任设备（记住本机 N 天）+ 恢复码自助重生成 | TOTP 全链路已交付：setup/enable/disable（`handlers/user_totp.go:33`）、step-up 闸门（`middleware/stepup.go:15`）、10 个恢复码（`op/user_totp.go:146`）、重放防护（`TOTPLastStep`） | ✅ **已交付 (v1.11.0)** —— 新建 `trusted_devices` 表(AutoMigrate) + 登录免码旁路(令牌只存 sha256、30 天固定不滑动、HttpOnly、改密/重绑 2FA 时全量清除、设置页可逐个/全部吊销) + `POST /2fa/recovery-codes/regenerate`(step-up + 一个有效码, 整体替换旧码, 不吊销会话)。见 `docs/two-factor-trusted-devices.md` | internal/op/user_totp.go + internal/server/middleware/stepup.go | `grep -rn "trusted_device\|TrustedDevice\|remember_me\|rememberDevice" --include=*.go --include=*.tsx internal web/src` → **0 命中**；`grep -rn "RecoveryRegenerate\|regenerate.*recovery" --include=*.go internal` → **0 命中**；`user_totp.go` 的恢复码生成只在 `UserTOTPEnable`(:146) 内 | P3（体验优化；恢复码重生成是安全运维的实际痛点，可提到 P2） |
 | B10 | API Key 逐日明细趋势图 | 报表接口已把逐日明细整份下发：`model/apikey_usage.go:49` 的 `Days []APIKeyUsageDay`（升序、无数据时非 nil 空切片），前端类型也有（`api/apikey.ts:127`） | ✅ **已交付 (v1.10.22)** —— `setting/apiKeyUsageChart.ts`(纯逻辑: 标签校验/加总/判据/30 天窗口) + `APIKey.tsx` 内私有 `APIKeyUsageDaysChart`; recharts BarChart 只画 `request_count`, 窗口收到 `recent_from`, 全零走空态不画零线 | web/src/components/modules/setting/APIKey.tsx | `grep -rn "recharts\|LineChart\|BarChart" web/src/components/modules/setting/APIKey.tsx` → **0 命中**；`grep -rn "days" 同文件` → 仅 `:502` 的 `retention_days` 文案，无 `usage.days` 遍历 | P3（数据零成本，纯前端） |
 | B11 | 等级 → 模型白名单（tier 决定可访问模型） | tier 列 + `EffectiveTier()` + 四档配额 + 兜底限流已交付（`model/user.go:51,154`、`relay/ratelimit.go:16`、`op/quota_usage.go:55`） | 等级**只影响限流兜底额度**，不影响「能用哪些模型」。原文承诺的「差异化服务（限流、模型权限）」的模型权限一半完全没做；现有限制都在渠道/渠道模型侧，不在用户侧 | internal/relay + internal/model/user_tier.go | `grep -rn "allowedModels\|AllowedModels\|ModelWhitelist\|model_permission" --include=*.go internal` → **0 命中**；`internal/model/user.go` 无任何模型相关列；relay 里 `Tier` 的唯一用处是 `relay/ratelimit.go:16` | P2（是「分级」承诺的实质缺口，但涉及路由选模型链路） |
 | B12 | 审计归档推对象存储（S3/OSS）+ JSON 导出格式 | CSV 导出（`handlers/audit.go:102`，上限 5000，超限自述截断）；NDJSON 本地归档 + 先归档后删 + 失败零删除（`op/audit_archive.go`）；备份侧**已有**远端推送通道可复用（`op/backupremote.go:18,32` `BackupRemoteConfigured`/`PushBackupRemote`） | ① 审计归档只落本地 `data/archives/audit/`，不推 S3/OSS（运维要异地留存只能手动拷）；② 导出只有 CSV，`format` 参数根本没实现（不存在 JSON 导出） | internal/op/audit_archive.go + handlers/audit.go | `grep -rn "s3\|oss" --include=*.go internal/op/audit_archive.go` → **0 命中**；`grep -rn "format" --include=*.go internal/server/handlers/audit.go` → **0 命中**（`auditFilterFromQuery` 只读 keyword/action/operator/from/to/limit）；目录见 `op/audit_archive.go:43-44` | P2（合规相关；S3 可复用既有远端通道，JSON 导出是小活） |
@@ -37,6 +38,11 @@
 
 同一版还顺带做掉了两条纯前端项: ✅ **B2 余额不足顶部 Banner**、✅ **B5 独立成功率柱状图**。
 四条合计后端零改动、零迁移 —— 这是本表里唯一一批「不需要定授权模型、不需要新表」的活。
+
+**下一批已交付(v1.11.0)**: ✅ **B9 2FA 信任设备 + 恢复码自助重生成**、✅ **B8 WebHook 机器人报文模板**。
+这两条的共同点是「原功能都能用, 但用到最后会把人卡死」—— 每台设备每次登录都要掏手机、
+最后一张恢复码用掉后账号再也回不来; WebHook 只能发通用 JSON, 钉钉/飞书端点直接拒收。
+两条都不需要新迁移号(AutoMigrate 建表/建列), 也不碰资金与路由。
 
 **一处不能低估**: **B1 自动充值**。它不是"少写个定时任务" —— 自动花钱必须有显式授权(授权范围/单次上限/失败回滚), 而这套授权模型目前不存在。在授权模型定下来之前不应动工。
 
@@ -267,4 +273,4 @@ B5 自动上架仍不做。
 | P2 | 出口健康看板 C5 | 小改动, 但线上零出口配置, 收益暂时为零 |
 | P3 | 应用多活 P3 | 改动最大, 需先有稳定期与 PG 集群 |
 | 外部依赖 | CF 边缘证书 B1 | 只有运维能操作 |
-| — | **§0.3 的 12 条新增项** | 见 §0.3 表内「档位」列: B4 / B10 / B2 / B5 已于 v1.10.22 交付; 剩下 B1 需先定授权模型, 不得直接动工 |
+| — | **§0.3 的 12 条新增项** | 见 §0.3 表内「档位」列: B4 / B10 / B2 / B5 已于 v1.10.22 交付, B8 / B9 已于 v1.11.0 交付; 剩下 B1 需先定授权模型(不得直接动工), B3 / B6 / B7 / B11 / B12 未做 |

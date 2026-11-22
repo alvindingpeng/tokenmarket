@@ -5,12 +5,18 @@ import type { NotificationType } from './notification';
 // ---------------------------------------------------------------------------
 // Webhook 订阅(P0-5)
 //
-// 仅通用 JSON 签名 Webhook: 后端按 JSON 载荷 + 签名头投递, 不做钉钉/飞书等
-// 专有格式适配, 界面文案也不做兼容性暗示。路径/字段已与 internal/model/webhook.go
+// 报文格式模板: 订阅可以选 generic(本平台通用 JSON) / dingtalk markdown / feishu card /
+// slack message, 后端在投递时按所选模板改写 body 形状, 让机器人端点能直接收。
+// 边界一: **平台自身的加签不做** —— 钉钉 sign / 飞书 signature 需要用户的平台密钥,
+//   我们既没有也不该有; 接收端必须自己接受未加签报文(钉钉走「自定义关键词」、Slack incoming
+//   webhook 本就不校验签名)。界面用 form.templateNote 把这句话说在用户眼前。
+// 边界二: 我们**自己的 HMAC 签名头照发**(X-Switchyard-Signature / Timestamp / Delivery-ID),
+//   与模板无关、不随模板改变, 签名覆盖的就是改写后的 body 字节。
+// 路径/字段已与 internal/model/webhook.go
 // (WebhookView/WebhookDeliveryLogView/WebhookTestResult)核对一致, 对齐时只改这一层:
-//   POST   /api/v1/webhook                 {url,secret,events,enabled,retry_count}
+//   POST   /api/v1/webhook                 {url,secret,events,enabled,retry_count,template}
 //   GET    /api/v1/webhook/list?page&page_size      -> {items,total}
-//   PUT    /api/v1/webhook/:id             {url,secret?,events,enabled,retry_count}
+//   PUT    /api/v1/webhook/:id             {url,secret?,events,enabled,retry_count,template?}
 //   DELETE /api/v1/webhook/:id
 //   POST   /api/v1/webhook/:id/test        -> queued(异步入队, 不是发送成功)
 //   GET    /api/v1/webhook/:id/logs?page&page_size&status&event -> {items,total}
@@ -45,6 +51,19 @@ export type WebhookDeliveryStatus = (typeof WEBHOOK_DELIVERY_STATUSES)[number];
 // test 是「测试发送」, 不在订阅事件里, 但日志里会出现 —— 少了它就没法只看测试投递。
 export const WEBHOOK_LOG_EVENT_FILTERS: string[] = [...WEBHOOK_EVENTS, 'test'];
 
+// 报文模板闭集(与 model.WebhookTemplates 同词同序): 下拉选项与合法性判断都从这里取,
+// 不散落在组件里 —— 后端加模板时只改这一处, 界面各处口径不会漂。
+// 注意 generic 必须在首位: 它是创建时的默认值, 也是"没选过"的落地值。
+export const WEBHOOK_TEMPLATES = ['generic', 'dingtalk', 'feishu', 'slack'] as const;
+export type WebhookTemplate = (typeof WEBHOOK_TEMPLATES)[number];
+
+// isWebhookTemplate 判断后端回来的模板名是否在闭集内。
+// 后端保证恒为非空闭集值(存量订阅已归一成 generic), 这里返回 false 说明契约被破坏,
+// 界面按 generic 展示而不是把未知字符串直接渲染出来。
+export function isWebhookTemplate(value: string): value is WebhookTemplate {
+    return (WEBHOOK_TEMPLATES as readonly string[]).includes(value);
+}
+
 // WebhookLogFilter 日志筛选条件: 空串/缺省都表示「不筛选」。
 // 空串绝不能拼进 query string —— 后端会把 status= 当成一个不存在的状态值, 结果是永远空列表。
 export type WebhookLogFilter = { status?: string; event?: string };
@@ -65,6 +84,8 @@ export type WebhookView = {
     events: string[];
     enabled: boolean;
     retry_count: number;
+    /** 报文模板(generic/dingtalk/feishu/slack); 后端恒给闭集内的非空值, 缺省按 generic 展示。 */
+    template: WebhookTemplate;
     has_secret: boolean;
     created_at: string;
     updated_at: string;
@@ -262,6 +283,12 @@ export type WebhookWritePayload = {
     events: string[];
     enabled: boolean;
     retry_count: number;
+    /**
+     * 报文模板; 省略时后端归一成 generic。
+     * 编辑时**必须显式带上**当前模板: 后端把 template 当可选字段处理, 省略等于「不改动」,
+     * 所以这里不能用「有值才上行」的写法 —— 那会让「把钉钉改回 generic」这个操作永远不生效。
+     */
+    template?: WebhookTemplate;
     secret?: string;
 };
 
@@ -281,6 +308,9 @@ export function updateWebhook(id: number, payload: WebhookWritePayload, opts: We
         enabled: payload.enabled,
         retry_count: payload.retry_count,
     };
+    // template 显式上行(含 generic): 省略在后端是「不改动」, 那样「从钉钉改回 generic」会失效。
+    // 只有调用方压根没传时才省略, 那种情况本来也没有"改"的意图。
+    if (payload.template) body.template = payload.template;
     if (payload.secret) body.secret = payload.secret;
     return apiRequest<WebhookView>(webhookItemPath(id), { method: 'PUT', body, signal: opts.signal });
 }

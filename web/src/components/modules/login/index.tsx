@@ -91,6 +91,8 @@ export function LoginForm({ onBack }: { onBack?: () => void }) {
           password,
           totp_code: totpCode.trim() || undefined,
           expire: trustDevice ? -1 : 86400,
+          // 勾了「信任本机」才请求后端登记信任设备; 没勾就不传, 免得服务端多写一行。
+          trust_device: trustDevice || undefined,
         })
       } else if (mode === 'apikey') {
         await apiKeyLoginMutation.mutateAsync(apiKey)
@@ -254,6 +256,9 @@ export function LoginForm({ onBack }: { onBack?: () => void }) {
                     {t('trustDevice')}
                   </FieldLabel>
                 </Field>
+                {/* 说明它到底省掉了什么: 原先这个勾只把会话 cookie 变长效, 却写着"信任本机",
+                    用户会以为 30 天内不用再输动态码 —— 现在它真的做到了, 就把边界写清楚。 */}
+                <p className="-mt-2 text-xs text-muted-foreground">{t('trustDeviceHint')}</p>
               </TabsContent>
               <TabsContent value="apikey" style={{ overflow: 'visible' }}>
                 <Field>

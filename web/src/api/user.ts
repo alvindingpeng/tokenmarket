@@ -13,6 +13,14 @@ export interface UserLoginRequest {
     password: string;
     totp_code?: string;
     expire: number; // 登录状态过期时间，正数为秒，-1 表示 30 天。
+    /**
+     * trust_device 只在本次登录真的验过动态码时生效: 后端把当前浏览标记为信任设备 30 天,
+     * 期间这台机器的登录只验密码。
+     *
+     * 它免的是**第二因子**, 不是密码 —— 两者别混。后端也不会因为这里传 true 就跳过验码:
+     * 没给 totp_code 的请求拿不到信任设备。
+     */
+    trust_device?: boolean;
 }
 
 /**
@@ -28,6 +36,13 @@ export type UserView = {
     username: string;
     email: string;
     totp_enabled?: boolean;
+    /**
+     * totp_recovery_remaining 剩余未使用的恢复码数量(仅启用 2FA 时有值)。
+     *
+     * 只用于提示"快用完了, 该重新生成"; 恢复码本身(以及哈希)永远不会下发。
+     * 缺失按 0 处理 —— 但不能据此断言"没有了": 旧后端不带这个字段时, 0 只表示"不知道"。
+     */
+    totp_recovery_remaining?: number;
     role: Role;
     status: 'active' | 'pending' | 'disabled';
     // tier 服务等级: 存量账号可能回空串(未设置), 后端按 free 兜底; 界面据此显示"未设置"。

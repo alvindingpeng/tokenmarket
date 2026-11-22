@@ -26,11 +26,15 @@ import (
 //  3. 越权即 404: 所有查询都带 user_id 条件, 不区分"不存在"与"不是你的"。
 
 var (
-	ErrWebhookNotFound        = errors.New("webhook not found")
-	ErrWebhookURLInvalid      = errors.New("invalid webhook url")
-	ErrWebhookEventsInvalid   = errors.New("invalid webhook events")
-	ErrWebhookSecretInvalid   = errors.New("invalid webhook secret")
-	ErrWebhookRetryInvalid    = errors.New("invalid webhook retry_count")
+	ErrWebhookNotFound      = errors.New("webhook not found")
+	ErrWebhookURLInvalid    = errors.New("invalid webhook url")
+	ErrWebhookEventsInvalid = errors.New("invalid webhook events")
+	ErrWebhookSecretInvalid = errors.New("invalid webhook secret")
+	ErrWebhookRetryInvalid  = errors.New("invalid webhook retry_count")
+	// ErrWebhookTemplateInvalid 报文模板不在闭集内(generic/dingtalk/feishu/slack)。
+	// 单独一个哨兵而不是复用 ErrWebhookRetryInvalid: 前端要按 error_code 分流到"模板"那个
+	// 表单字段上, 混淆成通用 invalid_request 会让用户看不懂是哪一项错了。
+	ErrWebhookTemplateInvalid = errors.New("invalid webhook template")
 	ErrWebhookQuota           = errors.New("webhook quota exceeded")
 	ErrWebhookTestRateLimited = errors.New("webhook test rate limited")
 	// 投递重放: "订阅不存在/不是你的"仍然复用 ErrWebhookNotFound(越权即 404),
@@ -133,6 +137,9 @@ func webhookToView(hook model.Webhook) (model.WebhookView, error) {
 		Events:     events,
 		Enabled:    hook.Enabled,
 		RetryCount: hook.RetryCount,
+		// 存量行(加列前建的)读出来是空串, 归一成 generic 再下发: 前端与 API 文档都约定
+		// 这个字段恒为非空闭集值, 让每个调用方各写一遍空值兜底是浪费且必然有人漏。
+		Template:   model.WebhookNormalizeTemplate(hook.Template),
 		HasSecret:  hook.SecretEncrypted != "",
 		CreatedAt:  hook.CreatedAt,
 		UpdatedAt:  hook.UpdatedAt,
@@ -168,6 +175,12 @@ func WebhookCreate(ctx context.Context, userID uint, req model.WebhookCreateRequ
 	if err != nil {
 		return model.WebhookView{}, err
 	}
+	// 模板: 省略/空串归一成 generic, 非闭集值直接拒(不静默降级 —— 用户选了 dingtalk
+	// 却被存成 generic, 他会一直收到"平台不认"的失败, 而界面显示一切正常)。
+	template := model.WebhookNormalizeTemplate(req.Template)
+	if !model.WebhookValidTemplate(template) {
+		return model.WebhookView{}, ErrWebhookTemplateInvalid
+	}
 
 	var view model.WebhookView
 	err = db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -189,12 +202,14 @@ func WebhookCreate(ctx context.Context, userID uint, req model.WebhookCreateRequ
 			Events:     encoded,
 			Enabled:    enabled,
 			RetryCount: retryCount,
+			Template:   template,
 			Version:    1,
 			LastStatus: model.WebhookLastStatusNone,
 		}
 		// 显式列插入: retry_count=0 / enabled=false 是合法零值,
 		// 不带 Select 的 Create 会跳过零值列并落成 DB default(retry=2 / enabled=true)。
-		if err := tx.Select("UserID", "URL", "Events", "Enabled", "RetryCount", "Version", "LastStatus").
+		// Template 也必须在 Select 里: 它是非空字符串, 但显式列出更安全(见上一条注释的理由)。
+		if err := tx.Select("UserID", "URL", "Events", "Enabled", "RetryCount", "Template", "Version", "LastStatus").
 			Create(&hook).Error; err != nil {
 			return fmt.Errorf("create webhook: %w", err)
 		}
@@ -299,6 +314,16 @@ func WebhookUpdate(ctx context.Context, userID uint, id uint64, req model.Webhoo
 	if req.RetryCount != nil && (*req.RetryCount < 0 || *req.RetryCount > model.WebhookMaxRetryCount) {
 		return model.WebhookView{}, ErrWebhookRetryInvalid
 	}
+	// Template 用指针区分"省略(不改)"与"显式改成 generic": 提交空串是合法请求(改回 generic)。
+	newTemplate := ""
+	templateChanged := false
+	if req.Template != nil {
+		newTemplate = model.WebhookNormalizeTemplate(*req.Template)
+		if !model.WebhookValidTemplate(newTemplate) {
+			return model.WebhookView{}, ErrWebhookTemplateInvalid
+		}
+		templateChanged = true
+	}
 
 	var view model.WebhookView
 	err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -326,6 +351,12 @@ func WebhookUpdate(ctx context.Context, userID uint, id uint64, req model.Webhoo
 		}
 		if req.RetryCount != nil {
 			changes["retry_count"] = *req.RetryCount
+		}
+		// 改模板**不动**Version, 也**不取消**未完成投递: Version 是"URL 版本"(防发往旧地址),
+		// 模板只影响 body 形状, 地址没变。已入队的投递沿用入队时的模板继续发 ——
+		// 那些 body 已经生成并参与过签名, 中途改写会让"签名覆盖 body"这条契约出现两套字节。
+		if templateChanged {
+			changes["template"] = newTemplate
 		}
 		if newSecret != "" {
 			sealed, err := webhookSealSecret(hook.ID, userID, newSecret)
@@ -507,18 +538,38 @@ func webhookDeliveryReplayable(status string) bool {
 // 重放被当成重复直接丢掉 —— HTTP 头 X-Switchyard-Delivery-ID 换了新值, body 却还是旧的,
 // 重放等于失效。签名是发送时按 raw body 重算的, 重建 body 不影响签名正确性。
 // 反序列化失败(存量损坏行)一律报错, 不静默回退成旧 payload。
-func webhookReplayPayload(rawPayload, deliveryID string, now time.Time) (string, error) {
-	var payload model.WebhookPayload
-	if err := json.Unmarshal([]byte(rawPayload), &payload); err != nil {
-		return "", fmt.Errorf("decode webhook delivery payload: %w", err)
+func webhookReplayPayload(template, rawPayload, event, deliveryID string, now time.Time) (string, error) {
+	tpl := model.WebhookNormalizeTemplate(template)
+	if tpl == model.WebhookTemplateGeneric {
+		var payload model.WebhookPayload
+		if err := json.Unmarshal([]byte(rawPayload), &payload); err != nil {
+			return "", fmt.Errorf("decode webhook delivery payload: %w", err)
+		}
+		payload.ID = deliveryID
+		payload.Timestamp = now.Unix()
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return "", fmt.Errorf("encode replay webhook payload: %w", err)
+		}
+		return string(body), nil
 	}
-	payload.ID = deliveryID
-	payload.Timestamp = now.Unix()
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("encode replay webhook payload: %w", err)
+	// 平台模板(dingtalk/feishu/slack)的 body 里**没有** id/timestamp 字段, 所以"换 id 防
+	// 重复"这套逻辑对它们不适用: 接收端本来就不按 body.id 去重(去重靠平台的 msgid/时间窗)。
+	//
+	// 这里要做的是"按**当前**订阅模板重建": 源投递若还是 generic 时代的(改模板前入队的),
+	// 它的 body 仍可完整解出 data, 直接按新模板重拼即可。解不出(说明源 body 本身就是
+	// 平台格式)就原样重发那份字节 —— 那正是"同一条消息再发一次", 也是唯一不丢信息的做法:
+	// 平台格式里没有结构化字段可还原, 硬按新模板重拼只会得到一份空消息。
+	var generic model.WebhookPayload
+	if err := json.Unmarshal([]byte(rawPayload), &generic); err == nil &&
+		(generic.ID != "" || generic.Data.Title != "" || generic.Data.Content != "") {
+		body, err := webhookBuildPayloadForTemplate(tpl, deliveryID, event, now, generic.UserID, generic.Data)
+		if err != nil {
+			return "", err
+		}
+		return body, nil
 	}
-	return string(body), nil
+	return rawPayload, nil
 }
 
 // WebhookReplayDelivery 重放一条终态失败/取消的投递: 新建一行待投递, 原行原样保留作审计。
@@ -558,7 +609,7 @@ func WebhookReplayDelivery(ctx context.Context, userID uint, webhookID uint64, d
 		}
 		now := time.Now()
 		// body 里的 id 必须跟着新投递走: 接收端按 payload.id 去重, 照抄旧 id 会把重放当重复丢弃。
-		payload, err := webhookReplayPayload(src.Payload, newDeliveryID, now)
+		payload, err := webhookReplayPayload(hook.Template, src.Payload, src.Event, newDeliveryID, now)
 		if err != nil {
 			return err
 		}

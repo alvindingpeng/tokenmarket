@@ -61,7 +61,8 @@
         "reasonPlaceholder": "申請成為渠道商的理由（選填）",
         "registerSuccess": "註冊成功，請登入。",
         "registerPending": "已提交註冊，等待管理員審批。",
-        "backToHome": "返回首頁"
+        "backToHome": "返回首頁",
+        "trustDeviceHint": "本機在憑證過期前免輸動態碼"
     },
     "apiKeyDashboard": {
         "error": "載入資料失敗",
@@ -449,7 +450,25 @@
                 "recoveryWarning": "復原碼僅顯示一次，請立即妥善儲存。每個復原碼只能使用一次。儲存前請勿重新整理或關閉本頁。",
                 "recoveryCodes": "一次性復原碼",
                 "savedLogin": "我已儲存復原碼，前往登入",
-                "loginAgain": "前往登入"
+                "loginAgain": "前往登入",
+                "trustedTitle": "信任裝置",
+                "trustedHint": "這些瀏覽器在到期前免輸動態碼。不認識的請吊銷。",
+                "trustedEmpty": "暫無信任裝置",
+                "trustedAdded": "新增於 {when}",
+                "trustedLastUsed": "最近使用 {when}",
+                "trustedNeverUsed": "從未使用",
+                "trustedRevoke": "吊銷",
+                "trustedRevokeAll": "全部吊銷",
+                "trustedRevoked": "已吊銷信任裝置",
+                "trustedFailed": "信任裝置操作失敗",
+                "recoveryTitle": "恢復碼",
+                "recoveryRemaining": "剩餘可用 {count} 個",
+                "recoveryRegenerate": "重新產生",
+                "recoveryRegenerateHint": "需輸入目前動態碼；現有恢復碼立即失效。",
+                "recoveryRegenerateFailed": "恢復碼重新產生失敗",
+                "regeneratedTitle": "恢復碼已重新產生",
+                "regeneratedNotice": "此前所有恢復碼已失效，請立即保存這一份。",
+                "saved": "我已保存恢復碼"
             },
             "title": "帳戶設定",
             "save": "儲存",
@@ -3103,8 +3122,7 @@
             "httpsOnly": "僅允許 HTTPS 公網 443 埠位址。",
             "secretWriteOnly": "簽名金鑰僅可寫入：加密儲存後無法讀取回顯。",
             "timeout": "每次投遞 5 秒逾時。",
-            "atLeastOnce": "投遞語義為至少一次：請按承載中的 delivery id 去重。",
-            "jsonOnly": "僅提供通用 JSON 簽名 Webhook，不相容釘釘/飛書等專有格式。"
+            "atLeastOnce": "投遞語義為至少一次：請按承載中的 delivery id 去重。"
         },
         "enabledBadge": {
             "on": "啟用",
@@ -3168,7 +3186,14 @@
                 "updated": "訂閱已更新",
                 "createFailed": "建立訂閱失敗",
                 "updateFailed": "更新訂閱失敗"
-            }
+            },
+            "templateLabel": "報文模板",
+            "templateHint": "機器人模板把報文改寫成平台要求的格式，簽章標頭仍照常送出。",
+            "templateGeneric": "通用 JSON",
+            "templateDingtalk": "釘釘 Markdown",
+            "templateFeishu": "飛書卡片",
+            "templateSlack": "Slack 訊息",
+            "templateNote": "平台自身的加簽（釘釘 sign / 飛書簽名）不做處理；接收端必須接受未加簽的報文。"
         },
         "test": {
             "pending": "入隊中...",

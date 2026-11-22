@@ -5,7 +5,7 @@
 ## 范围与安全决策
 
 - 仅订阅当前用户的站内通知，不广播其他用户事件。
-- 本期支持通用 JSON + HMAC；钉钉、飞书、Slack 专有报文模板另行实施。
+- 支持通用 JSON + HMAC 签名，以及**报文模板**（v1.11.0）：`generic` / `dingtalk` / `feishu` / `slack`。模板只改 body **形状**，**不做平台加签**（见下节）。
 - 仅公网 HTTPS 443，禁止 userinfo/fragment、环境代理、重定向。保存时校验与实际拨号均阻断私网、环回、链路本地和元数据地址；拨号按已校验 IP 建连以防 DNS rebinding。
 - 创建提供 16–128 字节密钥；编辑留空保留。使用现有 secretstore 加密并绑定归属，API 仅返回 has_secret。
 - 不保存或回显外部响应正文，不在日志中输出 URL、密钥、原始网络错误。URL 可能含 token。
@@ -74,6 +74,47 @@ def verify(secret: bytes, timestamp: str, signature: str, raw_body: bytes) -> bo
 ```
 
 验签后，将 delivery ID 与业务处理在接收端同一事务内记账；重复 ID 返回 2xx，不重复执行。时间窗校验不代替持久去重；长任务先持久化事件再返回 2xx。
+
+## 报文模板（v1.11.0）
+
+钉钉/飞书/Slack 的机器人端点只认自己的格式：通用 JSON 丢进去会被直接拒绝（钉钉回 errcode 400，
+Slack 回 `invalid_payload`）。此前用户要么自己写一个转换服务，要么就用不了 WebHook ——
+前者把每个用户都变成运维，后者等于功能不可用。
+
+每个订阅有一个 `template` 字段（DB 默认 `generic`，AutoMigrate 建列，**不占迁移号**）：
+
+| 模板 | body 形状 | 说明 |
+|---|---|---|
+| `generic` | 本平台自有格式（见「接收协议」） | 默认值；**字节与 v1.10.x 完全一致**，由写死字符串的逐字节断言锁住 |
+| `dingtalk` | `{"msgtype":"markdown","markdown":{"title","text"}}` | 钉钉自定义机器人 markdown |
+| `feishu` | `{"msg_type":"interactive","card":{"header":{"title":{"tag":"plain_text"}},"elements":[{"tag":"div","text":{"tag":"lark_md"}}]}}` | 飞书交互式卡片；注意是 `msg_type`（下划线），与钉钉的 `msgtype` 不同 |
+| `slack` | `{"text","blocks":[{"type":"section","text":{"type":"mrkdwn"}}]}` | Slack incoming webhook |
+
+四种 body 全部由 `json.Marshal` 生成，不拼字符串 —— 通知标题里带引号/换行/反斜杠时，
+手拼会产出非法 JSON，而那种坏 body 只有在对方端点才会暴露。
+
+### 明确不做：平台加签
+
+**钉钉的 `sign`、飞书的 `signature` 不做。** 我们不知道用户的平台密钥，也没有资格替平台签名。
+
+因此使用这两个模板的前提是接收端**接受未加签报文**：
+
+- 钉钉：机器人安全设置选「自定义关键词」（不要选「加签」）；
+- 飞书：同类限制，需选不校验签名的安全设置；
+- Slack：incoming webhook 本身不校验签名，可直接用。
+
+我们自己的 HMAC 头（见「接收端验签参考」）**照旧发送**，与模板无关：它对平台端点来说是多余的头，
+对自建中转则是仍然有效的验签依据。
+
+### 重放与模板变更
+
+- 投递入队时 body 就固化了（并且参与过签名）。**改模板不会改写已入队的投递** —— 那些 body
+  已经被签名覆盖，中途改写会让「签名覆盖 body」出现两套字节，接收端验签直接失败。
+- 重放（`POST /webhook/:id/deliveries/:delivery_id/replay`）按**当前**订阅模板重建 body：
+  能解成 generic 的（改模板前入队的）按新模板重建；解不出来的（源 body 本身就是平台格式，
+  里面没有 id/timestamp 等结构化字段）**原样重发那份字节** —— 硬重拼只会拼出一份空消息。
+- 改模板**不动** `version`：`version` 的语义是「URL 版本」（防止发往旧地址），模板只改 body 形状、
+  地址没变。已由 `TestWebhookUpdateTemplatePointerSemantics` 钉住。
 
 ## 备份与运维
 

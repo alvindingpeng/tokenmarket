@@ -19,8 +19,10 @@ import {
     webhookReplayPath,
     webhookSecretByteLength,
     webhookTestPath,
+    isWebhookTemplate,
     WEBHOOK_LOG_PAGE_SIZE,
     WEBHOOK_PAGE_SIZE,
+    WEBHOOK_TEMPLATES,
 } from './webhook';
 
 // 路径回归: 每条请求显式 /api/v1 前缀(此前多处漏前缀打 404 还被默认重试拖慢)。
@@ -99,6 +101,25 @@ describe('webhook 请求路径(显式 /api/v1 前缀)', () => {
         expect(webhookItemPath(3)).toBe('/api/v1/webhook/3');
         expect(webhookTestPath(3)).toBe('/api/v1/webhook/3/test');
         expect(webhookLogsPath(3, 4, 20)).toBe('/api/v1/webhook/3/logs?page=4&page_size=20');
+    });
+
+    // 模板必须显式上行(含 generic): 后端把省略的 template 当「不改动」,
+    // 所以「从钉钉改回 generic」只有真的把 "generic" 发出去才会生效。
+    it('创建/编辑都显式带 template, 且 generic 也照样发', async () => {
+        await createWebhook({ url: 'https://a.example/x', events: ['ticket'], enabled: true, retry_count: 3, template: 'dingtalk', secret: 's'.repeat(16) });
+        expect(JSON.parse(String(calls[0].init?.body)).template).toBe('dingtalk');
+
+        await updateWebhook(7, { url: 'https://a.example/x', events: ['ticket'], enabled: true, retry_count: 3, template: 'generic' });
+        expect(JSON.parse(String(calls[1].init?.body)).template).toBe('generic');
+    });
+
+    it('模板闭集与后端同词同序, generic 在首位(默认值)', () => {
+        expect(WEBHOOK_TEMPLATES).toEqual(['generic', 'dingtalk', 'feishu', 'slack']);
+        expect(isWebhookTemplate('dingtalk')).toBe(true);
+        // 大小写与拼错的变体一律不认: 后端也拒, 界面不该把它当已知模板渲染。
+        for (const bad of ['Generic', 'dingding', 'feishu-card', 'slack ', '']) {
+            expect(isWebhookTemplate(bad)).toBe(false);
+        }
     });
 
     it('编辑时空 secret 不上行(留空=保留原密钥), 非空才带上', async () => {

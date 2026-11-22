@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -164,6 +165,9 @@ type UserLogin struct {
 	Expire   int    `json:"expire"`
 	// TOTPCode 双因素动态码: 仅当账号启用 2FA 时必填; 未启用时忽略该字段。
 	TOTPCode string `json:"totp_code"`
+	// TrustDevice 勾选后, 本次验码成功即把本机记 30 天 —— 期间登录只验密码, 不再要动态码。
+	// 它不是"记住密码"的替代: 密码每次都还要, 免掉的只是第二因子。
+	TrustDevice bool `json:"trust_device"`
 }
 
 // UserRegister 注册请求; 不收 role, 角色由注册端点决定, 防止自提权。
@@ -242,8 +246,11 @@ type UserView struct {
 	// MustChangePassword 仅登录/状态响应携带: 默认管理员未改初始密码时为真, 前端据此强制引导改密。
 	MustChangePassword bool `json:"must_change_password,omitempty"`
 	// TOTPEnabled 供前端展示双因素状态; 密钥本身绝不下发。
-	TOTPEnabled bool      `json:"totp_enabled,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
+	TOTPEnabled bool `json:"totp_enabled,omitempty"`
+	// TOTPRecoveryRemaining 剩余未使用的恢复码数量(仅启用 2FA 时有意义)。
+	// 只下发**数量**: 用途是提醒"快用完了, 该重新生成"; 哈希与明文都是能直接进门的凭据, 绝不下发。
+	TOTPRecoveryRemaining int       `json:"totp_recovery_remaining,omitempty"`
+	CreatedAt             time.Time `json:"created_at"`
 }
 
 // EffectiveTier 返回生效的等级: 未设置时回落到 free。
@@ -258,21 +265,22 @@ func (u *User) EffectiveTier() UserTier {
 // View 返回账号的对外副本。
 func (u *User) View() UserView {
 	return UserView{
-		ID:             u.ID,
-		Username:       u.Username,
-		Email:          u.Email,
-		Role:           u.Role,
-		Status:         u.Status,
-		Tier:           u.EffectiveTier(),
-		Balance:        u.Balance,
-		Frozen:         u.Frozen,
-		TotalSpent:     u.TotalSpent,
-		TotalRevenue:   u.TotalRevenue,
-		TotalWithdrawn: u.TotalWithdrawn,
-		WithdrawFrozen: u.WithdrawFrozen,
-		Timezone:       u.Timezone,
-		TOTPEnabled:    u.TOTPEnabled,
-		CreatedAt:      u.CreatedAt,
+		ID:                    u.ID,
+		Username:              u.Username,
+		Email:                 u.Email,
+		Role:                  u.Role,
+		Status:                u.Status,
+		Tier:                  u.EffectiveTier(),
+		Balance:               u.Balance,
+		Frozen:                u.Frozen,
+		TotalSpent:            u.TotalSpent,
+		TotalRevenue:          u.TotalRevenue,
+		TotalWithdrawn:        u.TotalWithdrawn,
+		WithdrawFrozen:        u.WithdrawFrozen,
+		Timezone:              u.Timezone,
+		TOTPEnabled:           u.TOTPEnabled,
+		TOTPRecoveryRemaining: recoveryRemaining(*u),
+		CreatedAt:             u.CreatedAt,
 	}
 }
 
@@ -287,4 +295,20 @@ func (u *User) HashPassword() error {
 
 func (u *User) ComparePassword(password string) error {
 	return bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password))
+}
+
+// recoveryRemaining 数一遍还剩多少张恢复码。
+//
+// 解析失败按 0 处理而不是报错: 这个数字只用于提示"该重新生成了", 它坏了不该让整个用户状态接口
+// 失败 —— 那会让前端连"2FA 是否启用"都读不到, 反而更糟。TOTPEnabled 为假时恒 0:
+// 没启用就没有"恢复码快用完"这回事。
+func recoveryRemaining(u User) int {
+	if !u.TOTPEnabled || u.TOTPRecoveryHashes == "" {
+		return 0
+	}
+	var hashes []string
+	if err := json.Unmarshal([]byte(u.TOTPRecoveryHashes), &hashes); err != nil {
+		return 0
+	}
+	return len(hashes)
 }
