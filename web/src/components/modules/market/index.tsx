@@ -14,7 +14,7 @@ import {
 } from '@/api/market';
 import { MarketItem } from './Item';
 import { useMarketFavorites, useToggleMarketFavorite } from '@/api/marketFavorite';
-import { CompareBar, MAX_COMPARE } from './Compare';
+import { CompareBar, MAX_COMPARE } from './ModelCompare';
 import { brandLabel, type MarketTranslate } from './labels';
 
 // MarketActions 向稳定顶栏提供广场的搜索、排序、形态筛选、品牌多选和布局切换。

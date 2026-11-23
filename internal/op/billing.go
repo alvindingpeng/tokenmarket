@@ -11,6 +11,7 @@ import (
 	"github.com/alvindingpeng/switchyard/internal/alert"
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/charmbracelet/log"
 	"gorm.io/gorm"
 )
 
@@ -193,7 +194,9 @@ func billingSettleApply(ctx context.Context, reservationID uint64, record *model
 	// 用户自定义阈值预警: 与管理员侧的 low_balance 告警互补 —— 管理员关心全局,
 	// 用户关心自己设的那条线。检查失败不影响结算结果(余额已经动完了)。
 	if user, uerr := UserGetByID(record.UserID); uerr == nil {
-		BalanceAlertCheck(context.Background(), record.UserID, user.Balance-user.Frozen)
+		if _, err := BalanceAlertCheck(context.Background(), record.UserID, user.Balance-user.Frozen); err != nil {
+			log.Warnf("balance alert failed: user=%d err=%v", record.UserID, err)
+		}
 	}
 	return nil
 }

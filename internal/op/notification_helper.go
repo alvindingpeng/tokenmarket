@@ -66,10 +66,16 @@ func notifyAsync(ctx context.Context, userID uint, notifType model.NotificationT
 // balance 是可用余额(Balance - Frozen), 记账口径是 model.LedgerCurrency(USD), 不能标成「元」:
 // 用户按人民币理解会以为还有几倍于真实值的购买力, 于是把「余额不足」当成误报。
 func NotifyBalanceLow(ctx context.Context, userID uint, balance float64) error {
-	return NotificationCreate(ctx, userID, model.NotificationTypeBalanceLow,
-		"余额不足",
-		fmt.Sprintf("您的账户余额已不足 %.2f %s（账面币种），请及时充值以免影响服务使用。", balance, model.LedgerCurrency),
-		"", 0)
+	return notificationCreate(ctx, balanceLowNotification(userID, balance))
+}
+
+func balanceLowNotification(userID uint, balance float64) model.Notification {
+	return model.Notification{
+		UserID:  userID,
+		Type:    model.NotificationTypeBalanceLow,
+		Title:   "余额不足",
+		Content: fmt.Sprintf("您的账户余额已不足 %.2f %s（账面币种），请及时充值以免影响服务使用。", balance, model.LedgerCurrency),
+	}
 }
 
 // NotifyRateLimitHit 发送限流触发通知。

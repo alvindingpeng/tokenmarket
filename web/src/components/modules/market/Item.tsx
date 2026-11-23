@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { availableCount, cheapestListing, hasNumericMetrics, type MarketModel } from '@/api/market';
 import { AddToGroup } from './AddToGroup';
 import { CostEstimate } from './CostEstimate';
-import { CompareToggle } from './Compare';
+import { CompareToggle } from './ModelCompare';
 import { MetricValue, PriceValue, StatusBadge } from './shared';
 import { brandLabel, marketStatusOf, metricsNote, priceText, qualityBandTexts } from './labels';
 

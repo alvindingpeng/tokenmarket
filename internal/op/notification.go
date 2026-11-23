@@ -51,30 +51,32 @@ func createNotificationDedupKey(ctx context.Context, userID uint, notifType mode
 // 用户不存在(旧用例虚设 userID)都只是"无处可发/不该发", 通知照常成功;
 // 出站抑制由 worker 收件人闸门负责。损坏的订阅事件行仍报错可见(数据损坏需暴露)。
 func NotificationCreate(ctx context.Context, userID uint, notifType model.NotificationType, title, content, link string, relatedID uint64) error {
+	return notificationCreate(ctx, model.Notification{
+		UserID: userID, Type: notifType, Title: title, Content: content, Link: link, RelatedID: relatedID,
+	})
+}
+
+func notificationCreate(ctx context.Context, notification model.Notification) error {
 	// 目标预读放在事务外(只读): 事务里只留写(通知行+投递行), 尽量短持锁,
 	// 避免长事务加剧 SQLite 写锁竞争。损坏事件行在此即报错, 不会创建半截通知。
-	targets, err := webhookEnqueueTargets(ctx, userID, string(notifType))
+	targets, err := webhookEnqueueTargets(ctx, notification.UserID, string(notification.Type))
 	if err != nil {
 		return fmt.Errorf("failed to enqueue webhook deliveries: %w", err)
 	}
 	return db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		notification := model.Notification{
-			UserID:    userID,
-			Type:      notifType,
-			Title:     title,
-			Content:   content,
-			Link:      link,
-			RelatedID: relatedID,
-			Status:    model.NotificationStatusUnread,
-		}
-		if err := tx.Create(&notification).Error; err != nil {
-			return fmt.Errorf("failed to create notification: %w", err)
-		}
-		if err := webhookEnqueueForNotificationTx(tx, &notification, targets); err != nil {
-			return fmt.Errorf("failed to enqueue webhook deliveries: %w", err)
-		}
-		return nil
+		return notificationCreateTx(tx, &notification, targets)
 	})
+}
+
+func notificationCreateTx(tx *gorm.DB, notification *model.Notification, targets []model.Webhook) error {
+	notification.Status = model.NotificationStatusUnread
+	if err := tx.Create(notification).Error; err != nil {
+		return fmt.Errorf("failed to create notification: %w", err)
+	}
+	if err := webhookEnqueueForNotificationTx(tx, notification, targets); err != nil {
+		return fmt.Errorf("failed to enqueue webhook deliveries: %w", err)
+	}
+	return nil
 }
 
 // NotificationList 获取通知列表

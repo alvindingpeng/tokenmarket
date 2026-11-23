@@ -211,7 +211,7 @@ SQLite 的写锁是"第一条写语句拿到手并**一直持有到事务结束*
 | 23 | `internal/op/channel.go:173` | `ChannelCreate` | `Create(&channel)` | 26 条语句, 但首条即写 |
 | 24 | `internal/op/channel.go:253` | `ChannelUpdate` | `Updates(&model.Channel{...})` | 24 条语句, 但首条即写 |
 | 25 | `internal/op/channel.go:682` | `ChannelDel` | `Update` 清空 `active_item_id` | 经 `clearActiveItems`, 见 §9.4 坑 1 |
-| 26 | `internal/op/notification.go:60` | `NotificationCreate` | `Create(&notification)` | 目标预读在**事务外**, 见下 |
+| 26 | `internal/op/notification.go:66` | `notificationCreate` | `notificationCreateTx` 先 `Create(notification)` | 目标预读在**事务外**, 见下 |
 | 27 | `internal/op/redemption.go:143` | `RedemptionBatchCreate` | `Create(&batch)` | 批量发码, 首条即写 |
 | 28 | `internal/op/ticket.go:200` | `TicketReply` | `Update` 按"未关闭"条件顶 `updated_at` | 守卫写在前, 消息写在后 |
 | 29 | `internal/op/ticket.go:297` | `TicketAssign` | `Update("assigned_to", ...)` | 单语句事务 |
@@ -222,9 +222,9 @@ SQLite 的写锁是"第一条写语句拿到手并**一直持有到事务结束*
 | 34 | `internal/op/wallet.go:43` | `WalletCredit` | `Updates` 加余额(在 `walletCreditTx`) | 函数体是一行调用, 见 §9.4 坑 3 |
 | 35 | `internal/op/webhook.go:379` | `WebhookDelete` | `Delete` webhook | 两条 Delete |
 | 36 | `internal/op/withdrawal.go:270` | `WithdrawApply` | `UPDATE users SET total_revenue = total_revenue WHERE id = ?` | 自赋值空更新, 只为拿锁 |
-| 37 | `internal/op/balance_alert.go:111` | `BalanceAlertCheck` | `Update` `last_triggered_at` + `Create` history | 条件更新赢得去重后，在同一事务插历史；失败整体回滚 |
+| 37 | `internal/op/balance_alert.go:113` | `BalanceAlertCheck` | 条件 `Update` 抢占 `last_triggered_at` | 事务同时写入历史、站内通知和 Webhook 投递行 |
 
-> `notification.go:60` 顺带记录一条已经做对的模式: `NotificationCreate` 把 webhook 目标列表的
+> `notification.go:66` 顺带记录一条已经做对的模式: `notificationCreate` 把 webhook 目标列表的
 > **只读预读放在事务外**(`webhookEnqueueTargets`), 事务里只剩两条 INSERT。这是"短小的读后写"的
 > 另一种正解 —— 不需要锁, 只要把读挪出去。它也是 §9.5 里"backup 导入该不该上移校验"的对照:
 > 当读很便宜且不依赖写事务快照时, 挪出去是免费的; 当读必须与写同快照时, 挪出去就是错。

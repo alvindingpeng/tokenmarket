@@ -101,14 +101,19 @@ func BalanceAlertCheck(ctx context.Context, userID uint, available float64) (boo
 		return false, nil
 	}
 
-	// last_triggered_at 与历史行必须在一个事务里提交:
-	// 若先提交去重时间、再独立插历史, 历史插入失败会留下"用户已被提醒过"的状态,
-	// 但 UI 永远查不到那次提醒; 这就是半成功。事务失败时两者一起回滚, 下一次余额检查还能重试。
+	notification := balanceLowNotification(userID, available)
+	targets, err := webhookEnqueueTargets(ctx, userID, string(notification.Type))
+	if err != nil {
+		return false, fmt.Errorf("failed to load balance alert webhook targets: %w", err)
+	}
+	// Allocate the dedup window only when the history, notification and webhook
+	// delivery rows can all commit. Acquire the write lock before reading in the transaction.
 	now := time.Now()
 	triggered := false
 	err = db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&model.BalanceAlert{}).
-			Where("user_id = ? AND (last_triggered_at IS NULL OR last_triggered_at < ?)", userID, now.Add(-balanceAlertTriggerWindow)).
+			Where("user_id = ? AND enabled = ? AND threshold_cny > 0 AND threshold_cny > ?", userID, true, available).
+			Where("(last_triggered_at IS NULL OR last_triggered_at <= ?)", now.Add(-balanceAlertTriggerWindow)).
 			Update("last_triggered_at", now)
 		if result.Error != nil {
 			return fmt.Errorf("failed to update balance alert trigger time: %w", result.Error)
@@ -132,18 +137,16 @@ func BalanceAlertCheck(ctx context.Context, userID uint, available float64) (boo
 				return fmt.Errorf("failed to prune balance alert history: %w", err)
 			}
 		}
+		if err := notificationCreateTx(tx, &notification, targets); err != nil {
+			return err
+		}
 		triggered = true
 		return nil
 	})
 	if err != nil {
 		return false, err
 	}
-	if !triggered {
-		return false, nil
-	}
-
-	NotifyBalanceLow(ctx, userID, available)
-	return true, nil
+	return triggered, nil
 }
 
 // BalanceAlertHistoryList returns the current user's newest actual triggers.

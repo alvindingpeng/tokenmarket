@@ -3,6 +3,7 @@ package op
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -148,6 +149,64 @@ func TestBalanceAlertHistoryOnlyRecordsDedupWinner(t *testing.T) {
 	}
 	if rows[0].UserID != 31 || rows[0].Source != "balance_alert" || rows[0].TriggeredAt.IsZero() {
 		t.Fatalf("bad history row: %+v", rows[0])
+	}
+}
+
+func TestBalanceAlertCanRetryAfterNotificationFailure(t *testing.T) {
+	for _, drop := range []struct {
+		name  string
+		model any
+	}{
+		{name: "notification", model: &model.Notification{}},
+		{name: "webhook delivery", model: &model.WebhookDelivery{}},
+	} {
+		t.Run(drop.name, func(t *testing.T) {
+			webhookTestSetup(t)
+			ctx := context.Background()
+			const userID = 1
+			webhookTestCreate(t, userID, "https://hooks.example.com/alerts",
+				[]string{string(model.NotificationTypeBalanceLow)}, strings.Repeat("k", 16))
+			if _, err := BalanceAlertSet(ctx, userID, model.BalanceAlertUpsert{ThresholdCNY: 10}); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.GetDB().Migrator().DropTable(drop.model); err != nil {
+				t.Fatal(err)
+			}
+			if triggered, err := BalanceAlertCheck(ctx, userID, 5); err == nil || triggered {
+				t.Fatalf("failed notification was reported as triggered: %v, %v", triggered, err)
+			}
+			alert, err := BalanceAlertGet(ctx, userID)
+			if err != nil || alert.LastTriggeredAt != nil {
+				t.Fatalf("failed notification consumed the dedup window: %+v, %v", alert, err)
+			}
+			history, err := BalanceAlertHistoryList(ctx, userID)
+			if err != nil || len(history) != 0 {
+				t.Fatalf("failed notification left history: %+v, %v", history, err)
+			}
+			if err := db.GetDB().AutoMigrate(drop.model); err != nil {
+				t.Fatal(err)
+			}
+			if _, count, err := NotificationList(ctx, userID, model.NotificationListRequest{}); err != nil || count != 0 {
+				t.Fatalf("failed notification left %d rows: %v", count, err)
+			}
+			if triggered, err := BalanceAlertCheck(ctx, userID, 5); err != nil || !triggered {
+				t.Fatalf("retry did not trigger: %v, %v", triggered, err)
+			}
+			if triggered, err := BalanceAlertCheck(ctx, userID, 4); err != nil || triggered {
+				t.Fatalf("retry was not deduplicated: %v, %v", triggered, err)
+			}
+			history, err = BalanceAlertHistoryList(ctx, userID)
+			if err != nil || len(history) != 1 {
+				t.Fatalf("retry history: %+v, %v", history, err)
+			}
+			if _, count, err := NotificationList(ctx, userID, model.NotificationListRequest{}); err != nil || count != 1 {
+				t.Fatalf("retry created %d notifications: %v", count, err)
+			}
+			var deliveries int64
+			if err := db.GetDB().Model(&model.WebhookDelivery{}).Count(&deliveries).Error; err != nil || deliveries != 1 {
+				t.Fatalf("retry enqueued %d webhook deliveries: %v", deliveries, err)
+			}
+		})
 	}
 }
 
