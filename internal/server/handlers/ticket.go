@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
@@ -46,6 +47,10 @@ func init() {
 				Handle(replyTicket),
 		).
 		AddRoute(
+			router.NewRoute("/:id/history", http.MethodGet).
+				Handle(ticketHistory),
+		).
+		AddRoute(
 			router.NewRoute("/:id/close", http.MethodPost).
 				Handle(closeTicket),
 		).
@@ -71,6 +76,11 @@ func init() {
 				Use(middleware.RequireJSON()).
 				Allow(model.RoleAdmin).
 				Handle(adminReplyTicket),
+		).
+		AddRoute(
+			router.NewRoute("/:id/history", http.MethodGet).
+				Allow(model.RoleAdmin).
+				Handle(adminTicketHistory),
 		).
 		AddRoute(
 			router.NewRoute("/:id/assign", http.MethodPost).
@@ -159,7 +169,42 @@ func writeTicketDetail(c *gin.Context, isAdmin bool) {
 		writeTicketError(c, err)
 		return
 	}
-	resp.Success(c, gin.H{"ticket": detail})
+	history, err := op.TicketAuditHistoryList(c.Request.Context(), userID, isAdmin, ticketID, 100)
+	if err != nil {
+		writeTicketError(c, err)
+		return
+	}
+	historyItems := make([]gin.H, 0, len(history))
+	for _, row := range history {
+		historyItems = append(historyItems, gin.H{"id": row.ID, "actor": row.Username, "action": row.Action, "detail": row.Detail, "created_at": row.CreatedAt})
+	}
+	resp.Success(c, gin.H{"ticket": detail, "history": historyItems})
+}
+
+// ticketHistory 返回当前用户有权查看的单张工单操作历史；不使用全局审计列表接口。
+func ticketHistory(c *gin.Context) { writeTicketHistory(c, false) }
+
+// adminTicketHistory 管理员可以查看全部工单，但查询仍限制为该工单的 ticket.* 动作。
+func adminTicketHistory(c *gin.Context) { writeTicketHistory(c, true) }
+
+func writeTicketHistory(c *gin.Context, isAdmin bool) {
+	userID, _ := middleware.CurrentUser(c)
+	ticketID, ok := ticketIDFromParam(c)
+	if !ok {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
+		return
+	}
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	rows, err := op.TicketAuditHistoryList(c.Request.Context(), userID, isAdmin, ticketID, limit)
+	if err != nil {
+		writeTicketError(c, err)
+		return
+	}
+	items := make([]gin.H, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, gin.H{"id": row.ID, "actor": row.Username, "action": row.Action, "detail": row.Detail, "created_at": row.CreatedAt})
+	}
+	resp.Success(c, gin.H{"items": items})
 }
 
 // replyTicket POST /api/v1/ticket/:id/reply 用户回复工单。
@@ -258,11 +303,21 @@ func adminUpdateTicketStatus(c *gin.Context) {
 	if !bindTicketJSON(c, &req) {
 		return
 	}
+	// 操作历史要能显示"从什么状态变到什么状态"。旧状态只能在这里读一次（UpdateStatus 内部还有一次
+	// 条件更新守卫做并发保护）；读不到就退回只记目标状态，不让审计写失败阻断这次已成功的状态变更。
+	previous := ""
+	if before, getErr := op.TicketGet(c.Request.Context(), actorID, true, ticketID); getErr == nil {
+		previous = before.Status
+	}
 	if err := op.TicketUpdateStatus(c.Request.Context(), actorID, ticketID, req); err != nil {
 		writeTicketError(c, err)
 		return
 	}
-	audit(c, "ticket.status", fmt.Sprintf("#%d", ticketID), req.Status)
+	if previous != "" && previous != req.Status {
+		audit(c, "ticket.status", fmt.Sprintf("#%d", ticketID), previous+" -> "+req.Status)
+	} else {
+		audit(c, "ticket.status", fmt.Sprintf("#%d", ticketID), req.Status)
+	}
 	resp.Success(c, gin.H{"id": ticketID, "status": req.Status})
 }
 

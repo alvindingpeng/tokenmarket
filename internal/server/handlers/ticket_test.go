@@ -332,6 +332,33 @@ func TestTicketResellerRouteGates(t *testing.T) {
 
 // TestTicketAdminRoutesFlow 管理端: list/detail/reply/assign/status, 含分配校验、
 // 状态流转(409)、closed_at 维护与通知。
+func TestTicketHistoryRouteUserAndAdminScope(t *testing.T) {
+	userToken, _, adminToken, _, user1, _, _, _ := ticketAPIEnv(t)
+	engine := ticketEngine(t)
+	id := ticketCreateViaAPI(t, engine, userToken, "history route")
+	// Audit action belongs to the ticket and must be visible to owner and admin.
+	if w := ticketAPI(t, engine, http.MethodGet, fmt.Sprintf("/api/v1/ticket/%d/history", id), userToken, ""); w.Code != http.StatusOK {
+		t.Fatalf("user history: %d %s", w.Code, w.Body.String())
+	}
+	if w := ticketAPI(t, engine, http.MethodGet, fmt.Sprintf("/api/v1/admin/ticket/%d/history", id), adminToken, ""); w.Code != http.StatusOK {
+		t.Fatalf("admin history: %d %s", w.Code, w.Body.String())
+	}
+	// Another user is forbidden even though the endpoint is read-only.
+	other, err := op.UserCreate("history-other", "", "password123", model.RoleUser, model.StatusActive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer op.UserDelete(other.ID)
+	otherToken, _, err := auth.GenerateJWTToken(other, 3600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := ticketAPI(t, engine, http.MethodGet, fmt.Sprintf("/api/v1/ticket/%d/history", id), otherToken, ""); w.Code != http.StatusForbidden {
+		t.Fatalf("cross-user history: %d %s", w.Code, w.Body.String())
+	}
+	_ = user1
+}
+
 func TestTicketAdminRoutesFlow(t *testing.T) {
 	userToken, otherToken, adminToken, admin2Token, user1, user2, _, admin2 := ticketAPIEnv(t)
 	engine := ticketEngine(t)

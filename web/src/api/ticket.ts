@@ -68,8 +68,17 @@ export type TicketMessageView = {
 /**
  * TicketDetailView 工单详情(与后端 model.TicketDetailView 对齐): 工单视图 + 消息列表。
  */
+export type TicketAuditHistoryItem = {
+    id: number;
+    actor: string;
+    action: string;
+    detail: string;
+    created_at: string;
+};
+
 export type TicketDetailView = TicketView & {
     messages: TicketMessageView[];
+    history?: TicketAuditHistoryItem[];
 };
 
 // TicketListFilter 列表筛选; 空值表示不过滤。assigned_to 仅管理端有意义。
@@ -174,8 +183,8 @@ export function useTicketDetail(id: number | null, admin = false) {
         queryKey: ['ticket', 'detail', admin ? 'admin' : 'user', id],
         // 详情响应包着 {ticket: TicketDetailView}, 这里只交出详情本体。
         queryFn: () =>
-            apiRequest<{ ticket: TicketDetailView }>((admin ? '/api/v1/admin/ticket/' : '/api/v1/ticket/') + String(id)).then(
-                (data) => data.ticket,
+            apiRequest<{ ticket: TicketDetailView; history?: TicketAuditHistoryItem[] }>((admin ? '/api/v1/admin/ticket/' : '/api/v1/ticket/') + String(id)).then(
+                (data) => ({ ...data.ticket, history: data.history ?? [] }),
             ),
         enabled: id !== null,
     });

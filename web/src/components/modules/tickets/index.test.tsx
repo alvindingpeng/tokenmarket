@@ -4,6 +4,7 @@ import { ticketListQueryOptions, TICKET_PAGE_SIZE, type TicketDetailView, type T
 import { renderSSR } from '@/test/ssr';
 import { Tickets } from './index';
 import { TicketDetail } from './TicketDetail';
+import en from '@/locales/en.json';
 
 // 页面组件的 mock SSR 冒烟: 不起服务器, 用预置 query 缓存把组件渲染到「有数据」分支,
 // 断言关键标记(标题/状态/可访问标签/回复框)真的出现在 HTML 里。
@@ -125,5 +126,17 @@ describe('TicketDetail 页面(mock SSR)', () => {
         const html = renderSSR(<TicketDetail ticketId={null as unknown as number} admin={false} onBack={() => {}} />);
         expect(html).toContain('aria-label="Back to list"');
         expect(html).toContain('Retry');
+    });
+});
+
+describe('TicketDetail operation history', () => {
+    it('renders scoped operation events separately from conversation', () => {
+        const html = renderSSR(<TicketDetail ticketId={42} admin={false} onBack={() => {}} />, (client) => client.setQueryData(['ticket', 'detail', 'user', 42], {
+            id: 42, user_id: 1, username: 'user', title: 'History', content: 'Body', status: 'open', priority: 'normal', category: 'other', message_count: 0, created_at: '2026-11-22T00:00:00Z', updated_at: '2026-11-22T00:00:00Z', assigned_to: 0, messages: [],
+            history: [{ id: 1, actor: 'admin', action: 'ticket.status', detail: 'open -> in_progress', created_at: '2026-11-22T01:00:00Z' }],
+        }));
+        expect(html).toContain(en.tickets.detail.historyTitle);
+        expect(html).toContain('open -&gt; in_progress');
+        expect(html).toContain('admin');
     });
 });

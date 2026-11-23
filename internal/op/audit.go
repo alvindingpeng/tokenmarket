@@ -91,3 +91,27 @@ func AuditLogList(filter AuditLogFilter, limit, offset int) ([]model.AuditLog, i
 	}
 	return logs, total, nil
 }
+
+// TicketAuditHistoryList 返回单张工单的操作历史。默认工单只属于提交用户，不能直接复用管理员全局
+// AuditLogList：它的查询面包含所有用户和任意动作，开放给普通用户会变成全站审计侧信道。
+// 本函数先通过 ticketOwned 校验归属，再把查询严格限制到 target="#<ticketID>" 与 ticket.* 动作，
+// 并且只向调用方返回结构化的动作字段，不返回 detail（避免未来 detail 意外写入正文/敏感内容）。
+func TicketAuditHistoryList(ctx context.Context, userID uint, isAdmin bool, ticketID uint64, limit int) ([]model.AuditLog, error) {
+	if _, err := ticketOwned(ctx, userID, isAdmin, ticketID); err != nil {
+		return nil, err
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	var rows []model.AuditLog
+	err := db.GetDB().WithContext(ctx).
+		Where("target = ? AND action IN ?", fmt.Sprintf("#%d", ticketID), []string{"ticket.create", "ticket.reply", "ticket.close", "ticket.reopen", "ticket.assign", "ticket.status"}).
+		Order("id ASC").Limit(limit).Find(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list ticket audit history: %w", err)
+	}
+	if rows == nil {
+		rows = make([]model.AuditLog, 0)
+	}
+	return rows, nil
+}

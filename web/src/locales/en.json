@@ -3356,6 +3356,19 @@
                 "reopened": "Ticket reopened",
                 "statusChanged": "Status updated",
                 "assigned": "Ticket assigned"
+            },
+            "historyTitle": "Operation history",
+            "historyEmpty": "No operations recorded yet.",
+            "systemActor": "System",
+            "historyAction": {
+                "ticket": {
+                    "create": "created the ticket · {detail}",
+                    "reply": "replied · {detail}",
+                    "close": "closed the ticket · {detail}",
+                    "reopen": "reopened the ticket · {detail}",
+                    "assign": "updated assignment · {detail}",
+                    "status": "changed status · {detail}"
+                }
             }
         }
     },

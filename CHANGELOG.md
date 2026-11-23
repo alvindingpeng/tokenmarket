@@ -1,6 +1,6 @@
 # 更新说明
 
-## v1.15.0 — 2026-11-22
+## v1.16.0 — 2026-11-22
 
 **B3 / B11：补齐余额预警历史与 tier 模型白名单**
 
@@ -25,6 +25,13 @@
 - Go 全量：go test ./... -count=1 exit 0；go vet ./internal/... exit 0。
 - 前端全量：103 个文件 / 1009 个测试全绿；tsc 与 ESLint 均通过。
 - 本轮新增一处显式事务（条件更新去重时间 + 插入历史）。事务护栏首次报 39 处而非旧期望 38；判定首条为条件 UPDATE（B 类），已同步更新护栏与 docs/billing-retention-180d.md 清单，复跑通过。
+
+**B7 工单操作历史**
+
+- 新增工单 scoped 操作历史时间线，用户只能查看自己的工单，管理员可查看全部工单。
+- 历史来自已有审计记录，不新增重复存储；只返回 ticket.create/reply/close/reopen/assign/status，最多 100 条。
+- 详情响应包含 history，前端单独显示时间线，不混入对话正文；状态变更 detail 使用旧状态 -> 新状态。
+- 验证：Go ticket/op/handler 测试与 vet 通过；ticket 组件与三语测试通过；TypeScript 检查通过。
 
 ## v1.12.0 — 2026-11-22
 

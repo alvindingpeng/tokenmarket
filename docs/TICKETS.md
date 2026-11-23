@@ -42,6 +42,18 @@
 
 创建与详情返回 `{ticket: ...}`，回复返回 `{message: ...}`（均在标准 `data` 外壳内）；列表返回 `{items,total,page,page_size}`。详情 `messages` 仅包含后续回复，初始正文在 `ticket.content`，前端单独显示；`message_count` 只计回复。筛选参数 `status`、`priority`、`category`、`assigned_to`、`page`、`page_size`。
 
+## 操作历史（B7, v1.16.0）
+
+工单详情现在同时返回一条**工单 scoped 的操作时间线**，不把全局审计列表直接暴露给用户：
+
+- 用户端：GET `/api/v1/ticket/:id/history`，仅工单提交者可读；
+- 管理端：GET `/api/v1/admin/ticket/:id/history`，仅管理员可读；
+- 详情响应的 `data.history` 与详情同时返回，前端时间线单独呈现，不混入对话正文。
+
+历史只查询目标为 `#<ticketID>` 且 action 属于 ticket.create/reply/close/reopen/assign/status 的审计行，最多 100 条，响应字段为 id、actor、action、detail、created_at。普通用户无法通过参数查看其他工单或全局审计。
+
+状态变更的审计 detail 使用「旧状态 -> 新状态」格式，分配/回复/关闭/重开保留既有动作与 detail。
+
 ## 验证与发布
 
 ```sh

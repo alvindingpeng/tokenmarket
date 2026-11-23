@@ -3356,6 +3356,19 @@
                 "reopened": "工單已重新開啟",
                 "statusChanged": "狀態已更新",
                 "assigned": "工單已分配"
+            },
+            "historyTitle": "操作歷史",
+            "historyEmpty": "暫無操作紀錄。",
+            "systemActor": "系統",
+            "historyAction": {
+                "ticket": {
+                    "create": "建立了工單 · {detail}",
+                    "reply": "回覆了工單 · {detail}",
+                    "close": "關閉了工單 · {detail}",
+                    "reopen": "重新開啟了工單 · {detail}",
+                    "assign": "更新了分配 · {detail}",
+                    "status": "變更了狀態 · {detail}"
+                }
             }
         }
     },

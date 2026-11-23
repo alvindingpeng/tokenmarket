@@ -53,6 +53,7 @@ export function TicketDetail({ ticketId, admin, onBack }: TicketDetailProps) {
 
     const ticket = detail.data;
     const messages = ticket?.messages ?? [];
+    const history = ticket?.history ?? [];
     // 新消息到达后把对话滚到底部, 用户不必手动翻。
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ block: 'nearest' });
@@ -245,6 +246,28 @@ export function TicketDetail({ ticketId, admin, onBack }: TicketDetailProps) {
                     </div>
                 )}
             </div>
+
+            {/* 操作历史是独立时间线, 不混进对话正文: 用户要分清"谁改了状态"和"谁说了什么"。
+                服务端已经按工单归属裁剪, 这里不复用全局审计页面。 */}
+            <section className="shrink-0 rounded-3xl border border-border bg-card p-4" aria-labelledby="ticket-history-title">
+                <h3 id="ticket-history-title" className="mb-3 text-sm font-semibold">{t('detail.historyTitle')}</h3>
+                {history.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">{t('detail.historyEmpty')}</p>
+                ) : (
+                    <ol className="space-y-3 border-l border-border pl-4">
+                        {history.map((event) => (
+                            <li key={event.id} className="relative">
+                                <span className="absolute -left-[1.35rem] top-1 size-2 rounded-full bg-primary" aria-hidden="true" />
+                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
+                                    <span className="font-medium">{event.actor || t('detail.systemActor')}</span>
+                                    <span>{t('detail.historyAction.' + event.action, { detail: event.detail })}</span>
+                                </div>
+                                <time dateTime={event.created_at} className="text-xs tabular-nums text-muted-foreground">{formatDateTime(event.created_at, '-')}</time>
+                            </li>
+                        ))}
+                    </ol>
+                )}
+            </section>
 
             {/* 对话记录: 首条是工单正文, 其后是往来回复; 管理员回复带徽标区分。 */}
             <section
