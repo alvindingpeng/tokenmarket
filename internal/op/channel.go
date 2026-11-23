@@ -1219,8 +1219,8 @@ func maskChannelSecret(s string) string {
 	return s[:3] + "••••••••" + s[len(s)-4:]
 }
 
-// isMaskedChannelSecret 判断提交值是否为掩码占位(含圆点标记): 掩码时保持库中原值不覆盖。
-func isMaskedChannelSecret(s string) bool {
+// IsMaskedChannelSecret 判断提交值是否为掩码占位(含圆点标记): 掩码时保持库中原值不覆盖。
+func IsMaskedChannelSecret(s string) bool {
 	return s != "" && strings.Contains(s, maskSecretMark)
 }
 
@@ -1229,7 +1229,7 @@ func isMaskedChannelSecret(s string) bool {
 const egressMaskMark = "****"
 
 // isMaskedEgressURL 判断提交回来的出口地址是否为掩码占位。
-// 与凭据的 isMaskedChannelSecret 分开判定, 因为两者的掩码标记不同(圆点 vs 星号)。
+// 与凭据的 IsMaskedChannelSecret 分开判定, 因为两者的掩码标记不同(圆点 vs 星号)。
 func isMaskedEgressURL(raw string) bool {
 	return raw != "" && strings.Contains(raw, egressMaskMark)
 }
@@ -1364,11 +1364,11 @@ func syncChannelKeys(tx *gorm.DB, channelID int, requested []model.ChannelKeyCon
 			// 掩码占位: 编辑表单留空提交时, 前端把回显的掩码值原样带回来, 这里识别掩码并保持原值,
 			// 避免把「sk-••••abcd」当新密钥覆盖真实凭据。
 			key := requestedKey.Key
-			if isMaskedChannelSecret(key) {
+			if IsMaskedChannelSecret(key) {
 				key = current.Key
 			}
 			apiSecret := requestedKey.APISecret
-			if isMaskedChannelSecret(apiSecret) {
+			if IsMaskedChannelSecret(apiSecret) {
 				apiSecret = current.APISecret
 			}
 			if current.Key != key || current.AppID != requestedKey.AppID || current.APISecret != apiSecret || current.Domain != requestedKey.Domain || current.Enabled != requestedKey.Enabled {

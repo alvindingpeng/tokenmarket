@@ -14,7 +14,7 @@ import {
 import { IconButton } from '@/components/common/IconButton';
 import { ModelRuleEditor } from '@/components/modules/model/RuleEditor';
 import { useModelAutoAddRules } from '@/api/model-rule';
-import { useModelProbe } from './probe';
+import { modelProbeRequest, useModelProbe } from './probe';
 import { applyGrantToggle, grantColumns, sparkColumnVisible, videoColumnVisible } from './grantColumns';
 import { grantKey, type ChannelFormState } from './state';
 
@@ -99,7 +99,7 @@ export function FormGrants({ state, setState }: {
     const [selectedKey, setSelectedKey] = useState('');
 
     const keyNames = state.keys.map((k) => k.name);
-    const activeKey = selectedKey || keyNames[0] || '';
+    const activeKey = keyNames.includes(selectedKey) ? selectedKey : (keyNames[0] ?? '');
     const allExpanded = state.models.length > 0 && state.models.every((m) => expanded.has(m));
 
     // removeGrant 移除该模型在指定凭据上的授权, 模型与凭据本身保留。
@@ -173,7 +173,7 @@ export function FormGrants({ state, setState }: {
                 </IconButton>
                 <IconButton
                     onClick={() => probe(state, setState, activeKey)}
-                    disabled={pendingKey !== null || !state.base_url.trim()}
+                    disabled={pendingKey !== null || !modelProbeRequest(state, activeKey)}
                     className="size-9"
                     tip={t('modelRefresh')}
                 >

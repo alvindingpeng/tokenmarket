@@ -286,11 +286,11 @@ export type ChannelStatsFormatted = {
 // 名称可为空：探测常发生在渠道尚未命名时，后端只要求地址非空。
 // 不带协议：后端一次同时探 OpenAI 与 Anthropic 两侧，协议支持由各侧响应决定。
 type FetchModelRequest = {
-    channel: Omit<ChannelDetail, 'id' | 'keys' | 'models' | 'grants' | 'egresses'>;
-    // 订阅渠道没有手填的 key: 它的凭据是登录后落在库里的账号, 由后端按 channel_id 取。
-    // 这两种渠道互斥 —— 订阅传 channel_id, 其余方言传 key。
+    channel?: Omit<ChannelDetail, 'id' | 'keys' | 'models' | 'grants' | 'egresses'>;
+    // 草稿探测提交新 Key。已保存的凭据通过渠道 ID 和名称引用。
     key?: string;
     channel_id?: number;
+    key_name?: string;
     // 讯飞星火签名所需凭据；通用渠道保持可选以兼容旧探测接口。
     app_id?: string;
     api_secret?: string;

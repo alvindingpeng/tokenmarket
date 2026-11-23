@@ -12,8 +12,7 @@ export type ChannelFormState = {
     sub_platform: string;
     /**
      * channel_id 是已保存渠道的主键, 新建时为 0。
-     * 订阅渠道拉取模型要用它: 它的凭据在库里(登录后导入的账号), 回忆表单里没有 key 可填,
-     * 后端只能按渠道主键取凭据。节点与提交无关, toChannelDetail 用外部传入的 id。
+     * 刷新已保存的凭据时用于引用渠道。
      */
     channel_id: number;
     base_url: string;
@@ -33,6 +32,7 @@ export type ChannelFormState = {
     gemini_project?: string;
     keys: {
         name: string;
+        savedName?: string; // 探测时引用库里的原名，表单里尚未保存的改名不影响查找。
         key: string; // 上游访问凭据; 讯飞渠道用它承载 API Key; 账号凭据承载整包账号 JSON。
         // 讯飞星火专用(dialect=xunfei 才填写); 读侧可能缺省, 归一为空串, 写侧恒带三项。
         app_id: string;
@@ -130,7 +130,7 @@ export function fromChannel(channel: ChannelDetail): ChannelFormState {
         // 讯飞三项读侧可能缺省, 归一为空串: 表单里处处少判一次 undefined。
         keys: channel.keys.map(({ name, key, enabled, app_id, api_secret, domain,
             account_kind, account_platform, account_email, token_expires_at, token_refresh_at, disabled_until }) => ({
-            name, key, enabled,
+            name, savedName: name, key, enabled,
             app_id: app_id ?? '', api_secret: api_secret ?? '', domain: domain ?? '',
             // 账号元数据原样带过来供列表展示(见 ChannelFormState.keys 的说明)。
             account_kind, account_platform, account_email, token_expires_at, token_refresh_at, disabled_until,

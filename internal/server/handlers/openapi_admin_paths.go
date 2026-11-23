@@ -292,8 +292,7 @@ func openAPIAdminPathsAuth() gin.H {
 		},
 		"/api/v1/channel/fetch-model": gin.H{
 			"post": adminPath("channel", "试拉上游模型",
-				"用请求携带的渠道配置与凭据同时探测 OpenAI 与 Anthropic 两侧, 返回模型名及各自支持的协议。"+adminNewLine+adminNewLine+
-					"渠道尚未保存时也要能试拉, 故请求体带整份配置而不是 id; 缺 base_url 或过滤正则非法为 400, 两侧都探不通为 502 并带上上游原文。",
+				"草稿渠道使用请求中的配置和新填的 Key。已保存的渠道传 channel_id 与 key_name，由服务端按访问范围查找凭据并使用已保存的配置。",
 				"ChannelFetchModelRequest", adminEnvelope("探测到的模型", gin.H{"type": "array", "items": gin.H{"$ref": "#/components/schemas/ChannelFetchModel"}}), true),
 		},
 		"/api/v1/channel/publish": gin.H{

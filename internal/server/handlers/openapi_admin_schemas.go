@@ -171,11 +171,13 @@ func openAPIAdminSchemas() gin.H {
 
 		"ChannelFetchModelRequest": object(gin.H{
 			"channel":    ref("ChannelConfig"),
-			"key":        fieldString("拉取使用的上游凭据; 必填"),
+			"key":        fieldString("草稿探测用的新 Key"),
+			"channel_id": gin.H{"type": "integer", "description": "已保存的渠道 ID"},
+			"key_name":   fieldString("已保存的渠道凭据名称"),
 			"app_id":     fieldString("讯飞 App ID; Spark 渠道使用"),
 			"api_secret": fieldString("讯飞 API Secret; Spark 渠道使用"),
 			"domain":     fieldString("讯飞 Domain; Spark 渠道使用"),
-		}, "key"),
+		}),
 
 		"ChannelFetchModel": object(gin.H{
 			"name":      fieldString("上游模型名称"),

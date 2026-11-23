@@ -4,7 +4,7 @@ import { useTranslations } from 'use-intl';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { IconButton } from '@/components/common/IconButton';
-import { useModelProbe } from './probe';
+import { modelProbeRequest, useModelProbe } from './probe';
 import { grantKey, type ChannelFormState } from './state';
 import { AccountImport } from './AccountImport';
 import { AccountImportBatch } from './AccountImportBatch';
@@ -206,7 +206,7 @@ export function FormKeys({ state, setState, channelId, onAccountImported }: {
                         {/* 逐条凭据探测: 各凭据在上游被授权的模型不同, 需按凭据分别取回。 */}
                         <IconButton
                             onClick={() => probe(state, setState, channelKey.name)}
-                            disabled={pendingKey !== null || !channelKey.key.trim() || !state.base_url.trim()}
+                            disabled={pendingKey !== null || !modelProbeRequest(state, channelKey.name)}
                             className="size-8"
                             tip={t('modelRefresh')}
                         >

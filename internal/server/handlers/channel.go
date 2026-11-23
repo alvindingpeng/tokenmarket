@@ -599,90 +599,104 @@ func addChannelModelPrices(modelNames []string, ctx context.Context) error {
 	return op.LLMBatchCreate(llmInfos, ctx)
 }
 
-// fetchModel 按提交的渠道配置与凭据拉取上游模型列表; 探测与协议判定在 op.ProbeChannelModels,
-// 这里只负责按代理配置构建客户端并按失败类型映射状态码。
+// fetchModel probes a draft with caller-supplied credentials, or a saved
+// channel with a named credential. Saved credentials only use saved transport settings.
 func fetchModel(c *gin.Context) {
 	var request model.ChannelFetchModelRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
-	// SSRF 防护: 探测收到的是未落库配置, 不经保存时的 normalizeChannelConfig 校验,
-	// 必须在入口显式复核地址 —— 否则渠道商可用本端点探测内网/云元数据。
-	if err := netguard.CheckURL(c.Request.Context(), request.Channel.BaseURL, op.AllowPrivateUpstream()); err != nil {
-		resp.Error(c, http.StatusBadRequest, err.Error())
-		return
+	request.Key = strings.TrimSpace(request.Key)
+	request.KeyName = strings.TrimSpace(request.KeyName)
+	request.APISecret = strings.TrimSpace(request.APISecret)
+	target := request.Channel
+	legacySubscription := target.Dialect.Subscribable() && request.Key == ""
+	saved := request.KeyName != "" || legacySubscription
+	var channel model.Channel
+	var key model.ChannelKey
+	if saved {
+		if request.ChannelID <= 0 || request.Key != "" || request.APISecret != "" {
+			resp.Error(c, http.StatusBadRequest, "a saved credential requires a channel ID and no inline secrets")
+			return
+		}
+		var err error
+		channel, err = op.ChannelGet(request.ChannelID)
+		if err != nil || !scopeOf(c).Owns(channel.UserID) {
+			resp.Error(c, http.StatusNotFound, "channel not found")
+			return
+		}
+		target = channel.ChannelConfig
+		if legacySubscription && request.KeyName == "" && !target.Dialect.Subscribable() {
+			resp.Error(c, http.StatusBadRequest, "a saved credential name is required")
+			return
+		}
+		for _, candidate := range op.ChannelKeysByChannel(channel.ID) {
+			if request.KeyName != "" {
+				if candidate.Name != request.KeyName {
+					continue
+				}
+			} else if !candidate.Enabled || strings.TrimSpace(candidate.Key) == "" {
+				continue
+			}
+			key = candidate
+			break
+		}
+		if key.ID == 0 || strings.TrimSpace(key.Key) == "" {
+			resp.Error(c, http.StatusNotFound, "no matching saved credential")
+			return
+		}
+	} else {
+		if request.Key == "" || op.IsMaskedChannelSecret(request.Key) || op.IsMaskedChannelSecret(request.APISecret) {
+			resp.Error(c, http.StatusBadRequest, "provide a new key or select a saved credential")
+			return
+		}
+		key.ChannelKeyConfig = model.ChannelKeyConfig{
+			Key: request.Key, AppID: request.AppID, APISecret: request.APISecret, Domain: request.Domain,
+		}
 	}
-	if strings.TrimSpace(request.Channel.ChannelProxy) != "" {
-		if err := netguard.CheckProxyURL(c.Request.Context(), request.Channel.ChannelProxy, op.AllowPrivateUpstream()); err != nil {
+
+	ctx := c.Request.Context()
+	if strings.TrimSpace(target.BaseURL) != "" || !target.Dialect.Subscribable() {
+		if err := netguard.CheckURL(ctx, target.BaseURL, op.AllowPrivateUpstream()); err != nil {
 			resp.Error(c, http.StatusBadRequest, err.Error())
 			return
 		}
 	}
-	// 有渠道 ID 时按渠道取出口池: 探测必须与转发走同一条出口,
-	// 否则渠道配了出口代理时拉模型会从本机 IP 直连而被上游拒绝。
-	var (
-		client *http.Client
-		err    error
-	)
-	if request.ChannelID != 0 {
-		if channel, channelErr := op.ChannelGet(request.ChannelID); channelErr == nil {
-			client, err = probeHTTPClientForChannel(channel)
+	if strings.TrimSpace(target.ChannelProxy) != "" {
+		if err := netguard.CheckProxyURL(ctx, target.ChannelProxy, op.AllowPrivateUpstream()); err != nil {
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return
 		}
 	}
-	if client == nil {
-		client, err = probeHTTPClient(request.Channel)
+
+	var client *http.Client
+	var err error
+	if saved {
+		client, err = probeHTTPClientForChannel(channel)
+	} else {
+		client, err = probeHTTPClient(target)
 	}
 	if err != nil {
 		resp.Error(c, http.StatusBadGateway, err.Error())
 		return
 	}
-	fetched, err := probeModelsForRequest(client, request, c)
+
+	fetched, err := op.ProbeChannelKey(client, target, key, ctx)
 	if err != nil {
-		// 地址缺失与过滤正则编译错误属请求参数问题, 按 400; 两侧探测都失败是调用方配置问题, 按 502 带上游原文。
 		if errors.Is(err, op.ErrProbeBaseURLRequired) || errors.Is(err, op.ErrProbeInvalidFilter) {
 			resp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		if saved {
+			// Upstreams can echo request headers in an error response.
+			resp.Error(c, http.StatusBadGateway, "upstream model probe failed for the saved credential")
 			return
 		}
 		resp.Error(c, http.StatusBadGateway, err.Error())
 		return
 	}
 	resp.Success(c, fetched)
-}
-
-// probeModelsForRequest 决定这次探测用哪份凭据。
-//
-// 订阅渠道拿不到"手填的 Key": 它的凭据是登录后导入的账号, 存在库里而不是表单里。
-// 若照旧用 request.Key, 探测会带一个空令牌直接 401 —— 而界面上的"拉取模型"按钮
-// 在订阅渠道下根本没有 Key 可填, 表现为按钮点了就报鉴权失败。
-//
-// 因此订阅渠道改为取库里第一条可用凭据; 其余方言维持原行为(用提交上来的 Key),
-// 这样编辑表单里"改了 Key 还没保存, 先试拉一下"的能力不受影响。
-func probeModelsForRequest(client *http.Client, request model.ChannelFetchModelRequest, c *gin.Context) ([]model.ChannelFetchModel, error) {
-	if !request.Channel.Dialect.Subscribable() {
-		return op.ProbeChannelModels(client, request.Channel, request.Key, request.AppID, request.APISecret, request.Domain, c.Request.Context())
-	}
-	channelID := request.ChannelID
-	if channelID == 0 {
-		return nil, fmt.Errorf("订阅渠道拉取模型必须指定 channel_id: 凭据在库里而不在表单里")
-	}
-	userID, role := middleware.CurrentUser(c)
-	channel, err := op.ChannelGet(channelID)
-	if err != nil {
-		return nil, fmt.Errorf("渠道不存在")
-	}
-	if !(model.Scope{ID: userID, Role: role}).Owns(channel.UserID) {
-		return nil, fmt.Errorf("渠道不存在")
-	}
-	keys := op.ChannelKeysByChannel(channelID)
-	for _, channelKey := range keys {
-		if !channelKey.Enabled || strings.TrimSpace(channelKey.Key) == "" {
-			continue
-		}
-		// 用一个账号探测即可: 同一渠道下的账号属于同一订阅, 可用模型清单一致。
-		return op.ProbeChannelKey(client, request.Channel, channelKey, c.Request.Context())
-	}
-	return nil, fmt.Errorf("订阅渠道还没有可用账号: 请先登录或导入账号再拉取模型")
 }
 
 // probeHTTPClient 按渠道配置构建探测用的 HTTP 客户端: 直连 / 应用代理 / 渠道专用代理。
