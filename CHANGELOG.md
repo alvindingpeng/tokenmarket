@@ -1,37 +1,16 @@
 # 更新说明
 
-## v1.16.0 — 2026-11-22
+## v1.16.0 — 2026-11-23
 
-**B3 / B11：补齐余额预警历史与 tier 模型白名单**
+**B7 工单操作历史时间线**
 
-交付 backlog §0.3 两条功能：B3 最近 10 次余额预警历史与 B11 按用户等级限制可用模型组。AutoMigrate 建新表，无新迁移号。
+- 新增用户端 GET /api/v1/ticket/:id/history 与管理员端 GET /api/v1/admin/ticket/:id/history。
+- 工单详情响应同时返回 history，前端独立渲染时间线，不把操作事件混入对话正文。
+- 历史只查询该工单的 ticket.create/reply/close/reopen/assign/status 动作，最多 100 条；普通用户归属隔离，管理员角色隔离。
+- 状态变更 detail 使用「旧状态 -> 新状态」；不复用全局审计列表，不暴露无关用户的审计记录。
+- 生产部署已验证：停机 31.7 秒，v1.16.0 healthz 本地/外网正常，六项资金不变量全 0，watchdog active，NRestarts=0。
 
-### B3 最近 10 次预警历史
-
-- 历史只存 user_id、triggered_at、source，不存余额或阈值金额；表内按用户裁剪，仅长期保留最近 10 条。
-- 仅原子赢得 1 小时去重竞争才记一条；未启用、未跌破阈值、被去重时均不记。
-- 去重时间更新、历史行插入与裁剪位于同一事务，插入或裁剪失败时一起回滚，避免「已去重但历史不可查」的半成功状态。
-- GET /api/v1/user/balance-alert/history 当前用户隔离、按时间倒序、最多 10 条；钱包页区分加载、失败+重试、空态、数据四态。
-
-### B11 tier 模型白名单
-
-- TierLimits 增加 allowed_models，内容是用户实际请求的模型组名，不是上游模型 ID。
-- 未配置、null 或空数组保持不限制，兼容旧 JSON 与现有账号。
-- Relay 对客户端请求的 Group 名精确匹配，在分组解析和限流/余额预留前拦截；与 API Key supported_models 取交集。
-- 管理员设置页按当前可见分组提供复选框；已配置但暂不可见的分组名保留，避免列表短暂缺项时静默丢配置。
-
-### 验证
-
-- Go 全量：go test ./... -count=1 exit 0；go vet ./internal/... exit 0。
-- 前端全量：103 个文件 / 1009 个测试全绿；tsc 与 ESLint 均通过。
-- 本轮新增一处显式事务（条件更新去重时间 + 插入历史）。事务护栏首次报 39 处而非旧期望 38；判定首条为条件 UPDATE（B 类），已同步更新护栏与 docs/billing-retention-180d.md 清单，复跑通过。
-
-**B7 工单操作历史**
-
-- 新增工单 scoped 操作历史时间线，用户只能查看自己的工单，管理员可查看全部工单。
-- 历史来自已有审计记录，不新增重复存储；只返回 ticket.create/reply/close/reopen/assign/status，最多 100 条。
-- 详情响应包含 history，前端单独显示时间线，不混入对话正文；状态变更 detail 使用旧状态 -> 新状态。
-- 验证：Go ticket/op/handler 测试与 vet 通过；ticket 组件与三语测试通过；TypeScript 检查通过。
+验证：Go 全量测试与 vet 通过；前端 103 个测试文件 / 1008 个用例全绿，tsc/eslint 通过。
 
 ## v1.12.0 — 2026-11-22
 
