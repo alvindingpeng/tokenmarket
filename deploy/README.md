@@ -118,7 +118,13 @@ Unit 使用 StartLimitIntervalSec=300 / StartLimitBurst=10: 确定性故障(例�
 # 远端: bash /root/swap_deploy.sh v1.5.20
 ```
 
-健康检查、systemd active 状态或版本断言失败时, 脚本会恢复替换前的 `switchyard.prev-vN`, 再启动并探活**旧版本**（回滚时把期望版本换成替换前读出的旧版本号, 否则每次成功的回滚都会误报 `rollback health check failed`）, 最后以非零状态报告 `DEPLOY_ROLLED_BACK`。本地演练可设 `SWITCHYARD_BIN_DIR`、`SWITCHYARD_HEALTH_URL` 与 `SWITCHYARD_DRY_RUN=1`; dry-run 不调用 systemctl（只打印命令）、不修改二进制, 也**不做健康检查** —— 此刻响应 `/healthz` 的是现行进程, 拿它当"新二进制健康"的证据是假信号。
+脚本在停服前验证候选版本并复制、比对旧二进制。停服后任一步失败都会尝试恢复旧版本并探活，
+成功回退会报告 `DEPLOY_ROLLED_BACK` 并返回非零状态。无法完成回退时报告 `DEPLOY_ROLLBACK_FAILED`。
+脚本用二进制目录中的 `.swap-deploy.lock` 防止同时部署。主机掉电或进程被强制杀死后，确认部署进程已结束、
+检查当前二进制和回滚副本后再移除遗留锁。涉及迁移时，部署前另做数据库快照并验证恢复。
+
+本地演练可设置 `SWITCHYARD_BIN_DIR`、`SWITCHYARD_HEALTH_URL` 和 `SWITCHYARD_DRY_RUN=1`。
+dry-run 只打印部署命令并检查本地文件与数据库结构。
 
 ## 外部看门狗
 

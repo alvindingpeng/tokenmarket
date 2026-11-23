@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/alert"
@@ -19,6 +20,8 @@ import (
 
 // BackupDir 返回自动备份目录。
 func BackupDir() string { return filepath.Join("data", "backups") }
+
+var autoBackupMu sync.Mutex
 
 // AutoBackupResult 一次自动备份的结果。
 type AutoBackupResult struct {
@@ -38,11 +41,18 @@ func AutoBackupRun() (AutoBackupResult, error) {
 	if enabled, _ := SettingGetBool(model.SettingKeyAutoBackupEnabled); !enabled {
 		return AutoBackupResult{}, nil
 	}
+	autoBackupMu.Lock()
+	defer autoBackupMu.Unlock()
 	if err := os.MkdirAll(BackupDir(), 0o750); err != nil {
 		return AutoBackupResult{}, fmt.Errorf("create backup dir: %w", err)
 	}
+	staging, err := os.MkdirTemp(BackupDir(), ".pending-")
+	if err != nil {
+		return AutoBackupResult{}, fmt.Errorf("stage backup: %w", err)
+	}
+	defer os.RemoveAll(staging)
 	name := "backup-" + time.Now().Format("20060102-150405") + ".db"
-	path := filepath.Join(BackupDir(), name)
+	path := filepath.Join(staging, name)
 
 	// VACUUM INTO 需要在主库连接上执行, 生成的文件是完整一致快照。
 	// 注意: 这是物理快照, 静态凭据列存的是信封密文(绑定本机主密钥): 换一台主密钥不同的实例恢复时,
@@ -57,43 +67,58 @@ func AutoBackupRun() (AutoBackupResult, error) {
 	if _, err := sqlDB.Exec(fmt.Sprintf("VACUUM INTO '%s'", escaped)); err != nil {
 		return AutoBackupResult{}, fmt.Errorf("vacuum into backup: %w", err)
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return AutoBackupResult{}, fmt.Errorf("stat backup: %w", err)
+	if !verifyBackup(path) {
+		return AutoBackupResult{}, fmt.Errorf("backup snapshot failed SQLite verification")
 	}
-	result := AutoBackupResult{File: path, Size: info.Size(), Remote: "skipped"}
-
-	// 校验备份可打开并含关键表。
-	result.Verified = verifyBackup(path)
 
 	// 可选加密: 口令来自 config/env(见 backupcrypto.go), 缺口令视为配置错误, 备份整体判失败。
 	artifact := path
+	encrypted := false
 	if encrypt, _ := SettingGetBool(model.SettingKeyBackupEncrypt); encrypt {
 		passphrase := strings.TrimSpace(conf.AppConfig.Backup.Passphrase)
 		if passphrase == "" {
-			return result, fmt.Errorf("backup encryption enabled but backup.passphrase is not configured")
+			return AutoBackupResult{}, fmt.Errorf("backup encryption enabled but backup.passphrase is not configured")
 		}
 		encPath := path + ".enc"
 		if err := EncryptBackupFile(path, encPath, passphrase); err != nil {
-			return result, fmt.Errorf("encrypt backup: %w", err)
+			return AutoBackupResult{}, fmt.Errorf("encrypt backup: %w", err)
 		}
 		if err := os.Remove(path); err != nil {
-			return result, fmt.Errorf("remove plaintext backup: %w", err)
+			return AutoBackupResult{}, fmt.Errorf("remove plaintext backup: %w", err)
 		}
 		artifact = encPath
-		result.Encrypted = true
-		result.File = artifact
-		result.Size = 0
-		if encInfo, err := os.Stat(artifact); err == nil {
-			result.Size = encInfo.Size()
-		}
+		encrypted = true
 	}
 
 	// 校验和必写: 恢复前先验后用, 异地取回的备份也以此验真。
 	if err := WriteBackupChecksum(artifact); err != nil {
-		return result, err
+		return AutoBackupResult{}, err
 	}
-	result.Checksum = filepath.Base(BackupChecksumFile(artifact))
+	if !VerifyBackupChecksum(artifact) {
+		return AutoBackupResult{}, fmt.Errorf("backup checksum verification failed")
+	}
+	info, err := os.Stat(artifact)
+	if err != nil {
+		return AutoBackupResult{}, fmt.Errorf("stat backup: %w", err)
+	}
+	published := filepath.Join(BackupDir(), filepath.Base(artifact))
+	// Publish the checksum first. A snapshot becomes visible to rotation and listing
+	// only after both files are ready. Link fails if a snapshot name already exists.
+	if _, err := os.Lstat(published); !os.IsNotExist(err) {
+		return AutoBackupResult{}, fmt.Errorf("backup destination unavailable: %s", published)
+	}
+	if err := os.Link(BackupChecksumFile(artifact), BackupChecksumFile(published)); err != nil {
+		return AutoBackupResult{}, fmt.Errorf("publish backup checksum: %w", err)
+	}
+	if err := os.Link(artifact, published); err != nil {
+		_ = os.Remove(BackupChecksumFile(published))
+		return AutoBackupResult{}, fmt.Errorf("publish backup: %w", err)
+	}
+	artifact = published
+	result := AutoBackupResult{
+		File: artifact, Size: info.Size(), Verified: true, Encrypted: encrypted,
+		Checksum: filepath.Base(BackupChecksumFile(artifact)), Remote: "skipped",
+	}
 
 	// 异地推送: 本地备份已成功, 推送失败不判整体失败, 记告警进闭环。
 	if remote, _ := SettingGetBool(model.SettingKeyBackupRemote); remote {
@@ -167,6 +192,10 @@ func verifyBackup(path string) bool {
 		return false
 	}
 	defer sqlDB.Close()
+	var integrity string
+	if err := sqlDB.QueryRow("PRAGMA quick_check").Scan(&integrity); err != nil || integrity != "ok" {
+		return false
+	}
 	var count int64
 	if err := sqlDB.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users'").Scan(&count); err != nil || count < 1 {
 		return false

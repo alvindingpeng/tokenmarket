@@ -17,9 +17,15 @@ permissions:
   packages: write
 
 jobs:
+  tests:
+    uses: ./.github/workflows/test.yaml
+    with:
+      ref: ${{ github.sha }}
+
   release:
     name: release
     runs-on: ubuntu-latest
+    needs: tests
     steps:
       - name: Free Disk Space
         uses: endersonmenezes/free-disk-space@v3

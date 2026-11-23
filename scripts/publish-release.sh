@@ -1,115 +1,40 @@
 #!/bin/bash
-# 发布当前版本到 GitHub: 打标签(如缺) + 推送标签 + 用 CHANGELOG.md 对应章节创建/更新 Release。
-#
-# 由 .git/hooks/post-commit 经由 scripts/publish-release.sh 调用, 也可手工执行:
-#   GITHUB_TOKEN=... bash scripts/publish-release.sh
-# GITHUB_TOKEN 缺省时从 origin=github 的远端 URL 里取(该 URL 已内嵌 PAT)。
-# 幂等: 标签已存在则不重复打; Release 已存在则用最新正文覆盖(便于改了 CHANGELOG 再跑一次)。
-set -uo pipefail
+# 代码已推送后触发发版。GitHub Actions 测试通过后才构建并发布 Release。
+set -euo pipefail
 
-readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "${REPO_ROOT}" || exit 1
-
-readonly VERSION="$(bash scripts/version.sh)" || exit 1
-# 日志落 git common dir 而不是 .git: 在 git worktree 里 .git 是文件, 写 $REPO_ROOT/.git/... 会失败。
-# 同时清掉 git 传进来的 GIT_DIR / GIT_WORK_TREE, 否则下面的 rev-parse / push 会解析到
-# common dir 上的分支而不是当前工作树(见 auto-push.sh 文件头的说明)。
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 unset GIT_DIR GIT_WORK_TREE
-COMMON_DIR="$(cd "${REPO_ROOT}" && git rev-parse --git-common-dir)"
-case "${COMMON_DIR}" in /*) ;; *) COMMON_DIR="${REPO_ROOT}/${COMMON_DIR}" ;; esac
-readonly LOG="${COMMON_DIR}/publish-release.log"
-say() { echo "$(date -Iseconds) $*" | tee -a "${LOG}" >&2; }
-
-# 目标仓库: 优先 GITHUB_REPOSITORY 环境变量, 否则解析 github 远端 URL。
-OWNER_REPO="${GITHUB_REPOSITORY:-}"
-if [ -z "${OWNER_REPO}" ]; then
-    URL="$(git remote get-url github 2>/dev/null)" || { say "SKIP 无 github 远端"; exit 0; }
-    OWNER_REPO="$(printf '%s' "${URL}" | sed -n 's|.*github\.com[/:]\([^/]*/[^/]*\).git$|\1|p')"
-    [ -n "${OWNER_REPO}" ] || { say "SKIP 无法从远端 URL 解析仓库"; exit 0; }
-fi
-
-TOKEN="${GITHUB_TOKEN:-}"
-if [ -z "${TOKEN}" ]; then
-    TOKEN="$(git remote get-url github 2>/dev/null | sed -n 's|https://[^@]*@.*|&|p' | sed 's|https://||; s|@.*||')"
-fi
-[ -n "${TOKEN}" ] || { say "SKIP 没有可用的 GITHUB_TOKEN"; exit 0; }
-
-# 1) 标签: 不存在则创建并推送。
-#
-# 关键守卫(2026-11-22 的教训): 本仓库用 git worktree 并行开发两棵树(基线 + SaaS), 它们**共用
-# refs/tags** —— 标签命名空间是全局的。SaaS 线先发了 v1.11.0, 之后基线线也把版本写成 v1.11.0,
-# 于是 `git rev-parse refs/tags/v1.11.0` 安静地解析到了**另一棵树上的提交**, 钩子把那个 SaaS 提交
-# 当成"本次发布的提交"推给了基线仓库, 还给它挂了一条基线版本的 Release。
-# 标签是"某提交在本仓库可达"的声明; 指向不可达提交时这个声明就是假的。
-# 因此: 已存在的标签必须落在**当前分支的历史**里, 否则直接失败(不静默跳过)。
-if ! git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
-    git tag -a "${VERSION}" -m "release ${VERSION}" || { say "FAIL 打标签 ${VERSION}"; exit 1; }
-fi
-SHA="$(git rev-parse "refs/tags/${VERSION}^{commit}")"
-if ! git merge-base --is-ancestor "${SHA}" HEAD; then
-    say "FAIL 标签 ${VERSION} 已存在且指向当前分支之外的提交 ${SHA} —— 两棵 worktree 共用 refs/tags, 该版本号可能已被另一条产品线占用; 换一个版本号"
+VERSION="$(bash scripts/version.sh)"
+if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "Invalid release version: $VERSION" >&2
     exit 1
 fi
-REMOTE_SHA="$(git ls-remote github "refs/tags/${VERSION}" 2>/dev/null | awk '{print $1}')"
-if [ -z "${REMOTE_SHA}" ]; then
-    git push github "refs/tags/${VERSION}" >/dev/null 2>&1 || { say "FAIL 推送标签 ${VERSION}"; exit 1; }
+if ! awk -v version="$VERSION" '$1 == "##" && $2 == version { found=1 } END { exit !found }' CHANGELOG.md; then
+    echo "Missing changelog entry for $VERSION" >&2
+    exit 1
 fi
 
-# 2) 正文: 取 CHANGELOG.md 中 "## <VERSION>" 到下一个 "## " 之间的内容。
-if command -v python3 >/dev/null 2>&1; then
-    BODY_FILE="$(mktemp)"
-    python3 - "${VERSION}" CHANGELOG.md "${BODY_FILE}" <<'PY'
-import re, sys
-version, src, dst = sys.argv[1], sys.argv[2], sys.argv[3]
-text = open(src, encoding='utf-8').read()
-m = re.search(r'^## ' + re.escape(version) + r'.*$', text, re.M)
-body = ''
-if m:
-    rest = text[m.end():]
-    nxt = re.search(r'^## ', rest, re.M)
-    body = (rest[:nxt.start()] if nxt else rest).strip()
-if not body:
-    sys.exit(3)
-open(dst, 'w', encoding='utf-8').write(body + '\n')
-PY
-    if [ $? -ne 0 ]; then say "SKIP CHANGELOG.md 里没有 ${VERSION} 章节"; rm -f "${BODY_FILE}"; exit 0; fi
-else
-    say "SKIP 缺少 python3, 无法解析 CHANGELOG"; exit 0
+BRANCH="$(git symbolic-ref --short HEAD)"
+REMOTE="${SWITCHYARD_RELEASE_REMOTE:-github}"
+if ! git remote get-url "$REMOTE" >/dev/null 2>&1; then REMOTE=origin; fi
+HEAD_SHA="$(git rev-parse HEAD)"
+REMOTE_BRANCH="$(git ls-remote "$REMOTE" "refs/heads/$BRANCH" | cut -f1)"
+if [[ "$REMOTE_BRANCH" != "$HEAD_SHA" ]]; then
+    echo "Push the current commit to $REMOTE/$BRANCH before releasing $VERSION" >&2
+    exit 1
+fi
+if [[ "$BRANCH" == stable ]]; then
+    echo "The stable push triggers GitHub Actions for $VERSION"
+    exit 0
 fi
 
-STATUS="$(python3 - "${OWNER_REPO}" "${VERSION}" "${TOKEN}" "${BODY_FILE}" "${SHA}" <<'PY'
-import json, sys, urllib.request, urllib.error
-repo, version, token, body_file, sha = sys.argv[1:6]
-body = open(body_file, encoding='utf-8').read()
-api = 'https://api.github.com/repos/' + repo
-
-def req(method, url, payload=None):
-    data = json.dumps(payload).encode() if payload is not None else None
-    r = urllib.request.Request(url, data=data, method=method, headers={
-        'Authorization': 'Bearer ' + token,
-        'Accept': 'application/vnd.github+json',
-        'User-Agent': 'switchyard-publish-release',
-        'X-GitHub-Api-Version': '2022-11-28',
-    })
-    try:
-        with urllib.request.urlopen(r, timeout=30) as resp:
-            raw = resp.read()
-            return resp.status, (json.loads(raw) if raw else {})
-    except urllib.error.HTTPError as e:
-        return e.code, e.read().decode('utf-8', 'replace')
-
-status, info = req('GET', api + '/releases/tags/' + version)
-data = {'tag_name': version, 'name': version, 'body': body,
-        'draft': False, 'prerelease': False, 'target_commitish': sha}
-if status == 200:
-    code, resp = req('PATCH', api + '/releases/' + str(info['id']), data)
-else:
-    code, resp = req('POST', api + '/releases', data)
-print(code, resp.get('html_url', resp) if isinstance(resp, dict) else resp)
-sys.exit(0 if code in (200, 201) else 1)
-PY
-)"
-RC=$?
-rm -f "${BODY_FILE}"
-say "RELEASE ${VERSION} ${STATUS}"
-exit ${RC}
+TAG="refs/tags/$VERSION"
+if ! git show-ref --verify --quiet "$TAG"; then
+    git tag -a "$VERSION" -m "release $VERSION"
+fi
+if [[ "$(git rev-parse "$TAG^{commit}")" != "$HEAD_SHA" ]]; then
+    echo "Tag $VERSION points to a different commit" >&2
+    exit 1
+fi
+# Git rejects overwriting an existing remote tag. GitHub Actions owns the Release.
+git push "$REMOTE" "$TAG:$TAG"

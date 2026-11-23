@@ -13,6 +13,10 @@ CURRENT_BIN="${BIN_DIR}/switchyard"
 BACKUP_BIN=""
 HEALTH_VERSION=""
 HEALTH_UPTIME=""
+LOCK_DIR="${BIN_DIR}/.swap-deploy.lock"
+BACKUP_STAGE=""
+RECOVERY_REQUIRED=0
+FAILURE_REASON=deploy_interrupted
 
 run_service() {
   if [[ "$DRY_RUN" == 1 ]]; then printf '[dry-run] systemctl %s %s\n' "$1" "$SERVICE"; return 0; fi
@@ -52,17 +56,33 @@ wait_for_health() {
 rollback() {
   local reason="$1"
   echo "== ROLLBACK: $reason =="
-  if [[ -z "$BACKUP_BIN" ]]; then echo "DEPLOY_ROLLED_BACK reason=no_previous_binary"; return 1; fi
-  if ! run_service stop; then echo "rollback stop failed"; fi
-  if [[ "$DRY_RUN" == 1 ]]; then printf '[dry-run] install %s -> %s\n' "$BACKUP_BIN" "$CURRENT_BIN"; elif ! cp -f "$BACKUP_BIN" "$CURRENT_BIN"; then echo "rollback binary restore failed"; fi
-  if ! run_service start; then echo "rollback start failed"; fi
+  if ! run_service stop || ! mv -f "$BACKUP_BIN" "$CURRENT_BIN" || ! run_service start; then
+    echo "DEPLOY_ROLLBACK_FAILED reason=$reason"
+    return 1
+  fi
   # 回滚后要断言的是"**旧**二进制起来了", 不是"新版本起来了" —— 后者永远不可能成立,
   # 会让每一次成功的回滚都打印一行 "rollback health check failed", 把好事说成坏事。
   # 旧版本号在替换前已从现行二进制读进 $version; 若当时读不出来(降级成时间戳), 就只断言 status/db。
   if [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then EXPECTED_VERSION="$version"; else EXPECTED_VERSION=""; fi
-  if wait_for_health; then echo "rollback health check passed (version=$HEALTH_VERSION)"; else echo "rollback health check failed"; fi
-  echo "DEPLOY_ROLLED_BACK reason=$reason"
-  return 1
+  if wait_for_health; then
+    echo "rollback health check passed (version=$HEALTH_VERSION)"
+    echo "DEPLOY_ROLLED_BACK reason=$reason"
+  else
+    echo "DEPLOY_ROLLBACK_FAILED reason=$reason"
+    return 1
+  fi
+}
+
+finish_deploy() {
+  local status=$?
+  trap - EXIT
+  trap '' INT TERM
+  if [[ "$RECOVERY_REQUIRED" == 1 ]]; then
+    rollback "$FAILURE_REASON" || status=1
+  fi
+  if [[ -n "$BACKUP_STAGE" ]]; then rm -f -- "$BACKUP_STAGE" || true; fi
+  rmdir -- "$LOCK_DIR" || true
+  exit "$status"
 }
 
 inspect_database() {
@@ -88,6 +108,12 @@ conn.close()
 PY
 }
 
+if [[ "$DRY_RUN" != 1 ]]; then
+  if ! mkdir -- "$LOCK_DIR"; then echo "DEPLOY_LOCK_UNAVAILABLE: $LOCK_DIR" >&2; exit 1; fi
+  trap finish_deploy EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+fi
 if [[ ! -s "$NEW_BIN" ]]; then echo "NO_NEW_BINARY: $NEW_BIN"; exit 1; fi
 echo "== NEW BINARY =="; ls -lh "$NEW_BIN"
 if [[ ! -e "$CURRENT_BIN" ]]; then echo "NO_PREVIOUS_BINARY: $CURRENT_BIN"; exit 1; fi
@@ -102,22 +128,31 @@ BACKUP_BIN="${BIN_DIR}/switchyard.prev-${version}"
 if [[ -e "$BACKUP_BIN" && "$DRY_RUN" != 1 ]]; then
   # 不覆盖同名备份: 名字里的版本说的是"被替换下去的那个二进制", 而这次要备份的可能不是它
   # (例如回退后又重新部署同一版本)。覆盖会让备份的名字与内容不符, 等回滚时才发现就晚了。
-  BACKUP_BIN="${BIN_DIR}/switchyard.prev-${version}-$(date +%Y%m%d%H%M%S)"
+  BACKUP_BIN="${BIN_DIR}/switchyard.prev-${version}-$(date +%Y%m%d%H%M%S)-$$"
 fi
 if [[ "$DRY_RUN" == 1 ]]; then
-  printf '[dry-run] systemctl stop %s\n' "$SERVICE"
   printf '[dry-run] cp -f %s %s\n' "$CURRENT_BIN" "$BACKUP_BIN"
-  printf '[dry-run] chmod 755 %s && mv -f %s %s\n' "$NEW_BIN" "$NEW_BIN" "$CURRENT_BIN"
+  printf '[dry-run] chmod 755 %s\n' "$NEW_BIN"
+  printf '[dry-run] systemctl stop %s\n' "$SERVICE"
+  printf '[dry-run] mv -f %s %s\n' "$NEW_BIN" "$CURRENT_BIN"
 else
-  run_service stop
-  cp -f "$CURRENT_BIN" "$BACKUP_BIN"
-  # 二进制备份轮转: 每次部署产生一份 switchyard.prev-*(约 53MB), 不清理会随部署次数线性增长。
-  # 保留最近 10 份 —— 覆盖近两周的部署历史, 回滚窗口足够; 按修改时间取 newest 之外的部分删除。
-  # 只匹配 switchyard.prev-* 自己产生的前缀, 不碰运维手工放的其它文件。
-  ls -1t "$BIN_DIR"/switchyard.prev-* 2>/dev/null | tail -n +11 | while IFS= read -r old; do
-    rm -f -- "$old"
-  done
   chmod 755 "$NEW_BIN"
+  candidate="$("$NEW_BIN" version | sed -n 's/^[[:space:]]*Version:[[:space:]]*\(v[0-9][0-9.]*\)[[:space:]]*$/\1/p')"
+  if [[ ! "$candidate" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ || ( -n "$EXPECTED_VERSION" && "$candidate" != "$EXPECTED_VERSION" ) ]]; then
+    echo "INVALID_NEW_BINARY_VERSION: $candidate" >&2
+    exit 1
+  fi
+  EXPECTED_VERSION="$candidate"
+  BACKUP_STAGE="$(mktemp "${BIN_DIR}/.switchyard-backup.XXXXXX")"
+  cp -p "$CURRENT_BIN" "$BACKUP_STAGE"
+  cmp -s "$CURRENT_BIN" "$BACKUP_STAGE"
+  mv -f "$BACKUP_STAGE" "$BACKUP_BIN"
+  BACKUP_STAGE=""
+
+  RECOVERY_REQUIRED=1
+  FAILURE_REASON=stop_failed
+  run_service stop
+  FAILURE_REASON=replace_failed
   mv -f "$NEW_BIN" "$CURRENT_BIN"
 fi
 if [[ "$DRY_RUN" == 1 ]]; then
@@ -125,14 +160,22 @@ if [[ "$DRY_RUN" == 1 ]]; then
 else
   # start 失败必须走回滚, 不能让 set -e 把脚本直接带走: 那样新二进制留在原地、服务是停的,
   # 却没有 DEPLOY_ROLLED_BACK, 也没有恢复旧版本。StartLimitBurst 触发时正是这个形状(unit 进入 failed)。
-  if ! run_service start; then rollback start_failed; fi
+  FAILURE_REASON=start_failed
+  run_service start
 fi
 health_reason=
 if [[ "$DRY_RUN" != 1 ]]; then if ! active="$(systemctl is-active "$SERVICE")" || [[ "$active" != active ]]; then health_reason=service_not_active; fi; fi
 # dry-run 不探活: 此刻响应 /healthz 的是**现行**进程, 拿它当作"新二进制健康"的证据是假信号。
 if [[ -z "$health_reason" && "$DRY_RUN" != 1 ]] && ! wait_for_health; then health_reason=health_check_failed; fi
-if [[ -n "$health_reason" ]]; then rollback "$health_reason"; fi
+if [[ -n "$health_reason" ]]; then FAILURE_REASON="$health_reason"; exit 1; fi
 if [[ "$DRY_RUN" == 1 ]]; then DEPLOY_VERSION="${EXPECTED_VERSION:-dry-run}"; else DEPLOY_VERSION="$HEALTH_VERSION"; fi
+FAILURE_REASON=database_inspection_failed
 inspect_database
-if [[ -n "$EXPECTED_VERSION" && "$DEPLOY_VERSION" != "$EXPECTED_VERSION" ]]; then rollback version_mismatch; fi
+RECOVERY_REQUIRED=0
+if [[ "$DRY_RUN" != 1 ]]; then
+  # Rotate only after the replacement is healthy. A cleanup failure must not stop it.
+  if ! ls -1t "$BIN_DIR"/switchyard.prev-* 2>/dev/null | tail -n +11 | while IFS= read -r old; do
+    rm -f -- "$old" || exit 1
+  done; then echo "DEPLOY_BACKUP_ROTATION_FAILED" >&2; fi
+fi
 printf 'DEPLOY_OK version=%s\n' "$DEPLOY_VERSION"

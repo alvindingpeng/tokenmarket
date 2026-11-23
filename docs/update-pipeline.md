@@ -22,4 +22,4 @@ The updater refuses same-version and downgrade updates by default. The `.old` fi
 
 ## Release assets
 
-Version tags trigger `.github/workflows/release-assets.yaml`. The workflow builds the embedded frontend, cross-compiles Linux, Windows, and macOS standard targets, creates the ZIP archives, and uploads them to the matching GitHub Release. Android is intentionally skipped in this workflow because the fork does not require an Android NDK for server releases.
+A version change on `stable` or a version tag triggers `.github/workflows/release-assets.yaml`. The workflow tests the exact source revision before building the embedded frontend and the Linux, Windows, and macOS archives. On success, it publishes the matching GitHub Release with the archives and checksums.

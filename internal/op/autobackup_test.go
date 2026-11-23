@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/alvindingpeng/switchyard/internal/db"
+	"github.com/alvindingpeng/switchyard/internal/model"
 )
 
 // 本文件钉死备份轮转的删除面: 只认服务自己生成的 backup-YYYYMMDD-HHMMSS.db(.enc)。
@@ -69,5 +72,36 @@ func TestPruneBackupsKeepsOnlyManagedArtifacts(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(backupDir, "backup-20260103-000000.db")); err != nil {
 		t.Fatalf("newest managed backup must survive rotation: %v", err)
+	}
+}
+
+func TestAutoBackupKeepsLastValidSnapshotOnVerificationFailure(t *testing.T) {
+	t.Chdir(t.TempDir())
+	opTestDBSetup(t, "source.db")
+	for key, value := range map[model.SettingKey]string{
+		model.SettingKeyAutoBackupEnabled: "true",
+		model.SettingKeyAutoBackupKeep:    "1",
+	} {
+		if err := SettingUpsert(key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	valid, err := AutoBackupRun()
+	if err != nil || !valid.Verified || !VerifyBackupChecksum(valid.File) {
+		t.Fatalf("expected a verified backup with checksum, got %+v, %v", valid, err)
+	}
+	if err := db.GetDB().Migrator().DropTable(&model.User{}); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := AutoBackupRun(); err == nil || result.Pruned != 0 || result.File != "" {
+		t.Fatalf("invalid snapshot should fail before publication and rotation: %+v, %v", result, err)
+	}
+	if !VerifyBackupChecksum(valid.File) {
+		t.Fatal("previous recovery point or checksum was lost")
+	}
+	files, err := os.ReadDir(BackupDir())
+	if err != nil || len(files) != 2 {
+		t.Fatalf("expected only the previous snapshot and checksum, got %v, %v", files, err)
 	}
 }

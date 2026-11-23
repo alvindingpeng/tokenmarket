@@ -2,8 +2,12 @@ name: release-assets
 
 on:
   push:
+    branches:
+      - stable
     tags:
       - 'v*'
+    paths:
+      - main.go
   # 手动补齐漏发的 Release: 指定 tag 即可重跑构建与上传, 不必删标签重推。
   workflow_dispatch:
     inputs:
@@ -13,18 +17,37 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  revision:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.sha }}
+      - id: resolve
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  tests:
+    needs: revision
+    uses: ./.github/workflows/test.yaml
+    with:
+      ref: ${{ needs.revision.outputs.sha }}
+
   release-assets:
     name: Build and upload release archives
     runs-on: ubuntu-latest
+    needs: [revision, tests]
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # 手动补齐时必须检出目标 tag, 否则打出来的是默认分支的最新代码。
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ needs.revision.outputs.sha }}
           fetch-depth: 0
 
       - name: Resolve tag
@@ -32,8 +55,16 @@ jobs:
         env:
           INPUT_TAG: ${{ inputs.tag }}
           REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
-          TAG="${INPUT_TAG:-$REF_NAME}"
+          set -euo pipefail
+          VERSION="$(bash scripts/version.sh)"
+          TAG="${INPUT_TAG:-$VERSION}"
+          if [ "$REF_TYPE" = tag ] && [ -z "$INPUT_TAG" ]; then TAG="$REF_NAME"; fi
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ || "$TAG" != "$VERSION" ]]; then
+            echo "::error::Release ref $TAG does not match source version $VERSION"
+            exit 1
+          fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "resolved tag: ${TAG}"
 
@@ -71,29 +102,35 @@ jobs:
       - name: Refresh model prices
         run: python3 scripts/updatePrice.py
 
-      # workflow_dispatch 补齐产物时必须走 android 分支; 纯推 tag 时由 build.yaml 负责
-      # (它已包含 android), 这里跳过 android, 避免两个工作流同时上传同一批产物。
       - name: Build release archives
         env:
-          SKIP_ANDROID: ${{ inputs.tag == '' && '1' || '' }}
+          SKIP_ANDROID: '1'
+          SWITCHYARD_BUILD_VERSION: ${{ steps.tag.outputs.tag }}
         run: bash scripts/build.sh
 
-      - name: Upload release assets without replacing release notes
+      - name: Check release binary version
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          ACTUAL="$(build/bin/switchyard-linux-amd64 version | awk '$1 == "Version:" { print $2 }')"
+          test "$ACTUAL" = "$TAG"
+
+      - name: Publish tested release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
-          # release.yaml 负责带变更日志创建 Release, 这里只往它上面挂产物。
-          # 但那边一旦没跑成(例如分支名不匹配), 单纯 upload 会以 release not found
-          # 失败, 产物就永远挂不上去 —— 所以等不到就自己建一个, 保证产物有落点。
-          for attempt in 1 2 3 4 5 6; do
-            if gh release view "$TAG" >/dev/null 2>&1; then break; fi
-            echo "Release $TAG is not visible yet (attempt $attempt); waiting"
-            sleep 10
-          done
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG does not exist; creating it so the archives have somewhere to go"
-            gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
+          SHA="$(git rev-parse HEAD)"
+          if git show-ref --verify --quiet "refs/tags/$TAG"; then
+            test "$(git rev-parse "refs/tags/$TAG^{commit}")" = "$SHA"
           fi
-          gh release upload "$TAG" build/archives/* --clobber
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            git fetch origin "refs/tags/$TAG:refs/tags/$TAG"
+            test "$(git rev-parse "refs/tags/$TAG^{commit}")" = "$SHA"
+            gh release upload "$TAG" build/archives/* --clobber
+          else
+            awk -v tag="$TAG" '$1 == "##" { if (found) exit; if ($2 == tag) found=1; next } found' CHANGELOG.md > release-notes.md
+            test -s release-notes.md
+            gh release create "$TAG" build/archives/* --target "$SHA" --title "$TAG" --notes-file release-notes.md
+          fi

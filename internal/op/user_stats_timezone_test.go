@@ -180,10 +180,11 @@ func TestStatsWindowUsesUserCalendar(t *testing.T) {
 	statsTZSetUserTimezone(t, payer.ID, "Asia/Phnom_Penh")
 
 	serverAt := func(d, hour, min int) time.Time {
-		return statsTZDate(server, 2026, time.November, d, hour, min)
+		// SQLite stores application timestamps in the process's local representation.
+		return statsTZDate(server, 2026, time.November, d, hour, min).In(time.Local)
 	}
 	// 五条记录的代价互不相同(1/2/4/8/16), 这样"算错了哪一条"能从金额差反推出来。
-	userStatsInsert(t,
+	rows := []model.BillingRecord{
 		// A: 服务器 11-20 23:30 = 用户 11-20 22:30 → 用户的前一天, 两套日历都排除。
 		userStatsRow(payer.ID, "m", model.BillingStatusSettled, serverAt(20, 23, 30), 1, 1),
 		// B: 服务器 11-21 00:30 = 用户 11-20 23:30 → 用户的前一天, **必须排除**。
@@ -196,7 +197,8 @@ func TestStatsWindowUsesUserCalendar(t *testing.T) {
 		// E: 服务器 11-22 00:30 = 用户 11-21 23:30 → 用户当天, **必须计入**。
 		//    改造前它落在服务器窗口外会被丢掉 —— 这是本任务要修的第二处。
 		userStatsRow(payer.ID, "m", model.BillingStatusSettled, serverAt(22, 0, 30), 16, 16),
-	)
+	}
+	userStatsInsert(t, rows...)
 
 	ctx := context.Background()
 	overview, err := UserStatsOverview(ctx, payer.ID, "2026-11-21", "2026-11-21")
@@ -251,21 +253,26 @@ func TestStatsWindowUsesUserCalendar(t *testing.T) {
 		t.Fatalf("按模型的区间口径与概览不一致: %+v", models)
 	}
 
-	// 反向对照: 清空偏好(跟随服务器)后, 服务器日历应得 B + C + D(含 B 不含 E)。
-	// 这条对照证明上面 3/28/28 不是"没数据"碰巧凑出来的。
+	// 反向对照: 清空偏好后按进程的日历取数。夹具用上海时间描述，
+	// 在上海应计入 B+C+D；UTC 和金边的午夜边界各不相同。
 	statsTZSetUserTimezone(t, payer.ID, "")
 	serverOverview, err := UserStatsOverview(ctx, payer.ID, "2026-11-21", "2026-11-21")
 	if err != nil {
 		t.Fatalf("overview(server tz): %v", err)
 	}
-	if serverOverview.TotalRequests != 3 {
-		t.Fatalf("服务器日历下应恰好 3 条(B+C+D), 实际 %d", serverOverview.TotalRequests)
+	rows[1].UserCost = 999
+	rows[4].UserCost = 0
+	var wantRequests int64
+	var wantCost float64
+	for _, row := range rows {
+		if row.CreatedAt.In(time.Local).Format(time.DateOnly) == "2026-11-21" {
+			wantRequests++
+			wantCost += row.UserCost
+		}
 	}
-	// B(已被改成 999) 计入 + C(4) + D(8) = 1011; 用户日历下则是 C+D+E' = 4+8+0 = 12。
-	// 两个日历的差异正是 B 与 E 的取舍, 用金额直接指出差异来自哪两条。
-	if serverOverview.TotalCost <= afterE.TotalCost {
-		t.Fatalf("服务器日历应比用户日历多计入 B(999): server=%v user=%v",
-			serverOverview.TotalCost, afterE.TotalCost)
+	if serverOverview.TotalRequests != wantRequests || serverOverview.TotalCost != wantCost {
+		t.Fatalf("服务器日历: requests/cost=%d/%v，期望 %d/%v",
+			serverOverview.TotalRequests, serverOverview.TotalCost, wantRequests, wantCost)
 	}
 }
 
@@ -276,22 +283,26 @@ func TestStatsWindowUsesUserCalendar(t *testing.T) {
 func TestStatsHourLabelShiftsToUserTimezone(t *testing.T) {
 	phnomPenh := statsTZTestLocation(t, "Asia/Phnom_Penh")
 	shanghai := statsTZTestLocation(t, "Asia/Shanghai")
+	hostLabel := func(hour int) string {
+		return statsTZDate(shanghai, 2026, time.November, 21, hour, 0).
+			In(time.Local).Format("2006-01-02 15:04")
+	}
 
 	// 服务器 10:00 的桶 → +07 用户看到 09:00。
-	if got := statsHourLabelIn("2026-11-21 10:00", phnomPenh); got != "2026-11-21 09:00" {
+	if got := statsHourLabelIn(hostLabel(10), phnomPenh); got != "2026-11-21 09:00" {
 		t.Fatalf("服务器 10:00 的桶在 +07 下应为 09:00, 实际 %q", got)
 	}
 	// 服务器 10:00 的桶 → +08 用户(与服务器同时区)应当仍是 10:00。
-	if got := statsHourLabelIn("2026-11-21 10:00", shanghai); got != "2026-11-21 10:00" {
+	if got := statsHourLabelIn(hostLabel(10), shanghai); got != "2026-11-21 10:00" {
 		t.Fatalf("同时区下标签不该变, 实际 %q", got)
 	}
 	// 跨日: 服务器 00:00 的桶 → +07 用户是**前一天的** 23:00。
-	if got := statsHourLabelIn("2026-11-21 00:00", phnomPenh); got != "2026-11-20 23:00" {
+	if got := statsHourLabelIn(hostLabel(0), phnomPenh); got != "2026-11-20 23:00" {
 		t.Fatalf("跨日换算错: 服务器 11-21 00:00 在 +07 下应为 11-20 23:00, 实际 %q", got)
 	}
 	// 非整点偏移必须保留分钟位(四舍五入会让标签与它代表的桶错位)。
 	katmandu := statsTZTestLocation(t, "Asia/Kathmandu")
-	if got := statsHourLabelIn("2026-11-21 10:00", katmandu); got != "2026-11-21 07:45" {
+	if got := statsHourLabelIn(hostLabel(10), katmandu); got != "2026-11-21 07:45" {
 		t.Fatalf("+05:45 下的标签应带 45 分钟位(07:45), 实际 %q", got)
 	}
 	// 解析不了就原样返回: 宁可显示旧标签, 也不要让整条曲线消失。
@@ -307,7 +318,7 @@ func TestStatsHourTrendLabelEndToEnd(t *testing.T) {
 	server := statsTZTestLocation(t, "Asia/Shanghai")
 	statsTZSetUserTimezone(t, payer.ID, "Asia/Phnom_Penh")
 
-	at := statsTZDate(server, 2026, time.November, 21, 10, 15)
+	at := statsTZDate(server, 2026, time.November, 21, 10, 15).In(time.Local)
 	userStatsInsert(t, userStatsRow(payer.ID, "m", model.BillingStatusSettled, at, 3, 30))
 
 	ctx := context.Background()
@@ -331,8 +342,9 @@ func TestStatsHourTrendLabelEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("trend hour(server tz): %v", err)
 	}
-	if len(trend) != 1 || trend[0].Date != "2026-11-21 10:00" {
-		t.Fatalf("未设置用户时区时标签必须与改造前一致(10:00), 实际 %+v", trend)
+	want := at.In(time.Local).Format("2006-01-02 15:00")
+	if len(trend) != 1 || trend[0].Date != want {
+		t.Fatalf("未设置用户时区时应返回服务器小时桶 %s, 实际 %+v", want, trend)
 	}
 }
 

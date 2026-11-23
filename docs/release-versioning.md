@@ -7,8 +7,8 @@
 
 | 内容 | 位置 | 谁读它 |
 | --- | --- | --- |
-| 版本号 | `main.go` 里的 `// Version vX.Y.Z` 标记 | `scripts/version.sh`、上游 `.github/workflows/release.yaml`、`scripts/publish-release.sh` |
-| 更新说明 | `CHANGELOG.md` 中对应的 `## vX.Y.Z` 章节 | `scripts/publish-release.sh` → GitHub Release 正文 |
+| 版本号 | `main.go` 里的 `// Version vX.Y.Z` 标记 | `scripts/version.sh`、`.github/workflows/release-assets.yaml`、`scripts/publish-release.sh` |
+| 更新说明 | `CHANGELOG.md` 中对应的 `## vX.Y.Z` 章节 | `release-assets.yaml` → GitHub Release 正文 |
 
 > 不要再新增 `VERSION` 文件、`web/package.json` version 之类的第二处定义。上游 release
 > workflow 用 `grep '^// Version ' main.go` 解析版本，改格式会静默弄断 CI 发布。
@@ -24,20 +24,12 @@
 
 1. 改代码，`CHANGELOG.md` 顶部写（或补写）本次 `## vX.Y.Z` 章节。
 2. 把 `main.go` 的 `// Version` 改成同一个 `vX.Y.Z`。
-3. `bash scripts/build-local.sh` —— 前端与后端**必须同时重建**：`static/static.go` 用 embed
-   把 `static/out` 打进二进制，顺序反了或只重建一边，二进制里就是旧前端。
-4. 部署 + 回归（本仓库部署见 `switchyard-mobile-deploy.py`，回归 `switchyard-e2e-billing.py`）。
-5. `git commit`。提交后 `post-commit` 钩子自动完成：
-   - `git push github HEAD:refs/heads/<当前分支>`（实时推送，日志 `.git/auto-push.log`）。
-     目标分支取自提交所在的分支，**不硬编码**：本仓库的提交落在 `master` 上，
-     而远端 `main` 自 v1.5.6 起已与 `master` 分叉未再跟进，硬编码 `main` 会让每次
-     自动推送都以 non-fast-forward 失败。分离头指针时回落到 `master`。
-   - `scripts/publish-release.sh`：本地无 `vX.Y.Z` 标签则 `git tag -a` 并推送标签，
-     再用 CHANGELOG 对应章节 POST/PATCH GitHub Release（日志 `.git/publish-release.log`）。
+3. 验证本轮改动，提交并推送到 `tokenmarket` 的 `stable` 分支。每轮优化使用一个新版本号。
+4. GitHub Actions 验证本次提交；测试通过后构建含嵌入式前端的发行包并发布同名标签、Release 和校验和。
+5. 在 GitHub 核对标签对应的提交和发布产物。生产部署走独立流程。
 
-> 注：GitHub 仓库的**默认分支仍是 `main`**（即 v1.5.6 时代的内容），所以仓库首页展示的不是最新代码。
-> 需要的话可在 GitHub 设置里把默认分支改成 `master`；`main` 分支本身未做删除或强制同步 ——
-> 它含有一个 `master` 上没有的提交（v1.5.3–v1.5.6 的整批落库），两边历史已分叉，贸然覆盖会丢东西。
+`stable` 从 v1.16.0 标签建立，作为后续版本的发布分支。其他分支需要按现有流程推送代码及版本标签。
+`scripts/publish-release.sh` 校验远端分支和本地提交一致，必要时推送标签。Release 由测试通过后的工作流创建。
 
 ## 版本号在两棵 worktree 之间是**共享命名空间**(2026-11-22 事故)
 
@@ -57,17 +49,8 @@
 
 ### 现在的守卫
 
-`publish-release.sh` 在解析出标签对应的提交后多了一道检查：
-
-```bash
-if ! git merge-base --is-ancestor "${SHA}" HEAD; then
-    say "FAIL 标签 ${VERSION} 已存在且指向当前分支之外的提交 ${SHA} —— …换一个版本号"
-    exit 1
-fi
-```
-
-即：**已存在的标签必须落在当前分支的历史里**，否则发布直接失败（而不是静默跳过）。
-失败会写进 `.git/publish-release.log`，不会像以前那样"提交成功、发布悄悄指向别处"。
+发版脚本要求本地版本标签与当前提交一致，Git 会拒绝覆盖已存在的远端标签。
+工作流上传产物前也会检查版本标记及标签指向。
 
 ### 对版本号的实际影响
 
@@ -122,11 +105,11 @@ v1.10.22 首次部署被自己的健康检查判成失败并自动回滚, 根因
 改了 CHANGELOG 想覆盖已发布的 Release 正文：
 
 ```bash
-bash scripts/publish-release.sh        # 幂等: 标签已存在不重复打, Release 已存在则 PATCH 正文
+bash scripts/publish-release.sh        # 检查已推送的版本，必要时推送标签
 ```
 
 - 日志 `SKIP CHANGELOG.md 里没有 vX.Y.Z 章节` → 忘了写章节，或 `main.go` 标记与章节标题不一致。
 - 日志 `SKIP 没有可用的 GITHUB_TOKEN` → `github` 远端 URL 里没有内嵌 PAT，
-  临时 `GITHUB_TOKEN=... bash scripts/publish-release.sh`。
+  使用已配置的 Git 远端认证。
 - GitHub Actions 也可以发布（仓库 Actions 权限已开），但那要求 runner 能拿到 secrets；
   本地钩子路径不依赖 Actions，改代码机即发布机，所以选它。

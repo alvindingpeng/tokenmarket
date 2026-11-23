@@ -3,16 +3,22 @@ name: test
 on:
   push:
   pull_request:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: test-${{ github.workflow }}-${{ github.ref }}
+  group: test-${{ github.workflow }}-${{ github.ref }}-${{ inputs.ref || github.sha }}
   cancel-in-progress: true
 
 env:
   GOFLAGS: -p=2
+  TZ: UTC
 
 jobs:
   go-test:
@@ -25,6 +31,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
@@ -38,6 +46,15 @@ jobs:
           SHARDS: 4
           SHARD_INDEX: ${{ matrix.shard }}
         run: scripts/test-go.sh
+      - name: Test statistics across server timezones
+        if: matrix.shard == 0
+        run: |
+          for timezone in UTC Asia/Shanghai Asia/Phnom_Penh; do
+            TZ="$timezone" go test ./internal/op -run '^TestStats(DateRangeTimezoneSemantics|WindowUsesUserCalendar|HourLabelShiftsToUserTimezone|HourTrendLabelEndToEnd)$' -count=1
+          done
+      - name: Test deployment recovery
+        if: matrix.shard == 0
+        run: python3 -m unittest discover -s scripts -p test_swap_deploy.py
 
   web-test:
     name: Web typecheck and tests
@@ -45,6 +62,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
