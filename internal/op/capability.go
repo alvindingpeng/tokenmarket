@@ -10,6 +10,7 @@ import (
 
 	"github.com/alvindingpeng/switchyard/internal/db"
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -84,47 +85,20 @@ func CapabilityCount() int {
 	return len(capabilityCache.index.byName)
 }
 
-// CapabilityReplaceFromModelsDev 用官方能力登记整体替换非人工条目。
-// 人工补录(source=manual)的行始终保留: 官方没收录的小众供应商靠它们兜底, 不能被一次同步抹掉。
-func CapabilityReplaceFromModelsDev(capabilities []model.ModelCapability, ctx context.Context) error {
-	if len(capabilities) == 0 {
-		return nil
-	}
+// replaceModelsDevCapabilities replaces the feed rows while preserving manual overrides.
+func replaceModelsDevCapabilities(tx *gorm.DB, capabilities []model.ModelCapability) error {
 	now := time.Now()
-	rows := make([]model.ModelCapability, 0, len(capabilities))
-	for _, capability := range capabilities {
-		name := normalizeCapabilityKey(capability.Name)
-		if name == "" || capability.Empty() {
-			continue
-		}
-		capability.Name = name
-		capability.Source = model.CapabilitySourceModelsDev
-		capability.UpdatedAt = now
-		rows = append(rows, capability)
+	for i := range capabilities {
+		capabilities[i].Source = model.CapabilitySourceModelsDev
+		capabilities[i].UpdatedAt = now
 	}
-	if len(rows) == 0 {
-		return nil
-	}
-	// 去重: 同一模型在多个厂商下重复出现时以后写的为准(数据源内部已按名称合并)。
-	deduped := make([]model.ModelCapability, 0, len(rows))
-	seen := make(map[string]int, len(rows))
-	for _, row := range rows {
-		if at, ok := seen[row.Name]; ok {
-			deduped[at] = row
-			continue
-		}
-		seen[row.Name] = len(deduped)
-		deduped = append(deduped, row)
-	}
-	conn := db.GetDB().WithContext(ctx)
-	// 先删官方来源的旧行再整批写入: 官方下架的模型不应继续留在库里误导探测。
-	if err := conn.Where("source = ?", model.CapabilitySourceModelsDev).Delete(&model.ModelCapability{}).Error; err != nil {
+	if err := tx.Where("source = ?", model.CapabilitySourceModelsDev).Delete(&model.ModelCapability{}).Error; err != nil {
 		return fmt.Errorf("failed to clear model capabilities: %w", err)
 	}
-	if err := conn.Clauses(clause.OnConflict{UpdateAll: true}).CreateInBatches(&deduped, 200).Error; err != nil {
+	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&capabilities, 200).Error; err != nil {
 		return fmt.Errorf("failed to save model capabilities: %w", err)
 	}
-	return capabilityRefreshCache(ctx)
+	return nil
 }
 
 // CapabilityDelete 删除一条能力登记, 供管理界面清理错误条目。

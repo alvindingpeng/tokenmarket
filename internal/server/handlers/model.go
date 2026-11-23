@@ -147,7 +147,16 @@ func getModelList(c *gin.Context) {
 }
 
 func listLLM(c *gin.Context) {
-	resp.Success(c, op.LLMList())
+	type catalogItem struct {
+		model.LLMInfo
+		Reference model.ModelReference `json:"reference,omitzero"`
+	}
+	list := op.LLMList()
+	items := make([]catalogItem, 0, len(list))
+	for _, entry := range list {
+		items = append(items, catalogItem{LLMInfo: entry, Reference: op.ModelReferenceGet(entry.Name)})
+	}
+	resp.Success(c, items)
 }
 
 // listAutoAddRules 返回当前用户为各模型设置的自动添加条件, 供模型页逐条展示与编辑。
@@ -309,23 +318,13 @@ func deleteModelCapability(c *gin.Context) {
 }
 
 func updateLLMPrice(c *gin.Context) {
-	ctx := c.Request.Context()
-	// 一次抓取同时更新价格表与模型能力登记: 能力登记决定探测渠道模型时预勾选的协议位。
-	capabilities, err := price.UpdateLLMPrice(ctx)
+	result, err := price.SyncModelCatalog(c.Request.Context())
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	capabilityCount := 0
-	if len(capabilities) > 0 {
-		if err := op.CapabilityReplaceFromModelsDev(capabilities, ctx); err != nil {
-			resp.Error(c, http.StatusInternalServerError, err.Error())
-			return
-		}
-		capabilityCount = len(capabilities)
-	}
-	audit(c, "model.update-price", "", fmt.Sprintf("sync from models.dev, capabilities=%d", capabilityCount))
-	resp.Success(c, nil)
+	audit(c, "model.update-price", "", fmt.Sprintf("sync from models.dev, references=%d channel_models_updated=%d", result.References, result.ChannelModelsUpdated))
+	resp.Success(c, result)
 }
 
 // rebuildLLMPrice 清理幽灵模型并重新校准数据库中的剩余模型价格。

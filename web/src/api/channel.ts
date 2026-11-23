@@ -155,7 +155,8 @@ export type ChannelDetail = {
     // egresses 是渠道的出口池：每条出口描述"从哪条线路出去"，转发时按实测耗时择优。
     // 留空表示沿用渠道自身的代理配置（proxy / channel_proxy），保持旧行为。
     egresses: ChannelEgress[];
-    models: string[]; // 上游模型名称；模型除名称外没有界面用得上的字段。
+    models: string[]; // 上游模型名称。
+    model_contexts?: Record<string, number>; // 采集到的上下文窗口，单位为 token。
     grants: ChannelGrant[];
     proxy: boolean;
     custom_header: CustomHeader[];

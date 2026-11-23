@@ -160,6 +160,7 @@ type ChannelModel struct {
 	ID            int        `json:"id" gorm:"primaryKey"`                                      // 渠道模型主键。
 	ChannelID     int        `json:"channel_id" gorm:"not null;index:idx_channel_model,unique"` // 所属渠道 ID。
 	Name          string     `json:"name" gorm:"not null;index:idx_channel_model,unique"`       // 上游模型名称。
+	ContextLength int        `json:"context_length,omitempty" gorm:"not null;default:0"`        // models.dev 上下文窗口（token）。
 	Listed        bool       `json:"listed" gorm:"default:false"`                               // 是否上架: 已发布渠道中只有上架的模型对用户可见。
 	SupplyPrice   LLMPrice   `json:"supply_price" gorm:"serializer:json"`                       // 供货价(读/写/缓存读/缓存写, 每百万 token); 未设置即 0。
 	PriceCurrency string     `json:"price_currency" gorm:"size:8;default:''"`                   // 供货价币种声明; 空 = USD(账面币种, 零折算)。结算时按汇率快照折算入账。
@@ -201,10 +202,11 @@ type ChannelGrant struct {
 type ChannelDetail struct {
 	ID            int                  `json:"id"` // 渠道主键; 创建时提交 0, 由数据库分配。
 	ChannelConfig                      // 渠道自身的可编辑配置。
-	Keys          []ChannelKeyConfig   `json:"keys"`     // 渠道下的上游凭据。
-	Egresses      []ChannelEgress      `json:"egresses"` // 渠道的出口池; 空表示沿用渠道自身的代理配置(向后兼容)。
-	Models        []string             `json:"models"`   // 渠道提供的上游模型名称。
-	Grants        []ChannelGrantConfig `json:"grants"`   // 渠道下的授权。
+	Keys          []ChannelKeyConfig   `json:"keys"`                     // 渠道下的上游凭据。
+	Egresses      []ChannelEgress      `json:"egresses"`                 // 渠道的出口池; 空表示沿用渠道自身的代理配置(向后兼容)。
+	Models        []string             `json:"models"`                   // 渠道提供的上游模型名称。
+	ModelContexts map[string]int       `json:"model_contexts,omitempty"` // 已采集的上下文窗口，仅用于展示。
+	Grants        []ChannelGrantConfig `json:"grants"`                   // 渠道下的授权。
 	// ExplicitColumns 记录提交体里**真的出现过**的配置字段(JSON 字段名 → true)。
 	// 不进 JSON: 它描述的是"这次请求说过什么", 不是渠道的配置, 读取侧无从给值。
 	// 唯一用途是创建渠道时判断哪些零值该覆盖 DB 默认值(见 ChannelCreate 的说明) ——

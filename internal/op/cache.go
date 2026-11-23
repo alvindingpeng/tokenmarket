@@ -32,6 +32,9 @@ func InitCache() error {
 	if err := capabilityRefreshCache(ctx); err != nil {
 		return fmt.Errorf("model capability refresh cache error: %v", err)
 	}
+	if err := modelReferenceRefreshCache(ctx); err != nil {
+		return fmt.Errorf("model reference refresh cache error: %w", err)
+	}
 	if err := statsRefreshCache(ctx); err != nil {
 		return fmt.Errorf("stats refresh cache error: %v", err)
 	}

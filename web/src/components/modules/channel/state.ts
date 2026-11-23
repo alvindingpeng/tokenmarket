@@ -60,6 +60,7 @@ export type ChannelFormState = {
     // 出口池按名称组织, 与凭据一致: 后端同样按名称增删改, 新建渠道时主键尚不存在。
     egresses: { name: string; kind: ChannelDetail['egresses'][number]['kind']; url: string; region: string; weight: number; enabled: boolean }[];
     models: string[];
+    model_contexts?: ChannelDetail['model_contexts'];
     grants: Map<string, number>; // 键为 grantKey(模型名, 凭据名), 值为 Protocol 位掩码。
     custom_header: ChannelDetail['custom_header'];
     channel_proxy: string;
@@ -138,6 +139,7 @@ export function fromChannel(channel: ChannelDetail): ChannelFormState {
         // 后端承诺 egresses 恒为数组; 老库没有出口时就是空数组。
         egresses: (channel.egresses ?? []).map(({ name, kind, url, region, weight, enabled }) => ({ name, kind, url, region, weight, enabled })),
         models: [...channel.models],
+        model_contexts: channel.model_contexts,
         grants: new Map(channel.grants.map((g) => [grantKey(g.model_name, g.key_name), g.protocols])),
         custom_header: channel.custom_header,
         channel_proxy: channel.channel_proxy,

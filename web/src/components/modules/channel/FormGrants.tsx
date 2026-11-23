@@ -222,6 +222,7 @@ export function FormGrants({ state, setState }: {
                         <p className="px-3 py-6 text-center text-sm text-muted-foreground">{t('modelNoSelected')}</p>
                     ) : state.models.map((modelName) => {
                         const isOpen = expanded.has(modelName);
+                        const context = state.model_contexts?.[modelName];
                         const granted = keyNames.filter(
                             (keyName) => (state.grants.get(grantKey(modelName, keyName)) ?? 0) !== 0
                         ).length;
@@ -239,6 +240,11 @@ export function FormGrants({ state, setState }: {
                                     >
                                         <ChevronRight className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${isOpen ? 'rotate-90' : ''}`} />
                                         <span className="text-sm truncate">{modelName}</span>
+                                        {context && (
+                                            <span className="text-xs text-muted-foreground tabular-nums shrink-0" title="models.dev">
+                                                {t('modelContext', { count: context })}
+                                            </span>
+                                        )}
                                         <span className="text-xs text-muted-foreground tabular-nums shrink-0">
                                             {granted}/{keyNames.length}
                                         </span>

@@ -18,6 +18,12 @@ export interface LLMPrice {
  */
 export interface LLMInfo extends LLMPrice {
     name: string;
+    reference?: {
+        context_length?: number;
+        max_output?: number;
+        price_provider?: string;
+        official_price?: Partial<LLMPrice>;
+    };
 }
 
 /**
@@ -118,8 +124,11 @@ export function useUpdateModelPrice() {
 
     return useMutation({
         // 价格同步要访问 models.dev, 网络慢时可能超过默认超时。
-        mutationFn: () => apiRequest<null>('/api/v1/model/update-price', { method: 'POST', body: {}, timeoutMs: 90000 }),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['models', 'last-update-time'] }),
+        mutationFn: () => apiRequest<{ references: number; channel_models_updated: number }>('/api/v1/model/update-price', { method: 'POST', body: {}, timeoutMs: 90000 }),
+        onSuccess: () => Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['models'] }),
+            queryClient.invalidateQueries({ queryKey: ['channels'] }),
+        ]),
     });
 }
 

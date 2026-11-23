@@ -38,6 +38,10 @@ function scoreTooltip(score: ModelScore | undefined, t: ReturnType<typeof useTra
 export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score, capability, autoAddRule }: ModelItemProps) {
     const t = useTranslations('model');
     const isListLayout = layout === 'list';
+    const manual = capability?.source === 'manual' ? capability : undefined;
+    const context = manual?.context || model.reference?.context_length || 0;
+    const maxOutput = manual?.max_output || model.reference?.max_output || 0;
+    const officialPrice = model.reference?.official_price;
     const [isEditOpen, setIsEditOpen] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState(false);
     const [overlayRect, setOverlayRect] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -220,22 +224,22 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
                                 <span title={scoreTooltip(score, t)} className="text-muted-foreground/70">{t('card.scoreCold')}</span>
                             )}
                         </span>
-                        {capability && (capability.context > 0 || capability.max_output > 0) && (
+                        {(context > 0 || maxOutput > 0) && (
                             <>
                                 <span className="text-muted-foreground/60">|</span>
                                 <span className="inline-flex items-center gap-1 shrink-0">
                                     <MessageSquare className="size-3.5 shrink-0" style={{ color: brandColor }} />
-                                    {capability.context > 0 && (
+                                    {context > 0 && (
                                         <span className="tabular-nums">
-                                            {t('card.context')} {(capability.context / 1000).toFixed(0)}K
+                                            {t('card.context')} {context.toLocaleString()}
                                         </span>
                                     )}
-                                    {capability.context > 0 && capability.max_output > 0 && (
+                                    {context > 0 && maxOutput > 0 && (
                                         <span className="text-muted-foreground/60">/</span>
                                     )}
-                                    {capability.max_output > 0 && (
+                                    {maxOutput > 0 && (
                                         <span className="tabular-nums">
-                                            {t('card.maxOutput')} {(capability.max_output / 1000).toFixed(0)}K
+                                            {t('card.maxOutput')} {maxOutput.toLocaleString()}
                                         </span>
                                     )}
                                 </span>
@@ -274,25 +278,35 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
                     )}
                 </p>
 
-                {capability && (capability.context > 0 || capability.max_output > 0) && (
+                {(context > 0 || maxOutput > 0) && (
                     <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
                         <MessageSquare className="size-3.5" style={{ color: brandColor }} />
-                        {capability.context > 0 && (
+                        {context > 0 && (
                             <span className="tabular-nums">
-                                {t('card.context')} {(capability.context / 1000).toFixed(0)}K
+                                {t('card.context')} {context.toLocaleString()}
                             </span>
                         )}
-                        {capability.context > 0 && capability.max_output > 0 && (
+                        {context > 0 && maxOutput > 0 && (
                             <span className="text-muted-foreground/60">/</span>
                         )}
-                        {capability.max_output > 0 && (
+                        {maxOutput > 0 && (
                             <span className="tabular-nums">
-                                {t('card.maxOutput')} {(capability.max_output / 1000).toFixed(0)}K
+                                {t('card.maxOutput')} {maxOutput.toLocaleString()}
                             </span>
                         )}
                     </p>
                 )}
                     </>
+                )}
+                {officialPrice && (
+                    <p className="text-xs text-muted-foreground" title={`models.dev · ${model.reference?.price_provider}`}>
+                        {t('card.officialPrice', {
+                            input: officialPrice.input ?? '—',
+                            output: officialPrice.output ?? '—',
+                            cacheRead: officialPrice.cache_read ?? '—',
+                            cacheWrite: officialPrice.cache_write ?? '—',
+                        })}
+                    </p>
                 )}
             </div>
 

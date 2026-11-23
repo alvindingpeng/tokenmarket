@@ -19,11 +19,11 @@ import (
 //
 // 为什么这值得一条静态用例: 读后写的事务在 WAL 下会撞 SQLITE_BUSY_SNAPSHOT(517),
 // 而 busy_timeout 对它无效; 表现只是「偶发一条事务失败」, 单机低并发下几乎看不见。
-// 以后谁在这 39 处里加一句先行 SELECT、或把开头的 AcquireWriteLock 挪到读之后, 就重新打开
+// 以后谁在这 40 处里加一句先行 SELECT、或把开头的 AcquireWriteLock 挪到读之后, 就重新打开
 // 那个窗口, 而 review 时很难看出来 —— 这类缺陷只能靠静态断言守住。
 //
 // 为什么用静态 AST 扫描而不是运行时 GORM 回调(两个方案都试过):
-//   1. 运行时方案只覆盖「被用例真正驱动过的那几个 op」, 静态覆盖全部 39 处;
+//   1. 运行时方案只覆盖「被用例真正驱动过的那几个 op」, 静态覆盖全部 40 处;
 //   2. create/update/delete 默认各包一层隐式单语句事务, 运行时按 ConnPool 是不是 *sql.Tx
 //      判「在不在显式事务里」会把单条 db.Create 也算进来, 结论就乱了;
 //   3. Before 锚点里 Statement.SQL 还是空串(实测), 断言会静默空转。
@@ -126,7 +126,7 @@ func TestTxLockFirstStatementIsWrite(t *testing.T) {
 	// 处数与四类计数必须同时与 §9.1 的表一致。
 	//
 	// 顺序很重要: 逐处判定**先**跑。新增一处「读后写」的事务时, 上面那条会先报出可操作的
-	// 结论(「事务内首条语句是读」), 而不是只报一句「处数 = 39」—— 后者把"该加锁还是该白名单"
+	// 结论(「事务内首条语句是读」), 而不是只报一句「处数 = 40」—— 后者把"该加锁还是该白名单"
 	// 这个真正要做的判断留给下一个人去猜。处数与计数在这里兜的是另一类问题: 扫描器自己坏了
 	// (递归展开或 terminal 名单漏项)会安静地少报, 那比误报危险得多。
 	if len(sites) != wantSiteCount {
@@ -149,9 +149,9 @@ func TestTxLockFirstStatementIsWrite(t *testing.T) {
 }
 
 const (
-	wantSiteCount  = 39
+	wantSiteCount  = 40
 	wantLockFirst  = 18
-	wantWriteFirst = 19
+	wantWriteFirst = 20
 	wantReadOnly   = 1
 	wantLongTx     = 1
 )
@@ -277,7 +277,16 @@ func scanTransactionSites(t *testing.T) []txnSite {
 // 事务体的语句在这个 funclit 的 body 里, 与 Transaction( 出现在哪个外层函数无关 —— 这一点
 // 很容易看错。
 func transactionFuncLit(call *ast.CallExpr) *ast.FuncLit {
-	if sel, ok := call.Fun.(*ast.SelectorExpr); !ok || sel.Sel == nil || sel.Sel.Name != "Transaction" {
+	switch fn := call.Fun.(type) {
+	case *ast.SelectorExpr:
+		if fn.Sel.Name != "Transaction" {
+			return nil
+		}
+	case *ast.Ident:
+		if fn.Name != "channelModelTransaction" {
+			return nil
+		}
+	default:
 		return nil
 	}
 	for _, arg := range call.Args {

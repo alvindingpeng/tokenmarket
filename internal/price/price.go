@@ -11,11 +11,13 @@ import (
 	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
+	"github.com/alvindingpeng/switchyard/internal/op"
 	"github.com/alvindingpeng/switchyard/internal/rhttp"
 	"github.com/charmbracelet/log"
 )
 
 const llmPriceUrl = "https://models.dev/api.json"
+const maxModelsDevBodyBytes = 32 << 20
 
 // developerFamilies 定义研发商及其自研模型系列前缀。
 var developerFamilies = map[string][]string{
@@ -34,21 +36,55 @@ var developerFamilies = map[string][]string{
 
 var lastUpdateTime time.Time // 最近一次成功更新时间。
 
-// UpdateLLMPrice 从 models.dev 更新自研文本输出模型的价格, 并返回同一次抓取得到的模型能力登记。
-// 能力登记交给调用方落库: price 只负责解析官方数据, 落库与缓存属于 op 的职责,
-// 由调用方串联两者, price 便无需依赖 op(否则 op 侧改价要用价格表就会形成导入环)。
-func UpdateLLMPrice(ctx context.Context) ([]model.ModelCapability, error) {
-	log.Debugf("update LLM price task started")
-	startTime := time.Now()
-	defer func() {
-		log.Debugf("update LLM price task finished, update time: %s", time.Since(startTime))
-	}()
+type modelsDevProvider struct {
+	Models map[string]modelsDevModel `json:"models"`
+}
+
+type modelsDevModel struct {
+	ID         string `json:"id"`
+	Canonical  string `json:"canonical_model_id"`
+	Family     string `json:"family"`
+	Modalities struct {
+		Input  []string `json:"input"`
+		Output []string `json:"output"`
+	} `json:"modalities"`
+	Limit struct {
+		Context int `json:"context"`
+		Output  int `json:"output"`
+	} `json:"limit"`
+	Cost json.RawMessage `json:"cost"`
+}
+
+var catalogSync = make(chan struct{}, 1)
+
+// SyncModelCatalog shares the fetch and persistence path between manual and scheduled refreshes.
+func SyncModelCatalog(ctx context.Context) (op.ModelCatalogSyncResult, error) {
+	select {
+	case catalogSync <- struct{}{}:
+		defer func() { <-catalogSync }()
+	case <-ctx.Done():
+		return op.ModelCatalogSyncResult{}, ctx.Err()
+	}
+	capabilities, references, calibration, err := fetchModelsDev(ctx)
+	if err != nil {
+		return op.ModelCatalogSyncResult{}, err
+	}
+	result, err := op.ReplaceModelCatalog(ctx, capabilities, references)
+	if err != nil {
+		return op.ModelCatalogSyncResult{}, err
+	}
+	publishCalibration(calibration)
+	return result, nil
+}
+
+// fetchModelsDev parses a single feed for reference metadata and the existing price calibration.
+func fetchModelsDev(ctx context.Context) ([]model.ModelCapability, []model.ModelReference, map[string]model.LLMPrice, error) {
 	var body []byte
 	httpClient, err := rhttp.Direct()
 	if err == nil {
 		req, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, llmPriceUrl, nil)
 		if requestErr != nil {
-			return nil, requestErr
+			return nil, nil, nil, requestErr
 		}
 		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 		resp, requestErr := httpClient.Do(req)
@@ -58,7 +94,7 @@ func UpdateLLMPrice(ctx context.Context) ([]model.ModelCapability, error) {
 			if resp.StatusCode != http.StatusOK {
 				err = fmt.Errorf("failed to fetch LLM info: %s", resp.Status)
 			} else {
-				body, err = io.ReadAll(resp.Body)
+				body, err = io.ReadAll(io.LimitReader(resp.Body, maxModelsDevBodyBytes+1))
 				if err != nil {
 					err = fmt.Errorf("failed to read response body: %w", err)
 				}
@@ -70,44 +106,39 @@ func UpdateLLMPrice(ctx context.Context) ([]model.ModelCapability, error) {
 		log.Warnf("direct request failed, trying with proxy: %v", err)
 		httpClient, err = rhttp.Proxy()
 		if err != nil {
-			return nil, err
+			return nil, nil, nil, err
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, llmPriceUrl, nil)
 		if err != nil {
-			return nil, err
+			return nil, nil, nil, err
 		}
 		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 		resp, err := httpClient.Do(req)
 		if err != nil {
-			return nil, err
+			return nil, nil, nil, err
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("failed to fetch LLM info: %s", resp.Status)
+			return nil, nil, nil, fmt.Errorf("failed to fetch LLM info: %s", resp.Status)
 		}
-		body, err = io.ReadAll(resp.Body)
+		body, err = io.ReadAll(io.LimitReader(resp.Body, maxModelsDevBodyBytes+1))
 		if err != nil {
-			return nil, fmt.Errorf("failed to read response body: %w", err)
+			return nil, nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
 	}
-	var rawPrice map[string]struct {
-		Models map[string]struct {
-			ID         string `json:"id"`     // 模型标识。
-			Family     string `json:"family"` // 模型所属系列。
-			Modalities struct {
-				Input  []string `json:"input"`  // 模型接受的输入类型。
-				Output []string `json:"output"` // 模型支持的输出类型。
-			} `json:"modalities"`
-			Limit struct {
-				Context int `json:"context"` // 上下文窗口(token)。
-				Output  int `json:"output"`  // 单次最大输出(token)。
-			} `json:"limit"`
-			Cost model.LLMPrice `json:"cost"` // 模型价格。
-		} `json:"models"`
+	if len(body) > maxModelsDevBodyBytes {
+		return nil, nil, nil, fmt.Errorf("models.dev response exceeds %d bytes", maxModelsDevBodyBytes)
 	}
+	var rawPrice map[string]modelsDevProvider
 	if err := json.Unmarshal(body, &rawPrice); err != nil {
-		return nil, fmt.Errorf("failed to parse LLM info: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to parse LLM info: %w", err)
 	}
+	capabilities := collectModelCapabilities(rawPrice)
+	references := collectModelReferences(rawPrice)
+	if len(capabilities) == 0 || len(references) == 0 {
+		return nil, nil, nil, fmt.Errorf("models.dev returned an empty model catalog")
+	}
+
 	updatedPrices := make(map[string]model.LLMPrice)
 	for provider, familyPrefixes := range developerFamilies {
 		for _, priceModel := range rawPrice[provider].Models {
@@ -131,38 +162,25 @@ func UpdateLLMPrice(ctx context.Context) ([]model.ModelCapability, error) {
 				continue
 			}
 
-			updatedPrices[modelID] = priceModel.Cost
+			var cost model.LLMPrice
+			if json.Unmarshal(priceModel.Cost, &cost) == nil && cost.Validate() == nil {
+				updatedPrices[modelID] = cost
+			}
 		}
 	}
-	llmPriceLock.Lock()
-	llmPrice = updatedPrices
-	lastUpdateTime = time.Now()
-	llmPriceLock.Unlock()
-
-	// 能力登记(输入输出模态与规模上限)与价格同源, 一起返回给调用方: 探测渠道模型时据此
-	// 预勾选生图/生视频协议位, 不再靠模型名关键词猜。
-	return collectModelCapabilities(rawPrice), nil
+	return capabilities, references, updatedPrices, nil
 }
 
-// collectModelCapabilities 把 models.dev 的原始响应摊平成能力登记。
-// 同一个模型可能在多个厂商下重复登记且模态不同(聚合平台会补自己的元数据), 故按名称去重:
-// 优先保留带媒体输出的那条(媒体能力是这里唯一稀缺的信号), 同级再按输出模态更全定序,
-// 保证同一份上游数据每次跑出的结果完全一致 —— 能力登记会落库并被界面展示, 不能随 map 遍历顺序变化。
-func collectModelCapabilities(rawPrice map[string]struct {
-	Models map[string]struct {
-		ID         string `json:"id"`
-		Family     string `json:"family"`
-		Modalities struct {
-			Input  []string `json:"input"`
-			Output []string `json:"output"`
-		} `json:"modalities"`
-		Limit struct {
-			Context int `json:"context"`
-			Output  int `json:"output"`
-		} `json:"limit"`
-		Cost model.LLMPrice `json:"cost"`
-	} `json:"models"`
-}) []model.ModelCapability {
+// publishCalibration updates the legacy calibration only after the catalog sync commits.
+func publishCalibration(prices map[string]model.LLMPrice) {
+	llmPriceLock.Lock()
+	defer llmPriceLock.Unlock()
+	llmPrice = prices
+	lastUpdateTime = time.Now()
+}
+
+// collectModelCapabilities preserves the existing media classification when entries disagree.
+func collectModelCapabilities(rawPrice map[string]modelsDevProvider) []model.ModelCapability {
 	providers := make([]string, 0, len(rawPrice))
 	for provider := range rawPrice {
 		providers = append(providers, provider)
@@ -171,7 +189,13 @@ func collectModelCapabilities(rawPrice map[string]struct {
 
 	byName := make(map[string]model.ModelCapability, len(rawPrice))
 	for _, provider := range providers {
-		for _, priceModel := range rawPrice[provider].Models {
+		modelIDs := make([]string, 0, len(rawPrice[provider].Models))
+		for id := range rawPrice[provider].Models {
+			modelIDs = append(modelIDs, id)
+		}
+		slices.Sort(modelIDs)
+		for _, id := range modelIDs {
+			priceModel := rawPrice[provider].Models[id]
 			name := strings.ToLower(strings.TrimSpace(priceModel.ID))
 			if name == "" {
 				continue

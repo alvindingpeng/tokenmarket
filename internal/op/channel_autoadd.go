@@ -311,7 +311,7 @@ func AutoAddChannelModels(ctx context.Context, channelID int, config model.Chann
 	var added []string
 	truncated := false
 	if len(results) > 0 {
-		if err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := channelModelTransaction(ctx, func(tx *gorm.DB) error {
 			// 先拿写锁: 短事务的"读后写"升级会撞 SQLITE_BUSY_SNAPSHOT(517, busy_timeout 不覆盖),
 			// 取锁后并发方在本事务的写锁上按 busy_timeout 排队。见 db.AcquireWriteLock。
 			if err := db.AcquireWriteLock(tx); err != nil {
@@ -477,7 +477,7 @@ func mergeFetchedForKey(tx *gorm.DB, channelID, keyID int, fetched []model.Chann
 				truncated = true
 				break
 			}
-			channelModel := model.ChannelModel{ChannelID: channelID, Name: name}
+			channelModel := model.ChannelModel{ChannelID: channelID, Name: name, ContextLength: ModelReferenceGet(name).ContextLength}
 			if err := tx.Create(&channelModel).Error; err != nil {
 				return added, truncated, fmt.Errorf("failed to create channel model %q: %w", name, err)
 			}

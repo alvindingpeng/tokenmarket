@@ -170,7 +170,7 @@ func ChannelCreate(detail *model.ChannelDetail, scope model.Scope, ctx context.C
 		channel.ReviewedAt = &now
 		channel.ConfigFingerprint = channelConfigFingerprint(detail.ChannelConfig, detail.Models)
 	}
-	if err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := channelModelTransaction(ctx, func(tx *gorm.DB) error {
 		if err := tx.Create(&channel).Error; err != nil {
 			return fmt.Errorf("failed to create channel: %w", err)
 		}
@@ -250,7 +250,7 @@ func ChannelUpdate(detail *model.ChannelDetail, scope model.Scope, ctx context.C
 		return nil, &InvalidInputError{Reason: err}
 	}
 
-	if err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := channelModelTransaction(ctx, func(tx *gorm.DB) error {
 		// 只写配置列而不整行覆盖: 全量提交下 enabled 置假与被清空的可选字段都必须落库, 按零值跳过会写不进去;
 		// 而统计列由转发累加, 不在提交范围内, 整行覆盖会把它抹回提交时的旧值。
 		// 上浮覆盖值在提交范围内: <0 视为跟随全局, 其余必须落在常识区间(0 = 不加价, 10 = 1000% 已到荒谬边界)。
@@ -1168,6 +1168,9 @@ func reloadChannelChildren(ctx context.Context, channelID int) error {
 			channelModels[i].Listed = false
 		}
 		channelModel := channelModels[i]
+		if modelReferences.Load() != nil {
+			channelModel.ContextLength = ModelReferenceGet(channelModel.Name).ContextLength
+		}
 		liveModels[channelModel.ID] = struct{}{}
 		if cached, ok := channelModelCache.Get(channelModel.ID); ok {
 			channelModel.StatsMetrics = cached.StatsMetrics
@@ -1300,6 +1303,12 @@ func channelDetail(channel model.Channel) model.ChannelDetail {
 		if channelModel.ChannelID == channel.ID {
 			detail.Models = append(detail.Models, channelModel.Name)
 			modelNameByID[channelModel.ID] = channelModel.Name
+			if length := channelModel.ContextLength; length > 0 {
+				if detail.ModelContexts == nil {
+					detail.ModelContexts = make(map[string]int)
+				}
+				detail.ModelContexts[channelModel.Name] = length
+			}
 		}
 	}
 	sort.Strings(detail.Models)
@@ -1421,7 +1430,7 @@ func syncChannelModels(tx *gorm.DB, channelID int, requested []string) error {
 			delete(existingByName, requestedModel)
 			continue
 		}
-		if err := tx.Create(&model.ChannelModel{ChannelID: channelID, Name: requestedModel}).Error; err != nil {
+		if err := tx.Create(&model.ChannelModel{ChannelID: channelID, Name: requestedModel, ContextLength: ModelReferenceGet(requestedModel).ContextLength}).Error; err != nil {
 			return fmt.Errorf("failed to create channel model: %w", err)
 		}
 	}

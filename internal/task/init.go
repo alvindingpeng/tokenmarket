@@ -66,25 +66,19 @@ func SettingHasTask(key model.SettingKey) bool {
 }
 
 func Init() {
-	// 价格与能力更新: 拉 models.dev 价格表并同步能力登记。
 	Define(Spec{
 		Name:       TaskPriceUpdate,
 		Interval:   hoursInterval(model.SettingKeyModelInfoUpdateInterval, 24),
 		RunOnStart: true,
 		Fn: func() error {
-			ctx := context.Background()
-			capabilities, err := price.UpdateLLMPrice(ctx)
+			ctx, cancel := context.WithTimeout(context.Background(), 85*time.Second)
+			defer cancel()
+			result, err := price.SyncModelCatalog(ctx)
 			if err != nil {
-				log.Warnf("failed to update price info: %v", err)
+				return err
 			}
-			// 能力登记与价格同源却各自独立: 价格解析失败时能力未必也失败, 故分开处理, 互不阻塞。
-			if len(capabilities) > 0 {
-				if capErr := op.CapabilityReplaceFromModelsDev(capabilities, ctx); capErr != nil {
-					log.Warnf("failed to update model capabilities: %v", capErr)
-				}
-			}
-			// 价格解析失败要按任务失败计数: 连续失败达到阈值后由告警出口通知管理员。
-			return err
+			log.Infof("models.dev sync: references=%d channel_models_updated=%d", result.References, result.ChannelModelsUpdated)
+			return nil
 		},
 	})
 
