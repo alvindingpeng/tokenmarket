@@ -37,16 +37,21 @@ interface AutoRoutingSummary {
         task: string;
         state: string;
         recommended_ramp_percent: number;
+        confidence_level_percent: number;
         classified: number;
         shadow_requests: number;
         shadow_compared: number;
         shadow_coverage: number;
         prediction_agreement: number;
+        prediction_agreement_lower: number;
         active_requests: number;
         active_success_rate: number;
+        active_success_lower: number;
         predicted_cost_usd: number;
         actual_cost_usd: number;
         cost_delta_percent: number;
+        cost_ratio_p90_percent: number;
+        cost_samples: number;
         configured_candidates: number;
         verified_candidates: number;
         reasons: string[];
@@ -142,10 +147,12 @@ function AutoRoutingPanel() {
                                 <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
                                     <span>{tr('readinessShadow', { compared: item.shadow_compared, total: item.shadow_requests })}</span>
                                     <span>{tr('readinessAgreement', { value: `${(item.prediction_agreement * 100).toFixed(1)}%` })}</span>
+                                    {item.shadow_compared > 0 && <span>{tr('readinessAgreementLower', { level: item.confidence_level_percent, value: `${(item.prediction_agreement_lower * 100).toFixed(1)}%` })}</span>}
                                     <span>{tr('readinessCoverage', { value: `${(item.shadow_coverage * 100).toFixed(1)}%` })}</span>
                                     <span>{tr('readinessCandidates', { verified: item.verified_candidates, total: item.configured_candidates })}</span>
                                     {item.active_requests > 0 && <span>{tr('readinessActive', { count: item.active_requests, value: `${(item.active_success_rate * 100).toFixed(1)}%` })}</span>}
-                                    {item.predicted_cost_usd > 0 && <span>{tr('readinessCost', { value: `${item.cost_delta_percent.toFixed(1)}%` })}</span>}
+                                    {item.active_requests > 0 && <span>{tr('readinessActiveLower', { level: item.confidence_level_percent, value: `${(item.active_success_lower * 100).toFixed(1)}%` })}</span>}
+                                    {item.cost_samples > 0 && <span>{tr('readinessCost', { samples: item.cost_samples, value: `${item.cost_ratio_p90_percent.toFixed(1)}%` })}</span>}
                                 </div>
                                 {item.recommended_ramp_percent > 0 && (
                                     <p className="mt-2 font-medium text-foreground">{tr('readinessRamp', { value: item.recommended_ramp_percent })}</p>

@@ -3,6 +3,7 @@ package op
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -57,16 +58,21 @@ type AutoRoutingReadiness struct {
 	Task                   string   `json:"task"`
 	State                  string   `json:"state"`
 	RecommendedRampPercent int      `json:"recommended_ramp_percent"`
+	ConfidenceLevelPercent int      `json:"confidence_level_percent"`
 	Classified             int64    `json:"classified"`
 	ShadowRequests         int64    `json:"shadow_requests"`
 	ShadowCompared         int64    `json:"shadow_compared"`
 	ShadowCoverage         float64  `json:"shadow_coverage"`
 	PredictionAgreement    float64  `json:"prediction_agreement"`
+	PredictionAgreementLow float64  `json:"prediction_agreement_lower"`
 	ActiveRequests         int64    `json:"active_requests"`
 	ActiveSuccessRate      float64  `json:"active_success_rate"`
+	ActiveSuccessLow       float64  `json:"active_success_lower"`
 	PredictedCostUSD       float64  `json:"predicted_cost_usd"`
 	ActualCostUSD          float64  `json:"actual_cost_usd"`
 	CostDeltaPercent       float64  `json:"cost_delta_percent"`
+	CostRatioP90Percent    float64  `json:"cost_ratio_p90_percent"`
+	CostSamples            int      `json:"cost_samples"`
 	ConfiguredCandidates   int      `json:"configured_candidates"`
 	VerifiedCandidates     int      `json:"verified_candidates"`
 	Reasons                []string `json:"reasons"`
@@ -191,15 +197,58 @@ func autoTaskGrantConfig(config model.GroupRelayConfig, task string) string {
 type autoReadinessEvidence struct {
 	classified, shadowRequests, activeRequests, activeSuccess int64
 	compared, same, predictedCost, actualCost                 float64
+	costRatios                                                []float64
 	configuredCandidates, verifiedCandidates                  int
 	labelingEnabled                                           bool
 }
 
+const autoReadinessConfidenceZ = 1.96
+
+// autoWilsonLower 返回二项成功率的 Wilson 双侧 95% 置信区间下界。小样本即使
+// 暂时全部通过，下界仍会明显低于原始比例，避免凭几十次成功就快速扩大灰度。
+func autoWilsonLower(success, total int64) float64 {
+	if total <= 0 {
+		return 0
+	}
+	n := float64(total)
+	p := float64(success) / n
+	z2 := autoReadinessConfidenceZ * autoReadinessConfidenceZ
+	center := p + z2/(2*n)
+	margin := autoReadinessConfidenceZ * math.Sqrt(p*(1-p)/n+z2/(4*n*n))
+	return max(0, (center-margin)/(1+z2/n))
+}
+
+// autoPercentile 使用线性插值计算样本分位数。成本采用 P90，既保留异常放大的
+// 风险信号，又不会被单次结算噪声直接决定灰度。
+func autoPercentile(values []float64, percentile float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	sorted := append([]float64(nil), values...)
+	sort.Float64s(sorted)
+	position := clampFloat(percentile, 0, 1) * float64(len(sorted)-1)
+	lower := int(math.Floor(position))
+	upper := int(math.Ceil(position))
+	if lower == upper {
+		return sorted[lower]
+	}
+	weight := position - float64(lower)
+	return sorted[lower]*(1-weight) + sorted[upper]*weight
+}
+
+func clampFloat(value, minimum, maximum float64) float64 {
+	return min(max(value, minimum), maximum)
+}
+
 func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingReadiness {
 	readiness := AutoRoutingReadiness{
-		Task: task, Classified: evidence.classified, ShadowRequests: evidence.shadowRequests,
+		Task: task, ConfidenceLevelPercent: 95,
+		Classified: evidence.classified, ShadowRequests: evidence.shadowRequests,
 		ShadowCompared: int64(evidence.compared), ActiveRequests: evidence.activeRequests,
-		PredictedCostUSD: evidence.predictedCost, ActualCostUSD: evidence.actualCost,
+		PredictionAgreementLow: autoWilsonLower(int64(evidence.same), int64(evidence.compared)),
+		ActiveSuccessLow:       autoWilsonLower(evidence.activeSuccess, evidence.activeRequests),
+		PredictedCostUSD:       evidence.predictedCost, ActualCostUSD: evidence.actualCost,
+		CostSamples:          len(evidence.costRatios),
 		ConfiguredCandidates: evidence.configuredCandidates, VerifiedCandidates: evidence.verifiedCandidates,
 		Reasons: make([]string, 0),
 	}
@@ -215,7 +264,10 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 	if evidence.predictedCost > 0 {
 		readiness.CostDeltaPercent = (evidence.actualCost/evidence.predictedCost - 1) * 100
 	}
-	if readiness.CostDeltaPercent > 25 {
+	if len(evidence.costRatios) > 0 {
+		readiness.CostRatioP90Percent = (autoPercentile(evidence.costRatios, 0.9) - 1) * 100
+	}
+	if readiness.CostRatioP90Percent > 25 {
 		readiness.Reasons = append(readiness.Reasons, "actual_cost_above_prediction")
 	}
 
@@ -232,6 +284,9 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 	case readiness.PredictionAgreement < 0.65:
 		readiness.State = "investigate_prediction"
 		readiness.Reasons = append(readiness.Reasons, "prediction_agreement_below_65_percent")
+	case readiness.PredictionAgreementLow < 0.60:
+		readiness.State = "collect_shadow"
+		readiness.Reasons = append(readiness.Reasons, "prediction_confidence_below_60_percent")
 	case evidence.configuredCandidates > 0 && evidence.verifiedCandidates == 0:
 		readiness.State = "prepare_candidates"
 		readiness.Reasons = append(readiness.Reasons, "no_verified_task_candidates")
@@ -254,15 +309,31 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 		readiness.State = "hold_active"
 		readiness.RecommendedRampPercent = 5
 		readiness.Reasons = append(readiness.Reasons, "need_more_active_samples")
-	case !autoReadinessCostSafe(evidence):
+	case readiness.ActiveSuccessLow < 0.90:
 		readiness.State = "hold_active"
 		readiness.RecommendedRampPercent = 5
-		readiness.Reasons = append(readiness.Reasons, "hold_until_cost_returns_within_50_percent")
+		readiness.Reasons = append(readiness.Reasons, "active_confidence_below_90_percent")
+	case len(evidence.costRatios) > 0 && readiness.CostRatioP90Percent > 50:
+		readiness.State = "hold_active"
+		readiness.RecommendedRampPercent = 5
+		readiness.Reasons = append(readiness.Reasons, "cost_p90_above_50_percent")
 	case readiness.ActiveSuccessRate >= 0.99 && readiness.PredictionAgreement >= 0.75:
+		if readiness.PredictionAgreementLow < 0.65 {
+			readiness.State = "hold_active"
+			readiness.RecommendedRampPercent = 5
+			readiness.Reasons = append(readiness.Reasons, "prediction_confidence_below_65_percent")
+			break
+		}
+		if len(evidence.costRatios) == 0 {
+			readiness.State = "hold_active"
+			readiness.RecommendedRampPercent = 5
+			readiness.Reasons = append(readiness.Reasons, "need_cost_comparison_samples")
+			break
+		}
 		if !autoReadinessCostWithin(evidence, 25) {
 			readiness.State = "hold_active"
 			readiness.RecommendedRampPercent = 5
-			readiness.Reasons = append(readiness.Reasons, "hold_until_cost_returns_within_25_percent")
+			readiness.Reasons = append(readiness.Reasons, "cost_p90_above_25_percent")
 			break
 		}
 		readiness.State = "scale_active"
@@ -276,13 +347,11 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 	return readiness
 }
 
-func autoReadinessCostSafe(evidence autoReadinessEvidence) bool {
-	return autoReadinessCostWithin(evidence, 50)
-}
-
 func autoReadinessCostWithin(evidence autoReadinessEvidence, percent float64) bool {
-	return evidence.predictedCost <= 0 ||
-		(evidence.actualCost/evidence.predictedCost-1)*100 <= percent
+	if len(evidence.costRatios) == 0 {
+		return true
+	}
+	return (autoPercentile(evidence.costRatios, 0.9)-1)*100 <= percent
 }
 
 func applyReadinessCandidateConfig(
@@ -579,6 +648,9 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 			readiness.compared++
 			readiness.predictedCost += predicted.CostUSD
 			readiness.actualCost += request.Cost
+			if predicted.CostUSD > 0 {
+				readiness.costRatios = append(readiness.costRatios, request.Cost/predicted.CostUSD)
+			}
 			if actual == predicted.Model {
 				readiness.same++
 			}

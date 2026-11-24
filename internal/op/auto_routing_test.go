@@ -2,6 +2,7 @@ package op
 
 import (
 	"context"
+	"math"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -121,6 +122,18 @@ func TestAutoRoutingReadinessStartsConservatively(t *testing.T) {
 	if readiness.State != "collect_shadow" || readiness.RecommendedRampPercent != 0 {
 		t.Fatalf("small sample did not collect shadow: %+v", readiness)
 	}
+
+	readiness = autoReadinessFor(model.AutoRoutingTaskCoding, autoReadinessEvidence{
+		classified: 240, shadowRequests: 240, compared: 240, same: 158,
+		configuredCandidates: 2, verifiedCandidates: 2, labelingEnabled: true,
+	})
+	if readiness.PredictionAgreement < 0.65 || readiness.PredictionAgreementLow >= 0.60 {
+		t.Fatalf("fixture should isolate a confidence lower bound below 60%%: %+v", readiness)
+	}
+	if readiness.State != "collect_shadow" ||
+		!slices.Contains(readiness.Reasons, "prediction_confidence_below_60_percent") {
+		t.Fatalf("weak confidence interval should keep collecting: %+v", readiness)
+	}
 }
 
 func TestAutoRoutingReadinessHoldsAndScalesActiveSafely(t *testing.T) {
@@ -140,6 +153,7 @@ func TestAutoRoutingReadinessHoldsAndScalesActiveSafely(t *testing.T) {
 	base.same = 60
 	base.predictedCost = 1
 	base.actualCost = 1
+	base.costRatios = []float64{1}
 	readiness = autoReadinessFor(model.AutoRoutingTaskTool, base)
 	if readiness.State != "scale_active" || readiness.RecommendedRampPercent != 10 {
 		t.Fatalf("strong active evidence should scale to 10 percent: %+v", readiness)
@@ -152,16 +166,35 @@ func TestAutoRoutingReadinessHoldsAndScalesActiveSafely(t *testing.T) {
 	}
 
 	base.activeSuccess = 40
-	base.actualCost = 2
+	base.costRatios = []float64{2}
 	readiness = autoReadinessFor(model.AutoRoutingTaskTool, base)
-	if readiness.State != "hold_active" || !slices.Contains(readiness.Reasons, "hold_until_cost_returns_within_50_percent") {
+	if readiness.State != "hold_active" || !slices.Contains(readiness.Reasons, "cost_p90_above_50_percent") {
 		t.Fatalf("high active cost should stop scaling: %+v", readiness)
 	}
 
-	base.actualCost = 1.3
+	base.costRatios = []float64{1.3}
 	readiness = autoReadinessFor(model.AutoRoutingTaskTool, base)
-	if readiness.State != "hold_active" || !slices.Contains(readiness.Reasons, "hold_until_cost_returns_within_25_percent") {
+	if readiness.State != "hold_active" || !slices.Contains(readiness.Reasons, "cost_p90_above_25_percent") {
 		t.Fatalf("cost above safe expansion range should stop scaling: %+v", readiness)
+	}
+
+	base.actualCost = 1
+	base.costRatios = nil
+	readiness = autoReadinessFor(model.AutoRoutingTaskTool, base)
+	if readiness.State != "hold_active" || !slices.Contains(readiness.Reasons, "need_cost_comparison_samples") {
+		t.Fatalf("missing cost samples must not permit expansion: %+v", readiness)
+	}
+}
+
+func TestAutoReadinessWilsonAndCostPercentile(t *testing.T) {
+	if low := autoWilsonLower(40, 40); low >= 40.0/40.0 {
+		t.Fatalf("perfect success needs a conservative lower bound: %.4f", low)
+	}
+	if low := autoWilsonLower(1, 1); low >= 0.5 {
+		t.Fatalf("one sample must not imply broad confidence: %.4f", low)
+	}
+	if p90 := autoPercentile([]float64{0.8, 1, 1.2, 1.4, 2}, 0.9); p90 < 1.7 || p90 > 2 {
+		t.Fatalf("unexpected linear percentile: %.4f", p90)
 	}
 }
 
@@ -200,7 +233,11 @@ func TestAutoRoutingReadinessUsesActualActiveRequests(t *testing.T) {
 	if coding == nil {
 		t.Fatal("coding readiness missing")
 	}
-	if coding.Classified != 3 || coding.ActiveRequests != 1 || coding.ActiveSuccessRate != 1 {
+	if coding.Classified != 3 {
+		t.Fatalf("classified request count was not preserved: %+v", coding)
+	}
+	if coding.ActiveRequests != 1 || coding.ActiveSuccessRate != 1 ||
+		math.Abs(coding.ActiveSuccessLow-autoWilsonLower(1, 1)) > 1e-12 {
 		t.Fatalf("fallback and rejected requests polluted active evidence: %+v", coding)
 	}
 }
@@ -250,7 +287,14 @@ func TestAutoRoutingReadinessIncludesConfiguredCandidateCoverage(t *testing.T) {
 	if len(summary.Readiness) == 0 {
 		t.Fatal("task readiness was not included")
 	}
-	if summary.Readiness[0].Classified != 1 || summary.Readiness[0].State != "collect_shadow" {
-		t.Fatalf("unexpected readiness with no configured grant member: %+v", summary.Readiness[0])
+	var coding *AutoRoutingReadiness
+	for i := range summary.Readiness {
+		if summary.Readiness[i].Task == model.AutoRoutingTaskCoding {
+			coding = &summary.Readiness[i]
+			break
+		}
+	}
+	if coding == nil || coding.Classified != 1 || coding.State != "collect_shadow" {
+		t.Fatalf("unexpected readiness with no configured grant member: %+v", summary.Readiness)
 	}
 }
