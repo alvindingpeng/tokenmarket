@@ -62,6 +62,12 @@ func TestAutoRoutingAggregateUsesTaskSnapshotAndLegacyEvents(t *testing.T) {
 	if len(summary.Exclusions) != 2 || summary.Exclusions[0].Count != 1 {
 		t.Fatalf("exclusions: %+v", summary.Exclusions)
 	}
+	if len(summary.Errors) != 1 || summary.Errors[0].Class != "unknown" || summary.Errors[0].Count != 1 {
+		t.Fatalf("attempt errors: %+v", summary.Errors)
+	}
+	if len(summary.CostBands) != 0 {
+		t.Fatalf("missing input cost bands: %+v", summary.CostBands)
+	}
 }
 
 func TestAutoRoutingAggregateScopeHidesOtherUsers(t *testing.T) {
@@ -198,6 +204,11 @@ func TestAutoRoutingReadinessHoldsAndScalesActiveSafely(t *testing.T) {
 	base.predictedCost = 1
 	base.actualCost = 1
 	base.costRatios = []float64{1}
+	base.firstTokenDurations = make([]float64, autoReadinessMinimumFirstTokenSamples)
+	for i := range base.firstTokenDurations {
+		base.firstTokenDurations[i] = 500
+	}
+	base.streamStarted = autoReadinessMinimumStreamSamples
 	readiness = autoReadinessFor(model.AutoRoutingTaskTool, base)
 	if readiness.State != "scale_active" || readiness.RecommendedRampPercent != 10 {
 		t.Fatalf("strong active evidence should scale to 10 percent: %+v", readiness)
@@ -240,6 +251,24 @@ func TestAutoRoutingReadinessHoldsAndScalesActiveSafely(t *testing.T) {
 	readiness = autoReadinessFor(model.AutoRoutingTaskTool, base)
 	if readiness.State != "hold_active" || !slices.Contains(readiness.Reasons, "active_model_underperforming") {
 		t.Fatalf("one underperforming model should stop a ramp: %+v", readiness)
+	}
+
+	base.modelSuccess = nil
+	base.modelSuccessful = nil
+	base.streamIncomplete = 1
+	readiness = autoReadinessFor(model.AutoRoutingTaskTool, base)
+	if readiness.State != "hold_active" || !slices.Contains(readiness.Reasons, "stream_incomplete_rate_above_5_percent") {
+		t.Fatalf("stream failures after the first token should stop scaling: %+v", readiness)
+	}
+
+	base.streamIncomplete = 0
+	base.firstTokenDurations = make([]float64, autoReadinessMinimumFirstTokenSamples)
+	for i := range base.firstTokenDurations {
+		base.firstTokenDurations[i] = float64(autoReadinessMaxFirstTokenP90Ms + 100)
+	}
+	readiness = autoReadinessFor(model.AutoRoutingTaskTool, base)
+	if readiness.State != "hold_active" || !slices.Contains(readiness.Reasons, "first_token_p90_above_30_seconds") {
+		t.Fatalf("slow first-token tail should stop scaling: %+v", readiness)
 	}
 }
 
@@ -337,6 +366,64 @@ func TestAutoRoutingReadinessModelTeamsUseActiveEvidenceOnly(t *testing.T) {
 	}
 	if coding.ModelTeams != 1 || coding.ModelSamples != 2 || coding.ModelMinSuccessRate != 0.5 {
 		t.Fatalf("model stability must use only active or explored landings: %+v", coding)
+	}
+}
+
+func TestAutoRoutingAggregatePerformanceAndInputCostEvidence(t *testing.T) {
+	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "auto-routing-performance.db"), false); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	now := time.Now()
+	requests := []model.RelayRequest{
+		{ID: 701, UserID: 7, GroupID: 37, Status: "success", StartedAt: now, FirstTokenDurationNs: int64(200 * time.Millisecond), PromptTokens: 1200, Cost: 0.01, TargetModel: "model-a", AutoTask: "coding", AutoMode: "active", RouteEvents: `[{"phase":"auto_routing","reason":"coding:item=9"}]`},
+		{ID: 702, UserID: 7, GroupID: 37, Status: "failed", StartedAt: now, FirstTokenDurationNs: int64(400 * time.Millisecond), PromptTokens: 2400, Cost: 0.02, TargetModel: "model-a", AutoTask: "coding", AutoMode: "active", RouteEvents: `[{"phase":"auto_routing","reason":"coding:item=9"}]`},
+		{ID: 703, UserID: 7, GroupID: 37, Status: "success", StartedAt: now, FirstTokenDurationNs: int64(600 * time.Millisecond), PromptTokens: 20000, Cost: 0.12, TargetModel: "model-a", AutoTask: "coding", AutoMode: "active", RouteEvents: `[{"phase":"auto_routing","reason":"coding:item=9"}]`},
+	}
+	if err := db.GetDB().Create(&requests).Error; err != nil {
+		t.Fatal(err)
+	}
+	attempts := []model.RelayRequestAttempt{
+		{RequestID: 701, Round: 1, TargetModel: "model-a", Status: "success", FirstTokenMs: 200, Decision: `{"reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+		{RequestID: 702, Round: 1, TargetModel: "model-a", Status: "overloaded", FirstTokenMs: 400, Decision: `{"reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+		{RequestID: 703, Round: 1, TargetModel: "model-a", Status: "success", FirstTokenMs: 600, Decision: `{"reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+	}
+	if err := db.GetDB().Create(&attempts).Error; err != nil {
+		t.Fatal(err)
+	}
+	summary, err := AutoRoutingAggregate(model.Scope{ID: 7, Role: model.RoleAdmin}, 37, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var coding *AutoRoutingTaskSummary
+	for i := range summary.Tasks {
+		if summary.Tasks[i].Task == "coding" {
+			coding = &summary.Tasks[i]
+			break
+		}
+	}
+	if coding == nil || coding.FirstTokenSamples != 3 || coding.StreamStarted != 3 ||
+		coding.StreamFailedAfterFirst != 1 || math.Abs(coding.StreamIncompleteRate-1.0/3.0) > 1e-12 ||
+		coding.P90FirstTokenMs <= coding.AvgFirstTokenMs {
+		t.Fatalf("first-token and incomplete-stream evidence: %+v", coding)
+	}
+	if len(summary.Errors) != 1 || summary.Errors[0].Class != "overload" || summary.Errors[0].Count != 1 {
+		t.Fatalf("attempt error classes: %+v", summary.Errors)
+	}
+	if len(summary.ErrorClassCounts) != 1 || summary.ErrorClassCounts[0].Reason != "overload" {
+		t.Fatalf("global error class counts: %+v", summary.ErrorClassCounts)
+	}
+	if len(summary.CostBands) != 3 {
+		t.Fatalf("input length cost bands: %+v", summary.CostBands)
+	}
+	var codingReadiness *AutoRoutingReadiness
+	for i := range summary.Readiness {
+		if summary.Readiness[i].Task == "coding" {
+			codingReadiness = &summary.Readiness[i]
+			break
+		}
+	}
+	if codingReadiness == nil || codingReadiness.StreamStarted != 3 || codingReadiness.StreamIncomplete != 1 {
+		t.Fatalf("active stream risk was not included in readiness: %+v", codingReadiness)
 	}
 }
 

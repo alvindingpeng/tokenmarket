@@ -1347,6 +1347,14 @@
             "rate": "Rate {value}",
             "latency": "Latency {value}",
             "tailLatency": "P90 {value}",
+            "firstTokenLatency": "First token avg {value}",
+            "firstTokenTail": "First token P90 {value} · {samples} samples",
+            "streamIncomplete": "Incomplete after first token {value} · {count}",
+            "errorsTitle": "Error classes",
+            "costBandsTitle": "Input length and cost",
+            "costBandsHint": "Groups final user charges by actual input token range and shows average and P90 values, highlighting long-context cost amplification.",
+            "tokenAverage": "Avg {value} tokens",
+            "costAverage": "Avg ${avg} · P90 ${p90}",
             "failedShort": "{count} failed",
             "exclusionsTitle": "Candidate exclusions",
             "eventsTitle": "Runtime events",
@@ -1368,6 +1376,8 @@
             "readinessActiveLower": "{level}% lower bound {value}",
             "readinessCost": "Cost ratio P90 {value} · {samples} samples",
             "readinessModels": "{count} models · lowest success {value}",
+            "readinessFirstToken": "First token P90 {value} · {samples} samples",
+            "readinessStream": "Incomplete after first token {value} · {count}",
             "readinessRamp": "Suggested active traffic: {value}%",
             "readinessState": {
                 "collect_shadow": "Collect more",
@@ -1403,6 +1413,8 @@
                 "actual_cost_above_prediction": "Cost ratio P90 is above prediction",
                 "cost_p90_above_50_percent": "Cost ratio P90 is above 50%; hold expansion",
                 "cost_p90_above_25_percent": "Cost ratio P90 is above 25%; hold expansion",
+                "stream_incomplete_rate_above_5_percent": "More than 5% of active streams are incomplete after the first token; hold expansion",
+                "first_token_p90_above_30_seconds": "Active first-token P90 is above 30 seconds; hold expansion",
                 "need_cost_comparison_samples": "Expansion requires paid cost and prediction samples",
                 "hold_until_cost_returns_within_25_percent": "Hold expansion until active cost is within 25% of prediction",
                 "task_candidate_selection_not_enabled": "Task candidate selection is not enabled for this group"
@@ -1414,6 +1426,25 @@
                 "tool": "Tool calls",
                 "extraction": "Extraction",
                 "unsupported": "Unsupported"
+            },
+            "errorClass": {
+                "rate": "Rate limited",
+                "timeout": "Timeout",
+                "client": "Client error",
+                "policy": "Policy block",
+                "auth": "Authentication",
+                "quota": "Quota exhausted",
+                "overload": "Upstream overload",
+                "model": "Model missing",
+                "compatibility": "Compatibility",
+                "canceled": "Canceled",
+                "unknown": "Unclassified"
+            },
+            "costBand": {
+                "short": "Short (<2K)",
+                "medium": "Medium (2K-16K)",
+                "long": "Long (16K-64K)",
+                "xlong": "Extra long (>=64K)"
             }
         }
     },

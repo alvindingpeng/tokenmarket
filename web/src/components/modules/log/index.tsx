@@ -27,11 +27,14 @@ interface AutoRoutingSummary {
     success: number;
     failed: number;
     success_rate: number;
-    tasks: { task: string; requests: number; success: number; failed: number; success_rate: number; avg_duration_ms: number; p90_duration_ms: number }[];
-    models: { task: string; model: string; attempts: number; success: number; success_rate: number; avg_duration_ms: number; p90_duration_ms: number; avg_cost_usd: number }[];
+    tasks: { task: string; requests: number; success: number; failed: number; success_rate: number; avg_duration_ms: number; p90_duration_ms: number; first_token_samples: number; avg_first_token_ms: number; p90_first_token_ms: number; stream_started: number; stream_failed_after_first: number; stream_canceled_after_first: number; stream_incomplete_rate: number }[];
+    models: { task: string; model: string; attempts: number; success: number; success_rate: number; avg_duration_ms: number; p90_duration_ms: number; first_token_samples: number; avg_first_token_ms: number; p90_first_token_ms: number; avg_cost_usd: number }[];
     exclusions: { reason: string; count: number }[];
     events: { reason: string; count: number }[];
     predictions: { task: string; compared: number; same_model: number; same_model_rate: number; predicted_cost_usd: number; actual_cost_usd: number; cost_delta_usd: number }[];
+    errors: { task: string; class: string; count: number }[];
+    error_class_counts: { reason: string; count: number }[];
+    cost_bands: { task: string; band: string; requests: number; success: number; avg_prompt_tokens: number; avg_cost_usd: number; p90_cost_usd: number }[];
     sample_limit: number;
     readiness: {
         task: string;
@@ -63,6 +66,11 @@ interface AutoRoutingSummary {
         model_teams_lower: number;
         admin_multi_user_evidence: boolean;
         model_min_success_rate: number;
+        first_token_samples: number;
+        first_token_p90_ms: number;
+        stream_started: number;
+        stream_incomplete: number;
+        stream_incomplete_rate: number;
         reasons: string[];
     }[];
 }
@@ -128,6 +136,13 @@ function AutoRoutingPanel() {
                             <div key={task.task} className="rounded-xl border border-border/40 bg-muted/20 p-3">
                                 <div className="flex items-center justify-between"><span className="text-sm font-medium">{tr('task.' + task.task)}</span><span className="text-xs text-muted-foreground">{tr('requestCount', { count: task.requests })}</span></div>
                                 <div className="mt-2 grid grid-cols-2 gap-2 text-xs"><span>{tr('rate', { value: (task.success_rate * 100).toFixed(1) + '%' })}</span><span>{tr('latency', { value: Math.round(task.avg_duration_ms) + ' ms' })}</span><span>{tr('tailLatency', { value: Math.round(task.p90_duration_ms) + ' ms' })}</span><span>{tr('failedShort', { count: task.failed })}</span></div>
+                                {task.first_token_samples > 0 && (
+                                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                                        <span>{tr('firstTokenLatency', { value: Math.round(task.avg_first_token_ms) + ' ms' })}</span>
+                                        <span>{tr('firstTokenTail', { value: Math.round(task.p90_first_token_ms) + ' ms', samples: task.first_token_samples })}</span>
+                                        <span className={task.stream_incomplete_rate > 0.05 ? 'text-destructive' : undefined}>{tr('streamIncomplete', { value: (task.stream_incomplete_rate * 100).toFixed(1) + '%', count: task.stream_failed_after_first + task.stream_canceled_after_first })}</span>
+                                    </div>
+                                )}
                                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(100, task.success_rate * 100)}%` }} /></div>
                             </div>
                         ))}
@@ -166,6 +181,8 @@ function AutoRoutingPanel() {
                                     {item.active_requests > 0 && <span>{tr('readinessActiveLower', { level: item.confidence_level_percent, value: `${(item.active_success_lower * 100).toFixed(1)}%` })}</span>}
                                     {item.cost_samples > 0 && <span>{tr('readinessCost', { samples: item.cost_samples, value: `${item.cost_ratio_p90_percent.toFixed(1)}%` })}</span>}
                                     {item.model_teams > 0 && <span>{tr('readinessModels', { count: item.model_teams, value: `${(item.model_min_success_rate * 100).toFixed(1)}%` })}</span>}
+                                    {item.first_token_samples > 0 && <span>{tr('readinessFirstToken', { value: `${item.first_token_p90_ms.toFixed(0)} ms`, samples: item.first_token_samples })}</span>}
+                                    {item.stream_started > 0 && <span>{tr('readinessStream', { value: `${(item.stream_incomplete_rate * 100).toFixed(1)}%`, count: item.stream_incomplete })}</span>}
                                 </div>
                                 {item.recommended_ramp_percent > 0 && (
                                     <p className="mt-2 font-medium text-foreground">{tr('readinessRamp', { value: item.recommended_ramp_percent })}</p>
@@ -184,8 +201,46 @@ function AutoRoutingPanel() {
                     <section className="rounded-2xl border border-border/60 bg-card p-4"><h3 className="mb-3 text-sm font-semibold">{tr('eventsTitle')}</h3><div className="space-y-1">{data.events.slice(0, 10).map((item) => <div key={item.reason} className="flex justify-between gap-3 text-xs"><span className="text-muted-foreground">{routeEventText(t, item.reason) || item.reason}</span><span className="font-mono">{item.count}</span></div>)}</div></section>
                 </div>
             )}
+            {data.errors.length > 0 && (
+                <section className="rounded-2xl border border-border/60 bg-card p-4">
+                    <h3 className="mb-3 text-sm font-semibold">{tr('errorsTitle')}</h3>
+                    {data.error_class_counts.length > 0 && (
+                        <div className="mb-3 flex flex-wrap gap-2">
+                            {data.error_class_counts.map((item) => (
+                                <span key={item.reason} className="rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground">
+                                    {tr('errorClass.' + item.reason)} · {item.count}
+                                </span>
+                            ))}
+                        </div>
+                    )}
+                    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                        {data.errors.slice(0, 12).map((item) => (
+                            <div key={`${item.task}-${item.class}`} className="flex items-center justify-between gap-3 rounded-lg border border-border/40 px-3 py-2 text-xs">
+                                <span>{tr('task.' + item.task)} · {tr('errorClass.' + item.class)}</span>
+                                <span className="font-mono">{item.count}</span>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+            )}
+            {data.cost_bands.length > 0 && (
+                <section className="rounded-2xl border border-border/60 bg-card p-4">
+                    <h3 className="mb-1 text-sm font-semibold">{tr('costBandsTitle')}</h3>
+                    <p className="mb-3 text-xs text-muted-foreground">{tr('costBandsHint')}</p>
+                    <div className="space-y-2">
+                        {data.cost_bands.map((band) => (
+                            <div key={`${band.task}-${band.band}`} className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-3 rounded-lg border border-border/40 px-3 py-2 text-xs">
+                                <span>{tr('task.' + band.task)} · {tr('costBand.' + band.band)}</span>
+                                <span className="tabular-nums text-muted-foreground">{tr('requestCount', { count: band.requests })}</span>
+                                <span className="tabular-nums">{tr('tokenAverage', { value: Math.round(band.avg_prompt_tokens) })}</span>
+                                <span className="tabular-nums">{tr('costAverage', { avg: band.avg_cost_usd.toFixed(4), p90: band.p90_cost_usd.toFixed(4) })}</span>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+            )}
             {data.models.length > 0 && (
-                        <section className="rounded-2xl border border-border/60 bg-card p-4"><h3 className="mb-3 text-sm font-semibold">{tr('modelsTitle')}</h3><div className="space-y-2">{data.models.slice(0, 20).map((model) => <div key={`${model.task}-${model.model}`} className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-3 rounded-lg border border-border/40 px-3 py-2 text-xs"><span className="truncate">{tr('task.' + model.task)} · {model.model}</span><span className="tabular-nums text-muted-foreground">{tr('requestCount', { count: model.attempts })}</span><span className="tabular-nums">{tr('rate', { value: (model.success_rate * 100).toFixed(1) + '%' })}</span><span className="tabular-nums text-muted-foreground">{tr('tailLatency', { value: Math.round(model.p90_duration_ms) + ' ms' })}</span></div>)}</div></section>
+                <section className="rounded-2xl border border-border/60 bg-card p-4"><h3 className="mb-3 text-sm font-semibold">{tr('modelsTitle')}</h3><div className="space-y-2">{data.models.slice(0, 20).map((model) => <div key={`${model.task}-${model.model}`} className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-3 rounded-lg border border-border/40 px-3 py-2 text-xs"><span className="truncate">{tr('task.' + model.task)} · {model.model}</span><span className="tabular-nums text-muted-foreground">{tr('requestCount', { count: model.attempts })}</span><span className="tabular-nums">{tr('rate', { value: (model.success_rate * 100).toFixed(1) + '%' })}</span><span className="tabular-nums text-muted-foreground">{model.first_token_samples > 0 ? tr('firstTokenTail', { value: Math.round(model.p90_first_token_ms) + ' ms', samples: model.first_token_samples }) : tr('tailLatency', { value: Math.round(model.p90_duration_ms) + ' ms' })}</span></div>)}</div></section>
             )}
             {data.predictions.length > 0 && (
                 <section className="rounded-2xl border border-border/60 bg-card p-4">

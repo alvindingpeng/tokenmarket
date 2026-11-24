@@ -14,25 +14,53 @@ import (
 
 // AutoRoutingTaskSummary 汇总一个任务分类在观测窗口内的请求结果。
 type AutoRoutingTaskSummary struct {
-	Task          string  `json:"task"`
-	Requests      int64   `json:"requests"`
-	Success       int64   `json:"success"`
-	Failed        int64   `json:"failed"`
-	SuccessRate   float64 `json:"success_rate"`
-	AvgDurationMs float64 `json:"avg_duration_ms"`
-	P90DurationMs float64 `json:"p90_duration_ms"`
+	Task                     string  `json:"task"`
+	Requests                 int64   `json:"requests"`
+	Success                  int64   `json:"success"`
+	Failed                   int64   `json:"failed"`
+	SuccessRate              float64 `json:"success_rate"`
+	AvgDurationMs            float64 `json:"avg_duration_ms"`
+	P90DurationMs            float64 `json:"p90_duration_ms"`
+	FirstTokenSamples        int64   `json:"first_token_samples"`
+	AvgFirstTokenMs          float64 `json:"avg_first_token_ms"`
+	P90FirstTokenMs          float64 `json:"p90_first_token_ms"`
+	StreamStarted            int64   `json:"stream_started"`
+	StreamFailedAfterFirst   int64   `json:"stream_failed_after_first"`
+	StreamCanceledAfterFirst int64   `json:"stream_canceled_after_first"`
+	StreamIncompleteRate     float64 `json:"stream_incomplete_rate"`
 }
 
 // AutoRoutingModelSummary 按任务与实际落地模型汇总成功率和延迟。
 type AutoRoutingModelSummary struct {
-	Task          string  `json:"task"`
-	Model         string  `json:"model"`
-	Attempts      int64   `json:"attempts"`
-	Success       int64   `json:"success"`
-	SuccessRate   float64 `json:"success_rate"`
-	AvgDurationMs float64 `json:"avg_duration_ms"`
-	P90DurationMs float64 `json:"p90_duration_ms"`
-	AvgCostUSD    float64 `json:"avg_cost_usd"`
+	Task              string  `json:"task"`
+	Model             string  `json:"model"`
+	Attempts          int64   `json:"attempts"`
+	Success           int64   `json:"success"`
+	SuccessRate       float64 `json:"success_rate"`
+	AvgDurationMs     float64 `json:"avg_duration_ms"`
+	P90DurationMs     float64 `json:"p90_duration_ms"`
+	FirstTokenSamples int64   `json:"first_token_samples"`
+	AvgFirstTokenMs   float64 `json:"avg_first_token_ms"`
+	P90FirstTokenMs   float64 `json:"p90_first_token_ms"`
+	AvgCostUSD        float64 `json:"avg_cost_usd"`
+}
+
+// AutoRoutingErrorSummary 按任务和尝试错误类别汇总失败次数。
+type AutoRoutingErrorSummary struct {
+	Task  string `json:"task"`
+	Class string `json:"class"`
+	Count int64  `json:"count"`
+}
+
+// AutoRoutingCostBandSummary 展示不同输入长度档位的用户实付成本。
+type AutoRoutingCostBandSummary struct {
+	Task            string  `json:"task"`
+	Band            string  `json:"band"`
+	Requests        int64   `json:"requests"`
+	Success         int64   `json:"success"`
+	AvgPromptTokens float64 `json:"avg_prompt_tokens"`
+	AvgCostUSD      float64 `json:"avg_cost_usd"`
+	P90CostUSD      float64 `json:"p90_cost_usd"`
 }
 
 // AutoRoutingReasonSummary 是排除原因、运行事件或自动路由决策的计数。
@@ -86,43 +114,53 @@ type AutoRoutingReadiness struct {
 	ModelSuccessRate       float64  `json:"model_success_rate"`
 	ModelTeamsLow          float64  `json:"model_teams_lower"`
 	ModelMinSuccessRate    float64  `json:"model_min_success_rate"`
+	FirstTokenSamples      int64    `json:"first_token_samples"`
+	FirstTokenP90Ms        float64  `json:"first_token_p90_ms"`
+	StreamStarted          int64    `json:"stream_started"`
+	StreamIncomplete       int64    `json:"stream_incomplete"`
+	StreamIncompleteRate   float64  `json:"stream_incomplete_rate"`
 	Reasons                []string `json:"reasons"`
 }
 
 // AutoRoutingSummary 是近期调用日志的自动路由实验聚合。数据来自现有请求和尝试日志，
 // 不新增高频写入的独立报表表，也不需要迁移数据库。
 type AutoRoutingSummary struct {
-	Days           int                            `json:"days"`
-	GroupID        int                            `json:"group_id"`
-	GeneratedAt    time.Time                      `json:"generated_at"`
-	WindowStart    time.Time                      `json:"window_start"`
-	Requests       int64                          `json:"requests"`
-	TaskClassified int64                          `json:"task_classified"`
-	Success        int64                          `json:"success"`
-	Failed         int64                          `json:"failed"`
-	SuccessRate    float64                        `json:"success_rate"`
-	Tasks          []AutoRoutingTaskSummary       `json:"tasks"`
-	Models         []AutoRoutingModelSummary      `json:"models"`
-	Exclusions     []AutoRoutingReasonSummary     `json:"exclusions"`
-	Events         []AutoRoutingReasonSummary     `json:"events"`
-	Predictions    []AutoRoutingPredictionSummary `json:"predictions"`
-	Readiness      []AutoRoutingReadiness         `json:"readiness"`
-	SampleLimit    int                            `json:"sample_limit"`
+	Days             int                            `json:"days"`
+	GroupID          int                            `json:"group_id"`
+	GeneratedAt      time.Time                      `json:"generated_at"`
+	WindowStart      time.Time                      `json:"window_start"`
+	Requests         int64                          `json:"requests"`
+	TaskClassified   int64                          `json:"task_classified"`
+	Success          int64                          `json:"success"`
+	Failed           int64                          `json:"failed"`
+	SuccessRate      float64                        `json:"success_rate"`
+	Tasks            []AutoRoutingTaskSummary       `json:"tasks"`
+	Models           []AutoRoutingModelSummary      `json:"models"`
+	Exclusions       []AutoRoutingReasonSummary     `json:"exclusions"`
+	Events           []AutoRoutingReasonSummary     `json:"events"`
+	Predictions      []AutoRoutingPredictionSummary `json:"predictions"`
+	Errors           []AutoRoutingErrorSummary      `json:"errors"`
+	CostBands        []AutoRoutingCostBandSummary   `json:"cost_bands"`
+	ErrorClassCounts []AutoRoutingReasonSummary     `json:"error_class_counts"`
+	Readiness        []AutoRoutingReadiness         `json:"readiness"`
+	SampleLimit      int                            `json:"sample_limit"`
 }
 
 type autoRequestSample struct {
-	RequestID   uint64
-	UserID      uint
-	Status      string
-	StartedAt   time.Time
-	DurationMs  int64
-	Cost        float64
-	TargetModel string
-	RouteEvents string
-	Model       string
-	GroupID     int
-	AutoTask    string
-	AutoMode    string
+	RequestID    uint64
+	UserID       uint
+	Status       string
+	StartedAt    time.Time
+	DurationMs   int64
+	FirstTokenMs int64
+	PromptTokens int64
+	Cost         float64
+	TargetModel  string
+	RouteEvents  string
+	Model        string
+	GroupID      int
+	AutoTask     string
+	AutoMode     string
 }
 
 type autoPredictionEvidence struct {
@@ -214,12 +252,18 @@ type autoReadinessEvidence struct {
 	users                                                     map[uint]bool
 	timeBuckets                                               map[int64]bool
 	modelSuccess, modelSuccessful                             map[string]int64
+	firstTokenDurations                                       []float64
+	streamStarted, streamIncomplete                           int64
 	configuredCandidates, verifiedCandidates                  int
 	labelingEnabled                                           bool
 	requireMultiUserEvidence                                  bool
 }
 
 const autoReadinessMinimumBuckets = 4
+const autoReadinessMinimumFirstTokenSamples = 10
+const autoReadinessMinimumStreamSamples = 10
+const autoReadinessMaxFirstTokenP90Ms = 30000
+const autoReadinessMaxStreamIncompleteRate = 0.05
 
 const autoReadinessConfidenceZ = 1.96
 
@@ -259,6 +303,48 @@ func clampFloat(value, minimum, maximum float64) float64 {
 	return min(max(value, minimum), maximum)
 }
 
+func autoAttemptErrorClass(status string) string {
+	switch status {
+	case "limited":
+		return "rate"
+	case "timeout":
+		return "timeout"
+	case "client_error":
+		return "client"
+	case "policy_blocked":
+		return "policy"
+	case "auth_error":
+		return "auth"
+	case "quota":
+		return "quota"
+	case "overloaded":
+		return "overload"
+	case "model_missing":
+		return "model"
+	case "compatibility_error":
+		return "compatibility"
+	case "canceled":
+		return "canceled"
+	default:
+		return "unknown"
+	}
+}
+
+func autoInputCostBand(promptTokens int64) string {
+	switch {
+	case promptTokens <= 0:
+		return ""
+	case promptTokens < 2000:
+		return "short"
+	case promptTokens < 16000:
+		return "medium"
+	case promptTokens < 64000:
+		return "long"
+	default:
+		return "xlong"
+	}
+}
+
 func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingReadiness {
 	readiness := AutoRoutingReadiness{
 		Task: task, ConfidenceLevelPercent: 95,
@@ -273,7 +359,10 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 		RequiredBuckets:        autoReadinessMinimumBuckets,
 		AdminMultiUserEvidence: evidence.requireMultiUserEvidence,
 		ConfiguredCandidates:   evidence.configuredCandidates, VerifiedCandidates: evidence.verifiedCandidates,
-		Reasons: make([]string, 0),
+		FirstTokenSamples: int64(len(evidence.firstTokenDurations)),
+		StreamStarted:     evidence.streamStarted,
+		StreamIncomplete:  evidence.streamIncomplete,
+		Reasons:           make([]string, 0),
 	}
 	if evidence.shadowRequests > 0 {
 		readiness.ShadowCoverage = evidence.compared / float64(evidence.shadowRequests)
@@ -289,6 +378,12 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 	}
 	if len(evidence.costRatios) > 0 {
 		readiness.CostRatioP90Percent = (autoPercentile(evidence.costRatios, 0.9) - 1) * 100
+	}
+	if len(evidence.firstTokenDurations) > 0 {
+		readiness.FirstTokenP90Ms = autoPercentile(evidence.firstTokenDurations, 0.9)
+	}
+	if evidence.streamStarted > 0 {
+		readiness.StreamIncompleteRate = float64(evidence.streamIncomplete) / float64(evidence.streamStarted)
 	}
 	for name, attempts := range evidence.modelSuccess {
 		if attempts == 0 {
@@ -307,13 +402,19 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 			modelSuccess += success
 		}
 		readiness.ModelSuccessRate = float64(modelSuccess) / float64(readiness.ModelSamples)
-		readiness.ModelTeamsLow = min(
-			readiness.ModelSuccessRate,
-			autoWilsonLower(modelSuccess, int64(readiness.ModelSamples)),
-		)
+		readiness.ModelTeamsLow = autoWilsonLower(modelSuccess, int64(readiness.ModelSamples))
 	}
 	if readiness.CostRatioP90Percent > 25 {
 		readiness.Reasons = append(readiness.Reasons, "actual_cost_above_prediction")
+	}
+	if evidence.streamStarted >= autoReadinessMinimumStreamSamples &&
+		readiness.StreamIncompleteRate > autoReadinessMaxStreamIncompleteRate {
+		readiness.Reasons = append(readiness.Reasons, "stream_incomplete_rate_above_5_percent")
+	}
+	if evidence.firstTokenDurations != nil &&
+		int64(len(evidence.firstTokenDurations)) >= autoReadinessMinimumFirstTokenSamples &&
+		readiness.FirstTokenP90Ms > autoReadinessMaxFirstTokenP90Ms {
+		readiness.Reasons = append(readiness.Reasons, "first_token_p90_above_30_seconds")
 	}
 
 	switch {
@@ -360,6 +461,11 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 		readiness.State = "hold_active"
 		readiness.RecommendedRampPercent = 5
 		readiness.Reasons = append(readiness.Reasons, "active_model_underperforming")
+	case readiness.StreamStarted >= autoReadinessMinimumStreamSamples &&
+		readiness.StreamIncompleteRate > autoReadinessMaxStreamIncompleteRate:
+		readiness.State = "hold_active"
+		readiness.RecommendedRampPercent = 5
+		readiness.Reasons = append(readiness.Reasons, "stream_incomplete_rate_above_5_percent")
 	case evidence.activeRequests < 20:
 		readiness.State = "hold_active"
 		readiness.RecommendedRampPercent = 5
@@ -389,6 +495,13 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 			readiness.State = "hold_active"
 			readiness.RecommendedRampPercent = 5
 			readiness.Reasons = append(readiness.Reasons, "cost_p90_above_25_percent")
+			break
+		}
+		if readiness.FirstTokenSamples >= autoReadinessMinimumFirstTokenSamples &&
+			readiness.FirstTokenP90Ms > autoReadinessMaxFirstTokenP90Ms {
+			readiness.State = "hold_active"
+			readiness.RecommendedRampPercent = 5
+			readiness.Reasons = append(readiness.Reasons, "first_token_p90_above_30_seconds")
 			break
 		}
 		readiness.State = "scale_active"
@@ -482,6 +595,8 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 		Tasks:       make([]AutoRoutingTaskSummary, 0), Models: make([]AutoRoutingModelSummary, 0),
 		Exclusions: make([]AutoRoutingReasonSummary, 0), Events: make([]AutoRoutingReasonSummary, 0),
 		Predictions: make([]AutoRoutingPredictionSummary, 0), Readiness: make([]AutoRoutingReadiness, 0),
+		Errors: make([]AutoRoutingErrorSummary, 0), CostBands: make([]AutoRoutingCostBandSummary, 0),
+		ErrorClassCounts: make([]AutoRoutingReasonSummary, 0),
 	}
 	query := db.GetDB().Model(&model.RelayRequest{}).
 		Where("started_at >= ?", summary.WindowStart)
@@ -493,7 +608,7 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 	}
 	var requests []autoRequestSample
 	// 日志留存由系统生命周期管理；上限只约束交互式看板查询，避免一次把多年历史拉进内存。
-	if err := query.Select("id AS request_id, user_id, status, started_at, duration_ns / 1000000 AS duration_ms, cost, target_model, route_events, model, group_id, auto_task, auto_mode").
+	if err := query.Select("id AS request_id, user_id, status, started_at, duration_ns / 1000000 AS duration_ms, first_token_duration_ns / 1000000 AS first_token_ms, prompt_tokens, cost, target_model, route_events, model, group_id, auto_task, auto_mode").
 		Order("id DESC").Limit(summary.SampleLimit).Scan(&requests).Error; err != nil {
 		return summary, fmt.Errorf("failed to aggregate relay requests: %w", err)
 	}
@@ -520,19 +635,36 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 	}
 
 	type taskCount struct {
-		requests, success, failed int64
-		duration                  int64
-		durations                 []float64
+		requests, success, failed                        int64
+		duration                                         int64
+		durations                                        []float64
+		firstTokenSamples, streamStarted                 int64
+		streamFailedAfterFirst, streamCanceledAfterFirst int64
+		firstTokenDuration                               int64
+		firstTokenDurations                              []float64
 	}
 	tasks := make(map[string]*taskCount)
 	modelKey := func(task, name string) string { return task + "\x00" + name }
 	type modelCount struct {
-		attempts, success int64
-		duration          int64
-		durations         []float64
-		cost              float64
+		attempts, success   int64
+		duration            int64
+		durations           []float64
+		firstTokenSamples   int64
+		firstTokenDuration  int64
+		firstTokenDurations []float64
+		cost                float64
 	}
 	models := make(map[string]*modelCount)
+	errorsByTask := make(map[string]int64)
+	errorClassCounts := make(map[string]int64)
+	type costBandCount struct {
+		requests, success int64
+		promptTokens      int64
+		costTotal         float64
+		costs             []float64
+	}
+	costBands := make(map[string]*costBandCount)
+	costBandKey := func(task, band string) string { return task + "\x00" + band }
 	exclusions := make(map[string]int64)
 	events := make(map[string]int64)
 	type predictionCount struct {
@@ -588,6 +720,45 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 		} else if request.Status == "failed" {
 			tc.failed++
 		}
+		if request.FirstTokenMs > 0 {
+			tc.firstTokenSamples++
+			tc.firstTokenDuration += request.FirstTokenMs
+			tc.firstTokenDurations = append(tc.firstTokenDurations, float64(request.FirstTokenMs))
+			readiness.firstTokenDurations = append(readiness.firstTokenDurations, float64(request.FirstTokenMs))
+		}
+		if request.AutoMode == "active" && request.FirstTokenMs > 0 {
+			readiness.streamStarted++
+			switch request.Status {
+			case "failed":
+				readiness.streamIncomplete++
+			case "canceled":
+				readiness.streamIncomplete++
+			}
+		}
+		if request.FirstTokenMs > 0 {
+			tc.streamStarted++
+			switch request.Status {
+			case "failed":
+				tc.streamFailedAfterFirst++
+			case "canceled":
+				tc.streamCanceledAfterFirst++
+			}
+		}
+		if band := autoInputCostBand(request.PromptTokens); band != "" {
+			key := costBandKey(task, band)
+			bc := costBands[key]
+			if bc == nil {
+				bc = &costBandCount{}
+				costBands[key] = bc
+			}
+			bc.requests++
+			bc.promptTokens += request.PromptTokens
+			bc.costTotal += request.Cost
+			bc.costs = append(bc.costs, request.Cost)
+			if request.Status == "success" {
+				bc.success++
+			}
+		}
 		var routeEvents []struct {
 			Phase  string `json:"phase"`
 			Reason string `json:"reason"`
@@ -638,6 +809,16 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 		mc.attempts++
 		mc.duration += attempt.DurationMs
 		mc.durations = append(mc.durations, float64(attempt.DurationMs))
+		if attempt.FirstTokenMs > 0 {
+			mc.firstTokenSamples++
+			mc.firstTokenDuration += attempt.FirstTokenMs
+			mc.firstTokenDurations = append(mc.firstTokenDurations, float64(attempt.FirstTokenMs))
+		}
+		if attempt.Status != "success" && attempt.Status != "running" {
+			class := autoAttemptErrorClass(attempt.Status)
+			errorsByTask[modelKey(task, class)]++
+			errorClassCounts[class]++
+		}
 		if attempt.Status == "success" {
 			mc.success++
 			// Request-level cost is booked once for the final successful route.
@@ -747,6 +928,18 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 			item.AvgDurationMs = float64(count.duration) / float64(count.requests)
 			item.P90DurationMs = autoPercentile(count.durations, 0.9)
 		}
+		item.FirstTokenSamples = count.firstTokenSamples
+		if count.firstTokenSamples > 0 {
+			item.AvgFirstTokenMs = float64(count.firstTokenDuration) / float64(count.firstTokenSamples)
+			item.P90FirstTokenMs = autoPercentile(count.firstTokenDurations, 0.9)
+		}
+		item.StreamStarted = count.streamStarted
+		item.StreamFailedAfterFirst = count.streamFailedAfterFirst
+		item.StreamCanceledAfterFirst = count.streamCanceledAfterFirst
+		if count.streamStarted > 0 {
+			item.StreamIncompleteRate = float64(count.streamFailedAfterFirst+count.streamCanceledAfterFirst) /
+				float64(count.streamStarted)
+		}
 		if completed := count.success + count.failed; completed > 0 {
 			item.SuccessRate = float64(count.success) / float64(completed)
 		}
@@ -759,17 +952,45 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 			item.AvgDurationMs = float64(count.duration) / float64(count.attempts)
 			item.P90DurationMs = autoPercentile(count.durations, 0.9)
 		}
+		item.FirstTokenSamples = count.firstTokenSamples
+		if count.firstTokenSamples > 0 {
+			item.AvgFirstTokenMs = float64(count.firstTokenDuration) / float64(count.firstTokenSamples)
+			item.P90FirstTokenMs = autoPercentile(count.firstTokenDurations, 0.9)
+		}
 		item.SuccessRate = float64(count.success) / float64(count.attempts)
 		if count.success > 0 {
 			item.AvgCostUSD = count.cost / float64(count.success)
 		}
 		summary.Models = append(summary.Models, item)
 	}
+	for key, count := range errorsByTask {
+		parts := strings.SplitN(key, "\x00", 2)
+		summary.Errors = append(summary.Errors, AutoRoutingErrorSummary{
+			Task: parts[0], Class: parts[1], Count: count,
+		})
+	}
+	for key, count := range costBands {
+		parts := strings.SplitN(key, "\x00", 2)
+		item := AutoRoutingCostBandSummary{
+			Task: parts[0], Band: parts[1], Requests: count.requests, Success: count.success,
+		}
+		if count.requests > 0 {
+			item.AvgPromptTokens = float64(count.promptTokens) / float64(count.requests)
+			item.AvgCostUSD = count.costTotal / float64(count.requests)
+			item.P90CostUSD = autoPercentile(count.costs, 0.9)
+		}
+		summary.CostBands = append(summary.CostBands, item)
+	}
 	for reason, count := range exclusions {
 		summary.Exclusions = append(summary.Exclusions, AutoRoutingReasonSummary{Reason: reason, Count: count})
 	}
 	for reason, count := range events {
 		summary.Events = append(summary.Events, AutoRoutingReasonSummary{Reason: reason, Count: count})
+	}
+	for class, count := range errorClassCounts {
+		summary.ErrorClassCounts = append(summary.ErrorClassCounts, AutoRoutingReasonSummary{
+			Reason: class, Count: count,
+		})
 	}
 	for task, evidence := range readinessByTask {
 		if task == "unsupported" {
@@ -795,6 +1016,16 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 	})
 	sort.Slice(summary.Exclusions, func(i, j int) bool { return summary.Exclusions[i].Count > summary.Exclusions[j].Count })
 	sort.Slice(summary.Events, func(i, j int) bool { return summary.Events[i].Count > summary.Events[j].Count })
+	sort.Slice(summary.Errors, func(i, j int) bool { return summary.Errors[i].Count > summary.Errors[j].Count })
+	sort.Slice(summary.ErrorClassCounts, func(i, j int) bool {
+		return summary.ErrorClassCounts[i].Count > summary.ErrorClassCounts[j].Count
+	})
+	sort.Slice(summary.CostBands, func(i, j int) bool {
+		if summary.CostBands[i].Task != summary.CostBands[j].Task {
+			return summary.CostBands[i].Task < summary.CostBands[j].Task
+		}
+		return summary.CostBands[i].Band < summary.CostBands[j].Band
+	})
 	sort.Slice(summary.Predictions, func(i, j int) bool {
 		return summary.Predictions[i].Compared > summary.Predictions[j].Compared
 	})

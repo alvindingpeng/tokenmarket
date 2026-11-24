@@ -1347,6 +1347,14 @@
             "rate": "成功率 {value}",
             "latency": "延迟 {value}",
             "tailLatency": "P90 {value}",
+            "firstTokenLatency": "首 token 平均 {value}",
+            "firstTokenTail": "首 token P90 {value} · {samples} 个样本",
+            "streamIncomplete": "首字后未完成 {value} · {count} 个",
+            "errorsTitle": "错误类型",
+            "costBandsTitle": "输入长度与成本",
+            "costBandsHint": "按实际输入 token 分档展示最终用户实付的平均值和 P90，用于判断长上下文是否放大成本。",
+            "tokenAverage": "平均 {value} tokens",
+            "costAverage": "均价 ${avg} · P90 ${p90}",
             "failedShort": "失败 {count} 个",
             "exclusionsTitle": "候选排除原因",
             "eventsTitle": "运行事件",
@@ -1368,6 +1376,8 @@
             "readinessActiveLower": "{level}% 置信下界 {value}",
             "readinessCost": "成本比例 P90 {value} · {samples} 个样本",
             "readinessModels": "{count} 个模型 · 最低成功率 {value}",
+            "readinessFirstToken": "首 token P90 {value} · {samples} 个样本",
+            "readinessStream": "首字后未完成 {value} · {count} 个",
             "readinessRamp": "建议主动流量：{value}%",
             "readinessState": {
                 "collect_shadow": "继续采集",
@@ -1403,6 +1413,8 @@
                 "actual_cost_above_prediction": "成本比例 P90 明显高于预测",
                 "cost_p90_above_50_percent": "成本比例 P90 超过 50%，暂缓扩大流量",
                 "cost_p90_above_25_percent": "成本比例 P90 超过 25%，暂缓扩大流量",
+                "stream_incomplete_rate_above_5_percent": "主动流式请求首字后未完成率超过 5%，暂缓扩大流量",
+                "first_token_p90_above_30_seconds": "主动首 token P90 超过 30 秒，暂缓扩大流量",
                 "need_cost_comparison_samples": "扩大流量需要实际费用与预测费用的可比样本",
                 "hold_until_cost_returns_within_25_percent": "主动成本偏差超过 25%，暂缓扩大流量",
                 "task_candidate_selection_not_enabled": "该分组尚未启用此任务的候选选择"
@@ -1414,6 +1426,25 @@
                 "tool": "工具调用",
                 "extraction": "提取",
                 "unsupported": "不支持"
+            },
+            "errorClass": {
+                "rate": "限流",
+                "timeout": "超时",
+                "client": "请求错误",
+                "policy": "内容拦截",
+                "auth": "凭据失效",
+                "quota": "额度耗尽",
+                "overload": "上游过载",
+                "model": "模型缺失",
+                "compatibility": "协议不兼容",
+                "canceled": "已取消",
+                "unknown": "未分类"
+            },
+            "costBand": {
+                "short": "短 (<2K)",
+                "medium": "中 (2K–16K)",
+                "long": "长 (16K–64K)",
+                "xlong": "超长 (≥64K)"
             }
         }
     },
