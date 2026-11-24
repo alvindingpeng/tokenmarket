@@ -12,6 +12,10 @@ export type PriceMetric = 'blended' | 'input' | 'output';
 
 // GroupRelayConfig 保存分组 Relay 配置。
 export interface GroupRelayConfig {
+    auto_routing?: 'shadow' | 'active';
+    auto_general?: string;
+    auto_summary?: string;
+    auto_extract?: string;
  request_timeout_seconds: number;
  max_wait_seconds: number;
  max_waiting_requests: number;

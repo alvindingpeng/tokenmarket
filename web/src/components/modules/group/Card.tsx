@@ -134,6 +134,10 @@ export const GroupCard = memo(function GroupCard({
         if (values.name !== group.name) payload.name = values.name;
         if (values.mode !== group.mode) payload.mode = values.mode;
         if (
+            (values.relay_config.auto_routing ?? '') !== (group.relay_config.auto_routing ?? '') ||
+            (values.relay_config.auto_general ?? '') !== (group.relay_config.auto_general ?? '') ||
+            (values.relay_config.auto_summary ?? '') !== (group.relay_config.auto_summary ?? '') ||
+            (values.relay_config.auto_extract ?? '') !== (group.relay_config.auto_extract ?? '') ||
             values.relay_config.member_max_attempts !== group.relay_config.member_max_attempts ||
             values.relay_config.member_retry_interval_seconds !== group.relay_config.member_retry_interval_seconds ||
             values.relay_config.member_non_stream_response_timeout_seconds !== group.relay_config.member_non_stream_response_timeout_seconds ||

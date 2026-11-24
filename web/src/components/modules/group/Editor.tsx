@@ -714,6 +714,37 @@ export function GroupEditor({
                                 {mode === 'score' && (
                                 <>
                                 <Field>
+                                    <FieldLabel htmlFor="group-auto-routing">{t('form.autoRouting')}</FieldLabel>
+                                    <Select value={relayConfig.auto_routing ?? 'off'} onValueChange={(value) =>
+                                        setRelayConfig((prev) => ({ ...prev, auto_routing: value === 'off' ? undefined : value as 'shadow' | 'active' }))}>
+                                        <SelectTrigger id="group-auto-routing" className="w-full rounded-xl"><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="off">{t('form.autoOff')}</SelectItem>
+                                            <SelectItem value="shadow">{t('form.autoShadow')}</SelectItem>
+                                            <SelectItem value="active">{t('form.autoActive')}</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </Field>
+                                {!!relayConfig.auto_routing && (
+                                    <div className="space-y-3">
+                                        <p className="text-sm text-muted-foreground">{t('form.autoHint')}</p>
+                                        <p className="break-words text-sm text-muted-foreground">
+                                            {selectedMembers.map((member) => `#${member.channel_grant_id} ${member.name}`).join(' · ')}
+                                        </p>
+                                        {([
+                                            ['auto_general', 'autoGeneral'],
+                                            ['auto_summary', 'autoSummary'],
+                                            ['auto_extract', 'autoExtract'],
+                                        ] as const).map(([key, label]) => (
+                                            <Field key={key}>
+                                                <FieldLabel htmlFor={key}>{t(`form.${label}`)}</FieldLabel>
+                                                <Input id={key} maxLength={512} value={relayConfig[key] ?? ''}
+                                                    onChange={(event) => setRelayConfig((prev) => ({ ...prev, [key]: event.target.value }))} />
+                                            </Field>
+                                        ))}
+                                    </div>
+                                )}
+                                <Field>
                                     <FieldLabel htmlFor="group-score-price-weight">
                                         {t('form.scorePriceWeight')}
                                         <FieldHelp text={t('form.scoreWeightHint')} />

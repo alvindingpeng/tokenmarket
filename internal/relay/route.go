@@ -91,7 +91,7 @@ func ResetAllRouteStates() {
 // availability, limits, protocol capability, billing, or retry bounds.
 func effectiveGroupForRequest(group model.Group, preference string) model.Group {
 	// Manual selection is a hard constraint, not a preference.
-	if group.Mode == model.GroupModeManual {
+	if group.Mode == model.GroupModeManual || (group.Mode == model.GroupModeScore && group.RelayConfig.AutoRouting == "active") {
 		return group
 	}
 	if preference != "" && preference != model.RoutingPreferenceInherit && model.IsValidRoutingPreference(preference) {
@@ -153,7 +153,7 @@ func pickGroupItem(group model.Group) model.GroupItem {
 	route.exploreItemID = 0
 
 	// 亲和期内沿用当前成员, 不提前探测已恢复的高优先级成员。
-	if group.RequestRoutingPreference == "" && route.CurrentItemID != 0 && route.AffinityUntil > now {
+	if group.AutoRequestCosts == nil && group.RequestRoutingPreference == "" && route.CurrentItemID != 0 && route.AffinityUntil > now {
 		current := itemOf(group, route.CurrentItemID)
 		_, cooling := route.Cooldowns[current.ID]
 		// 亲和快捷路径同样要过并发与策略配额检查: 否则亲和期内的成员会绕过限流,
@@ -234,8 +234,10 @@ func pickGroupItem(group model.Group) model.GroupItem {
 	// 冷启动探索: 按实测成绩择优的模式下, 没有观测的成员会被评分结构性排除在外
 	// (延迟与成功率只能取中性值), 永远拿不到第一批样本; 这里按固定节奏把一小部分请求
 	// 定向给这样的成员, 让它先攒够样本, 之后回到正常评分竞争(详见 explore.go)。
-	if explore, ok := coldStartExplore(group, candidates, chosen, route); ok {
-		chosen = explore
+	if group.AutoRequestCosts == nil {
+		if explore, ok := coldStartExplore(group, candidates, chosen, route); ok {
+			chosen = explore
+		}
 	}
 	route.CurrentItemID = chosen.ID
 	publishRouteLocked(route)
@@ -320,6 +322,21 @@ func selectGroupItem(group model.Group, candidates []model.GroupItem) model.Grou
 		}
 		return best
 	case model.GroupModeScore:
+		if group.AutoRequestCosts != nil {
+			best := candidates[0]
+			for _, item := range candidates[1:] {
+				if group.AutoRequestCosts[item.ID] < group.AutoRequestCosts[best.ID] {
+					best = item
+				}
+			}
+			sameModel := make([]model.GroupItem, 0, len(candidates))
+			for _, item := range candidates {
+				if item.ModelName == best.ModelName {
+					sameModel = append(sameModel, item)
+				}
+			}
+			return selectByScore(group, sameModel)
+		}
 		return selectByScore(group, candidates)
 	case model.GroupModeRandom:
 		return candidates[rand.IntN(len(candidates))]
@@ -330,6 +347,9 @@ func selectGroupItem(group model.Group, candidates []model.GroupItem) model.Grou
 
 // memberPrice 返回成员在配置口径下的用户价(每百万 token)。
 func memberPrice(group model.Group, item model.GroupItem) float64 {
+	if cost, ok := group.AutoRequestCosts[item.ID]; ok {
+		return cost
+	}
 	price := item.UserPrice
 	switch group.RelayConfig.PriceMetric {
 	case model.PriceMetricInput:

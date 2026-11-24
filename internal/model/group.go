@@ -88,6 +88,10 @@ func clampPositive(value, fallback, maximum int) int {
 
 // 分组 Relay 的持久化配置，数据库中以 JSON 存储。
 type GroupRelayConfig struct {
+	AutoRouting                           string `json:"auto_routing,omitempty" binding:"omitempty,oneof=shadow active"`
+	AutoGeneral                           string `json:"auto_general,omitempty" binding:"max=512"`
+	AutoSummary                           string `json:"auto_summary,omitempty" binding:"max=512"`
+	AutoExtract                           string `json:"auto_extract,omitempty" binding:"max=512"`
 	MemberStreamIdleTimeoutSeconds        int    `json:"member_stream_idle_timeout_seconds" binding:"omitempty,min=1,max=3600"`
 	RequestTimeoutSeconds                 int    `json:"request_timeout_seconds" binding:"omitempty,min=1,max=3600"`                    // 整请求最大耗时, 包含重试与流式传输。
 	MaxWaitSeconds                        int    `json:"max_wait_seconds" binding:"omitempty,min=0,max=300"`                            // 无可用成员时最大等待秒数, 0 立即返回。
@@ -265,6 +269,7 @@ func NormalizeGroupRelayConfigForMode(config *GroupRelayConfig, mode GroupMode) 
 
 // 客户端模型名称及其可手动选择或故障转移的上游分组。
 type Group struct {
+	AutoRequestCosts         map[int]float64  `json:"-" gorm:"-"`
 	RequestRoutingPreference string           `json:"-" gorm:"-"`                                                                                                       // 请求级偏好, 不持久化。
 	ID                       int              `json:"id" gorm:"primaryKey"`                                                                                             // 分组主键。
 	UserID                   uint             `json:"user_id" gorm:"uniqueIndex:idx_group_owner_name;not null;default:0"`                                               // 归属用户; 分组名在归属内唯一, 跨用户可重名。
@@ -336,7 +341,7 @@ type GroupItemInput struct {
 // 本请求只声明"要加哪些", 由后端在事务内读出当前集合再追加, 因此并发安全且天然幂等:
 // 已经在分组里的授权不重复添加, 也不改变既有成员的顺序与优先级。
 type GroupAddItemsRequest struct {
-	GroupIDs       []int `json:"group_ids" binding:"required,min=1"`               // 目标分组主键; 一次可提交多个, 逐个追加。
+	GroupIDs        []int `json:"group_ids" binding:"required,min=1"`                   // 目标分组主键; 一次可提交多个, 逐个追加。
 	ChannelGrantIDs []int `json:"channel_grant_ids" binding:"required,min=1,dive,gt=0"` // 待追加的渠道授权主键; 顺序即追加顺序。
 }
 
@@ -344,8 +349,8 @@ type GroupAddItemsRequest struct {
 // 逐个分组给结果而不是只给一个汇总数: 一次提交多个分组时, "哪些真加进去了"必须能逐条看清,
 // 否则界面只能笼统地说"部分成功", 用户无从判断该重试哪一个。
 type GroupAddItemsResult struct {
-	GroupID  int   `json:"group_id"`  // 目标分组主键。
-	Added    []int `json:"added"`     // 本次真正新增的授权主键, 按追加顺序。
-	Skipped  []int `json:"skipped"`   // 已在该分组中而跳过的授权主键(重复提交不该报错)。
-	Group    Group `json:"group"`     // 追加后的完整分组, 语义与 GroupUpdate 的响应一致。
+	GroupID int   `json:"group_id"` // 目标分组主键。
+	Added   []int `json:"added"`    // 本次真正新增的授权主键, 按追加顺序。
+	Skipped []int `json:"skipped"`  // 已在该分组中而跳过的授权主键(重复提交不该报错)。
+	Group   Group `json:"group"`    // 追加后的完整分组, 语义与 GroupUpdate 的响应一致。
 }

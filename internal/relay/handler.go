@@ -168,6 +168,8 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		if !isMediaProtocol(requestProtocol) {
 			estIn, estOut = estimateTokens(raw.Body)
 		}
+		var task autoTask
+		autoObserved := false
 		userScopes := userRateScopes(keyUserID, c.GetInt("api_key_id"), metadata.Model)
 		userDecision := limiter.Reserve(userScopes, estIn, estOut)
 		if !userDecision.Allowed {
@@ -303,11 +305,39 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				}
 				continue
 			}
+			autoMode := ""
+			if group.Mode == model.GroupModeScore {
+				autoMode = group.RelayConfig.AutoRouting
+			}
 			group = effectiveGroupForRequest(group, c.GetString("routing_preference"))
 			// A rate retry is explicitly waiting to probe the same upstream again. In score mode,
 			// ordinary failures stay excluded, but this retry must survive the request-local filter.
 			if !pendingRateRetry {
 				group = scoreRetries.filtered(group)
+			}
+			var autoExcluded []model.RelayRouteCandidate
+			if autoMode == "active" || (autoMode == "shadow" && !autoObserved) {
+				if task.name == "" {
+					task = classifyAuto(raw.Body, requestProtocol, estIn, estOut)
+				}
+				eligible, excluded := autoCandidates(group, task)
+				if autoMode == "active" {
+					group, autoExcluded = eligible, excluded
+				} else {
+					autoObserved = true
+					state := RouteStateOf(group)
+					candidates := slices.DeleteFunc(eligible.Items, func(item model.GroupItem) bool {
+						return upstreamItemLimited(item) || upstreamItemBlockedByPolicy(item) ||
+							state.Cooldowns[item.ID] > time.Now().UnixMilli() || state.ProbeItemID == item.ID
+					})
+					reason := task.name + ":no_candidate"
+					if len(candidates) > 0 {
+						eligible.Mode = model.GroupModeScore
+						predicted := selectGroupItem(eligible, candidates)
+						reason = fmt.Sprintf("%s:item=%d", task.name, predicted.ID)
+					}
+					request.addRouteEvent("auto_shadow", reason)
+				}
 			}
 			// Recheck after refresh: a live configuration change may lower the
 			// budget or switch this request into score mode between attempts.
@@ -335,7 +365,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			// 灰度是"额外分一点流量给新渠道", 不能因为新渠道还没就绪就把请求卡住。
 			var item model.GroupItem
 			canary := false
-			if canaryHit && !canaryFailed {
+			if group.AutoRequestCosts == nil && canaryHit && !canaryFailed {
 				if canaryItem, ok := pickCanaryItem(group); ok {
 					item, canary = canaryItem, true
 				} else if !canaryWarned {
@@ -348,12 +378,25 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			if !canary {
 				item = pickGroupItem(group)
 			}
-			request.setRouteDecision(routeExplanation(group, item, canary))
+			decision := routeExplanation(group, item, canary)
+			if group.AutoRequestCosts != nil {
+				decision.Candidates = append(decision.Candidates, autoExcluded...)
+				decision.Reason = "auto_" + task.name
+			}
+			request.setRouteDecision(decision)
 			if item.ID == 0 {
 				// Score retries exhaust the currently eligible remaining candidates;
 				// never wait for cooldown expiry or probe completion to revisit one.
 				if group.Mode == model.GroupModeScore && lastScoreError != nil {
 					stop(lastScoreError, upstreamStatus(lastScoreError))
+					return
+				}
+				if group.AutoRequestCosts != nil && len(group.Items) == 0 {
+					status := http.StatusServiceUnavailable
+					if task.name == "unsupported" {
+						status = http.StatusBadRequest
+					}
+					stop(fmt.Errorf("auto routing has no compatible upstream for task %s", task.name), status)
 					return
 				}
 				// 分组一个成员都没有时, 等待永远等不到上游: 直接点明配置缺失, 不再报笼统的"无可用上游"。
@@ -446,7 +489,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			}
 
 			// 检查请求是否超过模型的上下文限制。
-			if exceeded, limit, estimated := checkContextLimit(channelModel.Name, raw.Body); exceeded {
+			if exceeded, limit, estimated := checkContextLimit(channelModel.Name, raw.Body); group.AutoRequestCosts == nil && exceeded {
 				err := fmt.Errorf("Request exceeds model context limit: estimated %d tokens, limit %d tokens", estimated, limit)
 				request.markFailed(err, "", nil)
 				// 使用 context_length_exceeded 错误类型，与上游错误保持一致
