@@ -68,4 +68,59 @@ func TestAutoFallbackDefaultsAreBounded(t *testing.T) {
 	if config.AutoFallbackFailures != 100 || config.AutoFallbackSeconds != 3600 {
 		t.Fatalf("configured fallback bounds were not applied: %+v", config)
 	}
+	config.AutoStickySeconds = 9999
+	config.AutoExplorePercent = 99
+	model.NormalizeGroupRelayConfigForMode(&config, model.GroupModeScore)
+	if config.AutoStickySeconds != 3600 || config.AutoExplorePercent != 20 {
+		t.Fatalf("new routing bounds were not applied: %+v", config)
+	}
+}
+
+func TestAutoStickyUsesCurrentKeyAndTaskAndClears(t *testing.T) {
+	ResetAutoState(99101)
+	group := model.Group{ID: 99101, RelayConfig: model.GroupRelayConfig{AutoStickySeconds: 10}}
+	autoStickyRecordSuccess(group, 7, 3, AutoTaskCoding, 42)
+	if itemID, ok := autoStickyGet(group, 7, 3, AutoTaskCoding); !ok || itemID != 42 {
+		t.Fatalf("sticky hit=(%d,%t), want (42,true)", itemID, ok)
+	}
+	if _, ok := autoStickyGet(group, 8, 3, AutoTaskCoding); ok {
+		t.Fatal("different API key inherited another session's sticky member")
+	}
+	if _, ok := autoStickyGet(group, 7, 3, AutoTaskSummary); ok {
+		t.Fatal("different task inherited another task's sticky member")
+	}
+	autoStickyClear(group.ID, 7, 3, AutoTaskCoding)
+	if _, ok := autoStickyGet(group, 7, 3, AutoTaskCoding); ok {
+		t.Fatal("failure clear left sticky member behind")
+	}
+}
+
+func TestAutoStickyDisabledPreservesLegacyBehavior(t *testing.T) {
+	group := model.Group{ID: 99102, RelayConfig: model.GroupRelayConfig{}}
+	autoStickyRecordSuccess(group, 7, 3, AutoTaskGeneral, 42)
+	if _, ok := autoStickyGet(group, 7, 3, AutoTaskGeneral); ok {
+		t.Fatal("disabled sticky routing created session state")
+	}
+}
+
+func TestAutoStickyMemberStillRequiresCurrentCandidateEligibility(t *testing.T) {
+	eligible := []model.GroupItem{{ID: 1}, {ID: 2}}
+	if item, ok := autoItemByID(eligible, 2); !ok || item.ID != 2 {
+		t.Fatal("eligible sticky member was not found")
+	}
+	if _, ok := autoItemByID(eligible, 99); ok {
+		t.Fatal("sticky member bypassed candidate eligibility")
+	}
+}
+
+func TestAutoExploreIsStableAndBounded(t *testing.T) {
+	if autoExploreHit(99103, 9, 1, 0, AutoTaskCoding) {
+		t.Fatal("zero exploration unexpectedly selected a member")
+	}
+	if got := autoExploreHit(99103, 9, 1, 99, AutoTaskCoding); got != autoExploreHit(99103, 9, 1, 20, AutoTaskCoding) {
+		t.Fatal("exploration above the cap should behave as 20 percent")
+	}
+	if autoExploreHit(99103, 9, 1, 20, AutoTaskCoding) != autoExploreHit(99103, 9, 1, 20, AutoTaskCoding) {
+		t.Fatal("exploration bucket is not stable")
+	}
 }

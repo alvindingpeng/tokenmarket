@@ -196,6 +196,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		var autoProtectionGroup model.Group
 		var autoProtectionTask autoTask
 		autoProtectionEngaged := false
+		autoRouteGroupID := 0
 		defer func() {
 			if !autoProtectionEngaged {
 				return
@@ -203,8 +204,12 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			switch request.statusSnapshot() {
 			case StatusSuccess:
 				autoCircuitRecordSuccess(autoProtectionGroup.ID, autoProtectionTask.name)
+				if itemID := request.autoChoiceSnapshot(); itemID != 0 && autoRouteGroupID != 0 {
+					autoStickyRecordSuccess(autoProtectionGroup, c.GetInt("api_key_id"), keyUserID, autoProtectionTask.name, itemID)
+				}
 			case StatusFailed:
 				autoCircuitRecordFailure(autoProtectionGroup, autoProtectionTask.name)
+				autoStickyClear(autoProtectionGroup.ID, c.GetInt("api_key_id"), keyUserID, autoProtectionTask.name)
 			}
 		}()
 		request.setRateScopes(userScopes, userDecision.Reservation)
@@ -267,6 +272,14 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				stop(lastScoreError, upstreamStatus(lastScoreError))
 				return false
 			}
+			if group.AutoRequestCosts != nil && len(group.Items) == 0 {
+				status := http.StatusServiceUnavailable
+				if request.autoDecisionSnapshot() == "reject" && request.autoTaskSnapshot().name == AutoTaskUnsupported {
+					status = http.StatusBadRequest
+				}
+				stop(fmt.Errorf("auto routing has no compatible upstream for task %s", request.autoTaskSnapshot().name), status)
+				return false
+			}
 			if waiter.ticket == nil {
 				request.addRouteEvent("waiting", "waiting_for_upstream")
 			}
@@ -317,6 +330,12 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				}
 				continue
 			}
+			// Any upstream failure invalidates the previous sticky choice before
+			// the next selection. A successful retry writes a new choice only after
+			// the complete response has been delivered.
+			if !pendingRateRetry && (lastScoreError != nil || failedItemID != 0) {
+				autoStickyClear(group.ID, c.GetInt("api_key_id"), keyUserID, request.autoTaskSnapshot().name)
+			}
 			autoMode := ""
 			if group.Mode == model.GroupModeScore {
 				autoMode = group.RelayConfig.AutoRouting
@@ -329,28 +348,150 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			}
 			var autoExcluded []model.RelayRouteCandidate
 			var shadowExcluded []model.RelayRouteCandidate
+			var autoRouteFallback bool
+			var autoExplore model.GroupItem
+			var analysis autoCandidateResult
+			baseGroup := group
 			observed, observedTask := request.autoObservation()
-			if autoMode != "" {
-				if !observed {
-					observedTask = classifyAuto(raw.Body, requestProtocol, estIn, estOut)
-					request.setAutoObservation(observedTask, autoMode)
-					observed = true
+			observedNow := false
+			stickyDecision := request.autoDecisionSnapshot()
+			if autoMode != "" && !observed {
+				observedTask = classifyAuto(raw.Body, requestProtocol, estIn, estOut)
+				request.setAutoObservation(observedTask, autoMode)
+				observed = true
+				observedNow = true
+				if autoMode == "active" {
+					// Commit the first active-routing classification immediately. A
+					// rejected task stays rejected even if a retry re-reads stale
+					// configuration before the cache catches up.
+					request.setAutoDecisionState("active")
 				}
+			}
+			lockedActive := request.autoDecisionSnapshot() == "active" ||
+				request.autoDecisionSnapshot() == "reject" ||
+				request.autoDecisionSnapshot() == "fallback"
+			if lockedActive && !observed {
+				observed = true
+				observedTask = request.autoTaskSnapshot()
+			}
+			if autoMode == "active" && !observed && request.autoDecisionSnapshot() == "reject" {
+				// A previous round locked this request to an active-routing decision,
+				// but the refreshed cache temporarily no longer advertises active mode.
+				// Preserve the decision for the lifetime of the request.
+				observed = true
+				observedTask = request.autoTaskSnapshot()
+			}
+			if request.autoDecisionSnapshot() == "fallback" {
+				autoRouteFallback = true
 			}
 			if autoMode == "active" && observed {
 				task := observedTask
-				if autoCircuitOpen(group.ID, task.name) {
+				if stickyDecision != "" && stickyDecision != "active" {
+					if stickyDecision == "reject" {
+						group.Items = nil
+						group.AutoRequestCosts = make(map[int]float64)
+						group.AutoTaskScores = make(map[int]int)
+						group.AutoTaskVerified = make(map[int]bool)
+						request.addRouteEvent("auto_routing", task.name+":forced")
+						request.addRouteEvent("auto_routing", task.name+":no_candidate")
+					} else if stickyDecision == "fallback" {
+						autoRouteFallback = true
+						request.addRouteEvent("auto_routing", "auto_fallback_no_candidate")
+					} else if stickyDecision == "explored" {
+						// Exploration is a request-scoped decision. A retry may move to
+						// another member from the same exploration cohort, but it must
+						// never reopen the unrestricted score group.
+						analysis = analyzeAutoCandidates(baseGroup, task)
+						exploreGroup := baseGroup
+						exploreGroup.Items = analysis.ExploreCandidate
+						if !pendingRateRetry {
+							exploreGroup = scoreRetries.filtered(exploreGroup)
+						}
+						analysis.ExploreCandidate = exploreGroup.Items
+						group, autoExcluded = baseGroup, analysis.Excluded
+						if task.name != AutoTaskUnsupported &&
+							task.name != AutoTaskTool &&
+							len(analysis.ExploreCandidate) > 0 {
+							autoExplore = analysis.ExploreCandidate[rand.IntN(len(analysis.ExploreCandidate))]
+							group.Items = []model.GroupItem{autoExplore}
+							group.AutoRequestCosts = make(map[int]float64, 1)
+							group.AutoTaskScores = make(map[int]int, 1)
+							group.AutoTaskVerified = make(map[int]bool, 1)
+							group.AutoRequestCosts[autoExplore.ID] = (float64(task.input)*autoExplore.UserPrice.Input + float64(task.output)*autoExplore.UserPrice.Output) / 1e6
+							group.AutoTaskScores[autoExplore.ID] = -1
+							group.AutoTaskVerified[autoExplore.ID] = false
+							request.addRouteEvent("auto_routing", "auto_explore")
+						} else {
+							request.setAutoDecisionState("reject")
+							group.Items = nil
+							request.addRouteEvent("auto_routing", task.name+":forced")
+							request.addRouteEvent("auto_routing", task.name+":no_candidate")
+						}
+					}
+				} else if autoCircuitOpen(group.ID, task.name) {
+					// Circuit and sampling holds are traffic controls for ordinary
+					// text. Tool capability is an explicit safety gate, so it must
+					// remain closed instead of falling back to an unverified member.
+					if task.name == AutoTaskUnsupported || task.name == AutoTaskTool {
+						request.setAutoDecisionState("reject")
+					} else {
+						autoRouteFallback = true
+						request.setAutoDecisionState("fallback")
+					}
 					request.addRouteEvent("auto_routing", "auto_circuit_open")
 				} else if !autoRampHit(group.ID, c.GetInt("api_key_id"), int(keyUserID), group.RelayConfig.AutoRampPercent) {
+					if task.name == AutoTaskUnsupported || task.name == AutoTaskTool {
+						request.setAutoDecisionState("reject")
+					} else {
+						autoRouteFallback = true
+						request.setAutoDecisionState("fallback")
+					}
 					request.addRouteEvent("auto_routing", "auto_ramp_hold")
 				} else {
-					eligible, excluded := autoCandidates(group, task)
+					analysis = analyzeAutoCandidates(group, task)
+					eligible, excluded := analysis.Group, analysis.Excluded
 					group, autoExcluded = eligible, excluded
+					if stickyID, ok := autoStickyGet(group, c.GetInt("api_key_id"), keyUserID, task.name); ok {
+						if stickyItem, found := autoItemByID(group.Items, stickyID); found {
+							group.Items = append([]model.GroupItem{stickyItem}, slices.DeleteFunc(slices.Clone(group.Items), func(member model.GroupItem) bool {
+								return member.ID == stickyID
+							})...)
+							request.setAutoSticky(stickyID, "hit")
+							request.addRouteEvent("auto_routing", "auto_sticky_hit")
+						} else {
+							request.setAutoSticky(stickyID, "miss")
+							request.addRouteEvent("auto_routing", "auto_sticky_miss")
+						}
+					}
 					if len(group.Items) > 0 {
 						autoProtectionGroup, autoProtectionTask, autoProtectionEngaged = group, task, true
+						autoRouteGroupID = group.ID
+					} else if task.name != AutoTaskUnsupported &&
+						group.RelayConfig.AutoExplorePercent > 0 &&
+						task.name != AutoTaskTool &&
+						len(analysis.ExploreCandidate) > 0 &&
+						autoExploreHit(group.ID, c.GetInt("api_key_id"), int(keyUserID), group.RelayConfig.AutoExplorePercent, task.name) {
+						autoExplore = analysis.ExploreCandidate[rand.IntN(len(analysis.ExploreCandidate))]
+						group.Items = []model.GroupItem{autoExplore}
+						group.AutoRequestCosts = make(map[int]float64, 1)
+						group.AutoTaskScores = make(map[int]int, 1)
+						group.AutoTaskVerified = make(map[int]bool, 1)
+						group.AutoRequestCosts[autoExplore.ID] = (float64(task.input)*autoExplore.UserPrice.Input + float64(task.output)*autoExplore.UserPrice.Output) / 1e6
+						group.AutoTaskScores[autoExplore.ID] = -1
+						group.AutoTaskVerified[autoExplore.ID] = false
+						request.addRouteEvent("auto_routing", "auto_explore")
+					} else if task.name != AutoTaskUnsupported && task.name != AutoTaskTool && group.RelayConfig.AutoFallbackNoCandidate {
+						autoRouteFallback = true
+						request.setAutoDecisionState("fallback")
+						request.addRouteEvent("auto_routing", "auto_fallback_no_candidate")
+					} else {
+						request.setAutoDecisionState("reject")
+						request.addRouteEvent("auto_routing", task.name+":forced")
 					}
-					request.addRouteEvent("auto_routing", task.name+":forced")
-					if len(group.Items) == 0 {
+					if len(group.Items) > 0 && autoExplore.ID == 0 {
+						request.addRouteEvent("auto_routing", task.name+":forced")
+					}
+					if len(group.Items) == 0 && !autoRouteFallback {
 						request.addRouteEvent("auto_routing", task.name+":no_candidate")
 					}
 				}
@@ -375,7 +516,49 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					}
 				}
 				request.addRouteEvent("auto_shadow", reason)
-				request.setAutoPredictionDetails(autoDecisionDetailsJSON(task, prediction, excluded))
+				request.setAutoPredictionDetails(autoDecisionDetailsJSON(task, prediction, excluded, "", nil))
+			}
+			if autoRouteFallback {
+				// A fallback uses the pre-filter group and therefore keeps the user's
+				// normal score strategy. It is not an active-route failure sample.
+				group = effectiveGroupForRequest(baseGroup, c.GetString("routing_preference"))
+				if !pendingRateRetry {
+					group = scoreRetries.filtered(group)
+				}
+				group.AutoRequestCosts = nil
+				group.AutoTaskScores = nil
+				group.AutoTaskVerified = nil
+				autoExcluded = analysis.Excluded
+			}
+			if autoMode == "active" && observed && observedTask.name != "" &&
+				!autoRouteFallback && autoExplore.ID == 0 && group.AutoRequestCosts != nil {
+				request.setAutoRouteAction("active")
+			}
+			if autoExplore.ID != 0 {
+				request.setAutoDecisionState("explored")
+				request.setAutoChoice(autoExplore.ID)
+			}
+			if request.autoDecisionSnapshot() == "active" && !autoRouteFallback && group.AutoRequestCosts == nil {
+				request.setAutoDecisionState("reject")
+			}
+			if request.autoDecisionSnapshot() == "reject" {
+				request.setAutoDecisionState("reject")
+				group.Items = nil
+				group.AutoRequestCosts = make(map[int]float64)
+				group.AutoTaskScores = make(map[int]int)
+				group.AutoTaskVerified = make(map[int]bool)
+			}
+			if autoMode == "active" && !autoRouteFallback && group.AutoRequestCosts == nil &&
+				(request.autoDecisionSnapshot() == "reject" || observedNow) {
+				// The first classification or policy decision is already a complete
+				// active-routing decision when no candidate survived. Keep the request
+				// on that path instead of letting a later retry silently select from
+				// the unrestricted group.
+				request.setAutoDecisionState("reject")
+				group.Items = nil
+				group.AutoRequestCosts = make(map[int]float64)
+				group.AutoTaskScores = make(map[int]int)
+				group.AutoTaskVerified = make(map[int]bool)
 			}
 			// Recheck after refresh: a live configuration change may lower the
 			// budget or switch this request into score mode between attempts.
@@ -420,6 +603,19 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			if group.AutoRequestCosts != nil {
 				decision.Candidates = append(decision.Candidates, autoExcluded...)
 				decision.Reason = "auto_" + observedTask.name
+				action := "active"
+				if autoExplore.ID != 0 {
+					action = "explore"
+				}
+				stickyID, stickyOutcome, stickyHit := request.autoStickySnapshot()
+				var stickyDetails *autoStickyDetails
+				if stickyHit {
+					stickyDetails = &autoStickyDetails{ItemID: stickyID, Outcome: stickyOutcome}
+					if stickyItem, found := autoItemByID(group.Items, stickyID); found {
+						stickyDetails.Model = stickyItem.ModelName
+					}
+				}
+				request.setAutoRouteAction(action)
 				// The actual candidate set is the one still admissible at selection
 				// time. Compute scores after admission instead of using the pre-filter
 				// candidate list, so the displayed score matches the chosen item.
@@ -436,9 +632,23 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 						detailsCandidates[i].Reason = "selected"
 					}
 				}
-				decision.Details = autoDecisionDetailsJSON(observedTask, nil, detailsCandidates)
+				decision.Details = autoDecisionDetailsJSON(observedTask, nil, detailsCandidates, action, stickyDetails)
 			} else if autoMode == "shadow" {
 				decision.Candidates = append(decision.Candidates, shadowExcluded...)
+			} else if autoRouteFallback {
+				decision.Details = autoDecisionDetailsJSON(observedTask, nil, autoExcluded, "fallback", nil)
+				request.addRouteEvent("auto_routing", "auto_fallback_no_candidate")
+			}
+			if request.autoDecisionSnapshot() == "reject" && !autoRouteFallback {
+				decision.Mode = "score"
+				decision.Phase = "selected"
+				decision.Reason = "auto_" + observedTask.name
+				decision.Candidates = autoExcluded
+				decision.Details = autoDecisionDetailsJSON(observedTask, nil, autoExcluded, "reject", nil)
+				group.Items = nil
+			}
+			if group.AutoRequestCosts != nil {
+				request.setAutoChoice(item.ID)
 			}
 			request.setRouteDecision(decision)
 			if item.ID == 0 {
@@ -906,6 +1116,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				if channelKey != nil {
 					op.ResetChannelKeyErrors(channelKey.ID)
 					op.ResetChannelModelErrors(channelModel.ID)
+				}
+				if itemID, _, hit := request.autoStickySnapshot(); hit && itemID != 0 {
+					request.setAutoSticky(itemID, "success")
 				}
 			}
 			if !metadata.Streaming {

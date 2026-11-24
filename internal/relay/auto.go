@@ -351,7 +351,22 @@ func autoEffectiveProtocol(itemProtocols, grantProtocols model.Protocol, preferr
 	return false
 }
 
+type autoCandidateResult struct {
+	Group            model.Group
+	Excluded         []model.RelayRouteCandidate
+	QualityRejected  int
+	Unverified       int
+	ExploreCandidate []model.GroupItem
+}
+
 func autoCandidates(group model.Group, task autoTask) (model.Group, []model.RelayRouteCandidate) {
+	result := analyzeAutoCandidates(group, task)
+	return result.Group, result.Excluded
+}
+
+// analyzeAutoCandidates 把资格过滤与质量门槛的中间结果保留下来。删除与回退必须
+// 依据同一份证据决定，不能先丢掉候选再靠原因字符串猜测是否存在“未验证”成员。
+func analyzeAutoCandidates(group model.Group, task autoTask) autoCandidateResult {
 	config := group.RelayConfig
 	qualified := config.AutoGeneral
 	verified := map[int]bool{}
@@ -386,6 +401,8 @@ func autoCandidates(group model.Group, task autoTask) (model.Group, []model.Rela
 	group.AutoTaskScores = make(map[int]int, len(items))
 	group.AutoTaskVerified = make(map[int]bool, len(items))
 	var excluded []model.RelayRouteCandidate
+	var qualityRejected, unverified int
+	var exploreCandidates []model.GroupItem
 	for _, item := range items {
 		contextOverride := config.AutoContextOverrides[strconv.Itoa(item.ChannelGrantID)]
 		reason := autoExclusion(item, task, grants[item.ChannelGrantID], verified[item.ChannelGrantID], contextOverride)
@@ -407,8 +424,10 @@ func autoCandidates(group model.Group, task autoTask) (model.Group, []model.Rela
 			switch {
 			case !hasTaskCapability || !taskCapability.Verified:
 				reason = "auto_quality_unverified"
+				unverified++
 			case taskCapability.Score < config.AutoMinTaskScore:
 				reason = "auto_quality_below_threshold"
+				qualityRejected++
 			}
 		}
 		if reason != "" {
@@ -423,7 +442,24 @@ func autoCandidates(group model.Group, task autoTask) (model.Group, []model.Rela
 		group.AutoTaskScores[item.ID] = taskScore
 		group.AutoTaskVerified[item.ID] = hasTaskCapability && taskCapability.Verified
 	}
-	return group, excluded
+	// 受控探索只考虑通过协议、上下文、渠道形态等安全过滤、但缺质量证据的文本任务成员。
+	// 工具任务不进入探索池，因为工具 -- 多轮往返不是价格或样本数量能替代的能力验证。
+	if task.name != AutoTaskUnsupported && task.name != AutoTaskTool && config.AutoExplorePercent > 0 {
+		for _, item := range items {
+			contextOverride := config.AutoContextOverrides[strconv.Itoa(item.ChannelGrantID)]
+			if autoExclusion(item, task, grants[item.ChannelGrantID], verified[item.ChannelGrantID], contextOverride) != "" {
+				continue
+			}
+			capability, ok := op.TaskCapabilityGet(item.ModelName, task.name)
+			if !ok || (!capability.Verified && capability.Score < config.AutoMinTaskScore) {
+				exploreCandidates = append(exploreCandidates, item)
+			}
+		}
+	}
+	return autoCandidateResult{
+		Group: group, Excluded: excluded, QualityRejected: qualityRejected,
+		Unverified: unverified, ExploreCandidate: exploreCandidates,
+	}
 }
 
 // autoTaskDecisionDetails 是写入尝试日志的结构化证据。字段只使用 JSON 基本类型，
@@ -435,6 +471,8 @@ type autoTaskDecisionDetails struct {
 	EstimatedOutput int64                       `json:"estimated_output"`
 	Prediction      *autoPredictionDetails      `json:"prediction,omitempty"`
 	Candidates      []model.RelayRouteCandidate `json:"candidates,omitempty"`
+	RouteAction     string                      `json:"route_action,omitempty"`
+	Sticky          *autoStickyDetails          `json:"sticky,omitempty"`
 }
 
 type autoPredictionDetails struct {
@@ -444,7 +482,13 @@ type autoPredictionDetails struct {
 	TaskScore int     `json:"task_score"`
 }
 
-func autoDecisionDetailsJSON(task autoTask, prediction *autoPredictionDetails, candidates []model.RelayRouteCandidate) string {
+type autoStickyDetails struct {
+	ItemID  int    `json:"item_id"`
+	Model   string `json:"model"`
+	Outcome string `json:"outcome"`
+}
+
+func autoDecisionDetailsJSON(task autoTask, prediction *autoPredictionDetails, candidates []model.RelayRouteCandidate, action string, sticky *autoStickyDetails) string {
 	details := autoTaskDecisionDetails{
 		ClassConfidence: task.confidence,
 		ClassRule:       task.rule,
@@ -452,6 +496,8 @@ func autoDecisionDetailsJSON(task autoTask, prediction *autoPredictionDetails, c
 		EstimatedOutput: task.output,
 		Prediction:      prediction,
 		Candidates:      candidates,
+		RouteAction:     action,
+		Sticky:          sticky,
 	}
 	raw, _ := json.Marshal(details)
 	return string(raw)

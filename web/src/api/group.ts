@@ -23,6 +23,9 @@ export interface GroupRelayConfig {
     auto_ramp_percent?: number;
     auto_fallback_failures?: number;
     auto_fallback_seconds?: number;
+    auto_sticky_seconds?: number;
+    auto_fallback_no_candidate?: boolean;
+    auto_explore_percent?: number;
     auto_min_task_score?: number;
     auto_quality_weight?: number;
     auto_price_weight?: number;

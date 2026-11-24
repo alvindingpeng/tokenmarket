@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState, type FormEvent } from 'react';
-import { Check, ChevronDownIcon, HelpCircle, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
+import { useCallback, useMemo, useState, type FormEvent, type MouseEvent } from 'react';
+import { Check, ChevronDownIcon, HelpCircle, LoaderCircle, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { toast } from 'sonner';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
+import { useProbeModelToolCapability } from '@/api/model';
 import { Accordion, AccordionContent, AccordionItem } from '@/components/ui/accordion';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -29,6 +30,44 @@ export type GroupEditorValues = {
     members: SelectedMember[];
 };
 
+function ToolProbeRunButton({ model, pending, onClick }: {
+    model: string; pending: boolean; onClick: (event: MouseEvent<HTMLButtonElement>) => void;
+}) {
+    return (
+        <button
+            type="button"
+            disabled={pending}
+            onClick={onClick}
+            className="shrink-0 rounded-md border border-border px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-muted disabled:opacity-50"
+        >
+            {pending ? <LoaderCircle className="size-3 animate-spin" /> : "Probe tool"}
+        </button>
+    );
+}
+
+function ToolProbeControls({ grantID, model, score }: { grantID: number; model: string; score: number }) {
+    const probe = useProbeModelToolCapability();
+    return (
+        <div className="mt-2 flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
+            <ToolProbeRunButton
+                model={model}
+                pending={probe.isPending}
+                onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    probe.mutate({ channel_grant_id: grantID, score }, {
+                        onSuccess: (result) => {
+                            toast.success(`Verified ${result.model_name}: ${result.score}`);
+                        },
+                        onError: (error) => toast.error(error.message),
+                    });
+                }}
+            />
+            {probe.isError && <span className="text-[10px] text-destructive">probe failed</span>}
+        </div>
+    );
+}
+
 // ModeRelayDefaults 是各模式预设里与模式相关的部分: 灰度四项不随模式变化, 由 modeRelayConfig 统一补齐。
 type ModeRelayDefaults = Omit<GroupRelayConfig, keyof CanaryConfig>;
 
@@ -45,7 +84,7 @@ const modeRelayDefaults: Record<GroupMode, ModeRelayDefaults> = {
 
 // modeRelayConfig 返回该模式的预设; 灰度恒从关闭态起步 —— 它叠加在模式之上, 不属于任何模式的预设。
 function modeRelayConfig(mode: GroupMode): GroupRelayConfig {
-    return { ...modeRelayDefaults[mode], ...canaryDefaults(), auto_ramp_percent: 5, auto_fallback_failures: 3, auto_fallback_seconds: 60, auto_min_task_score: 0, auto_quality_weight: 40, auto_price_weight: 20, auto_latency_weight: 20, auto_success_weight: 20 };
+    return { ...modeRelayDefaults[mode], ...canaryDefaults(), auto_ramp_percent: 5, auto_fallback_failures: 3, auto_fallback_seconds: 60, auto_sticky_seconds: 300, auto_fallback_no_candidate: true, auto_explore_percent: 5, auto_min_task_score: 0, auto_quality_weight: 40, auto_price_weight: 20, auto_latency_weight: 20, auto_success_weight: 20 };
 }
 
 // PROTOCOL_TAGS 是凭据行上的协议标识。
@@ -793,6 +832,25 @@ export function GroupEditor({
                                                         className="rounded-xl"
                                                     />
                                                 </Field>
+                                                <Field>
+                                                    <FieldLabel htmlFor="group-auto-sticky-seconds">
+                                                        {t('form.autoStickySeconds')}
+                                                        <FieldHelp text={t('form.autoStickySecondsHint')} />
+                                                    </FieldLabel>
+                                                    <Input
+                                                        id="group-auto-sticky-seconds"
+                                                        type="number"
+                                                        min={0}
+                                                        max={3600}
+                                                        step={1}
+                                                        value={String(relayConfig.auto_sticky_seconds ?? 0)}
+                                                        onChange={(event) => {
+                                                            const value = Number.parseInt(event.target.value, 10);
+                                                            setRelayConfig((prev) => ({ ...prev, auto_sticky_seconds: Number.isFinite(value) ? Math.min(Math.max(value, 0), 3600) : 0 }));
+                                                        }}
+                                                        className="rounded-xl"
+                                                    />
+                                                </Field>
                                             </div>
                                             <div className="rounded-xl border border-border/50 p-3">
                                                 <h4 className="mb-1 text-sm font-medium">{t('form.autoQualityTitle')}</h4>
@@ -823,6 +881,28 @@ export function GroupEditor({
                                                 <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
                                                     {t('form.autoQualityRegistryHint')}
                                                 </p>
+                                                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                                                    <label className="flex items-start gap-2 rounded-xl border border-border/50 p-3 text-xs">
+                                                        <Checkbox
+                                                            checked={!!relayConfig.auto_fallback_no_candidate}
+                                                            onCheckedChange={(value) => setRelayConfig((prev) => ({ ...prev, auto_fallback_no_candidate: value === true }))}
+                                                        />
+                                                        <span>
+                                                            <span className="block font-medium">{t('form.autoFallbackNoCandidate')}</span>
+                                                            <span className="mt-1 block leading-relaxed text-muted-foreground">{t('form.autoFallbackNoCandidateHint')}</span>
+                                                        </span>
+                                                    </label>
+                                                    <Field>
+                                                        <FieldLabel htmlFor="group-auto-explore-percent">
+                                                            {t('form.autoExplorePercent')}
+                                                            <FieldHelp text={t('form.autoExplorePercentHint')} />
+                                                        </FieldLabel>
+                                                        <Input id="group-auto-explore-percent" type="number" min={0} max={20} step={1}
+                                                            value={String(relayConfig.auto_explore_percent ?? 0)}
+                                                            onChange={(event) => setRelayConfig((prev) => ({ ...prev, auto_explore_percent: Math.min(Math.max(Number.parseInt(event.target.value, 10) || 0, 0), 20) }))}
+                                                            className="rounded-xl" />
+                                                    </Field>
+                                                </div>
                                             </div>
                                             </>
                                         )}
@@ -858,12 +938,15 @@ export function GroupEditor({
                                                                                     ),
                                                                                 } satisfies Partial<Record<AutoTaskConfigField, string>>))}
                                                                             />
-                                                                            <span className="min-w-0 flex-1 truncate">
+                                                                                <span className="min-w-0 flex-1 truncate">
                                                                                 {member.channel_name} · {member.name} · {member.key_name}
                                                                                 {(member.context_length || member.max_output) && (
                                                                                     <span className="ml-2 text-muted-foreground">
                                                                                         · context {member.context_length || '?'} · max output {member.max_output || '?'}
                                                                                     </span>
+                                                                                )}
+                                                                                {key === 'auto_tool' && (
+                                                                                    <ToolProbeControls grantID={member.channel_grant_id} model={member.name} score={relayConfig.auto_min_task_score || 80} />
                                                                                 )}
                                                                             </span>
                                                                             {key === 'auto_tool' && checked && (

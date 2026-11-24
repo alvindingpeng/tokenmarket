@@ -18,9 +18,23 @@ type autoCircuitState struct {
 	LastFailure time.Time
 }
 
+type autoStickyKey struct {
+	GroupID int
+	KeyID   int
+	UserID  uint
+	Task    string
+}
+
+type autoStickyState struct {
+	ItemID    int
+	ExpiresAt time.Time
+}
+
 var (
 	autoCircuitMu sync.Mutex
 	autoCircuits  = make(map[autoCircuitKey]autoCircuitState)
+	autoStickyMu  sync.Mutex
+	autoSticky    = make(map[autoStickyKey]autoStickyState)
 )
 
 func autoCircuitFailureLimit(group model.Group) int {
@@ -88,4 +102,107 @@ func autoCircuitRecordFailure(group model.Group, task string) bool {
 	}
 	autoCircuits[key] = state
 	return state.OpenUntil.After(now)
+}
+
+func autoStickyKeyFor(groupID, keyID int, userID uint, task string) autoStickyKey {
+	return autoStickyKey{GroupID: groupID, KeyID: keyID, UserID: userID, Task: task}
+}
+
+// autoStickyGet returns the recently successful member for this task. Zero or
+// expired state is a miss, including legacy groups that do not enable sticky
+// routing. The caller must still pass the returned item through the current
+// candidate filters.
+func autoStickyGet(group model.Group, keyID int, userID uint, task string) (int, bool) {
+	if group.RelayConfig.AutoStickySeconds <= 0 {
+		return 0, false
+	}
+	key := autoStickyKeyFor(group.ID, keyID, userID, task)
+	now := time.Now()
+	autoStickyMu.Lock()
+	defer autoStickyMu.Unlock()
+	state, ok := autoSticky[key]
+	if !ok || !state.ExpiresAt.After(now) {
+		delete(autoSticky, key)
+		return 0, false
+	}
+	return state.ItemID, true
+}
+
+func autoStickyRecordSuccess(group model.Group, keyID int, userID uint, task string, itemID int) {
+	if group.RelayConfig.AutoStickySeconds <= 0 || itemID == 0 {
+		return
+	}
+	key := autoStickyKeyFor(group.ID, keyID, userID, task)
+	autoStickyMu.Lock()
+	autoSticky[key] = autoStickyState{
+		ItemID: itemID, ExpiresAt: time.Now().Add(time.Duration(group.RelayConfig.AutoStickySeconds) * time.Second),
+	}
+	autoStickyMu.Unlock()
+}
+
+func autoStickyClear(groupID, keyID int, userID uint, task string) {
+	key := autoStickyKeyFor(groupID, keyID, userID, task)
+	autoStickyMu.Lock()
+	delete(autoSticky, key)
+	autoStickyMu.Unlock()
+}
+
+func autoStickyReset(groupID int) {
+	autoStickyMu.Lock()
+	for key := range autoSticky {
+		if key.GroupID == groupID {
+			delete(autoSticky, key)
+		}
+	}
+	autoStickyMu.Unlock()
+}
+
+func autoItemByID(items []model.GroupItem, id int) (model.GroupItem, bool) {
+	for _, item := range items {
+		if item.ID == id {
+			return item, true
+		}
+	}
+	return model.GroupItem{}, false
+}
+
+// autoExploreHit is a stable per-key sampling decision. Exploration deliberately
+// caps at 20% at configuration normalization; callers only use it for tasks that
+// have safe protocol/context eligibility but lack verified quality evidence.
+func autoExploreHit(groupID, keyID, userID, percent int, task string) bool {
+	if percent <= 0 {
+		return false
+	}
+	if percent > 20 {
+		percent = 20
+	}
+	seed := uint64(groupID) * 0x9E3779B97F4A7C15
+	if keyID > 0 {
+		seed ^= uint64(keyID) * 0xC2B2AE3D27D4EB4F
+	} else {
+		seed ^= uint64(userID) * 0x165667B19E3779F9
+	}
+	for index := 0; index < len(task); index++ {
+		seed ^= uint64(task[index]) << ((index % 8) * 8)
+	}
+	bucket := int((seed ^ (seed >> 29)) % 100)
+	return bucket < percent
+}
+
+func autoResetForGroup(groupID int) {
+	autoCircuitMu.Lock()
+	for key := range autoCircuits {
+		if key.groupID == groupID {
+			delete(autoCircuits, key)
+		}
+	}
+	autoCircuitMu.Unlock()
+	autoStickyReset(groupID)
+}
+
+// ResetAutoState clears circuit and sticky state for a group after its routing
+// mode changes or it is deleted. Tests also use it to keep process-local keys
+// isolated between SQLite fixtures.
+func ResetAutoState(groupID int) {
+	autoResetForGroup(groupID)
 }

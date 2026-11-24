@@ -267,6 +267,7 @@ func updateGroup(c *gin.Context) {
 	// 选择模式变化后进程内路由不再适用, 丢弃它以免旧的冷却与亲和在切回故障转移时复活。
 	if oldGroup.Mode != group.Mode {
 		relay.ResetRouteState(id)
+		relay.ResetAutoState(id)
 	}
 	response := groupResponse{Group: *group, Runtime: relay.RouteStateOf(*group)}
 	publishGroupEvent(groupEvent{Name: "changed", Data: response, ownerID: group.UserID})
@@ -329,6 +330,7 @@ func deleteGroup(c *gin.Context) {
 		return
 	}
 	relay.ResetRouteState(id)
+	relay.ResetAutoState(id)
 	publishGroupEvent(groupEvent{Name: "deleted", Data: id, ownerID: group.UserID})
 	resp.Success(c, "group deleted successfully")
 }

@@ -279,6 +279,21 @@ func openAPIAdminSchemas() gin.H {
 			"updated_at":  datetime("最近一次保存时间"),
 		}),
 
+		"ModelToolProbeRequest": object(gin.H{
+			"channel_grant_id": fieldNumber("integer", "要验证的渠道授权 ID"),
+			"score":            fieldNumber("integer", "验证成功后的工具任务质量分 1-100"),
+		}, "channel_grant_id"),
+
+		"ModelToolProbeResult": object(gin.H{
+			"channel_grant_id": fieldNumber("integer", "渠道授权 ID"),
+			"model_name":       fieldString("上游模型名称"),
+			"success":          fieldBool("两轮工具调用是否完整成功"),
+			"two_round":        fieldBool("第一轮是否返回合法工具调用"),
+			"score":            fieldNumber("integer", "写入工具任务能力的质量分"),
+			"verified_at":      datetime("验证完成时间"),
+			"error":            fieldString("失败摘要; 成功时为空"),
+		}),
+
 		"ModelTaskCapabilityDeleteRequest": object(gin.H{
 			"model_name": fieldString("模型名"),
 			"task":       fieldString("任务类型"),
@@ -450,6 +465,10 @@ func openAPIAdminSchemas() gin.H {
 			"canary_percent":                             fieldNumber("integer", "命中灰度的流量百分比 0-100"),
 			"canary_user_ids":                            gin.H{"type": "array", "items": gin.H{"type": "integer"}, "description": "显式灰度用户 ID 列表, 非空时这些用户恒走灰度并优先于比例"},
 			"canary_per_request":                         fieldBool("每请求重新抽样灰度, 为假时按 API Key 粘性分桶"),
+			"auto_sticky_seconds":                        fieldNumber("integer", "同一 API Key 与任务成功后沿用上次成员的秒数; 0 关闭"),
+			"auto_fallback_no_candidate":                 fieldBool("质量门槛无候选时是否回退原评分策略; 工具任务始终拒绝"),
+			"auto_explore_percent":                       fieldNumber("integer", "普通任务缺少质量证据时的受控探索比例 0-20"),
+			"auto_tool_verified":                         fieldString("已由管理员真实验证多轮工具调用的授权 ID"),
 		}),
 
 		"RouteState": object(gin.H{

@@ -80,6 +80,12 @@ type RequestState struct {
 	autoObserved          bool   // 任务分类与影子预测只需在请求内执行一次。
 	autoTask              autoTask
 	autoPredictionDetails string
+	autoStickyItemID      int
+	autoStickyHit         bool
+	autoStickyOutcome     string
+	autoChosenItemID      int
+	autoRouteAction       string
+	autoDecisionState     string
 	apiKeyID              int // 发起请求的 API Key ID, 用于请求完成后的归属统计。
 	routeDecision         model.RelayRouteDecision
 	roundItemID           int                  // 最新一轮的分组成员 ID, 供尝试记录落库。
@@ -344,6 +350,12 @@ func (r *RequestState) autoObservation() (bool, autoTask) {
 	return r.autoObserved, r.autoTask
 }
 
+func (r *RequestState) autoTaskSnapshot() autoTask {
+	mu.Lock()
+	defer mu.Unlock()
+	return r.autoTask
+}
+
 func (r *RequestState) setAutoPredictionDetails(details string) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -357,6 +369,50 @@ func (r *RequestState) autoPredictionSnapshot() string {
 	mu.Lock()
 	defer mu.Unlock()
 	return r.autoPredictionDetails
+}
+
+func (r *RequestState) setAutoSticky(itemID int, outcome string) {
+	mu.Lock()
+	defer mu.Unlock()
+	r.autoStickyHit = itemID != 0
+	r.autoStickyItemID = itemID
+	r.autoStickyOutcome = outcome
+}
+
+func (r *RequestState) setAutoChoice(itemID int) {
+	mu.Lock()
+	defer mu.Unlock()
+	r.autoChosenItemID = itemID
+}
+
+func (r *RequestState) autoChoiceSnapshot() int {
+	mu.Lock()
+	defer mu.Unlock()
+	return r.autoChosenItemID
+}
+
+func (r *RequestState) autoStickySnapshot() (int, string, bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	return r.autoStickyItemID, r.autoStickyOutcome, r.autoStickyHit
+}
+
+func (r *RequestState) setAutoRouteAction(action string) {
+	mu.Lock()
+	defer mu.Unlock()
+	r.autoRouteAction = action
+}
+
+func (r *RequestState) setAutoDecisionState(state string) {
+	mu.Lock()
+	defer mu.Unlock()
+	r.autoDecisionState = state
+}
+
+func (r *RequestState) autoDecisionSnapshot() string {
+	mu.Lock()
+	defer mu.Unlock()
+	return r.autoDecisionState
 }
 
 func (r *RequestState) statusSnapshot() Status {

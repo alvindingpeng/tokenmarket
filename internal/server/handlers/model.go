@@ -1,9 +1,17 @@
 package handlers
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
@@ -102,6 +110,11 @@ func init() {
 			router.NewRoute("/task-capability/delete", http.MethodPost).
 				Allow(model.RoleAdmin).
 				Handle(deleteModelTaskCapability),
+		).
+		AddRoute(
+			router.NewRoute("/task-capability/probe-tool", http.MethodPost).
+				Allow(model.RoleAdmin).
+				Handle(probeModelToolCapability),
 		)
 	router.NewGroupRouter("/v1").
 		Use(middleware.APIKeyAuth()).
@@ -366,6 +379,240 @@ func deleteModelTaskCapability(c *gin.Context) {
 	}
 	audit(c, "model.task-capability-delete", request.ModelName+"/"+request.Task, "")
 	resp.Success(c, nil)
+}
+
+func probeModelToolCapability(c *gin.Context) {
+	var request model.ModelToolProbeRequest
+	if err := c.ShouldBindJSON(&request); err != nil || request.ChannelGrantID <= 0 {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	request.Score = min(max(request.Score, 1), 100)
+	grant, err := op.ChannelGrantGet(request.ChannelGrantID)
+	if err != nil || grant.ChannelModel == nil || grant.ChannelKey == nil {
+		resp.Error(c, http.StatusNotFound, "channel grant not found or unavailable")
+		return
+	}
+	channel, err := op.ChannelGet(grant.ChannelModel.ChannelID)
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, "channel not found")
+		return
+	}
+	scope := scopeOf(c)
+	if !scope.Owns(channel.UserID) {
+		resp.Error(c, http.StatusNotFound, "channel not found")
+		return
+	}
+	if grant.Protocols&model.ProtocolOpenAIChatCompletion == 0 ||
+		(channel.Dialect != "" && channel.Dialect != model.DialectGeneric) ||
+		strings.TrimSpace(channel.ParamOverride) != "" {
+		resp.Error(c, http.StatusBadRequest, "tool probe requires native OpenAI Chat Completions with generic channel settings")
+		return
+	}
+	client, err := probeHTTPClientForChannel(channel)
+	if err != nil {
+		resp.Error(c, http.StatusBadGateway, err.Error())
+		return
+	}
+	result, err := runModelToolProbe(c.Request.Context(), client, channel, grant, request.Score)
+	if err != nil {
+		result.Error = err.Error()
+		audit(c, "model.tool-probe", grant.ChannelModel.Name,
+			fmt.Sprintf("grant=%d success=%t two_round=%t", grant.ID, result.Success, result.TwoRound))
+		c.JSON(http.StatusBadGateway, gin.H{
+			"code": http.StatusBadGateway, "message": "tool capability probe failed", "data": result,
+		})
+		return
+	}
+	audit(c, "model.tool-probe", grant.ChannelModel.Name,
+		fmt.Sprintf("grant=%d success=true two_round=true score=%d", grant.ID, request.Score))
+	if groupIDs := op.GroupsContainingGrant(grant.ID); len(groupIDs) > 0 {
+		list := op.GroupList(scope)
+		for _, group := range list {
+			if !slices.Contains(groupIDs, group.ID) ||
+				group.RelayConfig.AutoTool == "" ||
+				!slices.Contains(parseGrantIDsForProbe(group.RelayConfig.AutoTool), grant.ID) {
+				continue
+			}
+			verified := parseGrantIDsForProbe(group.RelayConfig.AutoToolVerified)
+			if slices.Contains(verified, grant.ID) {
+				continue
+			}
+			verified = append(verified, grant.ID)
+			group.RelayConfig.AutoToolVerified = joinGrantIDsForProbe(verified)
+			updated, updateErr := op.GroupUpdate(group.ID, &model.GroupUpdateRequest{RelayConfig: &group.RelayConfig}, scope, c.Request.Context())
+			if updateErr != nil {
+				result.Error = "verified, but failed to update an auto-routing group"
+				result.Success = false
+				c.JSON(http.StatusInternalServerError, gin.H{"code": http.StatusInternalServerError, "message": result.Error, "data": result})
+				return
+			}
+			_ = updated
+		}
+	}
+	resp.Success(c, result)
+}
+
+// runModelToolProbe exercises a complete OpenAI Chat function round trip. The
+// first request must emit a tool call. The second request replays the assistant
+// call and a role=tool result, and must produce a non-empty final answer. Only a
+// successful second round writes a verified tool capability.
+func runModelToolProbe(ctx context.Context, client *http.Client, channel model.Channel, grant model.ChannelGrant, score int) (model.ModelToolProbeResult, error) {
+	result := model.ModelToolProbeResult{
+		ChannelGrantID: grant.ID, ModelName: grant.ChannelModel.Name, Score: score,
+	}
+	base, err := url.Parse(strings.TrimSpace(channel.BaseURL))
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return result, fmt.Errorf("invalid channel base URL")
+	}
+	path := strings.TrimSpace(channel.OpenAIChatCompletionPath)
+	if path == "" {
+		path = "/v1/chat/completions"
+	}
+	endpoint := base.ResolveReference(&url.URL{Path: path})
+	probeCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	tool := map[string]any{
+		"type": "function",
+		"function": map[string]any{
+			"name":        "switchyard_probe",
+			"description": "Return the supplied probe nonce verbatim.",
+			"parameters": map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"nonce": map[string]any{"type": "string"}},
+				"required":   []string{"nonce"},
+			},
+		},
+	}
+	nonce := fmt.Sprintf("probe-%d", time.Now().UnixNano())
+	first := map[string]any{
+		"model":       grant.ChannelModel.Name,
+		"messages":    []map[string]any{{"role": "user", "content": "Call switchyard_probe with nonce " + nonce + ". Do not answer directly."}},
+		"tools":       []map[string]any{tool},
+		"tool_choice": "auto",
+		"max_tokens":  128,
+		"temperature": 0,
+	}
+	firstResponse, err := postToolProbe(probeCtx, client, endpoint.String(), channel, grant.ChannelKey.Key, first)
+	if err != nil {
+		return result, err
+	}
+	call, ok := extractProbeToolCall(firstResponse)
+	if !ok {
+		return result, fmt.Errorf("first round did not emit a valid tool call")
+	}
+	result.TwoRound = true
+	second := map[string]any{
+		"model": grant.ChannelModel.Name,
+		"messages": []map[string]any{
+			{"role": "user", "content": "Call switchyard_probe with nonce " + nonce + "."},
+			{"role": "assistant", "content": nil, "tool_calls": []map[string]any{call}},
+			{"role": "tool", "tool_call_id": call["id"], "content": nonce},
+		},
+		"tools":       []map[string]any{tool},
+		"tool_choice": "none",
+		"max_tokens":  128,
+		"temperature": 0,
+	}
+	secondResponse, err := postToolProbe(probeCtx, client, endpoint.String(), channel, grant.ChannelKey.Key, second)
+	if err != nil {
+		return result, err
+	}
+	if !probeHasFinalAnswer(secondResponse) {
+		return result, fmt.Errorf("second round did not produce a final answer")
+	}
+	result.Success = true
+	result.VerifiedAt = time.Now()
+	if err := op.TaskCapabilitySave(model.ModelTaskCapability{
+		ModelName: grant.ChannelModel.Name, Task: model.AutoRoutingTaskTool, Score: score,
+		Verified: true, Notes: "verified by two-round OpenAI Chat tool probe",
+	}, ctx); err != nil {
+		return result, fmt.Errorf("save verified tool capability: %w", err)
+	}
+	return result, nil
+}
+
+func postToolProbe(ctx context.Context, client *http.Client, endpoint string, channel model.Channel, key string, payload any) ([]byte, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Authorization", "Bearer "+key)
+	for _, header := range channel.CustomHeader {
+		if header.HeaderKey != "" {
+			request.Header.Set(header.HeaderKey, header.HeaderValue)
+		}
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if readErr != nil {
+		return nil, readErr
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, fmt.Errorf("upstream tool probe returned HTTP %d", response.StatusCode)
+	}
+	return responseBody, nil
+}
+
+func extractProbeToolCall(body []byte) (map[string]any, bool) {
+	var response struct {
+		Choices []struct {
+			Message struct {
+				ToolCalls []map[string]any `json:"tool_calls"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if json.Unmarshal(body, &response) != nil || len(response.Choices) == 0 {
+		return nil, false
+	}
+	call := response.Choices[0].Message.ToolCalls
+	if len(call) == 0 || strings.TrimSpace(fmt.Sprint(call[0]["id"])) == "" {
+		return nil, false
+	}
+	return call[0], true
+}
+
+func probeHasFinalAnswer(body []byte) bool {
+	var response struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	return json.Unmarshal(body, &response) == nil && len(response.Choices) > 0 &&
+		strings.TrimSpace(response.Choices[0].Message.Content) != ""
+}
+
+func parseGrantIDsForProbe(value string) []int {
+	ids := make([]int, 0)
+	for _, part := range strings.Split(value, ",") {
+		id, err := strconv.Atoi(strings.TrimSpace(part))
+		if err == nil && id > 0 && !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func joinGrantIDsForProbe(ids []int) string {
+	values := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id > 0 {
+			values = append(values, strconv.Itoa(id))
+		}
+	}
+	return strings.Join(values, ",")
 }
 
 func updateLLMPrice(c *gin.Context) {

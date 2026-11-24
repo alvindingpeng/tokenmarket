@@ -18,6 +18,10 @@ const ROUTE_REASON_KEYS = [
     'auto_context_unknown', 'auto_token_limit',
     'auto_tool_unverified', 'auto_ramp_hold', 'auto_circuit_open',
     'auto_quality_unverified', 'auto_quality_below_threshold', 'auto_eligible',
+    'auto_sticky_hit', 'auto_sticky_miss', 'auto_fallback_no_candidate',
+    'auto_explore', 'auto_sticky', 'auto_sticky_fallback', 'auto_reject',
+    'active_selected', 'fallback_selected', 'rejected', 'explored',
+    'sticky_hit', 'sticky_miss',
 ] as const;
 
 /** 路由事件的阶段名。 */
@@ -60,7 +64,8 @@ export function routeEventText(t: Translate, reason: string | undefined): string
     // 决策 reason 也可能出现在事件里(strategy_*), 与决策共用同一张表。
     if (reasonSet.has(reason)) return t('routeReason.' + reason);
     if (eventSet.has(reason)) return t('eventReason.' + reason);
-    const autoShadow = /^(general|summary|coding|tool|extraction):(item=|no_candidate|forced)/.exec(reason);
+    if (reasonSet.has(reason)) return t('routeReason.' + reason);
+    const autoShadow = /^(general|summary|coding|tool|extraction|unsupported):(item|no_candidate|forced)/.exec(reason);
     if (autoShadow) {
         const task = t('routeReason.auto_' + autoShadow[1]);
         if (reason.endsWith(':no_candidate')) return t('eventReason.auto_shadow_no_candidate', { task });

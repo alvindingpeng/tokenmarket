@@ -18,6 +18,23 @@ type ModelTaskCapability struct {
 	UpdatedAt  time.Time `json:"updated_at"`                                     // 最近一次保存时间。
 }
 
+// ModelToolProbeResult 是一次真实的 OpenAI Chat 工具调用冒烟验证结果。
+// 它不携带上游凭据或响应正文，以免管理页与审计记录成为第二份秘密存储。
+type ModelToolProbeResult struct {
+	ChannelGrantID int       `json:"channel_grant_id"`
+	ModelName      string    `json:"model_name"`
+	Success        bool      `json:"success"`
+	TwoRound       bool      `json:"two_round"`
+	Score          int       `json:"score"`
+	VerifiedAt     time.Time `json:"verified_at"`
+	Error          string    `json:"error,omitempty"`
+}
+
+type ModelToolProbeRequest struct {
+	ChannelGrantID int `json:"channel_grant_id"`
+	Score          int `json:"score"`
+}
+
 // TableName 固定表名，避免 GORM 生成与含义不一致的默认名称。
 func (ModelTaskCapability) TableName() string { return "model_task_capabilities" }
 

@@ -291,3 +291,27 @@ export function useDeleteModelTaskCapability() {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['models', 'task-capabilities'] }),
     });
 }
+
+export interface ModelToolProbeRequest {
+    channel_grant_id: number;
+    score: number;
+}
+
+export interface ModelToolProbeResult {
+    channel_grant_id: number;
+    model_name: string;
+    success: boolean;
+    two_round: boolean;
+    score: number;
+    verified_at: string;
+    error?: string;
+}
+
+export function useProbeModelToolCapability() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (data: ModelToolProbeRequest) =>
+            apiRequest<ModelToolProbeResult>('/api/v1/model/task-capability/probe-tool', { method: 'POST', body: data }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['models', 'task-capabilities'] }),
+    });
+}

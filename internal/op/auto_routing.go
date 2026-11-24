@@ -291,6 +291,27 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 				CostUSD float64 `json:"cost_usd"`
 			} `json:"prediction"`
 			ActualModel string `json:"actual_model"`
+			RouteAction string `json:"route_action"`
+			Sticky      *struct {
+				ItemID  int    `json:"item_id"`
+				Model   string `json:"model"`
+				Outcome string `json:"outcome"`
+			} `json:"sticky"`
+		}
+		if json.Unmarshal([]byte(decision.Details), &evidence) == nil {
+			switch evidence.RouteAction {
+			case "active":
+				events["active_selected"]++
+			case "fallback":
+				events["fallback_selected"]++
+			case "reject":
+				events["rejected"]++
+			case "explore":
+				events["explored"]++
+			}
+			if evidence.Sticky != nil {
+				events["sticky_"+evidence.Sticky.Outcome]++
+			}
 		}
 		if request.AutoMode == "shadow" && json.Unmarshal([]byte(decision.Details), &evidence) == nil &&
 			evidence.Prediction.Model != "" {

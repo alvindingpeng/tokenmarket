@@ -487,6 +487,11 @@ func openAPIAdminPathsAuth() gin.H {
 				"请求体包含 model_name 与 task; 删除后该模型在该任务上回到未知能力。",
 				"ModelTaskCapabilityDeleteRequest", adminOk(), true),
 		},
+		"/api/v1/model/task-capability/probe-tool": gin.H{
+			"post": adminPath("model", "验证多轮工具调用",
+				"使用已保存的渠道授权和凭据发起两轮 OpenAI Chat 请求。第一轮必须返回 tool_calls, 第二轮回传 role=tool 后必须产生最终文本。",
+				"ModelToolProbeRequest", adminItem("工具调用验证结果", "ModelToolProbeResult"), true),
+		},
 		"/api/v1/model/last-update-time": gin.H{
 			"get": adminPath("model", "价格库最后同步时间",
 				"RFC3339 时间戳; 从未同步过时为零值时间。", "",
