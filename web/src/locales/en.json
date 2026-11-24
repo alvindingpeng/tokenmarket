@@ -1379,6 +1379,7 @@
             "modelRiskTitle": "Per-model risk evidence",
             "modelRiskEligible": "{eligible}/{total} passed",
             "modelRiskSamples": "{count} active samples",
+            "modelRiskTrend": "Earlier {earlier} → recent {recent}",
             "modelRiskFirstToken": "First token P90 {value} · {samples} samples",
             "modelRiskStream": "Incomplete after first token {value} · {count}",
             "readinessFirstToken": "First token P90 {value} · {samples} samples",
@@ -1429,11 +1430,17 @@
                 "healthy": "Healthy",
                 "blocked": "Blocked"
             },
+            "modelRiskTrendState": {
+                "insufficient": "Trend needs more samples",
+                "stable": "Stable",
+                "declining": "Declining"
+            },
             "modelRiskReason": {
                 "model_sample_below_10": "Fewer than 10 active samples",
                 "model_success_below_85_percent": "Success rate below 85%",
                 "model_stream_incomplete_above_5_percent": "Streams incomplete after first token exceed 5%",
-                "model_first_token_p90_above_30_seconds": "First-token P90 exceeds 30 seconds"
+                "model_first_token_p90_above_30_seconds": "First-token P90 exceeds 30 seconds",
+                "model_recent_success_drop_above_10_percent": "Recent success rate dropped by at least 10 points"
             },
             "task": {
                 "general": "General",

@@ -1379,6 +1379,7 @@
             "modelRiskTitle": "模型級風險證據",
             "modelRiskEligible": "{eligible}/{total} 通過",
             "modelRiskSamples": "{count} 個主動樣本",
+            "modelRiskTrend": "早期 {earlier} → 近期 {recent}",
             "modelRiskFirstToken": "首 token P90 {value} · {samples} 個樣本",
             "modelRiskStream": "首字後未完成 {value} · {count} 個",
             "readinessFirstToken": "首 token P90 {value} · {samples} 個樣本",
@@ -1429,11 +1430,17 @@
                 "healthy": "健康",
                 "blocked": "已阻斷"
             },
+            "modelRiskTrendState": {
+                "insufficient": "趨勢樣本不足",
+                "stable": "穩定",
+                "declining": "正在下降"
+            },
             "modelRiskReason": {
                 "model_sample_below_10": "主動樣本不足 10 個",
                 "model_success_below_85_percent": "成功率低於 85%",
                 "model_stream_incomplete_above_5_percent": "首字後未完成率超過 5%",
-                "model_first_token_p90_above_30_seconds": "首 token P90 超過 30 秒"
+                "model_first_token_p90_above_30_seconds": "首 token P90 超過 30 秒",
+                "model_recent_success_drop_above_10_percent": "近期成功率比早期下降至少 10 個百分點"
             },
             "task": {
                 "general": "通用",

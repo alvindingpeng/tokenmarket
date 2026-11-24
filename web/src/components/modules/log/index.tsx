@@ -75,6 +75,14 @@ interface AutoRoutingSummary {
             success: number;
             success_rate: number;
             success_lower: number;
+            earlier_samples: number;
+            earlier_success: number;
+            earlier_success_rate: number;
+            recent_samples: number;
+            recent_success: number;
+            recent_success_rate: number;
+            success_trend: 'insufficient' | 'stable' | 'declining';
+            success_rate_delta: number;
             first_token_samples: number;
             first_token_p90_ms: number;
             stream_started: number;
@@ -231,6 +239,21 @@ function AutoRoutingPanel() {
                                                     <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                                                         <span>{tr('modelRiskSamples', { count: risk.active_requests })}</span>
                                                         <span>{tr('rate', { value: `${(risk.success_rate * 100).toFixed(1)}%` })}</span>
+                                                        {risk.success_trend !== 'insufficient' && (
+                                                            <span className={risk.success_trend === 'declining' ? 'text-destructive' : undefined}>
+                                                                {tr('modelRiskTrend', {
+                                                                    earlier: `${(risk.earlier_success_rate * 100).toFixed(1)}%`,
+                                                                    recent: `${(risk.recent_success_rate * 100).toFixed(1)}%`,
+                                                                })}
+                                                            </span>
+                                                        )}
+                                                        <span className={
+                                                            risk.success_trend === 'declining'
+                                                                ? 'text-destructive'
+                                                                : 'text-muted-foreground'
+                                                        }>
+                                                            {tr(`modelRiskTrendState.${risk.success_trend}`)}
+                                                        </span>
                                                         {risk.first_token_samples > 0 && <span>{tr('modelRiskFirstToken', { value: `${risk.first_token_p90_ms.toFixed(0)} ms`, samples: risk.first_token_samples })}</span>}
                                                         {risk.stream_started > 0 && <span className={risk.state === 'blocked' ? 'text-destructive' : undefined}>{tr('modelRiskStream', { value: `${(risk.stream_incomplete_rate * 100).toFixed(1)}%`, count: risk.stream_incomplete })}</span>}
                                                     </div>

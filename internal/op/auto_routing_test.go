@@ -281,29 +281,29 @@ func TestAutoRoutingReadinessHoldsAndScalesActiveSafely(t *testing.T) {
 }
 
 func TestAutoModelRiskScorecardsUseMinimumSamples(t *testing.T) {
-	collecting := autoModelRiskFor(model.AutoRoutingTaskCoding, "small-model", 9, 9, nil, 0, 0)
+	collecting := autoModelRiskFor(model.AutoRoutingTaskCoding, "small-model", 9, 9, 4, 4, 5, 5, nil, 0, 0)
 	if collecting.State != "collect_samples" || collecting.EligibleForPromotion ||
 		!slices.Contains(collecting.Reasons, "model_sample_below_10") {
 		t.Fatalf("small model sample should only collect evidence: %+v", collecting)
 	}
 
-	healthy := autoModelRiskFor(model.AutoRoutingTaskCoding, "healthy-model", 10, 9, nil, 0, 0)
+	healthy := autoModelRiskFor(model.AutoRoutingTaskCoding, "healthy-model", 10, 9, 5, 4, 5, 5, nil, 0, 0)
 	if healthy.State != "healthy" || !healthy.EligibleForPromotion {
 		t.Fatalf("90 percent success at ten samples should pass the risk threshold: %+v", healthy)
 	}
 
-	unstable := autoModelRiskFor(model.AutoRoutingTaskCoding, "unstable-model", 10, 8, nil, 0, 0)
+	unstable := autoModelRiskFor(model.AutoRoutingTaskCoding, "unstable-model", 10, 8, 5, 4, 5, 4, nil, 0, 0)
 	if unstable.State != "blocked" ||
 		!slices.Contains(unstable.Reasons, "model_success_below_85_percent") {
 		t.Fatalf("80 percent success at ten samples should block expansion: %+v", unstable)
 	}
 
-	atLimit := autoModelRiskFor(model.AutoRoutingTaskCoding, "stream-limit", 20, 20, nil, 20, 1)
+	atLimit := autoModelRiskFor(model.AutoRoutingTaskCoding, "stream-limit", 20, 20, 10, 10, 10, 10, nil, 20, 1)
 	if atLimit.State != "healthy" || !atLimit.EligibleForPromotion {
 		t.Fatalf("five percent incomplete streams are inside the configured limit: %+v", atLimit)
 	}
 
-	streaming := autoModelRiskFor(model.AutoRoutingTaskCoding, "stream-unstable", 20, 20, nil, 20, 2)
+	streaming := autoModelRiskFor(model.AutoRoutingTaskCoding, "stream-unstable", 20, 20, 10, 10, 10, 10, nil, 20, 2)
 	if streaming.State != "blocked" ||
 		!slices.Contains(streaming.Reasons, "model_stream_incomplete_above_5_percent") {
 		t.Fatalf("ten percent incomplete streams should block expansion: %+v", streaming)
@@ -313,10 +313,22 @@ func TestAutoModelRiskScorecardsUseMinimumSamples(t *testing.T) {
 	for i := range slow {
 		slow[i] = float64(autoReadinessMaxFirstTokenP90Ms + 100)
 	}
-	latency := autoModelRiskFor(model.AutoRoutingTaskCoding, "slow-model", 10, 10, slow, 0, 0)
+	latency := autoModelRiskFor(model.AutoRoutingTaskCoding, "slow-model", 10, 10, 5, 5, 5, 5, slow, 0, 0)
 	if latency.State != "blocked" ||
 		!slices.Contains(latency.Reasons, "model_first_token_p90_above_30_seconds") {
 		t.Fatalf("slow first-token tail should block expansion: %+v", latency)
+	}
+
+	declining := autoModelRiskFor(model.AutoRoutingTaskCoding, "declining-model", 10, 10, 5, 5, 5, 4, nil, 0, 0)
+	if declining.State != "blocked" || declining.SuccessTrend != "declining" ||
+		declining.SuccessRateDelta > -autoReadinessMaxSuccessRateDrop ||
+		!slices.Contains(declining.Reasons, "model_recent_success_drop_above_10_percent") {
+		t.Fatalf("recent success deterioration should block expansion: %+v", declining)
+	}
+
+	insufficientTrend := autoModelRiskFor(model.AutoRoutingTaskCoding, "trend-small", 7, 6, 3, 3, 4, 3, nil, 0, 0)
+	if insufficientTrend.State != "collect_samples" || insufficientTrend.SuccessTrend != "insufficient" {
+		t.Fatalf("small trend halves must not claim deterioration: %+v", insufficientTrend)
 	}
 }
 
@@ -414,6 +426,29 @@ func TestAutoRoutingReadinessModelTeamsUseActiveEvidenceOnly(t *testing.T) {
 	}
 	if coding.ModelTeams != 1 || coding.ModelSamples != 2 || coding.ModelMinSuccessRate != 0.5 {
 		t.Fatalf("model stability must use only active or explored landings: %+v", coding)
+	}
+}
+
+func TestAutoRoutingModelRiskUsesTimeOrderedTrend(t *testing.T) {
+	now := time.Now()
+	samples := make([]autoModelOutcomeSample, 0, 20)
+	for i := 0; i < 10; i++ {
+		samples = append(samples, autoModelOutcomeSample{StartedAt: now.Add(time.Duration(i) * time.Minute), Success: true})
+	}
+	for i := 10; i < 20; i++ {
+		samples = append(samples, autoModelOutcomeSample{StartedAt: now.Add(time.Duration(i) * time.Minute), Success: i < 15})
+	}
+	earlierSamples, earlierSuccess, recentSamples, recentSuccess := autoSplitOutcomeSamples(samples)
+	if earlierSamples != 10 || earlierSuccess != 10 || recentSamples != 10 || recentSuccess != 5 {
+		t.Fatalf("outcome samples were not split by request time: %d/%d then %d/%d",
+			earlierSuccess, earlierSamples, recentSuccess, recentSamples)
+	}
+	risk := autoModelRiskFor(model.AutoRoutingTaskCoding, "ordered-model", 20, 15,
+		earlierSamples, earlierSuccess, recentSamples, recentSuccess, nil, 0, 0)
+	if risk.EarlierSuccessRate != 1 || risk.RecentSuccessRate != 0.5 ||
+		risk.SuccessRateDelta != -0.5 || risk.SuccessTrend != "declining" || risk.State != "blocked" ||
+		!slices.Contains(risk.Reasons, "model_recent_success_drop_above_10_percent") {
+		t.Fatalf("time-ordered evidence should expose the recent regression: %+v", risk)
 	}
 }
 

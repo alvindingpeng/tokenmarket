@@ -73,6 +73,14 @@ type AutoRoutingModelRisk struct {
 	Success              int64    `json:"success"`
 	SuccessRate          float64  `json:"success_rate"`
 	SuccessLow           float64  `json:"success_lower"`
+	EarlierSamples       int64    `json:"earlier_samples"`
+	EarlierSuccess       int64    `json:"earlier_success"`
+	EarlierSuccessRate   float64  `json:"earlier_success_rate"`
+	RecentSamples        int64    `json:"recent_samples"`
+	RecentSuccess        int64    `json:"recent_success"`
+	RecentSuccessRate    float64  `json:"recent_success_rate"`
+	SuccessTrend         string   `json:"success_trend"`
+	SuccessRateDelta     float64  `json:"success_rate_delta"`
 	FirstTokenSamples    int64    `json:"first_token_samples"`
 	FirstTokenP90Ms      float64  `json:"first_token_p90_ms"`
 	StreamStarted        int64    `json:"stream_started"`
@@ -277,15 +285,23 @@ type autoReadinessEvidence struct {
 	streamStarted, streamIncomplete                           int64
 	modelFirstToken                                           map[string][]float64
 	modelStreamStarted, modelStreamIncomplete                 map[string]int64
+	modelTimeline                                             map[string][]autoModelOutcomeSample
 	configuredCandidates, verifiedCandidates                  int
 	labelingEnabled                                           bool
 	requireMultiUserEvidence                                  bool
+}
+
+type autoModelOutcomeSample struct {
+	StartedAt time.Time
+	Success   bool
 }
 
 const autoReadinessMinimumBuckets = 4
 const autoReadinessMinimumModelSamples = 10
 const autoReadinessMinimumFirstTokenSamples = 10
 const autoReadinessMinimumStreamSamples = 10
+const autoReadinessMinimumTrendSamplesPerHalf = 5
+const autoReadinessMaxSuccessRateDrop = 0.10
 const autoReadinessMaxFirstTokenP90Ms = 30000
 const autoReadinessMaxStreamIncompleteRate = 0.05
 
@@ -372,11 +388,14 @@ func autoInputCostBand(promptTokens int64) string {
 func autoModelRiskFor(
 	task, model string,
 	attempts, success int64,
+	earlierSamples, earlierSuccess, recentSamples, recentSuccess int64,
 	firstTokenDurations []float64,
 	streamStarted, streamIncomplete int64,
 ) AutoRoutingModelRisk {
 	risk := AutoRoutingModelRisk{
 		Task: task, Model: model, ActiveRequests: attempts, Success: success,
+		EarlierSamples: earlierSamples, EarlierSuccess: earlierSuccess,
+		RecentSamples: recentSamples, RecentSuccess: recentSuccess,
 		FirstTokenSamples: int64(len(firstTokenDurations)),
 		StreamStarted:     streamStarted, StreamIncomplete: streamIncomplete,
 		Reasons: make([]string, 0),
@@ -390,6 +409,26 @@ func autoModelRiskFor(
 	}
 	if streamStarted > 0 {
 		risk.StreamIncompleteRate = float64(streamIncomplete) / float64(streamStarted)
+	}
+	if earlierSamples > 0 {
+		risk.EarlierSuccessRate = float64(earlierSuccess) / float64(earlierSamples)
+	}
+	if recentSamples > 0 {
+		risk.RecentSuccessRate = float64(recentSuccess) / float64(recentSamples)
+	}
+	if earlierSamples >= autoReadinessMinimumTrendSamplesPerHalf &&
+		recentSamples >= autoReadinessMinimumTrendSamplesPerHalf {
+		risk.SuccessRateDelta = risk.RecentSuccessRate - risk.EarlierSuccessRate
+		if risk.SuccessRateDelta <= -autoReadinessMaxSuccessRateDrop {
+			risk.SuccessTrend = "declining"
+		} else {
+			risk.SuccessTrend = "stable"
+		}
+	} else {
+		risk.SuccessTrend = "insufficient"
+	}
+	if risk.SuccessTrend == "declining" {
+		risk.Reasons = append(risk.Reasons, "model_recent_success_drop_above_10_percent")
 	}
 	if attempts < autoReadinessMinimumModelSamples {
 		risk.State = "collect_samples"
@@ -405,6 +444,8 @@ func autoModelRiskFor(
 		risk.FirstTokenP90Ms > autoReadinessMaxFirstTokenP90Ms {
 		risk.State = "blocked"
 		risk.Reasons = append(risk.Reasons, "model_first_token_p90_above_30_seconds")
+	} else if risk.SuccessTrend == "declining" {
+		risk.State = "blocked"
 	} else {
 		risk.State = "healthy"
 		risk.EligibleForPromotion = true
@@ -464,7 +505,10 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 		if minModelSuccessRate == 0 || teamRate < minModelSuccessRate {
 			minModelSuccessRate = teamRate
 		}
+		earlierSamples, earlierSuccess, recentSamples, recentSuccess :=
+			autoSplitOutcomeSamples(evidence.modelTimeline[name])
 		risk := autoModelRiskFor(task, name, attempts, evidence.modelSuccessful[name],
+			earlierSamples, earlierSuccess, recentSamples, recentSuccess,
 			evidence.modelFirstToken[name], evidence.modelStreamStarted[name], evidence.modelStreamIncomplete[name])
 		readiness.ModelRisks = append(readiness.ModelRisks, risk)
 		if risk.EligibleForPromotion {
@@ -594,6 +638,34 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 		readiness.Reasons = append(readiness.Reasons, "active_evidence_needs_more_observation")
 	}
 	return readiness
+}
+
+// autoSplitOutcomeSamples 将一个模型按请求开始时间从早到晚分成前后两段。
+// 这用于识别“总体成功率仍高，但最近持续恶化”的模型，避免累计平均值掩盖退化。
+func autoSplitOutcomeSamples(samples []autoModelOutcomeSample) (int64, int64, int64, int64) {
+	if len(samples) == 0 {
+		return 0, 0, 0, 0
+	}
+	sorted := append([]autoModelOutcomeSample(nil), samples...)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].StartedAt.Equal(sorted[j].StartedAt) {
+			return !sorted[i].Success && sorted[j].Success
+		}
+		return sorted[i].StartedAt.Before(sorted[j].StartedAt)
+	})
+	middle := len(sorted) / 2
+	var earlierSuccess, recentSuccess int64
+	for _, sample := range sorted[:middle] {
+		if sample.Success {
+			earlierSuccess++
+		}
+	}
+	for _, sample := range sorted[middle:] {
+		if sample.Success {
+			recentSuccess++
+		}
+	}
+	return int64(middle), earlierSuccess, int64(len(sorted) - middle), recentSuccess
 }
 
 func autoReadinessCostWithin(evidence autoReadinessEvidence, percent float64) bool {
@@ -950,9 +1022,14 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 						readiness.modelFirstToken = make(map[string][]float64)
 						readiness.modelStreamStarted = make(map[string]int64)
 						readiness.modelStreamIncomplete = make(map[string]int64)
+						readiness.modelTimeline = make(map[string][]autoModelOutcomeSample)
 					}
 					readiness.modelSuccess[name]++
 					readiness.activeRequests++
+					readiness.modelTimeline[name] = append(readiness.modelTimeline[name], autoModelOutcomeSample{
+						StartedAt: request.StartedAt,
+						Success:   request.Status == "success",
+					})
 					if attempt.FirstTokenMs > 0 {
 						readiness.modelFirstToken[name] = append(readiness.modelFirstToken[name], float64(attempt.FirstTokenMs))
 						readiness.modelStreamStarted[name]++
