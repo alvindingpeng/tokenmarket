@@ -833,7 +833,18 @@
             "max_waiting_requests": "排队容量",
             "max_waiting_requestsHint": "默认 0（关闭）。容量占满或等待超时返回 429。",
             "member_stream_idle_timeout_seconds": "流式空闲超时（秒）",
-            "member_stream_idle_timeout_secondsHint": "连续无流事件时中止，默认 60 秒。"
+            "member_stream_idle_timeout_secondsHint": "连续无流事件时中止，默认 60 秒。",
+            "autoRampPercent": "主动路由抽样比例 (%)",
+            "autoRampPercentHint": "按 API Key 稳定分桶，1-100%。已有主动分组未保存该值时仍按 100% 运行。",
+            "autoFallbackFailures": "连续失败后回退次数",
+            "autoFallbackFailuresHint": "主动自动路由连续失败达到此值后，暂时回落到分组原有的综合评分策略。",
+            "autoFallbackSeconds": "回退保护时长（秒）",
+            "autoFallbackSecondsHint": "按分组与任务隔离。后续成功会清除失败计数。",
+            "autoToolVerified": "已验证多轮工具调用",
+            "autoContextOverrides": "上下文覆盖",
+            "autoContextOverridesHint": "留空沿用渠道模型或 models.dev 的数值。显式填写后用于候选资格判断。",
+            "autoContextUnknown": "未知",
+            "autoContextOverrideFor": "{model} 的上下文上限"
         },
         "memberPrice": "读 {input} / 写 {output}（m）",
         "modelPrice": "读 {input} / 写 {output} / 缓存读 {cacheRead} / 缓存写 {cacheWrite}（m）",
@@ -1177,7 +1188,8 @@
         "group": "模型配置",
         "tabs": {
             "live": "实时",
-            "history": "历史"
+            "history": "历史",
+            "autoRouting": "智能路由"
         },
         "history": {
             "searchPlaceholder": "搜索模型 / 渠道编码 / Key / 错误…",
@@ -1233,7 +1245,10 @@
             "auto_protocol_incompatible": "成员协议与该任务不兼容",
             "auto_channel_incompatible": "渠道方言或参数覆盖与该任务不兼容",
             "auto_context_unknown": "上下文上限未知",
-            "auto_token_limit": "输入与输出预算超出该成员上限"
+            "auto_token_limit": "输入与输出预算超出该成员上限",
+            "auto_tool_unverified": "工具调用能力未经管理员验证",
+            "auto_ramp_hold": "未命中主动路由抽样",
+            "auto_circuit_open": "主动路由已暂时回退"
         },
         "eventPhase": {
             "received": "已接收",
@@ -1243,7 +1258,8 @@
             "dispatch": "派发",
             "error_class": "错误分类",
             "finished": "结束",
-            "auto_shadow": "自动选路影子"
+            "auto_shadow": "自动选路影子",
+            "auto_routing": "主动路由"
         },
         "eventReason": {
             "request_received": "记录请求",
@@ -1255,7 +1271,8 @@
             "user_admitted": "通过配额与限流准入",
             "success": "本轮成功完成",
             "auto_shadow_prediction": "{task}，影子推荐成员 #{id}",
-            "auto_shadow_no_candidate": "{task}，没有合格成员"
+            "auto_shadow_no_candidate": "{task}，没有合格成员",
+            "auto_forced": "识别为{task}，已按主动路由选择候选"
         },
         "mode": {
             "manual": "人工指定",
@@ -1265,6 +1282,35 @@
             "success": "成功率优先",
             "score": "综合评分",
             "random": "随机分发"
+        },
+        "autoRouting": {
+            "loadFailed": "智能路由诊断加载失败",
+            "allGroups": "全部分组",
+            "daysOne": "最近 24 小时",
+            "daysSeven": "最近 7 天",
+            "daysThirty": "最近 30 天",
+            "window": "窗口内 {requests} 个请求",
+            "empty": "尚无智能路由样本",
+            "enableFirst": "请先在一个综合评分分组启用影子或主动路由，请求才能被任务分类。",
+            "classified": "已自动分类",
+            "successRate": "总体成功率",
+            "failures": "失败请求",
+            "tasksTitle": "按任务",
+            "requestCount": "{count} 个请求",
+            "rate": "成功率 {value}",
+            "latency": "延迟 {value}",
+            "failedShort": "失败 {count} 个",
+            "exclusionsTitle": "候选排除原因",
+            "eventsTitle": "运行事件",
+            "modelsTitle": "实际使用模型",
+            "task": {
+                "general": "通用",
+                "summary": "摘要",
+                "coding": "编程",
+                "tool": "工具调用",
+                "extraction": "提取",
+                "unsupported": "不支持"
+            }
         }
     },
     "channel": {

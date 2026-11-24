@@ -333,6 +333,7 @@ func autoEffectiveProtocol(itemProtocols, grantProtocols model.Protocol, preferr
 func autoCandidates(group model.Group, task autoTask) (model.Group, []model.RelayRouteCandidate) {
 	config := group.RelayConfig
 	qualified := config.AutoGeneral
+	verified := map[int]bool{}
 	switch task.name {
 	case AutoTaskSummary:
 		if config.AutoSummary != "" {
@@ -342,6 +343,11 @@ func autoCandidates(group model.Group, task autoTask) (model.Group, []model.Rela
 		qualified = config.AutoCoding
 	case AutoTaskTool:
 		qualified = config.AutoTool
+		for _, value := range strings.Split(config.AutoToolVerified, ",") {
+			if id, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && id > 0 {
+				verified[id] = true
+			}
+		}
 	case AutoTaskExtraction:
 		qualified = config.AutoExtract
 	case AutoTaskUnsupported:
@@ -358,7 +364,8 @@ func autoCandidates(group model.Group, task autoTask) (model.Group, []model.Rela
 	group.AutoRequestCosts = make(map[int]float64, len(items))
 	var excluded []model.RelayRouteCandidate
 	for _, item := range items {
-		reason := autoExclusion(item, task, grants[item.ChannelGrantID])
+		contextOverride := config.AutoContextOverrides[strconv.Itoa(item.ChannelGrantID)]
+		reason := autoExclusion(item, task, grants[item.ChannelGrantID], verified[item.ChannelGrantID], contextOverride)
 		if reason != "" {
 			excluded = append(excluded, model.RelayRouteCandidate{ItemID: item.ID, ChannelCode: item.ChannelName, Model: item.ModelName, Reason: reason})
 			continue
@@ -369,7 +376,7 @@ func autoCandidates(group model.Group, task autoTask) (model.Group, []model.Rela
 	return group, excluded
 }
 
-func autoExclusion(item model.GroupItem, task autoTask, qualified bool) string {
+func autoExclusion(item model.GroupItem, task autoTask, qualified, toolVerified bool, contextOverride int) string {
 	if !qualified {
 		return "auto_not_qualified"
 	}
@@ -394,6 +401,9 @@ func autoExclusion(item model.GroupItem, task autoTask, qualified bool) string {
 			required = model.ProtocolOpenAIResponse
 		}
 	case AutoTaskTool:
+		if !toolVerified {
+			return "auto_tool_unverified"
+		}
 		// The pilot only accepts native Chat-Completions for tool round trips.
 		required = model.ProtocolOpenAIChatCompletion
 		if item.Protocols&required == 0 {
@@ -416,6 +426,9 @@ func autoExclusion(item model.GroupItem, task autoTask, qualified bool) string {
 		return "auto_channel_incompatible"
 	}
 	reference := op.ModelReferenceGet(grant.ChannelModel.Name)
+	// Precedence follows the operator's ability to make a deliberate correction:
+	// manual capability first, explicit group override second, then the synced
+	// channel field and finally the global models.dev reference.
 	limit, maxOutput := grant.ChannelModel.ContextLength, reference.MaxOutput
 	if limit == 0 {
 		limit = reference.ContextLength
@@ -427,6 +440,9 @@ func autoExclusion(item model.GroupItem, task autoTask, qualified bool) string {
 		if capability.MaxOutput > 0 {
 			maxOutput = capability.MaxOutput
 		}
+	}
+	if contextOverride > 0 {
+		limit = contextOverride
 	}
 	if limit <= 0 {
 		return "auto_context_unknown"

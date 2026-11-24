@@ -32,6 +32,8 @@ export interface RelayLogOverview {
     reasoning_effort: string;
     protocol: number;
     group_id: number;
+    auto_task?: string; // 自动路由任务分类快照; 未进入实验时为空。
+    auto_mode?: 'shadow' | 'active'; // 影子或主动路由。
     api_key_name: string;
     usage: RelayUsage;
     cost: number;

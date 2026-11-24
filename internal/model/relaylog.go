@@ -2,6 +2,14 @@ package model
 
 import "time"
 
+const (
+	AutoRoutingTaskGeneral    = "general"
+	AutoRoutingTaskSummary    = "summary"
+	AutoRoutingTaskCoding     = "coding"
+	AutoRoutingTaskTool       = "tool"
+	AutoRoutingTaskExtraction = "extraction"
+)
+
 // UpstreamTiming 是一次上游请求的连接与首字节耗时分解, 单位纳秒。
 // 各段是包含关系: TTFBNs 覆盖 DNS+建连+TLS, 故上游净等待 ≈ TTFBNs - DNSNs - ConnectNs - TLSNs。
 //
@@ -49,10 +57,10 @@ type RelayRequest struct {
 	CompletionTokens     int64             `json:"completion_tokens"`
 	CachedTokens         int64             `json:"cached_tokens"`
 	CacheWriteTokens     int64             `json:"cache_write_tokens"`
-	Cost                 float64           `json:"cost"`              // 用户侧计费金额(美元), 含加价。
-	SupplyCost           float64           `json:"supply_cost"`       // 上游供货成本(美元), 不含加价。
-	UserCharge           float64           `json:"user_charge"`       // 用户实际扣款金额(美元), 等于 Cost。
-	Profit               float64           `json:"profit"`            // 毛利(美元) = UserCharge - SupplyCost。
+	Cost                 float64           `json:"cost"`        // 用户侧计费金额(美元), 含加价。
+	SupplyCost           float64           `json:"supply_cost"` // 上游供货成本(美元), 不含加价。
+	UserCharge           float64           `json:"user_charge"` // 用户实际扣款金额(美元), 等于 Cost。
+	Profit               float64           `json:"profit"`      // 毛利(美元) = UserCharge - SupplyCost。
 	OutputChars          int               `json:"output_chars"`
 	TargetChannelKey     string            `json:"target_channel_key"`
 	TargetChannelCode    string            `json:"target_channel_code"`
@@ -61,6 +69,8 @@ type RelayRequest struct {
 	Error                string            `json:"error" gorm:"type:text"`
 	RequestBody          string            `json:"request_body" gorm:"type:text"`
 	RouteEvents          string            `json:"route_events" gorm:"type:text"`
+	AutoTask             string            `json:"auto_task" gorm:"size:32;default:''"` // 任务分类快照; 空表示本次请求未进入自动路由实验。
+	AutoMode             string            `json:"auto_mode" gorm:"size:16;default:''"` // shadow / active; 空表示本次请求未进入自动路由实验。
 	ResponseBody         string            `json:"response_body" gorm:"type:text"`
 }
 

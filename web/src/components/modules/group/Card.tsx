@@ -14,6 +14,7 @@ import type { SelectedMember } from './ItemList';
 import { MemberList } from './ItemList';
 import { GroupEditor, type GroupEditorValues } from './Editor';
 import { canaryChanged } from './canary';
+import { compareContextOverrides } from './autoRouting';
 import {
     MorphingDialog,
     MorphingDialogContainer,
@@ -142,6 +143,11 @@ export const GroupCard = memo(function GroupCard({
             (values.relay_config.auto_coding ?? '') !== (group.relay_config.auto_coding ?? '') ||
             (values.relay_config.auto_tool ?? '') !== (group.relay_config.auto_tool ?? '') ||
             (values.relay_config.auto_extract ?? '') !== (group.relay_config.auto_extract ?? '') ||
+            (values.relay_config.auto_tool_verified ?? '') !== (group.relay_config.auto_tool_verified ?? '') ||
+            compareContextOverrides(values.relay_config.auto_context_overrides, group.relay_config.auto_context_overrides) ||
+            (values.relay_config.auto_ramp_percent ?? 0) !== (group.relay_config.auto_ramp_percent ?? 0) ||
+            (values.relay_config.auto_fallback_failures ?? 0) !== (group.relay_config.auto_fallback_failures ?? 0) ||
+            (values.relay_config.auto_fallback_seconds ?? 0) !== (group.relay_config.auto_fallback_seconds ?? 0) ||
             values.relay_config.member_max_attempts !== group.relay_config.member_max_attempts ||
             values.relay_config.member_retry_interval_seconds !== group.relay_config.member_retry_interval_seconds ||
             values.relay_config.member_non_stream_response_timeout_seconds !== group.relay_config.member_non_stream_response_timeout_seconds ||

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SelectedMember } from './ItemList';
-import { autoGrantIDsValue, parseAutoGrantIDs, toggleAutoGrantID } from './autoRouting';
+import { autoGrantIDsValue, compareContextOverrides, contextOverridesValue, parseAutoGrantIDs, parseContextOverrides, toggleAutoGrantID } from './autoRouting';
 
 const member = (id: number): SelectedMember => ({
     id: String(id),
@@ -11,6 +11,18 @@ const member = (id: number): SelectedMember => ({
     channel_name: `channel-${id}`,
     key_name: 'key',
     protocols: 0,
+});
+
+describe('auto routing context overrides', () => {
+    it('drops malformed keys and preserves explicit values', () => {
+        expect(parseContextOverrides({ '653': 10000, bad: 2, '0': 4, '-1': 5 })).toEqual({ 653: 10000 });
+        expect(contextOverridesValue({ 653: 10000, 0: 4 })).toEqual({ '653': 10000 });
+    });
+
+    it('compares key order without reporting false edits', () => {
+        expect(compareContextOverrides({ '653': 10000, '476': 20000 }, { '476': 20000, '653': 10000 })).toBe(false);
+        expect(compareContextOverrides({ '653': 10000 }, { '653': 20000 })).toBe(true);
+    });
 });
 
 describe('auto routing candidate selection', () => {

@@ -49,19 +49,21 @@ type RequestState struct {
 	StreamDuration     time.Duration  `json:"stream_duration"`      // 流式响应从首字节提交到响应结束的耗时, 非流式响应为零。
 	ResponseDuration   time.Duration  `json:"response_duration"`    // 非流式正确响应轮次开始到完整响应提交的耗时, 流式响应为零。
 	ClientIP           string         `json:"client_ip"`
-	ClientCountry      string         `json:"client_country"`   // 调用方国家码, 取自可信反代注入的头; 无边缘接入时为空。
-	UserID             uint           `json:"user_id"`          // 发起请求的用户 ID(API Key 归属者), 日志与计费的归属依据。
-	Model              string         `json:"model"`            // 客户端请求的模型名称, 即分组名称。
-	ReasoningEffort    string         `json:"reasoning_effort"` // 客户端请求的思考等级, 未指定时为空。
-	Protocol           model.Protocol `json:"protocol"`         // 客户端请求使用的协议, 由入站格式定出, 单个协议位而非掩码组合。
-	GroupID            int            `json:"group_id"`         // 承载本请求的分组 ID, 供界面按主键直接定位分组而不必按名称回查。
-	APIKeyName         string         `json:"api_key_name"`     // 发起请求时的 API Key 名称。
-	Usage              llm.Usage      `json:"usage"`            // 请求结束时写入的展示用量。
-	Cost               float64        `json:"cost"`             // 请求结束时写入的累计费用（用户侧，含加价）。
-	SupplyCost         float64        `json:"supply_cost"`      // 上游供货成本（不含加价）。
-	UserCharge         float64        `json:"user_charge"`      // 用户实际扣款金额（等于 Cost）。
-	Profit             float64        `json:"profit"`           // 毛利 = UserCharge - SupplyCost。
-	OutputChars        int            `json:"output_chars"`     // 流式过程中按事件数量估算并实时累计的输出字符数, 仅用于界面展示, 不参与结算。
+	ClientCountry      string         `json:"client_country"`      // 调用方国家码, 取自可信反代注入的头; 无边缘接入时为空。
+	UserID             uint           `json:"user_id"`             // 发起请求的用户 ID(API Key 归属者), 日志与计费的归属依据。
+	Model              string         `json:"model"`               // 客户端请求的模型名称, 即分组名称。
+	ReasoningEffort    string         `json:"reasoning_effort"`    // 客户端请求的思考等级, 未指定时为空。
+	Protocol           model.Protocol `json:"protocol"`            // 客户端请求使用的协议, 由入站格式定出, 单个协议位而非掩码组合。
+	GroupID            int            `json:"group_id"`            // 承载本请求的分组 ID, 供界面按主键直接定位分组而不必按名称回查。
+	AutoTask           string         `json:"auto_task,omitempty"` // 自动路由任务分类快照。
+	AutoMode           string         `json:"auto_mode,omitempty"` // shadow / active。
+	APIKeyName         string         `json:"api_key_name"`        // 发起请求时的 API Key 名称。
+	Usage              llm.Usage      `json:"usage"`               // 请求结束时写入的展示用量。
+	Cost               float64        `json:"cost"`                // 请求结束时写入的累计费用（用户侧，含加价）。
+	SupplyCost         float64        `json:"supply_cost"`         // 上游供货成本（不含加价）。
+	UserCharge         float64        `json:"user_charge"`         // 用户实际扣款金额（等于 Cost）。
+	Profit             float64        `json:"profit"`              // 毛利 = UserCharge - SupplyCost。
+	OutputChars        int            `json:"output_chars"`        // 流式过程中按事件数量估算并实时累计的输出字符数, 仅用于界面展示, 不参与结算。
 
 	Round             int            `json:"round"`               // 最新一轮循环的递增序号, 人工中止按此匹配以免误杀下一轮。
 	RoundStartedAt    time.Time      `json:"round_started_at"`    // 最新一轮上游请求的开始时间。
@@ -74,7 +76,9 @@ type RequestState struct {
 
 	requestBody   string // 客户端原始请求体, 体积大故不进状态流, 由独立接口按需拉取。
 	responseBody  string // 聚合后的完整最终响应体, 同样按需拉取。
-	apiKeyID      int    // 发起请求的 API Key ID, 用于请求完成后的归属统计。
+	autoObserved  bool   // 任务分类与影子预测只需在请求内执行一次。
+	autoTask      autoTask
+	apiKeyID      int // 发起请求的 API Key ID, 用于请求完成后的归属统计。
 	routeDecision model.RelayRouteDecision
 	roundItemID   int                  // 最新一轮的分组成员 ID, 供尝试记录落库。
 	roundTiming   model.UpstreamTiming // 最新一轮上游请求的连接耗时分解, 由 setRoundTiming 在每轮结束时写入。
@@ -321,6 +325,27 @@ func (r *RequestState) setRouteDecision(decision model.RelayRouteDecision) {
 	defer mu.Unlock()
 	r.routeDecision = decision
 	r.addRouteEventLocked("selection", decision.Reason)
+}
+
+func (r *RequestState) setAutoObservation(task autoTask, mode string) {
+	mu.Lock()
+	defer mu.Unlock()
+	r.AutoTask = task.name
+	r.AutoMode = mode
+	r.autoObserved = true
+	r.autoTask = task
+}
+
+func (r *RequestState) autoObservation() (bool, autoTask) {
+	mu.Lock()
+	defer mu.Unlock()
+	return r.autoObserved, r.autoTask
+}
+
+func (r *RequestState) statusSnapshot() Status {
+	mu.Lock()
+	defer mu.Unlock()
+	return r.Status
 }
 
 // SetReservation 登记余额预扣记录并启动预扣续租心跳, 供请求结束时结算或释放。

@@ -18,6 +18,11 @@ export interface GroupRelayConfig {
     auto_coding?: string;
     auto_tool?: string;
     auto_extract?: string;
+    auto_tool_verified?: string;
+    auto_context_overrides?: Record<string, number>;
+    auto_ramp_percent?: number;
+    auto_fallback_failures?: number;
+    auto_fallback_seconds?: number;
  request_timeout_seconds: number;
  max_wait_seconds: number;
  max_waiting_requests: number;

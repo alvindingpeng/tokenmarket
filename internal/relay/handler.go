@@ -168,8 +168,6 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		if !isMediaProtocol(requestProtocol) {
 			estIn, estOut = estimateTokens(raw.Body)
 		}
-		var task autoTask
-		autoObserved := false
 		userScopes := userRateScopes(keyUserID, c.GetInt("api_key_id"), metadata.Model)
 		userDecision := limiter.Reserve(userScopes, estIn, estOut)
 		if !userDecision.Allowed {
@@ -195,6 +193,20 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		// 国家码只采信可信反代注入的头: 无边缘接入时这些头可被任意伪造, 采信等于把统计口径交给调用方。
 		clientCountry := geo.HeaderCountry(c.GetHeader, len(conf.AppConfig.Server.TrustedProxies) > 0)
 		request := newRequestState(c.Request.Context(), metadata.Model, reasoningEffort, group.ID, requestProtocol, bodyForLog, c.GetInt("api_key_id"), keyUserID, clientIP, clientCountry, group.RelayConfig.RequestTimeoutSeconds)
+		var autoProtectionGroup model.Group
+		var autoProtectionTask autoTask
+		autoProtectionEngaged := false
+		defer func() {
+			if !autoProtectionEngaged {
+				return
+			}
+			switch request.statusSnapshot() {
+			case StatusSuccess:
+				autoCircuitRecordSuccess(autoProtectionGroup.ID, autoProtectionTask.name)
+			case StatusFailed:
+				autoCircuitRecordFailure(autoProtectionGroup, autoProtectionTask.name)
+			}
+		}()
 		request.setRateScopes(userScopes, userDecision.Reservation)
 		// 生视频的计费用量来自请求本身(seconds 与分辨率档位), 预扣与结算回落都用它;
 		// 其余协议的请求没有媒体用量, 保持零值。
@@ -316,28 +328,48 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				group = scoreRetries.filtered(group)
 			}
 			var autoExcluded []model.RelayRouteCandidate
-			if autoMode == "active" || (autoMode == "shadow" && !autoObserved) {
-				if task.name == "" {
-					task = classifyAuto(raw.Body, requestProtocol, estIn, estOut)
+			var shadowExcluded []model.RelayRouteCandidate
+			observed, observedTask := request.autoObservation()
+			if autoMode != "" {
+				if !observed {
+					observedTask = classifyAuto(raw.Body, requestProtocol, estIn, estOut)
+					request.setAutoObservation(observedTask, autoMode)
+					observed = true
 				}
-				eligible, excluded := autoCandidates(group, task)
-				if autoMode == "active" {
-					group, autoExcluded = eligible, excluded
+			}
+			if autoMode == "active" && observed {
+				task := observedTask
+				if autoCircuitOpen(group.ID, task.name) {
+					request.addRouteEvent("auto_routing", "auto_circuit_open")
+				} else if !autoRampHit(group.ID, c.GetInt("api_key_id"), int(keyUserID), group.RelayConfig.AutoRampPercent) {
+					request.addRouteEvent("auto_routing", "auto_ramp_hold")
 				} else {
-					autoObserved = true
-					state := RouteStateOf(group)
-					candidates := slices.DeleteFunc(eligible.Items, func(item model.GroupItem) bool {
-						return upstreamItemLimited(item) || upstreamItemBlockedByPolicy(item) ||
-							state.Cooldowns[item.ID] > time.Now().UnixMilli() || state.ProbeItemID == item.ID
-					})
-					reason := task.name + ":no_candidate"
-					if len(candidates) > 0 {
-						eligible.Mode = model.GroupModeScore
-						predicted := selectGroupItem(eligible, candidates)
-						reason = fmt.Sprintf("%s:item=%d", task.name, predicted.ID)
+					eligible, excluded := autoCandidates(group, task)
+					group, autoExcluded = eligible, excluded
+					if len(group.Items) > 0 {
+						autoProtectionGroup, autoProtectionTask, autoProtectionEngaged = group, task, true
 					}
-					request.addRouteEvent("auto_shadow", reason)
+					request.addRouteEvent("auto_routing", task.name+":forced")
+					if len(group.Items) == 0 {
+						request.addRouteEvent("auto_routing", task.name+":no_candidate")
+					}
 				}
+			} else if autoMode == "shadow" {
+				task := observedTask
+				eligible, excluded := autoCandidates(group, task)
+				shadowExcluded = excluded
+				state := RouteStateOf(group)
+				candidates := slices.DeleteFunc(eligible.Items, func(item model.GroupItem) bool {
+					return upstreamItemLimited(item) || upstreamItemBlockedByPolicy(item) ||
+						state.Cooldowns[item.ID] > time.Now().UnixMilli() || state.ProbeItemID == item.ID
+				})
+				reason := task.name + ":no_candidate"
+				if len(candidates) > 0 {
+					eligible.Mode = model.GroupModeScore
+					predicted := selectGroupItem(eligible, candidates)
+					reason = fmt.Sprintf("%s:item=%d", task.name, predicted.ID)
+				}
+				request.addRouteEvent("auto_shadow", reason)
 			}
 			// Recheck after refresh: a live configuration change may lower the
 			// budget or switch this request into score mode between attempts.
@@ -381,7 +413,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			decision := routeExplanation(group, item, canary)
 			if group.AutoRequestCosts != nil {
 				decision.Candidates = append(decision.Candidates, autoExcluded...)
-				decision.Reason = "auto_" + task.name
+				decision.Reason = "auto_" + observedTask.name
+			} else if autoMode == "shadow" {
+				decision.Candidates = append(decision.Candidates, shadowExcluded...)
 			}
 			request.setRouteDecision(decision)
 			if item.ID == 0 {
@@ -393,10 +427,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				}
 				if group.AutoRequestCosts != nil && len(group.Items) == 0 {
 					status := http.StatusServiceUnavailable
-					if task.name == "unsupported" {
+					if observedTask.name == "unsupported" {
 						status = http.StatusBadRequest
 					}
-					stop(fmt.Errorf("auto routing has no compatible upstream for task %s", task.name), status)
+					stop(fmt.Errorf("auto routing has no compatible upstream for task %s", observedTask.name), status)
 					return
 				}
 				// 分组一个成员都没有时, 等待永远等不到上游: 直接点明配置缺失, 不再报笼统的"无可用上游"。

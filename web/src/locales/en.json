@@ -833,7 +833,18 @@
             "max_waiting_requests": "Waiting queue capacity",
             "max_waiting_requestsHint": "Default 0 (disabled). Full queue or wait expiry returns 429.",
             "member_stream_idle_timeout_seconds": "Stream idle timeout (seconds)",
-            "member_stream_idle_timeout_secondsHint": "Abort if no new stream events arrive; default 60 seconds."
+            "member_stream_idle_timeout_secondsHint": "Abort if no new stream events arrive; default 60 seconds.",
+            "autoRampPercent": "Active routing sample (%)",
+            "autoRampPercentHint": "Stable per API key. 1-100%; existing active groups without a saved value still run at 100%.",
+            "autoFallbackFailures": "Fallback after consecutive failures",
+            "autoFallbackFailuresHint": "After this many failed active auto-routing requests, temporarily return to the group’s normal score strategy.",
+            "autoFallbackSeconds": "Fallback duration (seconds)",
+            "autoFallbackSecondsHint": "The protection window is per group and task. A later success clears the failure streak.",
+            "autoToolVerified": "Verified for multi-turn tools",
+            "autoContextOverrides": "Context overrides",
+            "autoContextOverridesHint": "Leave blank to use the channel model or models.dev value. An explicit value takes precedence for candidate qualification.",
+            "autoContextUnknown": "Unknown",
+            "autoContextOverrideFor": "Context limit for {model}"
         },
         "memberPrice": "Read {input} / write {output} (m)",
         "modelPrice": "read {input} / write {output} / cache read {cacheRead} / cache write {cacheWrite} (m)",
@@ -1177,7 +1188,8 @@
         "group": "Model Config",
         "tabs": {
             "live": "Live",
-            "history": "History"
+            "history": "History",
+            "autoRouting": "Smart routing"
         },
         "history": {
             "searchPlaceholder": "Search model / channel code / key / error…",
@@ -1233,7 +1245,10 @@
             "auto_protocol_incompatible": "Protocol incompatible with this task",
             "auto_channel_incompatible": "Channel dialect or parameter override is incompatible",
             "auto_context_unknown": "Context limit is unknown",
-            "auto_token_limit": "Input and output budget exceeds this member's limit"
+            "auto_token_limit": "Input and output budget exceeds this member's limit",
+            "auto_tool_unverified": "Tool capability not administrator-verified",
+            "auto_ramp_hold": "Held by active-routing sample",
+            "auto_circuit_open": "Active routing temporarily fell back"
         },
         "eventPhase": {
             "received": "Received",
@@ -1243,7 +1258,8 @@
             "dispatch": "Dispatch",
             "error_class": "Error class",
             "finished": "Finished",
-            "auto_shadow": "Automatic routing shadow"
+            "auto_shadow": "Automatic routing shadow",
+            "auto_routing": "Active routing"
         },
         "eventReason": {
             "request_received": "Request recorded",
@@ -1255,7 +1271,8 @@
             "user_admitted": "Admitted by quota and rate limit",
             "success": "Round completed successfully",
             "auto_shadow_prediction": "{task}; predicted member #{id}",
-            "auto_shadow_no_candidate": "{task}; no eligible member"
+            "auto_shadow_no_candidate": "{task}; no eligible member",
+            "auto_forced": "Classified as {task}; active routing applied"
         },
         "mode": {
             "manual": "Manual",
@@ -1265,6 +1282,35 @@
             "success": "Highest success",
             "score": "Weighted score",
             "random": "Random"
+        },
+        "autoRouting": {
+            "loadFailed": "Failed to load smart routing diagnostics",
+            "allGroups": "All groups",
+            "daysOne": "Last 24 hours",
+            "daysSeven": "Last 7 days",
+            "daysThirty": "Last 30 days",
+            "window": "{requests} requests in window",
+            "empty": "No smart-routing samples yet",
+            "enableFirst": "Enable shadow or active routing on a score group so requests can be classified.",
+            "classified": "Automatically classified",
+            "successRate": "Overall success rate",
+            "failures": "Failed requests",
+            "tasksTitle": "By task",
+            "requestCount": "{count} requests",
+            "rate": "Rate {value}",
+            "latency": "Latency {value}",
+            "failedShort": "{count} failed",
+            "exclusionsTitle": "Candidate exclusions",
+            "eventsTitle": "Runtime events",
+            "modelsTitle": "Models actually used",
+            "task": {
+                "general": "General",
+                "summary": "Summary",
+                "coding": "Programming",
+                "tool": "Tool calls",
+                "extraction": "Extraction",
+                "unsupported": "Unsupported"
+            }
         }
     },
     "channel": {

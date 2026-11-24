@@ -20,7 +20,7 @@ import type { SelectedMember } from './ItemList';
 import { MemberList } from './ItemList';
 import { autoAddMatches, memberKey, normalizeKey } from './utils';
 import { canaryDefaults, canaryOf, canarySubmitBlocked, canarySubmitConfig, formatCanaryUserIDs, parseCanaryUserIDs, preserveCanary, type CanaryConfig } from './canary';
-import { autoGrantIDsValue, parseAutoGrantIDs, toggleAutoGrantID, type AutoTaskConfigField } from './autoRouting';
+import { autoGrantIDsValue, contextOverridesValue, parseAutoGrantIDs, parseContextOverrides, toggleAutoGrantID, type AutoTaskConfigField } from './autoRouting';
 
 export type GroupEditorValues = {
     name: string;
@@ -45,7 +45,7 @@ const modeRelayDefaults: Record<GroupMode, ModeRelayDefaults> = {
 
 // modeRelayConfig 返回该模式的预设; 灰度恒从关闭态起步 —— 它叠加在模式之上, 不属于任何模式的预设。
 function modeRelayConfig(mode: GroupMode): GroupRelayConfig {
-    return { ...modeRelayDefaults[mode], ...canaryDefaults() };
+    return { ...modeRelayDefaults[mode], ...canaryDefaults(), auto_ramp_percent: 5, auto_fallback_failures: 3, auto_fallback_seconds: 60 };
 }
 
 // PROTOCOL_TAGS 是凭据行上的协议标识。
@@ -733,6 +733,67 @@ export function GroupEditor({
                                     <div className="space-y-3">
                                         <p className="text-sm text-muted-foreground">{t('form.autoHint')}</p>
                                         <p className="text-xs leading-relaxed text-muted-foreground">{t('form.autoRefreshHint')}</p>
+                                        {relayConfig.auto_routing === 'active' && (
+                                            <div className="grid gap-3 rounded-xl border border-border/50 p-3 md:grid-cols-3">
+                                                <Field>
+                                                    <FieldLabel htmlFor="group-auto-ramp">
+                                                        {t('form.autoRampPercent')}
+                                                        <FieldHelp text={t('form.autoRampPercentHint')} />
+                                                    </FieldLabel>
+                                                    <Input
+                                                        id="group-auto-ramp"
+                                                        type="number"
+                                                        min={1}
+                                                        max={100}
+                                                        step={1}
+                                                        value={String(relayConfig.auto_ramp_percent ?? 5)}
+                                                        onChange={(event) => {
+                                                            const value = Number.parseInt(event.target.value, 10);
+                                                            setRelayConfig((prev) => ({ ...prev, auto_ramp_percent: Number.isFinite(value) ? Math.min(Math.max(value, 1), 100) : 5 }));
+                                                        }}
+                                                        className="rounded-xl"
+                                                    />
+                                                </Field>
+                                                <Field>
+                                                    <FieldLabel htmlFor="group-auto-fallback-failures">
+                                                        {t('form.autoFallbackFailures')}
+                                                        <FieldHelp text={t('form.autoFallbackFailuresHint')} />
+                                                    </FieldLabel>
+                                                    <Input
+                                                        id="group-auto-fallback-failures"
+                                                        type="number"
+                                                        min={1}
+                                                        max={100}
+                                                        step={1}
+                                                        value={String(relayConfig.auto_fallback_failures ?? 3)}
+                                                        onChange={(event) => {
+                                                            const value = Number.parseInt(event.target.value, 10);
+                                                            setRelayConfig((prev) => ({ ...prev, auto_fallback_failures: Number.isFinite(value) ? Math.min(Math.max(value, 1), 100) : 3 }));
+                                                        }}
+                                                        className="rounded-xl"
+                                                    />
+                                                </Field>
+                                                <Field>
+                                                    <FieldLabel htmlFor="group-auto-fallback-seconds">
+                                                        {t('form.autoFallbackSeconds')}
+                                                        <FieldHelp text={t('form.autoFallbackSecondsHint')} />
+                                                    </FieldLabel>
+                                                    <Input
+                                                        id="group-auto-fallback-seconds"
+                                                        type="number"
+                                                        min={1}
+                                                        max={3600}
+                                                        step={1}
+                                                        value={String(relayConfig.auto_fallback_seconds ?? 60)}
+                                                        onChange={(event) => {
+                                                            const value = Number.parseInt(event.target.value, 10);
+                                                            setRelayConfig((prev) => ({ ...prev, auto_fallback_seconds: Number.isFinite(value) ? Math.min(Math.max(value, 1), 3600) : 60 }));
+                                                        }}
+                                                        className="rounded-xl"
+                                                    />
+                                                </Field>
+                                            </div>
+                                        )}
                                         <div className="space-y-3">
                                             {([
                                                 ['auto_general', 'autoGeneral'],
@@ -773,6 +834,17 @@ export function GroupEditor({
                                                                                     </span>
                                                                                 )}
                                                                             </span>
+                                                                            {key === 'auto_tool' && checked && (
+                                                                                <span className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground" onClick={(event) => event.stopPropagation()}>
+                                                                                    <Checkbox
+                                                                                        checked={parseAutoGrantIDs(relayConfig.auto_tool_verified).includes(member.channel_grant_id)}
+                                                                                        onCheckedChange={(value) => setRelayConfig((prev) => ({ ...prev,
+                                                                                            auto_tool_verified: autoGrantIDsValue(selectedMembers, toggleAutoGrantID(parseAutoGrantIDs(prev.auto_tool_verified), member.channel_grant_id, value === true)),
+                                                                                        }))}
+                                                                                    />
+                                                                                    {t('form.autoToolVerified')}
+                                                                                </span>
+                                                                            )}
                                                                         </label>
                                                                     );
                                                                 })}
@@ -782,6 +854,40 @@ export function GroupEditor({
                                                 );
                                             })}
                                         </div>
+                                        {selectedMembers.length > 0 && (
+                                            <div className="space-y-2 rounded-xl border border-border/50 p-3">
+                                                <div>
+                                                    <span className="text-sm font-medium">{t('form.autoContextOverrides')}</span>
+                                                    <p className="text-xs text-muted-foreground">{t('form.autoContextOverridesHint')}</p>
+                                                </div>
+                                                <div className="grid gap-2 md:grid-cols-2">
+                                                    {selectedMembers.map((member) => {
+                                                        const overrides = parseContextOverrides(relayConfig.auto_context_overrides);
+                                                        return (
+                                                            <label key={`context-${member.channel_grant_id}`} className="flex items-center gap-2 text-xs text-muted-foreground">
+                                                                <span className="min-w-0 flex-1 truncate">{member.channel_name} · {member.name}</span>
+                                                                <Input
+                                                                    type="number"
+                                                                    min={1}
+                                                                    step={1}
+                                                                    placeholder={member.context_length ? String(member.context_length) : t('form.autoContextUnknown')}
+                                                                    value={overrides[member.channel_grant_id] ? String(overrides[member.channel_grant_id]) : ''}
+                                                                    onChange={(event) => {
+                                                                        const next = { ...overrides };
+                                                                        const value = Number.parseInt(event.target.value, 10);
+                                                                        if (Number.isFinite(value) && value > 0) next[member.channel_grant_id] = value;
+                                                                        else delete next[member.channel_grant_id];
+                                                                        setRelayConfig((prev) => ({ ...prev, auto_context_overrides: contextOverridesValue(next) }));
+                                                                    }}
+                                                                    className="h-8 w-28 rounded-lg"
+                                                                    aria-label={t('form.autoContextOverrideFor', { model: member.name })}
+                                                                />
+                                                            </label>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                                 <Field>

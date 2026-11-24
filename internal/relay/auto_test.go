@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
@@ -35,6 +36,7 @@ func TestAutoRoutingFiltersContextBeforeDispatch(t *testing.T) {
 		}
 	}
 	config.AutoRouting = "active"
+	config.AutoRampPercent = 100
 	config.AutoSummary = fmt.Sprintf("%d,%d", group.Items[0].ChannelGrantID, group.Items[1].ChannelGrantID)
 	setScoreTestGroup(t, env, config)
 	response := forwardRequest(llm.APIFormatOpenAIChatCompletion, env.userID, fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"请总结这篇文章"}],"max_tokens":100}`, env.group))
@@ -71,6 +73,7 @@ func TestAutoRoutingChoosesResponsesCodingAndNativeToolMembers(t *testing.T) {
 			t.Fatal(err)
 		}
 		config.AutoRouting = "active"
+		config.AutoRampPercent = 100
 		config.AutoCoding = fmt.Sprintf("%d", group.Items[0].ChannelGrantID)
 		setScoreTestGroup(t, env, config)
 		response := forwardRequest(llm.APIFormatOpenAIResponse, env.userID,
@@ -88,12 +91,50 @@ func TestAutoRoutingChoosesResponsesCodingAndNativeToolMembers(t *testing.T) {
 			t.Fatal(err)
 		}
 		config.AutoRouting = "active"
+		config.AutoRampPercent = 100
 		config.AutoTool = fmt.Sprintf("%d", group.Items[0].ChannelGrantID)
+		config.AutoToolVerified = config.AutoTool
 		setScoreTestGroup(t, env, config)
+		nonce := fmt.Sprintf("nonce-resp-%d", time.Now().UnixNano())
 		response := forwardRequest(llm.APIFormatOpenAIChatCompletion, env.userID,
-			fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"search"}],"tools":[{"type":"function","function":{"name":"search"}}],"max_tokens":100}`, env.group))
+			fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":%q}],"tools":[{"type":"function","function":{"name":"search"}}],"max_tokens":100}`, env.group, nonce))
 		if response.Code != http.StatusServiceUnavailable {
 			t.Fatalf("Responses-only tool candidate should be rejected before dispatch: status=%d body=%s", response.Code, response.Body.String())
+		}
+	})
+
+	t.Run("tool candidate is not usable until explicitly verified", func(t *testing.T) {
+		config := model.DefaultGroupRelayConfigForMode(model.GroupModeScore)
+		env := newRelayGroup(t, upstream.URL, model.ProtocolOpenAIChatCompletion, model.MediaKindText, 1, config)
+		group := setScoreTestGroup(t, env, config)
+		if err := op.CapabilitySaveManual(model.ModelCapability{Name: group.Items[0].ModelName, Context: 10000}, context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		config.AutoRouting = "active"
+		config.AutoRampPercent = 100
+		config.AutoTool = fmt.Sprintf("%d", group.Items[0].ChannelGrantID)
+		setScoreTestGroup(t, env, config)
+		nonce := fmt.Sprintf("nonce-%d", time.Now().UnixNano())
+		response := forwardRequest(llm.APIFormatOpenAIChatCompletion, env.userID,
+			fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":%q}],"tools":[{"type":"function","function":{"name":"search"}}],"max_tokens":100}`, env.group, nonce))
+		if response.Code != http.StatusServiceUnavailable {
+			t.Fatalf("unverified tool candidate should be rejected: status=%d body=%s", response.Code, response.Body.String())
+		}
+	})
+
+	t.Run("explicit group context override qualifies a real candidate", func(t *testing.T) {
+		config := model.DefaultGroupRelayConfigForMode(model.GroupModeScore)
+		env := newRelayGroup(t, upstream.URL, model.ProtocolOpenAIChatCompletion, model.MediaKindText, 1, config)
+		group := setScoreTestGroup(t, env, config)
+		config.AutoRouting = "active"
+		config.AutoRampPercent = 100
+		config.AutoGeneral = fmt.Sprintf("%d", group.Items[0].ChannelGrantID)
+		config.AutoContextOverrides = map[string]int{fmt.Sprintf("%d", group.Items[0].ChannelGrantID): 10000}
+		setScoreTestGroup(t, env, config)
+		response := forwardRequest(llm.APIFormatOpenAIChatCompletion, env.userID,
+			fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"plain text"}],"max_tokens":100}`, env.group))
+		if response.Code != http.StatusOK {
+			t.Fatalf("configured context override did not qualify candidate: status=%d body=%s", response.Code, response.Body.String())
 		}
 	})
 }

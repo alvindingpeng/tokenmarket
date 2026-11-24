@@ -833,7 +833,18 @@
             "max_waiting_requests": "排隊容量",
             "max_waiting_requestsHint": "預設 0（關閉）。容量占滿或等待逾時回傳 429。",
             "member_stream_idle_timeout_seconds": "串流閒置逾時（秒）",
-            "member_stream_idle_timeout_secondsHint": "連續無串流事件時中止，預設 60 秒。"
+            "member_stream_idle_timeout_secondsHint": "連續無串流事件時中止，預設 60 秒。",
+            "autoRampPercent": "主動路由抽樣比例 (%)",
+            "autoRampPercentHint": "按 API Key 穩定分桶，1-100%。既有主動分組未保存該值時仍按 100% 執行。",
+            "autoFallbackFailures": "連續失敗後回退次數",
+            "autoFallbackFailuresHint": "主動自動路由連續失敗達到此值後，暫時回落至分組原有的綜合評分策略。",
+            "autoFallbackSeconds": "回退保護時長（秒）",
+            "autoFallbackSecondsHint": "按分組與任務隔離。後續成功會清除失敗計數。",
+            "autoToolVerified": "已驗證多輪工具調用",
+            "autoContextOverrides": "上下文覆蓋",
+            "autoContextOverridesHint": "留空沿用渠道模型或 models.dev 的數值。顯式填寫後用於候選資格判斷。",
+            "autoContextUnknown": "未知",
+            "autoContextOverrideFor": "{model} 的上下文上限"
         },
         "memberPrice": "讀 {input} / 寫 {output}（m）",
         "modelPrice": "讀 {input} / 寫 {output} / 快取讀 {cacheRead} / 快取寫 {cacheWrite}（m）",
@@ -1177,7 +1188,8 @@
         "group": "模型配置",
         "tabs": {
             "live": "即時",
-            "history": "歷史"
+            "history": "歷史",
+            "autoRouting": "智能路由"
         },
         "history": {
             "searchPlaceholder": "搜尋模型 / 渠道編碼 / Key / 錯誤…",
@@ -1233,7 +1245,10 @@
             "auto_protocol_incompatible": "成員協定與該任務不相容",
             "auto_channel_incompatible": "渠道方言或參數覆寫與該任務不相容",
             "auto_context_unknown": "上下文上限未知",
-            "auto_token_limit": "輸入與輸出預算超出該成員上限"
+            "auto_token_limit": "輸入與輸出預算超出該成員上限",
+            "auto_tool_unverified": "工具調用能力未經管理員驗證",
+            "auto_ramp_hold": "未命中主動路由抽樣",
+            "auto_circuit_open": "主動路由已暫時回退"
         },
         "eventPhase": {
             "received": "已接收",
@@ -1243,7 +1258,8 @@
             "dispatch": "派發",
             "error_class": "錯誤分類",
             "finished": "結束",
-            "auto_shadow": "自動選路影子"
+            "auto_shadow": "自動選路影子",
+            "auto_routing": "主動路由"
         },
         "eventReason": {
             "request_received": "記錄請求",
@@ -1255,7 +1271,8 @@
             "user_admitted": "通過配額與限流准入",
             "success": "本輪成功完成",
             "auto_shadow_prediction": "{task}，影子推薦成員 #{id}",
-            "auto_shadow_no_candidate": "{task}，沒有合格成員"
+            "auto_shadow_no_candidate": "{task}，沒有合格成員",
+            "auto_forced": "識別為{task}，已按主動路由選擇候選"
         },
         "mode": {
             "manual": "人工指定",
@@ -1265,6 +1282,35 @@
             "success": "成功率優先",
             "score": "綜合評分",
             "random": "隨機分發"
+        },
+        "autoRouting": {
+            "loadFailed": "智能路由診斷載入失敗",
+            "allGroups": "全部分組",
+            "daysOne": "最近 24 小時",
+            "daysSeven": "最近 7 天",
+            "daysThirty": "最近 30 天",
+            "window": "窗口內 {requests} 個請求",
+            "empty": "尚無智能路由樣本",
+            "enableFirst": "請先在一個綜合評分分組啟用影子或主動路由，請求才能被任務分類。",
+            "classified": "已自動分類",
+            "successRate": "總體成功率",
+            "failures": "失敗請求",
+            "tasksTitle": "按任務",
+            "requestCount": "{count} 個請求",
+            "rate": "成功率 {value}",
+            "latency": "延遲 {value}",
+            "failedShort": "失敗 {count} 個",
+            "exclusionsTitle": "候選排除原因",
+            "eventsTitle": "運行事件",
+            "modelsTitle": "實際使用模型",
+            "task": {
+                "general": "通用",
+                "summary": "摘要",
+                "coding": "編程",
+                "tool": "工具調用",
+                "extraction": "提取",
+                "unsupported": "不支持"
+            }
         }
     },
     "channel": {

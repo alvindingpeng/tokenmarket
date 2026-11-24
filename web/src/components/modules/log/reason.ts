@@ -16,10 +16,11 @@ const ROUTE_REASON_KEYS = [
     'auto_unsupported', 'auto_not_qualified', 'auto_member_unavailable',
     'auto_protocol_incompatible', 'auto_channel_incompatible',
     'auto_context_unknown', 'auto_token_limit',
+    'auto_tool_unverified', 'auto_ramp_hold', 'auto_circuit_open',
 ] as const;
 
 /** 路由事件的阶段名。 */
-const ROUTE_PHASE_KEYS = ['received', 'selection', 'waiting', 'admission', 'dispatch', 'error_class', 'auto_shadow', 'finished'] as const;
+const ROUTE_PHASE_KEYS = ['received', 'selection', 'waiting', 'admission', 'dispatch', 'error_class', 'auto_shadow', 'auto_routing', 'finished'] as const;
 
 /** 路由事件的原因里, 有固定文案的那部分。 */
 const ROUTE_EVENT_KEYS = [
@@ -58,10 +59,11 @@ export function routeEventText(t: Translate, reason: string | undefined): string
     // 决策 reason 也可能出现在事件里(strategy_*), 与决策共用同一张表。
     if (reasonSet.has(reason)) return t('routeReason.' + reason);
     if (eventSet.has(reason)) return t('eventReason.' + reason);
-    const autoShadow = /^(general|summary|coding|tool|extraction):(item=|no_candidate)/.exec(reason);
+    const autoShadow = /^(general|summary|coding|tool|extraction):(item=|no_candidate|forced)/.exec(reason);
     if (autoShadow) {
         const task = t('routeReason.auto_' + autoShadow[1]);
         if (reason.endsWith(':no_candidate')) return t('eventReason.auto_shadow_no_candidate', { task });
+        if (reason.endsWith(':forced')) return t('eventReason.auto_forced', { task });
         return t('eventReason.auto_shadow_prediction', { task, id: reason.slice(reason.lastIndexOf('=') + 1) });
     }
     return reason;

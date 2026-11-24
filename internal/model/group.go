@@ -3,6 +3,8 @@ package model
 import (
 	"reflect"
 	"slices"
+	"strconv"
+	"strings"
 )
 
 // 分组选择上游成员的模式。
@@ -88,28 +90,33 @@ func clampPositive(value, fallback, maximum int) int {
 
 // 分组 Relay 的持久化配置，数据库中以 JSON 存储。
 type GroupRelayConfig struct {
-	AutoRouting                           string `json:"auto_routing,omitempty" binding:"omitempty,oneof=shadow active"`
-	AutoGeneral                           string `json:"auto_general,omitempty" binding:"max=512"`
-	AutoSummary                           string `json:"auto_summary,omitempty" binding:"max=512"`
-	AutoCoding                            string `json:"auto_coding,omitempty" binding:"max=512"`
-	AutoTool                              string `json:"auto_tool,omitempty" binding:"max=512"`
-	AutoExtract                           string `json:"auto_extract,omitempty" binding:"max=512"`
-	MemberStreamIdleTimeoutSeconds        int    `json:"member_stream_idle_timeout_seconds" binding:"omitempty,min=1,max=3600"`
-	RequestTimeoutSeconds                 int    `json:"request_timeout_seconds" binding:"omitempty,min=1,max=3600"`                    // 整请求最大耗时, 包含重试与流式传输。
-	MaxWaitSeconds                        int    `json:"max_wait_seconds" binding:"omitempty,min=0,max=300"`                            // 无可用成员时最大等待秒数, 0 立即返回。
-	MaxWaitingRequests                    int    `json:"max_waiting_requests" binding:"omitempty,min=0,max=1000"`                       // 同一分组同时排队的请求上限, 0 不排队。
-	MaxTotalAttempts                      int    `json:"max_total_attempts" binding:"omitempty,min=1,max=100"`                          // 单请求跨成员最大尝试轮次, 含首次; score 按不同渠道模型计数, 设为 5 即最多尝试 5 个候选。
-	MemberMaxAttempts                     int    `json:"member_max_attempts" binding:"omitempty,min=1,max=100"`                         // 单个成员包含首次请求的总尝试次数, 动态选路模式(非手动)生效。
-	MemberRetryIntervalSeconds            int    `json:"member_retry_interval_seconds" binding:"omitempty,min=1,max=300"`               // 同一成员相邻两次尝试之间的等待秒数。
-	MemberNonStreamResponseTimeoutSeconds int    `json:"member_non_stream_response_timeout_seconds" binding:"omitempty,min=1,max=3600"` // 单个成员返回完整非流式响应的超时秒数。
-	MemberStreamFirstEventTimeoutSeconds  int    `json:"member_stream_first_event_timeout_seconds" binding:"omitempty,min=1,max=3600"`  // 单个成员返回首个有效流事件的超时秒数。
-	MemberCooldownSeconds                 int    `json:"member_cooldown_seconds" binding:"omitempty,min=1,max=86400"`                   // 单个成员耗尽尝试后被跳过的秒数, 动态选路模式(非手动)生效。
-	MemberAffinitySeconds                 int    `json:"member_affinity_seconds" binding:"omitempty,min=0,max=3600"`                    // 成员亲和时间:动态选路成功后继续保持当前成员的秒数;当前成员失败会立即结束亲和,0 表示不保持。
-	PriceMetric                           string `json:"price_metric" binding:"omitempty,oneof=blended input output"`                   // 低价优先与综合评分的价格口径: blended 读写均值, input 仅输入, output 仅输出。
-	MetricWindowSize                      int    `json:"metric_window_size" binding:"omitempty,min=5,max=200"`                          // 延迟与成功率指标的样本窗口规模, 越大越平滑, 5-200。
-	ScorePriceWeight                      int    `json:"score_price_weight" binding:"omitempty,min=0,max=100"`                          // 综合评分中价格的相对权重, 0-100; 0 表示未自定义, 运行时跟随系统默认设置。
-	ScoreLatencyWeight                    int    `json:"score_latency_weight" binding:"omitempty,min=0,max=100"`                        // 综合评分中延迟的相对权重, 0-100; 0 表示未自定义, 运行时跟随系统默认设置。
-	ScoreSuccessWeight                    int    `json:"score_success_weight" binding:"omitempty,min=0,max=100"`                        // 综合评分中成功率的相对权重, 0-100; 0 表示未自定义, 运行时跟随系统默认设置。
+	AutoRouting                           string         `json:"auto_routing,omitempty" binding:"omitempty,oneof=shadow active"`
+	AutoGeneral                           string         `json:"auto_general,omitempty" binding:"max=512"`
+	AutoSummary                           string         `json:"auto_summary,omitempty" binding:"max=512"`
+	AutoCoding                            string         `json:"auto_coding,omitempty" binding:"max=512"`
+	AutoTool                              string         `json:"auto_tool,omitempty" binding:"max=512"`
+	AutoExtract                           string         `json:"auto_extract,omitempty" binding:"max=512"`
+	AutoToolVerified                      string         `json:"auto_tool_verified,omitempty" binding:"max=512"`                     // 已由管理员验证多轮工具调用的授权 ID; 不从模型目录推断。
+	AutoContextOverrides                  map[string]int `json:"auto_context_overrides,omitempty"`                                   // 按渠道授权 ID 覆盖上下文窗口, 用于修正缺失或错误的上游元数据。
+	AutoRampPercent                       int            `json:"auto_ramp_percent,omitempty" binding:"omitempty,min=1,max=100"`      // 主动自动路由命中比例; 0 兼容旧配置并按 100% 运行。
+	AutoFallbackFailures                  int            `json:"auto_fallback_failures,omitempty" binding:"omitempty,min=1,max=100"` // 连续失败多少次后暂时回退。
+	AutoFallbackSeconds                   int            `json:"auto_fallback_seconds,omitempty" binding:"omitempty,min=1,max=3600"` // 回退持续时间。
+	MemberStreamIdleTimeoutSeconds        int            `json:"member_stream_idle_timeout_seconds" binding:"omitempty,min=1,max=3600"`
+	RequestTimeoutSeconds                 int            `json:"request_timeout_seconds" binding:"omitempty,min=1,max=3600"`                    // 整请求最大耗时, 包含重试与流式传输。
+	MaxWaitSeconds                        int            `json:"max_wait_seconds" binding:"omitempty,min=0,max=300"`                            // 无可用成员时最大等待秒数, 0 立即返回。
+	MaxWaitingRequests                    int            `json:"max_waiting_requests" binding:"omitempty,min=0,max=1000"`                       // 同一分组同时排队的请求上限, 0 不排队。
+	MaxTotalAttempts                      int            `json:"max_total_attempts" binding:"omitempty,min=1,max=100"`                          // 单请求跨成员最大尝试轮次, 含首次; score 按不同渠道模型计数, 设为 5 即最多尝试 5 个候选。
+	MemberMaxAttempts                     int            `json:"member_max_attempts" binding:"omitempty,min=1,max=100"`                         // 单个成员包含首次请求的总尝试次数, 动态选路模式(非手动)生效。
+	MemberRetryIntervalSeconds            int            `json:"member_retry_interval_seconds" binding:"omitempty,min=1,max=300"`               // 同一成员相邻两次尝试之间的等待秒数。
+	MemberNonStreamResponseTimeoutSeconds int            `json:"member_non_stream_response_timeout_seconds" binding:"omitempty,min=1,max=3600"` // 单个成员返回完整非流式响应的超时秒数。
+	MemberStreamFirstEventTimeoutSeconds  int            `json:"member_stream_first_event_timeout_seconds" binding:"omitempty,min=1,max=3600"`  // 单个成员返回首个有效流事件的超时秒数。
+	MemberCooldownSeconds                 int            `json:"member_cooldown_seconds" binding:"omitempty,min=1,max=86400"`                   // 单个成员耗尽尝试后被跳过的秒数, 动态选路模式(非手动)生效。
+	MemberAffinitySeconds                 int            `json:"member_affinity_seconds" binding:"omitempty,min=0,max=3600"`                    // 成员亲和时间:动态选路成功后继续保持当前成员的秒数;当前成员失败会立即结束亲和,0 表示不保持。
+	PriceMetric                           string         `json:"price_metric" binding:"omitempty,oneof=blended input output"`                   // 低价优先与综合评分的价格口径: blended 读写均值, input 仅输入, output 仅输出。
+	MetricWindowSize                      int            `json:"metric_window_size" binding:"omitempty,min=5,max=200"`                          // 延迟与成功率指标的样本窗口规模, 越大越平滑, 5-200。
+	ScorePriceWeight                      int            `json:"score_price_weight" binding:"omitempty,min=0,max=100"`                          // 综合评分中价格的相对权重, 0-100; 0 表示未自定义, 运行时跟随系统默认设置。
+	ScoreLatencyWeight                    int            `json:"score_latency_weight" binding:"omitempty,min=0,max=100"`                        // 综合评分中延迟的相对权重, 0-100; 0 表示未自定义, 运行时跟随系统默认设置。
+	ScoreSuccessWeight                    int            `json:"score_success_weight" binding:"omitempty,min=0,max=100"`                        // 综合评分中成功率的相对权重, 0-100; 0 表示未自定义, 运行时跟随系统默认设置。
 	// ReliabilityFloor 是综合评分的可靠性下限(百分比, 0-100): 成功率低于该值的成员排到全部达标成员之后。
 	// 0 表示未自定义, 运行时跟随系统默认设置; 用于避免最便宜的成员凭静态价格长期霸占首位。
 	ReliabilityFloor int `json:"reliability_floor" binding:"omitempty,min=0,max=100"`
@@ -250,6 +257,26 @@ func NormalizeGroupRelayConfigForMode(config *GroupRelayConfig, mode GroupMode) 
 	config.ScorePriceWeight = min(max(config.ScorePriceWeight, 0), 100)
 	config.ScoreLatencyWeight = min(max(config.ScoreLatencyWeight, 0), 100)
 	config.ScoreSuccessWeight = min(max(config.ScoreSuccessWeight, 0), 100)
+	config.AutoRampPercent = min(max(config.AutoRampPercent, 0), 100)
+	// Preserve zero as "use the runtime defaults", including for legacy rows.
+	// Normalization runs whenever an unrelated group setting is edited, so
+	// materializing these defaults would silently upgrade every save.
+	if config.AutoFallbackFailures != 0 {
+		config.AutoFallbackFailures = clampPositive(config.AutoFallbackFailures, 3, 100)
+	}
+	if config.AutoFallbackSeconds != 0 {
+		config.AutoFallbackSeconds = clampPositive(config.AutoFallbackSeconds, 60, 3600)
+	}
+	if len(config.AutoContextOverrides) > 0 {
+		cleaned := make(map[string]int, len(config.AutoContextOverrides))
+		for key, value := range config.AutoContextOverrides {
+			id, err := strconv.Atoi(strings.TrimSpace(key))
+			if err == nil && id > 0 && value > 0 {
+				cleaned[strconv.Itoa(id)] = value
+			}
+		}
+		config.AutoContextOverrides = cleaned
+	}
 	// 灰度配置只做范围收敛, 不做"没配就补默认": 灰度成员 0 与比例 0 本身就是「关闭」这一有效状态。
 	config.CanaryItemID = max(config.CanaryItemID, 0)
 	config.CanaryPercent = min(max(config.CanaryPercent, 0), 100)

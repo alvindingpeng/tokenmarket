@@ -29,6 +29,10 @@ func init() {
 				Handle(streamOverview),
 		).
 		AddRoute(
+			router.NewRoute("/auto-routing/summary", http.MethodGet).
+				Handle(autoRoutingSummary),
+		).
+		AddRoute(
 			router.NewRoute("/request-body/:id", http.MethodGet).
 				Handle(getRequestBody),
 		).
@@ -66,6 +70,18 @@ func init() {
 			router.NewRoute("/replay/:id", http.MethodPost).
 				Handle(replayRequest),
 		)
+}
+
+func autoRoutingSummary(c *gin.Context) {
+	userID, role := middleware.CurrentUser(c)
+	groupID, _ := strconv.Atoi(c.Query("group_id"))
+	days, _ := strconv.Atoi(c.Query("days"))
+	summary, err := op.AutoRoutingAggregate(model.Scope{ID: userID, Role: role}, groupID, days)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, "failed to aggregate auto routing experiment")
+		return
+	}
+	resp.Success(c, summary)
 }
 
 // getLogAttempts returns durable attempt history with the same ownership guard as bodies.
