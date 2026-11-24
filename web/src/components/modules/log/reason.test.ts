@@ -47,6 +47,13 @@ describe('选路解释文案解析', () => {
         expect(routeEventText(t, 'strategy_latency')).toBe('Fastest of the eligible members');
         expect(routeEventText(t, 'waiting_for_upstream')).toContain('Waiting');
     });
+
+    it('任务路由和影子推荐都有可读文案', () => {
+        expect(routeReasonText(t, 'auto_coding')).toContain('programming');
+        expect(routeReasonText(t, 'auto_token_limit')).toContain('budget');
+        expect(routeEventText(t, 'coding:item=9')).toBe('Classified as a programming request; predicted member #9');
+        expect(routeEventText(t, 'tool:no_candidate')).toBe('Classified as a tool-call conversation; no eligible member');
+    });
 });
 // 词表与真实数据的一致性: 生产日志里出现过的 reason 必须都有文案, 否则界面会退回内部代号。
 // 这一条不是凑数 —— 第一次查生产数据时就发现 user_admitted 与 success 两个值没被收录,

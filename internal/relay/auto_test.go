@@ -55,3 +55,45 @@ func TestAutoRoutingFiltersContextBeforeDispatch(t *testing.T) {
 		t.Fatalf("shadow affected dispatch: status=%d calls=%d", response.Code, calls.Load())
 	}
 }
+
+func TestAutoRoutingChoosesResponsesCodingAndNativeToolMembers(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"ok","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+	}))
+	defer upstream.Close()
+
+	t.Run("coding accepts Responses-only member", func(t *testing.T) {
+		config := model.DefaultGroupRelayConfigForMode(model.GroupModeScore)
+		env := newRelayGroup(t, upstream.URL, model.ProtocolOpenAIResponse, model.MediaKindText, 1, config)
+		group := setScoreTestGroup(t, env, config)
+		if err := op.CapabilitySaveManual(model.ModelCapability{Name: group.Items[0].ModelName, Context: 10000}, context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		config.AutoRouting = "active"
+		config.AutoCoding = fmt.Sprintf("%d", group.Items[0].ChannelGrantID)
+		setScoreTestGroup(t, env, config)
+		response := forwardRequest(llm.APIFormatOpenAIResponse, env.userID,
+			fmt.Sprintf(`{"model":%q,"input":"Fix this compile error","max_output_tokens":100}`, env.group))
+		if response.Code != http.StatusOK {
+			t.Fatalf("Responses coding candidate rejected: status=%d body=%s", response.Code, response.Body.String())
+		}
+	})
+
+	t.Run("tool rejects Responses-only member", func(t *testing.T) {
+		config := model.DefaultGroupRelayConfigForMode(model.GroupModeScore)
+		env := newRelayGroup(t, upstream.URL, model.ProtocolOpenAIResponse, model.MediaKindText, 1, config)
+		group := setScoreTestGroup(t, env, config)
+		if err := op.CapabilitySaveManual(model.ModelCapability{Name: group.Items[0].ModelName, Context: 10000}, context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		config.AutoRouting = "active"
+		config.AutoTool = fmt.Sprintf("%d", group.Items[0].ChannelGrantID)
+		setScoreTestGroup(t, env, config)
+		response := forwardRequest(llm.APIFormatOpenAIChatCompletion, env.userID,
+			fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"search"}],"tools":[{"type":"function","function":{"name":"search"}}],"max_tokens":100}`, env.group))
+		if response.Code != http.StatusServiceUnavailable {
+			t.Fatalf("Responses-only tool candidate should be rejected before dispatch: status=%d body=%s", response.Code, response.Body.String())
+		}
+	})
+}

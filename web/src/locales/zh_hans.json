@@ -795,10 +795,14 @@
             "autoOff": "关闭",
             "autoShadow": "影子模式",
             "autoActive": "启用",
-            "autoHint": "填写本组的授权 ID，以逗号分隔。每类任务只填已验证的授权。",
+            "autoHint": "按任务勾选已验证的成员。正式路由时，没有勾选成员的任务会被拒绝。工具调用候选需由你自行完成多轮工具调用验证。",
+            "autoRefreshHint": "上下文窗口与最大输出来自最近一次 models.dev 同步，会定期自动刷新。",
             "autoGeneral": "通用及默认候选",
             "autoSummary": "摘要",
+            "autoCoding": "编程",
+            "autoTool": "多轮工具调用",
             "autoExtract": "JSON Schema 提取",
+            "autoNoMembers": "请先向分组添加成员，再配置任务候选。",
             "scorePriceWeight": "评分·价格权重",
             "scoreLatencyWeight": "评分·延迟权重",
             "scoreSuccessWeight": "评分·成功率权重",
@@ -1217,7 +1221,19 @@
             "unavailable": "不可用(已停用或超出上限)",
             "rate_or_concurrency_limit": "被限流或并发上限挡住",
             "not_manual_target": "不是人工指定的成员",
-            "cooldown": "失败后冷却中"
+            "cooldown": "失败后冷却中",
+            "auto_general": "规则判断为通用问答",
+            "auto_summary": "规则判断为摘要任务",
+            "auto_coding": "规则判断为编程任务",
+            "auto_tool": "规则判断为工具调用对话",
+            "auto_extraction": "规则判断为结构化提取",
+            "auto_unsupported": "自动路由暂不支持该请求形态",
+            "auto_not_qualified": "未勾选为该类任务的候选",
+            "auto_member_unavailable": "成员不可用或不是文本模型",
+            "auto_protocol_incompatible": "成员协议与该任务不兼容",
+            "auto_channel_incompatible": "渠道方言或参数覆盖与该任务不兼容",
+            "auto_context_unknown": "上下文上限未知",
+            "auto_token_limit": "输入与输出预算超出该成员上限"
         },
         "eventPhase": {
             "received": "已接收",
@@ -1225,7 +1241,9 @@
             "waiting": "排队等待",
             "admission": "准入",
             "dispatch": "派发",
-            "error_class": "错误分类"
+            "error_class": "错误分类",
+            "finished": "结束",
+            "auto_shadow": "自动选路影子"
         },
         "eventReason": {
             "request_received": "记录请求",
@@ -1235,7 +1253,9 @@
             "upstream_admitted": "上游已准入",
             "egress": "出口",
             "user_admitted": "通过配额与限流准入",
-            "success": "本轮成功完成"
+            "success": "本轮成功完成",
+            "auto_shadow_prediction": "{task}，影子推荐成员 #{id}",
+            "auto_shadow_no_candidate": "{task}，没有合格成员"
         },
         "mode": {
             "manual": "人工指定",

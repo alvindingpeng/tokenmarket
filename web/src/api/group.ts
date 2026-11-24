@@ -15,6 +15,8 @@ export interface GroupRelayConfig {
     auto_routing?: 'shadow' | 'active';
     auto_general?: string;
     auto_summary?: string;
+    auto_coding?: string;
+    auto_tool?: string;
     auto_extract?: string;
  request_timeout_seconds: number;
  max_wait_seconds: number;
@@ -100,6 +102,8 @@ export interface GroupItem {
     available: boolean; // 为假表示该成员当前无法转发，但仍会列出以便移除。
     supply_price: LLMPrice; // 供货价（渠道商收入口径）。
     user_price: LLMPrice; // 上浮后的用户价；同名模型在不同发布渠道价格不同，逐成员展示。
+    context_length?: number; // 已同步的渠道模型上下文窗口（token），0 表示未知。
+    max_output?: number; // models.dev 参考的最大输出（token），0 表示未知。
 }
 
 // GroupRuntime 是分组的实时路由状态。

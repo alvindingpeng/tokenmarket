@@ -91,6 +91,8 @@ type GroupRelayConfig struct {
 	AutoRouting                           string `json:"auto_routing,omitempty" binding:"omitempty,oneof=shadow active"`
 	AutoGeneral                           string `json:"auto_general,omitempty" binding:"max=512"`
 	AutoSummary                           string `json:"auto_summary,omitempty" binding:"max=512"`
+	AutoCoding                            string `json:"auto_coding,omitempty" binding:"max=512"`
+	AutoTool                              string `json:"auto_tool,omitempty" binding:"max=512"`
 	AutoExtract                           string `json:"auto_extract,omitempty" binding:"max=512"`
 	MemberStreamIdleTimeoutSeconds        int    `json:"member_stream_idle_timeout_seconds" binding:"omitempty,min=1,max=3600"`
 	RequestTimeoutSeconds                 int    `json:"request_timeout_seconds" binding:"omitempty,min=1,max=3600"`                    // 整请求最大耗时, 包含重试与流式传输。
@@ -303,6 +305,8 @@ type GroupItem struct {
 	MediaSupply    MediaPrice `json:"media_supply" gorm:"-"`             // 媒体供货价, 仅模型 kind=image|video 时使用。
 	UserMedia      MediaPrice `json:"user_media" gorm:"-"`               // 媒体用户价(上浮后)。
 	Kind           MediaKind  `json:"kind,omitempty" gorm:"-"`           // 模型媒体形态, 文本留空。
+	ContextLength  int        `json:"context_length,omitempty" gorm:"-"` // 渠道模型上下文窗口, 来自已同步的模型清单。
+	MaxOutput      int        `json:"max_output,omitempty" gorm:"-"`     // 渠道模型最大输出, 来自已同步的模型清单。
 	PriceCurrency  string     `json:"price_currency,omitempty" gorm:"-"` // 渠道报价币种; 空或 USD 表示零折算。
 	FxMissing      bool       `json:"fx_missing,omitempty" gorm:"-"`     // 声明了非 USD 报价但牌价不可用: 价格未折算, 成员按不可用处理。
 }

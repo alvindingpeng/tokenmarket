@@ -25,6 +25,8 @@ export interface SelectedMember {
     channel_name: string;
     key_name: string;
     protocols: number;
+    context_length?: number;
+    max_output?: number;
     item_id?: number;
     user_price?: { input: number; output: number; cache_read: number; cache_write: number }; // 用户价, 逐成员展示不同渠道商的定价。
 }

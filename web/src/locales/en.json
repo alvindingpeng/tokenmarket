@@ -795,10 +795,14 @@
             "autoOff": "Off",
             "autoShadow": "Shadow",
             "autoActive": "Active",
-            "autoHint": "Enter comma-separated grant IDs from this group. Include only grants verified for each task.",
+            "autoHint": "Select only the members verified for each task. In active mode, a task with no selected member is rejected. Tool candidates require your own multi-turn tool-call verification.",
+            "autoRefreshHint": "Context windows and max output come from the last models.dev sync and refresh automatically.",
             "autoGeneral": "General and fallback",
             "autoSummary": "Summarization",
+            "autoCoding": "Programming",
+            "autoTool": "Tool calls",
             "autoExtract": "JSON Schema extraction",
+            "autoNoMembers": "Add group members before assigning task candidates.",
             "scorePriceWeight": "Score: Price Weight",
             "scoreLatencyWeight": "Score: Latency Weight",
             "scoreSuccessWeight": "Score: Success Weight",
@@ -1217,7 +1221,19 @@
             "unavailable": "Unavailable (disabled or over limit)",
             "rate_or_concurrency_limit": "Blocked by rate or concurrency limit",
             "not_manual_target": "Not the pinned member",
-            "cooldown": "Cooling down after failures"
+            "cooldown": "Cooling down after failures",
+            "auto_general": "Classified as general chat",
+            "auto_summary": "Classified as a summary request",
+            "auto_coding": "Classified as a programming request",
+            "auto_tool": "Classified as a tool-call conversation",
+            "auto_extraction": "Classified as structured extraction",
+            "auto_unsupported": "Request shape unsupported by automatic routing",
+            "auto_not_qualified": "Not selected for this task",
+            "auto_member_unavailable": "Member unavailable or not a text model",
+            "auto_protocol_incompatible": "Protocol incompatible with this task",
+            "auto_channel_incompatible": "Channel dialect or parameter override is incompatible",
+            "auto_context_unknown": "Context limit is unknown",
+            "auto_token_limit": "Input and output budget exceeds this member's limit"
         },
         "eventPhase": {
             "received": "Received",
@@ -1225,7 +1241,9 @@
             "waiting": "Waiting",
             "admission": "Admission",
             "dispatch": "Dispatch",
-            "error_class": "Error class"
+            "error_class": "Error class",
+            "finished": "Finished",
+            "auto_shadow": "Automatic routing shadow"
         },
         "eventReason": {
             "request_received": "Request recorded",
@@ -1235,7 +1253,9 @@
             "upstream_admitted": "Admitted by upstream",
             "egress": "Egress",
             "user_admitted": "Admitted by quota and rate limit",
-            "success": "Round completed successfully"
+            "success": "Round completed successfully",
+            "auto_shadow_prediction": "{task}; predicted member #{id}",
+            "auto_shadow_no_candidate": "{task}; no eligible member"
         },
         "mode": {
             "manual": "Manual",

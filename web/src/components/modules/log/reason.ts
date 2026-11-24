@@ -12,10 +12,14 @@ const ROUTE_REASON_KEYS = [
     'canary_rollout', 'recovery_probe', 'cold_start_explore', 'affinity',
     'eligible', 'selected', 'unavailable', 'rate_or_concurrency_limit',
     'not_manual_target', 'cooldown',
+    'auto_general', 'auto_summary', 'auto_coding', 'auto_tool', 'auto_extraction',
+    'auto_unsupported', 'auto_not_qualified', 'auto_member_unavailable',
+    'auto_protocol_incompatible', 'auto_channel_incompatible',
+    'auto_context_unknown', 'auto_token_limit',
 ] as const;
 
 /** 路由事件的阶段名。 */
-const ROUTE_PHASE_KEYS = ['received', 'selection', 'waiting', 'admission', 'dispatch', 'error_class'] as const;
+const ROUTE_PHASE_KEYS = ['received', 'selection', 'waiting', 'admission', 'dispatch', 'error_class', 'auto_shadow', 'finished'] as const;
 
 /** 路由事件的原因里, 有固定文案的那部分。 */
 const ROUTE_EVENT_KEYS = [
@@ -32,7 +36,9 @@ const eventSet: ReadonlySet<string> = new Set(ROUTE_EVENT_KEYS);
  *
  * 未收录的取值原样返回: 宁可露出内部代号, 也不要给出一个错位的翻译。
  */
-export function routeReasonText(t: (key: string) => string, reason: string | undefined): string {
+type Translate = (key: string, values?: Record<string, string | number>) => string;
+
+export function routeReasonText(t: Translate, reason: string | undefined): string {
     if (!reason) return '-';
     if (reasonSet.has(reason)) return t('routeReason.' + reason);
     if (reason.startsWith('egress:')) return t('eventReason.egress') + ' ' + reason.slice('egress:'.length);
@@ -40,25 +46,31 @@ export function routeReasonText(t: (key: string) => string, reason: string | und
 }
 
 /** routePhaseText 翻路由事件的阶段名; 未收录的原样返回。 */
-export function routePhaseText(t: (key: string) => string, phase: string | undefined): string {
+export function routePhaseText(t: Translate, phase: string | undefined): string {
     if (!phase) return '-';
     if (phaseSet.has(phase)) return t('eventPhase.' + phase);
     return phase;
 }
 
 /** routeEventText 翻路由事件的原因; 错误分类规则名等动态值原样返回。 */
-export function routeEventText(t: (key: string) => string, reason: string | undefined): string {
+export function routeEventText(t: Translate, reason: string | undefined): string {
     if (!reason) return '-';
     // 决策 reason 也可能出现在事件里(strategy_*), 与决策共用同一张表。
     if (reasonSet.has(reason)) return t('routeReason.' + reason);
     if (eventSet.has(reason)) return t('eventReason.' + reason);
+    const autoShadow = /^(general|summary|coding|tool|extraction):(item=|no_candidate)/.exec(reason);
+    if (autoShadow) {
+        const task = t('routeReason.auto_' + autoShadow[1]);
+        if (reason.endsWith(':no_candidate')) return t('eventReason.auto_shadow_no_candidate', { task });
+        return t('eventReason.auto_shadow_prediction', { task, id: reason.slice(reason.lastIndexOf('=') + 1) });
+    }
     return reason;
 }
 /** 分组选路模式中, 有固定文案的那部分。 */
 const ROUTE_MODE_KEYS: ReadonlySet<string> = new Set(['manual', 'failover', 'price', 'latency', 'success', 'score', 'random']);
 
 /** routeModeText 翻分组选路模式; 未收录的原样返回。 */
-export function routeModeText(t: (key: string) => string, mode: string | undefined): string {
+export function routeModeText(t: Translate, mode: string | undefined): string {
     if (!mode) return '-';
     return ROUTE_MODE_KEYS.has(mode) ? t('mode.' + mode) : mode;
 }

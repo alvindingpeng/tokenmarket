@@ -508,6 +508,8 @@ func groupSnapshot(group model.Group, scope model.Scope) model.Group {
 		item.MediaSupply = mediaSupply
 		item.UserMedia = userMedia
 		item.Kind = channelModel.Kind
+		item.ContextLength = channelModel.ContextLength
+		item.MaxOutput = ModelReferenceGet(channelModel.Name).MaxOutput
 		// 展示名与可用性判定同候选口径(单点见 grant_view.go): 已发布渠道一律显示唯一编码(#1001)。
 		item.ChannelName = grantDisplayName(channel)
 		item.Available = grantAvailability(parts, fxOK)

@@ -304,6 +304,8 @@ type ChannelGrantCandidate struct {
 	MediaSupply   MediaPrice `json:"media_supply,omitempty"`   // 媒体供货价(已折算为 USD); 文本模型为零值。
 	UserMedia     MediaPrice `json:"user_media,omitempty"`     // 媒体用户价(折算后上浮)。
 	Kind          MediaKind  `json:"kind,omitempty"`           // 模型媒体形态, 文本留空。
+	ContextLength int        `json:"context_length,omitempty"` // 渠道模型上下文窗口(token), 来自已同步的模型清单。
+	MaxOutput     int        `json:"max_output,omitempty"`     // models.dev 参考的最大输出(token)。
 	PriceCurrency string     `json:"price_currency,omitempty"` // 渠道报价币种; 空或 USD 表示零折算。
 	FxMissing     bool       `json:"fx_missing,omitempty"`     // 声明了非 USD 报价但牌价不可用: 价格未折算, 候选按不可用处理。
 }

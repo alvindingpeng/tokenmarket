@@ -7,6 +7,7 @@ import { Protocol, useChannelGrantList } from '@/api/channel';
 import { Button } from '@/components/ui/button';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Accordion, AccordionContent, AccordionItem } from '@/components/ui/accordion';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -19,6 +20,7 @@ import type { SelectedMember } from './ItemList';
 import { MemberList } from './ItemList';
 import { autoAddMatches, memberKey, normalizeKey } from './utils';
 import { canaryDefaults, canaryOf, canarySubmitBlocked, canarySubmitConfig, formatCanaryUserIDs, parseCanaryUserIDs, preserveCanary, type CanaryConfig } from './canary';
+import { autoGrantIDsValue, parseAutoGrantIDs, toggleAutoGrantID, type AutoTaskConfigField } from './autoRouting';
 
 export type GroupEditorValues = {
     name: string;
@@ -361,6 +363,8 @@ export function GroupEditor({
         channel_name: grant.channel_name,
         key_name: grant.key_name,
         protocols: grant.protocols,
+        context_length: grant.context_length,
+        max_output: grant.max_output,
         user_price: grant.user_price,
     })), [grantCandidates]);
 
@@ -728,20 +732,56 @@ export function GroupEditor({
                                 {!!relayConfig.auto_routing && (
                                     <div className="space-y-3">
                                         <p className="text-sm text-muted-foreground">{t('form.autoHint')}</p>
-                                        <p className="break-words text-sm text-muted-foreground">
-                                            {selectedMembers.map((member) => `#${member.channel_grant_id} ${member.name}`).join(' · ')}
-                                        </p>
-                                        {([
-                                            ['auto_general', 'autoGeneral'],
-                                            ['auto_summary', 'autoSummary'],
-                                            ['auto_extract', 'autoExtract'],
-                                        ] as const).map(([key, label]) => (
-                                            <Field key={key}>
-                                                <FieldLabel htmlFor={key}>{t(`form.${label}`)}</FieldLabel>
-                                                <Input id={key} maxLength={512} value={relayConfig[key] ?? ''}
-                                                    onChange={(event) => setRelayConfig((prev) => ({ ...prev, [key]: event.target.value }))} />
-                                            </Field>
-                                        ))}
+                                        <p className="text-xs leading-relaxed text-muted-foreground">{t('form.autoRefreshHint')}</p>
+                                        <div className="space-y-3">
+                                            {([
+                                                ['auto_general', 'autoGeneral'],
+                                                ['auto_summary', 'autoSummary'],
+                                                ['auto_coding', 'autoCoding'],
+                                                ['auto_tool', 'autoTool'],
+                                                ['auto_extract', 'autoExtract'],
+                                            ] as const).map(([key, label]) => {
+                                                const selected = parseAutoGrantIDs(relayConfig[key]);
+                                                return (
+                                                    <Field key={key}>
+                                                        <FieldLabel>{t(`form.${label}`)}</FieldLabel>
+                                                        {selectedMembers.length === 0 ? (
+                                                            <p className="text-xs text-muted-foreground">{t('form.autoNoMembers')}</p>
+                                                        ) : (
+                                                            <div className="grid gap-1 rounded-xl border border-border/50 p-2">
+                                                                {selectedMembers.map((member) => {
+                                                                    const checked = selected.includes(member.channel_grant_id);
+                                                                    const inputID = `${key}-${member.channel_grant_id}`;
+                                                                    return (
+                                                                        <label key={member.channel_grant_id} htmlFor={inputID} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-muted/60">
+                                                                            <Checkbox
+                                                                                id={inputID}
+                                                                                checked={checked}
+                                                                                onCheckedChange={(value) => setRelayConfig((prev) => ({
+                                                                                    ...prev,
+                                                                                    [key]: autoGrantIDsValue(
+                                                                                        selectedMembers,
+                                                                                        toggleAutoGrantID(parseAutoGrantIDs(prev[key]), member.channel_grant_id, value === true),
+                                                                                    ),
+                                                                                } satisfies Partial<Record<AutoTaskConfigField, string>>))}
+                                                                            />
+                                                                            <span className="min-w-0 flex-1 truncate">
+                                                                                {member.channel_name} · {member.name} · {member.key_name}
+                                                                                {(member.context_length || member.max_output) && (
+                                                                                    <span className="ml-2 text-muted-foreground">
+                                                                                        · context {member.context_length || '?'} · max output {member.max_output || '?'}
+                                                                                    </span>
+                                                                                )}
+                                                                            </span>
+                                                                        </label>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                    </Field>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 )}
                                 <Field>

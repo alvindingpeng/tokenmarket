@@ -84,6 +84,8 @@ export const GroupCard = memo(function GroupCard({
             channel_name: item.channel_name,
             key_name: item.key_name,
             protocols: item.protocols,
+            context_length: item.context_length,
+            max_output: item.max_output,
             item_id: item.id,
             user_price: item.user_price,
         })),
@@ -137,6 +139,8 @@ export const GroupCard = memo(function GroupCard({
             (values.relay_config.auto_routing ?? '') !== (group.relay_config.auto_routing ?? '') ||
             (values.relay_config.auto_general ?? '') !== (group.relay_config.auto_general ?? '') ||
             (values.relay_config.auto_summary ?? '') !== (group.relay_config.auto_summary ?? '') ||
+            (values.relay_config.auto_coding ?? '') !== (group.relay_config.auto_coding ?? '') ||
+            (values.relay_config.auto_tool ?? '') !== (group.relay_config.auto_tool ?? '') ||
             (values.relay_config.auto_extract ?? '') !== (group.relay_config.auto_extract ?? '') ||
             values.relay_config.member_max_attempts !== group.relay_config.member_max_attempts ||
             values.relay_config.member_retry_interval_seconds !== group.relay_config.member_retry_interval_seconds ||

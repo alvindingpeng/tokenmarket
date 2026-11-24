@@ -88,6 +88,8 @@ func grantCandidateOf(grant model.ChannelGrant, parts grantParts, scope model.Sc
 		MediaSupply:   media,
 		UserMedia:     userMedia,
 		Kind:          parts.ChannelModel.Kind,
+		ContextLength: parts.ChannelModel.ContextLength,
+		MaxOutput:     ModelReferenceGet(parts.ChannelModel.Name).MaxOutput,
 		PriceCurrency: currency,
 		FxMissing:     !fxOK,
 	}

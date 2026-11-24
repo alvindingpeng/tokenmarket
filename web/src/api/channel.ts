@@ -83,6 +83,8 @@ export type ChannelGrantCandidate = {
     model_name: string;
     key_name: string; // 非自有渠道此值为空，不暴露上游凭据名。
     protocols: number; // Protocol 位掩码。
+    context_length?: number; // 已同步的渠道模型上下文窗口（token）。
+    max_output?: number; // models.dev 参考的最大输出（token）。
     available: boolean;
     listed: boolean; // 上架状态；非自有渠道只有上架模型才会出现在候选里。
     supply_price: LLMPrice; // 供货价（渠道商收入口径）。
