@@ -249,8 +249,16 @@ func TestAutoRoutingReadinessHoldsAndScalesActiveSafely(t *testing.T) {
 	base.activeRequests = 80
 	base.activeSuccess = 78
 	readiness = autoReadinessFor(model.AutoRoutingTaskTool, base)
-	if readiness.State != "hold_active" || !slices.Contains(readiness.Reasons, "active_model_underperforming") {
+	if readiness.State != "hold_active" || !slices.Contains(readiness.Reasons, "active_model_risk_blocks_scale") {
 		t.Fatalf("one underperforming model should stop a ramp: %+v", readiness)
+	}
+	if readiness.ModelTeams != 2 || readiness.ModelEligibleTeams != 1 ||
+		len(readiness.ModelRisks) != 2 ||
+		readiness.ModelRisks[0].Model != "model-a" ||
+		readiness.ModelRisks[0].State != "blocked" ||
+		!slices.Contains(readiness.ModelRisks[0].Reasons, "model_success_below_85_percent") ||
+		readiness.ModelRisks[1].State != "healthy" {
+		t.Fatalf("per-model risk cards should explain the blocked ramp: %+v", readiness.ModelRisks)
 	}
 
 	base.modelSuccess = nil
@@ -269,6 +277,46 @@ func TestAutoRoutingReadinessHoldsAndScalesActiveSafely(t *testing.T) {
 	readiness = autoReadinessFor(model.AutoRoutingTaskTool, base)
 	if readiness.State != "hold_active" || !slices.Contains(readiness.Reasons, "first_token_p90_above_30_seconds") {
 		t.Fatalf("slow first-token tail should stop scaling: %+v", readiness)
+	}
+}
+
+func TestAutoModelRiskScorecardsUseMinimumSamples(t *testing.T) {
+	collecting := autoModelRiskFor(model.AutoRoutingTaskCoding, "small-model", 9, 9, nil, 0, 0)
+	if collecting.State != "collect_samples" || collecting.EligibleForPromotion ||
+		!slices.Contains(collecting.Reasons, "model_sample_below_10") {
+		t.Fatalf("small model sample should only collect evidence: %+v", collecting)
+	}
+
+	healthy := autoModelRiskFor(model.AutoRoutingTaskCoding, "healthy-model", 10, 9, nil, 0, 0)
+	if healthy.State != "healthy" || !healthy.EligibleForPromotion {
+		t.Fatalf("90 percent success at ten samples should pass the risk threshold: %+v", healthy)
+	}
+
+	unstable := autoModelRiskFor(model.AutoRoutingTaskCoding, "unstable-model", 10, 8, nil, 0, 0)
+	if unstable.State != "blocked" ||
+		!slices.Contains(unstable.Reasons, "model_success_below_85_percent") {
+		t.Fatalf("80 percent success at ten samples should block expansion: %+v", unstable)
+	}
+
+	atLimit := autoModelRiskFor(model.AutoRoutingTaskCoding, "stream-limit", 20, 20, nil, 20, 1)
+	if atLimit.State != "healthy" || !atLimit.EligibleForPromotion {
+		t.Fatalf("five percent incomplete streams are inside the configured limit: %+v", atLimit)
+	}
+
+	streaming := autoModelRiskFor(model.AutoRoutingTaskCoding, "stream-unstable", 20, 20, nil, 20, 2)
+	if streaming.State != "blocked" ||
+		!slices.Contains(streaming.Reasons, "model_stream_incomplete_above_5_percent") {
+		t.Fatalf("ten percent incomplete streams should block expansion: %+v", streaming)
+	}
+
+	slow := make([]float64, autoReadinessMinimumFirstTokenSamples)
+	for i := range slow {
+		slow[i] = float64(autoReadinessMaxFirstTokenP90Ms + 100)
+	}
+	latency := autoModelRiskFor(model.AutoRoutingTaskCoding, "slow-model", 10, 10, slow, 0, 0)
+	if latency.State != "blocked" ||
+		!slices.Contains(latency.Reasons, "model_first_token_p90_above_30_seconds") {
+		t.Fatalf("slow first-token tail should block expansion: %+v", latency)
 	}
 }
 
@@ -424,6 +472,17 @@ func TestAutoRoutingAggregatePerformanceAndInputCostEvidence(t *testing.T) {
 	}
 	if codingReadiness == nil || codingReadiness.StreamStarted != 3 || codingReadiness.StreamIncomplete != 1 {
 		t.Fatalf("active stream risk was not included in readiness: %+v", codingReadiness)
+	}
+	if codingReadiness.ModelEligibleTeams != 0 ||
+		len(codingReadiness.ModelRisks) != 1 ||
+		codingReadiness.ModelRisks[0].Model != "model-a" ||
+		codingReadiness.ModelRisks[0].State != "collect_samples" ||
+		codingReadiness.ModelRisks[0].ActiveRequests != 3 ||
+		codingReadiness.ModelRisks[0].Success != 2 ||
+		codingReadiness.ModelRisks[0].FirstTokenSamples != 3 ||
+		codingReadiness.ModelRisks[0].StreamStarted != 3 ||
+		codingReadiness.ModelRisks[0].StreamIncomplete != 1 {
+		t.Fatalf("active model risk card did not preserve measured evidence: %+v", codingReadiness.ModelRisks)
 	}
 }
 

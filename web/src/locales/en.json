@@ -1376,6 +1376,11 @@
             "readinessActiveLower": "{level}% lower bound {value}",
             "readinessCost": "Cost ratio P90 {value} · {samples} samples",
             "readinessModels": "{count} models · lowest success {value}",
+            "modelRiskTitle": "Per-model risk evidence",
+            "modelRiskEligible": "{eligible}/{total} passed",
+            "modelRiskSamples": "{count} active samples",
+            "modelRiskFirstToken": "First token P90 {value} · {samples} samples",
+            "modelRiskStream": "Incomplete after first token {value} · {count}",
             "readinessFirstToken": "First token P90 {value} · {samples} samples",
             "readinessStream": "Incomplete after first token {value} · {count}",
             "readinessRamp": "Suggested active traffic: {value}%",
@@ -1404,7 +1409,7 @@
                 "tool_requires_explicit_verified_candidate": "Tool tasks require a verified candidate",
                 "shadow_evidence_passed_start_at_5_percent": "Shadow evidence passed; start at 5%",
                 "active_success_rate_below_95_percent": "Active success rate below 95%",
-                "active_model_underperforming": "At least one active model is below 85% success",
+                "active_model_risk_blocks_scale": "At least one active model has insufficient evidence or a quality risk",
                 "need_more_active_samples": "Fewer than 20 active samples",
                 "active_confidence_below_90_percent": "Active success confidence lower bound is below 90%",
                 "prediction_confidence_below_65_percent": "Prediction agreement confidence lower bound is below 65%",
@@ -1418,6 +1423,17 @@
                 "need_cost_comparison_samples": "Expansion requires paid cost and prediction samples",
                 "hold_until_cost_returns_within_25_percent": "Hold expansion until active cost is within 25% of prediction",
                 "task_candidate_selection_not_enabled": "Task candidate selection is not enabled for this group"
+            },
+            "modelRiskState": {
+                "collect_samples": "Collect more",
+                "healthy": "Healthy",
+                "blocked": "Blocked"
+            },
+            "modelRiskReason": {
+                "model_sample_below_10": "Fewer than 10 active samples",
+                "model_success_below_85_percent": "Success rate below 85%",
+                "model_stream_incomplete_above_5_percent": "Streams incomplete after first token exceed 5%",
+                "model_first_token_p90_above_30_seconds": "First-token P90 exceeds 30 seconds"
             },
             "task": {
                 "general": "General",

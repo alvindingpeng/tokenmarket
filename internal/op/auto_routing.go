@@ -63,6 +63,25 @@ type AutoRoutingCostBandSummary struct {
 	P90CostUSD      float64 `json:"p90_cost_usd"`
 }
 
+// AutoRoutingModelRisk 是主动路由真实落地模型的样本级风险卡。
+// 样本不足时只展示观测值，不参与扩容阻断。
+type AutoRoutingModelRisk struct {
+	Task                 string   `json:"task"`
+	Model                string   `json:"model"`
+	State                string   `json:"state"`
+	ActiveRequests       int64    `json:"active_requests"`
+	Success              int64    `json:"success"`
+	SuccessRate          float64  `json:"success_rate"`
+	SuccessLow           float64  `json:"success_lower"`
+	FirstTokenSamples    int64    `json:"first_token_samples"`
+	FirstTokenP90Ms      float64  `json:"first_token_p90_ms"`
+	StreamStarted        int64    `json:"stream_started"`
+	StreamIncomplete     int64    `json:"stream_incomplete"`
+	StreamIncompleteRate float64  `json:"stream_incomplete_rate"`
+	EligibleForPromotion bool     `json:"eligible_for_promotion"`
+	Reasons              []string `json:"reasons"`
+}
+
 // AutoRoutingReasonSummary 是排除原因、运行事件或自动路由决策的计数。
 type AutoRoutingReasonSummary struct {
 	Reason string `json:"reason"`
@@ -85,41 +104,43 @@ type AutoRoutingPredictionSummary struct {
 // 分组配置，不会自动改写 active 模式或流量比例。真实样本不足、候选未验证或预测
 // 一致率低时都会返回保守建议。
 type AutoRoutingReadiness struct {
-	Task                   string   `json:"task"`
-	State                  string   `json:"state"`
-	RecommendedRampPercent int      `json:"recommended_ramp_percent"`
-	ConfidenceLevelPercent int      `json:"confidence_level_percent"`
-	Classified             int64    `json:"classified"`
-	EvidenceUsers          int      `json:"evidence_users"`
-	EvidenceBuckets        int      `json:"evidence_buckets"`
-	RequiredBuckets        int      `json:"required_buckets"`
-	AdminMultiUserEvidence bool     `json:"admin_multi_user_evidence"`
-	ShadowRequests         int64    `json:"shadow_requests"`
-	ShadowCompared         int64    `json:"shadow_compared"`
-	ShadowCoverage         float64  `json:"shadow_coverage"`
-	PredictionAgreement    float64  `json:"prediction_agreement"`
-	PredictionAgreementLow float64  `json:"prediction_agreement_lower"`
-	ActiveRequests         int64    `json:"active_requests"`
-	ActiveSuccessRate      float64  `json:"active_success_rate"`
-	ActiveSuccessLow       float64  `json:"active_success_lower"`
-	PredictedCostUSD       float64  `json:"predicted_cost_usd"`
-	ActualCostUSD          float64  `json:"actual_cost_usd"`
-	CostDeltaPercent       float64  `json:"cost_delta_percent"`
-	CostRatioP90Percent    float64  `json:"cost_ratio_p90_percent"`
-	CostSamples            int      `json:"cost_samples"`
-	ConfiguredCandidates   int      `json:"configured_candidates"`
-	VerifiedCandidates     int      `json:"verified_candidates"`
-	ModelTeams             int      `json:"model_teams"`
-	ModelSamples           int      `json:"model_samples"`
-	ModelSuccessRate       float64  `json:"model_success_rate"`
-	ModelTeamsLow          float64  `json:"model_teams_lower"`
-	ModelMinSuccessRate    float64  `json:"model_min_success_rate"`
-	FirstTokenSamples      int64    `json:"first_token_samples"`
-	FirstTokenP90Ms        float64  `json:"first_token_p90_ms"`
-	StreamStarted          int64    `json:"stream_started"`
-	StreamIncomplete       int64    `json:"stream_incomplete"`
-	StreamIncompleteRate   float64  `json:"stream_incomplete_rate"`
-	Reasons                []string `json:"reasons"`
+	Task                   string                 `json:"task"`
+	State                  string                 `json:"state"`
+	RecommendedRampPercent int                    `json:"recommended_ramp_percent"`
+	ConfidenceLevelPercent int                    `json:"confidence_level_percent"`
+	Classified             int64                  `json:"classified"`
+	EvidenceUsers          int                    `json:"evidence_users"`
+	EvidenceBuckets        int                    `json:"evidence_buckets"`
+	RequiredBuckets        int                    `json:"required_buckets"`
+	AdminMultiUserEvidence bool                   `json:"admin_multi_user_evidence"`
+	ShadowRequests         int64                  `json:"shadow_requests"`
+	ShadowCompared         int64                  `json:"shadow_compared"`
+	ShadowCoverage         float64                `json:"shadow_coverage"`
+	PredictionAgreement    float64                `json:"prediction_agreement"`
+	PredictionAgreementLow float64                `json:"prediction_agreement_lower"`
+	ActiveRequests         int64                  `json:"active_requests"`
+	ActiveSuccessRate      float64                `json:"active_success_rate"`
+	ActiveSuccessLow       float64                `json:"active_success_lower"`
+	PredictedCostUSD       float64                `json:"predicted_cost_usd"`
+	ActualCostUSD          float64                `json:"actual_cost_usd"`
+	CostDeltaPercent       float64                `json:"cost_delta_percent"`
+	CostRatioP90Percent    float64                `json:"cost_ratio_p90_percent"`
+	CostSamples            int                    `json:"cost_samples"`
+	ConfiguredCandidates   int                    `json:"configured_candidates"`
+	VerifiedCandidates     int                    `json:"verified_candidates"`
+	ModelTeams             int                    `json:"model_teams"`
+	ModelSamples           int                    `json:"model_samples"`
+	ModelEligibleTeams     int                    `json:"model_eligible_teams"`
+	ModelSuccessRate       float64                `json:"model_success_rate"`
+	ModelTeamsLow          float64                `json:"model_teams_lower"`
+	ModelMinSuccessRate    float64                `json:"model_min_success_rate"`
+	ModelRisks             []AutoRoutingModelRisk `json:"model_risks"`
+	FirstTokenSamples      int64                  `json:"first_token_samples"`
+	FirstTokenP90Ms        float64                `json:"first_token_p90_ms"`
+	StreamStarted          int64                  `json:"stream_started"`
+	StreamIncomplete       int64                  `json:"stream_incomplete"`
+	StreamIncompleteRate   float64                `json:"stream_incomplete_rate"`
+	Reasons                []string               `json:"reasons"`
 }
 
 // AutoRoutingSummary 是近期调用日志的自动路由实验聚合。数据来自现有请求和尝试日志，
@@ -254,12 +275,15 @@ type autoReadinessEvidence struct {
 	modelSuccess, modelSuccessful                             map[string]int64
 	firstTokenDurations                                       []float64
 	streamStarted, streamIncomplete                           int64
+	modelFirstToken                                           map[string][]float64
+	modelStreamStarted, modelStreamIncomplete                 map[string]int64
 	configuredCandidates, verifiedCandidates                  int
 	labelingEnabled                                           bool
 	requireMultiUserEvidence                                  bool
 }
 
 const autoReadinessMinimumBuckets = 4
+const autoReadinessMinimumModelSamples = 10
 const autoReadinessMinimumFirstTokenSamples = 10
 const autoReadinessMinimumStreamSamples = 10
 const autoReadinessMaxFirstTokenP90Ms = 30000
@@ -345,6 +369,49 @@ func autoInputCostBand(promptTokens int64) string {
 	}
 }
 
+func autoModelRiskFor(
+	task, model string,
+	attempts, success int64,
+	firstTokenDurations []float64,
+	streamStarted, streamIncomplete int64,
+) AutoRoutingModelRisk {
+	risk := AutoRoutingModelRisk{
+		Task: task, Model: model, ActiveRequests: attempts, Success: success,
+		FirstTokenSamples: int64(len(firstTokenDurations)),
+		StreamStarted:     streamStarted, StreamIncomplete: streamIncomplete,
+		Reasons: make([]string, 0),
+	}
+	if attempts > 0 {
+		risk.SuccessRate = float64(success) / float64(attempts)
+		risk.SuccessLow = autoWilsonLower(success, attempts)
+	}
+	if len(firstTokenDurations) > 0 {
+		risk.FirstTokenP90Ms = autoPercentile(firstTokenDurations, 0.9)
+	}
+	if streamStarted > 0 {
+		risk.StreamIncompleteRate = float64(streamIncomplete) / float64(streamStarted)
+	}
+	if attempts < autoReadinessMinimumModelSamples {
+		risk.State = "collect_samples"
+		risk.Reasons = append(risk.Reasons, "model_sample_below_10")
+	} else if risk.SuccessRate < 0.85 {
+		risk.State = "blocked"
+		risk.Reasons = append(risk.Reasons, "model_success_below_85_percent")
+	} else if streamStarted >= autoReadinessMinimumStreamSamples &&
+		risk.StreamIncompleteRate > autoReadinessMaxStreamIncompleteRate {
+		risk.State = "blocked"
+		risk.Reasons = append(risk.Reasons, "model_stream_incomplete_above_5_percent")
+	} else if len(firstTokenDurations) >= autoReadinessMinimumFirstTokenSamples &&
+		risk.FirstTokenP90Ms > autoReadinessMaxFirstTokenP90Ms {
+		risk.State = "blocked"
+		risk.Reasons = append(risk.Reasons, "model_first_token_p90_above_30_seconds")
+	} else {
+		risk.State = "healthy"
+		risk.EligibleForPromotion = true
+	}
+	return risk
+}
+
 func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingReadiness {
 	readiness := AutoRoutingReadiness{
 		Task: task, ConfidenceLevelPercent: 95,
@@ -362,6 +429,7 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 		FirstTokenSamples: int64(len(evidence.firstTokenDurations)),
 		StreamStarted:     evidence.streamStarted,
 		StreamIncomplete:  evidence.streamIncomplete,
+		ModelRisks:        make([]AutoRoutingModelRisk, 0),
 		Reasons:           make([]string, 0),
 	}
 	if evidence.shadowRequests > 0 {
@@ -385,6 +453,7 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 	if evidence.streamStarted > 0 {
 		readiness.StreamIncompleteRate = float64(evidence.streamIncomplete) / float64(evidence.streamStarted)
 	}
+	var minModelSuccessRate float64
 	for name, attempts := range evidence.modelSuccess {
 		if attempts == 0 {
 			continue
@@ -392,10 +461,22 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 		readiness.ModelTeams++
 		readiness.ModelSamples += int(attempts)
 		teamRate := float64(evidence.modelSuccessful[name]) / float64(attempts)
-		if readiness.ModelMinSuccessRate == 0 || teamRate < readiness.ModelMinSuccessRate {
-			readiness.ModelMinSuccessRate = teamRate
+		if minModelSuccessRate == 0 || teamRate < minModelSuccessRate {
+			minModelSuccessRate = teamRate
+		}
+		risk := autoModelRiskFor(task, name, attempts, evidence.modelSuccessful[name],
+			evidence.modelFirstToken[name], evidence.modelStreamStarted[name], evidence.modelStreamIncomplete[name])
+		readiness.ModelRisks = append(readiness.ModelRisks, risk)
+		if risk.EligibleForPromotion {
+			readiness.ModelEligibleTeams++
 		}
 	}
+	if minModelSuccessRate > 0 {
+		readiness.ModelMinSuccessRate = minModelSuccessRate
+	}
+	sort.Slice(readiness.ModelRisks, func(i, j int) bool {
+		return readiness.ModelRisks[i].Model < readiness.ModelRisks[j].Model
+	})
 	if readiness.ModelSamples > 0 {
 		var modelSuccess int64
 		for _, success := range evidence.modelSuccessful {
@@ -457,10 +538,10 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 	case readiness.ActiveSuccessRate < 0.95:
 		readiness.State = "pause_active"
 		readiness.Reasons = append(readiness.Reasons, "active_success_rate_below_95_percent")
-	case readiness.ModelTeams > 0 && readiness.ModelMinSuccessRate < 0.85:
+	case readiness.ModelTeams > 0 && readiness.ModelEligibleTeams < readiness.ModelTeams:
 		readiness.State = "hold_active"
 		readiness.RecommendedRampPercent = 5
-		readiness.Reasons = append(readiness.Reasons, "active_model_underperforming")
+		readiness.Reasons = append(readiness.Reasons, "active_model_risk_blocks_scale")
 	case readiness.StreamStarted >= autoReadinessMinimumStreamSamples &&
 		readiness.StreamIncompleteRate > autoReadinessMaxStreamIncompleteRate:
 		readiness.State = "hold_active"
@@ -866,9 +947,19 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 					if readiness.modelSuccess == nil {
 						readiness.modelSuccess = make(map[string]int64)
 						readiness.modelSuccessful = make(map[string]int64)
+						readiness.modelFirstToken = make(map[string][]float64)
+						readiness.modelStreamStarted = make(map[string]int64)
+						readiness.modelStreamIncomplete = make(map[string]int64)
 					}
 					readiness.modelSuccess[name]++
 					readiness.activeRequests++
+					if attempt.FirstTokenMs > 0 {
+						readiness.modelFirstToken[name] = append(readiness.modelFirstToken[name], float64(attempt.FirstTokenMs))
+						readiness.modelStreamStarted[name]++
+						if request.Status == "failed" || request.Status == "canceled" {
+							readiness.modelStreamIncomplete[name]++
+						}
+					}
 					if request.Status == "success" {
 						readiness.activeSuccess++
 						readiness.modelSuccessful[name]++

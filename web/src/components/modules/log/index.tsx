@@ -62,10 +62,27 @@ interface AutoRoutingSummary {
         verified_candidates: number;
         model_teams: number;
         model_samples: number;
+        model_eligible_teams: number;
         model_success_rate: number;
         model_teams_lower: number;
         admin_multi_user_evidence: boolean;
         model_min_success_rate: number;
+        model_risks: {
+            task: string;
+            model: string;
+            state: 'collect_samples' | 'healthy' | 'blocked';
+            active_requests: number;
+            success: number;
+            success_rate: number;
+            success_lower: number;
+            first_token_samples: number;
+            first_token_p90_ms: number;
+            stream_started: number;
+            stream_incomplete: number;
+            stream_incomplete_rate: number;
+            eligible_for_promotion: boolean;
+            reasons: string[];
+        }[];
         first_token_samples: number;
         first_token_p90_ms: number;
         stream_started: number;
@@ -189,6 +206,41 @@ function AutoRoutingPanel() {
                                 )}
                                 {item.reasons.length > 0 && (
                                     <p className="mt-1 leading-relaxed text-muted-foreground">{item.reasons.map((reason) => tr('readinessReason.' + reason)).join(' · ')}</p>
+                                )}
+                                {item.model_risks.length > 0 && (
+                                    <div className="mt-3 border-t border-border/50 pt-3">
+                                        <div className="mb-2 flex items-center justify-between gap-2">
+                                            <span className="font-medium">{tr('modelRiskTitle')}</span>
+                                            <span className="text-muted-foreground">{tr('modelRiskEligible', { eligible: item.model_eligible_teams, total: item.model_teams })}</span>
+                                        </div>
+                                        <div className="space-y-2">
+                                            {item.model_risks.map((risk) => (
+                                                <div key={`${risk.task}-${risk.model}`} className="rounded-lg border border-border/40 bg-background/60 p-2">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className="truncate font-mono text-[11px] text-foreground">{risk.model}</span>
+                                                        <span className={
+                                                            risk.state === 'healthy'
+                                                                ? 'shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-700 dark:text-emerald-300'
+                                                                : risk.state === 'blocked'
+                                                                    ? 'shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] text-destructive'
+                                                                    : 'shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground'
+                                                        }>
+                                                            {tr(`modelRiskState.${risk.state}`)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                                                        <span>{tr('modelRiskSamples', { count: risk.active_requests })}</span>
+                                                        <span>{tr('rate', { value: `${(risk.success_rate * 100).toFixed(1)}%` })}</span>
+                                                        {risk.first_token_samples > 0 && <span>{tr('modelRiskFirstToken', { value: `${risk.first_token_p90_ms.toFixed(0)} ms`, samples: risk.first_token_samples })}</span>}
+                                                        {risk.stream_started > 0 && <span className={risk.state === 'blocked' ? 'text-destructive' : undefined}>{tr('modelRiskStream', { value: `${(risk.stream_incomplete_rate * 100).toFixed(1)}%`, count: risk.stream_incomplete })}</span>}
+                                                    </div>
+                                                    {risk.reasons.length > 0 && (
+                                                        <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{risk.reasons.map((reason) => tr('modelRiskReason.' + reason)).join(' · ')}</p>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
                                 )}
                             </div>
                         ))}

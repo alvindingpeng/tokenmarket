@@ -1376,6 +1376,11 @@
             "readinessActiveLower": "{level}% 置信下界 {value}",
             "readinessCost": "成本比例 P90 {value} · {samples} 個樣本",
             "readinessModels": "{count} 個模型 · 最低成功率 {value}",
+            "modelRiskTitle": "模型級風險證據",
+            "modelRiskEligible": "{eligible}/{total} 通過",
+            "modelRiskSamples": "{count} 個主動樣本",
+            "modelRiskFirstToken": "首 token P90 {value} · {samples} 個樣本",
+            "modelRiskStream": "首字後未完成 {value} · {count} 個",
             "readinessFirstToken": "首 token P90 {value} · {samples} 個樣本",
             "readinessStream": "首字後未完成 {value} · {count} 個",
             "readinessRamp": "建議主動流量：{value}%",
@@ -1404,7 +1409,7 @@
                 "tool_requires_explicit_verified_candidate": "工具任務必須先驗證候選",
                 "shadow_evidence_passed_start_at_5_percent": "影子證據通過，建議從 5% 開始",
                 "active_success_rate_below_95_percent": "主動成功率低於 95%",
-                "active_model_underperforming": "至少一個主動模型的成功率低於 85%",
+                "active_model_risk_blocks_scale": "至少一個主動模型樣本不足或存在品質風險",
                 "need_more_active_samples": "主動樣本不足 20 個",
                 "active_confidence_below_90_percent": "主動成功率的 95% 置信下界低於 90%",
                 "prediction_confidence_below_65_percent": "預測一致率的 95% 置信下界低於 65%",
@@ -1418,6 +1423,17 @@
                 "need_cost_comparison_samples": "擴大流量需要實際費用與預測費用的可比樣本",
                 "hold_until_cost_returns_within_25_percent": "主動成本偏差超過 25%，暫緩擴大流量",
                 "task_candidate_selection_not_enabled": "該分組尚未啟用此任務的候選選擇"
+            },
+            "modelRiskState": {
+                "collect_samples": "繼續採集",
+                "healthy": "健康",
+                "blocked": "已阻斷"
+            },
+            "modelRiskReason": {
+                "model_sample_below_10": "主動樣本不足 10 個",
+                "model_success_below_85_percent": "成功率低於 85%",
+                "model_stream_incomplete_above_5_percent": "首字後未完成率超過 5%",
+                "model_first_token_p90_above_30_seconds": "首 token P90 超過 30 秒"
             },
             "task": {
                 "general": "通用",
