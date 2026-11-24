@@ -50,6 +50,28 @@ type AutoRoutingPredictionSummary struct {
 	CostDeltaUSD     float64 `json:"cost_delta_usd"`
 }
 
+// AutoRoutingReadiness 是任务级灰度晋级建议所需的证据汇总。它只读取调用日志和
+// 分组配置，不会自动改写 active 模式或流量比例。真实样本不足、候选未验证或预测
+// 一致率低时都会返回保守建议。
+type AutoRoutingReadiness struct {
+	Task                   string   `json:"task"`
+	State                  string   `json:"state"`
+	RecommendedRampPercent int      `json:"recommended_ramp_percent"`
+	Classified             int64    `json:"classified"`
+	ShadowRequests         int64    `json:"shadow_requests"`
+	ShadowCompared         int64    `json:"shadow_compared"`
+	ShadowCoverage         float64  `json:"shadow_coverage"`
+	PredictionAgreement    float64  `json:"prediction_agreement"`
+	ActiveRequests         int64    `json:"active_requests"`
+	ActiveSuccessRate      float64  `json:"active_success_rate"`
+	PredictedCostUSD       float64  `json:"predicted_cost_usd"`
+	ActualCostUSD          float64  `json:"actual_cost_usd"`
+	CostDeltaPercent       float64  `json:"cost_delta_percent"`
+	ConfiguredCandidates   int      `json:"configured_candidates"`
+	VerifiedCandidates     int      `json:"verified_candidates"`
+	Reasons                []string `json:"reasons"`
+}
+
 // AutoRoutingSummary 是近期调用日志的自动路由实验聚合。数据来自现有请求和尝试日志，
 // 不新增高频写入的独立报表表，也不需要迁移数据库。
 type AutoRoutingSummary struct {
@@ -67,6 +89,8 @@ type AutoRoutingSummary struct {
 	Exclusions     []AutoRoutingReasonSummary     `json:"exclusions"`
 	Events         []AutoRoutingReasonSummary     `json:"events"`
 	Predictions    []AutoRoutingPredictionSummary `json:"predictions"`
+	Readiness      []AutoRoutingReadiness         `json:"readiness"`
+	SampleLimit    int                            `json:"sample_limit"`
 }
 
 type autoRequestSample struct {
@@ -128,6 +152,195 @@ func autoTaskFromEvents(raw string) string {
 	return ""
 }
 
+func autoGrantSet(raw string) map[int]bool {
+	grants := make(map[int]bool)
+	for _, part := range strings.Split(raw, ",") {
+		id := 0
+		for _, ch := range strings.TrimSpace(part) {
+			if ch < '0' || ch > '9' {
+				id = 0
+				break
+			}
+			id = id*10 + int(ch-'0')
+		}
+		if id > 0 {
+			grants[id] = true
+		}
+	}
+	return grants
+}
+
+func autoTaskGrantConfig(config model.GroupRelayConfig, task string) string {
+	switch task {
+	case model.AutoRoutingTaskSummary:
+		if config.AutoSummary != "" {
+			return config.AutoSummary
+		}
+		return config.AutoGeneral
+	case model.AutoRoutingTaskCoding:
+		return config.AutoCoding
+	case model.AutoRoutingTaskTool:
+		return config.AutoTool
+	case model.AutoRoutingTaskExtraction:
+		return config.AutoExtract
+	default:
+		return config.AutoGeneral
+	}
+}
+
+type autoReadinessEvidence struct {
+	classified, shadowRequests, activeRequests, activeSuccess int64
+	compared, same, predictedCost, actualCost                 float64
+	configuredCandidates, verifiedCandidates                  int
+	labelingEnabled                                           bool
+}
+
+func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingReadiness {
+	readiness := AutoRoutingReadiness{
+		Task: task, Classified: evidence.classified, ShadowRequests: evidence.shadowRequests,
+		ShadowCompared: int64(evidence.compared), ActiveRequests: evidence.activeRequests,
+		PredictedCostUSD: evidence.predictedCost, ActualCostUSD: evidence.actualCost,
+		ConfiguredCandidates: evidence.configuredCandidates, VerifiedCandidates: evidence.verifiedCandidates,
+		Reasons: make([]string, 0),
+	}
+	if evidence.shadowRequests > 0 {
+		readiness.ShadowCoverage = evidence.compared / float64(evidence.shadowRequests)
+	}
+	if evidence.compared > 0 {
+		readiness.PredictionAgreement = evidence.same / evidence.compared
+	}
+	if evidence.activeRequests > 0 {
+		readiness.ActiveSuccessRate = float64(evidence.activeSuccess) / float64(evidence.activeRequests)
+	}
+	if evidence.predictedCost > 0 {
+		readiness.CostDeltaPercent = (evidence.actualCost/evidence.predictedCost - 1) * 100
+	}
+	if readiness.CostDeltaPercent > 25 {
+		readiness.Reasons = append(readiness.Reasons, "actual_cost_above_prediction")
+	}
+
+	switch {
+	case !evidence.labelingEnabled:
+		readiness.State = "labeling_disabled"
+		readiness.Reasons = append(readiness.Reasons, "task_candidate_selection_not_enabled")
+	case evidence.classified < 20 || evidence.shadowRequests < 20:
+		readiness.State = "collect_shadow"
+		readiness.Reasons = append(readiness.Reasons, "need_more_classified_samples")
+	case readiness.ShadowCoverage < 0.8:
+		readiness.State = "improve_shadow_coverage"
+		readiness.Reasons = append(readiness.Reasons, "shadow_coverage_below_80_percent")
+	case readiness.PredictionAgreement < 0.65:
+		readiness.State = "investigate_prediction"
+		readiness.Reasons = append(readiness.Reasons, "prediction_agreement_below_65_percent")
+	case evidence.configuredCandidates > 0 && evidence.verifiedCandidates == 0:
+		readiness.State = "prepare_candidates"
+		readiness.Reasons = append(readiness.Reasons, "no_verified_task_candidates")
+	case task == model.AutoRoutingTaskTool && evidence.verifiedCandidates == 0:
+		readiness.State = "prepare_candidates"
+		readiness.Reasons = append(readiness.Reasons, "tool_requires_explicit_verified_candidate")
+	case evidence.activeRequests == 0:
+		if evidence.verifiedCandidates == 0 {
+			readiness.State = "prepare_candidates"
+			readiness.Reasons = append(readiness.Reasons, "no_verified_task_candidates")
+			break
+		}
+		readiness.State = "ready_for_active"
+		readiness.RecommendedRampPercent = 5
+		readiness.Reasons = append(readiness.Reasons, "shadow_evidence_passed_start_at_5_percent")
+	case readiness.ActiveSuccessRate < 0.95:
+		readiness.State = "pause_active"
+		readiness.Reasons = append(readiness.Reasons, "active_success_rate_below_95_percent")
+	case evidence.activeRequests < 20:
+		readiness.State = "hold_active"
+		readiness.RecommendedRampPercent = 5
+		readiness.Reasons = append(readiness.Reasons, "need_more_active_samples")
+	case !autoReadinessCostSafe(evidence):
+		readiness.State = "hold_active"
+		readiness.RecommendedRampPercent = 5
+		readiness.Reasons = append(readiness.Reasons, "hold_until_cost_returns_within_50_percent")
+	case readiness.ActiveSuccessRate >= 0.99 && readiness.PredictionAgreement >= 0.75:
+		if !autoReadinessCostWithin(evidence, 25) {
+			readiness.State = "hold_active"
+			readiness.RecommendedRampPercent = 5
+			readiness.Reasons = append(readiness.Reasons, "hold_until_cost_returns_within_25_percent")
+			break
+		}
+		readiness.State = "scale_active"
+		readiness.RecommendedRampPercent = 10
+		readiness.Reasons = append(readiness.Reasons, "active_evidence_passed_scale_to_10_percent")
+	default:
+		readiness.State = "hold_active"
+		readiness.RecommendedRampPercent = 5
+		readiness.Reasons = append(readiness.Reasons, "active_evidence_needs_more_observation")
+	}
+	return readiness
+}
+
+func autoReadinessCostSafe(evidence autoReadinessEvidence) bool {
+	return autoReadinessCostWithin(evidence, 50)
+}
+
+func autoReadinessCostWithin(evidence autoReadinessEvidence, percent float64) bool {
+	return evidence.predictedCost <= 0 ||
+		(evidence.actualCost/evidence.predictedCost-1)*100 <= percent
+}
+
+func applyReadinessCandidateConfig(
+	scope model.Scope,
+	groupID int,
+	evidence map[string]*autoReadinessEvidence,
+) {
+	if groupID <= 0 {
+		return
+	}
+	group, err := GroupGet(groupID, scope)
+	if err != nil {
+		return
+	}
+	verified := autoGrantSet(group.RelayConfig.AutoToolVerified)
+	for _, task := range model.AutoRoutingTasks {
+		actual := evidence[task]
+		if actual == nil {
+			actual = &autoReadinessEvidence{}
+			evidence[task] = actual
+		}
+		grants := autoGrantSet(autoTaskGrantConfig(group.RelayConfig, task))
+		actual.labelingEnabled = len(grants) > 0
+		for _, item := range group.Items {
+			if !grants[item.ChannelGrantID] {
+				continue
+			}
+			actual.configuredCandidates++
+			if task == model.AutoRoutingTaskTool {
+				if verified[item.ChannelGrantID] {
+					actual.verifiedCandidates++
+				}
+				continue
+			}
+			if capability, ok := TaskCapabilityGet(item.ModelName, task); ok && capability.Verified {
+				actual.verifiedCandidates++
+			}
+		}
+	}
+}
+
+func readinessByConfig(scope model.Scope, groupID int) []AutoRoutingReadiness {
+	if groupID <= 0 {
+		return nil
+	}
+	evidence := make(map[string]*autoReadinessEvidence)
+	applyReadinessCandidateConfig(scope, groupID, evidence)
+	result := make([]AutoRoutingReadiness, 0, len(model.AutoRoutingTasks))
+	for _, task := range model.AutoRoutingTasks {
+		item := evidence[task]
+		if item == nil {
+			item = &autoReadinessEvidence{}
+		}
+		result = append(result, autoReadinessFor(task, *item))
+	}
+	return result
+}
+
 // AutoRoutingAggregate 聚合指定分组在最近 days 天内的自动路由效果，scope 与调用日志的
 // 可见范围一致，普通用户只能看到自己的请求。
 func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSummary, error) {
@@ -141,9 +354,10 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 	summary := AutoRoutingSummary{
 		Days: days, GroupID: groupID, GeneratedAt: now,
 		WindowStart: now.AddDate(0, 0, -days),
+		SampleLimit: 5000,
 		Tasks:       make([]AutoRoutingTaskSummary, 0), Models: make([]AutoRoutingModelSummary, 0),
 		Exclusions: make([]AutoRoutingReasonSummary, 0), Events: make([]AutoRoutingReasonSummary, 0),
-		Predictions: make([]AutoRoutingPredictionSummary, 0),
+		Predictions: make([]AutoRoutingPredictionSummary, 0), Readiness: make([]AutoRoutingReadiness, 0),
 	}
 	query := db.GetDB().Model(&model.RelayRequest{}).
 		Where("started_at >= ?", summary.WindowStart)
@@ -156,10 +370,11 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 	var requests []autoRequestSample
 	// 日志留存由系统生命周期管理；上限只约束交互式看板查询，避免一次把多年历史拉进内存。
 	if err := query.Select("id AS request_id, status, duration_ns / 1000000 AS duration_ms, cost, target_model, route_events, model, group_id, auto_task, auto_mode").
-		Order("id DESC").Limit(5000).Scan(&requests).Error; err != nil {
+		Order("id DESC").Limit(summary.SampleLimit).Scan(&requests).Error; err != nil {
 		return summary, fmt.Errorf("failed to aggregate relay requests: %w", err)
 	}
 	if len(requests) == 0 {
+		summary.Readiness = readinessByConfig(scope, groupID)
 		return summary, nil
 	}
 
@@ -201,6 +416,9 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 	predictions := make(map[string]*predictionCount)
 	shadowPredictions := make(map[uint64]autoPredictionEvidence)
 	requestTasks := make(map[uint64]string)
+	readinessByTask := make(map[string]*autoReadinessEvidence)
+	applyReadinessCandidateConfig(scope, groupID, readinessByTask)
+	activeReadinessRequests := make(map[uint64]bool)
 	for _, request := range requests {
 		task := request.AutoTask
 		if task == "" {
@@ -214,6 +432,16 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 		if tc == nil {
 			tc = &taskCount{}
 			tasks[task] = tc
+		}
+		readiness := readinessByTask[task]
+		if readiness == nil {
+			readiness = &autoReadinessEvidence{}
+			readinessByTask[task] = readiness
+		}
+		readiness.classified++
+		switch request.AutoMode {
+		case "shadow":
+			readiness.shadowRequests++
 		}
 		tc.requests++
 		tc.duration += request.DurationMs
@@ -309,6 +537,17 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 			case "explore":
 				events["explored"]++
 			}
+			if (evidence.RouteAction == "active" || evidence.RouteAction == "explore") &&
+				!activeReadinessRequests[attempt.RequestID] {
+				activeReadinessRequests[attempt.RequestID] = true
+				readiness := readinessByTask[task]
+				if readiness != nil {
+					readiness.activeRequests++
+					if request.Status == "success" {
+						readiness.activeSuccess++
+					}
+				}
+			}
 			if evidence.Sticky != nil {
 				events["sticky_"+evidence.Sticky.Outcome]++
 			}
@@ -335,6 +574,15 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 		}
 		pc.predictedCost += predicted.CostUSD
 		pc.actualCost += request.Cost
+		readiness := readinessByTask[predicted.Task]
+		if readiness != nil {
+			readiness.compared++
+			readiness.predictedCost += predicted.CostUSD
+			readiness.actualCost += request.Cost
+			if actual == predicted.Model {
+				readiness.same++
+			}
+		}
 	}
 	for _, task := range tasks {
 		summary.TaskClassified += task.requests
@@ -372,6 +620,12 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 	for reason, count := range events {
 		summary.Events = append(summary.Events, AutoRoutingReasonSummary{Reason: reason, Count: count})
 	}
+	for task, evidence := range readinessByTask {
+		if task == "unsupported" {
+			continue
+		}
+		summary.Readiness = append(summary.Readiness, autoReadinessFor(task, *evidence))
+	}
 	for task, count := range predictions {
 		item := AutoRoutingPredictionSummary{Task: task, Compared: count.compared, SameModel: count.same,
 			PredictedCostUSD: count.predictedCost, ActualCostUSD: count.actualCost,
@@ -392,6 +646,9 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 	sort.Slice(summary.Events, func(i, j int) bool { return summary.Events[i].Count > summary.Events[j].Count })
 	sort.Slice(summary.Predictions, func(i, j int) bool {
 		return summary.Predictions[i].Compared > summary.Predictions[j].Compared
+	})
+	sort.Slice(summary.Readiness, func(i, j int) bool {
+		return summary.Readiness[i].Classified > summary.Readiness[j].Classified
 	})
 	return summary, nil
 }

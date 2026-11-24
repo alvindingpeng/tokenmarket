@@ -100,7 +100,7 @@ func attemptRow(r *RequestState, itemID, channelID int, channelCode, targetModel
 	if r.AutoMode == "active" && itemID != 0 {
 		// attemptRow 的调用方已持有 RequestState 写锁；这里不能再次获取同一把
 		// 非可重入锁，否则首轮转发会永久阻塞。
-		explanation.Details = attachAutoActual(explanation.Details, r.autoPredictionDetails, itemID, targetModel)
+		explanation.Details = attachAutoActual(explanation.Details, r.autoPredictionDetails, itemID, targetModel, r.autoRouteAction)
 	}
 	// Keep the actual selection reason; the separate phase records attempt outcome.
 	decision, _ := json.Marshal(explanation)
@@ -121,7 +121,7 @@ func attemptRow(r *RequestState, itemID, channelID int, channelCode, targetModel
 	}
 }
 
-func attachAutoActual(decisionDetails, predictionDetails string, actualItemID int, actualModel string) string {
+func attachAutoActual(decisionDetails, predictionDetails string, actualItemID int, actualModel, routeAction string) string {
 	if decisionDetails == "" && predictionDetails == "" {
 		return ""
 	}
@@ -135,6 +135,9 @@ func attachAutoActual(decisionDetails, predictionDetails string, actualItemID in
 		if json.Unmarshal([]byte(predictionDetails), &prediction) == nil {
 			details["prediction"] = prediction
 		}
+	}
+	if routeAction != "" {
+		details["route_action"] = routeAction
 	}
 	details["actual_item_id"] = actualItemID
 	details["actual_model"] = actualModel

@@ -1,7 +1,9 @@
 package op
 
 import (
+	"context"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -101,5 +103,154 @@ func TestAutoRoutingAggregateComparesShadowPrediction(t *testing.T) {
 	prediction := summary.Predictions[0]
 	if prediction.Compared != 1 || prediction.SameModel != 0 || prediction.PredictedCostUSD != 0.05 || prediction.ActualCostUSD != 0.03 {
 		t.Fatalf("prediction comparison: %+v", prediction)
+	}
+}
+
+func TestAutoRoutingReadinessStartsConservatively(t *testing.T) {
+	readiness := autoReadinessFor(model.AutoRoutingTaskCoding, autoReadinessEvidence{
+		classified: 40, shadowRequests: 40, compared: 35, same: 28,
+		configuredCandidates: 2, verifiedCandidates: 2, labelingEnabled: true,
+	})
+	if readiness.State != "ready_for_active" || readiness.RecommendedRampPercent != 5 {
+		t.Fatalf("unexpected readiness: %+v", readiness)
+	}
+
+	readiness = autoReadinessFor(model.AutoRoutingTaskCoding, autoReadinessEvidence{
+		classified: 10, shadowRequests: 10, configuredCandidates: 2, verifiedCandidates: 2, labelingEnabled: true,
+	})
+	if readiness.State != "collect_shadow" || readiness.RecommendedRampPercent != 0 {
+		t.Fatalf("small sample did not collect shadow: %+v", readiness)
+	}
+}
+
+func TestAutoRoutingReadinessHoldsAndScalesActiveSafely(t *testing.T) {
+	base := autoReadinessEvidence{
+		classified: 80, shadowRequests: 80, compared: 70, same: 56,
+		configuredCandidates: 2, verifiedCandidates: 2, labelingEnabled: true,
+	}
+	base.activeRequests = 10
+	base.activeSuccess = 10
+	readiness := autoReadinessFor(model.AutoRoutingTaskTool, base)
+	if readiness.State != "hold_active" || readiness.RecommendedRampPercent != 5 {
+		t.Fatalf("small active sample should hold at 5 percent: %+v", readiness)
+	}
+
+	base.activeRequests = 40
+	base.activeSuccess = 40
+	base.same = 60
+	base.predictedCost = 1
+	base.actualCost = 1
+	readiness = autoReadinessFor(model.AutoRoutingTaskTool, base)
+	if readiness.State != "scale_active" || readiness.RecommendedRampPercent != 10 {
+		t.Fatalf("strong active evidence should scale to 10 percent: %+v", readiness)
+	}
+
+	base.activeSuccess = 30
+	readiness = autoReadinessFor(model.AutoRoutingTaskTool, base)
+	if readiness.State != "pause_active" || readiness.RecommendedRampPercent != 0 {
+		t.Fatalf("weak active success should pause: %+v", readiness)
+	}
+
+	base.activeSuccess = 40
+	base.actualCost = 2
+	readiness = autoReadinessFor(model.AutoRoutingTaskTool, base)
+	if readiness.State != "hold_active" || !slices.Contains(readiness.Reasons, "hold_until_cost_returns_within_50_percent") {
+		t.Fatalf("high active cost should stop scaling: %+v", readiness)
+	}
+
+	base.actualCost = 1.3
+	readiness = autoReadinessFor(model.AutoRoutingTaskTool, base)
+	if readiness.State != "hold_active" || !slices.Contains(readiness.Reasons, "hold_until_cost_returns_within_25_percent") {
+		t.Fatalf("cost above safe expansion range should stop scaling: %+v", readiness)
+	}
+}
+
+func TestAutoRoutingReadinessUsesActualActiveRequests(t *testing.T) {
+	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "auto-routing-active.db"), false); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	now := time.Now()
+	requests := []model.RelayRequest{
+		{ID: 501, UserID: 7, GroupID: 37, Status: "success", StartedAt: now, AutoTask: "coding", AutoMode: "active"},
+		{ID: 502, UserID: 7, GroupID: 37, Status: "success", StartedAt: now, AutoTask: "coding", AutoMode: "active"},
+		{ID: 503, UserID: 7, GroupID: 37, Status: "failed", StartedAt: now, AutoTask: "coding", AutoMode: "active"},
+	}
+	if err := db.GetDB().Create(&requests).Error; err != nil {
+		t.Fatal(err)
+	}
+	attempts := []model.RelayRequestAttempt{
+		{RequestID: 501, Round: 1, TargetModel: "model-a", Status: "success", Decision: `{"reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+		{RequestID: 502, Round: 1, TargetModel: "model-a", Status: "success", Decision: `{"reason":"auto_coding","details":"{\"route_action\":\"fallback\"}"}`},
+		{RequestID: 503, Round: 1, TargetModel: "model-a", Status: "failed", Decision: `{"reason":"auto_coding","details":"{\"route_action\":\"reject\"}"}`},
+	}
+	if err := db.GetDB().Create(&attempts).Error; err != nil {
+		t.Fatal(err)
+	}
+	summary, err := AutoRoutingAggregate(model.Scope{ID: 7, Role: model.RoleUser}, 37, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var coding *AutoRoutingReadiness
+	for i := range summary.Readiness {
+		if summary.Readiness[i].Task == "coding" {
+			coding = &summary.Readiness[i]
+			break
+		}
+	}
+	if coding == nil {
+		t.Fatal("coding readiness missing")
+	}
+	if coding.Classified != 3 || coding.ActiveRequests != 1 || coding.ActiveSuccessRate != 1 {
+		t.Fatalf("fallback and rejected requests polluted active evidence: %+v", coding)
+	}
+}
+
+func TestAutoRoutingReadinessIncludesConfiguredCandidateCoverage(t *testing.T) {
+	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "auto-routing-readiness.db"), false); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	if err := CapabilitySaveManual(model.ModelCapability{Name: "model-a", Context: 10000}, context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := TaskCapabilitySave(model.ModelTaskCapability{
+		ModelName: "model-a", Task: model.AutoRoutingTaskCoding, Score: 90, Verified: true,
+	}, context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	config := model.DefaultGroupRelayConfigForMode(model.GroupModeScore)
+	config.AutoRouting = "shadow"
+	config.AutoCoding = "31"
+	group, err := GroupCreate(&model.GroupCreateRequest{
+		Name: "readiness-group", Mode: model.GroupModeScore, RelayConfig: config,
+	}, model.Scope{ID: 7, Role: model.RoleAdmin}, context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// GroupCreate cannot accept an item whose grant is not persisted in this isolated
+	// fixture. Readiness accounting is still tested directly through its pure helper.
+	readiness := autoReadinessFor(model.AutoRoutingTaskCoding, autoReadinessEvidence{
+		classified: 20, shadowRequests: 20, compared: 20, same: 20,
+		configuredCandidates: 1, verifiedCandidates: 1, labelingEnabled: true,
+	})
+	if readiness.State != "ready_for_active" {
+		t.Fatalf("verified candidate did not qualify for first ramp: %+v", readiness)
+	}
+	_ = group
+	rows := []model.RelayRequest{
+		{ID: 401, UserID: 7, GroupID: group.ID, Status: "success", StartedAt: now, AutoTask: "coding", AutoMode: "shadow"},
+	}
+	if err := db.GetDB().Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	summary, err := AutoRoutingAggregate(model.Scope{ID: 7, Role: model.RoleAdmin}, group.ID, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summary.Readiness) == 0 {
+		t.Fatal("task readiness was not included")
+	}
+	if summary.Readiness[0].Classified != 1 || summary.Readiness[0].State != "collect_shadow" {
+		t.Fatalf("unexpected readiness with no configured grant member: %+v", summary.Readiness[0])
 	}
 }

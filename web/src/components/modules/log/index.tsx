@@ -32,6 +32,25 @@ interface AutoRoutingSummary {
     exclusions: { reason: string; count: number }[];
     events: { reason: string; count: number }[];
     predictions: { task: string; compared: number; same_model: number; same_model_rate: number; predicted_cost_usd: number; actual_cost_usd: number; cost_delta_usd: number }[];
+    sample_limit: number;
+    readiness: {
+        task: string;
+        state: string;
+        recommended_ramp_percent: number;
+        classified: number;
+        shadow_requests: number;
+        shadow_compared: number;
+        shadow_coverage: number;
+        prediction_agreement: number;
+        active_requests: number;
+        active_success_rate: number;
+        predicted_cost_usd: number;
+        actual_cost_usd: number;
+        cost_delta_percent: number;
+        configured_candidates: number;
+        verified_candidates: number;
+        reasons: string[];
+    }[];
 }
 
 // AutoRoutingPanel 从现有调用日志聚合实验数据。看板不要求先打开所有请求详情，
@@ -69,7 +88,7 @@ function AutoRoutingPanel() {
                         <SelectItem value="30">{tr('daysThirty')}</SelectItem>
                     </SelectContent>
                 </Select>
-                <span className="ml-auto text-xs text-muted-foreground">{tr('window', { requests: data.requests })}</span>
+                <span className="ml-auto text-xs text-muted-foreground">{tr('window', { requests: data.requests })} · {tr('samplesMax', { count: data.sample_limit })}</span>
             </div>
             {data.task_classified === 0 ? (
                 <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-6 text-center text-muted-foreground">
@@ -96,6 +115,44 @@ function AutoRoutingPanel() {
                                 <div className="flex items-center justify-between"><span className="text-sm font-medium">{tr('task.' + task.task)}</span><span className="text-xs text-muted-foreground">{tr('requestCount', { count: task.requests })}</span></div>
                                 <div className="mt-2 grid grid-cols-3 gap-2 text-xs"><span>{tr('rate', { value: (task.success_rate * 100).toFixed(1) + '%' })}</span><span>{tr('latency', { value: Math.round(task.avg_duration_ms) + ' ms' })}</span><span>{tr('failedShort', { count: task.failed })}</span></div>
                                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(100, task.success_rate * 100)}%` }} /></div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+            )}
+            {data.readiness.length > 0 && (
+                <section className="rounded-2xl border border-border/60 bg-card p-4">
+                    <h3 className="mb-1 text-sm font-semibold">{tr('readinessTitle')}</h3>
+                    <p className="mb-3 text-xs leading-relaxed text-muted-foreground">{tr('readinessHint')}</p>
+                    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                        {data.readiness.map((item) => (
+                            <div key={item.task} className="rounded-xl border border-border/40 bg-muted/20 p-3 text-xs">
+                                <div className="flex items-start justify-between gap-2">
+                                    <span className="font-medium">{tr('task.' + item.task)}</span>
+                                    <span className={
+                                        item.state === 'scale_active' || item.state === 'ready_for_active'
+                                            ? 'rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-700 dark:text-emerald-300'
+                                            : item.state === 'pause_active' || item.state === 'investigate_prediction'
+                                                ? 'rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] text-destructive'
+                                                : 'rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground'
+                                    }>
+                                        {tr(`readinessState.${item.state}`)}
+                                    </span>
+                                </div>
+                                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+                                    <span>{tr('readinessShadow', { compared: item.shadow_compared, total: item.shadow_requests })}</span>
+                                    <span>{tr('readinessAgreement', { value: `${(item.prediction_agreement * 100).toFixed(1)}%` })}</span>
+                                    <span>{tr('readinessCoverage', { value: `${(item.shadow_coverage * 100).toFixed(1)}%` })}</span>
+                                    <span>{tr('readinessCandidates', { verified: item.verified_candidates, total: item.configured_candidates })}</span>
+                                    {item.active_requests > 0 && <span>{tr('readinessActive', { count: item.active_requests, value: `${(item.active_success_rate * 100).toFixed(1)}%` })}</span>}
+                                    {item.predicted_cost_usd > 0 && <span>{tr('readinessCost', { value: `${item.cost_delta_percent.toFixed(1)}%` })}</span>}
+                                </div>
+                                {item.recommended_ramp_percent > 0 && (
+                                    <p className="mt-2 font-medium text-foreground">{tr('readinessRamp', { value: item.recommended_ramp_percent })}</p>
+                                )}
+                                {item.reasons.length > 0 && (
+                                    <p className="mt-1 leading-relaxed text-muted-foreground">{item.reasons.map((reason) => tr('readinessReason.' + reason)).join(' · ')}</p>
+                                )}
                             </div>
                         ))}
                     </div>
