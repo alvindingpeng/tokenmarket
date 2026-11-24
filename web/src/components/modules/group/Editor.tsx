@@ -45,7 +45,7 @@ const modeRelayDefaults: Record<GroupMode, ModeRelayDefaults> = {
 
 // modeRelayConfig 返回该模式的预设; 灰度恒从关闭态起步 —— 它叠加在模式之上, 不属于任何模式的预设。
 function modeRelayConfig(mode: GroupMode): GroupRelayConfig {
-    return { ...modeRelayDefaults[mode], ...canaryDefaults(), auto_ramp_percent: 5, auto_fallback_failures: 3, auto_fallback_seconds: 60 };
+    return { ...modeRelayDefaults[mode], ...canaryDefaults(), auto_ramp_percent: 5, auto_fallback_failures: 3, auto_fallback_seconds: 60, auto_min_task_score: 0, auto_quality_weight: 40, auto_price_weight: 20, auto_latency_weight: 20, auto_success_weight: 20 };
 }
 
 // PROTOCOL_TAGS 是凭据行上的协议标识。
@@ -734,6 +734,7 @@ export function GroupEditor({
                                         <p className="text-sm text-muted-foreground">{t('form.autoHint')}</p>
                                         <p className="text-xs leading-relaxed text-muted-foreground">{t('form.autoRefreshHint')}</p>
                                         {relayConfig.auto_routing === 'active' && (
+                                            <>
                                             <div className="grid gap-3 rounded-xl border border-border/50 p-3 md:grid-cols-3">
                                                 <Field>
                                                     <FieldLabel htmlFor="group-auto-ramp">
@@ -793,6 +794,37 @@ export function GroupEditor({
                                                     />
                                                 </Field>
                                             </div>
+                                            <div className="rounded-xl border border-border/50 p-3">
+                                                <h4 className="mb-1 text-sm font-medium">{t('form.autoQualityTitle')}</h4>
+                                                <p className="mb-3 text-xs leading-relaxed text-muted-foreground">{t('form.autoQualityHint')}</p>
+                                                <div className="grid gap-3 md:grid-cols-3">
+                                                    <Field>
+                                                        <FieldLabel htmlFor="group-auto-min-score">{t('form.autoMinTaskScore')}</FieldLabel>
+                                                        <Input id="group-auto-min-score" type="number" min={0} max={100} step={1}
+                                                            value={String(relayConfig.auto_min_task_score ?? 0)}
+                                                            onChange={(event) => setRelayConfig((prev) => ({ ...prev, auto_min_task_score: Math.min(Math.max(Number.parseInt(event.target.value, 10) || 0, 0), 100) }))}
+                                                            className="rounded-xl" />
+                                                    </Field>
+                                                    {([
+                                                        ['auto_quality_weight', 'autoQualityWeight'],
+                                                        ['auto_price_weight', 'autoPriceWeight'],
+                                                        ['auto_latency_weight', 'autoLatencyWeight'],
+                                                        ['auto_success_weight', 'autoSuccessWeight'],
+                                                    ] as const).map(([key, label]) => (
+                                                        <Field key={key}>
+                                                            <FieldLabel htmlFor={`group-${key}`}>{t(`form.${label}`)}</FieldLabel>
+                                                            <Input id={`group-${key}`} type="number" min={0} max={100} step={1}
+                                                                value={String(relayConfig[key] ?? 0)}
+                                                                onChange={(event) => setRelayConfig((prev) => ({ ...prev, [key]: Math.min(Math.max(Number.parseInt(event.target.value, 10) || 0, 0), 100) }))}
+                                                                className="rounded-xl" />
+                                                        </Field>
+                                                    ))}
+                                                </div>
+                                                <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                                                    {t('form.autoQualityRegistryHint')}
+                                                </p>
+                                            </div>
+                                            </>
                                         )}
                                         <div className="space-y-3">
                                             {([

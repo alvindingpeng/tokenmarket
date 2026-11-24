@@ -55,6 +55,10 @@ func resetProcessCaches() {
 	capabilityCache.mu.Lock()
 	capabilityCache.index = capabilityIndex{}
 	capabilityCache.mu.Unlock()
+	taskCapabilityCache.mu.Lock()
+	taskCapabilityCache.items = make(map[string]model.ModelTaskCapability)
+	taskCapabilityCache.byBare = make(map[string][]model.ModelTaskCapability)
+	taskCapabilityCache.mu.Unlock()
 
 	// 三个 map 类缓存各有配对锁与 dirty 标记。dirty 必须一起清:
 	// 只清数据不减 dirty 集合, 下一次落库会按旧 dirty 去读已清空的 map,

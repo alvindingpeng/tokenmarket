@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { ArrowUpAZ } from 'lucide-react';
 import { useTranslations } from 'use-intl';
-import { useModelList, useModelScores, useModelCapabilities } from '@/api/model';
+import { useModelList, useModelScores, useModelCapabilities, useModelTaskCapabilities } from '@/api/model';
 import { useModelAutoAddRules } from '@/api/model-rule';
 import { PageActions, usePageActionsStore } from '@/components/common/PageActions';
 import { ModelItem } from './Item';
@@ -55,6 +55,7 @@ export function Model() {
     const { data: models, isError: modelsError, refetch: refetchModels, isRefetching: modelsRefetching } = useModelList();
     const { data: scores } = useModelScores();
     const { data: capabilities } = useModelCapabilities();
+    const { data: taskCapabilities } = useModelTaskCapabilities();
     // 自动添加条件按模型名索引: 与评分/能力同一套归并口径, 卡片点开即能编辑该模型自己的条件。
     const { data: autoAddRules } = useModelAutoAddRules();
     // 评分按小写模型名归并: llms 表以名称为键且统一小写, 渠道模型名可能与上游大小写不同。
@@ -69,6 +70,15 @@ export function Model() {
         for (const c of capabilities ?? []) map.set(c.name.toLowerCase(), c);
         return map;
     }, [capabilities]);
+    const taskCapabilitiesByModel = useMemo(() => {
+        const map = new Map<string, NonNullable<typeof taskCapabilities>>();
+        for (const item of taskCapabilities ?? []) {
+            const list = map.get(item.model_name.toLowerCase()) ?? [];
+            list.push(item);
+            map.set(item.model_name.toLowerCase(), list);
+        }
+        return map;
+    }, [taskCapabilities]);
     const searchTerm = usePageActionsStore((state) => state.searchTerms.model || '');
     const layout = usePageActionsStore((state) => state.layouts.model || 'grid');
     const sortOrder = usePageActionsStore((state) => state.sortOrders.model === 'desc' ? 'desc' : 'asc');
@@ -115,6 +125,7 @@ export function Model() {
                     layout={layout}
                     score={scoreByName.get(model.name.toLowerCase())}
                     capability={capabilityByName.get(model.name.toLowerCase())}
+                    taskCapabilities={taskCapabilitiesByModel.get(model.name.toLowerCase())}
                     autoAddRule={autoAddRules?.get(model.name.toLowerCase())}
                 />
             )}

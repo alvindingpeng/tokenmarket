@@ -17,6 +17,7 @@ const ROUTE_REASON_KEYS = [
     'auto_protocol_incompatible', 'auto_channel_incompatible',
     'auto_context_unknown', 'auto_token_limit',
     'auto_tool_unverified', 'auto_ramp_hold', 'auto_circuit_open',
+    'auto_quality_unverified', 'auto_quality_below_threshold', 'auto_eligible',
 ] as const;
 
 /** 路由事件的阶段名。 */

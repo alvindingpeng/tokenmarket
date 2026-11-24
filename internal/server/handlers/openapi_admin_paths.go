@@ -470,6 +470,23 @@ func openAPIAdminPathsAuth() gin.H {
 				"请求体只需 name; 同步会重新写回官方来源的条目, 人工条目删除后不再恢复。",
 				"ModelNameRequest", adminOk(), true),
 		},
+		"/api/v1/model/task-capability": gin.H{
+			"get": adminPath("model", "模型任务能力登记",
+				"返回管理员为自动路由登记的各模型任务质量分与验证状态。该数据独立于 models.dev 同步,"+adminNewLine+
+					"models.dev 没有统一的编程、摘要或工具调用质量字段。",
+				"", adminArray("任务能力登记", "ModelTaskCapability"), false),
+		},
+		"/api/v1/model/task-capability/save": gin.H{
+			"post": adminPath("model", "保存模型任务能力",
+				"按 (模型, 任务) 覆盖保存。score 为 0-100, verified 为管理员真实验证标记。"+adminNewLine+
+					"没有 verified=true 的记录不能通过设置了质量门槛的自动路由。",
+				"ModelTaskCapability", adminItem("保存后的任务能力", "ModelTaskCapability"), true),
+		},
+		"/api/v1/model/task-capability/delete": gin.H{
+			"post": adminPath("model", "删除模型任务能力",
+				"请求体包含 model_name 与 task; 删除后该模型在该任务上回到未知能力。",
+				"ModelTaskCapabilityDeleteRequest", adminOk(), true),
+		},
 		"/api/v1/model/last-update-time": gin.H{
 			"get": adminPath("model", "价格库最后同步时间",
 				"RFC3339 时间戳; 从未同步过时为零值时间。", "",

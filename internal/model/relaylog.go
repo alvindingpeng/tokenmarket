@@ -98,10 +98,14 @@ type RelayRequestAttempt struct {
 
 // RelayRouteDecision 是一轮尝试的结构化路由解释。
 type RelayRouteCandidate struct {
-	ItemID      int    `json:"item_id"`
-	ChannelCode string `json:"channel_code"`
-	Model       string `json:"model"`
-	Reason      string `json:"reason"`
+	ItemID          int     `json:"item_id"`
+	ChannelCode     string  `json:"channel_code"`
+	Model           string  `json:"model"`
+	Reason          string  `json:"reason"`
+	TaskScore       int     `json:"task_score,omitempty"`       // 管理员登记的任务质量分; -1 表示未登记。
+	QualityEligible bool    `json:"quality_eligible,omitempty"` // 是否达到本轮任务门槛。
+	EstimatedCost   float64 `json:"estimated_cost,omitempty"`   // 本请求按当前用户价估算的美元成本。
+	FinalScore      float64 `json:"final_score,omitempty"`      // 0-100 的自动路由综合分。
 }
 
 type RelayRouteDecision struct {

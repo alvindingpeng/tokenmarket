@@ -88,6 +88,20 @@ func init() {
 			router.NewRoute("/capability/delete", http.MethodPost).
 				Allow(model.RoleAdmin).
 				Handle(deleteModelCapability),
+		).
+		AddRoute(
+			router.NewRoute("/task-capability", http.MethodGet).
+				Handle(listModelTaskCapability),
+		).
+		AddRoute(
+			router.NewRoute("/task-capability/save", http.MethodPost).
+				Allow(model.RoleAdmin).
+				Handle(saveModelTaskCapability),
+		).
+		AddRoute(
+			router.NewRoute("/task-capability/delete", http.MethodPost).
+				Allow(model.RoleAdmin).
+				Handle(deleteModelTaskCapability),
 		)
 	router.NewGroupRouter("/v1").
 		Use(middleware.APIKeyAuth()).
@@ -314,6 +328,43 @@ func deleteModelCapability(c *gin.Context) {
 		return
 	}
 	audit(c, "model.capability-delete", request.Name, "")
+	resp.Success(c, nil)
+}
+
+func listModelTaskCapability(c *gin.Context) {
+	resp.Success(c, op.TaskCapabilityList())
+}
+
+func saveModelTaskCapability(c *gin.Context) {
+	var item model.ModelTaskCapability
+	if err := c.ShouldBindJSON(&item); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	if err := op.TaskCapabilitySave(item, c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	audit(c, "model.task-capability-save", item.ModelName+"/"+item.Task,
+		fmt.Sprintf("score=%d verified=%t", item.Score, item.Verified))
+	saved, _ := op.TaskCapabilityGet(item.ModelName, item.Task)
+	resp.Success(c, saved)
+}
+
+func deleteModelTaskCapability(c *gin.Context) {
+	var request struct {
+		ModelName string `json:"model_name"`
+		Task      string `json:"task"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	if err := op.TaskCapabilityDelete(request.ModelName, request.Task, c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	audit(c, "model.task-capability-delete", request.ModelName+"/"+request.Task, "")
 	resp.Success(c, nil)
 }
 

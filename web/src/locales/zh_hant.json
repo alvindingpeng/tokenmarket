@@ -844,7 +844,15 @@
             "autoContextOverrides": "上下文覆蓋",
             "autoContextOverridesHint": "留空沿用渠道模型或 models.dev 的數值。顯式填寫後用於候選資格判斷。",
             "autoContextUnknown": "未知",
-            "autoContextOverrideFor": "{model} 的上下文上限"
+            "autoContextOverrideFor": "{model} 的上下文上限",
+            "autoQualityTitle": "品質門檻與綜合評分",
+            "autoQualityHint": "門檻大於 0 時，先排除未驗證或品質分不達標的模型，再按品質、成本、延遲和成功率綜合選擇。設定為 0 時保持原來的最低成本優先。",
+            "autoMinTaskScore": "最低任務品質分",
+            "autoQualityWeight": "品質權重",
+            "autoPriceWeight": "成本權重",
+            "autoLatencyWeight": "延遲權重",
+            "autoSuccessWeight": "成功率權重",
+            "autoQualityRegistryHint": "品質分按「模型 × 任務」登記。模型頁新增能力入口，也可調用 /api/v1/model/task-capability 管理。"
         },
         "memberPrice": "讀 {input} / 寫 {output}（m）",
         "modelPrice": "讀 {input} / 寫 {output} / 快取讀 {cacheRead} / 快取寫 {cacheWrite}（m）",
@@ -1085,6 +1093,22 @@
             "name": "模型名",
             "namePlaceholder": "例如 claude-opus-4-6",
             "nameHint": "上游探測到的模型名可能與這裡的寫法不同，以上游返回的名稱為準。"
+        },
+        "taskCapability": {
+            "open": "任務能力與驗證",
+            "title": "模型 × 任務品質",
+            "close": "關閉",
+            "score": "品質分",
+            "verified": "已驗證",
+            "notes": "驗證說明",
+            "save": "保存任務能力",
+            "tasks": {
+                "general": "通用",
+                "summary": "摘要",
+                "coding": "編程",
+                "tool": "工具調用",
+                "extraction": "提取"
+            }
         }
     },
     "log": {
@@ -1248,7 +1272,10 @@
             "auto_token_limit": "輸入與輸出預算超出該成員上限",
             "auto_tool_unverified": "工具調用能力未經管理員驗證",
             "auto_ramp_hold": "未命中主動路由抽樣",
-            "auto_circuit_open": "主動路由已暫時回退"
+            "auto_circuit_open": "主動路由已暫時回退",
+            "auto_quality_unverified": "任務能力尚未驗證",
+            "auto_quality_below_threshold": "任務品質分未達門檻",
+            "auto_eligible": "通過任務能力門檻"
         },
         "eventPhase": {
             "received": "已接收",
@@ -1303,6 +1330,10 @@
             "exclusionsTitle": "候選排除原因",
             "eventsTitle": "運行事件",
             "modelsTitle": "實際使用模型",
+            "predictionsTitle": "影子預測與實際結果",
+            "predictionSamples": "可比樣本 {count}",
+            "predictionAgreement": "預測一致 {value}",
+            "predictionCostDelta": "預測 ${predicted} / 實際 ${actual} / 差額 ${delta}",
             "task": {
                 "general": "通用",
                 "summary": "摘要",

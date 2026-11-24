@@ -32,9 +32,10 @@ const (
 
 // 客户端请求的完整进程内状态, 同时作为状态流的消息形状; 上半部分在请求到达时写入并在结束时定稿, 下半部分每轮循环覆盖。
 type RouteEvent struct {
-	At     time.Time `json:"at"`
-	Phase  string    `json:"phase"`
-	Reason string    `json:"reason"`
+	At      time.Time `json:"at"`
+	Phase   string    `json:"phase"`
+	Reason  string    `json:"reason"`
+	Details string    `json:"details,omitempty"`
 }
 
 type RequestState struct {
@@ -74,14 +75,15 @@ type RequestState struct {
 	Sending           bool           `json:"sending"`             // 最新一轮是否仍在等待上游响应。
 	Error             string         `json:"error,omitempty"`     // 最新一轮的失败原因, 请求结束后即为最终错误。
 
-	requestBody   string // 客户端原始请求体, 体积大故不进状态流, 由独立接口按需拉取。
-	responseBody  string // 聚合后的完整最终响应体, 同样按需拉取。
-	autoObserved  bool   // 任务分类与影子预测只需在请求内执行一次。
-	autoTask      autoTask
-	apiKeyID      int // 发起请求的 API Key ID, 用于请求完成后的归属统计。
-	routeDecision model.RelayRouteDecision
-	roundItemID   int                  // 最新一轮的分组成员 ID, 供尝试记录落库。
-	roundTiming   model.UpstreamTiming // 最新一轮上游请求的连接耗时分解, 由 setRoundTiming 在每轮结束时写入。
+	requestBody           string // 客户端原始请求体, 体积大故不进状态流, 由独立接口按需拉取。
+	responseBody          string // 聚合后的完整最终响应体, 同样按需拉取。
+	autoObserved          bool   // 任务分类与影子预测只需在请求内执行一次。
+	autoTask              autoTask
+	autoPredictionDetails string
+	apiKeyID              int // 发起请求的 API Key ID, 用于请求完成后的归属统计。
+	routeDecision         model.RelayRouteDecision
+	roundItemID           int                  // 最新一轮的分组成员 ID, 供尝试记录落库。
+	roundTiming           model.UpstreamTiming // 最新一轮上游请求的连接耗时分解, 由 setRoundTiming 在每轮结束时写入。
 	// 本轮使用的出口: ID 落进 UpstreamTiming 供归因与聚合, 名称随轮次推给界面。
 	// 没有配出口池的渠道两者恒为零值, 与"直连"在统计上区分开。
 	roundEgressID   int
@@ -340,6 +342,21 @@ func (r *RequestState) autoObservation() (bool, autoTask) {
 	mu.Lock()
 	defer mu.Unlock()
 	return r.autoObserved, r.autoTask
+}
+
+func (r *RequestState) setAutoPredictionDetails(details string) {
+	mu.Lock()
+	defer mu.Unlock()
+	r.autoPredictionDetails = details
+	if n := len(r.RouteEvents); n > 0 && r.RouteEvents[n-1].Phase == "auto_shadow" {
+		r.RouteEvents[n-1].Details = details
+	}
+}
+
+func (r *RequestState) autoPredictionSnapshot() string {
+	mu.Lock()
+	defer mu.Unlock()
+	return r.autoPredictionDetails
 }
 
 func (r *RequestState) statusSnapshot() Status {

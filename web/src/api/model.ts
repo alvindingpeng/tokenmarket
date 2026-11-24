@@ -247,3 +247,47 @@ export function useDeleteModelCapability() {
         },
     });
 }
+
+export type AutoRoutingTask = 'general' | 'summary' | 'coding' | 'tool' | 'extraction';
+
+/** 管理员对模型完成某类自动路由任务的质量验证。 */
+export interface ModelTaskCapability {
+    model_name: string;
+    task: AutoRoutingTask;
+    score: number;
+    verified: boolean;
+    source: string;
+    notes: string;
+    verified_at: string;
+    updated_at: string;
+}
+
+export function taskCapabilityListOptions() {
+    return {
+        queryKey: ['models', 'task-capabilities'] as const,
+        queryFn: () => apiRequest<ModelTaskCapability[]>('/api/v1/model/task-capability'),
+        refetchInterval: POLL_SLOW,
+    };
+}
+
+export function useModelTaskCapabilities() {
+    return useQuery(taskCapabilityListOptions());
+}
+
+export function useSaveModelTaskCapability() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (data: ModelTaskCapability) =>
+            apiRequest<ModelTaskCapability>('/api/v1/model/task-capability/save', { method: 'POST', body: data }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['models', 'task-capabilities'] }),
+    });
+}
+
+export function useDeleteModelTaskCapability() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (data: Pick<ModelTaskCapability, 'model_name' | 'task'>) =>
+            apiRequest<null>('/api/v1/model/task-capability/delete', { method: 'POST', body: data }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['models', 'task-capabilities'] }),
+    });
+}

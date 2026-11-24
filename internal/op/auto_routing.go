@@ -38,22 +38,35 @@ type AutoRoutingReasonSummary struct {
 	Count  int64  `json:"count"`
 }
 
+// AutoRoutingPredictionSummary 对照影子预测和实际落地结果。只在两边都记录了模型时
+// 才计为可比较样本，避免把没有预测或尚未成功的请求算成误判。
+type AutoRoutingPredictionSummary struct {
+	Task             string  `json:"task"`
+	Compared         int64   `json:"compared"`
+	SameModel        int64   `json:"same_model"`
+	SameModelRate    float64 `json:"same_model_rate"`
+	PredictedCostUSD float64 `json:"predicted_cost_usd"`
+	ActualCostUSD    float64 `json:"actual_cost_usd"`
+	CostDeltaUSD     float64 `json:"cost_delta_usd"`
+}
+
 // AutoRoutingSummary 是近期调用日志的自动路由实验聚合。数据来自现有请求和尝试日志，
 // 不新增高频写入的独立报表表，也不需要迁移数据库。
 type AutoRoutingSummary struct {
-	Days           int                        `json:"days"`
-	GroupID        int                        `json:"group_id"`
-	GeneratedAt    time.Time                  `json:"generated_at"`
-	WindowStart    time.Time                  `json:"window_start"`
-	Requests       int64                      `json:"requests"`
-	TaskClassified int64                      `json:"task_classified"`
-	Success        int64                      `json:"success"`
-	Failed         int64                      `json:"failed"`
-	SuccessRate    float64                    `json:"success_rate"`
-	Tasks          []AutoRoutingTaskSummary   `json:"tasks"`
-	Models         []AutoRoutingModelSummary  `json:"models"`
-	Exclusions     []AutoRoutingReasonSummary `json:"exclusions"`
-	Events         []AutoRoutingReasonSummary `json:"events"`
+	Days           int                            `json:"days"`
+	GroupID        int                            `json:"group_id"`
+	GeneratedAt    time.Time                      `json:"generated_at"`
+	WindowStart    time.Time                      `json:"window_start"`
+	Requests       int64                          `json:"requests"`
+	TaskClassified int64                          `json:"task_classified"`
+	Success        int64                          `json:"success"`
+	Failed         int64                          `json:"failed"`
+	SuccessRate    float64                        `json:"success_rate"`
+	Tasks          []AutoRoutingTaskSummary       `json:"tasks"`
+	Models         []AutoRoutingModelSummary      `json:"models"`
+	Exclusions     []AutoRoutingReasonSummary     `json:"exclusions"`
+	Events         []AutoRoutingReasonSummary     `json:"events"`
+	Predictions    []AutoRoutingPredictionSummary `json:"predictions"`
 }
 
 type autoRequestSample struct {
@@ -67,6 +80,12 @@ type autoRequestSample struct {
 	GroupID     int
 	AutoTask    string
 	AutoMode    string
+}
+
+type autoPredictionEvidence struct {
+	Task    string
+	Model   string
+	CostUSD float64
 }
 
 func autoTaskFromDecision(reason string) string {
@@ -124,6 +143,7 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 		WindowStart: now.AddDate(0, 0, -days),
 		Tasks:       make([]AutoRoutingTaskSummary, 0), Models: make([]AutoRoutingModelSummary, 0),
 		Exclusions: make([]AutoRoutingReasonSummary, 0), Events: make([]AutoRoutingReasonSummary, 0),
+		Predictions: make([]AutoRoutingPredictionSummary, 0),
 	}
 	query := db.GetDB().Model(&model.RelayRequest{}).
 		Where("started_at >= ?", summary.WindowStart)
@@ -174,6 +194,12 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 	models := make(map[string]*modelCount)
 	exclusions := make(map[string]int64)
 	events := make(map[string]int64)
+	type predictionCount struct {
+		compared, same            int64
+		predictedCost, actualCost float64
+	}
+	predictions := make(map[string]*predictionCount)
+	shadowPredictions := make(map[uint64]autoPredictionEvidence)
 	requestTasks := make(map[uint64]string)
 	for _, request := range requests {
 		task := request.AutoTask
@@ -209,7 +235,7 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 					events["circuit_open"]++
 				} else if strings.Contains(event.Reason, ":no_candidate") {
 					events["no_candidate"]++
-				} else if strings.Contains(event.Reason, ":item=") {
+				} else if strings.Contains(event.Reason, ":item=") || strings.Contains(event.Reason, ":model=") {
 					events["predicted"]++
 				} else {
 					events[event.Reason]++
@@ -259,6 +285,35 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 				exclusions[candidate.Reason]++
 			}
 		}
+		var evidence struct {
+			Prediction struct {
+				Model   string  `json:"model"`
+				CostUSD float64 `json:"cost_usd"`
+			} `json:"prediction"`
+			ActualModel string `json:"actual_model"`
+		}
+		if request.AutoMode == "shadow" && json.Unmarshal([]byte(decision.Details), &evidence) == nil &&
+			evidence.Prediction.Model != "" {
+			shadowPredictions[attempt.RequestID] = autoPredictionEvidence{Task: task, Model: evidence.Prediction.Model, CostUSD: evidence.Prediction.CostUSD}
+		}
+	}
+	for requestID, predicted := range shadowPredictions {
+		request := requestByID[requestID]
+		actual := request.TargetModel
+		if actual == "" || request.Status != "success" {
+			continue
+		}
+		pc := predictions[predicted.Task]
+		if pc == nil {
+			pc = &predictionCount{}
+			predictions[predicted.Task] = pc
+		}
+		pc.compared++
+		if actual == predicted.Model {
+			pc.same++
+		}
+		pc.predictedCost += predicted.CostUSD
+		pc.actualCost += request.Cost
 	}
 	for _, task := range tasks {
 		summary.TaskClassified += task.requests
@@ -296,6 +351,15 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 	for reason, count := range events {
 		summary.Events = append(summary.Events, AutoRoutingReasonSummary{Reason: reason, Count: count})
 	}
+	for task, count := range predictions {
+		item := AutoRoutingPredictionSummary{Task: task, Compared: count.compared, SameModel: count.same,
+			PredictedCostUSD: count.predictedCost, ActualCostUSD: count.actualCost,
+			CostDeltaUSD: count.actualCost - count.predictedCost}
+		if count.compared > 0 {
+			item.SameModelRate = float64(count.same) / float64(count.compared)
+		}
+		summary.Predictions = append(summary.Predictions, item)
+	}
 	sort.Slice(summary.Tasks, func(i, j int) bool { return summary.Tasks[i].Requests > summary.Tasks[j].Requests })
 	sort.Slice(summary.Models, func(i, j int) bool {
 		if summary.Models[i].Task != summary.Models[j].Task {
@@ -305,5 +369,8 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 	})
 	sort.Slice(summary.Exclusions, func(i, j int) bool { return summary.Exclusions[i].Count > summary.Exclusions[j].Count })
 	sort.Slice(summary.Events, func(i, j int) bool { return summary.Events[i].Count > summary.Events[j].Count })
+	sort.Slice(summary.Predictions, func(i, j int) bool {
+		return summary.Predictions[i].Compared > summary.Predictions[j].Compared
+	})
 	return summary, nil
 }

@@ -95,6 +95,13 @@ func persistRequestLocked(r *RequestState) {
 func attemptRow(r *RequestState, itemID, channelID int, channelCode, targetModel string, protocol model.Protocol, startedAt time.Time, status, errText string) model.RelayRequestAttempt {
 	explanation := r.routeDecision
 	explanation.Phase = status
+	// 主动请求的实际落地成员就是本轮尝试目标。把它写回结构化证据，后续汇总才能
+	// 对照影子预测与真实结果，而不是只看到两边各自的模型名。
+	if r.AutoMode == "active" && itemID != 0 {
+		// attemptRow 的调用方已持有 RequestState 写锁；这里不能再次获取同一把
+		// 非可重入锁，否则首轮转发会永久阻塞。
+		explanation.Details = attachAutoActual(explanation.Details, r.autoPredictionDetails, itemID, targetModel)
+	}
 	// Keep the actual selection reason; the separate phase records attempt outcome.
 	decision, _ := json.Marshal(explanation)
 	return model.RelayRequestAttempt{
@@ -112,6 +119,27 @@ func attemptRow(r *RequestState, itemID, channelID int, channelCode, targetModel
 		Error:          errText,
 		Decision:       string(decision),
 	}
+}
+
+func attachAutoActual(decisionDetails, predictionDetails string, actualItemID int, actualModel string) string {
+	if decisionDetails == "" && predictionDetails == "" {
+		return ""
+	}
+	var details map[string]any
+	_ = json.Unmarshal([]byte(decisionDetails), &details)
+	if details == nil {
+		details = map[string]any{}
+	}
+	if predictionDetails != "" {
+		var prediction any
+		if json.Unmarshal([]byte(predictionDetails), &prediction) == nil {
+			details["prediction"] = prediction
+		}
+	}
+	details["actual_item_id"] = actualItemID
+	details["actual_model"] = actualModel
+	raw, _ := json.Marshal(details)
+	return string(raw)
 }
 
 // routeDecisionReason 提供稳定的机器可读路由事件原因。

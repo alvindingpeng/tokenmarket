@@ -72,3 +72,34 @@ func TestAutoRoutingAggregateScopeHidesOtherUsers(t *testing.T) {
 		t.Fatalf("user saw %d requests; cross-account rows leaked", summary.Requests)
 	}
 }
+
+func TestAutoRoutingAggregateComparesShadowPrediction(t *testing.T) {
+	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "auto-routing-prediction.db"), false); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	now := time.Now()
+	requests := []model.RelayRequest{
+		{ID: 301, UserID: 7, GroupID: 37, Status: "success", StartedAt: now, Cost: 0.03, TargetModel: "model-fast", AutoTask: "coding", AutoMode: "shadow"},
+	}
+	if err := db.GetDB().Create(&requests).Error; err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	attempt := model.RelayRequestAttempt{
+		RequestID: 301, Round: 1, TargetModel: "model-fast", Status: "success",
+		Decision: `{"mode":"score","phase":"success","reason":"strategy_score","details":"{\"prediction\":{\"model\":\"model-quality\",\"cost_usd\":0.05},\"actual_model\":\"model-fast\"}"}`,
+	}
+	if err := db.GetDB().Create(&attempt).Error; err != nil {
+		t.Fatalf("create attempt: %v", err)
+	}
+	summary, err := AutoRoutingAggregate(model.Scope{ID: 7, Role: model.RoleUser}, 37, 7)
+	if err != nil {
+		t.Fatalf("aggregate: %v", err)
+	}
+	if len(summary.Predictions) != 1 {
+		t.Fatalf("predictions: %+v", summary.Predictions)
+	}
+	prediction := summary.Predictions[0]
+	if prediction.Compared != 1 || prediction.SameModel != 0 || prediction.PredictedCostUSD != 0.05 || prediction.ActualCostUSD != 0.03 {
+		t.Fatalf("prediction comparison: %+v", prediction)
+	}
+}

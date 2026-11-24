@@ -138,3 +138,86 @@ func TestAutoRoutingChoosesResponsesCodingAndNativeToolMembers(t *testing.T) {
 		}
 	})
 }
+
+func TestAutoRoutingQualityFloorPrefersVerifiedTaskCapability(t *testing.T) {
+	var calls atomic.Int64
+	models := make(chan string, 2)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct{ Model string }
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		calls.Add(1)
+		models <- body.Model
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"ok","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+	}))
+	defer upstream.Close()
+
+	config := model.DefaultGroupRelayConfigForMode(model.GroupModeScore)
+	env := newRelayGroup(t, upstream.URL, model.ProtocolOpenAIChatCompletion, model.MediaKindText, 2, config)
+	group := setScoreTestGroup(t, env, config)
+	for _, item := range group.Items {
+		if err := op.CapabilitySaveManual(model.ModelCapability{Name: item.ModelName, Context: 10000}, context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 第一项更便宜且排序更靠前，但只适合通用任务；第二项经过编程验证。
+	if err := op.TaskCapabilitySave(model.ModelTaskCapability{
+		ModelName: group.Items[0].ModelName, Task: model.AutoRoutingTaskGeneral, Score: 80, Verified: true,
+	}, context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := op.TaskCapabilitySave(model.ModelTaskCapability{
+		ModelName: group.Items[1].ModelName, Task: model.AutoRoutingTaskCoding, Score: 92, Verified: true,
+	}, context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	config.AutoRouting = "active"
+	config.AutoRampPercent = 100
+	config.AutoCoding = fmt.Sprintf("%d,%d", group.Items[0].ChannelGrantID, group.Items[1].ChannelGrantID)
+	config.AutoMinTaskScore = 80
+	config.AutoQualityWeight = 60
+	config.AutoPriceWeight = 40
+	config.AutoLatencyWeight = 0
+	config.AutoSuccessWeight = 0
+	setScoreTestGroup(t, env, config)
+
+	response := forwardRequest(llm.APIFormatOpenAIChatCompletion, env.userID,
+		fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"Fix this compile error in the code"}],"max_tokens":100}`, env.group))
+	if response.Code != http.StatusOK || calls.Load() != 1 {
+		t.Fatalf("status=%d calls=%d body=%s", response.Code, calls.Load(), response.Body.String())
+	}
+	if chosen := <-models; chosen != group.Items[1].ModelName {
+		t.Fatalf("selected %q without coding capability, want %q", chosen, group.Items[1].ModelName)
+	}
+}
+
+func TestAutoRoutingQualityFloorRejectsUnverifiedCandidates(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"ok","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+	}))
+	defer upstream.Close()
+
+	config := model.DefaultGroupRelayConfigForMode(model.GroupModeScore)
+	env := newRelayGroup(t, upstream.URL, model.ProtocolOpenAIChatCompletion, model.MediaKindText, 1, config)
+	group := setScoreTestGroup(t, env, config)
+	if err := op.CapabilitySaveManual(model.ModelCapability{Name: group.Items[0].ModelName, Context: 10000}, context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := op.TaskCapabilitySave(model.ModelTaskCapability{
+		ModelName: group.Items[0].ModelName, Task: model.AutoRoutingTaskCoding, Score: 95, Verified: false,
+	}, context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	config.AutoRouting = "active"
+	config.AutoRampPercent = 100
+	config.AutoCoding = fmt.Sprintf("%d", group.Items[0].ChannelGrantID)
+	config.AutoMinTaskScore = 80
+	setScoreTestGroup(t, env, config)
+
+	response := forwardRequest(llm.APIFormatOpenAIChatCompletion, env.userID,
+		fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"Fix this compile error in the code"}],"max_tokens":100}`, env.group))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unverified candidate dispatched: status=%d body=%s", response.Code, response.Body.String())
+	}
+}

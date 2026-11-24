@@ -359,17 +359,23 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				eligible, excluded := autoCandidates(group, task)
 				shadowExcluded = excluded
 				state := RouteStateOf(group)
-				candidates := slices.DeleteFunc(eligible.Items, func(item model.GroupItem) bool {
+				candidates := slices.DeleteFunc(slices.Clone(eligible.Items), func(item model.GroupItem) bool {
 					return upstreamItemLimited(item) || upstreamItemBlockedByPolicy(item) ||
 						state.Cooldowns[item.ID] > time.Now().UnixMilli() || state.ProbeItemID == item.ID
 				})
 				reason := task.name + ":no_candidate"
+				var prediction *autoPredictionDetails
 				if len(candidates) > 0 {
-					eligible.Mode = model.GroupModeScore
 					predicted := selectGroupItem(eligible, candidates)
 					reason = fmt.Sprintf("%s:item=%d", task.name, predicted.ID)
+					prediction = &autoPredictionDetails{
+						ItemID: predicted.ID, Model: predicted.ModelName,
+						CostUSD:   eligible.AutoRequestCosts[predicted.ID],
+						TaskScore: eligible.AutoTaskScores[predicted.ID],
+					}
 				}
 				request.addRouteEvent("auto_shadow", reason)
+				request.setAutoPredictionDetails(autoDecisionDetailsJSON(task, prediction, excluded))
 			}
 			// Recheck after refresh: a live configuration change may lower the
 			// budget or switch this request into score mode between attempts.
@@ -414,6 +420,23 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			if group.AutoRequestCosts != nil {
 				decision.Candidates = append(decision.Candidates, autoExcluded...)
 				decision.Reason = "auto_" + observedTask.name
+				// The actual candidate set is the one still admissible at selection
+				// time. Compute scores after admission instead of using the pre-filter
+				// candidate list, so the displayed score matches the chosen item.
+				scoreCandidates := group.Items
+				state := RouteStateOf(group)
+				now := time.Now().UnixMilli()
+				scoreCandidates = slices.DeleteFunc(slices.Clone(scoreCandidates), func(member model.GroupItem) bool {
+					return upstreamItemLimited(member) || upstreamItemBlockedByPolicy(member) ||
+						state.Cooldowns[member.ID] > now || state.ProbeItemID == member.ID
+				})
+				detailsCandidates := autoCandidatesForDetails(group, autoCandidateScores(group, scoreCandidates))
+				for i := range detailsCandidates {
+					if detailsCandidates[i].ItemID == item.ID {
+						detailsCandidates[i].Reason = "selected"
+					}
+				}
+				decision.Details = autoDecisionDetailsJSON(observedTask, nil, detailsCandidates)
 			} else if autoMode == "shadow" {
 				decision.Candidates = append(decision.Candidates, shadowExcluded...)
 			}

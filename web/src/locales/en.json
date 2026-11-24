@@ -844,7 +844,15 @@
             "autoContextOverrides": "Context overrides",
             "autoContextOverridesHint": "Leave blank to use the channel model or models.dev value. An explicit value takes precedence for candidate qualification.",
             "autoContextUnknown": "Unknown",
-            "autoContextOverrideFor": "Context limit for {model}"
+            "autoContextOverrideFor": "Context limit for {model}",
+            "autoQualityTitle": "Quality floor and blended score",
+            "autoQualityHint": "A floor above 0 first removes unverified or below-threshold models, then blends quality, cost, latency and success. A floor of 0 preserves the original lowest-cost behavior.",
+            "autoMinTaskScore": "Minimum task score",
+            "autoQualityWeight": "Quality weight",
+            "autoPriceWeight": "Cost weight",
+            "autoLatencyWeight": "Latency weight",
+            "autoSuccessWeight": "Success weight",
+            "autoQualityRegistryHint": "Scores are registered per model and task. The model page provides a new capability editor; administrators can also use /api/v1/model/task-capability."
         },
         "memberPrice": "Read {input} / write {output} (m)",
         "modelPrice": "read {input} / write {output} / cache read {cacheRead} / cache write {cacheWrite} (m)",
@@ -1085,6 +1093,22 @@
             "name": "Model name",
             "namePlaceholder": "e.g. claude-opus-4-6",
             "nameHint": "The probed upstream name may differ; the name the upstream returns wins."
+        },
+        "taskCapability": {
+            "open": "Task capability and verification",
+            "title": "Model × task quality",
+            "close": "Close",
+            "score": "Quality score",
+            "verified": "Verified",
+            "notes": "Validation notes",
+            "save": "Save task capability",
+            "tasks": {
+                "general": "General",
+                "summary": "Summary",
+                "coding": "Coding",
+                "tool": "Tool calls",
+                "extraction": "Extraction"
+            }
         }
     },
     "log": {
@@ -1248,7 +1272,10 @@
             "auto_token_limit": "Input and output budget exceeds this member's limit",
             "auto_tool_unverified": "Tool capability not administrator-verified",
             "auto_ramp_hold": "Held by active-routing sample",
-            "auto_circuit_open": "Active routing temporarily fell back"
+            "auto_circuit_open": "Active routing temporarily fell back",
+            "auto_quality_unverified": "Task capability is not verified",
+            "auto_quality_below_threshold": "Task score is below the floor",
+            "auto_eligible": "Meets the task quality floor"
         },
         "eventPhase": {
             "received": "Received",
@@ -1303,6 +1330,10 @@
             "exclusionsTitle": "Candidate exclusions",
             "eventsTitle": "Runtime events",
             "modelsTitle": "Models actually used",
+            "predictionsTitle": "Shadow prediction vs actual",
+            "predictionSamples": "{count} comparable",
+            "predictionAgreement": "Prediction agreement {value}",
+            "predictionCostDelta": "Predicted ${predicted} / actual ${actual} / delta ${delta}",
             "task": {
                 "general": "General",
                 "summary": "Summary",

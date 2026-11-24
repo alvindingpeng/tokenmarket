@@ -3,7 +3,7 @@ import { Pencil, Trash2, ArrowDownToLine, ArrowUpFromLine, Gauge, MessageSquare,
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslations } from 'use-intl';
 import { parseLLMPriceForm } from '@/lib/price-input';
-import { useUpdateModel, useDeleteModel, type LLMInfo, type ModelScore, type ModelCapability } from '@/api/model';
+import { useUpdateModel, useDeleteModel, useSaveModelTaskCapability, type LLMInfo, type ModelScore, type ModelCapability, type ModelTaskCapability, type AutoRoutingTask } from '@/api/model';
 import { getModelIcon } from '@/lib/model-icons';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -20,6 +20,7 @@ interface ModelItemProps {
     score?: ModelScore; // 该模型的全局选路评分; 无观测时按冷启动展示。
     capability?: ModelCapability; // 该模型的能力登记（上下文/输出上限）。
     autoAddRule?: ModelAutoAddRule; // 当前用户为该模型单独设的自动添加条件; 空表示全部跟随系统设置。
+    taskCapabilities?: ModelTaskCapability[]; // 管理员登记的任务质量验证。
 }
 
 // 缓存编辑弹层实测高度，首次打开即可正确判断是否需要向上弹出
@@ -35,7 +36,7 @@ function scoreTooltip(score: ModelScore | undefined, t: ReturnType<typeof useTra
     return sources ? `${head}\n${sources}` : head;
 }
 
-export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score, capability, autoAddRule }: ModelItemProps) {
+export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score, capability, autoAddRule, taskCapabilities }: ModelItemProps) {
     const t = useTranslations('model');
     const isListLayout = layout === 'list';
     const manual = capability?.source === 'manual' ? capability : undefined;
@@ -58,6 +59,15 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
 
     const updateModel = useUpdateModel();
     const deleteModel = useDeleteModel();
+    const saveTaskCapability = useSaveModelTaskCapability();
+    const [taskEditorOpen, setTaskEditorOpen] = useState(false);
+    const [taskValues, setTaskValues] = useState<Record<AutoRoutingTask, { score: string; verified: boolean; notes: string }>>(() => {
+        const tasks: AutoRoutingTask[] = ['general', 'summary', 'coding', 'tool', 'extraction'];
+        return Object.fromEntries(tasks.map((task) => {
+            const saved = taskCapabilities?.find((item) => item.task === task);
+            return [task, { score: String(saved?.score ?? 0), verified: saved?.verified ?? false, notes: saved?.notes ?? '' }];
+        })) as Record<AutoRoutingTask, { score: string; verified: boolean; notes: string }>;
+    });
 
     const { Icon, className: iconClassName, color: brandColor } = useMemo(() => getModelIcon(model.name), [model.name]);
 
@@ -172,7 +182,7 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
             ref={cardRef}
             className={cn(
                 'group relative rounded-3xl border border-border bg-card flex items-center gap-3 p-4',
-                (isEditOpen || confirmDelete) && 'z-50'
+                (isEditOpen || confirmDelete || taskEditorOpen) && 'z-50'
             )}
         >
             <Icon aria-hidden="true" className={iconClassName} width={52} height={52} />
@@ -338,6 +348,17 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
                         </button>
                     }
                 />
+                <button type="button" title={t('taskCapability.open')} onClick={() => {
+                    const tasks: AutoRoutingTask[] = ['general', 'summary', 'coding', 'tool', 'extraction'];
+                    setTaskValues(Object.fromEntries(tasks.map((task) => {
+                        const saved = taskCapabilities?.find((item) => item.task === task);
+                        return [task, { score: String(saved?.score ?? 0), verified: saved?.verified ?? false, notes: saved?.notes ?? '' }];
+                    })) as Record<AutoRoutingTask, { score: string; verified: boolean; notes: string }>);
+                    setTaskEditorOpen((open) => !open);
+                }}
+                    className={cn('h-9 w-9 flex items-center justify-center rounded-lg transition-colors', taskCapabilities?.some((item) => item.verified) ? 'bg-primary/15 text-primary hover:bg-primary/25' : 'bg-muted/60 text-muted-foreground hover:bg-muted')}>
+                    <Gauge className="size-4" />
+                </button>
                 <motion.button
                     layoutId={editLayoutId}
                     type="button"
@@ -358,6 +379,37 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
                     <Trash2 className="size-4" />
                 </motion.button>
             </div>
+
+            {taskEditorOpen && (
+                <div className="absolute inset-x-3 bottom-3 z-20 rounded-2xl border border-border bg-card p-3 shadow-xl">
+                    <div className="mb-2 flex items-center justify-between">
+                        <span className="text-xs font-semibold">{t('taskCapability.title')}</span>
+                        <button type="button" onClick={() => setTaskEditorOpen(false)} className="text-xs text-muted-foreground">{t('taskCapability.close')}</button>
+                    </div>
+                    <div className="grid gap-2">
+                        {(['general', 'summary', 'coding', 'tool', 'extraction'] as const).map((task) => (
+                            <div key={task} className="grid grid-cols-[5rem_4rem_auto_1fr] items-center gap-2 text-xs">
+                                <span>{t('taskCapability.tasks.' + task)}</span>
+                                <input type="number" min={0} max={100} value={taskValues[task].score} aria-label={t('taskCapability.score')}
+                                    onChange={(event) => setTaskValues((current) => ({ ...current, [task]: { ...current[task], score: event.target.value } }))}
+                                    className="h-7 rounded-lg border border-border bg-background px-2 tabular-nums" />
+                                <label className="flex items-center gap-1"><input type="checkbox" checked={taskValues[task].verified}
+                                    onChange={(event) => setTaskValues((current) => ({ ...current, [task]: { ...current[task], verified: event.target.checked } }))} /> {t('taskCapability.verified')}</label>
+                                <input value={taskValues[task].notes} placeholder={t('taskCapability.notes')}
+                                    onChange={(event) => setTaskValues((current) => ({ ...current, [task]: { ...current[task], notes: event.target.value } }))}
+                                    className="h-7 rounded-lg border border-border bg-background px-2" />
+                            </div>
+                        ))}
+                    </div>
+                    <button type="button" disabled={saveTaskCapability.isPending} onClick={() => {
+                        for (const task of ['general', 'summary', 'coding', 'tool', 'extraction'] as const) {
+                            const value = taskValues[task];
+                            saveTaskCapability.mutate({ model_name: model.name, task, score: Math.min(Math.max(Number.parseInt(value.score, 10) || 0, 0), 100), verified: value.verified, notes: value.notes, source: 'manual', verified_at: '', updated_at: '' });
+                        }
+                        setTaskEditorOpen(false);
+                    }} className="mt-3 h-8 w-full rounded-lg bg-primary text-xs font-medium text-primary-foreground disabled:opacity-50">{t('taskCapability.save')}</button>
+                </div>
+            )}
 
             <AnimatePresence>
                 {confirmDelete && (

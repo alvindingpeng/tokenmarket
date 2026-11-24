@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/gin-gonic/gin"
 )
 
@@ -266,6 +267,22 @@ func openAPIAdminSchemas() gin.H {
 			"source":     gin.H{"type": "string", "enum": []string{"models.dev", "manual"}, "description": "来源; manual 为人工补录, 同步时不覆盖也不删除"},
 			"updated_at": datetime(""),
 		}),
+
+		"ModelTaskCapability": object(gin.H{
+			"model_name":  fieldString("模型名, 统一小写; 独立于 models.dev 能力同步"),
+			"task":        gin.H{"type": "string", "enum": model.AutoRoutingTasks, "description": "自动路由任务类型"},
+			"score":       fieldNumber("integer", "0-100 的质量分; 0 表示未验证或明确不达标"),
+			"verified":    fieldBool("管理员是否已实际验证该模型完成此类任务"),
+			"source":      fieldString("来源; 当前固定为 manual"),
+			"notes":       fieldString("验证方法、限制或样本说明"),
+			"verified_at": datetime("最近一次人工验证时间"),
+			"updated_at":  datetime("最近一次保存时间"),
+		}),
+
+		"ModelTaskCapabilityDeleteRequest": object(gin.H{
+			"model_name": fieldString("模型名"),
+			"task":       fieldString("任务类型"),
+		}, "model_name", "task"),
 
 		"ChannelStats": withStatsFlatten(gin.H{
 			"channel_id":   fieldNumber("integer", "渠道主键"),

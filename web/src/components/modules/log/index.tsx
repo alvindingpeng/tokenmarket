@@ -31,6 +31,7 @@ interface AutoRoutingSummary {
     models: { task: string; model: string; attempts: number; success: number; success_rate: number; avg_duration_ms: number; avg_cost_usd: number }[];
     exclusions: { reason: string; count: number }[];
     events: { reason: string; count: number }[];
+    predictions: { task: string; compared: number; same_model: number; same_model_rate: number; predicted_cost_usd: number; actual_cost_usd: number; cost_delta_usd: number }[];
 }
 
 // AutoRoutingPanel 从现有调用日志聚合实验数据。看板不要求先打开所有请求详情，
@@ -108,6 +109,18 @@ function AutoRoutingPanel() {
             )}
             {data.models.length > 0 && (
                 <section className="rounded-2xl border border-border/60 bg-card p-4"><h3 className="mb-3 text-sm font-semibold">{tr('modelsTitle')}</h3><div className="space-y-2">{data.models.slice(0, 20).map((model) => <div key={`${model.task}-${model.model}`} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-lg border border-border/40 px-3 py-2 text-xs"><span className="truncate">{tr('task.' + model.task)} · {model.model}</span><span className="tabular-nums text-muted-foreground">{tr('requestCount', { count: model.attempts })}</span><span className="tabular-nums">{tr('rate', { value: (model.success_rate * 100).toFixed(1) + '%' })}</span></div>)}</div></section>
+            )}
+            {data.predictions.length > 0 && (
+                <section className="rounded-2xl border border-border/60 bg-card p-4">
+                    <h3 className="mb-3 text-sm font-semibold">{tr('predictionsTitle')}</h3>
+                    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                        {data.predictions.map((item) => <div key={item.task} className="rounded-xl border border-border/40 bg-muted/20 p-3 text-xs">
+                            <div className="flex justify-between"><span className="font-medium">{tr('task.' + item.task)}</span><span>{tr('predictionSamples', { count: item.compared })}</span></div>
+                            <p className="mt-2">{tr('predictionAgreement', { value: (item.same_model_rate * 100).toFixed(1) + '%' })}</p>
+                            <p className="mt-1 text-muted-foreground">{tr('predictionCostDelta', { predicted: item.predicted_cost_usd.toFixed(4), actual: item.actual_cost_usd.toFixed(4), delta: item.cost_delta_usd.toFixed(4) })}</p>
+                        </div>)}
+                    </div>
+                </section>
             )}
         </div>
     );

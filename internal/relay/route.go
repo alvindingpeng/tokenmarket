@@ -323,19 +323,7 @@ func selectGroupItem(group model.Group, candidates []model.GroupItem) model.Grou
 		return best
 	case model.GroupModeScore:
 		if group.AutoRequestCosts != nil {
-			best := candidates[0]
-			for _, item := range candidates[1:] {
-				if group.AutoRequestCosts[item.ID] < group.AutoRequestCosts[best.ID] {
-					best = item
-				}
-			}
-			sameModel := make([]model.GroupItem, 0, len(candidates))
-			for _, item := range candidates {
-				if item.ModelName == best.ModelName {
-					sameModel = append(sameModel, item)
-				}
-			}
-			return selectByScore(group, sameModel)
+			return selectAutoByScore(group, candidates)
 		}
 		return selectByScore(group, candidates)
 	case model.GroupModeRandom:
@@ -343,6 +331,78 @@ func selectGroupItem(group model.Group, candidates []model.GroupItem) model.Grou
 	default: // 故障转移及未知模式: 按优先级取第一个。
 		return candidates[0]
 	}
+}
+
+// autoScoreWeights 返回自动路由的有效权重。门槛为 0 时调用方仍走旧的最低成本
+// 路径；门槛大于 0 后，质量维度默认 40，其余 20/20/20，确保能力足够时不会只凭
+// 一个极低价格把质量挤出局。用户显式设置的任一项都按原值保留。
+func autoScoreWeights(config model.GroupRelayConfig) (quality, price, latency, success int) {
+	quality, price = config.AutoQualityWeight, config.AutoPriceWeight
+	latency, success = config.AutoLatencyWeight, config.AutoSuccessWeight
+	if quality+price+latency+success == 0 {
+		return 40, 20, 20, 20
+	}
+	return
+}
+
+// selectAutoByScore 先只比较已经通过任务能力硬门槛的候选，再把任务质量、本请求
+// 估算成本、历史延迟和成功率一起打分。这样“能力足够但贵”的模型能胜过
+// “便宜但能力不足”的模型，同时仍允许管理员把价格权重调高。
+func selectAutoByScore(group model.Group, candidates []model.GroupItem) model.GroupItem {
+	scores := autoCandidateScores(group, candidates)
+	best, bestScore := candidates[0], math.Inf(-1)
+	for _, item := range candidates {
+		score := scores[item.ID]
+		if score > bestScore {
+			best, bestScore = item, score
+		}
+	}
+	return best
+}
+
+// autoCandidateScores 计算一组成员在自动路由门槛之后相对彼此的综合分。
+// 归一化只在本次真实候选集内进行，因此诊断中显示的分数与选路算法一致。
+func autoCandidateScores(group model.Group, candidates []model.GroupItem) map[int]float64 {
+	qualityWeight, priceWeight, latencyWeight, successWeight := autoScoreWeights(group.RelayConfig)
+	weightSum := qualityWeight + priceWeight + latencyWeight + successWeight
+	scores := make(map[int]float64, len(candidates))
+	if weightSum <= 0 {
+		for _, item := range candidates {
+			scores[item.ID] = 0
+		}
+		return scores
+	}
+	prices := make([]float64, len(candidates))
+	waits := make([]float64, len(candidates))
+	rates := make([]float64, len(candidates))
+	samples := make([]int, len(candidates))
+	known := make([]bool, len(candidates))
+	for i, item := range candidates {
+		prices[i] = memberPrice(group, item)
+		waits[i], rates[i], samples[i] = memberScopeMetric(group, item)
+		known[i] = samples[i] > 0
+	}
+	floor := effectiveReliabilityFloor(group.RelayConfig)
+	for i, item := range candidates {
+		qualityScore := 0.5
+		if taskScore, ok := group.AutoTaskScores[item.ID]; ok && taskScore >= 0 {
+			qualityScore = float64(taskScore) / 100
+		}
+		priceScore := normalizedDim(prices, i, false)
+		latScore, succScore := 0.5, 0.5
+		if known[i] {
+			latScore = normalizedDim(waits, i, false)
+			succScore = normalizedDim(rates, i, true)
+		}
+		score := (float64(qualityWeight)*qualityScore +
+			float64(priceWeight)*priceScore +
+			float64(latencyWeight)*latScore +
+			float64(successWeight)*succScore) / float64(weightSum)
+		score *= reliabilityPenalty(rates[i], samples[i], floor)
+		score *= observationPenalty(item)
+		scores[item.ID] = score * 100
+	}
+	return scores
 }
 
 // memberPrice 返回成员在配置口径下的用户价(每百万 token)。

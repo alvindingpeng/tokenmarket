@@ -13,6 +13,8 @@ import (
 type autoTask struct {
 	name          string
 	input, output int64
+	confidence    int
+	rule          string
 }
 
 const (
@@ -44,8 +46,9 @@ var (
 // unsupported instead of being routed to a plausible-looking but incompatible
 // model.
 func classifyAuto(body []byte, protocol model.Protocol, input, output int64) autoTask {
-	task := autoTask{name: AutoTaskUnsupported, input: input, output: output}
+	task := autoTask{name: AutoTaskUnsupported, input: input, output: output, confidence: 100, rule: "unsupported_shape"}
 	if protocol != model.ProtocolOpenAIChatCompletion && protocol != model.ProtocolOpenAIResponse {
+		task.rule = "unsupported_protocol"
 		return task
 	}
 	var request struct {
@@ -74,6 +77,7 @@ func classifyAuto(body []byte, protocol model.Protocol, input, output int64) aut
 	}
 	if json.Unmarshal(body, &request) != nil ||
 		(len(request.Modalities) != 0 && (len(request.Modalities) != 1 || request.Modalities[0] != "text")) {
+		task.rule = "unsupported_multimodal_or_invalid"
 		return task
 	}
 
@@ -90,6 +94,7 @@ func classifyAuto(body []byte, protocol model.Protocol, input, output int64) aut
 			hasInput = true
 			hasTools = true
 		default:
+			task.rule = "unsupported_role"
 			return task
 		}
 		if nonEmptyJSON(message.ToolCalls) || nonEmptyJSON(message.FunctionCall) || message.Role == "tool" || message.Role == "function" {
@@ -97,6 +102,7 @@ func classifyAuto(body []byte, protocol model.Protocol, input, output int64) aut
 		}
 		text, ok := autoText(message.Content)
 		if !ok {
+			task.rule = "unsupported_content"
 			return task
 		}
 		textParts = append(textParts, text)
@@ -107,6 +113,7 @@ func classifyAuto(body []byte, protocol model.Protocol, input, output int64) aut
 	if protocol == model.ProtocolOpenAIResponse {
 		inputText, ok := autoResponseInputText(request.Input)
 		if !ok {
+			task.rule = "unsupported_response_input"
 			return task
 		}
 		if strings.TrimSpace(inputText) != "" {
@@ -116,6 +123,7 @@ func classifyAuto(body []byte, protocol model.Protocol, input, output int64) aut
 		}
 	}
 	if !hasInput || len(textParts) == 0 {
+		task.rule = "empty_or_unsupported_input"
 		return task
 	}
 	var nonASCII int64
@@ -134,15 +142,20 @@ func classifyAuto(body []byte, protocol model.Protocol, input, output int64) aut
 		// function calls. Responses requests that merely contain tool markers are
 		// left unsupported until its continuation semantics have dedicated coverage.
 		if protocol == model.ProtocolOpenAIResponse {
+			task.rule = "unsupported_responses_tools"
 			return task
 		}
 		task.name = AutoTaskTool
+		task.confidence = 100
+		task.rule = "tools_or_tool_history"
 		return task
 	}
 	switch request.ResponseFormat.Type {
 	case "json_schema":
 		if nonEmptyJSON(request.ResponseFormat.Schema) {
 			task.name = AutoTaskExtraction
+			task.confidence = 100
+			task.rule = "response_format_json_schema"
 			return task
 		}
 	}
@@ -151,20 +164,28 @@ func classifyAuto(body []byte, protocol model.Protocol, input, output int64) aut
 		strings.EqualFold(request.Text.Format.Type, "json_schema") &&
 		nonEmptyJSON(request.Text.Format.Schema) {
 		task.name = AutoTaskExtraction
+		task.confidence = 100
+		task.rule = "response_text_format_json_schema"
 		return task
 	}
 	allText := strings.ToLower(strings.TrimSpace(strings.Join(intentParts, "\n")))
 	if isSummaryRequest(strings.ToLower(strings.TrimSpace(last))) {
 		task.name = AutoTaskSummary
+		task.confidence = 90
+		task.rule = "summary_prefix"
 		return task
 	}
 	if isCodingRequest(allText) {
 		task.name = AutoTaskCoding
+		task.confidence = 85
+		task.rule = "code_or_programming_intent"
 		return task
 	}
 	switch request.ResponseFormat.Type {
 	case "", "text":
 		task.name = AutoTaskGeneral
+		task.confidence = 60
+		task.rule = "default_text"
 	}
 	return task
 }
@@ -362,6 +383,8 @@ func autoCandidates(group model.Group, task autoTask) (model.Group, []model.Rela
 	items := group.Items
 	group.Items = make([]model.GroupItem, 0, len(items))
 	group.AutoRequestCosts = make(map[int]float64, len(items))
+	group.AutoTaskScores = make(map[int]int, len(items))
+	group.AutoTaskVerified = make(map[int]bool, len(items))
 	var excluded []model.RelayRouteCandidate
 	for _, item := range items {
 		contextOverride := config.AutoContextOverrides[strconv.Itoa(item.ChannelGrantID)]
@@ -370,10 +393,84 @@ func autoCandidates(group model.Group, task autoTask) (model.Group, []model.Rela
 			excluded = append(excluded, model.RelayRouteCandidate{ItemID: item.ID, ChannelCode: item.ChannelName, Model: item.ModelName, Reason: reason})
 			continue
 		}
+		taskCapability, hasTaskCapability := op.TaskCapabilityGet(item.ModelName, task.name)
+		taskScore := -1
+		qualityEligible := true
+		if hasTaskCapability {
+			taskScore = taskCapability.Score
+			qualityEligible = taskCapability.Verified
+		}
+		// 门槛为 0 是 v1.16.7 兼容模式: 管理员没有声明质量要求时不改变原有选路。
+		// 一旦设置门槛，未验证和低于门槛的模型都不能进入候选，避免“便宜但不会做”的模型
+		// 仅因价格取胜。
+		if config.AutoMinTaskScore > 0 {
+			switch {
+			case !hasTaskCapability || !taskCapability.Verified:
+				reason = "auto_quality_unverified"
+			case taskCapability.Score < config.AutoMinTaskScore:
+				reason = "auto_quality_below_threshold"
+			}
+		}
+		if reason != "" {
+			excluded = append(excluded, model.RelayRouteCandidate{
+				ItemID: item.ID, ChannelCode: item.ChannelName, Model: item.ModelName,
+				Reason: reason, TaskScore: taskScore, QualityEligible: qualityEligible,
+			})
+			continue
+		}
 		group.Items = append(group.Items, item)
 		group.AutoRequestCosts[item.ID] = (float64(task.input)*item.UserPrice.Input + float64(task.output)*item.UserPrice.Output) / 1e6
+		group.AutoTaskScores[item.ID] = taskScore
+		group.AutoTaskVerified[item.ID] = hasTaskCapability && taskCapability.Verified
 	}
 	return group, excluded
+}
+
+// autoTaskDecisionDetails 是写入尝试日志的结构化证据。字段只使用 JSON 基本类型，
+// 这样历史日志在没有这些字段时仍能反序列化，新增字段也不要求数据库迁移。
+type autoTaskDecisionDetails struct {
+	ClassConfidence int                         `json:"class_confidence"`
+	ClassRule       string                      `json:"class_rule"`
+	EstimatedInput  int64                       `json:"estimated_input"`
+	EstimatedOutput int64                       `json:"estimated_output"`
+	Prediction      *autoPredictionDetails      `json:"prediction,omitempty"`
+	Candidates      []model.RelayRouteCandidate `json:"candidates,omitempty"`
+}
+
+type autoPredictionDetails struct {
+	ItemID    int     `json:"item_id"`
+	Model     string  `json:"model"`
+	CostUSD   float64 `json:"cost_usd"`
+	TaskScore int     `json:"task_score"`
+}
+
+func autoDecisionDetailsJSON(task autoTask, prediction *autoPredictionDetails, candidates []model.RelayRouteCandidate) string {
+	details := autoTaskDecisionDetails{
+		ClassConfidence: task.confidence,
+		ClassRule:       task.rule,
+		EstimatedInput:  task.input,
+		EstimatedOutput: task.output,
+		Prediction:      prediction,
+		Candidates:      candidates,
+	}
+	raw, _ := json.Marshal(details)
+	return string(raw)
+}
+
+// autoCandidatesForDetails 生成实际选路时的候选证据。excluded 已并入 decision，
+// 所以这里只输出 qualified 成员的分数和估算成本；FinalScore 由调用方传入的
+// 最终候选集计算，避免诊断看板与真实选路使用两套公式。
+func autoCandidatesForDetails(group model.Group, finalScores map[int]float64) []model.RelayRouteCandidate {
+	items := make([]model.RelayRouteCandidate, 0, len(group.Items))
+	for _, item := range group.Items {
+		items = append(items, model.RelayRouteCandidate{
+			ItemID: item.ID, ChannelCode: item.ChannelName, Model: item.ModelName,
+			Reason: "auto_eligible", TaskScore: group.AutoTaskScores[item.ID],
+			QualityEligible: true, EstimatedCost: group.AutoRequestCosts[item.ID],
+			FinalScore: finalScores[item.ID],
+		})
+	}
+	return items
 }
 
 func autoExclusion(item model.GroupItem, task autoTask, qualified, toolVerified bool, contextOverride int) string {

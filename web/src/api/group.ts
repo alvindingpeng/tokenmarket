@@ -23,6 +23,11 @@ export interface GroupRelayConfig {
     auto_ramp_percent?: number;
     auto_fallback_failures?: number;
     auto_fallback_seconds?: number;
+    auto_min_task_score?: number;
+    auto_quality_weight?: number;
+    auto_price_weight?: number;
+    auto_latency_weight?: number;
+    auto_success_weight?: number;
  request_timeout_seconds: number;
  max_wait_seconds: number;
  max_waiting_requests: number;
