@@ -20,6 +20,7 @@ type AutoRoutingTaskSummary struct {
 	Failed        int64   `json:"failed"`
 	SuccessRate   float64 `json:"success_rate"`
 	AvgDurationMs float64 `json:"avg_duration_ms"`
+	P90DurationMs float64 `json:"p90_duration_ms"`
 }
 
 // AutoRoutingModelSummary 按任务与实际落地模型汇总成功率和延迟。
@@ -30,6 +31,7 @@ type AutoRoutingModelSummary struct {
 	Success       int64   `json:"success"`
 	SuccessRate   float64 `json:"success_rate"`
 	AvgDurationMs float64 `json:"avg_duration_ms"`
+	P90DurationMs float64 `json:"p90_duration_ms"`
 	AvgCostUSD    float64 `json:"avg_cost_usd"`
 }
 
@@ -60,6 +62,10 @@ type AutoRoutingReadiness struct {
 	RecommendedRampPercent int      `json:"recommended_ramp_percent"`
 	ConfidenceLevelPercent int      `json:"confidence_level_percent"`
 	Classified             int64    `json:"classified"`
+	EvidenceUsers          int      `json:"evidence_users"`
+	EvidenceBuckets        int      `json:"evidence_buckets"`
+	RequiredBuckets        int      `json:"required_buckets"`
+	AdminMultiUserEvidence bool     `json:"admin_multi_user_evidence"`
 	ShadowRequests         int64    `json:"shadow_requests"`
 	ShadowCompared         int64    `json:"shadow_compared"`
 	ShadowCoverage         float64  `json:"shadow_coverage"`
@@ -75,6 +81,11 @@ type AutoRoutingReadiness struct {
 	CostSamples            int      `json:"cost_samples"`
 	ConfiguredCandidates   int      `json:"configured_candidates"`
 	VerifiedCandidates     int      `json:"verified_candidates"`
+	ModelTeams             int      `json:"model_teams"`
+	ModelSamples           int      `json:"model_samples"`
+	ModelSuccessRate       float64  `json:"model_success_rate"`
+	ModelTeamsLow          float64  `json:"model_teams_lower"`
+	ModelMinSuccessRate    float64  `json:"model_min_success_rate"`
 	Reasons                []string `json:"reasons"`
 }
 
@@ -101,7 +112,9 @@ type AutoRoutingSummary struct {
 
 type autoRequestSample struct {
 	RequestID   uint64
+	UserID      uint
 	Status      string
+	StartedAt   time.Time
 	DurationMs  int64
 	Cost        float64
 	TargetModel string
@@ -198,9 +211,15 @@ type autoReadinessEvidence struct {
 	classified, shadowRequests, activeRequests, activeSuccess int64
 	compared, same, predictedCost, actualCost                 float64
 	costRatios                                                []float64
+	users                                                     map[uint]bool
+	timeBuckets                                               map[int64]bool
+	modelSuccess, modelSuccessful                             map[string]int64
 	configuredCandidates, verifiedCandidates                  int
 	labelingEnabled                                           bool
+	requireMultiUserEvidence                                  bool
 }
+
+const autoReadinessMinimumBuckets = 4
 
 const autoReadinessConfidenceZ = 1.96
 
@@ -248,8 +267,12 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 		PredictionAgreementLow: autoWilsonLower(int64(evidence.same), int64(evidence.compared)),
 		ActiveSuccessLow:       autoWilsonLower(evidence.activeSuccess, evidence.activeRequests),
 		PredictedCostUSD:       evidence.predictedCost, ActualCostUSD: evidence.actualCost,
-		CostSamples:          len(evidence.costRatios),
-		ConfiguredCandidates: evidence.configuredCandidates, VerifiedCandidates: evidence.verifiedCandidates,
+		CostSamples:            len(evidence.costRatios),
+		EvidenceUsers:          len(evidence.users),
+		EvidenceBuckets:        len(evidence.timeBuckets),
+		RequiredBuckets:        autoReadinessMinimumBuckets,
+		AdminMultiUserEvidence: evidence.requireMultiUserEvidence,
+		ConfiguredCandidates:   evidence.configuredCandidates, VerifiedCandidates: evidence.verifiedCandidates,
 		Reasons: make([]string, 0),
 	}
 	if evidence.shadowRequests > 0 {
@@ -267,6 +290,28 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 	if len(evidence.costRatios) > 0 {
 		readiness.CostRatioP90Percent = (autoPercentile(evidence.costRatios, 0.9) - 1) * 100
 	}
+	for name, attempts := range evidence.modelSuccess {
+		if attempts == 0 {
+			continue
+		}
+		readiness.ModelTeams++
+		readiness.ModelSamples += int(attempts)
+		teamRate := float64(evidence.modelSuccessful[name]) / float64(attempts)
+		if readiness.ModelMinSuccessRate == 0 || teamRate < readiness.ModelMinSuccessRate {
+			readiness.ModelMinSuccessRate = teamRate
+		}
+	}
+	if readiness.ModelSamples > 0 {
+		var modelSuccess int64
+		for _, success := range evidence.modelSuccessful {
+			modelSuccess += success
+		}
+		readiness.ModelSuccessRate = float64(modelSuccess) / float64(readiness.ModelSamples)
+		readiness.ModelTeamsLow = min(
+			readiness.ModelSuccessRate,
+			autoWilsonLower(modelSuccess, int64(readiness.ModelSamples)),
+		)
+	}
 	if readiness.CostRatioP90Percent > 25 {
 		readiness.Reasons = append(readiness.Reasons, "actual_cost_above_prediction")
 	}
@@ -278,6 +323,12 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 	case evidence.classified < 20 || evidence.shadowRequests < 20:
 		readiness.State = "collect_shadow"
 		readiness.Reasons = append(readiness.Reasons, "need_more_classified_samples")
+	case evidence.requireMultiUserEvidence && readiness.EvidenceUsers < 3:
+		readiness.State = "collect_diverse_shadow"
+		readiness.Reasons = append(readiness.Reasons, "need_more_users")
+	case readiness.EvidenceBuckets < autoReadinessMinimumBuckets:
+		readiness.State = "collect_diverse_shadow"
+		readiness.Reasons = append(readiness.Reasons, "need_more_time_buckets")
 	case readiness.ShadowCoverage < 0.8:
 		readiness.State = "improve_shadow_coverage"
 		readiness.Reasons = append(readiness.Reasons, "shadow_coverage_below_80_percent")
@@ -305,6 +356,10 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 	case readiness.ActiveSuccessRate < 0.95:
 		readiness.State = "pause_active"
 		readiness.Reasons = append(readiness.Reasons, "active_success_rate_below_95_percent")
+	case readiness.ModelTeams > 0 && readiness.ModelMinSuccessRate < 0.85:
+		readiness.State = "hold_active"
+		readiness.RecommendedRampPercent = 5
+		readiness.Reasons = append(readiness.Reasons, "active_model_underperforming")
 	case evidence.activeRequests < 20:
 		readiness.State = "hold_active"
 		readiness.RecommendedRampPercent = 5
@@ -438,7 +493,7 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 	}
 	var requests []autoRequestSample
 	// 日志留存由系统生命周期管理；上限只约束交互式看板查询，避免一次把多年历史拉进内存。
-	if err := query.Select("id AS request_id, status, duration_ns / 1000000 AS duration_ms, cost, target_model, route_events, model, group_id, auto_task, auto_mode").
+	if err := query.Select("id AS request_id, user_id, status, started_at, duration_ns / 1000000 AS duration_ms, cost, target_model, route_events, model, group_id, auto_task, auto_mode").
 		Order("id DESC").Limit(summary.SampleLimit).Scan(&requests).Error; err != nil {
 		return summary, fmt.Errorf("failed to aggregate relay requests: %w", err)
 	}
@@ -467,12 +522,14 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 	type taskCount struct {
 		requests, success, failed int64
 		duration                  int64
+		durations                 []float64
 	}
 	tasks := make(map[string]*taskCount)
 	modelKey := func(task, name string) string { return task + "\x00" + name }
 	type modelCount struct {
 		attempts, success int64
 		duration          int64
+		durations         []float64
 		cost              float64
 	}
 	models := make(map[string]*modelCount)
@@ -487,6 +544,9 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 	requestTasks := make(map[uint64]string)
 	readinessByTask := make(map[string]*autoReadinessEvidence)
 	applyReadinessCandidateConfig(scope, groupID, readinessByTask)
+	for _, evidence := range readinessByTask {
+		evidence.requireMultiUserEvidence = scope.IsAdmin()
+	}
 	activeReadinessRequests := make(map[uint64]bool)
 	for _, request := range requests {
 		task := request.AutoTask
@@ -506,14 +566,23 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 		if readiness == nil {
 			readiness = &autoReadinessEvidence{}
 			readinessByTask[task] = readiness
+			readiness.requireMultiUserEvidence = scope.IsAdmin()
 		}
+		if readiness.users == nil {
+			readiness.users = make(map[uint]bool)
+		}
+		readiness.users[request.UserID] = true
+		if readiness.timeBuckets == nil {
+			readiness.timeBuckets = make(map[int64]bool)
+		}
+		readiness.timeBuckets[request.StartedAt.Truncate(6*time.Hour).Unix()] = true
 		readiness.classified++
-		switch request.AutoMode {
-		case "shadow":
+		if request.AutoMode == "shadow" {
 			readiness.shadowRequests++
 		}
 		tc.requests++
 		tc.duration += request.DurationMs
+		tc.durations = append(tc.durations, float64(request.DurationMs))
 		if request.Status == "success" {
 			tc.success++
 		} else if request.Status == "failed" {
@@ -568,6 +637,7 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 		}
 		mc.attempts++
 		mc.duration += attempt.DurationMs
+		mc.durations = append(mc.durations, float64(attempt.DurationMs))
 		if attempt.Status == "success" {
 			mc.success++
 			// Request-level cost is booked once for the final successful route.
@@ -606,14 +676,21 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 			case "explore":
 				events["explored"]++
 			}
-			if (evidence.RouteAction == "active" || evidence.RouteAction == "explore") &&
+			if request.AutoMode == "active" &&
+				(evidence.RouteAction == "active" || evidence.RouteAction == "explore") &&
 				!activeReadinessRequests[attempt.RequestID] {
 				activeReadinessRequests[attempt.RequestID] = true
 				readiness := readinessByTask[task]
 				if readiness != nil {
+					if readiness.modelSuccess == nil {
+						readiness.modelSuccess = make(map[string]int64)
+						readiness.modelSuccessful = make(map[string]int64)
+					}
+					readiness.modelSuccess[name]++
 					readiness.activeRequests++
 					if request.Status == "success" {
 						readiness.activeSuccess++
+						readiness.modelSuccessful[name]++
 					}
 				}
 			}
@@ -668,6 +745,7 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 		}
 		if count.requests > 0 {
 			item.AvgDurationMs = float64(count.duration) / float64(count.requests)
+			item.P90DurationMs = autoPercentile(count.durations, 0.9)
 		}
 		if completed := count.success + count.failed; completed > 0 {
 			item.SuccessRate = float64(count.success) / float64(completed)
@@ -679,6 +757,7 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 		item := AutoRoutingModelSummary{Task: parts[0], Model: parts[1], Attempts: count.attempts, Success: count.success}
 		if count.attempts > 0 {
 			item.AvgDurationMs = float64(count.duration) / float64(count.attempts)
+			item.P90DurationMs = autoPercentile(count.durations, 0.9)
 		}
 		item.SuccessRate = float64(count.success) / float64(count.attempts)
 		if count.success > 0 {

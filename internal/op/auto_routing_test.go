@@ -45,9 +45,18 @@ func TestAutoRoutingAggregateUsesTaskSnapshotAndLegacyEvents(t *testing.T) {
 	if len(summary.Tasks) != 2 || len(summary.Models) != 2 {
 		t.Fatalf("tasks=%+v models=%+v", summary.Tasks, summary.Models)
 	}
+	for _, modelSummary := range summary.Models {
+		if modelSummary.Task == "coding" && modelSummary.Model == "model-a" &&
+			modelSummary.P90DurationMs <= modelSummary.AvgDurationMs {
+			t.Fatalf("model P90 should expose the slow tail: %+v", modelSummary)
+		}
+	}
 	for _, task := range summary.Tasks {
 		if task.Task == "coding" && (task.Requests != 2 || task.Success != 1 || task.Failed != 1) {
 			t.Fatalf("coding summary: %+v", task)
+		}
+		if task.Task == "coding" && task.P90DurationMs == 0 {
+			t.Fatalf("coding P90 duration was not calculated: %+v", task)
 		}
 	}
 	if len(summary.Exclusions) != 2 || summary.Exclusions[0].Count != 1 {
@@ -108,8 +117,11 @@ func TestAutoRoutingAggregateComparesShadowPrediction(t *testing.T) {
 }
 
 func TestAutoRoutingReadinessStartsConservatively(t *testing.T) {
+	users := map[uint]bool{1: true, 2: true, 3: true}
+	buckets := map[int64]bool{1: true, 2: true, 3: true, 4: true}
 	readiness := autoReadinessFor(model.AutoRoutingTaskCoding, autoReadinessEvidence{
 		classified: 40, shadowRequests: 40, compared: 35, same: 28,
+		users: users, timeBuckets: buckets,
 		configuredCandidates: 2, verifiedCandidates: 2, labelingEnabled: true,
 	})
 	if readiness.State != "ready_for_active" || readiness.RecommendedRampPercent != 5 {
@@ -117,7 +129,8 @@ func TestAutoRoutingReadinessStartsConservatively(t *testing.T) {
 	}
 
 	readiness = autoReadinessFor(model.AutoRoutingTaskCoding, autoReadinessEvidence{
-		classified: 10, shadowRequests: 10, configuredCandidates: 2, verifiedCandidates: 2, labelingEnabled: true,
+		classified: 10, shadowRequests: 10, users: users, timeBuckets: buckets,
+		configuredCandidates: 2, verifiedCandidates: 2, labelingEnabled: true,
 	})
 	if readiness.State != "collect_shadow" || readiness.RecommendedRampPercent != 0 {
 		t.Fatalf("small sample did not collect shadow: %+v", readiness)
@@ -125,6 +138,7 @@ func TestAutoRoutingReadinessStartsConservatively(t *testing.T) {
 
 	readiness = autoReadinessFor(model.AutoRoutingTaskCoding, autoReadinessEvidence{
 		classified: 240, shadowRequests: 240, compared: 240, same: 158,
+		users: users, timeBuckets: buckets,
 		configuredCandidates: 2, verifiedCandidates: 2, labelingEnabled: true,
 	})
 	if readiness.PredictionAgreement < 0.65 || readiness.PredictionAgreementLow >= 0.60 {
@@ -134,11 +148,41 @@ func TestAutoRoutingReadinessStartsConservatively(t *testing.T) {
 		!slices.Contains(readiness.Reasons, "prediction_confidence_below_60_percent") {
 		t.Fatalf("weak confidence interval should keep collecting: %+v", readiness)
 	}
+
+	readiness = autoReadinessFor(model.AutoRoutingTaskCoding, autoReadinessEvidence{
+		classified: 40, shadowRequests: 40, compared: 35, same: 28,
+		users: map[uint]bool{1: true}, timeBuckets: buckets,
+		configuredCandidates: 2, verifiedCandidates: 2, labelingEnabled: true,
+		requireMultiUserEvidence: true,
+	})
+	if readiness.State != "collect_diverse_shadow" || !slices.Contains(readiness.Reasons, "need_more_users") {
+		t.Fatalf("single-user evidence should not start a ramp: %+v", readiness)
+	}
+
+	readiness = autoReadinessFor(model.AutoRoutingTaskCoding, autoReadinessEvidence{
+		classified: 40, shadowRequests: 40, compared: 35, same: 28,
+		users: map[uint]bool{1: true}, timeBuckets: buckets,
+		configuredCandidates: 2, verifiedCandidates: 2, labelingEnabled: true,
+	})
+	if readiness.State != "ready_for_active" || slices.Contains(readiness.Reasons, "need_more_users") {
+		t.Fatalf("user-scoped evidence should not require inaccessible cross-user logs: %+v", readiness)
+	}
+
+	readiness = autoReadinessFor(model.AutoRoutingTaskCoding, autoReadinessEvidence{
+		classified: 40, shadowRequests: 40, compared: 35, same: 28,
+		users: users, timeBuckets: map[int64]bool{1: true, 2: true},
+		configuredCandidates: 2, verifiedCandidates: 2, labelingEnabled: true,
+	})
+	if readiness.State != "collect_diverse_shadow" || !slices.Contains(readiness.Reasons, "need_more_time_buckets") {
+		t.Fatalf("one-session evidence should not start a ramp: %+v", readiness)
+	}
 }
 
 func TestAutoRoutingReadinessHoldsAndScalesActiveSafely(t *testing.T) {
 	base := autoReadinessEvidence{
 		classified: 80, shadowRequests: 80, compared: 70, same: 56,
+		users:                map[uint]bool{1: true, 2: true, 3: true},
+		timeBuckets:          map[int64]bool{1: true, 2: true, 3: true, 4: true},
 		configuredCandidates: 2, verifiedCandidates: 2, labelingEnabled: true,
 	}
 	base.activeRequests = 10
@@ -167,6 +211,8 @@ func TestAutoRoutingReadinessHoldsAndScalesActiveSafely(t *testing.T) {
 
 	base.activeSuccess = 40
 	base.costRatios = []float64{2}
+	base.modelSuccess = nil
+	base.modelSuccessful = nil
 	readiness = autoReadinessFor(model.AutoRoutingTaskTool, base)
 	if readiness.State != "hold_active" || !slices.Contains(readiness.Reasons, "cost_p90_above_50_percent") {
 		t.Fatalf("high active cost should stop scaling: %+v", readiness)
@@ -183,6 +229,17 @@ func TestAutoRoutingReadinessHoldsAndScalesActiveSafely(t *testing.T) {
 	readiness = autoReadinessFor(model.AutoRoutingTaskTool, base)
 	if readiness.State != "hold_active" || !slices.Contains(readiness.Reasons, "need_cost_comparison_samples") {
 		t.Fatalf("missing cost samples must not permit expansion: %+v", readiness)
+	}
+
+	base.actualCost = 1
+	base.costRatios = []float64{1}
+	base.modelSuccess = map[string]int64{"model-a": 40, "model-b": 40}
+	base.modelSuccessful = map[string]int64{"model-a": 33, "model-b": 39}
+	base.activeRequests = 80
+	base.activeSuccess = 78
+	readiness = autoReadinessFor(model.AutoRoutingTaskTool, base)
+	if readiness.State != "hold_active" || !slices.Contains(readiness.Reasons, "active_model_underperforming") {
+		t.Fatalf("one underperforming model should stop a ramp: %+v", readiness)
 	}
 }
 
@@ -236,9 +293,50 @@ func TestAutoRoutingReadinessUsesActualActiveRequests(t *testing.T) {
 	if coding.Classified != 3 {
 		t.Fatalf("classified request count was not preserved: %+v", coding)
 	}
-	if coding.ActiveRequests != 1 || coding.ActiveSuccessRate != 1 ||
+	if coding.ActiveRequests != 1 || coding.ActiveSuccessRate != 1 || coding.ModelTeams != 1 ||
+		coding.ModelMinSuccessRate != 1 ||
 		math.Abs(coding.ActiveSuccessLow-autoWilsonLower(1, 1)) > 1e-12 {
 		t.Fatalf("fallback and rejected requests polluted active evidence: %+v", coding)
+	}
+}
+
+func TestAutoRoutingReadinessModelTeamsUseActiveEvidenceOnly(t *testing.T) {
+	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "auto-routing-model-teams.db"), false); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	now := time.Now()
+	requests := []model.RelayRequest{
+		{ID: 601, UserID: 7, GroupID: 37, Status: "failed", StartedAt: now, TargetModel: "shadow-only", AutoTask: "coding", AutoMode: "shadow"},
+		{ID: 602, UserID: 7, GroupID: 37, Status: "success", StartedAt: now, TargetModel: "model-a", AutoTask: "coding", AutoMode: "active"},
+		{ID: 603, UserID: 7, GroupID: 37, Status: "failed", StartedAt: now, TargetModel: "model-a", AutoTask: "coding", AutoMode: "active"},
+	}
+	if err := db.GetDB().Create(&requests).Error; err != nil {
+		t.Fatal(err)
+	}
+	attempts := []model.RelayRequestAttempt{
+		{RequestID: 601, Round: 1, TargetModel: "shadow-only", Status: "failed", Decision: `{"reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+		{RequestID: 602, Round: 1, TargetModel: "model-a", Status: "success", Decision: `{"reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+		{RequestID: 603, Round: 1, TargetModel: "model-a", Status: "failed", Decision: `{"reason":"auto_coding","details":"{\"route_action\":\"explore\"}"}`},
+	}
+	if err := db.GetDB().Create(&attempts).Error; err != nil {
+		t.Fatal(err)
+	}
+	summary, err := AutoRoutingAggregate(model.Scope{ID: 7, Role: model.RoleUser}, 37, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var coding *AutoRoutingReadiness
+	for i := range summary.Readiness {
+		if summary.Readiness[i].Task == "coding" {
+			coding = &summary.Readiness[i]
+			break
+		}
+	}
+	if coding == nil {
+		t.Fatal("coding readiness missing")
+	}
+	if coding.ModelTeams != 1 || coding.ModelSamples != 2 || coding.ModelMinSuccessRate != 0.5 {
+		t.Fatalf("model stability must use only active or explored landings: %+v", coding)
 	}
 }
 
@@ -268,6 +366,8 @@ func TestAutoRoutingReadinessIncludesConfiguredCandidateCoverage(t *testing.T) {
 	// fixture. Readiness accounting is still tested directly through its pure helper.
 	readiness := autoReadinessFor(model.AutoRoutingTaskCoding, autoReadinessEvidence{
 		classified: 20, shadowRequests: 20, compared: 20, same: 20,
+		users:                map[uint]bool{1: true, 2: true, 3: true},
+		timeBuckets:          map[int64]bool{1: true, 2: true, 3: true, 4: true},
 		configuredCandidates: 1, verifiedCandidates: 1, labelingEnabled: true,
 	})
 	if readiness.State != "ready_for_active" {

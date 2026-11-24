@@ -27,8 +27,8 @@ interface AutoRoutingSummary {
     success: number;
     failed: number;
     success_rate: number;
-    tasks: { task: string; requests: number; success: number; failed: number; success_rate: number; avg_duration_ms: number }[];
-    models: { task: string; model: string; attempts: number; success: number; success_rate: number; avg_duration_ms: number; avg_cost_usd: number }[];
+    tasks: { task: string; requests: number; success: number; failed: number; success_rate: number; avg_duration_ms: number; p90_duration_ms: number }[];
+    models: { task: string; model: string; attempts: number; success: number; success_rate: number; avg_duration_ms: number; p90_duration_ms: number; avg_cost_usd: number }[];
     exclusions: { reason: string; count: number }[];
     events: { reason: string; count: number }[];
     predictions: { task: string; compared: number; same_model: number; same_model_rate: number; predicted_cost_usd: number; actual_cost_usd: number; cost_delta_usd: number }[];
@@ -39,6 +39,9 @@ interface AutoRoutingSummary {
         recommended_ramp_percent: number;
         confidence_level_percent: number;
         classified: number;
+        evidence_users: number;
+        evidence_buckets: number;
+        required_buckets: number;
         shadow_requests: number;
         shadow_compared: number;
         shadow_coverage: number;
@@ -54,6 +57,12 @@ interface AutoRoutingSummary {
         cost_samples: number;
         configured_candidates: number;
         verified_candidates: number;
+        model_teams: number;
+        model_samples: number;
+        model_success_rate: number;
+        model_teams_lower: number;
+        admin_multi_user_evidence: boolean;
+        model_min_success_rate: number;
         reasons: string[];
     }[];
 }
@@ -118,7 +127,7 @@ function AutoRoutingPanel() {
                         {data.tasks.map((task) => (
                             <div key={task.task} className="rounded-xl border border-border/40 bg-muted/20 p-3">
                                 <div className="flex items-center justify-between"><span className="text-sm font-medium">{tr('task.' + task.task)}</span><span className="text-xs text-muted-foreground">{tr('requestCount', { count: task.requests })}</span></div>
-                                <div className="mt-2 grid grid-cols-3 gap-2 text-xs"><span>{tr('rate', { value: (task.success_rate * 100).toFixed(1) + '%' })}</span><span>{tr('latency', { value: Math.round(task.avg_duration_ms) + ' ms' })}</span><span>{tr('failedShort', { count: task.failed })}</span></div>
+                                <div className="mt-2 grid grid-cols-2 gap-2 text-xs"><span>{tr('rate', { value: (task.success_rate * 100).toFixed(1) + '%' })}</span><span>{tr('latency', { value: Math.round(task.avg_duration_ms) + ' ms' })}</span><span>{tr('tailLatency', { value: Math.round(task.p90_duration_ms) + ' ms' })}</span><span>{tr('failedShort', { count: task.failed })}</span></div>
                                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(100, task.success_rate * 100)}%` }} /></div>
                             </div>
                         ))}
@@ -146,6 +155,9 @@ function AutoRoutingPanel() {
                                 </div>
                                 <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
                                     <span>{tr('readinessShadow', { compared: item.shadow_compared, total: item.shadow_requests })}</span>
+                                    {item.admin_multi_user_evidence
+                                        ? <span>{tr('readinessEvidence', { users: item.evidence_users, buckets: item.evidence_buckets, required: item.required_buckets })}</span>
+                                        : <span>{tr('readinessUserEvidence', { buckets: item.evidence_buckets, required: item.required_buckets })}</span>}
                                     <span>{tr('readinessAgreement', { value: `${(item.prediction_agreement * 100).toFixed(1)}%` })}</span>
                                     {item.shadow_compared > 0 && <span>{tr('readinessAgreementLower', { level: item.confidence_level_percent, value: `${(item.prediction_agreement_lower * 100).toFixed(1)}%` })}</span>}
                                     <span>{tr('readinessCoverage', { value: `${(item.shadow_coverage * 100).toFixed(1)}%` })}</span>
@@ -153,6 +165,7 @@ function AutoRoutingPanel() {
                                     {item.active_requests > 0 && <span>{tr('readinessActive', { count: item.active_requests, value: `${(item.active_success_rate * 100).toFixed(1)}%` })}</span>}
                                     {item.active_requests > 0 && <span>{tr('readinessActiveLower', { level: item.confidence_level_percent, value: `${(item.active_success_lower * 100).toFixed(1)}%` })}</span>}
                                     {item.cost_samples > 0 && <span>{tr('readinessCost', { samples: item.cost_samples, value: `${item.cost_ratio_p90_percent.toFixed(1)}%` })}</span>}
+                                    {item.model_teams > 0 && <span>{tr('readinessModels', { count: item.model_teams, value: `${(item.model_min_success_rate * 100).toFixed(1)}%` })}</span>}
                                 </div>
                                 {item.recommended_ramp_percent > 0 && (
                                     <p className="mt-2 font-medium text-foreground">{tr('readinessRamp', { value: item.recommended_ramp_percent })}</p>
@@ -172,7 +185,7 @@ function AutoRoutingPanel() {
                 </div>
             )}
             {data.models.length > 0 && (
-                <section className="rounded-2xl border border-border/60 bg-card p-4"><h3 className="mb-3 text-sm font-semibold">{tr('modelsTitle')}</h3><div className="space-y-2">{data.models.slice(0, 20).map((model) => <div key={`${model.task}-${model.model}`} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-lg border border-border/40 px-3 py-2 text-xs"><span className="truncate">{tr('task.' + model.task)} · {model.model}</span><span className="tabular-nums text-muted-foreground">{tr('requestCount', { count: model.attempts })}</span><span className="tabular-nums">{tr('rate', { value: (model.success_rate * 100).toFixed(1) + '%' })}</span></div>)}</div></section>
+                        <section className="rounded-2xl border border-border/60 bg-card p-4"><h3 className="mb-3 text-sm font-semibold">{tr('modelsTitle')}</h3><div className="space-y-2">{data.models.slice(0, 20).map((model) => <div key={`${model.task}-${model.model}`} className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-3 rounded-lg border border-border/40 px-3 py-2 text-xs"><span className="truncate">{tr('task.' + model.task)} · {model.model}</span><span className="tabular-nums text-muted-foreground">{tr('requestCount', { count: model.attempts })}</span><span className="tabular-nums">{tr('rate', { value: (model.success_rate * 100).toFixed(1) + '%' })}</span><span className="tabular-nums text-muted-foreground">{tr('tailLatency', { value: Math.round(model.p90_duration_ms) + ' ms' })}</span></div>)}</div></section>
             )}
             {data.predictions.length > 0 && (
                 <section className="rounded-2xl border border-border/60 bg-card p-4">
