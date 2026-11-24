@@ -1381,6 +1381,7 @@
             "modelRiskSamples": "{count} 个主动样本",
             "modelRiskTrend": "早期 {earlier} → 近期 {recent}",
             "modelRiskFirstToken": "首 token P90 {value} · {samples} 个样本",
+            "modelRiskFirstTokenTrend": "首 token P90 早期 {earlier} → 近期 {recent}",
             "modelRiskStream": "首字后未完成 {value} · {count} 个",
             "readinessFirstToken": "首 token P90 {value} · {samples} 个样本",
             "readinessStream": "首字后未完成 {value} · {count} 个",
@@ -1440,7 +1441,8 @@
                 "model_success_below_85_percent": "成功率低于 85%",
                 "model_stream_incomplete_above_5_percent": "首字后未完成率超过 5%",
                 "model_first_token_p90_above_30_seconds": "首 token P90 超过 30 秒",
-                "model_recent_success_drop_above_10_percent": "近期成功率比早期下降至少 10 个百分点"
+                "model_recent_success_drop_above_10_percent": "近期成功率比早期下降至少 10 个百分点",
+                "model_first_token_p90_rise_above_25_percent": "近期首 token P90 比早期上升至少 25%"
             },
             "task": {
                 "general": "通用",

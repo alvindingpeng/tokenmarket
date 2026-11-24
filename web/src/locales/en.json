@@ -1381,6 +1381,7 @@
             "modelRiskSamples": "{count} active samples",
             "modelRiskTrend": "Earlier {earlier} → recent {recent}",
             "modelRiskFirstToken": "First token P90 {value} · {samples} samples",
+            "modelRiskFirstTokenTrend": "First token P90 earlier {earlier} → recent {recent}",
             "modelRiskStream": "Incomplete after first token {value} · {count}",
             "readinessFirstToken": "First token P90 {value} · {samples} samples",
             "readinessStream": "Incomplete after first token {value} · {count}",
@@ -1440,7 +1441,8 @@
                 "model_success_below_85_percent": "Success rate below 85%",
                 "model_stream_incomplete_above_5_percent": "Streams incomplete after first token exceed 5%",
                 "model_first_token_p90_above_30_seconds": "First-token P90 exceeds 30 seconds",
-                "model_recent_success_drop_above_10_percent": "Recent success rate dropped by at least 10 points"
+                "model_recent_success_drop_above_10_percent": "Recent success rate dropped by at least 10 points",
+                "model_first_token_p90_rise_above_25_percent": "Recent first-token P90 rose by at least 25%"
             },
             "task": {
                 "general": "General",

@@ -85,6 +85,12 @@ interface AutoRoutingSummary {
             success_rate_delta: number;
             first_token_samples: number;
             first_token_p90_ms: number;
+            earlier_first_token_samples: number;
+            earlier_first_token_p90_ms: number;
+            recent_first_token_samples: number;
+            recent_first_token_p90_ms: number;
+            first_token_trend: 'insufficient' | 'stable' | 'degrading';
+            first_token_p90_delta_ms: number;
             stream_started: number;
             stream_incomplete: number;
             stream_incomplete_rate: number;
@@ -255,6 +261,14 @@ function AutoRoutingPanel() {
                                                             {tr(`modelRiskTrendState.${risk.success_trend}`)}
                                                         </span>
                                                         {risk.first_token_samples > 0 && <span>{tr('modelRiskFirstToken', { value: `${risk.first_token_p90_ms.toFixed(0)} ms`, samples: risk.first_token_samples })}</span>}
+                                                        {risk.first_token_trend !== 'insufficient' && (
+                                                            <span className={risk.first_token_trend === 'degrading' ? 'text-destructive' : undefined}>
+                                                                {tr('modelRiskFirstTokenTrend', {
+                                                                    earlier: `${risk.earlier_first_token_p90_ms.toFixed(0)} ms`,
+                                                                    recent: `${risk.recent_first_token_p90_ms.toFixed(0)} ms`,
+                                                                })}
+                                                            </span>
+                                                        )}
                                                         {risk.stream_started > 0 && <span className={risk.state === 'blocked' ? 'text-destructive' : undefined}>{tr('modelRiskStream', { value: `${(risk.stream_incomplete_rate * 100).toFixed(1)}%`, count: risk.stream_incomplete })}</span>}
                                                     </div>
                                                     {risk.reasons.length > 0 && (
