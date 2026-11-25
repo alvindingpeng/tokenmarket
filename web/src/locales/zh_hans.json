@@ -3042,13 +3042,109 @@
             "userDesc": "模型市场、API 密钥、余额与调用统计(按小时/天聚合, 金额/次数/词元多维度排行)"
         },
         "cta": {
-            "title": "准备好开始了吗？",
-            "subtitle": "进入控制台，接入你的第一条线路。",
-            "button": "进入控制台"
+            "title": "把复杂上游交由编组站统一调度",
+            "subtitle": "进入控制台接入第一条渠道，或先查看当前公开节点的实时状态。",
+            "button": "进入控制台",
+            "statusButton": "查看实时状态"
         },
         "footer": {
             "tagline": "自托管部署 · 数据与余额都在自己手里",
             "contact": "联系管理员"
+        },
+        "workbench": {
+            "heading": "智能编组调度台",
+            "statusLive": "在线编组",
+            "inboundLabel": "入站请求",
+            "routingLabel": "编组决策",
+            "tracksLabel": "上游股道与容灾",
+            "ledgerLabel": "预扣与结算",
+            "primaryBadge": "主选",
+            "standbyBadge": "热备",
+            "tabs": {
+                "coding": "编码与工具调用",
+                "summary": "高并发摘要",
+                "media": "图像与视频生成"
+            },
+            "scenarios": {
+                "coding": {
+                    "endpoint": "POST /v1/responses",
+                    "model": "auto (coding · tool)",
+                    "protocol": "OpenAI Responses 原生函数调用",
+                    "policy": "智能路由 shadow / 5% 灰度 · 综合评分（质量 40% · 价格 20% · 延迟 20% · 成功率 20%）",
+                    "trackA": "主力上游 A · 420ms 首字 · 99.6% 成功 · 工具已核验",
+                    "trackB": "热备上游 B · 连续失败 3 次自动冷却 60s 切道",
+                    "ledger": "调用前按估算输入预扣，结束后按输入/输出/缓存命中精确结算"
+                },
+                "summary": {
+                    "endpoint": "POST /v1/messages",
+                    "model": "auto (summary)",
+                    "protocol": "Anthropic Messages 原生文本分类路由",
+                    "policy": "按成本与延迟档位自动择优 · 上下文超限样本自动标记降权",
+                    "trackA": "低价高吞吐渠道 · 280ms 首字 · 缓存命中自动折算",
+                    "trackB": "跨区出口池化线路 · 限流 429 自动无感换道重试",
+                    "ledger": "实时写入调用日志与小时级统计，支持按日自动对账"
+                },
+                "media": {
+                    "endpoint": "POST /v1/images/edits · /v1/videos",
+                    "model": "media-group",
+                    "protocol": "多图编辑直通与异步视频任务轮询落库",
+                    "policy": "按分辨率与形态独立计价 · 美元基准多币种汇率快照",
+                    "trackA": "生图/生视频专享上游 · 独立密钥与配额隔离",
+                    "trackB": "失败任务自动释放预扣额度并记录可追溯账本",
+                    "ledger": "图像按张分档计费，视频按起步价加每秒时长精确结算"
+                }
+            }
+        },
+        "metrics": {
+            "m1Value": "7 种",
+            "m1Label": "选路策略与智能灰度",
+            "m2Value": "5 类",
+            "m2Label": "多协议与多模态统一入口",
+            "m3Value": "预扣结算",
+            "m3Label": "多币种账本与每日对账",
+            "m4Value": "单二进制",
+            "m4Label": "自托管部署与加密备份"
+        },
+        "highlights": {
+            "smartRoutingTitle": "智能路由与多协议网关",
+            "smartRoutingDesc": "统一承接 OpenAI Chat、Responses 原生函数调用与 Anthropic Messages。支持按任务分类自动选路、shadow 影子观测与按比例主动灰度，综合质量、价格、延迟、成功率及断流/超限表现动态调度，并支持出口池化与自动冷却切道。",
+            "marketTitle": "模型广场与多币种分销",
+            "marketDesc": "渠道商可一键发布渠道至模型广场，四位共享编码终身锁定并支持渠道级加价与多币种自动汇率快照。用户按实时成功率、首字延迟与价格并排对比模型，一键收藏或编入自己的路由分组。",
+            "opsDetail": "实时 SSE 日志流、历史检索与导出、时区感知调用分析、多维度限流、Webhook 投递重放、工单系统、健康探测告警与异地加密备份。",
+            "billingDetail": "调用前预扣、结束后精确结算、每日自动对账、上游账单导入核对、毛利分析、争议处理、兑换码批次与提现审批全流程闭环。",
+            "channelsDetail": "单模型名可聚合多条渠道与上游账号，独立管理密钥池、协议支持位、模型授权、出口代理与并发额度。",
+            "accessDetail": "管理员、渠道商、用户三角色按权限裁剪界面；支持 TOTP 二次验证、审计日志归档、三语界面、深浅色与白色/紧凑工作台模板。",
+            "smartRoutingTags": {
+                "t1": "OpenAI Responses",
+                "t2": "Anthropic Messages",
+                "t3": "Shadow 与比例灰度",
+                "t4": "工具调用验证",
+                "t5": "自动冷却容灾"
+            },
+            "marketTags": {
+                "t1": "四位共享编码",
+                "t2": "多币种汇率快照",
+                "t3": "实时成功率排行",
+                "t4": "模型并排对比",
+                "t5": "渠道自主加价"
+            }
+        },
+        "rolePoints": {
+            "admin": {
+                "p1": "渠道、上游账号与授权统一管控",
+                "p2": "用户等级、配额、限流与审计归档",
+                "p3": "运维中心、对账、提现审核与加密备份"
+            },
+            "reseller": {
+                "p1": "接入自有上游并一键发布至模型广场",
+                "p2": "自主配置多币种定价与渠道加价比例",
+                "p3": "查看供货收入、结算单与争议处理"
+            },
+            "user": {
+                "p1": "按延迟、成功率与价格浏览模型广场",
+                "p2": "独立 API 密钥、钱包流水与余额预警",
+                "p3": "按小时与天查看调用趋势、缓存命中与成本排行"
+            }
         }
     },
     "wallet": {

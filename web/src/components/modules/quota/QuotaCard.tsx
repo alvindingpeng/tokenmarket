@@ -23,14 +23,12 @@ function QuotaBar({
     label,
     limit,
     used,
-    remain,
     text,
 }: {
     field: string;
     label: string;
     limit: number;
     used: number;
-    remain: number;
     text: { unlimited: string; reset: string };
 }) {
     const level = quotaLevel(limit, used);
@@ -66,7 +64,7 @@ function QuotaBar({
             </div>
             {limit > 0 && (
                 <div className="mt-1 text-xs text-muted-foreground">
-                    {text.reset.replace('{remain}', remain.toLocaleString())}
+                    {text.reset}
                 </div>
             )}
         </div>
@@ -107,24 +105,21 @@ export function QuotaCardBody({ data }: { data: QuotaUsageResponse }) {
                     label={t('rpm')}
                     limit={usage.rpm}
                     used={usage.used_rpm}
-                    remain={data.remain_rpm}
-                    text={{ unlimited: t('unlimited'), reset: t('remainReset') }}
+                    text={{ unlimited: t('unlimited'), reset: t('remainReset', { remain: data.remain_rpm.toLocaleString() }) }}
                 />
                 <QuotaBar
                     field="tpm"
                     label={t('tpm')}
                     limit={usage.tpm}
                     used={usage.used_tpm}
-                    remain={data.remain_tpm}
-                    text={{ unlimited: t('unlimited'), reset: t('remainReset') }}
+                    text={{ unlimited: t('unlimited'), reset: t('remainReset', { remain: data.remain_tpm.toLocaleString() }) }}
                 />
                 <QuotaBar
                     field="concurrent"
                     label={t('concurrent')}
                     limit={usage.concurrent}
                     used={usage.in_flight}
-                    remain={data.remain_concurrent}
-                    text={{ unlimited: t('unlimited'), reset: t('remainReset') }}
+                    text={{ unlimited: t('unlimited'), reset: t('remainReset', { remain: data.remain_concurrent.toLocaleString() }) }}
                 />
             </div>
         </div>

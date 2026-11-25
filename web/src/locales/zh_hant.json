@@ -3042,13 +3042,109 @@
             "userDesc": "模型市場、API 密鑰、餘額與調用統計(按小時/天聚合, 金額/次數/詞元多維度排行)"
         },
         "cta": {
-            "title": "準備好開始了嗎？",
-            "subtitle": "進入控制台，接入你的第一條線路。",
-            "button": "進入控制台"
+            "title": "把複雜上游交由編組站統一調度",
+            "subtitle": "進入控制台接入第一條渠道，或先檢視目前公開節點的即時狀態。",
+            "button": "進入控制台",
+            "statusButton": "檢視即時狀態"
         },
         "footer": {
             "tagline": "自託管部署 · 資料與餘額都在自己手裡",
             "contact": "聯絡管理員"
+        },
+        "workbench": {
+            "heading": "智慧編組調度台",
+            "statusLive": "線上編組",
+            "inboundLabel": "入站請求",
+            "routingLabel": "編組決策",
+            "tracksLabel": "上游股道與容災",
+            "ledgerLabel": "預扣與結算",
+            "primaryBadge": "主選",
+            "standbyBadge": "熱備",
+            "tabs": {
+                "coding": "編碼與工具呼叫",
+                "summary": "高併發摘要",
+                "media": "圖像與影片生成"
+            },
+            "scenarios": {
+                "coding": {
+                    "endpoint": "POST /v1/responses",
+                    "model": "auto (coding · tool)",
+                    "protocol": "OpenAI Responses 原生函式呼叫",
+                    "policy": "智慧路由 shadow / 5% 灰度 · 綜合評分（品質 40% · 價格 20% · 延遲 20% · 成功率 20%）",
+                    "trackA": "主力上游 A · 420ms 首字 · 99.6% 成功 · 工具已核驗",
+                    "trackB": "熱備上游 B · 連續失敗 3 次自動冷卻 60s 切道",
+                    "ledger": "呼叫前依估算輸入預扣，結束後依輸入/輸出/快取命中精確結算"
+                },
+                "summary": {
+                    "endpoint": "POST /v1/messages",
+                    "model": "auto (summary)",
+                    "protocol": "Anthropic Messages 原生文字分類路由",
+                    "policy": "依成本與延遲檔位自動擇優 · 上下文超限樣本自動標記降權",
+                    "trackA": "低價高吞吐渠道 · 280ms 首字 · 快取命中自動折算",
+                    "trackB": "跨區出口池化線路 · 限流 429 自動無感換道重試",
+                    "ledger": "即時寫入呼叫日誌與小時級統計，支援按日自動對帳"
+                },
+                "media": {
+                    "endpoint": "POST /v1/images/edits · /v1/videos",
+                    "model": "media-group",
+                    "protocol": "多圖編輯直通與非同步影片任務輪詢落庫",
+                    "policy": "依解析度與形態獨立計價 · 美元基準多幣種匯率快照",
+                    "trackA": "生圖/生影片專享上游 · 獨立金鑰與配額隔離",
+                    "trackB": "失敗任務自動釋放預扣額度並記錄可追溯帳本",
+                    "ledger": "圖像按張分檔計費，影片按起步價加每秒時長精確結算"
+                }
+            }
+        },
+        "metrics": {
+            "m1Value": "7 種",
+            "m1Label": "選路策略與智慧灰度",
+            "m2Value": "5 類",
+            "m2Label": "多協定與多模態統一入口",
+            "m3Value": "預扣結算",
+            "m3Label": "多幣種帳本與每日對帳",
+            "m4Value": "單二進位",
+            "m4Label": "自託管部署與加密備份"
+        },
+        "highlights": {
+            "smartRoutingTitle": "智慧路由與多協定閘道",
+            "smartRoutingDesc": "統一承接 OpenAI Chat、Responses 原生函式呼叫與 Anthropic Messages。支援依任務分類自動選路、shadow 影子觀測與依比例主動灰度，綜合品質、價格、延遲、成功率與斷流/超限表現動態調度，並支援出口池化與自動冷卻切道。",
+            "marketTitle": "模型廣場與多幣種分銷",
+            "marketDesc": "渠道商可一鍵發布渠道至模型廣場，四位共享編碼終身鎖定並支援渠道級加價與多幣種自動匯率快照。使用者依即時成功率、首字延遲與價格並排對比模型，一鍵收藏或編入自己的路由分組。",
+            "opsDetail": "即時 SSE 日誌流、歷史檢索與匯出、時區感知呼叫分析、多維度限流、Webhook 投遞重放、工單系統、健康探測告警與異地加密備份。",
+            "billingDetail": "呼叫前預扣、結束後精確結算、每日自動對帳、上游帳單匯入核對、毛利分析、爭議處理、兌換碼批次與提現審批全流程閉環。",
+            "channelsDetail": "單模型名可聚合多條渠道與上游帳號，獨立管理金鑰池、協定支援位、模型授權、出口代理與併發額度。",
+            "accessDetail": "管理員、渠道商、使用者三角色依權限裁剪介面；支援 TOTP 二次驗證、審計日誌歸檔、三語介面、深淺色與白色/緊湊工作台模板。",
+            "smartRoutingTags": {
+                "t1": "OpenAI Responses",
+                "t2": "Anthropic Messages",
+                "t3": "Shadow 與比例灰度",
+                "t4": "工具呼叫驗證",
+                "t5": "自動冷卻容災"
+            },
+            "marketTags": {
+                "t1": "四位共享編碼",
+                "t2": "多幣種匯率快照",
+                "t3": "即時成功率排行",
+                "t4": "模型並排對比",
+                "t5": "渠道自主加價"
+            }
+        },
+        "rolePoints": {
+            "admin": {
+                "p1": "渠道、上游帳號與授權統一管控",
+                "p2": "使用者等級、配額、限流與審計歸檔",
+                "p3": "維運中心、對帳、提現審核與加密備份"
+            },
+            "reseller": {
+                "p1": "接入自有上游並一鍵發布至模型廣場",
+                "p2": "自主設定多幣種定價與渠道加價比例",
+                "p3": "檢視供貨收入、結算單與爭議處理"
+            },
+            "user": {
+                "p1": "依延遲、成功率與價格瀏覽模型廣場",
+                "p2": "獨立 API 金鑰、錢包流水與餘額預警",
+                "p3": "按小時與天檢視呼叫趨勢、快取命中與成本排行"
+            }
         }
     },
     "wallet": {

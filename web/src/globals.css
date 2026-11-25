@@ -336,6 +336,9 @@ html.dark,
     flex: 0 0 auto;
     min-height: 14rem;
   }
+  .responsive-page .overscroll-contain {
+    overscroll-behavior-y: auto;
+  }
   .wallet-page,
   .ops-page,
   .notification-page {
@@ -352,6 +355,15 @@ html.dark,
   .settings-page > .flex-1 {
     height: auto;
     overflow: visible;
+  }
+  .settings-page > .flex-1 > .h-full {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+  }
+  .settings-page > .flex-1 > .h-full > .flex-1 {
+    flex: 0 0 auto;
+    min-height: 14rem;
   }
   .responsive-page .virtualized-grid {
     min-height: 14rem;

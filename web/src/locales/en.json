@@ -3042,13 +3042,109 @@
             "userDesc": "Model market, API keys, balance and usage analytics (hourly/daily, ranked by cost, count or tokens)"
         },
         "cta": {
-            "title": "Ready to get started?",
-            "subtitle": "Open the console and hook up your first upstream.",
-            "button": "Enter Console"
+            "title": "Put one marshalling yard in front of every upstream",
+            "subtitle": "Open the console to connect your first channel, or inspect live status on public nodes first.",
+            "button": "Enter Console",
+            "statusButton": "View Live Status"
         },
         "footer": {
             "tagline": "Self-hosted · your data and balance stay with you",
             "contact": "Contact operator"
+        },
+        "workbench": {
+            "heading": "Smart Routing Switchboard",
+            "statusLive": "Active marshalling",
+            "inboundLabel": "Inbound request",
+            "routingLabel": "Routing decision",
+            "tracksLabel": "Upstream tracks & failover",
+            "ledgerLabel": "Reserve & settle",
+            "primaryBadge": "Primary",
+            "standbyBadge": "Standby",
+            "tabs": {
+                "coding": "Coding & tools",
+                "summary": "High-volume summary",
+                "media": "Image & video"
+            },
+            "scenarios": {
+                "coding": {
+                    "endpoint": "POST /v1/responses",
+                    "model": "auto (coding · tool)",
+                    "protocol": "OpenAI Responses native function calling",
+                    "policy": "Smart routing shadow / 5% canary · composite score (quality 40% · price 20% · latency 20% · success 20%)",
+                    "trackA": "Primary upstream A · 420ms TTFT · 99.6% success · tool verified",
+                    "trackB": "Standby upstream B · auto-cooldown 60s after 3 consecutive failures",
+                    "ledger": "Pre-reserved from estimated input tokens, settled precisely on input, output, and cache hits"
+                },
+                "summary": {
+                    "endpoint": "POST /v1/messages",
+                    "model": "auto (summary)",
+                    "protocol": "Anthropic Messages native text classification",
+                    "policy": "Cost and latency tier scoring · context-overflow samples automatically penalized",
+                    "trackA": "Low-cost high-throughput channel · 280ms TTFT · cache discount applied",
+                    "trackB": "Pooled egress track · seamless retry on upstream 429 rate limits",
+                    "ledger": "Streamed to live SSE logs and hourly analytics with automated daily reconciliation"
+                },
+                "media": {
+                    "endpoint": "POST /v1/images/edits · /v1/videos",
+                    "model": "media-group",
+                    "protocol": "Multi-image edits and persisted async video jobs",
+                    "policy": "Per-modality resolution pricing · USD baseline with automated FX snapshots",
+                    "trackA": "Dedicated media upstream · isolated keys and concurrency quotas",
+                    "trackB": "Failed jobs automatically release reserved funds to the auditable ledger",
+                    "ledger": "Images metered per piece by tier; video settled by base fee plus per-second rate"
+                }
+            }
+        },
+        "metrics": {
+            "m1Value": "7 modes",
+            "m1Label": "Routing policies & canary ramp",
+            "m2Value": "5 formats",
+            "m2Label": "Unified protocols & modalities",
+            "m3Value": "Reserve-settle",
+            "m3Label": "Multi-currency ledger & reconciliation",
+            "m4Value": "Single binary",
+            "m4Label": "Self-hosted with encrypted backups"
+        },
+        "highlights": {
+            "smartRoutingTitle": "Smart routing & multi-protocol gateway",
+            "smartRoutingDesc": "Serve OpenAI Chat, Responses native function calling, and Anthropic Messages behind one key. Classify tasks automatically, evaluate routes in shadow mode or gradual canary ramps, score by quality, price, latency, and reliability, and fail over with automatic cooldowns and egress pools.",
+            "marketTitle": "Model market & multi-currency distribution",
+            "marketDesc": "Publish channels to the marketplace in one click with lifetime-locked 4-digit share codes, channel-level markups, and automated FX rate snapshots. Users compare models side by side by live success rate, TTFT, and price, then add them straight into routing groups.",
+            "opsDetail": "Live SSE log streams, history search and export, timezone-aware analytics, multi-scope rate limits, webhook delivery replay, support tickets, health probes, and encrypted off-site backups.",
+            "billingDetail": "Reserve before calls, settle after completion, daily reconciliation, upstream invoice import, margin tracking, dispute review, redemption batches, and withdrawal workflows.",
+            "channelsDetail": "Aggregate multiple upstreams and accounts under one model name with isolated key pools, protocol flags, model grants, egress proxies, and concurrency limits.",
+            "accessDetail": "Scoped workspaces for administrators, resellers, and users with TOTP step-up verification, audit archival, 3 languages, and light, dark, white, and compact workspace themes.",
+            "smartRoutingTags": {
+                "t1": "OpenAI Responses",
+                "t2": "Anthropic Messages",
+                "t3": "Shadow & canary ramp",
+                "t4": "Tool verification",
+                "t5": "Auto-cooldown failover"
+            },
+            "marketTags": {
+                "t1": "4-digit share codes",
+                "t2": "Automated FX snapshots",
+                "t3": "Live reliability ranks",
+                "t4": "Side-by-side compare",
+                "t5": "Channel markups"
+            }
+        },
+        "rolePoints": {
+            "admin": {
+                "p1": "Manage channels, upstream accounts, and grants",
+                "p2": "Control user tiers, quotas, rate limits, and audit archives",
+                "p3": "Run ops center, reconciliation, withdrawals, and backups"
+            },
+            "reseller": {
+                "p1": "Connect own upstreams and publish to the model market",
+                "p2": "Configure multi-currency pricing and channel markups",
+                "p3": "Track supply revenue, settlement statements, and disputes"
+            },
+            "user": {
+                "p1": "Browse models by live latency, reliability, and price",
+                "p2": "Manage API keys, wallet ledger, and balance alerts",
+                "p3": "Inspect hourly/daily usage, cache hits, and cost rankings"
+            }
         }
     },
     "wallet": {

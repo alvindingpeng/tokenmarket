@@ -159,3 +159,62 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 667, height: 375 }
         });
     }
 }
+
+for (const viewport of [{ width: 390, height: 844 }, { width: 667, height: 375 }]) {
+    for (const target of [
+        { page: 'webhook', section: 'personal', label: 'webhook', expectedText: 'https://hook.example.com/20' },
+        { page: 'tickets', section: 'personal', label: 'tickets', expectedText: 'Ticket 20' },
+        { page: 'apikey', section: 'personal', label: 'apikey', expectedText: 'Key 20' },
+        { page: 'setting', section: 'audit', label: 'setting-audit', expectedText: 'channel.update' },
+    ] as const) {
+        test(`${target.label} table/list scrolls with touch at ${viewport.width}x${viewport.height}`, async ({ browser }) => {
+            const context = await browser.newContext({ viewport, isMobile: true, hasTouch: true, reducedMotion: 'reduce' });
+            const page = await context.newPage();
+            const consoleErrors: string[] = [];
+            page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
+            await page.addInitScript(({ currentPage, settingSection }) => {
+                localStorage.setItem('theme', 'compact');
+                localStorage.setItem('nav-storage', JSON.stringify({ state: { currentPage, settingSection }, version: 0 }));
+            }, { currentPage: target.page, settingSection: target.section });
+
+            const now = '2026-11-25T10:00:00Z';
+            const items20 = <T,>(fn: (index: number) => T) => Array.from({ length: 20 }, (_, i) => fn(i + 1));
+            await page.route('**/api/v1/**', async route => {
+                const path = new URL(route.request().url()).pathname;
+                const data = path === '/api/v1/user/status'
+                    ? { id: 1, username: 'admin', role: 'admin', status: 'active', balance: 100 }
+                    : path === '/api/v1/apikey/list'
+                        ? items20(i => ({ id: i, name: `Key ${i}`, key: `sk-test-${i}`, status: 1, enabled: true, quota: 100, used: 10, created_at: now, updated_at: now, groups: ['auto'] }))
+                    : path.startsWith('/api/v1/webhook/list')
+                        ? { items: items20(i => ({ id: i, url: `https://hook.example.com/${i}`, events: ['billing.low_balance'], enabled: true, retry_count: 3, created_at: now, updated_at: now })), total: 20 }
+                    : path.includes('/ticket/list')
+                        ? { items: items20(i => ({ id: i, title: `Ticket ${i}`, category: 'billing', priority: 'normal', status: 'open', user_id: 1, username: 'admin', created_at: now, updated_at: now })), total: 20 }
+                    : path.startsWith('/api/v1/audit/list')
+                        ? { items: items20(i => ({ id: i, actor_id: 1, actor_name: 'admin', action: 'channel.update', target_type: 'channel', target_id: String(i), ip: '127.0.0.1', created_at: now })), total: 20 }
+                    : [];
+                await route.fulfill({ json: { data } });
+            });
+
+            await page.goto('/');
+            await page.locator('#initial-loader').waitFor({ state: 'hidden' });
+            const scroller = page.locator('.responsive-page').first();
+            await expect(page.getByText(target.expectedText).first()).toBeVisible();
+            await expect.poll(() => scroller.evaluate(el => el.scrollHeight - el.clientHeight)).toBeGreaterThan(100);
+
+            const box = (await scroller.boundingBox())!;
+            const x = Math.round(box.x + box.width * 0.5);
+            const from = Math.round(box.y + box.height * 0.78);
+            const to = Math.round(box.y + box.height * 0.22);
+            const session = await context.newCDPSession(page);
+            await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: from }] });
+            for (let step = 1; step <= 5; step++) {
+                await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: Math.round(from + (to - from) * step / 5) }] });
+                await page.waitForTimeout(20);
+            }
+            await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+            await expect.poll(() => scroller.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+            expect(consoleErrors).toEqual([]);
+            await context.close();
+        });
+    }
+}
