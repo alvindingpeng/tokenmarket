@@ -79,6 +79,7 @@ type AutoRoutingModelRisk struct {
 	CandidateFailures        int64                      `json:"candidate_failures"`
 	OtherFailures            int64                      `json:"other_failures"`
 	ErrorClassCounts         []AutoRoutingReasonSummary `json:"error_class_counts"`
+	BandRisks                []AutoRoutingModelBandRisk `json:"band_risks"`
 	EarlierSamples           int64                      `json:"earlier_samples"`
 	EarlierSuccess           int64                      `json:"earlier_success"`
 	EarlierSuccessRate       float64                    `json:"earlier_success_rate"`
@@ -108,6 +109,28 @@ type AutoRoutingModelRisk struct {
 	StreamRateDelta          float64                    `json:"stream_incomplete_rate_delta"`
 	EligibleForPromotion     bool                       `json:"eligible_for_promotion"`
 	Reasons                  []string                   `json:"reasons"`
+}
+
+// AutoRoutingModelBandRisk 是模型在输入长度档位内的风险证据。长上下文请求
+// 可能先于短请求出现失败或延迟退化，分档统计避免总体平均掩盖这一差异。
+type AutoRoutingModelBandRisk struct {
+	Task                 string   `json:"task"`
+	Model                string   `json:"model"`
+	Band                 string   `json:"band"`
+	State                string   `json:"state"`
+	Samples              int64    `json:"samples"`
+	Success              int64    `json:"success"`
+	SuccessRate          float64  `json:"success_rate"`
+	SuccessLow           float64  `json:"success_lower"`
+	AvgPromptTokens      float64  `json:"avg_prompt_tokens"`
+	P90PromptTokens      float64  `json:"p90_prompt_tokens"`
+	FirstTokenSamples    int64    `json:"first_token_samples"`
+	FirstTokenP90Ms      float64  `json:"first_token_p90_ms"`
+	StreamStarted        int64    `json:"stream_started"`
+	StreamIncomplete     int64    `json:"stream_incomplete"`
+	StreamIncompleteRate float64  `json:"stream_incomplete_rate"`
+	EligibleForPromotion bool     `json:"eligible_for_promotion"`
+	Reasons              []string `json:"reasons"`
 }
 
 // AutoRoutingReasonSummary 是排除原因、运行事件或自动路由决策的计数。
@@ -306,10 +329,19 @@ type autoReadinessEvidence struct {
 	modelFirstToken                                           map[string][]float64
 	modelStreamStarted, modelStreamIncomplete                 map[string]int64
 	modelErrorClasses                                         map[string]map[string]int64
+	modelBands                                                map[string]map[string]*autoModelBandEvidence
 	modelTimeline                                             map[string][]autoModelOutcomeSample
 	configuredCandidates, verifiedCandidates                  int
 	labelingEnabled                                           bool
 	requireMultiUserEvidence                                  bool
+}
+
+type autoModelBandEvidence struct {
+	samples, success                int64
+	promptTokenTotal                int64
+	promptTokens                    []float64
+	firstTokenDurations             []float64
+	streamStarted, streamIncomplete int64
 }
 
 type autoModelOutcomeSample struct {
@@ -322,6 +354,7 @@ type autoModelOutcomeSample struct {
 
 const autoReadinessMinimumBuckets = 4
 const autoReadinessMinimumModelSamples = 10
+const autoReadinessMinimumModelBandSamples = 5
 const autoReadinessMinimumFirstTokenSamples = 10
 const autoReadinessMinimumStreamSamples = 10
 const autoReadinessMinimumTrendSamplesPerHalf = 5
@@ -441,6 +474,62 @@ func autoInputCostBand(promptTokens int64) string {
 	}
 }
 
+func autoModelBandRiskFor(task, model, band string, evidence *autoModelBandEvidence) AutoRoutingModelBandRisk {
+	risk := AutoRoutingModelBandRisk{
+		Task: task, Model: model, Band: band, State: "collect_samples",
+		Reasons: make([]string, 0),
+	}
+	if evidence == nil {
+		return risk
+	}
+	risk.Samples = evidence.samples
+	risk.Success = evidence.success
+	risk.AvgPromptTokens = float64(evidence.promptTokenTotal) / float64(evidence.samples)
+	risk.P90PromptTokens = autoPercentile(evidence.promptTokens, 0.9)
+	risk.FirstTokenSamples = int64(len(evidence.firstTokenDurations))
+	risk.FirstTokenP90Ms = autoPercentile(evidence.firstTokenDurations, 0.9)
+	risk.StreamStarted = evidence.streamStarted
+	risk.StreamIncomplete = evidence.streamIncomplete
+	if evidence.samples > 0 {
+		risk.SuccessRate = float64(evidence.success) / float64(evidence.samples)
+		risk.SuccessLow = autoWilsonLower(evidence.success, evidence.samples)
+	}
+	if evidence.streamStarted > 0 {
+		risk.StreamIncompleteRate = float64(evidence.streamIncomplete) / float64(evidence.streamStarted)
+	}
+	if evidence.samples < autoReadinessMinimumModelBandSamples {
+		risk.Reasons = append(risk.Reasons, "band_sample_below_5")
+		return risk
+	}
+	if risk.SuccessRate < 0.80 {
+		risk.State = "blocked"
+		risk.Reasons = append(risk.Reasons, "band_success_below_80_percent")
+	} else if evidence.streamStarted >= autoReadinessMinimumModelBandSamples &&
+		risk.StreamIncompleteRate > autoReadinessMaxStreamIncompleteRate {
+		risk.State = "blocked"
+		risk.Reasons = append(risk.Reasons, "band_stream_incomplete_above_5_percent")
+	} else if len(evidence.firstTokenDurations) >= autoReadinessMinimumModelBandSamples &&
+		risk.FirstTokenP90Ms > autoReadinessMaxFirstTokenP90Ms {
+		risk.State = "blocked"
+		risk.Reasons = append(risk.Reasons, "band_first_token_p90_above_30_seconds")
+	} else {
+		risk.State = "healthy"
+		risk.EligibleForPromotion = true
+	}
+	return risk
+}
+
+func autoBlockedModelBands(risks []AutoRoutingModelBandRisk) []string {
+	bands := make([]string, 0)
+	for _, risk := range risks {
+		if risk.State != "healthy" {
+			bands = append(bands, risk.Band)
+		}
+	}
+	sort.Strings(bands)
+	return bands
+}
+
 func autoModelRiskFor(
 	task, model string,
 	attempts, success int64,
@@ -458,6 +547,7 @@ func autoModelRiskFor(
 		FirstTokenSamples: int64(len(firstTokenDurations)),
 		StreamStarted:     streamStarted, StreamIncomplete: streamIncomplete,
 		ErrorClassCounts: make([]AutoRoutingReasonSummary, 0),
+		BandRisks:        make([]AutoRoutingModelBandRisk, 0),
 		Reasons:          make([]string, 0),
 	}
 	if attempts > 0 {
@@ -622,6 +712,17 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 			trend.EarlierStreamStarted, trend.EarlierStreamIncomplete,
 			trend.RecentStreamStarted, trend.RecentStreamIncomplete)
 		risk.ErrorClassCounts = autoFailureClassCounts(evidence.modelErrorClasses[name])
+		bands := evidence.modelBands[name]
+		for _, band := range []string{"short", "medium", "long", "xlong"} {
+			item := autoModelBandRiskFor(task, name, band, bands[band])
+			if item.Samples == 0 {
+				continue
+			}
+			risk.BandRisks = append(risk.BandRisks, item)
+		}
+		if risk.BandRisks == nil {
+			risk.BandRisks = make([]AutoRoutingModelBandRisk, 0)
+		}
 		for _, item := range risk.ErrorClassCounts {
 			switch autoModelFailureScope(item.Reason) {
 			case "channel":
@@ -655,6 +756,12 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 			case "candidate":
 				risk.Reasons = append(risk.Reasons, "model_failures_are_candidate_side")
 			}
+		}
+		blockedBands := autoBlockedModelBands(risk.BandRisks)
+		if risk.ActiveRequests >= autoReadinessMinimumModelSamples && len(blockedBands) > 0 {
+			risk.State = "blocked"
+			risk.EligibleForPromotion = false
+			risk.Reasons = append(risk.Reasons, "model_input_band_risk_blocks_scale")
 		}
 		readiness.ModelRisks = append(readiness.ModelRisks, risk)
 		if risk.EligibleForPromotion {
@@ -1203,11 +1310,36 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 						readiness.modelStreamStarted = make(map[string]int64)
 						readiness.modelStreamIncomplete = make(map[string]int64)
 						readiness.modelErrorClasses = make(map[string]map[string]int64)
+						readiness.modelBands = make(map[string]map[string]*autoModelBandEvidence)
 						readiness.modelTimeline = make(map[string][]autoModelOutcomeSample)
 					}
 					readiness.modelSuccess[name]++
 					readiness.activeRequests++
 					modelSuccess := request.Status == "success" && attempt.Status == "success"
+					band := autoInputCostBand(request.PromptTokens)
+					if band != "" {
+						if readiness.modelBands[name] == nil {
+							readiness.modelBands[name] = make(map[string]*autoModelBandEvidence)
+						}
+						be := readiness.modelBands[name][band]
+						if be == nil {
+							be = &autoModelBandEvidence{}
+							readiness.modelBands[name][band] = be
+						}
+						be.samples++
+						if modelSuccess {
+							be.success++
+						}
+						be.promptTokenTotal += request.PromptTokens
+						be.promptTokens = append(be.promptTokens, float64(request.PromptTokens))
+						if attempt.FirstTokenMs > 0 {
+							be.firstTokenDurations = append(be.firstTokenDurations, float64(attempt.FirstTokenMs))
+							be.streamStarted++
+							if request.Status == "failed" || request.Status == "canceled" {
+								be.streamIncomplete++
+							}
+						}
+					}
 					if !modelSuccess {
 						if readiness.modelErrorClasses[name] == nil {
 							readiness.modelErrorClasses[name] = make(map[string]int64)

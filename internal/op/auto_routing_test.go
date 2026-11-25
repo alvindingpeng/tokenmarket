@@ -369,6 +369,88 @@ func TestAutoModelRiskScorecardsUseMinimumSamples(t *testing.T) {
 	}
 }
 
+func TestAutoModelBandRiskSeparatesLongContextFailures(t *testing.T) {
+	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "auto-routing-model-bands.db"), false); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	now := time.Now()
+	requests := make([]model.RelayRequest, 0, 15)
+	attempts := make([]model.RelayRequestAttempt, 0, 15)
+	for i := 0; i < 15; i++ {
+		status, promptTokens := "success", int64(1200)
+		if i >= 10 {
+			status, promptTokens = "failed", int64(20000)
+		}
+		id := uint64(5510 + i)
+		requests = append(requests, model.RelayRequest{
+			ID: id, UserID: 7, GroupID: 37, Status: status,
+			StartedAt:    now.Add(time.Duration(i) * time.Minute),
+			PromptTokens: promptTokens, TargetModel: "model-a",
+			AutoTask: "coding", AutoMode: "active",
+		})
+		attempts = append(attempts, model.RelayRequestAttempt{
+			RequestID: id, Round: 1, TargetModel: "model-a", Status: status,
+			FirstTokenMs: 300,
+			Decision:     `{"reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`,
+		})
+	}
+	if err := db.GetDB().Create(&requests).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.GetDB().Create(&attempts).Error; err != nil {
+		t.Fatal(err)
+	}
+	summary, err := AutoRoutingAggregate(model.Scope{ID: 7, Role: model.RoleAdmin}, 37, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var coding *AutoRoutingReadiness
+	for i := range summary.Readiness {
+		if summary.Readiness[i].Task == model.AutoRoutingTaskCoding {
+			coding = &summary.Readiness[i]
+			break
+		}
+	}
+	if coding == nil || len(coding.ModelRisks) != 1 {
+		t.Fatalf("coding risk card missing: %+v", coding)
+	}
+	risk := coding.ModelRisks[0]
+	if risk.SuccessRate != 2.0/3.0 || len(risk.BandRisks) != 2 {
+		t.Fatalf("total and band evidence mismatch: %+v", risk)
+	}
+	if risk.BandRisks[0].Band != "short" || risk.BandRisks[0].State != "healthy" ||
+		risk.BandRisks[1].Band != "long" || risk.BandRisks[1].State != "blocked" ||
+		!slices.Contains(risk.BandRisks[1].Reasons, "band_success_below_80_percent") {
+		t.Fatalf("long-context failure should be isolated from healthy short requests: %+v", risk.BandRisks)
+	}
+	if !slices.Contains(risk.Reasons, "model_input_band_risk_blocks_scale") {
+		t.Fatalf("blocked band must be surfaced on the model risk card: %+v", risk)
+	}
+}
+
+func TestAutoModelBandRiskRequiresEnoughSamples(t *testing.T) {
+	small := autoModelBandRiskFor(model.AutoRoutingTaskCoding, "model-a", "long", &autoModelBandEvidence{
+		samples: 4, success: 1, promptTokenTotal: 80000,
+		promptTokens:        []float64{20000, 20000, 20000, 20000},
+		firstTokenDurations: []float64{30000},
+		streamStarted:       4, streamIncomplete: 3,
+	})
+	if small.State != "collect_samples" || small.EligibleForPromotion ||
+		!slices.Contains(small.Reasons, "band_sample_below_5") {
+		t.Fatalf("a single bad long request must not block expansion: %+v", small)
+	}
+
+	healthy := autoModelBandRiskFor(model.AutoRoutingTaskCoding, "model-a", "long", &autoModelBandEvidence{
+		samples: 5, success: 4, promptTokenTotal: 100000,
+		promptTokens:        []float64{20000, 20000, 20000, 20000, 20000},
+		firstTokenDurations: []float64{500, 500, 500, 500, 500},
+		streamStarted:       5, streamIncomplete: 0,
+	})
+	if healthy.State != "healthy" || !healthy.EligibleForPromotion {
+		t.Fatalf("healthy long-context evidence should pass: %+v", healthy)
+	}
+}
+
 func TestAutoReadinessWilsonAndCostPercentile(t *testing.T) {
 	if low := autoWilsonLower(40, 40); low >= 40.0/40.0 {
 		t.Fatalf("perfect success needs a conservative lower bound: %.4f", low)

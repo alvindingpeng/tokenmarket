@@ -81,6 +81,25 @@ interface AutoRoutingSummary {
             candidate_failures: number;
             other_failures: number;
             error_class_counts: { reason: string; count: number }[];
+            band_risks: {
+                task: string;
+                model: string;
+                band: 'short' | 'medium' | 'long' | 'xlong';
+                state: 'collect_samples' | 'healthy' | 'blocked';
+                samples: number;
+                success: number;
+                success_rate: number;
+                success_lower: number;
+                avg_prompt_tokens: number;
+                p90_prompt_tokens: number;
+                first_token_samples: number;
+                first_token_p90_ms: number;
+                stream_started: number;
+                stream_incomplete: number;
+                stream_incomplete_rate: number;
+                eligible_for_promotion: boolean;
+                reasons: string[];
+            }[];
             earlier_samples: number;
             earlier_success: number;
             earlier_success_rate: number;
@@ -305,6 +324,27 @@ function AutoRoutingPanel() {
                                                                     {tr('errorClass.' + item.reason)} · {item.count}
                                                                 </span>
                                                             ))}
+                                                        </div>
+                                                    )}
+                                                    {risk.band_risks.length > 0 && (
+                                                        <div className="mt-2 border-t border-border/40 pt-2">
+                                                            <div className="mb-1 text-[10px] font-medium text-muted-foreground">{tr('modelRiskBandTitle')}</div>
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {risk.band_risks.map((band) => (
+                                                                    <span
+                                                                        key={`${risk.model}-${band.band}`}
+                                                                        title={band.reasons.map((reason) => tr('modelRiskBandReason.' + reason)).join(' · ')}
+                                                                        className={`rounded-full px-2 py-0.5 text-[10px] ${band.state === 'blocked'
+                                                                            ? 'bg-destructive/10 text-destructive'
+                                                                            : band.state === 'healthy'
+                                                                                ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                                                                                : 'bg-muted text-muted-foreground'
+                                                                            }`}
+                                                                    >
+                                                                        {tr('costBand.' + band.band)} · {tr('rate', { value: `${(band.success_rate * 100).toFixed(1)}%` })} · {Math.round(band.avg_prompt_tokens)} tokens
+                                                                    </span>
+                                                                ))}
+                                                            </div>
                                                         </div>
                                                     )}
                                                     {risk.reasons.length > 0 && (

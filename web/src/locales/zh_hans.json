@@ -1385,6 +1385,7 @@
             "modelRiskFirstTokenTrend": "首 token P90 早期 {earlier} → 近期 {recent}",
             "modelRiskStream": "首字后未完成 {value} · {count} 个",
             "modelRiskStreamTrend": "首字后未完成率 早期 {earlier} → 近期 {recent}",
+            "modelRiskBandTitle": "输入长度分层",
             "readinessFirstToken": "首 token P90 {value} · {samples} 个样本",
             "readinessStream": "首字后未完成 {value} · {count} 个",
             "readinessRamp": "建议主动流量：{value}%",
@@ -1448,7 +1449,14 @@
                 "model_recent_stream_incomplete_rise": "近期首字后未完成率明显上升并超过安全阈值",
                 "model_failures_are_channel_operational": "主要失败来自渠道或运行故障，优先检查限流、额度、凭据与上游稳定性",
                 "model_failures_are_request_side": "主要失败来自请求侧，检查输入、内容策略与客户端取消",
-                "model_failures_are_candidate_side": "主要失败来自候选错误，检查该渠道是否实际提供此模型"
+                "model_failures_are_candidate_side": "主要失败来自候选错误，检查该渠道是否实际提供此模型",
+                "model_input_band_risk_blocks_scale": "至少一个输入长度档位存在质量风险"
+            },
+            "modelRiskBandReason": {
+                "band_sample_below_5": "该长度档位样本不足 5 个",
+                "band_success_below_80_percent": "该长度档位成功率低于 80%",
+                "band_stream_incomplete_above_5_percent": "该长度档位首字后未完成率超过 5%",
+                "band_first_token_p90_above_30_seconds": "该长度档位首 token P90 超过 30 秒"
             },
             "task": {
                 "general": "通用",

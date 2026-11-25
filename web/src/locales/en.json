@@ -1385,6 +1385,7 @@
             "modelRiskFirstTokenTrend": "First token P90 earlier {earlier} → recent {recent}",
             "modelRiskStream": "Incomplete after first token {value} · {count}",
             "modelRiskStreamTrend": "Stream failures earlier {earlier} → recent {recent}",
+            "modelRiskBandTitle": "Input-length bands",
             "readinessFirstToken": "First token P90 {value} · {samples} samples",
             "readinessStream": "Incomplete after first token {value} · {count}",
             "readinessRamp": "Suggested active traffic: {value}%",
@@ -1448,7 +1449,14 @@
                 "model_recent_stream_incomplete_rise": "Recent stream failures increased above the safe threshold",
                 "model_failures_are_channel_operational": "Most failures are channel or runtime failures. Check rate limits, quota, credentials and upstream stability",
                 "model_failures_are_request_side": "Most failures are request-side failures. Check input, content policy and client cancellation",
-                "model_failures_are_candidate_side": "Most failures are candidate errors. Check whether this channel actually exposes the model"
+                "model_failures_are_candidate_side": "Most failures are candidate errors. Check whether this channel actually exposes the model",
+                "model_input_band_risk_blocks_scale": "At least one input-length band has a quality risk"
+            },
+            "modelRiskBandReason": {
+                "band_sample_below_5": "Fewer than 5 samples in this band",
+                "band_success_below_80_percent": "Success rate in this band is below 80%",
+                "band_stream_incomplete_above_5_percent": "Incomplete streams in this band exceed 5%",
+                "band_first_token_p90_above_30_seconds": "First-token P90 in this band exceeds 30 seconds"
             },
             "task": {
                 "general": "General",
