@@ -65,7 +65,7 @@ export function Card({ channel }: { channel: ChannelStatsFormatted }) {
             <MorphingDialogTrigger className="w-full">
                 <article
                     onClickCapture={() => setOpenInEditing(false)}
-                    className="flex flex-col gap-4 rounded-3xl border border-border bg-card text-card-foreground p-4"
+                    className="workspace-card flex flex-col gap-4 rounded-3xl border border-border bg-card text-card-foreground p-4"
                 >
                     <header className="flex items-center justify-between gap-2">
                         <Tooltip>

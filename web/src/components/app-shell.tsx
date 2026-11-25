@@ -22,7 +22,7 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
     const t = useTranslations('navbar');
     const { theme } = useTheme();
     const reduceMotion = useReducedMotion();
-    const titleOffset = reduceMotion || theme === 'white' ? 0 : 32;
+    const titleOffset = reduceMotion || (theme === 'white' || theme === 'compact') ? 0 : 32;
     const role = useAuthStore((state) => state.role);
     const navItems = navItemsFor(role); // 导航按角色裁剪: 无权页面不出现在 Dock 中。
     const activeIndex = navItems.findIndex((route) => route.id === currentPage); // activeIndex 表示选中项在 Dock 中的位置。
@@ -47,7 +47,7 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
     }, [activeIndex, currentPage, reduceMotion]);
 
     return (
-        <div className="flex h-dvh w-full flex-col overflow-hidden px-3 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-300 md:grid md:grid-cols-[auto_minmax(0,1fr)] md:grid-rows-[auto_auto_minmax(0,1fr)] md:gap-x-6 md:px-6">
+        <div className="console-shell flex h-dvh w-full flex-col overflow-hidden px-3 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-300 md:grid md:grid-cols-[auto_minmax(0,1fr)] md:grid-rows-[auto_auto_minmax(0,1fr)] md:gap-x-6 md:px-6">
             {/* md:min-h-0 让这一列可以被压缩, 否则内容高度会把网格行撑破并被外层 overflow-hidden 裁掉。 */}
             {/* row-span-3 跨过头部与横幅槽: 横幅出现或消失都不改变导航的 sticky 容器高度。 */}
             <div className="relative z-50 md:row-span-3 md:min-h-0">
@@ -55,6 +55,7 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                     ref={navRef}
                     aria-label="Main Navigation"
                     className={cn(
+                        'console-nav',
                         // 移动端: 贴底单行, 横向可滚动 —— 导航项多于屏宽时滑动查看, 绝不换行挤压或溢出屏幕。
                         // 垂直位置用安全区偏移, 避免被 iOS 底部横条与浏览器工具栏盖住。
                         'fixed bottom-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] left-1/2 isolate flex -translate-x-1/2 items-center gap-1 p-2 motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 motion-safe:duration-300',
@@ -73,7 +74,7 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                 >
                     <span
                         aria-hidden="true"
-                        className="pointer-events-none absolute left-2 top-2 z-10 size-10 shrink-0 rounded-2xl bg-sidebar-primary transition-transform duration-300 ease-out [transform:translateX(var(--nav-offset-x))] md:left-3 md:top-3 md:size-12 md:[transform:translateY(var(--nav-offset-y))]"
+                        className="console-nav-indicator pointer-events-none absolute left-2 top-2 z-10 size-10 shrink-0 rounded-2xl bg-sidebar-primary transition-transform duration-300 ease-out [transform:translateX(var(--nav-offset-x))] md:left-3 md:top-3 md:size-12 md:[transform:translateY(var(--nav-offset-y))]"
                         style={{
                             '--nav-offset-x': `${activeIndex * 2.75}rem`,
                             '--nav-offset-y': `${activeIndex * 3.75}rem`,
@@ -83,7 +84,7 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                         ref={hoverIndicatorRef}
                         aria-hidden="true"
                         className={cn(
-                            'pointer-events-none absolute left-2 top-2 z-0 size-10 shrink-0 [transform:translateX(var(--nav-offset-x))] md:left-3 md:top-3 md:size-12 md:[transform:translateY(var(--nav-offset-y))]',
+                            'console-nav-indicator pointer-events-none absolute left-2 top-2 z-0 size-10 shrink-0 [transform:translateX(var(--nav-offset-x))] md:left-3 md:top-3 md:size-12 md:[transform:translateY(var(--nav-offset-y))]',
                             isNavHovered ? 'transition-transform duration-300 ease-out' : 'transition-none',
                         )}
                         style={{
@@ -123,20 +124,21 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                                     setCurrentPage(route.id);
                                 }}
                                 className={cn(
-                                    'relative z-20 flex size-10 shrink-0 items-center justify-center rounded-2xl p-2 transition-[color,scale] duration-150 ease-linear hover:z-30 hover:scale-110 active:scale-95 md:size-12 md:p-3',
+                                    'console-nav-item relative z-20 flex size-10 shrink-0 items-center justify-center rounded-2xl p-2 transition-[color,scale] duration-150 ease-linear hover:z-30 hover:scale-110 active:scale-95 md:size-12 md:p-3',
                                     isActive ? 'text-sidebar-primary-foreground' : 'text-sidebar-foreground/60',
                                 )}
                             >
                                 <span className="relative z-10">
                                     <route.icon strokeWidth={2} />
                                 </span>
+                                <span className="console-nav-label">{t(route.id)}</span>
                             </button>
                         );
                     })}
                 </nav>
             </div>
 
-            <header className="my-3 flex min-w-0 flex-none flex-wrap items-center gap-x-2 gap-y-1 px-2 md:my-6">
+            <header className="console-header my-3 flex min-w-0 flex-none flex-wrap items-center gap-x-2 gap-y-1 px-2 md:my-6">
                 <div className="w-9 shrink-0 [&>svg]:size-full sm:w-12"><Logo /></div>
                 <div className="min-w-0 flex-1 overflow-hidden">
                     <AnimatePresence mode="wait" custom={direction}>
@@ -188,7 +190,7 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
             </div>
 
             {/* 在滚动容器之外预留 Dock 净空，绝对定位的页面及其内部滚动区也能避开导航。 */}
-            <main className="relative mb-[calc(env(safe-area-inset-bottom,0px)+4.5rem)] flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden md:mb-0">
+            <main className="console-main relative mb-[calc(env(safe-area-inset-bottom,0px)+4.5rem)] flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden md:mb-0">
                 {children}
             </main>
         </div>

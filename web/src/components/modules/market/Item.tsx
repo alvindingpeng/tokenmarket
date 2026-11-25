@@ -45,7 +45,7 @@ export function MarketItem({ model, layout, compareIndex, compareSelected, onTog
     );
 
     return (
-        <article className="group rounded-3xl border border-border bg-card p-4">
+        <article className="workspace-card group rounded-3xl border border-border bg-card p-4">
             <div className="flex items-center gap-3">
                 <Icon aria-hidden="true" className={iconClassName} color={brandColor} width={40} height={40} />
                 <div className="flex min-w-0 flex-1 flex-col gap-1.5">

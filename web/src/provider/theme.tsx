@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
-type Theme = 'light' | 'dark' | 'system' | 'white';
+type Theme = 'light' | 'dark' | 'system' | 'white' | 'compact';
 type ResolvedTheme = 'light' | 'dark';
 
 interface ThemeContextValue {
@@ -14,7 +14,7 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 export function ThemeProvider({ children }: { children: ReactNode }) {
     const [theme, setThemeState] = useState<Theme>(() => {
         const storedTheme = localStorage.getItem('theme');
-        return storedTheme === 'light' || storedTheme === 'dark' || storedTheme === 'system' || storedTheme === 'white'
+        return storedTheme === 'light' || storedTheme === 'dark' || storedTheme === 'system' || storedTheme === 'white' || storedTheme === 'compact'
             ? storedTheme
             : 'system';
     });
@@ -37,17 +37,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         const root = document.documentElement;
         root.classList.toggle('dark', resolvedTheme === 'dark');
-        root.classList.toggle('theme-white', theme === 'white');
+        root.classList.toggle('theme-white', theme === 'white' || theme === 'compact');
+        root.classList.toggle('theme-compact', theme === 'compact');
         root.style.colorScheme = resolvedTheme;
         document.querySelector('meta[name="theme-color"]')?.setAttribute(
             'content',
-            theme === 'white' ? '#f7f8fa' : resolvedTheme === 'dark' ? '#413a2c' : '#eae9e3'
+            theme === 'white' || theme === 'compact' ? '#f7f8fa' : resolvedTheme === 'dark' ? '#413a2c' : '#eae9e3'
         );
         localStorage.setItem('theme', theme);
     }, [resolvedTheme, theme]);
 
     const setTheme = (value: string) => {
-        if (value === 'light' || value === 'dark' || value === 'system' || value === 'white') {
+        if (value === 'light' || value === 'dark' || value === 'system' || value === 'white' || value === 'compact') {
             setThemeState(value);
         }
     };

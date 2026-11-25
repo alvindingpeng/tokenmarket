@@ -218,7 +218,7 @@ export function Market() {
                 ) : (
                     // 不用 VirtualizedGrid: 广场卡片可以展开, 展开后行高变化会让虚拟化的测量失效
                     // (行高只在挂载时测一次), 结果是下一行盖住展开内容。几十行的直接渲染代价远小于这个坑。
-                    <div className={cn('grid gap-4', layout === 'list' ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2')}>
+                    <div className={cn('workspace-market-grid grid gap-4', layout === 'list' ? 'grid-cols-1' : 'workspace-market-cards grid-cols-1 md:grid-cols-2')}>
                         {models.map((model, index) => (
                             <MarketItem
                                 key={model.name}

@@ -41,6 +41,7 @@ export function SettingAppearance() {
                             <PanelsTopLeft className="size-4" />
                             {t('theme.white')}
                         </SelectItem>
+                    <SelectItem value="compact" className="rounded-xl"><PanelsTopLeft className="size-4" />{t('theme.compact')}</SelectItem>
                     </SelectContent>
                 </Select>
             </div>

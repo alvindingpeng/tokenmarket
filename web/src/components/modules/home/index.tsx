@@ -16,7 +16,7 @@ import { useHomeViewStore } from './store';
 // HomeSections 汇总首页各统计区块, 屏内正文与分享图舞台共用。
 function HomeSections() {
     return (
-        <div className="@container/home space-y-6">
+        <div className="workspace-home @container/home space-y-6">
             <Total />
             <Activity />
             <StatsChart />

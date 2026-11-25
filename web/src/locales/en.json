@@ -223,6 +223,7 @@
         "appearance": "Appearance",
         "system": "System",
         "theme": {
+            "compact": "Compact workspace",
             "white": "White template",
             "label": "Theme",
             "light": "Light",

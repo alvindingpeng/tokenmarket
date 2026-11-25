@@ -75,7 +75,7 @@ export function AppContainer() {
     const queryClient = useQueryClient();
     const { theme } = useTheme();
     const reduceMotion = useReducedMotion();
-    const usePageScale = !reduceMotion && theme !== 'white';
+    const usePageScale = !reduceMotion && theme !== 'white' && theme !== 'compact';
     // 浏览器标题在登录页也要生效, 所以挂在最外层而不是 AppShell 里。
     useApplySiteTitle();
     const authMode = isAPIKeyAuth ? 'apikey' : 'user'; // authMode 区分两种认证模式各自需要的初始 API。

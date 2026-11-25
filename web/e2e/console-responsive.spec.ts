@@ -66,3 +66,24 @@ test('white template persists and respects reduced motion', async ({ page }) => 
     await expect(page.locator('.home-summary-card').first()).toHaveCSS('animation-name', 'none');
     await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(247, 248, 250)');
 });
+
+test('compact workspace keeps navigation and summary usable across screen sizes', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('theme', 'compact'));
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openConsole(page);
+    const dock = page.getByRole('navigation', { name: 'Main Navigation' });
+    await expect(page.locator('html')).toHaveClass(/theme-compact/);
+    await expect(dock.getByRole('button', { name: 'Home', exact: true }).locator('.console-nav-label')).toBeVisible();
+    await expect(page.locator('.home-summary-card')).toHaveCount(4);
+    await dock.getByRole('button', { name: 'Setting', exact: true }).click();
+    await expect(page.getByRole('combobox', { name: 'Theme' })).toHaveText('Compact workspace');
+    await page.reload();
+    await expect(page.locator('html')).toHaveClass(/theme-compact/);
+    await page.setViewportSize({ width: 320, height: 700 });
+    await dock.getByRole('button', { name: 'Home', exact: true }).click();
+    await expect(page.locator('.home-summary-card')).toHaveCount(4);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+    const mainBox = (await page.getByRole('main').boundingBox())!;
+    const dockBox = (await dock.boundingBox())!;
+    expect(mainBox.y + mainBox.height).toBeLessThanOrEqual(dockBox.y);
+});

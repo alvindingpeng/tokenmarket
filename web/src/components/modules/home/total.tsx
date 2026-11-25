@@ -62,20 +62,20 @@ export function Total() {
     ];
 
     return (
-        <div className="grid grid-cols-1 @xl/home:grid-cols-2 @5xl/home:grid-cols-4 gap-4">
+        <div className="home-summary-grid grid grid-cols-1 @xl/home:grid-cols-2 @5xl/home:grid-cols-4 gap-4">
             {cards.map((card) => (
                 <section
                     key={card.title}
                     className="home-summary-card min-w-0 rounded-3xl bg-card border-border border p-4 sm:p-5 text-card-foreground flex flex-row items-center gap-4"
                 >
-                    <div className="flex flex-col items-center justify-center gap-3 border-r border-border/50 pr-4 py-1 self-stretch">
+                    <div className="home-summary-heading flex flex-col items-center justify-center gap-3 border-r border-border/50 pr-4 py-1 self-stretch">
                         <card.headerIcon className="w-4 h-4" />
                         <h3 className="font-medium text-sm [writing-mode:vertical-lr]">{card.title}</h3>
                     </div>
 
-                    <div className="flex flex-col gap-4 flex-1 min-w-0">
+                    <div className="home-summary-items flex flex-col gap-4 flex-1 min-w-0">
                         {card.items.map((item) => (
-                            <div key={item.label} className="flex items-center gap-3">
+                            <div key={item.label} className="home-summary-item flex items-center gap-3">
                                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-primary ${item.bgColor}`}>
                                     <item.icon className="w-5 h-5" />
                                 </div>

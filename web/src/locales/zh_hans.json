@@ -223,6 +223,7 @@
         "appearance": "外观",
         "system": "系统",
         "theme": {
+            "compact": "紧凑工作台",
             "white": "白色模板",
             "label": "主题",
             "light": "浅色",

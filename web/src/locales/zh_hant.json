@@ -223,6 +223,7 @@
         "appearance": "外觀",
         "system": "系統",
         "theme": {
+            "compact": "緊湊工作台",
             "white": "白色範本",
             "label": "主題",
             "light": "淺色",

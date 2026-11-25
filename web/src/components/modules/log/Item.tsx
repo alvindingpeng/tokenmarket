@@ -561,7 +561,7 @@ function LogCardBody({ log }: { log: RelayLogOverview }) {
     return (
         <>
             <MorphingDialogTrigger
-                className="rounded-3xl border border-border bg-card w-full text-left"
+                className="workspace-log-row rounded-3xl border border-border bg-card w-full text-left"
             >
                 <div className="p-4 grid grid-cols-[auto_1fr] gap-4 items-start">
                     <Icon aria-hidden="true" className={cn('hidden md:block', iconClassName)} width={40} height={40} />
