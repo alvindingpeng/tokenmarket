@@ -119,7 +119,7 @@ export default function Ops() {
     const t = useTranslations('ops');
     const [tab, setTab] = useState('reconcile');
     return (
-        <div className='flex h-full min-h-0 flex-col gap-3'>
+        <div className='ops-page flex h-full min-h-0 flex-col gap-3'>
             <h2 className='flex shrink-0 items-center gap-2 text-lg font-bold text-card-foreground'>
                 <HeartPulse className='size-5' />
                 {t('title')}

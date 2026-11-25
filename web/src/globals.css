@@ -318,23 +318,13 @@ html.dark,
 }
 
 
-/* The wallet has several fixed-height summary sections above its tabular content. */
+/* 普通页面由自身滚动；钱包与运维页在窄屏或矮屏上改为整页滚动，
+   避免固定摘要把列表压到零高度。明确声明 touch-action 以兼容 iOS 与安卓触控。 */
 @media (max-width: 767px), (max-height: 600px) {
-  .wallet-page {
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
-  }
-  .wallet-page > .flex-1 {
-    flex: 0 0 auto;
-    min-height: 16rem;
-  }
-}
-
-/* On short screens, keep filters and the list in one reachable scroll area. */
-@media (max-height: 600px) {
   .responsive-page {
     overflow-y: auto;
     overscroll-behavior-y: contain;
+    touch-action: pan-y;
   }
   .responsive-page > .h-full {
     height: auto;
@@ -345,6 +335,19 @@ html.dark,
   .responsive-page > .h-full > .virtualized-grid {
     flex: 0 0 auto;
     min-height: 14rem;
+  }
+  .wallet-page,
+  .ops-page,
+  .notification-page {
+    height: auto;
+    min-height: max(100%, calc(100dvh + 4rem));
+    overflow: visible;
+    touch-action: pan-y;
+  }
+  .wallet-page > .flex-1,
+  .ops-page > .flex-1 {
+    flex: 0 0 auto;
+    min-height: 16rem;
   }
   .settings-page > .flex-1 {
     height: auto;

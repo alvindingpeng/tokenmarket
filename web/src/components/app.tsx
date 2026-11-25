@@ -185,7 +185,7 @@ export function AppContainer() {
                                 ...(usePageScale && { scale: 0.98 }),
                                 transition: { duration: reduceMotion ? 0 : 0.25 },
                             }}
-                            className="responsive-page absolute inset-0 min-h-0 overflow-hidden"
+                            className="responsive-page absolute inset-0 min-h-0 overflow-x-hidden"
                         >
                             {/* 页面级错误边界: 单页渲染异常只废掉内容区, 导航与外壳仍然可用。 */}
                             <ErrorBoundary resetKey={visibleItem}>

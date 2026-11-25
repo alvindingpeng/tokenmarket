@@ -62,7 +62,7 @@ export function NotificationCenter() {
     ];
 
     return (
-        <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-4 md:p-6">
+        <div className="notification-page mx-auto flex h-full min-h-0 w-full max-w-4xl flex-col gap-4 overflow-y-auto overscroll-contain p-4 md:p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                     <Bell className="size-5 text-muted-foreground" />

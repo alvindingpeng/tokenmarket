@@ -2512,7 +2512,10 @@
             "latency": "延遲歸因",
             "ratelimit": "限流 TOP",
             "upstream": "上游對單",
-            "metrics": "指標觀測"
+            "metrics": "指標觀測",
+            "fx": "匯率",
+            "tasks": "定時任務",
+            "budgets": "預算"
         },
         "fx": {
             "description": "匯率快照與採集健康狀態。",
@@ -2552,10 +2555,12 @@
             "trendEmpty": "暫無足夠的 {currency} 快照繪製趨勢",
             "reconCountShare": "筆數佔比 {share}",
             "reconAmountShare": "金額佔比 {share}",
-            "export.title": "訂單匯出",
-            "export.rechargeOrders": "儲值訂單 CSV",
-            "export.withdrawals": "提現單 CSV",
-            "export.done": "已下載 {name}"
+            "export": {
+                "title": "訂單匯出",
+                "rechargeOrders": "儲值訂單 CSV",
+                "withdrawals": "提現單 CSV",
+                "done": "已下載 {name}"
+            }
         },
         "latency": {
             "desc": "首字節 = 建連(DNS/建連/TLS) + 上游等待。上游等待偏高說明該換上游渠道; 建連與 TLS 偏高說明該加出口或走邊緣接入。建連列為 0 有三種情況: 復用了連接、上游用 http 明文、上游地址是 IP —— 看復用率與渠道地址區分, 不要一律讀成「很快」。只統計拿到首字節的請求。",

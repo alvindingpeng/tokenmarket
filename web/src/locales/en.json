@@ -2512,7 +2512,10 @@
             "latency": "Latency",
             "ratelimit": "Rate Limit TOP",
             "upstream": "Upstream Bills",
-            "metrics": "Metrics"
+            "metrics": "Metrics",
+            "fx": "FX",
+            "tasks": "Tasks",
+            "budgets": "Budgets"
         },
         "fx": {
             "description": "FX snapshot and collection health.",
@@ -2552,10 +2555,12 @@
             "trendEmpty": "Not enough {currency} snapshots for a trend yet.",
             "reconCountShare": "{share} of conversions",
             "reconAmountShare": "{share} of amount",
-            "export.title": "Order export",
-            "export.rechargeOrders": "Recharge orders CSV",
-            "export.withdrawals": "Withdrawals CSV",
-            "export.done": "Downloaded {name}"
+            "export": {
+                "title": "Order export",
+                "rechargeOrders": "Recharge orders CSV",
+                "withdrawals": "Withdrawals CSV",
+                "done": "Downloaded {name}"
+            }
         },
         "latency": {
             "desc": "Time to first byte = connect (DNS/TCP/TLS) + upstream wait. High upstream wait means the channel itself is slow; high connect or TLS means your own egress or the edge hop is the problem. A zero under connect has three causes: the connection was reused, the upstream is plain http, or the upstream address is a bare IP; check the reused rate and the channel URL instead of reading it as fast. Only requests that produced a first byte are counted.",
