@@ -293,6 +293,7 @@ export function useDeleteModelTaskCapability() {
 }
 
 export interface ModelToolProbeRequest {
+    protocol?: 'openai_chat' | 'anthropic_messages';
     channel_grant_id: number;
     score: number;
 }

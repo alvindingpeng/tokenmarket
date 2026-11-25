@@ -31,8 +31,9 @@ type ModelToolProbeResult struct {
 }
 
 type ModelToolProbeRequest struct {
-	ChannelGrantID int `json:"channel_grant_id"`
-	Score          int `json:"score"`
+	ChannelGrantID int    `json:"channel_grant_id"`
+	Score          int    `json:"score"`
+	Protocol       string `json:"protocol" binding:"omitempty,oneof=openai_chat anthropic_messages"`
 }
 
 // TableName 固定表名，避免 GORM 生成与含义不一致的默认名称。

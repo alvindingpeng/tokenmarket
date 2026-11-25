@@ -281,7 +281,8 @@ func openAPIAdminSchemas() gin.H {
 
 		"ModelToolProbeRequest": object(gin.H{
 			"channel_grant_id": fieldNumber("integer", "要验证的渠道授权 ID"),
-			"score":            fieldNumber("integer", "验证成功后的工具任务质量分 1-100"),
+			"score":            fieldNumber("integer", "OpenAI Chat 验证成功后的工具任务质量分 1-100"),
+			"protocol":         fieldString("openai_chat 或 anthropic_messages，缺省为 openai_chat"),
 		}, "channel_grant_id"),
 
 		"ModelToolProbeResult": object(gin.H{

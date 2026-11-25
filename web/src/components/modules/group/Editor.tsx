@@ -30,40 +30,46 @@ export type GroupEditorValues = {
     members: SelectedMember[];
 };
 
-function ToolProbeRunButton({ model, pending, onClick }: {
-    model: string; pending: boolean; onClick: (event: MouseEvent<HTMLButtonElement>) => void;
+function ToolProbeRunButton({ label, pending, onClick }: {
+    label: string; pending: boolean; onClick: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
     return (
         <button
             type="button"
             disabled={pending}
+            aria-label={label}
             onClick={onClick}
             className="shrink-0 rounded-md border border-border px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-muted disabled:opacity-50"
         >
-            {pending ? <LoaderCircle className="size-3 animate-spin" /> : "Probe tool"}
+            {pending ? <LoaderCircle className="size-3 animate-spin" /> : label}
         </button>
     );
 }
 
-function ToolProbeControls({ grantID, model, score }: { grantID: number; model: string; score: number }) {
+function ToolProbeControls({ grantID, score, onAnthropicVerified }: {
+    grantID: number;
+    score: number;
+    onAnthropicVerified?: () => void;
+}) {
+    const t = useTranslations('group.form');
     const probe = useProbeModelToolCapability();
     return (
         <div className="mt-2 flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
             <ToolProbeRunButton
-                model={model}
+                label={onAnthropicVerified ? t('probeAnthropicTool') : t('probeChatTool')}
                 pending={probe.isPending}
                 onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    probe.mutate({ channel_grant_id: grantID, score }, {
+                    probe.mutate({ channel_grant_id: grantID, score, protocol: onAnthropicVerified ? 'anthropic_messages' : 'openai_chat' }, {
                         onSuccess: (result) => {
-                            toast.success(`Verified ${result.model_name}: ${result.score}`);
+                            onAnthropicVerified?.();
+                            toast.success(onAnthropicVerified ? t('probeAnthropicPassed') : t('probeChatPassed'));
                         },
                         onError: (error) => toast.error(error.message),
                     });
                 }}
             />
-            {probe.isError && <span className="text-[10px] text-destructive">probe failed</span>}
         </div>
     );
 }
@@ -963,8 +969,14 @@ export function GroupEditor({
                                                                                         · context {member.context_length || '?'} · max output {member.max_output || '?'}
                                                                                     </span>
                                                                                 )}
-                                                                                {key === 'auto_tool' && (
-                                                                                    <ToolProbeControls grantID={member.channel_grant_id} model={member.name} score={relayConfig.auto_min_task_score || 80} />
+                                                                                {key === 'auto_tool' && checked && !!(member.protocols & Protocol.OpenAIChatCompletion) && (
+                                                                                    <ToolProbeControls grantID={member.channel_grant_id} score={relayConfig.auto_min_task_score || 80} />
+                                                                                )}
+                                                                                {key === 'auto_tool' && checked && !!(member.protocols & Protocol.AnthropicMessage) && (
+                                                                                    <ToolProbeControls grantID={member.channel_grant_id} score={0} onAnthropicVerified={() => setRelayConfig((previous) => ({
+                                                                                        ...previous,
+                                                                                        auto_anthropic_tool_verified: autoGrantIDsValue(selectedMembers, toggleAutoGrantID(parseAutoGrantIDs(previous.auto_anthropic_tool_verified), member.channel_grant_id, true)),
+                                                                                    }))} />
                                                                                 )}
                                                                             </span>
                                                                             {key === 'auto_tool' && checked && (

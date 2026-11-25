@@ -403,10 +403,14 @@ func probeModelToolCapability(c *gin.Context) {
 		resp.Error(c, http.StatusNotFound, "channel not found")
 		return
 	}
-	if grant.Protocols&model.ProtocolOpenAIChatCompletion == 0 ||
+	required := model.ProtocolOpenAIChatCompletion
+	if request.Protocol == "anthropic_messages" {
+		required = model.ProtocolAnthropicMessage
+	}
+	if grant.Protocols&required == 0 ||
 		(channel.Dialect != "" && channel.Dialect != model.DialectGeneric) ||
 		strings.TrimSpace(channel.ParamOverride) != "" {
-		resp.Error(c, http.StatusBadRequest, "tool probe requires native OpenAI Chat Completions with generic channel settings")
+		resp.Error(c, http.StatusBadRequest, "tool probe requires the requested native protocol with generic channel settings")
 		return
 	}
 	client, err := probeHTTPClientForChannel(channel)
@@ -414,18 +418,26 @@ func probeModelToolCapability(c *gin.Context) {
 		resp.Error(c, http.StatusBadGateway, err.Error())
 		return
 	}
-	result, err := runModelToolProbe(c.Request.Context(), client, channel, grant, request.Score)
+	runProbe := runModelToolProbe
+	if required == model.ProtocolAnthropicMessage {
+		runProbe = runAnthropicToolProbe
+	}
+	result, err := runProbe(c.Request.Context(), client, channel, grant, request.Score)
 	if err != nil {
 		result.Error = err.Error()
 		audit(c, "model.tool-probe", grant.ChannelModel.Name,
-			fmt.Sprintf("grant=%d success=%t two_round=%t", grant.ID, result.Success, result.TwoRound))
+			fmt.Sprintf("grant=%d protocol=%d success=%t two_round=%t", grant.ID, required, result.Success, result.TwoRound))
 		c.JSON(http.StatusBadGateway, gin.H{
 			"code": http.StatusBadGateway, "message": "tool capability probe failed", "data": result,
 		})
 		return
 	}
 	audit(c, "model.tool-probe", grant.ChannelModel.Name,
-		fmt.Sprintf("grant=%d success=true two_round=true score=%d", grant.ID, request.Score))
+		fmt.Sprintf("grant=%d protocol=%d success=true two_round=true", grant.ID, required))
+	if required == model.ProtocolAnthropicMessage {
+		resp.Success(c, result)
+		return
+	}
 	if groupIDs := op.GroupsContainingGrant(grant.ID); len(groupIDs) > 0 {
 		list := op.GroupList(scope)
 		for _, group := range list {
@@ -493,7 +505,7 @@ func runModelToolProbe(ctx context.Context, client *http.Client, channel model.C
 		"max_tokens":  128,
 		"temperature": 0,
 	}
-	firstResponse, err := postToolProbe(probeCtx, client, endpoint.String(), channel, grant.ChannelKey.Key, first)
+	firstResponse, err := postToolProbe(probeCtx, client, endpoint.String(), channel, grant.ChannelKey.Key, first, model.ProtocolOpenAIChatCompletion)
 	if err != nil {
 		return result, err
 	}
@@ -514,7 +526,7 @@ func runModelToolProbe(ctx context.Context, client *http.Client, channel model.C
 		"max_tokens":  128,
 		"temperature": 0,
 	}
-	secondResponse, err := postToolProbe(probeCtx, client, endpoint.String(), channel, grant.ChannelKey.Key, second)
+	secondResponse, err := postToolProbe(probeCtx, client, endpoint.String(), channel, grant.ChannelKey.Key, second, model.ProtocolOpenAIChatCompletion)
 	if err != nil {
 		return result, err
 	}
@@ -532,7 +544,7 @@ func runModelToolProbe(ctx context.Context, client *http.Client, channel model.C
 	return result, nil
 }
 
-func postToolProbe(ctx context.Context, client *http.Client, endpoint string, channel model.Channel, key string, payload any) ([]byte, error) {
+func postToolProbe(ctx context.Context, client *http.Client, endpoint string, channel model.Channel, key string, payload any, protocol model.Protocol) ([]byte, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -543,7 +555,12 @@ func postToolProbe(ctx context.Context, client *http.Client, endpoint string, ch
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Authorization", "Bearer "+key)
+	if protocol == model.ProtocolAnthropicMessage {
+		request.Header.Set("X-Api-Key", key)
+		request.Header.Set("Anthropic-Version", "2023-06-01")
+	} else {
+		request.Header.Set("Authorization", "Bearer "+key)
+	}
 	for _, header := range channel.CustomHeader {
 		if header.HeaderKey != "" {
 			request.Header.Set(header.HeaderKey, header.HeaderValue)
