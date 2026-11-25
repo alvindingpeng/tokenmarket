@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
@@ -549,9 +550,16 @@ func analyzeAutoCandidates(group model.Group, task autoTask) autoCandidateResult
 	var excluded []model.RelayRouteCandidate
 	var qualityRejected, unverified int
 	var exploreCandidates []model.GroupItem
+	strictStream := config.AutoRequireAnthropicStreamProbe && task.name == AutoTaskTool && task.stream && task.protocol == model.ProtocolAnthropicMessage
 	for _, item := range items {
 		contextOverride := config.AutoContextOverrides[strconv.Itoa(item.ChannelGrantID)]
-		reason := autoExclusion(item, task, grants[item.ChannelGrantID], verified[item.ChannelGrantID], contextOverride)
+		reason := autoExclusion(item, task, grants[item.ChannelGrantID], strictStream || verified[item.ChannelGrantID], contextOverride)
+		if reason == "" && strictStream {
+			status := op.AutoToolProbeStatus(item.ChannelGrantID, op.AutoGrantRevision(item.ChannelGrantID), time.Now())
+			if status != "verified" {
+				reason = "auto_stream_probe_" + status
+			}
+		}
 		if reason != "" {
 			excluded = append(excluded, model.RelayRouteCandidate{ItemID: item.ID, ChannelCode: item.ChannelName, Model: item.ModelName, Reason: reason})
 			continue

@@ -21,6 +21,8 @@ type ModelTaskCapability struct {
 // ModelToolProbeResult 是一次真实的 OpenAI Chat 工具调用冒烟验证结果。
 // 它不携带上游凭据或响应正文，以免管理页与审计记录成为第二份秘密存储。
 type ModelProbeEvaluation struct {
+	StreamsCompleted    int      `json:"streams_completed"`
+	StreamsExpected     int      `json:"streams_expected"`
 	Task                string   `json:"task"`
 	Passed              int      `json:"passed"`
 	Total               int      `json:"total"`

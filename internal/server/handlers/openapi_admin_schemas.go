@@ -288,6 +288,8 @@ func openAPIAdminSchemas() gin.H {
 		}, "channel_grant_id"),
 
 		"ModelProbeEvaluation": object(gin.H{
+			"streams_completed":     fieldNumber("integer", "完整结束的流式调用次数"),
+			"streams_expected":      fieldNumber("integer", "预期的流式调用次数"),
 			"task":                  fieldString("任务类别"),
 			"passed":                fieldNumber("integer", "通过数"),
 			"total":                 fieldNumber("integer", "用例数"),
@@ -456,7 +458,8 @@ func openAPIAdminSchemas() gin.H {
 		}, "group_id", "added", "skipped", "group"),
 
 		"GroupRelayConfig": object(gin.H{
-			"auto_anthropic_stream_verified": fieldString("已单独验证 Anthropic 流式工具调用的授权 ID"),
+			"auto_require_anthropic_stream_probe": fieldBool("Anthropic 流式工具仅使用当前配置 30 天内验证通过的候选"),
+			"auto_anthropic_stream_verified":      fieldString("已单独验证 Anthropic 流式工具调用的授权 ID"),
 
 			"member_stream_idle_timeout_seconds":         fieldNumber("integer", "流式响应两帧之间的最大空闲秒数"),
 			"request_timeout_seconds":                    fieldNumber("integer", "整请求最大耗时秒数, 含重试与流式传输"),

@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/api/user';
 import { apiRequest } from '@/api/client';
+import type { ModelProbeEvaluation } from '@/api/model';
 import { useGroupList, type Group } from '@/api/group';
 import { routeEventText, routeReasonText } from './reason';
 import { logExportUrl, useLogList, useLogs } from '@/api/log';
@@ -22,7 +23,24 @@ const PAGE_SIZE = 20;
 // STATUS_OPTIONS 终态筛选选项, 与后端终态定义一致。
 const STATUS_OPTIONS = ['success', 'failed', 'canceled', 'committed', 'running'] as const;
 
+interface ToolProbeCandidate {
+    grant_id: number;
+    channel: string;
+    model: string;
+    status: 'unverified' | 'verified' | 'failed' | 'expired' | 'changed' | 'unavailable';
+    runs: { id: number; created_at: string; success: boolean; evaluation?: ModelProbeEvaluation[] }[] | null;
+    tasks: {
+        task: string;
+        passed: number;
+        total: number;
+        streams_completed: number;
+        streams_expected: number;
+        latency_p90_ms: number;
+    }[] | null;
+}
+
 interface AutoRoutingSummary {
+    probe_candidates?: ToolProbeCandidate[];
     requests: number;
     task_classified: number;
     success: number;
@@ -211,6 +229,43 @@ function AutoRoutingPanel() {
                 </Select>
                 <span className="ml-auto text-xs text-muted-foreground">{tr('window', { requests: data.requests })} · {tr('samplesMax', { count: data.sample_limit })}</span>
             </div>
+            {!!data.probe_candidates?.length && (
+                <section className="rounded-2xl border border-border/60 bg-card p-4">
+                    <h3 className="mb-3 text-sm font-semibold">{tr('probeComparison')}</h3>
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        {data.probe_candidates.map((candidate) => (
+                            <article key={candidate.grant_id} className="min-w-0 space-y-2 rounded-xl border p-3 text-xs">
+                                <h4 className="break-words font-medium">{candidate.channel} · {candidate.model} #{candidate.grant_id}</h4>
+                                <p className="text-muted-foreground">{tr('probeStatus.' + candidate.status)}</p>
+                                {candidate.tasks?.map((task) => (
+                                    <p key={task.task} className="break-words">
+                                        {tr('task.' + task.task)} · {tr('probeMetrics', {
+                                            passed: task.passed, total: task.total,
+                                            complete: task.streams_completed, expected: task.streams_expected,
+                                            ms: Math.round(task.latency_p90_ms),
+                                        })}
+                                    </p>
+                                ))}
+                                {candidate.runs?.map((run) => (
+                                    <div key={run.id} className="space-y-1 border-t pt-2 text-muted-foreground">
+                                        <p>{new Date(run.created_at).toLocaleString()} · {tr(run.success ? 'probeStatus.verified' : 'probeStatus.failed')}</p>
+                                        {run.evaluation?.map((item) => (
+                                            <p key={item.task}>
+                                                {tr('task.' + item.task)} · {item.passed}/{item.total} · {item.duration_ms} ms
+                                                {item.estimated_supply_cost != null && (
+                                                    <> · {tr('probeSupplyEstimate', {
+                                                        cost: item.estimated_supply_cost.toPrecision(3), currency: item.currency || 'USD',
+                                                    })}</>
+                                                )}
+                                            </p>
+                                        ))}
+                                    </div>
+                                ))}
+                            </article>
+                        ))}
+                    </div>
+                </section>
+            )}
             {data.task_classified === 0 ? (
                 <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-6 text-center text-muted-foreground">
                     <Activity className="size-8" />

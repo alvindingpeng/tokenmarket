@@ -105,6 +105,8 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.ModelAutoAddRule{}, // 按(用户, 模型)存放的自动添加条件; 独立于价格表, 免受价格同步覆盖。
 		&model.ModelCapability{},
 		&model.ModelTaskCapability{},
+		&model.AutoToolProbeRun{},
+		&model.AutoSessionBinding{},
 		&model.ModelReference{},
 		&model.APIKey{},
 		&model.BillingRecord{},

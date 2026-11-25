@@ -30,25 +30,35 @@ func TestAnthropicStreamingEvaluation(t *testing.T) {
 				emit := func(data string) { fmt.Fprintf(w, "data: %s\n\n", data) }
 				emit(`{"type":"message_start","message":{"usage":{"input_tokens":10,"output_tokens":0}}}`)
 				stop := "end_turn"
-				if len(payload.Messages) == 1 && len(payload.Tools) > 0 {
+				if len(payload.Messages) < 5 && len(payload.Tools) > 0 {
 					stop = "tool_use"
-					emit(`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"switchyard_probe","input":{}}}`)
+					emit(fmt.Sprintf(`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_%d","name":"switchyard_probe","input":{}}}`, len(payload.Messages)))
 					emit(`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{"}}`)
 					if failure != "invalid JSON" {
 						emit(`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"}"}}`)
 					}
 				} else {
 					var answer string
-					if len(payload.Messages) == 3 {
-						var result []struct{ Content string }
-						if json.Unmarshal(payload.Messages[2].Content, &result) != nil || len(result) != 1 {
-							t.Error("missing tool result")
-							return
+					if len(payload.Messages) == 5 {
+						var texts []string
+						for _, index := range []int{2, 4} {
+							var result []struct{ Content string }
+							if json.Unmarshal(payload.Messages[index].Content, &result) != nil || len(result) != 1 {
+								t.Error("missing tool result")
+								return
+							}
+							if index == 2 && len(result[0].Content) < 6000 {
+								t.Error("first tool result must exercise long content")
+							}
+							lastLine := result[0].Content[strings.LastIndex(result[0].Content, "\n")+1:]
+							texts = append(texts, lastLine)
 						}
-						answer = result[0].Content
+						answer = strings.Join(texts, " ")
 						if failure == "wrong result" {
 							answer = "unrelated"
 						}
+					} else if strings.Contains(string(payload.Messages[0].Content), "is_valid_port") {
+						answer = `{"find":"port < 65535","replace":"port <= 65535"}`
 					} else if strings.Contains(string(payload.Messages[0].Content), "Python") {
 						answer = "return len(items)"
 					} else {
@@ -70,8 +80,11 @@ func TestAnthropicStreamingEvaluation(t *testing.T) {
 			if (err == nil) != (failure == "") || result.Success != (failure == "") {
 				t.Fatalf("result=%+v error=%v", result, err)
 			}
-			if len(result.Evaluation) != 2 || result.Evaluation[1].Passed != 2 || result.Evaluation[1].EstimatedSupplyCost == nil {
+			if len(result.Evaluation) != 2 || result.Evaluation[1].Passed != 3 || result.Evaluation[1].EstimatedSupplyCost == nil {
 				t.Fatalf("missing separate coding outcomes: %+v", result.Evaluation)
+			}
+			if failure == "" && (result.Evaluation[0].StreamsCompleted != 3 || result.Evaluation[0].StreamsExpected != 3) {
+				t.Fatalf("missing complete streams: %+v", result.Evaluation)
 			}
 		})
 	}

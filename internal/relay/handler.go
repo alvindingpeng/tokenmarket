@@ -199,6 +199,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		var autoProtectionTask autoTask
 		autoProtectionEngaged := false
 		autoRouteGroupID := 0
+		sessionRevision := ""
+		sessionFailure := ""
+		sessionKeyID := c.GetInt("api_key_id")
 		defer func() {
 			if !autoProtectionEngaged {
 				return
@@ -206,8 +209,8 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			switch request.statusSnapshot() {
 			case StatusSuccess:
 				autoCircuitRecordSuccess(autoProtectionGroup.ID, autoProtectionTask.name)
-				if itemID := request.autoChoiceSnapshot(); itemID != 0 && autoRouteGroupID != 0 {
-					autoStickyRecordSuccess(autoProtectionGroup, c.GetInt("api_key_id"), keyUserID, autoProtectionTask.name, autoProtectionTask.protocol, itemID, session)
+				if itemID := request.autoChoiceSnapshot(); session == "" && itemID != 0 && autoRouteGroupID != 0 {
+					autoStickyRecordSuccess(autoProtectionGroup, sessionKeyID, keyUserID, autoProtectionTask.name, autoProtectionTask.protocol, itemID)
 				}
 			case StatusFailed:
 				autoCircuitRecordFailure(autoProtectionGroup, autoProtectionTask.name)
@@ -461,7 +464,19 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					eligible, excluded := analysis.Group, analysis.Excluded
 					group, autoExcluded = eligible, excluded
 					bound := false
-					if stickyID, ok := autoStickyGet(group, c.GetInt("api_key_id"), keyUserID, task.name, task.protocol, session); ok {
+					stickyID, stickyOK := 0, false
+					sessionFailure = ""
+					if session == "" {
+						stickyID, stickyOK = autoStickyGet(group, sessionKeyID, keyUserID, task.name, task.protocol)
+					} else {
+						binding, reason := autoSessionLookup(ctx, baseGroup, sessionKeyID, keyUserID, task, session)
+						stickyID, stickyOK = binding.ItemID, reason == ""
+						sessionFailure = reason
+						if stickyOK {
+							sessionRevision = binding.Revision
+						}
+					}
+					if stickyOK {
 						if stickyItem, found := autoItemByID(group.Items, stickyID); found {
 							group.Items = append([]model.GroupItem{stickyItem}, slices.DeleteFunc(slices.Clone(group.Items), func(member model.GroupItem) bool {
 								return member.ID == stickyID
@@ -476,14 +491,19 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 							request.setAutoSticky(stickyID, "hit")
 							request.addRouteEvent("auto_routing", "auto_sticky_hit")
 						} else {
+							sessionFailure = "auto_session_member_ineligible"
 							request.setAutoSticky(stickyID, "miss")
 							request.addRouteEvent("auto_routing", "auto_sticky_miss")
 						}
 					}
 					if task.signedHistory && !bound {
-						for _, member := range group.Items {
-							autoExcluded = append(autoExcluded, model.RelayRouteCandidate{ItemID: member.ID, Model: member.ModelName, Reason: "auto_signed_session_required"})
+						if sessionFailure == "" {
+							sessionFailure = "auto_signed_session_required"
 						}
+						for _, member := range group.Items {
+							autoExcluded = append(autoExcluded, model.RelayRouteCandidate{ItemID: member.ID, Model: member.ModelName, Reason: sessionFailure})
+						}
+						request.addRouteEvent("auto_routing", sessionFailure)
 						group.Items = nil
 					}
 					if len(group.Items) > 0 {
@@ -693,7 +713,11 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					if observedTask.name == "unsupported" {
 						status = http.StatusBadRequest
 					}
-					stop(fmt.Errorf("auto routing has no compatible upstream for task %s", observedTask.name), status)
+					if observedTask.signedHistory && sessionFailure != "" {
+						stop(fmt.Errorf("signed continuation unavailable: %s", sessionFailure), status)
+					} else {
+						stop(fmt.Errorf("auto routing has no compatible upstream for task %s", observedTask.name), status)
+					}
 					return
 				}
 				// 分组一个成员都没有时, 等待永远等不到上游: 直接点明配置缺失, 不再报笼统的"无可用上游"。
@@ -764,6 +788,15 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				}
 			}
 
+			if session != "" && group.AutoRequestCosts != nil {
+				revision := op.AutoUpstreamRevision(channel, grant)
+				if observedTask.signedHistory && sessionRevision != revision {
+					request.addRouteEvent("auto_routing", "auto_session_upstream_changed")
+					stop(errors.New("signed continuation unavailable: auto_session_upstream_changed"), http.StatusServiceUnavailable)
+					return
+				}
+				sessionRevision = revision
+			}
 			// 将分组成员配置的真实模型写入本轮上游请求; multipart 表单按字段重写而非 JSON 路径。
 			if isMultipart {
 				err = rewriteMultipartModel(raw, channelModel.Name)
@@ -1127,6 +1160,24 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				}
 				return
 			}
+			// Persist explicit affinity before the client can receive the final event
+			// and immediately submit the next turn.
+			saveSession := func() {
+				if session == "" || sessionRevision == "" || !autoProtectionEngaged ||
+					group.AutoRequestCosts == nil || group.RelayConfig.AutoStickySeconds <= 0 {
+					return
+				}
+				saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+				defer cancel()
+				if err := op.AutoSessionSave(saveCtx, model.AutoSessionBinding{
+					Key:     autoSessionKey(group.ID, sessionKeyID, keyUserID, observedTask, session),
+					GroupID: group.ID, ItemID: item.ID, Revision: sessionRevision,
+					StartedAt: request.StartedAt,
+					ExpiresAt: time.Now().Add(time.Duration(group.RelayConfig.AutoStickySeconds) * time.Second),
+				}); err != nil {
+					request.addRouteEvent("auto_routing", "auto_session_store_unavailable")
+				}
+			}
 			// 记录本轮已经取得可提交的上游响应。
 			// 流式响应此刻只拿到首个事件, 响应尚未交付完: 终态由流末分支统一收尾(见下方 finishRound),
 			// 这里提前记成功会让尝试行先写 success 再被覆盖, 也把在途的流伪装成已成功。
@@ -1185,6 +1236,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				_ = op.ChannelKeyStatsUpdate(channelKey.ID, metrics)
 				op.ChannelDailyStatsUpdate(channel.ID, metrics)
 				op.ChannelModelDailyStatsUpdate(channelModel.ID, metrics)
+				saveSession()
 				n, err := c.Writer.Write(result.body)
 				if err == nil && n != len(result.body) {
 					err = io.ErrShortWrite
@@ -1240,6 +1292,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 						err = encodeErr
 						upstreamFailure = false
 						break
+					}
+					if last && err == nil {
+						saveSession()
 					}
 					n, writeErr := c.Writer.Write(encoded.Bytes())
 					if writeErr == nil && n != encoded.Len() {

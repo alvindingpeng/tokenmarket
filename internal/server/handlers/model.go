@@ -421,11 +421,23 @@ func probeModelToolCapability(c *gin.Context) {
 		resp.Error(c, http.StatusBadGateway, err.Error())
 		return
 	}
+	started := time.Now()
 	var result model.ModelToolProbeResult
 	if required == model.ProtocolAnthropicMessage {
 		result, err = runAnthropicToolProbe(c.Request.Context(), client, channel, grant, request.Stream, request.Evaluate)
 	} else {
 		result, err = runModelToolProbe(c.Request.Context(), client, channel, grant, request.Score)
+	}
+	if required == model.ProtocolAnthropicMessage && request.Stream {
+		saveCtx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 5*time.Second)
+		defer cancel()
+		if saveErr := op.AutoToolProbeSave(saveCtx, model.AutoToolProbeRun{
+			GrantID: grant.ID, Revision: op.AutoUpstreamRevision(channel, grant), StartedAt: started,
+			Success: result.Success && err == nil, Evaluation: result.Evaluation,
+		}); saveErr != nil {
+			resp.Error(c, http.StatusInternalServerError, "failed to save Anthropic streaming verification")
+			return
+		}
 	}
 	evaluation, _ := json.Marshal(result.Evaluation)
 	audit(c, "model.tool-probe", grant.ChannelModel.Name,

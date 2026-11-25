@@ -520,6 +520,20 @@ func TestAutoRoutingAnthropicToolRequiresAnthropicVerification(t *testing.T) {
 	if len(streaming.Group.Items) != 1 || streaming.Group.Items[0].ChannelGrantID != group.Items[0].ChannelGrantID {
 		t.Fatalf("streaming must use separate tool verification: %+v", streaming.Group.Items)
 	}
+
+	group.RelayConfig.AutoRequireAnthropicStreamProbe = true
+	if strict := analyzeAutoCandidates(group, task); len(strict.Group.Items) != 0 {
+		t.Fatal("strict mode accepted legacy verification without a probe record")
+	}
+	verifiedGrant := group.Items[1].ChannelGrantID
+	if err := op.AutoToolProbeSave(context.Background(), model.AutoToolProbeRun{
+		GrantID: verifiedGrant, Revision: op.AutoGrantRevision(verifiedGrant), StartedAt: time.Now(), Success: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if strict := analyzeAutoCandidates(group, task); len(strict.Group.Items) != 1 || strict.Group.Items[0].ChannelGrantID != verifiedGrant {
+		t.Fatalf("strict mode accepted the wrong grants: %+v", strict.Group.Items)
+	}
 }
 
 func TestAnthropicSignedHistoryUsesBoundSession(t *testing.T) {
@@ -556,7 +570,14 @@ func TestAnthropicSignedHistoryUsesBoundSession(t *testing.T) {
 	body := fmt.Sprintf(`{"model":%q,"max_tokens":128,"messages":[{"role":"user","content":"Use a tool"},{"role":"assistant","content":[{"type":"thinking","thinking":"opaque text","signature":"opaque-signature"},{"type":"tool_use","id":"toolu_1","name":"lookup","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"ok"}]}]}`, env.group)
 	for i, session := range []string{"conversation-a", "conversation-b", "unbound"} {
 		if i < 2 {
-			autoStickyRecordSuccess(group, 0, env.userID, AutoTaskTool, model.ProtocolAnthropicMessage, group.Items[i].ID, session)
+			task := autoTask{name: AutoTaskTool, protocol: model.ProtocolAnthropicMessage}
+			if err := op.AutoSessionSave(context.Background(), model.AutoSessionBinding{
+				Key: autoSessionKey(group.ID, 0, env.userID, task, session), GroupID: group.ID,
+				ItemID: group.Items[i].ID, Revision: op.AutoGrantRevision(group.Items[i].ChannelGrantID),
+				StartedAt: time.Now(), ExpiresAt: time.Now().Add(time.Minute),
+			}); err != nil {
+				t.Fatal(err)
+			}
 		}
 		response := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(response)

@@ -24,6 +24,7 @@ export interface GroupRelayConfig {
     auto_responses_tool_verified?: string;
     auto_anthropic_tool_verified?: string;
     auto_anthropic_stream_verified?: string;
+    auto_require_anthropic_stream_probe?: boolean;
     auto_ramp_percent?: number;
     auto_fallback_failures?: number;
     auto_fallback_seconds?: number;

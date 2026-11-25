@@ -121,19 +121,19 @@
 
 ### 9.1 结论先行
 
-用 AST 穷举(见 §9.4)`internal/op` 非测试文件，共 **41 处**
+用 AST 穷举(见 §9.4)`internal/op` 非测试文件，共 **42 处**
 GORM 事务（含 `channelModelTransaction` 包装的三处渠道事务），按"事务首条语句 + 事务长短"分成四类:
 
 | 类别 | 处数 | 判据 | 动作 |
 | --- | --- | --- | --- |
 | A. 已在开头取写锁 | 19 | 首条是 `db.AcquireWriteLock` 的锚点 UPDATE | 已正确, 维持 |
-| B. 首条即写 | 20 | 事务第一条执行语句就是 INSERT/UPDATE/DELETE | **不需要**加锁, 也不许加 |
+| B. 首条即写 | 21 | 事务第一条执行语句就是 INSERT/UPDATE/DELETE | **不需要**加锁, 也不许加 |
 | C. 纯只读事务 | 1 | 事务内一条写语句都没有 | **绝不能**加锁 |
 | D. 长事务 | 1 | 事务体是整轮归档/整份导入, 秒级到分钟级 | **绝不能**加锁 |
 
-合计 41 = 19 + 20 + 1 + 1。短事务的读后写均提前取得写锁。
+合计 42 = 19 + 21 + 1 + 1。短事务的读后写均提前取得写锁。
 这句话的含义要说清: 不是"我扫了一遍没发现", 而是"四类互斥、每类都有明确判据与全量名单,
-名单总数 41 与 AST 计数相等", 所以"漏掉一处"在这里是可证伪的。
+名单总数 42 与 AST 计数相等", 所以"漏掉一处"在这里是可证伪的。
 
 一句话记住本节判据: **只有"事务很短 + 首条是读 + 后面要写"三者同时成立才需要提前取锁**;
 三者缺一 —— 首条是写(写锁已经到手)、只读(永远不写)、长(提前拿锁等于把全库写入口堵死)。
@@ -172,7 +172,7 @@ SQLite 的写锁是"第一条写语句拿到手并**一直持有到事务结束*
 
 **D 类(1 处, 长事务): 绝不能加锁, 理由见 §9.5。**
 
-### 9.3 全量清单（41 处）
+### 9.3 全量清单（42 处）
 
 首条语句按**实际执行顺序**记录(见 §9.4 的三个坑): 这张表是 AST 解析 + 递归展开包内 helper 之后得到的,
 不是按源码行号从上往下读出来的。
@@ -201,7 +201,7 @@ SQLite 的写锁是"第一条写语句拿到手并**一直持有到事务结束*
 | 17 | `internal/op/withdrawal.go:450` | `WithdrawMarkPaid` | :450 | `Take` 提现单 |
 | 18 | `internal/op/withdrawal.go:625` | `WithdrawRollback` | :625 | `Take` 提现单 |
 
-**B 类 — 首条即写, 不需要也不允许加锁(20 处)**
+**B 类 — 首条即写, 不需要也不允许加锁(21 处)**
 
 | # | 位置 | 函数 | 首条执行语句 | 备注 |
 | --- | --- | --- | --- | --- |
@@ -225,6 +225,7 @@ SQLite 的写锁是"第一条写语句拿到手并**一直持有到事务结束*
 | 36 | `internal/op/withdrawal.go:270` | `WithdrawApply` | `UPDATE users SET total_revenue = total_revenue WHERE id = ?` | 自赋值空更新, 只为拿锁 |
 | 37 | `internal/op/balance_alert.go:113` | `BalanceAlertCheck` | 条件 `Update` 抢占 `last_triggered_at` | 事务同时写入历史、站内通知和 Webhook 投递行 |
 | 38 | `internal/op/model_catalog.go` | `replaceModelCatalog` | `Delete` 清除旧的 models.dev 能力条目 | 模型参考资料与渠道上下文在同一事务更新 |
+| 42 | `internal/op/auto_evidence.go` | `AutoToolProbeSave` | `Create` 写入评测结果 | 在同一事务中保留渠道授权最近 20 次评测 |
 
 > `notification.go:66` 顺带记录一条已经做对的模式: `notificationCreate` 把 webhook 目标列表的
 > **只读预读放在事务外**(`webhookEnqueueTargets`), 事务里只剩两条 INSERT。这是"短小的读后写"的
@@ -247,7 +248,7 @@ SQLite 的写锁是"第一条写语句拿到手并**一直持有到事务结束*
 首条即写, 属 B 类; 不在 `internal/op` 也不在本次委托范围, 仅记录不动作。
 `internal/server` 与 `cmd` 下**没有**任何 `.Transaction(`; 全仓也没有 `db.Begin()`、
 `Session{NewDB: true}`、手工改 `Statement.ConnPool` 这类绕过显式事务的写法 —— 也就是说
-"显式事务"这个面已被这 41 处完整覆盖。
+"显式事务"这个面已被这 42 处完整覆盖。
 
 ### 9.4 三个静态分析的坑(下一个审计者一定会踩)
 

@@ -1054,6 +1054,18 @@ export function GroupEditor({
                                                 );
                                             })}
                                         </div>
+                                        <label className="flex items-start gap-2 text-xs">
+                                            <Checkbox
+                                                checked={relayConfig.auto_require_anthropic_stream_probe ?? false}
+                                                onCheckedChange={(value) => setRelayConfig((previous) => ({
+                                                    ...previous, auto_require_anthropic_stream_probe: value === true,
+                                                }))}
+                                            />
+                                            <span>
+                                                {t('form.requireAnthropicStreamProbe')}
+                                                <span className="mt-1 block text-muted-foreground">{t('form.requireAnthropicStreamProbeHint')}</span>
+                                            </span>
+                                        </label>
                                         {selectedMembers.length > 0 && (
                                             <div className="space-y-2 rounded-xl border border-border/50 p-3">
                                                 <div>

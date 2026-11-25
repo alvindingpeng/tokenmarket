@@ -224,6 +224,7 @@ type AutoRoutingReadiness struct {
 // AutoRoutingSummary 是近期调用日志的自动路由实验聚合。数据来自现有请求和尝试日志，
 // 不新增高频写入的独立报表表，也不需要迁移数据库。
 type AutoRoutingSummary struct {
+	ProbeCandidates    []AutoProbeCandidate           `json:"probe_candidates,omitempty"`
 	Days               int                            `json:"days"`
 	GroupID            int                            `json:"group_id"`
 	GeneratedAt        time.Time                      `json:"generated_at"`
@@ -1138,6 +1139,13 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 		Errors: make([]AutoRoutingErrorSummary, 0), CostBands: make([]AutoRoutingCostBandSummary, 0),
 		ErrorClassCounts:   make([]AutoRoutingReasonSummary, 0),
 		ContextWindowHints: make([]AutoRoutingContextWindowHint, 0),
+	}
+	if scope.IsAdmin() && groupID > 0 {
+		var err error
+		summary.ProbeCandidates, err = AutoProbeCandidates(scope, groupID, now)
+		if err != nil {
+			return summary, fmt.Errorf("failed to load probe evidence: %w", err)
+		}
 	}
 	query := db.GetDB().Model(&model.RelayRequest{}).
 		Where("started_at >= ?", summary.WindowStart)

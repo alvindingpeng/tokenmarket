@@ -300,15 +300,19 @@ export interface ModelToolProbeRequest {
     score: number;
 }
 
+export interface ModelProbeEvaluation {
+    task: 'coding' | 'tool';
+    passed: number;
+    total: number;
+    duration_ms: number;
+    streams_completed?: number;
+    streams_expected?: number;
+    estimated_supply_cost?: number;
+    currency?: string;
+}
+
 export interface ModelToolProbeResult {
-    evaluation?: {
-        task: 'coding' | 'tool';
-        passed: number;
-        total: number;
-        duration_ms: number;
-        estimated_supply_cost?: number;
-        currency?: string;
-    }[];
+    evaluation?: ModelProbeEvaluation[];
     channel_grant_id: number;
     model_name: string;
     success: boolean;

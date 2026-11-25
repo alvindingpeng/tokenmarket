@@ -149,9 +149,9 @@ func TestTxLockFirstStatementIsWrite(t *testing.T) {
 }
 
 const (
-	wantSiteCount  = 41
+	wantSiteCount  = 42
 	wantLockFirst  = 19
-	wantWriteFirst = 20
+	wantWriteFirst = 21
 	wantReadOnly   = 1
 	wantLongTx     = 1
 )
