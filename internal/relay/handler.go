@@ -205,11 +205,11 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			case StatusSuccess:
 				autoCircuitRecordSuccess(autoProtectionGroup.ID, autoProtectionTask.name)
 				if itemID := request.autoChoiceSnapshot(); itemID != 0 && autoRouteGroupID != 0 {
-					autoStickyRecordSuccess(autoProtectionGroup, c.GetInt("api_key_id"), keyUserID, autoProtectionTask.name, itemID)
+					autoStickyRecordSuccess(autoProtectionGroup, c.GetInt("api_key_id"), keyUserID, autoProtectionTask.name, autoProtectionTask.protocol, itemID)
 				}
 			case StatusFailed:
 				autoCircuitRecordFailure(autoProtectionGroup, autoProtectionTask.name)
-				autoStickyClear(autoProtectionGroup.ID, c.GetInt("api_key_id"), keyUserID, autoProtectionTask.name)
+				autoStickyClear(autoProtectionGroup.ID, c.GetInt("api_key_id"), keyUserID, autoProtectionTask.name, autoProtectionTask.protocol)
 			}
 		}()
 		request.setRateScopes(userScopes, userDecision.Reservation)
@@ -334,7 +334,8 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			// the next selection. A successful retry writes a new choice only after
 			// the complete response has been delivered.
 			if !pendingRateRetry && (lastScoreError != nil || failedItemID != 0) {
-				autoStickyClear(group.ID, c.GetInt("api_key_id"), keyUserID, request.autoTaskSnapshot().name)
+				autoSnap := request.autoTaskSnapshot()
+				autoStickyClear(group.ID, c.GetInt("api_key_id"), keyUserID, autoSnap.name, autoSnap.protocol)
 			}
 			autoMode := ""
 			if group.Mode == model.GroupModeScore {
@@ -454,7 +455,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					analysis = analyzeAutoCandidates(group, task)
 					eligible, excluded := analysis.Group, analysis.Excluded
 					group, autoExcluded = eligible, excluded
-					if stickyID, ok := autoStickyGet(group, c.GetInt("api_key_id"), keyUserID, task.name); ok {
+					if stickyID, ok := autoStickyGet(group, c.GetInt("api_key_id"), keyUserID, task.name, task.protocol); ok {
 						if stickyItem, found := autoItemByID(group.Items, stickyID); found {
 							group.Items = append([]model.GroupItem{stickyItem}, slices.DeleteFunc(slices.Clone(group.Items), func(member model.GroupItem) bool {
 								return member.ID == stickyID

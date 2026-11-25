@@ -19,10 +19,11 @@ type autoCircuitState struct {
 }
 
 type autoStickyKey struct {
-	GroupID int
-	KeyID   int
-	UserID  uint
-	Task    string
+	GroupID  int
+	KeyID    int
+	UserID   uint
+	Task     string
+	Protocol model.Protocol
 }
 
 type autoStickyState struct {
@@ -112,19 +113,19 @@ func autoCircuitRecordFailure(group model.Group, task string) bool {
 	return state.OpenUntil.After(now)
 }
 
-func autoStickyKeyFor(groupID, keyID int, userID uint, task string) autoStickyKey {
-	return autoStickyKey{GroupID: groupID, KeyID: keyID, UserID: userID, Task: task}
+func autoStickyKeyFor(groupID, keyID int, userID uint, task string, protocol model.Protocol) autoStickyKey {
+	return autoStickyKey{GroupID: groupID, KeyID: keyID, UserID: userID, Task: task, Protocol: protocol}
 }
 
 // autoStickyGet returns the recently successful member for this task. Zero or
 // expired state is a miss, including legacy groups that do not enable sticky
 // routing. The caller must still pass the returned item through the current
 // candidate filters.
-func autoStickyGet(group model.Group, keyID int, userID uint, task string) (int, bool) {
+func autoStickyGet(group model.Group, keyID int, userID uint, task string, protocol model.Protocol) (int, bool) {
 	if group.RelayConfig.AutoStickySeconds <= 0 {
 		return 0, false
 	}
-	key := autoStickyKeyFor(group.ID, keyID, userID, task)
+	key := autoStickyKeyFor(group.ID, keyID, userID, task, protocol)
 	now := time.Now()
 	autoStickyMu.Lock()
 	defer autoStickyMu.Unlock()
@@ -136,11 +137,11 @@ func autoStickyGet(group model.Group, keyID int, userID uint, task string) (int,
 	return state.ItemID, true
 }
 
-func autoStickyRecordSuccess(group model.Group, keyID int, userID uint, task string, itemID int) {
+func autoStickyRecordSuccess(group model.Group, keyID int, userID uint, task string, protocol model.Protocol, itemID int) {
 	if group.RelayConfig.AutoStickySeconds <= 0 || itemID == 0 {
 		return
 	}
-	key := autoStickyKeyFor(group.ID, keyID, userID, task)
+	key := autoStickyKeyFor(group.ID, keyID, userID, task, protocol)
 	autoStickyMu.Lock()
 	autoSticky[key] = autoStickyState{
 		ItemID: itemID, ExpiresAt: time.Now().Add(time.Duration(group.RelayConfig.AutoStickySeconds) * time.Second),
@@ -148,8 +149,8 @@ func autoStickyRecordSuccess(group model.Group, keyID int, userID uint, task str
 	autoStickyMu.Unlock()
 }
 
-func autoStickyClear(groupID, keyID int, userID uint, task string) {
-	key := autoStickyKeyFor(groupID, keyID, userID, task)
+func autoStickyClear(groupID, keyID int, userID uint, task string, protocol model.Protocol) {
+	key := autoStickyKeyFor(groupID, keyID, userID, task, protocol)
 	autoStickyMu.Lock()
 	delete(autoSticky, key)
 	autoStickyMu.Unlock()

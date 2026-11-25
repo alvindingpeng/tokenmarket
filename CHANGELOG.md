@@ -1,5 +1,11 @@
 # 更新说明
 
+## v1.16.31 — 2026-11-25
+
+- 智能路由新增原生 Anthropic Messages 自定义多轮工具调用支持，识别 `tools`、`tool_use` 与纯文本 `tool_result` 块并精确计入上下文与输入估算，继续保守拦截服务端内置工具（`unsupported_anthropic_tool_type`）与含图像等非文本块的工具结果。
+- 新增分组级独立验证字段 `auto_anthropic_tool_verified`，Anthropic 工具请求仅在管理员显式验证且支持原生 Anthropic Messages 协议的候选中选路，与 OpenAI Chat 和 Responses 工具验证彼此隔离，并在分组编辑器补齐三语复选框。
+- 智能路由会话粘性按请求协议隔离（`GroupID + KeyID + UserID + Task + Protocol`），避免同一密钥跨 OpenAI Chat、Responses 与 Anthropic Messages 调用同任务时误命中不兼容协议成员。
+
 ## v1.16.30 — 2026-11-25
 
 - 将产品落地页主色调调整为与内页一致的冷白底色（`#f7f8fa`）与钴蓝天青科技渐变（`#315fbd` 至 `#0ea5e9`），保留深色模式适配、蓝图坐标网格、交互式光路拓扑调度台、扫描光束与 `motion/react` 动效。

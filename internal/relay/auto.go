@@ -112,10 +112,22 @@ func classifyAuto(body []byte, protocol model.Protocol, input, output int64) aut
 		if nonEmptyJSON(message.ToolCalls) || nonEmptyJSON(message.FunctionCall) || message.Role == "tool" || message.Role == "function" {
 			hasTools = true
 		}
-		text, ok := autoText(message.Content)
-		if !ok {
-			task.rule = "unsupported_content"
-			return task
+		var text string
+		var ok bool
+		if protocol == model.ProtocolAnthropicMessage {
+			var contentTools bool
+			text, contentTools, ok = autoAnthropicContent(message.Content)
+			if !ok {
+				task.rule = "unsupported_content"
+				return task
+			}
+			hasTools = hasTools || contentTools
+		} else {
+			text, ok = autoText(message.Content)
+			if !ok {
+				task.rule = "unsupported_content"
+				return task
+			}
 		}
 		textParts = append(textParts, text)
 		if message.Role == "user" || message.Role == "tool" || message.Role == "function" {
@@ -141,7 +153,12 @@ func classifyAuto(body []byte, protocol model.Protocol, input, output int64) aut
 	}
 	task.input = 32
 	for _, message := range request.Messages {
-		text, _ := autoText(message.Content)
+		var text string
+		if protocol == model.ProtocolAnthropicMessage {
+			text, _, _ = autoAnthropicContent(message.Content)
+		} else {
+			text, _ = autoText(message.Content)
+		}
 		task.input += 8 + autoTextTokens(text) + autoTextTokens(string(message.ToolCalls)) + autoTextTokens(string(message.FunctionCall))
 	}
 	for _, value := range []json.RawMessage{request.System, request.Instructions, request.Tools, request.Functions, request.ToolChoice, request.FunctionCall, request.Input, request.Text.Format.Schema, request.ResponseFormat.Schema} {
@@ -153,8 +170,19 @@ func classifyAuto(body []byte, protocol model.Protocol, input, output int64) aut
 	}
 	if hasTools {
 		if protocol == model.ProtocolAnthropicMessage {
-			task.rule = "unsupported_anthropic_tools"
-			return task
+			if nonEmptyJSON(request.Tools) {
+				var tools []struct{ Type string }
+				if json.Unmarshal(request.Tools, &tools) != nil {
+					task.rule = "unsupported_anthropic_tool_type"
+					return task
+				}
+				for _, tool := range tools {
+					if tool.Type != "" && tool.Type != "custom" {
+						task.rule = "unsupported_anthropic_tool_type"
+						return task
+					}
+				}
+			}
 		}
 		if protocol == model.ProtocolOpenAIResponse && nonEmptyJSON(request.Tools) {
 			var tools []struct{ Type string }
@@ -260,6 +288,57 @@ func autoText(raw json.RawMessage) (string, bool) {
 		texts = append(texts, part.Text)
 	}
 	return strings.Join(texts, "\n"), true
+}
+
+// autoAnthropicContent parses Anthropic Messages content strings or block arrays,
+// allowing text, tool_use, and text-only tool_result blocks while rejecting images,
+// documents, or unknown multimodal blocks.
+func autoAnthropicContent(raw json.RawMessage) (string, bool, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", false, true
+	}
+	var value string
+	if json.Unmarshal(raw, &value) == nil {
+		return value, false, true
+	}
+	var blocks []struct {
+		Type    string
+		Text    string
+		Name    string
+		Input   json.RawMessage
+		Content json.RawMessage
+	}
+	if json.Unmarshal(raw, &blocks) != nil {
+		return "", false, false
+	}
+	var texts []string
+	hasTools := false
+	for _, block := range blocks {
+		switch block.Type {
+		case "text":
+			texts = append(texts, block.Text)
+		case "tool_use":
+			hasTools = true
+			if block.Name != "" {
+				texts = append(texts, block.Name)
+			}
+			if nonEmptyJSON(block.Input) {
+				texts = append(texts, string(block.Input))
+			}
+		case "tool_result":
+			hasTools = true
+			resultText, ok := autoText(block.Content)
+			if !ok {
+				return "", false, false
+			}
+			if resultText != "" {
+				texts = append(texts, resultText)
+			}
+		default:
+			return "", false, false
+		}
+	}
+	return strings.Join(texts, "\n"), hasTools, true
 }
 
 func autoResponseInputText(raw json.RawMessage) (string, bool, bool) {
@@ -426,8 +505,11 @@ func analyzeAutoCandidates(group model.Group, task autoTask) autoCandidateResult
 	case AutoTaskTool:
 		qualified = config.AutoTool
 		verifiedGrants := config.AutoToolVerified
-		if task.protocol == model.ProtocolOpenAIResponse {
+		switch task.protocol {
+		case model.ProtocolOpenAIResponse:
 			verifiedGrants = config.AutoResponsesToolVerified
+		case model.ProtocolAnthropicMessage:
+			verifiedGrants = config.AutoAnthropicToolVerified
 		}
 		for _, value := range strings.Split(verifiedGrants, ",") {
 			if id, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && id > 0 {
@@ -603,8 +685,11 @@ func autoExclusion(item model.GroupItem, task autoTask, qualified, toolVerified 
 			return "auto_tool_unverified"
 		}
 		required = model.ProtocolOpenAIChatCompletion
-		if task.protocol == model.ProtocolOpenAIResponse {
+		switch task.protocol {
+		case model.ProtocolOpenAIResponse:
 			required = model.ProtocolOpenAIResponse
+		case model.ProtocolAnthropicMessage:
+			required = model.ProtocolAnthropicMessage
 		}
 		if item.Protocols&required == 0 {
 			return "auto_protocol_incompatible"

@@ -22,6 +22,7 @@ export interface GroupRelayConfig {
     auto_context_overrides?: Record<string, number>;
     auto_task_ramp_percent?: Record<string, number>;
     auto_responses_tool_verified?: string;
+    auto_anthropic_tool_verified?: string;
     auto_ramp_percent?: number;
     auto_fallback_failures?: number;
     auto_fallback_seconds?: number;

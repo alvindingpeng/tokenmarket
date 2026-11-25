@@ -968,7 +968,7 @@ export function GroupEditor({
                                                                                 )}
                                                                             </span>
                                                                             {key === 'auto_tool' && checked && (
-                                                                                <span className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground" onClick={(event) => event.stopPropagation()}>
+                                                                                <span className="flex shrink-0 flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground" onClick={(event) => event.stopPropagation()}>
                                                                                     <Checkbox
                                                                                         checked={parseAutoGrantIDs(relayConfig.auto_tool_verified).includes(member.channel_grant_id)}
                                                                                         onCheckedChange={(value) => setRelayConfig((prev) => ({ ...prev,
@@ -985,6 +985,15 @@ export function GroupEditor({
                                                                                         }))}
                                                                                     />
                                                                                     {t('form.autoResponsesToolVerified')}
+                                                                                    <Checkbox
+                                                                                        aria-label={t('form.autoAnthropicToolVerified')}
+                                                                                        checked={parseAutoGrantIDs(relayConfig.auto_anthropic_tool_verified).includes(member.channel_grant_id)}
+                                                                                        onCheckedChange={(value) => setRelayConfig((previous) => ({
+                                                                                            ...previous,
+                                                                                            auto_anthropic_tool_verified: autoGrantIDsValue(selectedMembers, toggleAutoGrantID(parseAutoGrantIDs(previous.auto_anthropic_tool_verified), member.channel_grant_id, value === true)),
+                                                                                        }))}
+                                                                                    />
+                                                                                    {t('form.autoAnthropicToolVerified')}
                                                                                 </span>
                                                                             )}
                                                                         </label>

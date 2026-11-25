@@ -305,7 +305,7 @@ func TestAutoRoutingStickyCandidateStillMustPassQualityFloor(t *testing.T) {
 	}, context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	autoStickyRecordSuccess(group, 7, 3, AutoTaskCoding, 1)
+	autoStickyRecordSuccess(group, 7, 3, AutoTaskCoding, model.ProtocolOpenAIChatCompletion, 1)
 	analysis := analyzeAutoCandidates(group, autoTask{name: AutoTaskCoding, input: 10, output: 10})
 	if _, found := autoItemByID(analysis.Group.Items, 1); found {
 		t.Fatal("sticky member bypassed the quality floor")
@@ -348,7 +348,7 @@ func TestAutoRoutingStickyRequestRetriesInsideEligibleMemberSet(t *testing.T) {
 	config.AutoMinTaskScore = 80
 	config.AutoStickySeconds = 300
 	group = setScoreTestGroup(t, env, config)
-	autoStickyRecordSuccess(group, 0, env.userID, AutoTaskGeneral, group.Items[1].ID)
+	autoStickyRecordSuccess(group, 0, env.userID, AutoTaskGeneral, model.ProtocolOpenAIChatCompletion, group.Items[1].ID)
 
 	response := forwardRequest(llm.APIFormatOpenAIChatCompletion, env.userID,
 		fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"plain text"}],"max_tokens":100}`, env.group))
@@ -474,4 +474,41 @@ func TestAutoRoutingCircuitAndRampHoldUseOriginalScoreGroup(t *testing.T) {
 			t.Fatalf("tool ramp hold reopened an unverified group: status=%d body=%s", response.Code, response.Body.String())
 		}
 	})
+}
+
+func TestAutoRoutingAnthropicToolRequiresAnthropicVerification(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"OK"}],"usage":{"input_tokens":5,"output_tokens":2}}`)
+	}))
+	defer upstream.Close()
+
+	config := model.DefaultGroupRelayConfigForMode(model.GroupModeScore)
+	env := newRelayGroup(t, upstream.URL, model.ProtocolAnthropicMessage, model.MediaKindText, 2, config)
+	group := setScoreTestGroup(t, env, config)
+	for _, item := range group.Items {
+		if err := op.CapabilitySaveManual(model.ModelCapability{Name: item.ModelName, Context: 32000}, context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	grant0 := fmt.Sprintf("%d", group.Items[0].ChannelGrantID)
+	grant1 := fmt.Sprintf("%d", group.Items[1].ChannelGrantID)
+	config.AutoRouting = "active"
+	config.AutoRampPercent = 100
+	config.AutoTool = grant0 + "," + grant1
+	// Member 0 is only verified for OpenAI Chat & Responses; Member 1 is verified for Anthropic Messages.
+	config.AutoToolVerified = grant0
+	config.AutoResponsesToolVerified = grant0
+	config.AutoAnthropicToolVerified = grant1
+	group = setScoreTestGroup(t, env, config)
+
+	task := autoTask{name: AutoTaskTool, protocol: model.ProtocolAnthropicMessage, input: 100, output: 100}
+	analysis := analyzeAutoCandidates(group, task)
+	if len(analysis.Group.Items) != 1 || analysis.Group.Items[0].ChannelGrantID != group.Items[1].ChannelGrantID {
+		t.Fatalf("eligible anthropic tool items=%+v, want only grant %d", analysis.Group.Items, group.Items[1].ChannelGrantID)
+	}
+	if len(analysis.Excluded) != 1 || analysis.Excluded[0].Reason != "auto_tool_unverified" {
+		t.Fatalf("excluded=%+v, want member 0 excluded with auto_tool_unverified", analysis.Excluded)
+	}
 }

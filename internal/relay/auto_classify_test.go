@@ -68,6 +68,30 @@ func TestClassifyAutoCodingToolAndUnsupportedShapes(t *testing.T) {
 			want:     AutoTaskCoding,
 		},
 		{
+			name:     "anthropic native custom tool definition",
+			body:     `{"messages":[{"role":"user","content":"Check weather"}],"tools":[{"name":"get_weather","input_schema":{"type":"object"}}]}`,
+			protocol: model.ProtocolAnthropicMessage,
+			want:     AutoTaskTool,
+		},
+		{
+			name:     "anthropic native multi-turn tool use and text tool result",
+			body:     `{"messages":[{"role":"user","content":"Check weather"},{"role":"assistant","content":[{"type":"text","text":"Checking"},{"type":"tool_use","id":"toolu_1","name":"get_weather","input":{"city":"Tokyo"}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":[{"type":"text","text":"Sunny 22C"}]}]}]}`,
+			protocol: model.ProtocolAnthropicMessage,
+			want:     AutoTaskTool,
+		},
+		{
+			name:     "anthropic server built-in tool type is unsupported",
+			body:     `{"messages":[{"role":"user","content":"Search news"}],"tools":[{"type":"web_search_20250305","name":"web_search"}]}`,
+			protocol: model.ProtocolAnthropicMessage,
+			want:     AutoTaskUnsupported,
+		},
+		{
+			name:     "anthropic tool result with image block is unsupported",
+			body:     `{"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA=="}}]}]}]}`,
+			protocol: model.ProtocolAnthropicMessage,
+			want:     AutoTaskUnsupported,
+		},
+		{
 			name:     "responses full function history",
 			body:     `{"input":[{"type":"function_call","call_id":"call_1","name":"lookup","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`,
 			protocol: model.ProtocolOpenAIResponse,

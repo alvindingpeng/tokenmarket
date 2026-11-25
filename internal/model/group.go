@@ -92,6 +92,7 @@ func clampPositive(value, fallback, maximum int) int {
 type GroupRelayConfig struct {
 	AutoRouting               string         `json:"auto_routing,omitempty" binding:"omitempty,oneof=shadow active"`
 	AutoResponsesToolVerified string         `json:"auto_responses_tool_verified,omitempty" binding:"max=512"`
+	AutoAnthropicToolVerified string         `json:"auto_anthropic_tool_verified,omitempty" binding:"max=512"`
 	AutoTaskRampPercent       map[string]int `json:"auto_task_ramp_percent,omitempty" binding:"omitempty,dive,min=0,max=100"`
 	AutoGeneral               string         `json:"auto_general,omitempty" binding:"max=512"`
 	AutoSummary               string         `json:"auto_summary,omitempty" binding:"max=512"`

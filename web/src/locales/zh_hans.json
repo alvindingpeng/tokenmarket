@@ -851,6 +851,7 @@
             "autoExplorePercentHint": "缺少质量验证时，按 API Key 稳定抽取 0-20% 请求尝试一个通过协议和上下文检查的普通任务成员；工具调用永不探索。",
             "autoToolVerified": "已验证多轮工具调用",
             "autoResponsesToolVerified": "已验证 Responses 工具调用",
+            "autoAnthropicToolVerified": "已验证 Anthropic 工具调用",
             "autoTaskRamp": "{task}主动灰度比例（%）",
             "autoTaskRampDefault": "沿用分组比例（{percent}%）",
             "autoContextOverrides": "上下文覆盖",

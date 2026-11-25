@@ -108,26 +108,36 @@ func TestAutoFallbackDefaultsAreBounded(t *testing.T) {
 func TestAutoStickyUsesCurrentKeyAndTaskAndClears(t *testing.T) {
 	ResetAutoState(99101)
 	group := model.Group{ID: 99101, RelayConfig: model.GroupRelayConfig{AutoStickySeconds: 10}}
-	autoStickyRecordSuccess(group, 7, 3, AutoTaskCoding, 42)
-	if itemID, ok := autoStickyGet(group, 7, 3, AutoTaskCoding); !ok || itemID != 42 {
+	autoStickyRecordSuccess(group, 7, 3, AutoTaskCoding, model.ProtocolOpenAIChatCompletion, 42)
+	if itemID, ok := autoStickyGet(group, 7, 3, AutoTaskCoding, model.ProtocolOpenAIChatCompletion); !ok || itemID != 42 {
 		t.Fatalf("sticky hit=(%d,%t), want (42,true)", itemID, ok)
 	}
-	if _, ok := autoStickyGet(group, 8, 3, AutoTaskCoding); ok {
+	if _, ok := autoStickyGet(group, 8, 3, AutoTaskCoding, model.ProtocolOpenAIChatCompletion); ok {
 		t.Fatal("different API key inherited another session's sticky member")
 	}
-	if _, ok := autoStickyGet(group, 7, 3, AutoTaskSummary); ok {
+	if _, ok := autoStickyGet(group, 7, 3, AutoTaskSummary, model.ProtocolOpenAIChatCompletion); ok {
 		t.Fatal("different task inherited another task's sticky member")
 	}
-	autoStickyClear(group.ID, 7, 3, AutoTaskCoding)
-	if _, ok := autoStickyGet(group, 7, 3, AutoTaskCoding); ok {
+	if _, ok := autoStickyGet(group, 7, 3, AutoTaskCoding, model.ProtocolAnthropicMessage); ok {
+		t.Fatal("different protocol inherited another protocol's sticky member")
+	}
+	autoStickyRecordSuccess(group, 7, 3, AutoTaskCoding, model.ProtocolAnthropicMessage, 84)
+	if itemID, ok := autoStickyGet(group, 7, 3, AutoTaskCoding, model.ProtocolAnthropicMessage); !ok || itemID != 84 {
+		t.Fatalf("anthropic sticky hit=(%d,%t), want (84,true)", itemID, ok)
+	}
+	autoStickyClear(group.ID, 7, 3, AutoTaskCoding, model.ProtocolOpenAIChatCompletion)
+	if _, ok := autoStickyGet(group, 7, 3, AutoTaskCoding, model.ProtocolOpenAIChatCompletion); ok {
 		t.Fatal("failure clear left sticky member behind")
+	}
+	if itemID, ok := autoStickyGet(group, 7, 3, AutoTaskCoding, model.ProtocolAnthropicMessage); !ok || itemID != 84 {
+		t.Fatalf("clearing chat sticky cleared anthropic sticky: (%d,%t)", itemID, ok)
 	}
 }
 
 func TestAutoStickyDisabledPreservesLegacyBehavior(t *testing.T) {
 	group := model.Group{ID: 99102, RelayConfig: model.GroupRelayConfig{}}
-	autoStickyRecordSuccess(group, 7, 3, AutoTaskGeneral, 42)
-	if _, ok := autoStickyGet(group, 7, 3, AutoTaskGeneral); ok {
+	autoStickyRecordSuccess(group, 7, 3, AutoTaskGeneral, model.ProtocolOpenAIChatCompletion, 42)
+	if _, ok := autoStickyGet(group, 7, 3, AutoTaskGeneral, model.ProtocolOpenAIChatCompletion); ok {
 		t.Fatal("disabled sticky routing created session state")
 	}
 }
