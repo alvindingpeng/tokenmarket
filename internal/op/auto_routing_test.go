@@ -122,6 +122,52 @@ func TestAutoRoutingAggregateComparesShadowPrediction(t *testing.T) {
 	}
 }
 
+func TestAutoRoutingAggregateBuildsContextWindowHints(t *testing.T) {
+	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "auto-routing-context-window.db"), false); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	now := time.Now()
+	requests := []model.RelayRequest{
+		{ID: 401, UserID: 7, GroupID: 37, Status: "failed", StartedAt: now, PromptTokens: 12000, TargetModel: "model-a", AutoTask: "coding", AutoMode: "active"},
+		{ID: 402, UserID: 7, GroupID: 37, Status: "failed", StartedAt: now.Add(-time.Minute), PromptTokens: 8000, TargetModel: "model-a", AutoTask: "coding", AutoMode: "active"},
+		{ID: 403, UserID: 7, GroupID: 37, Status: "failed", StartedAt: now.Add(-2 * time.Minute), PromptTokens: 5000, TargetModel: "model-a", AutoTask: "coding", AutoMode: "active"},
+		{ID: 404, UserID: 7, GroupID: 37, Status: "failed", StartedAt: now.Add(-3 * time.Minute), PromptTokens: 7000, TargetModel: "model-a", AutoTask: "coding", AutoMode: "active"},
+		{ID: 405, UserID: 7, GroupID: 37, Status: "failed", StartedAt: now.Add(-4 * time.Minute), PromptTokens: 0, TargetModel: "model-a", AutoTask: "coding", AutoMode: "active"},
+	}
+	if err := db.GetDB().Create(&requests).Error; err != nil {
+		t.Fatalf("create requests: %v", err)
+	}
+	attempts := []model.RelayRequestAttempt{
+		{RequestID: 401, Round: 1, TargetModel: "model-a", ChannelCode: "#1001", Status: "context_length", Decision: `{"mode":"score","reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+		{RequestID: 402, Round: 1, TargetModel: "model-a", ChannelCode: "#1001", Status: "context_length", Decision: `{"mode":"score","reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+		// A generic client error must not affect the window hint.
+		{RequestID: 403, Round: 1, TargetModel: "model-a", ChannelCode: "#1001", Status: "client_error", Decision: `{"mode":"score","reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+		{RequestID: 404, Round: 1, TargetModel: "model-a", ChannelCode: "#1002", Status: "context_length", Decision: `{"mode":"score","reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+		{RequestID: 405, Round: 1, TargetModel: "model-a", ChannelCode: "#1001", Status: "failed", Decision: `{"mode":"score","reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+	}
+	if err := db.GetDB().Create(&attempts).Error; err != nil {
+		t.Fatalf("create attempts: %v", err)
+	}
+	summary, err := AutoRoutingAggregate(model.Scope{ID: 7, Role: model.RoleUser}, 37, 7)
+	if err != nil {
+		t.Fatalf("aggregate: %v", err)
+	}
+	if len(summary.ContextWindowHints) != 2 {
+		t.Fatalf("context window hints: %+v", summary.ContextWindowHints)
+	}
+	hint := summary.ContextWindowHints[0]
+	if hint.Task != "coding" || hint.Model != "model-a" || hint.ChannelCode != "#1001" ||
+		hint.Samples != 2 || hint.ObservedMaxInputTokens != 12000 ||
+		hint.SuggestedContextLength != 9000 || hint.Reason != "context_length_error_observed" {
+		t.Fatalf("unexpected context window hint: %+v", hint)
+	}
+	second := summary.ContextWindowHints[1]
+	if second.ChannelCode != "#1002" || second.Samples != 1 ||
+		second.ObservedMaxInputTokens != 7000 || second.SuggestedContextLength != 5250 {
+		t.Fatalf("channel-specific context window hint was merged incorrectly: %+v", second)
+	}
+}
+
 func TestAutoRoutingReadinessStartsConservatively(t *testing.T) {
 	users := map[uint]bool{1: true, 2: true, 3: true}
 	buckets := map[int64]bool{1: true, 2: true, 3: true, 4: true}

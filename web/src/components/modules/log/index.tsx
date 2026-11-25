@@ -35,6 +35,15 @@ interface AutoRoutingSummary {
     errors: { task: string; class: string; count: number }[];
     error_class_counts: { reason: string; count: number }[];
     cost_bands: { task: string; band: string; requests: number; success: number; avg_prompt_tokens: number; avg_cost_usd: number; p90_cost_usd: number }[];
+    context_window_hints: {
+        task: string;
+        model: string;
+        channel_code: string;
+        samples: number;
+        observed_max_input_tokens: number;
+        suggested_context_length: number;
+        reason: string;
+    }[];
     sample_limit: number;
     readiness: {
         task: string;
@@ -409,6 +418,30 @@ function AutoRoutingPanel() {
                                 <span className="tabular-nums text-muted-foreground">{tr('requestCount', { count: band.requests })}</span>
                                 <span className="tabular-nums">{tr('tokenAverage', { value: Math.round(band.avg_prompt_tokens) })}</span>
                                 <span className="tabular-nums">{tr('costAverage', { avg: band.avg_cost_usd.toFixed(4), p90: band.p90_cost_usd.toFixed(4) })}</span>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+            )}
+            {data.context_window_hints.length > 0 && (
+                <section className="rounded-2xl border border-border/60 bg-card p-4">
+                    <h3 className="mb-1 text-sm font-semibold">{tr('contextWindowHintsTitle')}</h3>
+                    <p className="mb-3 text-xs text-muted-foreground">{tr('contextWindowHintsHint')}</p>
+                    <div className="space-y-2">
+                        {data.context_window_hints.slice(0, 10).map((item) => (
+                            <div key={`${item.task}-${item.model}-${item.channel_code}`} className="rounded-xl border border-border/40 px-3 py-2 text-xs">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-medium">{item.channel_code || '-'}</span>
+                                    <span className="font-mono">{item.model}</span>
+                                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">{tr('task.' + item.task)}</span>
+                                </div>
+                                <p className="mt-1 text-muted-foreground">
+                                    {tr('contextWindowHintObserved', {
+                                        samples: item.samples,
+                                        tokens: item.observed_max_input_tokens,
+                                        suggestion: item.suggested_context_length,
+                                    })}
+                                </p>
                             </div>
                         ))}
                     </div>

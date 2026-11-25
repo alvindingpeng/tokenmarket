@@ -63,6 +63,19 @@ type AutoRoutingCostBandSummary struct {
 	P90CostUSD      float64 `json:"p90_cost_usd"`
 }
 
+// AutoRoutingContextWindowHint 是上游上下文超限后对候选窗口的可执行复核建议。
+// PromptTokens 是失败尝试实际请求的输入长度，而不是目录预埋值；Samples 与
+// ObservedMaxInputTokens 只统计明确分类为 context 的失败，不把普通 400 混入。
+type AutoRoutingContextWindowHint struct {
+	Task                   string `json:"task"`
+	Model                  string `json:"model"`
+	ChannelCode            string `json:"channel_code"`
+	Samples                int64  `json:"samples"`
+	ObservedMaxInputTokens int64  `json:"observed_max_input_tokens"`
+	SuggestedContextLength int64  `json:"suggested_context_length"`
+	Reason                 string `json:"reason"`
+}
+
 // AutoRoutingModelRisk 是主动路由真实落地模型的样本级风险卡。
 // 样本不足时只展示观测值，不参与扩容阻断。
 type AutoRoutingModelRisk struct {
@@ -198,25 +211,26 @@ type AutoRoutingReadiness struct {
 // AutoRoutingSummary 是近期调用日志的自动路由实验聚合。数据来自现有请求和尝试日志，
 // 不新增高频写入的独立报表表，也不需要迁移数据库。
 type AutoRoutingSummary struct {
-	Days             int                            `json:"days"`
-	GroupID          int                            `json:"group_id"`
-	GeneratedAt      time.Time                      `json:"generated_at"`
-	WindowStart      time.Time                      `json:"window_start"`
-	Requests         int64                          `json:"requests"`
-	TaskClassified   int64                          `json:"task_classified"`
-	Success          int64                          `json:"success"`
-	Failed           int64                          `json:"failed"`
-	SuccessRate      float64                        `json:"success_rate"`
-	Tasks            []AutoRoutingTaskSummary       `json:"tasks"`
-	Models           []AutoRoutingModelSummary      `json:"models"`
-	Exclusions       []AutoRoutingReasonSummary     `json:"exclusions"`
-	Events           []AutoRoutingReasonSummary     `json:"events"`
-	Predictions      []AutoRoutingPredictionSummary `json:"predictions"`
-	Errors           []AutoRoutingErrorSummary      `json:"errors"`
-	CostBands        []AutoRoutingCostBandSummary   `json:"cost_bands"`
-	ErrorClassCounts []AutoRoutingReasonSummary     `json:"error_class_counts"`
-	Readiness        []AutoRoutingReadiness         `json:"readiness"`
-	SampleLimit      int                            `json:"sample_limit"`
+	Days               int                            `json:"days"`
+	GroupID            int                            `json:"group_id"`
+	GeneratedAt        time.Time                      `json:"generated_at"`
+	WindowStart        time.Time                      `json:"window_start"`
+	Requests           int64                          `json:"requests"`
+	TaskClassified     int64                          `json:"task_classified"`
+	Success            int64                          `json:"success"`
+	Failed             int64                          `json:"failed"`
+	SuccessRate        float64                        `json:"success_rate"`
+	Tasks              []AutoRoutingTaskSummary       `json:"tasks"`
+	Models             []AutoRoutingModelSummary      `json:"models"`
+	Exclusions         []AutoRoutingReasonSummary     `json:"exclusions"`
+	Events             []AutoRoutingReasonSummary     `json:"events"`
+	Predictions        []AutoRoutingPredictionSummary `json:"predictions"`
+	Errors             []AutoRoutingErrorSummary      `json:"errors"`
+	CostBands          []AutoRoutingCostBandSummary   `json:"cost_bands"`
+	ErrorClassCounts   []AutoRoutingReasonSummary     `json:"error_class_counts"`
+	ContextWindowHints []AutoRoutingContextWindowHint `json:"context_window_hints"`
+	Readiness          []AutoRoutingReadiness         `json:"readiness"`
+	SampleLimit        int                            `json:"sample_limit"`
 }
 
 type autoRequestSample struct {
@@ -1052,7 +1066,8 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 		Exclusions: make([]AutoRoutingReasonSummary, 0), Events: make([]AutoRoutingReasonSummary, 0),
 		Predictions: make([]AutoRoutingPredictionSummary, 0), Readiness: make([]AutoRoutingReadiness, 0),
 		Errors: make([]AutoRoutingErrorSummary, 0), CostBands: make([]AutoRoutingCostBandSummary, 0),
-		ErrorClassCounts: make([]AutoRoutingReasonSummary, 0),
+		ErrorClassCounts:   make([]AutoRoutingReasonSummary, 0),
+		ContextWindowHints: make([]AutoRoutingContextWindowHint, 0),
 	}
 	query := db.GetDB().Model(&model.RelayRequest{}).
 		Where("started_at >= ?", summary.WindowStart)
@@ -1128,6 +1143,14 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 		predictedCost, actualCost float64
 	}
 	predictions := make(map[string]*predictionCount)
+	type contextWindowCount struct {
+		task, model, channelCode string
+		samples, maxInputTokens  int64
+	}
+	contextWindows := make(map[string]*contextWindowCount)
+	contextWindowKey := func(task, model, channelCode string) string {
+		return task + "\x00" + model + "\x00" + channelCode
+	}
 	shadowPredictions := make(map[uint64]autoPredictionEvidence)
 	requestTasks := make(map[uint64]string)
 	readinessByTask := make(map[string]*autoReadinessEvidence)
@@ -1274,6 +1297,18 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 			class := autoAttemptErrorClass(attempt.Status)
 			errorsByTask[modelKey(task, class)]++
 			errorClassCounts[class]++
+			if class == "context" && request.PromptTokens > 0 {
+				key := contextWindowKey(task, name, attempt.ChannelCode)
+				hint := contextWindows[key]
+				if hint == nil {
+					hint = &contextWindowCount{task: task, model: name, channelCode: attempt.ChannelCode}
+					contextWindows[key] = hint
+				}
+				hint.samples++
+				if request.PromptTokens > hint.maxInputTokens {
+					hint.maxInputTokens = request.PromptTokens
+				}
+			}
 		}
 		if attempt.Status == "success" {
 			mc.success++
@@ -1514,6 +1549,19 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 			Reason: class, Count: count,
 		})
 	}
+	for _, count := range contextWindows {
+		hint := AutoRoutingContextWindowHint{
+			Task: count.task, Model: count.model, ChannelCode: count.channelCode,
+			Samples: count.samples, ObservedMaxInputTokens: count.maxInputTokens,
+			Reason: "context_length_error_observed",
+		}
+		// 失败输入长度只证明这个长度无法由该渠道处理。建议值保留 25% 安全余量，
+		// 因为 token 估算与上游分词不完全一致；管理员确认后再写入上下文覆盖。
+		if count.maxInputTokens > 0 {
+			hint.SuggestedContextLength = max(1, count.maxInputTokens*3/4)
+		}
+		summary.ContextWindowHints = append(summary.ContextWindowHints, hint)
+	}
 	for task, evidence := range readinessByTask {
 		if task == "unsupported" {
 			continue
@@ -1547,6 +1595,18 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 			return summary.CostBands[i].Task < summary.CostBands[j].Task
 		}
 		return summary.CostBands[i].Band < summary.CostBands[j].Band
+	})
+	sort.Slice(summary.ContextWindowHints, func(i, j int) bool {
+		if summary.ContextWindowHints[i].Samples != summary.ContextWindowHints[j].Samples {
+			return summary.ContextWindowHints[i].Samples > summary.ContextWindowHints[j].Samples
+		}
+		if summary.ContextWindowHints[i].Task != summary.ContextWindowHints[j].Task {
+			return summary.ContextWindowHints[i].Task < summary.ContextWindowHints[j].Task
+		}
+		if summary.ContextWindowHints[i].Model != summary.ContextWindowHints[j].Model {
+			return summary.ContextWindowHints[i].Model < summary.ContextWindowHints[j].Model
+		}
+		return summary.ContextWindowHints[i].ChannelCode < summary.ContextWindowHints[j].ChannelCode
 	})
 	sort.Slice(summary.Predictions, func(i, j int) bool {
 		return summary.Predictions[i].Compared > summary.Predictions[j].Compared
