@@ -66,42 +66,48 @@ type AutoRoutingCostBandSummary struct {
 // AutoRoutingModelRisk 是主动路由真实落地模型的样本级风险卡。
 // 样本不足时只展示观测值，不参与扩容阻断。
 type AutoRoutingModelRisk struct {
-	Task                     string   `json:"task"`
-	Model                    string   `json:"model"`
-	State                    string   `json:"state"`
-	ActiveRequests           int64    `json:"active_requests"`
-	Success                  int64    `json:"success"`
-	SuccessRate              float64  `json:"success_rate"`
-	SuccessLow               float64  `json:"success_lower"`
-	EarlierSamples           int64    `json:"earlier_samples"`
-	EarlierSuccess           int64    `json:"earlier_success"`
-	EarlierSuccessRate       float64  `json:"earlier_success_rate"`
-	RecentSamples            int64    `json:"recent_samples"`
-	RecentSuccess            int64    `json:"recent_success"`
-	RecentSuccessRate        float64  `json:"recent_success_rate"`
-	SuccessTrend             string   `json:"success_trend"`
-	SuccessRateDelta         float64  `json:"success_rate_delta"`
-	FirstTokenSamples        int64    `json:"first_token_samples"`
-	FirstTokenP90Ms          float64  `json:"first_token_p90_ms"`
-	EarlierFirstTokenSamples int64    `json:"earlier_first_token_samples"`
-	EarlierFirstTokenP90Ms   float64  `json:"earlier_first_token_p90_ms"`
-	RecentFirstTokenSamples  int64    `json:"recent_first_token_samples"`
-	RecentFirstTokenP90Ms    float64  `json:"recent_first_token_p90_ms"`
-	FirstTokenTrend          string   `json:"first_token_trend"`
-	FirstTokenP90DeltaMs     float64  `json:"first_token_p90_delta_ms"`
-	StreamStarted            int64    `json:"stream_started"`
-	StreamIncomplete         int64    `json:"stream_incomplete"`
-	StreamIncompleteRate     float64  `json:"stream_incomplete_rate"`
-	EarlierStreamStarted     int64    `json:"earlier_stream_started"`
-	EarlierStreamIncomplete  int64    `json:"earlier_stream_incomplete"`
-	EarlierStreamRate        float64  `json:"earlier_stream_incomplete_rate"`
-	RecentStreamStarted      int64    `json:"recent_stream_started"`
-	RecentStreamIncomplete   int64    `json:"recent_stream_incomplete"`
-	RecentStreamRate         float64  `json:"recent_stream_incomplete_rate"`
-	StreamTrend              string   `json:"stream_trend"`
-	StreamRateDelta          float64  `json:"stream_incomplete_rate_delta"`
-	EligibleForPromotion     bool     `json:"eligible_for_promotion"`
-	Reasons                  []string `json:"reasons"`
+	Task                     string                     `json:"task"`
+	Model                    string                     `json:"model"`
+	State                    string                     `json:"state"`
+	ActiveRequests           int64                      `json:"active_requests"`
+	Success                  int64                      `json:"success"`
+	Failed                   int64                      `json:"failed"`
+	SuccessRate              float64                    `json:"success_rate"`
+	SuccessLow               float64                    `json:"success_lower"`
+	ChannelFailures          int64                      `json:"channel_failures"`
+	RequestFailures          int64                      `json:"request_failures"`
+	CandidateFailures        int64                      `json:"candidate_failures"`
+	OtherFailures            int64                      `json:"other_failures"`
+	ErrorClassCounts         []AutoRoutingReasonSummary `json:"error_class_counts"`
+	EarlierSamples           int64                      `json:"earlier_samples"`
+	EarlierSuccess           int64                      `json:"earlier_success"`
+	EarlierSuccessRate       float64                    `json:"earlier_success_rate"`
+	RecentSamples            int64                      `json:"recent_samples"`
+	RecentSuccess            int64                      `json:"recent_success"`
+	RecentSuccessRate        float64                    `json:"recent_success_rate"`
+	SuccessTrend             string                     `json:"success_trend"`
+	SuccessRateDelta         float64                    `json:"success_rate_delta"`
+	FirstTokenSamples        int64                      `json:"first_token_samples"`
+	FirstTokenP90Ms          float64                    `json:"first_token_p90_ms"`
+	EarlierFirstTokenSamples int64                      `json:"earlier_first_token_samples"`
+	EarlierFirstTokenP90Ms   float64                    `json:"earlier_first_token_p90_ms"`
+	RecentFirstTokenSamples  int64                      `json:"recent_first_token_samples"`
+	RecentFirstTokenP90Ms    float64                    `json:"recent_first_token_p90_ms"`
+	FirstTokenTrend          string                     `json:"first_token_trend"`
+	FirstTokenP90DeltaMs     float64                    `json:"first_token_p90_delta_ms"`
+	StreamStarted            int64                      `json:"stream_started"`
+	StreamIncomplete         int64                      `json:"stream_incomplete"`
+	StreamIncompleteRate     float64                    `json:"stream_incomplete_rate"`
+	EarlierStreamStarted     int64                      `json:"earlier_stream_started"`
+	EarlierStreamIncomplete  int64                      `json:"earlier_stream_incomplete"`
+	EarlierStreamRate        float64                    `json:"earlier_stream_incomplete_rate"`
+	RecentStreamStarted      int64                      `json:"recent_stream_started"`
+	RecentStreamIncomplete   int64                      `json:"recent_stream_incomplete"`
+	RecentStreamRate         float64                    `json:"recent_stream_incomplete_rate"`
+	StreamTrend              string                     `json:"stream_trend"`
+	StreamRateDelta          float64                    `json:"stream_incomplete_rate_delta"`
+	EligibleForPromotion     bool                       `json:"eligible_for_promotion"`
+	Reasons                  []string                   `json:"reasons"`
 }
 
 // AutoRoutingReasonSummary 是排除原因、运行事件或自动路由决策的计数。
@@ -299,6 +305,7 @@ type autoReadinessEvidence struct {
 	streamStarted, streamIncomplete                           int64
 	modelFirstToken                                           map[string][]float64
 	modelStreamStarted, modelStreamIncomplete                 map[string]int64
+	modelErrorClasses                                         map[string]map[string]int64
 	modelTimeline                                             map[string][]autoModelOutcomeSample
 	configuredCandidates, verifiedCandidates                  int
 	labelingEnabled                                           bool
@@ -389,6 +396,36 @@ func autoAttemptErrorClass(status string) string {
 	}
 }
 
+func autoModelFailureScope(class string) string {
+	switch class {
+	case "rate", "auth", "quota", "overload", "compatibility", "timeout", "stream_incomplete", "unknown":
+		return "channel"
+	case "client", "policy", "canceled":
+		return "request"
+	case "model":
+		return "candidate"
+	default:
+		return "other"
+	}
+}
+
+func autoFailureClassCounts(counts map[string]int64) []AutoRoutingReasonSummary {
+	result := make([]AutoRoutingReasonSummary, 0, len(counts))
+	for class, count := range counts {
+		if count <= 0 {
+			continue
+		}
+		result = append(result, AutoRoutingReasonSummary{Reason: class, Count: count})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Count != result[j].Count {
+			return result[i].Count > result[j].Count
+		}
+		return result[i].Reason < result[j].Reason
+	})
+	return result
+}
+
 func autoInputCostBand(promptTokens int64) string {
 	switch {
 	case promptTokens <= 0:
@@ -415,11 +452,13 @@ func autoModelRiskFor(
 ) AutoRoutingModelRisk {
 	risk := AutoRoutingModelRisk{
 		Task: task, Model: model, ActiveRequests: attempts, Success: success,
+		Failed:         attempts - success,
 		EarlierSamples: earlierSamples, EarlierSuccess: earlierSuccess,
 		RecentSamples: recentSamples, RecentSuccess: recentSuccess,
 		FirstTokenSamples: int64(len(firstTokenDurations)),
 		StreamStarted:     streamStarted, StreamIncomplete: streamIncomplete,
-		Reasons: make([]string, 0),
+		ErrorClassCounts: make([]AutoRoutingReasonSummary, 0),
+		Reasons:          make([]string, 0),
 	}
 	if attempts > 0 {
 		risk.SuccessRate = float64(success) / float64(attempts)
@@ -582,6 +621,41 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 			evidence.modelStreamStarted[name], evidence.modelStreamIncomplete[name],
 			trend.EarlierStreamStarted, trend.EarlierStreamIncomplete,
 			trend.RecentStreamStarted, trend.RecentStreamIncomplete)
+		risk.ErrorClassCounts = autoFailureClassCounts(evidence.modelErrorClasses[name])
+		for _, item := range risk.ErrorClassCounts {
+			switch autoModelFailureScope(item.Reason) {
+			case "channel":
+				risk.ChannelFailures += item.Count
+			case "request":
+				risk.RequestFailures += item.Count
+			case "candidate":
+				risk.CandidateFailures += item.Count
+			default:
+				risk.OtherFailures += item.Count
+			}
+		}
+		if risk.SuccessRate < 0.85 {
+			dominantScope, dominantCount := "", int64(0)
+			for _, scope := range []string{"channel", "request", "candidate", "other"} {
+				count := map[string]int64{
+					"channel":   risk.ChannelFailures,
+					"request":   risk.RequestFailures,
+					"candidate": risk.CandidateFailures,
+					"other":     risk.OtherFailures,
+				}[scope]
+				if count > dominantCount {
+					dominantScope, dominantCount = scope, count
+				}
+			}
+			switch dominantScope {
+			case "channel":
+				risk.Reasons = append(risk.Reasons, "model_failures_are_channel_operational")
+			case "request":
+				risk.Reasons = append(risk.Reasons, "model_failures_are_request_side")
+			case "candidate":
+				risk.Reasons = append(risk.Reasons, "model_failures_are_candidate_side")
+			}
+		}
 		readiness.ModelRisks = append(readiness.ModelRisks, risk)
 		if risk.EligibleForPromotion {
 			readiness.ModelEligibleTeams++
@@ -1128,13 +1202,25 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 						readiness.modelFirstToken = make(map[string][]float64)
 						readiness.modelStreamStarted = make(map[string]int64)
 						readiness.modelStreamIncomplete = make(map[string]int64)
+						readiness.modelErrorClasses = make(map[string]map[string]int64)
 						readiness.modelTimeline = make(map[string][]autoModelOutcomeSample)
 					}
 					readiness.modelSuccess[name]++
 					readiness.activeRequests++
+					modelSuccess := request.Status == "success" && attempt.Status == "success"
+					if !modelSuccess {
+						if readiness.modelErrorClasses[name] == nil {
+							readiness.modelErrorClasses[name] = make(map[string]int64)
+						}
+						class := autoAttemptErrorClass(attempt.Status)
+						if attempt.Status == "success" {
+							class = "stream_incomplete"
+						}
+						readiness.modelErrorClasses[name][class]++
+					}
 					readiness.modelTimeline[name] = append(readiness.modelTimeline[name], autoModelOutcomeSample{
 						StartedAt:     request.StartedAt,
-						Success:       request.Status == "success",
+						Success:       modelSuccess,
 						FirstTokenMs:  attempt.FirstTokenMs,
 						StreamStarted: attempt.FirstTokenMs > 0,
 						StreamIncomplete: attempt.FirstTokenMs > 0 &&
@@ -1147,7 +1233,7 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 							readiness.modelStreamIncomplete[name]++
 						}
 					}
-					if request.Status == "success" {
+					if modelSuccess {
 						readiness.activeSuccess++
 						readiness.modelSuccessful[name]++
 					}

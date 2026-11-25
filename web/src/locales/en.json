@@ -1379,6 +1379,7 @@
             "modelRiskTitle": "Per-model risk evidence",
             "modelRiskEligible": "{eligible}/{total} passed",
             "modelRiskSamples": "{count} active samples",
+            "modelRiskFailureBreakdown": "Channel {channel} · request {request} · candidate {candidate}",
             "modelRiskTrend": "Earlier {earlier} → recent {recent}",
             "modelRiskFirstToken": "First token P90 {value} · {samples} samples",
             "modelRiskFirstTokenTrend": "First token P90 earlier {earlier} → recent {recent}",
@@ -1444,7 +1445,10 @@
                 "model_first_token_p90_above_30_seconds": "First-token P90 exceeds 30 seconds",
                 "model_recent_success_drop_above_10_percent": "Recent success rate dropped by at least 10 points",
                 "model_first_token_p90_rise_above_25_percent": "Recent first-token P90 rose by at least 25%",
-                "model_recent_stream_incomplete_rise": "Recent stream failures increased above the safe threshold"
+                "model_recent_stream_incomplete_rise": "Recent stream failures increased above the safe threshold",
+                "model_failures_are_channel_operational": "Most failures are channel or runtime failures. Check rate limits, quota, credentials and upstream stability",
+                "model_failures_are_request_side": "Most failures are request-side failures. Check input, content policy and client cancellation",
+                "model_failures_are_candidate_side": "Most failures are candidate errors. Check whether this channel actually exposes the model"
             },
             "task": {
                 "general": "General",
@@ -1465,6 +1469,7 @@
                 "model": "Model missing",
                 "compatibility": "Compatibility",
                 "canceled": "Canceled",
+                "stream_incomplete": "Incomplete after first token",
                 "unknown": "Unclassified"
             },
             "costBand": {

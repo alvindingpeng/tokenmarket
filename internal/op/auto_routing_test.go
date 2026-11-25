@@ -426,6 +426,55 @@ func TestAutoRoutingReadinessUsesActualActiveRequests(t *testing.T) {
 	}
 }
 
+func TestAutoRoutingModelUsesActualAttemptResultAndFailureScope(t *testing.T) {
+	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "auto-routing-model-failures.db"), false); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	now := time.Now()
+	requests := []model.RelayRequest{
+		{ID: 551, UserID: 7, GroupID: 37, Status: "success", StartedAt: now, TargetModel: "model-a", AutoTask: "coding", AutoMode: "active"},
+		{ID: 552, UserID: 7, GroupID: 37, Status: "failed", StartedAt: now.Add(time.Minute), TargetModel: "model-a", AutoTask: "coding", AutoMode: "active"},
+		{ID: 553, UserID: 7, GroupID: 37, Status: "failed", StartedAt: now.Add(2 * time.Minute), TargetModel: "model-a", AutoTask: "coding", AutoMode: "active"},
+		{ID: 554, UserID: 7, GroupID: 37, Status: "failed", StartedAt: now.Add(3 * time.Minute), TargetModel: "model-a", AutoTask: "coding", AutoMode: "active"},
+	}
+	if err := db.GetDB().Create(&requests).Error; err != nil {
+		t.Fatal(err)
+	}
+	attempts := []model.RelayRequestAttempt{
+		{RequestID: 551, Round: 1, TargetModel: "model-a", Status: "success", Decision: `{"reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+		{RequestID: 552, Round: 1, TargetModel: "model-a", Status: "overloaded", Decision: `{"reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+		{RequestID: 553, Round: 1, TargetModel: "model-a", Status: "model_missing", Decision: `{"reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+		{RequestID: 554, Round: 1, TargetModel: "model-a", Status: "client_error", Decision: `{"reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+	}
+	if err := db.GetDB().Create(&attempts).Error; err != nil {
+		t.Fatal(err)
+	}
+	summary, err := AutoRoutingAggregate(model.Scope{ID: 7, Role: model.RoleAdmin}, 37, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var coding *AutoRoutingReadiness
+	for i := range summary.Readiness {
+		if summary.Readiness[i].Task == model.AutoRoutingTaskCoding {
+			coding = &summary.Readiness[i]
+			break
+		}
+	}
+	if coding == nil || len(coding.ModelRisks) != 1 {
+		t.Fatalf("coding risk card missing: %+v", coding)
+	}
+	risk := coding.ModelRisks[0]
+	if risk.ActiveRequests != 4 || risk.Success != 1 || risk.Failed != 3 ||
+		risk.ChannelFailures != 1 || risk.CandidateFailures != 1 || risk.RequestFailures != 1 ||
+		len(risk.ErrorClassCounts) != 3 {
+		t.Fatalf("actual failed attempts were not attributed to the model: %+v", risk)
+	}
+	if risk.ErrorClassCounts[0].Count != 1 ||
+		slices.Contains(risk.Reasons, "model_failures_are_candidate_side") {
+		t.Fatalf("mixed failure sources must not claim one dominant cause: %+v", risk)
+	}
+}
+
 func TestAutoRoutingReadinessModelTeamsUseActiveEvidenceOnly(t *testing.T) {
 	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "auto-routing-model-teams.db"), false); err != nil {
 		t.Fatalf("init db: %v", err)

@@ -1379,6 +1379,7 @@
             "modelRiskTitle": "模型级风险证据",
             "modelRiskEligible": "{eligible}/{total} 通过",
             "modelRiskSamples": "{count} 个主动样本",
+            "modelRiskFailureBreakdown": "渠道 {channel} · 请求 {request} · 候选 {candidate}",
             "modelRiskTrend": "早期 {earlier} → 近期 {recent}",
             "modelRiskFirstToken": "首 token P90 {value} · {samples} 个样本",
             "modelRiskFirstTokenTrend": "首 token P90 早期 {earlier} → 近期 {recent}",
@@ -1444,7 +1445,10 @@
                 "model_first_token_p90_above_30_seconds": "首 token P90 超过 30 秒",
                 "model_recent_success_drop_above_10_percent": "近期成功率比早期下降至少 10 个百分点",
                 "model_first_token_p90_rise_above_25_percent": "近期首 token P90 比早期上升至少 25%",
-                "model_recent_stream_incomplete_rise": "近期首字后未完成率明显上升并超过安全阈值"
+                "model_recent_stream_incomplete_rise": "近期首字后未完成率明显上升并超过安全阈值",
+                "model_failures_are_channel_operational": "主要失败来自渠道或运行故障，优先检查限流、额度、凭据与上游稳定性",
+                "model_failures_are_request_side": "主要失败来自请求侧，检查输入、内容策略与客户端取消",
+                "model_failures_are_candidate_side": "主要失败来自候选错误，检查该渠道是否实际提供此模型"
             },
             "task": {
                 "general": "通用",
@@ -1465,6 +1469,7 @@
                 "model": "模型缺失",
                 "compatibility": "协议不兼容",
                 "canceled": "已取消",
+                "stream_incomplete": "首字后未完成",
                 "unknown": "未分类"
             },
             "costBand": {

@@ -1379,6 +1379,7 @@
             "modelRiskTitle": "模型級風險證據",
             "modelRiskEligible": "{eligible}/{total} 通過",
             "modelRiskSamples": "{count} 個主動樣本",
+            "modelRiskFailureBreakdown": "渠道 {channel} · 請求 {request} · 候選 {candidate}",
             "modelRiskTrend": "早期 {earlier} → 近期 {recent}",
             "modelRiskFirstToken": "首 token P90 {value} · {samples} 個樣本",
             "modelRiskFirstTokenTrend": "首 token P90 早期 {earlier} → 近期 {recent}",
@@ -1444,7 +1445,10 @@
                 "model_first_token_p90_above_30_seconds": "首 token P90 超過 30 秒",
                 "model_recent_success_drop_above_10_percent": "近期成功率比早期下降至少 10 個百分點",
                 "model_first_token_p90_rise_above_25_percent": "近期首 token P90 比早期上升至少 25%",
-                "model_recent_stream_incomplete_rise": "近期首字後未完成率明顯上升並超過安全閾值"
+                "model_recent_stream_incomplete_rise": "近期首字後未完成率明顯上升並超過安全閾值",
+                "model_failures_are_channel_operational": "主要失敗來自渠道或執行故障，優先檢查限流、額度、憑證與上游穩定性",
+                "model_failures_are_request_side": "主要失敗來自請求側，檢查輸入、內容策略與用戶端取消",
+                "model_failures_are_candidate_side": "主要失敗來自候選錯誤，檢查該渠道是否實際提供此模型"
             },
             "task": {
                 "general": "通用",
@@ -1465,6 +1469,7 @@
                 "model": "模型缺失",
                 "compatibility": "協議不相容",
                 "canceled": "已取消",
+                "stream_incomplete": "首字後未完成",
                 "unknown": "未分類"
             },
             "costBand": {

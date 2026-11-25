@@ -73,8 +73,14 @@ interface AutoRoutingSummary {
             state: 'collect_samples' | 'healthy' | 'blocked';
             active_requests: number;
             success: number;
+            failed: number;
             success_rate: number;
             success_lower: number;
+            channel_failures: number;
+            request_failures: number;
+            candidate_failures: number;
+            other_failures: number;
+            error_class_counts: { reason: string; count: number }[];
             earlier_samples: number;
             earlier_success: number;
             earlier_success_rate: number;
@@ -253,6 +259,11 @@ function AutoRoutingPanel() {
                                                     <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                                                         <span>{tr('modelRiskSamples', { count: risk.active_requests })}</span>
                                                         <span>{tr('rate', { value: `${(risk.success_rate * 100).toFixed(1)}%` })}</span>
+                                                        {risk.failed > 0 && <span>{tr('modelRiskFailureBreakdown', {
+                                                            channel: risk.channel_failures,
+                                                            request: risk.request_failures,
+                                                            candidate: risk.candidate_failures,
+                                                        })}</span>}
                                                         {risk.success_trend !== 'insufficient' && (
                                                             <span className={risk.success_trend === 'declining' ? 'text-destructive' : undefined}>
                                                                 {tr('modelRiskTrend', {
@@ -287,6 +298,15 @@ function AutoRoutingPanel() {
                                                             </span>
                                                         )}
                                                     </div>
+                                                    {risk.error_class_counts.length > 0 && (
+                                                        <div className="mt-1 flex flex-wrap gap-1">
+                                                            {risk.error_class_counts.map((item) => (
+                                                                <span key={item.reason} className={`rounded-full px-1.5 py-0.5 text-[10px] ${autoFailureBadgeClass(item.reason)}`}>
+                                                                    {tr('errorClass.' + item.reason)} · {item.count}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
                                                     {risk.reasons.length > 0 && (
                                                         <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{risk.reasons.map((reason) => tr('modelRiskReason.' + reason)).join(' · ')}</p>
                                                     )}
@@ -361,6 +381,27 @@ function AutoRoutingPanel() {
             )}
         </div>
     );
+}
+
+function autoFailureBadgeClass(reason: string) {
+    switch (reason) {
+        case 'rate':
+        case 'quota':
+        case 'auth':
+        case 'overload':
+        case 'compatibility':
+        case 'timeout':
+        case 'unknown':
+            return 'bg-amber-500/10 text-amber-700 dark:text-amber-300';
+        case 'client':
+        case 'policy':
+        case 'canceled':
+            return 'bg-sky-500/10 text-sky-700 dark:text-sky-300';
+        case 'model':
+            return 'bg-destructive/10 text-destructive';
+        default:
+            return 'bg-muted text-muted-foreground';
+    }
 }
 
 // LogHistory 渲染历史日志的分页视图: 关键字/状态筛选 + 页码导航。
