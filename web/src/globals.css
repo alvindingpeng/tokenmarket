@@ -373,10 +373,16 @@ html.dark,
 /* 落地页科技感背景网格与光束动效 */
 .landing-tech-grid {
   background-image:
-    linear-gradient(to right, rgba(56, 189, 248, 0.08) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(56, 189, 248, 0.08) 1px, transparent 1px);
+    linear-gradient(to right, rgba(49, 95, 189, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(49, 95, 189, 0.08) 1px, transparent 1px);
   background-size: 48px 48px;
   mask-image: radial-gradient(ellipse 80% 65% at 50% 25%, #000 35%, transparent 100%);
+}
+
+.dark .landing-tech-grid {
+  background-image:
+    linear-gradient(to right, rgba(56, 189, 248, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(56, 189, 248, 0.08) 1px, transparent 1px);
 }
 
 @keyframes landing-beam-sweep {
