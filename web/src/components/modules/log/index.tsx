@@ -97,6 +97,7 @@ interface AutoRoutingSummary {
                 stream_started: number;
                 stream_incomplete: number;
                 stream_incomplete_rate: number;
+                error_class_counts: { reason: string; count: number }[];
                 eligible_for_promotion: boolean;
                 reasons: string[];
             }[];
@@ -345,6 +346,15 @@ function AutoRoutingPanel() {
                                                                     </span>
                                                                 ))}
                                                             </div>
+                                                            {risk.band_risks.some((band) => band.error_class_counts.length > 0) && (
+                                                                <div className="mt-1 flex flex-wrap gap-1">
+                                                                    {risk.band_risks.flatMap((band) => band.error_class_counts.map((item) => (
+                                                                        <span key={`${risk.model}-${band.band}-${item.reason}`} className={`rounded-full px-1.5 py-0.5 text-[10px] ${autoFailureBadgeClass(item.reason)}`}>
+                                                                            {tr('costBand.' + band.band)} · {tr('errorClass.' + item.reason)} · {item.count}
+                                                                        </span>
+                                                                    )))}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     )}
                                                     {risk.reasons.length > 0 && (

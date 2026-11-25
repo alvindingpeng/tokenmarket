@@ -1456,7 +1456,8 @@
                 "band_sample_below_5": "該長度檔位樣本不足 5 個",
                 "band_success_below_80_percent": "該長度檔位成功率低於 80%",
                 "band_stream_incomplete_above_5_percent": "該長度檔位首字後未完成率超過 5%",
-                "band_first_token_p90_above_30_seconds": "該長度檔位首 token P90 超過 30 秒"
+                "band_first_token_p90_above_30_seconds": "該長度檔位首 token P90 超過 30 秒",
+                "band_context_length_error": "該長度檔位出現上下文超限，候選模型的實際視窗可能小於預埋值"
             },
             "task": {
                 "general": "通用",
@@ -1470,6 +1471,7 @@
                 "rate": "限流",
                 "timeout": "逾時",
                 "client": "請求錯誤",
+                "context": "上下文超限",
                 "policy": "內容攔截",
                 "auth": "憑據失效",
                 "quota": "額度耗盡",

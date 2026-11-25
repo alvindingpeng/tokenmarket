@@ -24,7 +24,7 @@ func TestClassifyUpstreamError(t *testing.T) {
 		class ErrorClass
 	}{
 		{"openai 参数错误", &llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Type: "invalid_request_error", Message: "Invalid value for 'temperature'"}}, ErrorClassClient},
-		{"openai 上下文超长", &llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Code: "context_length_exceeded", Type: "invalid_request_error", Message: "This model maximum context length is 128000 tokens"}}, ErrorClassClient},
+		{"openai 上下文超长", &llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Code: "context_length_exceeded", Type: "invalid_request_error", Message: "This model maximum context length is 128000 tokens"}}, ErrorClassContext},
 		{"openai 凭据无效", &llm.ResponseError{StatusCode: 401, Detail: llm.ErrorDetail{Code: "invalid_api_key", Type: "authentication_error", Message: "Incorrect API key provided"}}, ErrorClassAuth},
 		{"openai 无权限", &llm.ResponseError{StatusCode: 403, Detail: llm.ErrorDetail{Type: "permission_error", Message: "You do not have access to this model"}}, ErrorClassAuth},
 		{"openai 额度耗尽", &llm.ResponseError{StatusCode: 429, Detail: llm.ErrorDetail{Code: "insufficient_quota", Type: "rate_limit_error", Message: "You exceeded your current quota"}}, ErrorClassQuota},
@@ -34,7 +34,7 @@ func TestClassifyUpstreamError(t *testing.T) {
 		{"openai 服务端错误", &llm.ResponseError{StatusCode: 500, Detail: llm.ErrorDetail{Type: "server_error", Message: "The server had an error"}}, ErrorClassTransient},
 		{"anthropic 过载", &llm.ResponseError{StatusCode: 529, Detail: llm.ErrorDetail{Type: "overloaded_error", Message: "Overloaded"}}, ErrorClassOverload},
 		{"anthropic 限流", &llm.ResponseError{StatusCode: 429, Detail: llm.ErrorDetail{Type: "rate_limit_error", Message: "Number of request tokens has exceeded your per-minute rate limit"}}, ErrorClassRate},
-		{"anthropic 提示词超长", &llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Type: "invalid_request_error", Message: "prompt is too long: 250000 tokens > 200000 maximum"}}, ErrorClassClient},
+		{"anthropic 提示词超长", &llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Type: "invalid_request_error", Message: "prompt is too long: 250000 tokens > 200000 maximum"}}, ErrorClassContext},
 		{"anthropic 额度耗尽", &llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Code: "billing_hard_limit_reached", Type: "invalid_request_error", Message: "Credit balance is too low"}}, ErrorClassQuota},
 		{"gemini 配额限流", &llm.ResponseError{StatusCode: 429, Detail: llm.ErrorDetail{Code: "RESOURCE_EXHAUSTED", Message: "Quota exceeded for quota metric Generate Content API requests per minute"}}, ErrorClassRate},
 		{"gemini 过载", &llm.ResponseError{StatusCode: 503, Detail: llm.ErrorDetail{Code: "UNAVAILABLE", Message: "The model is overloaded. Please try again later."}}, ErrorClassOverload},
@@ -94,6 +94,7 @@ func TestAttemptStatusOfClass(t *testing.T) {
 		{errors.New("upstream stream first event timeout"), "timeout"},
 		{&llm.ResponseError{StatusCode: 429, Detail: llm.ErrorDetail{Type: "rate_limit_error"}}, "limited"},
 		{&llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Type: "invalid_request_error"}}, "client_error"},
+		{&llm.ResponseError{StatusCode: 400, Detail: llm.ErrorDetail{Code: "context_length_exceeded"}}, "context_length"},
 		{&llm.ResponseError{StatusCode: 401, Detail: llm.ErrorDetail{Type: "authentication_error"}}, "auth_error"},
 		{&llm.ResponseError{StatusCode: 402, Detail: llm.ErrorDetail{Message: "Insufficient Balance"}}, "quota"},
 		{&llm.ResponseError{StatusCode: 529, Detail: llm.ErrorDetail{Type: "overloaded_error"}}, "overloaded"},

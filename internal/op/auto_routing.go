@@ -114,23 +114,24 @@ type AutoRoutingModelRisk struct {
 // AutoRoutingModelBandRisk 是模型在输入长度档位内的风险证据。长上下文请求
 // 可能先于短请求出现失败或延迟退化，分档统计避免总体平均掩盖这一差异。
 type AutoRoutingModelBandRisk struct {
-	Task                 string   `json:"task"`
-	Model                string   `json:"model"`
-	Band                 string   `json:"band"`
-	State                string   `json:"state"`
-	Samples              int64    `json:"samples"`
-	Success              int64    `json:"success"`
-	SuccessRate          float64  `json:"success_rate"`
-	SuccessLow           float64  `json:"success_lower"`
-	AvgPromptTokens      float64  `json:"avg_prompt_tokens"`
-	P90PromptTokens      float64  `json:"p90_prompt_tokens"`
-	FirstTokenSamples    int64    `json:"first_token_samples"`
-	FirstTokenP90Ms      float64  `json:"first_token_p90_ms"`
-	StreamStarted        int64    `json:"stream_started"`
-	StreamIncomplete     int64    `json:"stream_incomplete"`
-	StreamIncompleteRate float64  `json:"stream_incomplete_rate"`
-	EligibleForPromotion bool     `json:"eligible_for_promotion"`
-	Reasons              []string `json:"reasons"`
+	Task                 string                     `json:"task"`
+	Model                string                     `json:"model"`
+	Band                 string                     `json:"band"`
+	State                string                     `json:"state"`
+	Samples              int64                      `json:"samples"`
+	Success              int64                      `json:"success"`
+	SuccessRate          float64                    `json:"success_rate"`
+	SuccessLow           float64                    `json:"success_lower"`
+	AvgPromptTokens      float64                    `json:"avg_prompt_tokens"`
+	P90PromptTokens      float64                    `json:"p90_prompt_tokens"`
+	FirstTokenSamples    int64                      `json:"first_token_samples"`
+	FirstTokenP90Ms      float64                    `json:"first_token_p90_ms"`
+	StreamStarted        int64                      `json:"stream_started"`
+	StreamIncomplete     int64                      `json:"stream_incomplete"`
+	StreamIncompleteRate float64                    `json:"stream_incomplete_rate"`
+	ErrorClassCounts     []AutoRoutingReasonSummary `json:"error_class_counts"`
+	EligibleForPromotion bool                       `json:"eligible_for_promotion"`
+	Reasons              []string                   `json:"reasons"`
 }
 
 // AutoRoutingReasonSummary 是排除原因、运行事件或自动路由决策的计数。
@@ -342,6 +343,7 @@ type autoModelBandEvidence struct {
 	promptTokens                    []float64
 	firstTokenDurations             []float64
 	streamStarted, streamIncomplete int64
+	errorClasses                    map[string]int64
 }
 
 type autoModelOutcomeSample struct {
@@ -410,6 +412,8 @@ func autoAttemptErrorClass(status string) string {
 		return "timeout"
 	case "client_error":
 		return "client"
+	case "context_length":
+		return "context"
 	case "policy_blocked":
 		return "policy"
 	case "auth_error":
@@ -477,7 +481,8 @@ func autoInputCostBand(promptTokens int64) string {
 func autoModelBandRiskFor(task, model, band string, evidence *autoModelBandEvidence) AutoRoutingModelBandRisk {
 	risk := AutoRoutingModelBandRisk{
 		Task: task, Model: model, Band: band, State: "collect_samples",
-		Reasons: make([]string, 0),
+		ErrorClassCounts: make([]AutoRoutingReasonSummary, 0),
+		Reasons:          make([]string, 0),
 	}
 	if evidence == nil {
 		return risk
@@ -490,6 +495,7 @@ func autoModelBandRiskFor(task, model, band string, evidence *autoModelBandEvide
 	risk.FirstTokenP90Ms = autoPercentile(evidence.firstTokenDurations, 0.9)
 	risk.StreamStarted = evidence.streamStarted
 	risk.StreamIncomplete = evidence.streamIncomplete
+	risk.ErrorClassCounts = autoFailureClassCounts(evidence.errorClasses)
 	if evidence.samples > 0 {
 		risk.SuccessRate = float64(evidence.success) / float64(evidence.samples)
 		risk.SuccessLow = autoWilsonLower(evidence.success, evidence.samples)
@@ -515,6 +521,16 @@ func autoModelBandRiskFor(task, model, band string, evidence *autoModelBandEvide
 	} else {
 		risk.State = "healthy"
 		risk.EligibleForPromotion = true
+	}
+	for _, item := range risk.ErrorClassCounts {
+		// 任一上下文超限都说明该渠道没有兑现目录中的窗口值。此类请求不会
+		// 进入成功样本，因此也不能要求先凑齐普通失败的成功率门槛。
+		if item.Reason == "context" {
+			risk.State = "blocked"
+			risk.EligibleForPromotion = false
+			risk.Reasons = append(risk.Reasons, "band_context_length_error")
+			break
+		}
 	}
 	return risk
 }
@@ -1332,6 +1348,16 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 						}
 						be.promptTokenTotal += request.PromptTokens
 						be.promptTokens = append(be.promptTokens, float64(request.PromptTokens))
+						if !modelSuccess {
+							if be.errorClasses == nil {
+								be.errorClasses = make(map[string]int64)
+							}
+							class := autoAttemptErrorClass(attempt.Status)
+							if attempt.Status == "success" {
+								class = "stream_incomplete"
+							}
+							be.errorClasses[class]++
+						}
 						if attempt.FirstTokenMs > 0 {
 							be.firstTokenDurations = append(be.firstTokenDurations, float64(attempt.FirstTokenMs))
 							be.streamStarted++

@@ -12,6 +12,7 @@ func TestAutoRoutingDiagnosticLabels(t *testing.T) {
 		{"auth_error", "auth"},
 		{"quota", "quota"},
 		{"overloaded", "overload"},
+		{"context_length", "context"},
 		{"compatibility_error", "compatibility"},
 		{"failed", "unknown"},
 	}

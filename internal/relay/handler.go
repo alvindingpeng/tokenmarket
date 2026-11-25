@@ -983,7 +983,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				}
 				// 请求本身有问题或内容被安全策略拦截: 换渠道必然同样失败, 直接透传上游错误。
 				// 内容拦截不换渠道, 是为了不跨供应商绕过内容审查。
-				if class == ErrorClassClient || class == ErrorClassPolicy {
+				if class == ErrorClassClient || class == ErrorClassContext || class == ErrorClassPolicy {
 					releaseRouteProbe(group, item.ID)
 					upstreamReservation.Settle(0, 0, true)
 					cancelRound()
@@ -1292,7 +1292,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					case ErrorClassRate:
 						releaseRouteProbe(group, item.ID)
 						limiter.MarkBlocked(upstreamScopes, upEstIn, upEstOut)
-					case ErrorClassClient, ErrorClassPolicy:
+					case ErrorClassClient, ErrorClassContext, ErrorClassPolicy:
 						releaseRouteProbe(group, item.ID)
 					default:
 						countFailure = class != ErrorClassModel

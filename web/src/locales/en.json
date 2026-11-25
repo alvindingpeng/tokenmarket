@@ -1456,7 +1456,8 @@
                 "band_sample_below_5": "Fewer than 5 samples in this band",
                 "band_success_below_80_percent": "Success rate in this band is below 80%",
                 "band_stream_incomplete_above_5_percent": "Incomplete streams in this band exceed 5%",
-                "band_first_token_p90_above_30_seconds": "First-token P90 in this band exceeds 30 seconds"
+                "band_first_token_p90_above_30_seconds": "First-token P90 in this band exceeds 30 seconds",
+                "band_context_length_error": "Context-length errors in this band indicate the channel may expose less context than the catalog value"
             },
             "task": {
                 "general": "General",
@@ -1470,6 +1471,7 @@
                 "rate": "Rate limited",
                 "timeout": "Timeout",
                 "client": "Client error",
+                "context": "Context length",
                 "policy": "Policy block",
                 "auth": "Authentication",
                 "quota": "Quota exhausted",

@@ -59,8 +59,12 @@ func TestAPIKeyUsageReportFromLiveRecords(t *testing.T) {
 	apiKeyUsageTestDB(t)
 	ctx := context.Background()
 	now := time.Now()
-	apiKeyUsageSeed(t, 11, now.Add(-3*time.Hour), 100, 50, 2, model.BillingStatusSettled)
-	apiKeyUsageSeed(t, 11, now.Add(-26*time.Hour), 200, 100, 4, model.BillingStatusSettled)
+	localDay := dayStart(now)
+	// 用自然日边界两侧的固定时刻，避免测试运行在 UTC 凌晨时 -3h/-26h 落入同一天。
+	recent := localDay.Add(time.Nanosecond)
+	previousDay := localDay.Add(-time.Nanosecond)
+	apiKeyUsageSeed(t, 11, recent, 100, 50, 2, model.BillingStatusSettled)
+	apiKeyUsageSeed(t, 11, previousDay, 200, 100, 4, model.BillingStatusSettled)
 	apiKeyUsageSeed(t, 12, now.Add(-2*time.Hour), 999, 999, 99, model.BillingStatusSettled)
 
 	report, err := APIKeyUsageReport(ctx, 11, time.Time{}, time.Time{})

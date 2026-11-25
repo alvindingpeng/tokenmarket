@@ -451,6 +451,21 @@ func TestAutoModelBandRiskRequiresEnoughSamples(t *testing.T) {
 	}
 }
 
+func TestAutoModelBandRiskSeparatesContextLengthFailures(t *testing.T) {
+	band := autoModelBandRiskFor(model.AutoRoutingTaskCoding, "model-a", "long", &autoModelBandEvidence{
+		samples: 5, success: 4, promptTokenTotal: 100000,
+		promptTokens:        []float64{20000, 20000, 20000, 20000, 20000},
+		firstTokenDurations: []float64{300, 300, 300, 300},
+		streamStarted:       4, streamIncomplete: 0,
+		errorClasses: map[string]int64{"context": 1},
+	})
+	if band.State != "blocked" || band.EligibleForPromotion ||
+		len(band.ErrorClassCounts) != 1 || band.ErrorClassCounts[0].Reason != "context" ||
+		!slices.Contains(band.Reasons, "band_context_length_error") {
+		t.Fatalf("context-length failures should expose an effective-window risk: %+v", band)
+	}
+}
+
 func TestAutoReadinessWilsonAndCostPercentile(t *testing.T) {
 	if low := autoWilsonLower(40, 40); low >= 40.0/40.0 {
 		t.Fatalf("perfect success needs a conservative lower bound: %.4f", low)

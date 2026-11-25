@@ -27,7 +27,8 @@ import (
 type ErrorClass string
 
 const (
-	ErrorClassClient        ErrorClass = "client"        // 请求错误: 参数不合法/上下文超长等, 任何渠道都会失败。
+	ErrorClassClient        ErrorClass = "client"        // 请求错误: 参数不合法, 任何渠道都会失败。
+	ErrorClassContext       ErrorClass = "context"       // 上下文超限: 用于判断候选模型的有效窗口, 仍按请求错误直接透传。
 	ErrorClassPolicy        ErrorClass = "policy"        // 内容被安全策略拦截: 不换渠道绕过审查, 直接透传。
 	ErrorClassAuth          ErrorClass = "auth"          // 凭据失效: 401/403 与各家 invalid_api_key 语义。
 	ErrorClassQuota         ErrorClass = "quota"         // 额度/余额耗尽: 402 与 insufficient_quota 语义。
@@ -92,9 +93,13 @@ var errorRules = []errorRule{
 	{name: "body_json_shape_unsupported", class: ErrorClassCompatibility, tokens: []string{
 		"must be a valid json object",
 	}},
+	{name: "context_too_long", class: ErrorClassContext, tokens: []string{
+		"context_length_exceeded", "prompt is too long", "request_too_large",
+		"maximum context length", "reduce the length", "too many tokens",
+		"input length exceeds", "context window exceeded", "maximum tokens allowed",
+	}},
 	{name: "client_invalid", class: ErrorClassClient, tokens: []string{
-		"invalid_request_error", "invalid_prompt", "context_length_exceeded",
-		"prompt is too long", "request_too_large", "invalid_argument", "reduce the length",
+		"invalid_request_error", "invalid_prompt", "invalid_argument",
 	}},
 	// 语义没给出答案时按状态码归类: 主流厂商的状态码语义基本一致。
 	{name: "status_rate", class: ErrorClassRate, statuses: []int{http.StatusTooManyRequests}},
@@ -285,6 +290,8 @@ func attemptStatusOfClass(class ErrorClass) string {
 		return "limited"
 	case ErrorClassClient:
 		return "client_error"
+	case ErrorClassContext:
+		return "context_length"
 	case ErrorClassPolicy:
 		return "policy_blocked"
 	case ErrorClassAuth:
