@@ -293,12 +293,22 @@ export function useDeleteModelTaskCapability() {
 }
 
 export interface ModelToolProbeRequest {
+    stream?: boolean;
+    evaluate?: boolean;
     protocol?: 'openai_chat' | 'anthropic_messages';
     channel_grant_id: number;
     score: number;
 }
 
 export interface ModelToolProbeResult {
+    evaluation?: {
+        task: 'coding' | 'tool';
+        passed: number;
+        total: number;
+        duration_ms: number;
+        estimated_supply_cost?: number;
+        currency?: string;
+    }[];
     channel_grant_id: number;
     model_name: string;
     success: boolean;

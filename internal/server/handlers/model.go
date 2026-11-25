@@ -406,6 +406,9 @@ func probeModelToolCapability(c *gin.Context) {
 	required := model.ProtocolOpenAIChatCompletion
 	if request.Protocol == "anthropic_messages" {
 		required = model.ProtocolAnthropicMessage
+	} else if request.Stream || request.Evaluate {
+		resp.Error(c, http.StatusBadRequest, "streaming evaluation requires Anthropic Messages")
+		return
 	}
 	if grant.Protocols&required == 0 ||
 		(channel.Dialect != "" && channel.Dialect != model.DialectGeneric) ||
@@ -418,22 +421,27 @@ func probeModelToolCapability(c *gin.Context) {
 		resp.Error(c, http.StatusBadGateway, err.Error())
 		return
 	}
-	runProbe := runModelToolProbe
+	var result model.ModelToolProbeResult
 	if required == model.ProtocolAnthropicMessage {
-		runProbe = runAnthropicToolProbe
+		result, err = runAnthropicToolProbe(c.Request.Context(), client, channel, grant, request.Stream, request.Evaluate)
+	} else {
+		result, err = runModelToolProbe(c.Request.Context(), client, channel, grant, request.Score)
 	}
-	result, err := runProbe(c.Request.Context(), client, channel, grant, request.Score)
+	evaluation, _ := json.Marshal(result.Evaluation)
+	audit(c, "model.tool-probe", grant.ChannelModel.Name,
+		fmt.Sprintf("grant=%d protocol=%d stream=%t success=%t two_round=%t score=%d evaluation=%s",
+			grant.ID, required, request.Stream, result.Success && err == nil, result.TwoRound, result.Score, evaluation))
 	if err != nil {
 		result.Error = err.Error()
-		audit(c, "model.tool-probe", grant.ChannelModel.Name,
-			fmt.Sprintf("grant=%d protocol=%d success=%t two_round=%t", grant.ID, required, result.Success, result.TwoRound))
+		if request.Evaluate && len(result.Evaluation) > 0 {
+			resp.Success(c, result)
+			return
+		}
 		c.JSON(http.StatusBadGateway, gin.H{
-			"code": http.StatusBadGateway, "message": "tool capability probe failed", "data": result,
+			"code": http.StatusBadGateway, "message": result.Error, "data": result,
 		})
 		return
 	}
-	audit(c, "model.tool-probe", grant.ChannelModel.Name,
-		fmt.Sprintf("grant=%d protocol=%d success=true two_round=true", grant.ID, required))
 	if required == model.ProtocolAnthropicMessage {
 		resp.Success(c, result)
 		return
@@ -555,6 +563,9 @@ func postToolProbe(ctx context.Context, client *http.Client, endpoint string, ch
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
+	if params, ok := payload.(map[string]any); ok && params["stream"] == true {
+		request.Header.Set("Accept", "text/event-stream")
+	}
 	if protocol == model.ProtocolAnthropicMessage {
 		request.Header.Set("X-Api-Key", key)
 		request.Header.Set("Anthropic-Version", "2023-06-01")

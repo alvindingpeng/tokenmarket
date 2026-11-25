@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 	"github.com/alvindingpeng/switchyard/internal/op"
+	"github.com/gin-gonic/gin"
 	"github.com/looplj/axonhub/llm"
 )
 
@@ -501,6 +503,7 @@ func TestAutoRoutingAnthropicToolRequiresAnthropicVerification(t *testing.T) {
 	config.AutoToolVerified = grant0
 	config.AutoResponsesToolVerified = grant0
 	config.AutoAnthropicToolVerified = grant1
+	config.AutoAnthropicStreamVerified = grant0
 	group = setScoreTestGroup(t, env, config)
 
 	task := autoTask{name: AutoTaskTool, protocol: model.ProtocolAnthropicMessage, input: 100, output: 100}
@@ -510,5 +513,66 @@ func TestAutoRoutingAnthropicToolRequiresAnthropicVerification(t *testing.T) {
 	}
 	if len(analysis.Excluded) != 1 || analysis.Excluded[0].Reason != "auto_tool_unverified" {
 		t.Fatalf("excluded=%+v, want member 0 excluded with auto_tool_unverified", analysis.Excluded)
+	}
+
+	task.stream = true
+	streaming := analyzeAutoCandidates(group, task)
+	if len(streaming.Group.Items) != 1 || streaming.Group.Items[0].ChannelGrantID != group.Items[0].ChannelGrantID {
+		t.Fatalf("streaming must use separate tool verification: %+v", streaming.Group.Items)
+	}
+}
+
+func TestAnthropicSignedHistoryUsesBoundSession(t *testing.T) {
+	var selected atomic.Value
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Model    string
+			Messages []struct{ Content json.RawMessage }
+		}
+		if json.NewDecoder(r.Body).Decode(&body) != nil || len(body.Messages) != 3 ||
+			!strings.Contains(string(body.Messages[1].Content), `"signature":"opaque-signature"`) ||
+			r.Header.Get("X-Switchyard-Session-ID") != "" {
+			t.Error("signed history or session header forwarded incorrectly")
+		}
+		selected.Store(body.Model)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"OK"}],"stop_reason":"end_turn","usage":{"input_tokens":5,"output_tokens":2}}`)
+	}))
+	defer upstream.Close()
+	config := model.DefaultGroupRelayConfigForMode(model.GroupModeScore)
+	env := newRelayGroup(t, upstream.URL, model.ProtocolAnthropicMessage, model.MediaKindText, 2, config)
+	group := setScoreTestGroup(t, env, config)
+	for _, item := range group.Items {
+		if err := op.CapabilitySaveManual(model.ModelCapability{Name: item.ModelName, Context: 32000}, context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	config.AutoRouting = "active"
+	config.AutoRampPercent = 100
+	config.AutoStickySeconds = 300
+	config.AutoTool = fmt.Sprintf("%d,%d", group.Items[0].ChannelGrantID, group.Items[1].ChannelGrantID)
+	config.AutoAnthropicToolVerified = config.AutoTool
+	group = setScoreTestGroup(t, env, config)
+	body := fmt.Sprintf(`{"model":%q,"max_tokens":128,"messages":[{"role":"user","content":"Use a tool"},{"role":"assistant","content":[{"type":"thinking","thinking":"opaque text","signature":"opaque-signature"},{"type":"tool_use","id":"toolu_1","name":"lookup","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"ok"}]}]}`, env.group)
+	for i, session := range []string{"conversation-a", "conversation-b", "unbound"} {
+		if i < 2 {
+			autoStickyRecordSuccess(group, 0, env.userID, AutoTaskTool, model.ProtocolAnthropicMessage, group.Items[i].ID, session)
+		}
+		response := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(response)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(body))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Request.Header.Set("X-Switchyard-Session-ID", session)
+		c.Set("api_key_user_id", int(env.userID))
+		c.Set("api_key_id", 0)
+		selected.Store("")
+		Forward(llm.APIFormatAnthropicMessage)(c)
+		if i < 2 {
+			if response.Code != http.StatusOK || selected.Load() != group.Items[i].ModelName {
+				t.Fatalf("session %s status=%d model=%s body=%s", session, response.Code, selected.Load(), response.Body)
+			}
+		} else if response.Code != http.StatusServiceUnavailable || selected.Load() != "" {
+			t.Fatalf("unbound signed continuation status=%d model=%s body=%s", response.Code, selected.Load(), response.Body)
+		}
 	}
 }

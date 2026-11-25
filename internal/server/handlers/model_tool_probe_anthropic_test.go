@@ -54,7 +54,7 @@ func TestAnthropicToolProbeRequiresResultRoundTrip(t *testing.T) {
 			channel := model.Channel{ChannelConfig: model.ChannelConfig{BaseURL: server.URL, AnthropicMessagePath: "/custom/messages"}}
 			grant := model.ChannelGrant{ID: 7, ChannelModel: &model.ChannelModel{Name: "probe-model"},
 				ChannelKey: &model.ChannelKey{ChannelKeyConfig: model.ChannelKeyConfig{Key: "probe-key"}}}
-			result, err := runAnthropicToolProbe(context.Background(), server.Client(), channel, grant, 0)
+			result, err := runAnthropicToolProbe(context.Background(), server.Client(), channel, grant, false, false)
 			if (err == nil) != valid || result.Success != valid || !result.TwoRound || calls.Load() != 2 {
 				t.Fatalf("result=%+v err=%v calls=%d", result, err, calls.Load())
 			}

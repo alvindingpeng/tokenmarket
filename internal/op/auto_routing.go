@@ -180,43 +180,45 @@ type AutoRoutingPredictionSummary struct {
 // 分组配置，不会自动改写 active 模式或流量比例。真实样本不足、候选未验证或预测
 // 一致率低时都会返回保守建议。
 type AutoRoutingReadiness struct {
-	Task                   string                 `json:"task"`
-	State                  string                 `json:"state"`
-	RecommendedRampPercent int                    `json:"recommended_ramp_percent"`
-	ConfidenceLevelPercent int                    `json:"confidence_level_percent"`
-	Classified             int64                  `json:"classified"`
-	EvidenceUsers          int                    `json:"evidence_users"`
-	EvidenceBuckets        int                    `json:"evidence_buckets"`
-	RequiredBuckets        int                    `json:"required_buckets"`
-	AdminMultiUserEvidence bool                   `json:"admin_multi_user_evidence"`
-	ShadowRequests         int64                  `json:"shadow_requests"`
-	ShadowCompared         int64                  `json:"shadow_compared"`
-	ShadowCoverage         float64                `json:"shadow_coverage"`
-	PredictionAgreement    float64                `json:"prediction_agreement"`
-	PredictionAgreementLow float64                `json:"prediction_agreement_lower"`
-	ActiveRequests         int64                  `json:"active_requests"`
-	ActiveSuccessRate      float64                `json:"active_success_rate"`
-	ActiveSuccessLow       float64                `json:"active_success_lower"`
-	PredictedCostUSD       float64                `json:"predicted_cost_usd"`
-	ActualCostUSD          float64                `json:"actual_cost_usd"`
-	CostDeltaPercent       float64                `json:"cost_delta_percent"`
-	CostRatioP90Percent    float64                `json:"cost_ratio_p90_percent"`
-	CostSamples            int                    `json:"cost_samples"`
-	ConfiguredCandidates   int                    `json:"configured_candidates"`
-	VerifiedCandidates     int                    `json:"verified_candidates"`
-	ModelTeams             int                    `json:"model_teams"`
-	ModelSamples           int                    `json:"model_samples"`
-	ModelEligibleTeams     int                    `json:"model_eligible_teams"`
-	ModelSuccessRate       float64                `json:"model_success_rate"`
-	ModelTeamsLow          float64                `json:"model_teams_lower"`
-	ModelMinSuccessRate    float64                `json:"model_min_success_rate"`
-	ModelRisks             []AutoRoutingModelRisk `json:"model_risks"`
-	FirstTokenSamples      int64                  `json:"first_token_samples"`
-	FirstTokenP90Ms        float64                `json:"first_token_p90_ms"`
-	StreamStarted          int64                  `json:"stream_started"`
-	StreamIncomplete       int64                  `json:"stream_incomplete"`
-	StreamIncompleteRate   float64                `json:"stream_incomplete_rate"`
-	Reasons                []string               `json:"reasons"`
+	Task                      string                 `json:"task"`
+	State                     string                 `json:"state"`
+	RecommendedRampPercent    int                    `json:"recommended_ramp_percent"`
+	ConfidenceLevelPercent    int                    `json:"confidence_level_percent"`
+	Classified                int64                  `json:"classified"`
+	EvidenceUsers             int                    `json:"evidence_users"`
+	EvidenceBuckets           int                    `json:"evidence_buckets"`
+	RequiredBuckets           int                    `json:"required_buckets"`
+	AdminMultiUserEvidence    bool                   `json:"admin_multi_user_evidence"`
+	ShadowRequests            int64                  `json:"shadow_requests"`
+	ShadowCompared            int64                  `json:"shadow_compared"`
+	ShadowCoverage            float64                `json:"shadow_coverage"`
+	PredictionAgreement       float64                `json:"prediction_agreement"`
+	PredictionAgreementLow    float64                `json:"prediction_agreement_lower"`
+	ActiveRequests            int64                  `json:"active_requests"`
+	ActiveSuccessRate         float64                `json:"active_success_rate"`
+	ActiveSuccessLow          float64                `json:"active_success_lower"`
+	PredictedCostUSD          float64                `json:"predicted_cost_usd"`
+	ActualCostUSD             float64                `json:"actual_cost_usd"`
+	CostDeltaPercent          float64                `json:"cost_delta_percent"`
+	CostRatioP90Percent       float64                `json:"cost_ratio_p90_percent"`
+	CostSamples               int                    `json:"cost_samples"`
+	ConfiguredCandidates      int                    `json:"configured_candidates"`
+	VerifiedCandidates        int                    `json:"verified_candidates"`
+	AnthropicStreamCandidates int                    `json:"anthropic_stream_candidates"`
+	AnthropicStreamVerified   int                    `json:"anthropic_stream_verified"`
+	ModelTeams                int                    `json:"model_teams"`
+	ModelSamples              int                    `json:"model_samples"`
+	ModelEligibleTeams        int                    `json:"model_eligible_teams"`
+	ModelSuccessRate          float64                `json:"model_success_rate"`
+	ModelTeamsLow             float64                `json:"model_teams_lower"`
+	ModelMinSuccessRate       float64                `json:"model_min_success_rate"`
+	ModelRisks                []AutoRoutingModelRisk `json:"model_risks"`
+	FirstTokenSamples         int64                  `json:"first_token_samples"`
+	FirstTokenP90Ms           float64                `json:"first_token_p90_ms"`
+	StreamStarted             int64                  `json:"stream_started"`
+	StreamIncomplete          int64                  `json:"stream_incomplete"`
+	StreamIncompleteRate      float64                `json:"stream_incomplete_rate"`
+	Reasons                   []string               `json:"reasons"`
 }
 
 // AutoRoutingSummary 是近期调用日志的自动路由实验聚合。数据来自现有请求和尝试日志，
@@ -358,6 +360,7 @@ type autoReadinessEvidence struct {
 	modelBands                                                map[string]map[string]*autoModelBandEvidence
 	modelTimeline                                             map[string][]autoModelOutcomeSample
 	configuredCandidates, verifiedCandidates                  int
+	anthropicStreamCandidates, anthropicStreamVerified        int
 	labelingEnabled                                           bool
 	requireMultiUserEvidence                                  bool
 }
@@ -694,6 +697,7 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 		RequiredBuckets:        autoReadinessMinimumBuckets,
 		AdminMultiUserEvidence: evidence.requireMultiUserEvidence,
 		ConfiguredCandidates:   evidence.configuredCandidates, VerifiedCandidates: evidence.verifiedCandidates,
+		AnthropicStreamCandidates: evidence.anthropicStreamCandidates, AnthropicStreamVerified: evidence.anthropicStreamVerified,
 		FirstTokenSamples: int64(len(evidence.firstTokenDurations)),
 		StreamStarted:     evidence.streamStarted,
 		StreamIncomplete:  evidence.streamIncomplete,
@@ -1003,6 +1007,9 @@ func applyReadinessCandidateConfig(
 		return nil
 	}
 	verified := autoGrantSet(group.RelayConfig.AutoToolVerified)
+	responsesVerified := autoGrantSet(group.RelayConfig.AutoResponsesToolVerified)
+	anthropicVerified := autoGrantSet(group.RelayConfig.AutoAnthropicToolVerified)
+	streamVerified := autoGrantSet(group.RelayConfig.AutoAnthropicStreamVerified)
 	for _, task := range model.AutoRoutingTasks {
 		actual := evidence[task]
 		if actual == nil {
@@ -1017,7 +1024,17 @@ func applyReadinessCandidateConfig(
 			}
 			actual.configuredCandidates++
 			if task == model.AutoRoutingTaskTool {
-				if verified[item.ChannelGrantID] {
+				id := item.ChannelGrantID
+				anthropic := item.Protocols&model.ProtocolAnthropicMessage != 0
+				if anthropic {
+					actual.anthropicStreamCandidates++
+					if streamVerified[id] {
+						actual.anthropicStreamVerified++
+					}
+				}
+				if verified[id] && item.Protocols&model.ProtocolOpenAIChatCompletion != 0 ||
+					responsesVerified[id] && item.Protocols&model.ProtocolOpenAIResponse != 0 ||
+					anthropic && (anthropicVerified[id] || streamVerified[id]) {
 					actual.verifiedCandidates++
 				}
 				continue

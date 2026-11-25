@@ -20,17 +20,29 @@ type ModelTaskCapability struct {
 
 // ModelToolProbeResult 是一次真实的 OpenAI Chat 工具调用冒烟验证结果。
 // 它不携带上游凭据或响应正文，以免管理页与审计记录成为第二份秘密存储。
+type ModelProbeEvaluation struct {
+	Task                string   `json:"task"`
+	Passed              int      `json:"passed"`
+	Total               int      `json:"total"`
+	DurationMS          int64    `json:"duration_ms"`
+	EstimatedSupplyCost *float64 `json:"estimated_supply_cost,omitempty"`
+	Currency            string   `json:"currency,omitempty"`
+}
+
 type ModelToolProbeResult struct {
-	ChannelGrantID int       `json:"channel_grant_id"`
-	ModelName      string    `json:"model_name"`
-	Success        bool      `json:"success"`
-	TwoRound       bool      `json:"two_round"`
-	Score          int       `json:"score"`
-	VerifiedAt     time.Time `json:"verified_at"`
-	Error          string    `json:"error,omitempty"`
+	Evaluation     []ModelProbeEvaluation `json:"evaluation,omitempty"`
+	ChannelGrantID int                    `json:"channel_grant_id"`
+	ModelName      string                 `json:"model_name"`
+	Success        bool                   `json:"success"`
+	TwoRound       bool                   `json:"two_round"`
+	Score          int                    `json:"score"`
+	VerifiedAt     time.Time              `json:"verified_at"`
+	Error          string                 `json:"error,omitempty"`
 }
 
 type ModelToolProbeRequest struct {
+	Stream         bool   `json:"stream"`
+	Evaluate       bool   `json:"evaluate"`
 	ChannelGrantID int    `json:"channel_grant_id"`
 	Score          int    `json:"score"`
 	Protocol       string `json:"protocol" binding:"omitempty,oneof=openai_chat anthropic_messages"`

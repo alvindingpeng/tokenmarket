@@ -17,6 +17,7 @@ type autoTask struct {
 	rule          string
 	protocol      model.Protocol
 	stream        bool
+	signedHistory bool
 }
 
 const (
@@ -115,8 +116,9 @@ func classifyAuto(body []byte, protocol model.Protocol, input, output int64) aut
 		var text string
 		var ok bool
 		if protocol == model.ProtocolAnthropicMessage {
-			var contentTools bool
-			text, contentTools, ok = autoAnthropicContent(message.Content)
+			var contentTools, signed bool
+			text, contentTools, signed, ok = autoAnthropicContent(message.Content, message.Role == "assistant")
+			task.signedHistory = task.signedHistory || signed
 			if !ok {
 				task.rule = "unsupported_content"
 				return task
@@ -169,7 +171,7 @@ func classifyAuto(body []byte, protocol model.Protocol, input, output int64) aut
 	if protocol == model.ProtocolOpenAIResponse {
 		last = lastResponseUserText(request.Input)
 	}
-	if hasTools {
+	if hasTools || task.signedHistory {
 		if protocol == model.ProtocolAnthropicMessage {
 			if nonEmptyJSON(request.Tools) {
 				var tools []struct{ Type string }
@@ -294,26 +296,28 @@ func autoText(raw json.RawMessage) (string, bool) {
 // autoAnthropicContent parses Anthropic Messages content strings or block arrays,
 // allowing text, tool_use, and text-only tool_result blocks while rejecting images,
 // documents, or unknown multimodal blocks.
-func autoAnthropicContent(raw json.RawMessage) (string, bool, bool) {
+func autoAnthropicContent(raw json.RawMessage, assistant bool) (string, bool, bool, bool) {
 	if len(raw) == 0 || string(raw) == "null" {
-		return "", false, true
+		return "", false, false, true
 	}
 	var value string
 	if json.Unmarshal(raw, &value) == nil {
-		return value, false, true
+		return value, false, false, true
 	}
 	var blocks []struct {
-		Type    string
-		Text    string
-		Name    string
-		Input   json.RawMessage
-		Content json.RawMessage
+		Type      string
+		Text      string
+		Name      string
+		Input     json.RawMessage
+		Signature string
+		Data      string
+		Content   json.RawMessage
 	}
 	if json.Unmarshal(raw, &blocks) != nil {
-		return "", false, false
+		return "", false, false, false
 	}
 	var texts []string
-	hasTools := false
+	hasTools, signed := false, false
 	for _, block := range blocks {
 		switch block.Type {
 		case "text":
@@ -326,20 +330,25 @@ func autoAnthropicContent(raw json.RawMessage) (string, bool, bool) {
 			if nonEmptyJSON(block.Input) {
 				texts = append(texts, string(block.Input))
 			}
+		case "thinking", "redacted_thinking":
+			if !assistant || (block.Type == "thinking" && block.Signature == "") || (block.Type == "redacted_thinking" && block.Data == "") {
+				return "", false, false, false
+			}
+			signed = true
 		case "tool_result":
 			hasTools = true
 			resultText, ok := autoText(block.Content)
 			if !ok {
-				return "", false, false
+				return "", false, false, false
 			}
 			if resultText != "" {
 				texts = append(texts, resultText)
 			}
 		default:
-			return "", false, false
+			return "", false, false, false
 		}
 	}
-	return strings.Join(texts, "\n"), hasTools, true
+	return strings.Join(texts, "\n"), hasTools, signed, true
 }
 
 func autoResponseInputText(raw json.RawMessage) (string, bool, bool) {
@@ -511,6 +520,9 @@ func analyzeAutoCandidates(group model.Group, task autoTask) autoCandidateResult
 			verifiedGrants = config.AutoResponsesToolVerified
 		case model.ProtocolAnthropicMessage:
 			verifiedGrants = config.AutoAnthropicToolVerified
+			if task.stream && config.AutoAnthropicStreamVerified != "" {
+				verifiedGrants = config.AutoAnthropicStreamVerified
+			}
 		}
 		for _, value := range strings.Split(verifiedGrants, ",") {
 			if id, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && id > 0 {

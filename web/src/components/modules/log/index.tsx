@@ -79,6 +79,8 @@ interface AutoRoutingSummary {
         cost_samples: number;
         configured_candidates: number;
         verified_candidates: number;
+        anthropic_stream_candidates: number;
+        anthropic_stream_verified: number;
         model_teams: number;
         model_samples: number;
         model_eligible_teams: number;
@@ -274,6 +276,7 @@ function AutoRoutingPanel() {
                                     {item.shadow_compared > 0 && <span>{tr('readinessAgreementLower', { level: item.confidence_level_percent, value: `${(item.prediction_agreement_lower * 100).toFixed(1)}%` })}</span>}
                                     <span>{tr('readinessCoverage', { value: `${(item.shadow_coverage * 100).toFixed(1)}%` })}</span>
                                     <span>{tr('readinessCandidates', { verified: item.verified_candidates, total: item.configured_candidates })}</span>
+                                    {item.anthropic_stream_candidates > 0 && <span>{tr('readinessAnthropicStream', { verified: item.anthropic_stream_verified, total: item.anthropic_stream_candidates })}</span>}
                                     {item.active_requests > 0 && <span>{tr('readinessActive', { count: item.active_requests, value: `${(item.active_success_rate * 100).toFixed(1)}%` })}</span>}
                                     {item.active_requests > 0 && <span>{tr('readinessActiveLower', { level: item.confidence_level_percent, value: `${(item.active_success_lower * 100).toFixed(1)}%` })}</span>}
                                     {item.cost_samples > 0 && <span>{tr('readinessCost', { samples: item.cost_samples, value: `${item.cost_ratio_p90_percent.toFixed(1)}%` })}</span>}

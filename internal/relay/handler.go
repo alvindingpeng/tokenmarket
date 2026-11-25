@@ -160,6 +160,8 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			rejectRequest(c, inbound, errors.New("model not found"))
 			return
 		}
+		session := autoSessionID(c.GetHeader("X-Switchyard-Session-ID"))
+		raw.Headers.Del("X-Switchyard-Session-ID")
 		group = effectiveGroupForRequest(group, c.GetString("routing_preference"))
 
 		// 用户侧限流: RPM/TPM 按用户与 API Key 双维度一次预留, 触顶直接 429, 不产生日志行。
@@ -205,11 +207,13 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			case StatusSuccess:
 				autoCircuitRecordSuccess(autoProtectionGroup.ID, autoProtectionTask.name)
 				if itemID := request.autoChoiceSnapshot(); itemID != 0 && autoRouteGroupID != 0 {
-					autoStickyRecordSuccess(autoProtectionGroup, c.GetInt("api_key_id"), keyUserID, autoProtectionTask.name, autoProtectionTask.protocol, itemID)
+					autoStickyRecordSuccess(autoProtectionGroup, c.GetInt("api_key_id"), keyUserID, autoProtectionTask.name, autoProtectionTask.protocol, itemID, session)
 				}
 			case StatusFailed:
 				autoCircuitRecordFailure(autoProtectionGroup, autoProtectionTask.name)
-				autoStickyClear(autoProtectionGroup.ID, c.GetInt("api_key_id"), keyUserID, autoProtectionTask.name, autoProtectionTask.protocol)
+				if session == "" {
+					autoStickyClear(autoProtectionGroup.ID, c.GetInt("api_key_id"), keyUserID, autoProtectionTask.name, autoProtectionTask.protocol, session)
+				}
 			}
 		}()
 		request.setRateScopes(userScopes, userDecision.Reservation)
@@ -333,9 +337,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			// Any upstream failure invalidates the previous sticky choice before
 			// the next selection. A successful retry writes a new choice only after
 			// the complete response has been delivered.
-			if !pendingRateRetry && (lastScoreError != nil || failedItemID != 0) {
+			if session == "" && !pendingRateRetry && (lastScoreError != nil || failedItemID != 0) {
 				autoSnap := request.autoTaskSnapshot()
-				autoStickyClear(group.ID, c.GetInt("api_key_id"), keyUserID, autoSnap.name, autoSnap.protocol)
+				autoStickyClear(group.ID, c.GetInt("api_key_id"), keyUserID, autoSnap.name, autoSnap.protocol, session)
 			}
 			autoMode := ""
 			if group.Mode == model.GroupModeScore {
@@ -350,6 +354,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			var autoExcluded []model.RelayRouteCandidate
 			var shadowExcluded []model.RelayRouteCandidate
 			var autoRouteFallback bool
+			var preferredSessionItem int
 			var autoExplore model.GroupItem
 			var analysis autoCandidateResult
 			baseGroup := group
@@ -455,17 +460,31 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					analysis = analyzeAutoCandidates(group, task)
 					eligible, excluded := analysis.Group, analysis.Excluded
 					group, autoExcluded = eligible, excluded
-					if stickyID, ok := autoStickyGet(group, c.GetInt("api_key_id"), keyUserID, task.name, task.protocol); ok {
+					bound := false
+					if stickyID, ok := autoStickyGet(group, c.GetInt("api_key_id"), keyUserID, task.name, task.protocol, session); ok {
 						if stickyItem, found := autoItemByID(group.Items, stickyID); found {
 							group.Items = append([]model.GroupItem{stickyItem}, slices.DeleteFunc(slices.Clone(group.Items), func(member model.GroupItem) bool {
 								return member.ID == stickyID
 							})...)
+							bound = session != ""
+							if bound {
+								preferredSessionItem = stickyID
+							}
+							if task.signedHistory && bound {
+								group.Items = []model.GroupItem{stickyItem}
+							}
 							request.setAutoSticky(stickyID, "hit")
 							request.addRouteEvent("auto_routing", "auto_sticky_hit")
 						} else {
 							request.setAutoSticky(stickyID, "miss")
 							request.addRouteEvent("auto_routing", "auto_sticky_miss")
 						}
+					}
+					if task.signedHistory && !bound {
+						for _, member := range group.Items {
+							autoExcluded = append(autoExcluded, model.RelayRouteCandidate{ItemID: member.ID, Model: member.ModelName, Reason: "auto_signed_session_required"})
+						}
+						group.Items = nil
 					}
 					if len(group.Items) > 0 {
 						autoProtectionGroup, autoProtectionTask, autoProtectionEngaged = group, task, true
@@ -502,6 +521,12 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			} else if autoMode == "shadow" {
 				task := observedTask
 				eligible, excluded := autoCandidates(group, task)
+				if task.signedHistory {
+					for _, member := range eligible.Items {
+						excluded = append(excluded, model.RelayRouteCandidate{ItemID: member.ID, Model: member.ModelName, Reason: "auto_signed_session_required"})
+					}
+					eligible.Items = nil
+				}
 				shadowExcluded = excluded
 				state := RouteStateOf(group)
 				candidates := slices.DeleteFunc(slices.Clone(eligible.Items), func(item model.GroupItem) bool {
@@ -601,7 +626,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				}
 			}
 			if !canary {
-				item = pickGroupItem(group)
+				item = pickGroupItem(group, preferredSessionItem)
 			}
 			decision := routeExplanation(group, item, canary)
 			if group.AutoRequestCosts != nil {

@@ -93,6 +93,7 @@ func openAPISpec() gin.H {
 					"tags":        []string{"chat"},
 					"summary":     "Messages(Anthropic 兼容)",
 					"description": "Anthropic Messages 协议转发; x-api-key 与 Authorization: Bearer 均可携带 API Key。",
+					"parameters":  []gin.H{{"in": "header", "name": "X-Switchyard-Session-ID", "schema": gin.H{"type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$"}, "description": "主动智能路由的会话标识。同一会话各轮使用相同值。带思考签名的后续轮次要求已建立会话粘性。"}},
 					"security":    auth,
 					"requestBody": jsonBody("AnthropicMessageRequest"),
 					"responses":   completionResponses("AnthropicMessageResponse"),

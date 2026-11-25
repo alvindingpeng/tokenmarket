@@ -16,7 +16,7 @@ const ROUTE_REASON_KEYS = [
     'auto_unsupported', 'auto_not_qualified', 'auto_member_unavailable',
     'auto_protocol_incompatible', 'auto_channel_incompatible',
     'auto_context_unknown', 'auto_token_limit',
-    'auto_tool_unverified', 'auto_ramp_hold', 'auto_circuit_open',
+    'auto_tool_unverified', 'auto_signed_session_required', 'auto_ramp_hold', 'auto_circuit_open',
     'auto_quality_unverified', 'auto_quality_below_threshold', 'auto_eligible',
     'auto_sticky_hit', 'auto_sticky_miss', 'auto_fallback_no_candidate',
     'auto_explore', 'auto_sticky', 'auto_sticky_fallback', 'auto_reject',

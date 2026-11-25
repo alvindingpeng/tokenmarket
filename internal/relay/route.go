@@ -128,7 +128,7 @@ func pickCanaryItem(group model.Group) (model.GroupItem, bool) {
 	return item, true
 }
 
-func pickGroupItem(group model.Group) model.GroupItem {
+func pickGroupItem(group model.Group, preferred ...int) model.GroupItem {
 	if group.Mode == model.GroupModeManual {
 		for _, item := range group.Items {
 			// 手动模式同样要过并发与策略配额检查: 人工指定只决定"选谁", 不代表可以绕过限流。
@@ -205,8 +205,15 @@ func pickGroupItem(group model.Group) model.GroupItem {
 			if route.ProbeItemID != 0 {
 				continue
 			}
-		} else if !hasHealthy || item.Priority < bestHealthyPriority {
-			bestHealthyPriority, hasHealthy = item.Priority, true
+		} else {
+			if len(preferred) > 0 && item.ID == preferred[0] {
+				route.CurrentItemID = item.ID
+				publishRouteLocked(route)
+				return *item
+			}
+			if !hasHealthy || item.Priority < bestHealthyPriority {
+				bestHealthyPriority, hasHealthy = item.Priority, true
+			}
 		}
 		candidates = append(candidates, *item)
 	}

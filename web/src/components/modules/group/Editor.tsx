@@ -46,23 +46,28 @@ function ToolProbeRunButton({ label, pending, onClick }: {
     );
 }
 
-function ToolProbeControls({ grantID, score, onAnthropicVerified }: {
+function ToolProbeControls({ grantID, score, stream, onAnthropicVerified }: {
     grantID: number;
     score: number;
+    stream?: boolean;
     onAnthropicVerified?: () => void;
 }) {
     const t = useTranslations('group.form');
     const probe = useProbeModelToolCapability();
     return (
-        <div className="mt-2 flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
+        <div className="mt-2 flex flex-wrap items-center gap-2 whitespace-normal" onClick={(event) => event.stopPropagation()}>
             <ToolProbeRunButton
-                label={onAnthropicVerified ? t('probeAnthropicTool') : t('probeChatTool')}
+                label={stream ? t('probeAnthropicStream') : onAnthropicVerified ? t('probeAnthropicTool') : t('probeChatTool')}
                 pending={probe.isPending}
                 onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    probe.mutate({ channel_grant_id: grantID, score, protocol: onAnthropicVerified ? 'anthropic_messages' : 'openai_chat' }, {
+                    probe.mutate({ channel_grant_id: grantID, score, stream, evaluate: stream, protocol: onAnthropicVerified ? 'anthropic_messages' : 'openai_chat' }, {
                         onSuccess: (result) => {
+                            if (!result.success) {
+                                toast.error(result.error || t('probeFailed'));
+                                return;
+                            }
                             onAnthropicVerified?.();
                             toast.success(onAnthropicVerified ? t('probeAnthropicPassed') : t('probeChatPassed'));
                         },
@@ -70,6 +75,19 @@ function ToolProbeControls({ grantID, score, onAnthropicVerified }: {
                     });
                 }}
             />
+            {probe.data?.evaluation?.map((result) => (
+                <span key={result.task} className="text-xs text-muted-foreground">
+                    {t(result.task === 'coding' ? 'probeCodingResult' : 'probeToolResult', {
+                        passed: result.passed,
+                        total: result.total,
+                        ms: result.duration_ms,
+                    })}
+                    {' · '}
+                    {result.estimated_supply_cost == null
+                        ? t('probeCostUnavailable')
+                        : t('probeCost', { cost: result.estimated_supply_cost.toPrecision(3), currency: result.currency || 'USD' })}
+                </span>
+            ))}
         </div>
     );
 }
@@ -950,7 +968,7 @@ export function GroupEditor({
                                                                     const checked = selected.includes(member.channel_grant_id);
                                                                     const inputID = `${key}-${member.channel_grant_id}`;
                                                                     return (
-                                                                        <label key={member.channel_grant_id} htmlFor={inputID} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-muted/60">
+                                                                        <label key={member.channel_grant_id} htmlFor={inputID} className="flex cursor-pointer flex-wrap items-center gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-muted/60">
                                                                             <Checkbox
                                                                                 id={inputID}
                                                                                 checked={checked}
@@ -978,9 +996,15 @@ export function GroupEditor({
                                                                                         auto_anthropic_tool_verified: autoGrantIDsValue(selectedMembers, toggleAutoGrantID(parseAutoGrantIDs(previous.auto_anthropic_tool_verified), member.channel_grant_id, true)),
                                                                                     }))} />
                                                                                 )}
+                                                                                {key === 'auto_tool' && checked && !!(member.protocols & Protocol.AnthropicMessage) && (
+                                                                                    <ToolProbeControls grantID={member.channel_grant_id} score={0} stream onAnthropicVerified={() => setRelayConfig((previous) => ({
+                                                                                        ...previous,
+                                                                                        auto_anthropic_stream_verified: autoGrantIDsValue(selectedMembers, toggleAutoGrantID(parseAutoGrantIDs(previous.auto_anthropic_stream_verified), member.channel_grant_id, true)),
+                                                                                    }))} />
+                                                                                )}
                                                                             </span>
                                                                             {key === 'auto_tool' && checked && (
-                                                                                <span className="flex shrink-0 flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground" onClick={(event) => event.stopPropagation()}>
+                                                                                <span className="flex basis-full flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground" onClick={(event) => event.stopPropagation()}>
                                                                                     <Checkbox
                                                                                         checked={parseAutoGrantIDs(relayConfig.auto_tool_verified).includes(member.channel_grant_id)}
                                                                                         onCheckedChange={(value) => setRelayConfig((prev) => ({ ...prev,
@@ -1006,6 +1030,19 @@ export function GroupEditor({
                                                                                         }))}
                                                                                     />
                                                                                     {t('form.autoAnthropicToolVerified')}
+                                                                                    {!!(member.protocols & Protocol.AnthropicMessage) && (
+                                                                                        <>
+                                                                                            <Checkbox
+                                                                                                aria-label={t('form.autoAnthropicStreamVerified')}
+                                                                                                checked={parseAutoGrantIDs(relayConfig.auto_anthropic_stream_verified).includes(member.channel_grant_id)}
+                                                                                                onCheckedChange={(value) => setRelayConfig((previous) => ({
+                                                                                                    ...previous,
+                                                                                                    auto_anthropic_stream_verified: autoGrantIDsValue(selectedMembers, toggleAutoGrantID(parseAutoGrantIDs(previous.auto_anthropic_stream_verified), member.channel_grant_id, value === true)),
+                                                                                                }))}
+                                                                                            />
+                                                                                            {t('form.autoAnthropicStreamVerified')}
+                                                                                        </>
+                                                                                    )}
                                                                                 </span>
                                                                             )}
                                                                         </label>

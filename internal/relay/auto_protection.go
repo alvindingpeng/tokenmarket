@@ -24,6 +24,7 @@ type autoStickyKey struct {
 	UserID   uint
 	Task     string
 	Protocol model.Protocol
+	Session  string
 }
 
 type autoStickyState struct {
@@ -32,10 +33,11 @@ type autoStickyState struct {
 }
 
 var (
-	autoCircuitMu sync.Mutex
-	autoCircuits  = make(map[autoCircuitKey]autoCircuitState)
-	autoStickyMu  sync.Mutex
-	autoSticky    = make(map[autoStickyKey]autoStickyState)
+	autoCircuitMu      sync.Mutex
+	autoCircuits       = make(map[autoCircuitKey]autoCircuitState)
+	autoStickyMu       sync.Mutex
+	autoStickyPrunedAt time.Time
+	autoSticky         = make(map[autoStickyKey]autoStickyState)
 )
 
 func autoCircuitFailureLimit(group model.Group) int {
@@ -113,19 +115,23 @@ func autoCircuitRecordFailure(group model.Group, task string) bool {
 	return state.OpenUntil.After(now)
 }
 
-func autoStickyKeyFor(groupID, keyID int, userID uint, task string, protocol model.Protocol) autoStickyKey {
-	return autoStickyKey{GroupID: groupID, KeyID: keyID, UserID: userID, Task: task, Protocol: protocol}
+func autoStickyKeyFor(groupID, keyID int, userID uint, task string, protocol model.Protocol, session ...string) autoStickyKey {
+	key := autoStickyKey{GroupID: groupID, KeyID: keyID, UserID: userID, Task: task, Protocol: protocol}
+	if len(session) != 0 {
+		key.Session = session[0]
+	}
+	return key
 }
 
 // autoStickyGet returns the recently successful member for this task. Zero or
 // expired state is a miss, including legacy groups that do not enable sticky
 // routing. The caller must still pass the returned item through the current
 // candidate filters.
-func autoStickyGet(group model.Group, keyID int, userID uint, task string, protocol model.Protocol) (int, bool) {
+func autoStickyGet(group model.Group, keyID int, userID uint, task string, protocol model.Protocol, session ...string) (int, bool) {
 	if group.RelayConfig.AutoStickySeconds <= 0 {
 		return 0, false
 	}
-	key := autoStickyKeyFor(group.ID, keyID, userID, task, protocol)
+	key := autoStickyKeyFor(group.ID, keyID, userID, task, protocol, session...)
 	now := time.Now()
 	autoStickyMu.Lock()
 	defer autoStickyMu.Unlock()
@@ -137,20 +143,32 @@ func autoStickyGet(group model.Group, keyID int, userID uint, task string, proto
 	return state.ItemID, true
 }
 
-func autoStickyRecordSuccess(group model.Group, keyID int, userID uint, task string, protocol model.Protocol, itemID int) {
+func autoStickyRecordSuccess(group model.Group, keyID int, userID uint, task string, protocol model.Protocol, itemID int, session ...string) {
 	if group.RelayConfig.AutoStickySeconds <= 0 || itemID == 0 {
 		return
 	}
-	key := autoStickyKeyFor(group.ID, keyID, userID, task, protocol)
+	key := autoStickyKeyFor(group.ID, keyID, userID, task, protocol, session...)
 	autoStickyMu.Lock()
-	autoSticky[key] = autoStickyState{
-		ItemID: itemID, ExpiresAt: time.Now().Add(time.Duration(group.RelayConfig.AutoStickySeconds) * time.Second),
+	defer autoStickyMu.Unlock()
+	now := time.Now()
+	if len(autoSticky) >= 4096 && now.Sub(autoStickyPrunedAt) >= time.Second {
+		autoStickyPrunedAt = now
+		for oldKey, state := range autoSticky {
+			if !state.ExpiresAt.After(now) {
+				delete(autoSticky, oldKey)
+			}
+		}
 	}
-	autoStickyMu.Unlock()
+	if _, exists := autoSticky[key]; len(autoSticky) >= 4096 && !exists {
+		return
+	}
+	autoSticky[key] = autoStickyState{
+		ItemID: itemID, ExpiresAt: now.Add(time.Duration(group.RelayConfig.AutoStickySeconds) * time.Second),
+	}
 }
 
-func autoStickyClear(groupID, keyID int, userID uint, task string, protocol model.Protocol) {
-	key := autoStickyKeyFor(groupID, keyID, userID, task, protocol)
+func autoStickyClear(groupID, keyID int, userID uint, task string, protocol model.Protocol, session ...string) {
+	key := autoStickyKeyFor(groupID, keyID, userID, task, protocol, session...)
 	autoStickyMu.Lock()
 	delete(autoSticky, key)
 	autoStickyMu.Unlock()
@@ -215,4 +233,16 @@ func autoResetForGroup(groupID int) {
 // isolated between SQLite fixtures.
 func ResetAutoState(groupID int) {
 	autoResetForGroup(groupID)
+}
+
+func autoSessionID(value string) string {
+	if len(value) > 128 {
+		return ""
+	}
+	for _, ch := range value {
+		if !(ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9' || ch == '-' || ch == '_') {
+			return ""
+		}
+	}
+	return value
 }

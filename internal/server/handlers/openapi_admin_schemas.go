@@ -283,9 +283,20 @@ func openAPIAdminSchemas() gin.H {
 			"channel_grant_id": fieldNumber("integer", "要验证的渠道授权 ID"),
 			"score":            fieldNumber("integer", "OpenAI Chat 验证成功后的工具任务质量分 1-100"),
 			"protocol":         fieldString("openai_chat 或 anthropic_messages，缺省为 openai_chat"),
+			"stream":           fieldBool("使用 Anthropic SSE 验证"),
+			"evaluate":         fieldBool("同时运行固定的编程评测用例"),
 		}, "channel_grant_id"),
 
+		"ModelProbeEvaluation": object(gin.H{
+			"task":                  fieldString("任务类别"),
+			"passed":                fieldNumber("integer", "通过数"),
+			"total":                 fieldNumber("integer", "用例数"),
+			"duration_ms":           fieldNumber("integer", "总耗时（毫秒）"),
+			"estimated_supply_cost": fieldNumber("number", "按渠道供货价和返回用量估算的成本"),
+			"currency":              fieldString("供货价币种"),
+		}),
 		"ModelToolProbeResult": object(gin.H{
+			"evaluation":       gin.H{"type": "array", "items": ref("ModelProbeEvaluation")},
 			"channel_grant_id": fieldNumber("integer", "渠道授权 ID"),
 			"model_name":       fieldString("上游模型名称"),
 			"success":          fieldBool("两轮工具调用是否完整成功"),
@@ -445,6 +456,8 @@ func openAPIAdminSchemas() gin.H {
 		}, "group_id", "added", "skipped", "group"),
 
 		"GroupRelayConfig": object(gin.H{
+			"auto_anthropic_stream_verified": fieldString("已单独验证 Anthropic 流式工具调用的授权 ID"),
+
 			"member_stream_idle_timeout_seconds":         fieldNumber("integer", "流式响应两帧之间的最大空闲秒数"),
 			"request_timeout_seconds":                    fieldNumber("integer", "整请求最大耗时秒数, 含重试与流式传输"),
 			"max_wait_seconds":                           fieldNumber("integer", "无可用成员时最大等待秒数, 0 立即返回"),
