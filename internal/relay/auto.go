@@ -155,7 +155,8 @@ func classifyAuto(body []byte, protocol model.Protocol, input, output int64) aut
 	for _, message := range request.Messages {
 		var text string
 		if protocol == model.ProtocolAnthropicMessage {
-			text, _, _ = autoAnthropicContent(message.Content)
+			// Include block metadata and tool call identifiers in the budget.
+			text = string(message.Content)
 		} else {
 			text, _ = autoText(message.Content)
 		}

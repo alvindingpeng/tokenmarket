@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
@@ -123,5 +124,15 @@ func TestClassifyAutoResponseExtraction(t *testing.T) {
 	body := []byte("{\"input\":[{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"Extract fields\"}]}],\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"sample\",\"schema\":{\"type\":\"object\"}}}}")
 	if got := classifyAuto(body, model.ProtocolOpenAIResponse, 10, 10).name; got != AutoTaskExtraction {
 		t.Fatalf("class=%q want extraction", got)
+	}
+}
+
+func TestAnthropicToolBudgetIncludesCallMetadata(t *testing.T) {
+	short := `{"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"a","name":"lookup","input":{}}]}]}`
+	long := `{"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"` + strings.Repeat("a", 900) + `","name":"lookup","input":{}}]}]}`
+	a := classifyAuto([]byte(short), model.ProtocolAnthropicMessage, 0, 100)
+	b := classifyAuto([]byte(long), model.ProtocolAnthropicMessage, 0, 100)
+	if a.name != AutoTaskTool || b.name != AutoTaskTool || b.input <= a.input {
+		t.Fatalf("tool metadata omitted from budget: short=%+v long=%+v", a, b)
 	}
 }
