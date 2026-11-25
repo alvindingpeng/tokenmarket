@@ -133,6 +133,7 @@ func TestAutoRoutingAggregateBuildsContextWindowHints(t *testing.T) {
 		{ID: 403, UserID: 7, GroupID: 37, Status: "failed", StartedAt: now.Add(-2 * time.Minute), PromptTokens: 5000, TargetModel: "model-a", AutoTask: "coding", AutoMode: "active"},
 		{ID: 404, UserID: 7, GroupID: 37, Status: "failed", StartedAt: now.Add(-3 * time.Minute), PromptTokens: 7000, TargetModel: "model-a", AutoTask: "coding", AutoMode: "active"},
 		{ID: 405, UserID: 7, GroupID: 37, Status: "failed", StartedAt: now.Add(-4 * time.Minute), PromptTokens: 0, TargetModel: "model-a", AutoTask: "coding", AutoMode: "active"},
+		{ID: 406, UserID: 7, GroupID: 37, Status: "success", StartedAt: now.Add(-5 * time.Minute), PromptTokens: 5500, TargetModel: "model-a", AutoTask: "coding", AutoMode: "active"},
 	}
 	if err := db.GetDB().Create(&requests).Error; err != nil {
 		t.Fatalf("create requests: %v", err)
@@ -144,6 +145,7 @@ func TestAutoRoutingAggregateBuildsContextWindowHints(t *testing.T) {
 		{RequestID: 403, Round: 1, TargetModel: "model-a", ChannelCode: "#1001", Status: "client_error", Decision: `{"mode":"score","reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
 		{RequestID: 404, Round: 1, TargetModel: "model-a", ChannelCode: "#1002", Status: "context_length", Decision: `{"mode":"score","reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
 		{RequestID: 405, Round: 1, TargetModel: "model-a", ChannelCode: "#1001", Status: "failed", Decision: `{"mode":"score","reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+		{RequestID: 406, Round: 1, TargetModel: "model-a", ChannelCode: "#1001", Status: "success", Decision: `{"mode":"score","reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
 	}
 	if err := db.GetDB().Create(&attempts).Error; err != nil {
 		t.Fatalf("create attempts: %v", err)
@@ -157,14 +159,122 @@ func TestAutoRoutingAggregateBuildsContextWindowHints(t *testing.T) {
 	}
 	hint := summary.ContextWindowHints[0]
 	if hint.Task != "coding" || hint.Model != "model-a" || hint.ChannelCode != "#1001" ||
-		hint.Samples != 2 || hint.ObservedMaxInputTokens != 12000 ||
-		hint.SuggestedContextLength != 9000 || hint.Reason != "context_length_error_observed" {
+		hint.Samples != 2 || hint.ObservedMinInputTokens != 8000 || hint.ObservedMaxInputTokens != 12000 ||
+		hint.ObservedMaxSuccessInputTokens != 5500 ||
+		hint.SuggestedContextLength != 6000 || hint.Reason != "context_length_error_observed" {
 		t.Fatalf("unexpected context window hint: %+v", hint)
 	}
 	second := summary.ContextWindowHints[1]
 	if second.ChannelCode != "#1002" || second.Samples != 1 ||
-		second.ObservedMaxInputTokens != 7000 || second.SuggestedContextLength != 5250 {
+		second.ObservedMinInputTokens != 7000 || second.ObservedMaxInputTokens != 7000 ||
+		second.ObservedMaxSuccessInputTokens != 0 || second.SuggestedContextLength != 5250 {
 		t.Fatalf("channel-specific context window hint was merged incorrectly: %+v", second)
+	}
+}
+
+func TestAutoRoutingContextWindowHintsReflectConfiguredStatusAndOrder(t *testing.T) {
+	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "auto-routing-context-status.db"), false); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	database := db.GetDB()
+	channels := []model.Channel{
+		{ID: 11, ShareCode: "2001", Shared: true, ReviewStatus: model.ChannelReviewApproved, ChannelConfig: model.ChannelConfig{Name: "chan-covered", Enabled: true, BaseURL: "https://example.com"}},
+		{ID: 12, ShareCode: "2002", Shared: true, ReviewStatus: model.ChannelReviewApproved, ChannelConfig: model.ChannelConfig{Name: "chan-margin", Enabled: true, BaseURL: "https://example.com"}},
+		{ID: 13, ShareCode: "2003", Shared: true, ReviewStatus: model.ChannelReviewApproved, ChannelConfig: model.ChannelConfig{Name: "chan-exceeds", Enabled: true, BaseURL: "https://example.com"}},
+	}
+	if err := database.Create(&channels).Error; err != nil {
+		t.Fatalf("create channels: %v", err)
+	}
+	keys := []model.ChannelKey{
+		{ID: 21, ChannelID: 11, ChannelKeyConfig: model.ChannelKeyConfig{Name: "k1", Enabled: true, Key: "s1"}},
+		{ID: 22, ChannelID: 12, ChannelKeyConfig: model.ChannelKeyConfig{Name: "k2", Enabled: true, Key: "s2"}},
+		{ID: 23, ChannelID: 13, ChannelKeyConfig: model.ChannelKeyConfig{Name: "k3", Enabled: true, Key: "s3"}},
+	}
+	if err := database.Create(&keys).Error; err != nil {
+		t.Fatalf("create keys: %v", err)
+	}
+	models := []model.ChannelModel{
+		{ID: 31, ChannelID: 11, Name: "model-a", Listed: true, ContextLength: 128000},
+		{ID: 32, ChannelID: 12, Name: "model-a", Listed: true, ContextLength: 128000},
+		{ID: 33, ChannelID: 13, Name: "model-a", Listed: true, ContextLength: 128000},
+	}
+	if err := database.Create(&models).Error; err != nil {
+		t.Fatalf("create models: %v", err)
+	}
+	grants := []model.ChannelGrant{
+		{ID: 41, ChannelModelID: 31, ChannelKeyID: 21},
+		{ID: 42, ChannelModelID: 32, ChannelKeyID: 22},
+		{ID: 43, ChannelModelID: 33, ChannelKeyID: 23},
+	}
+	if err := database.Create(&grants).Error; err != nil {
+		t.Fatalf("create grants: %v", err)
+	}
+	if err := channelRefreshCache(context.Background()); err != nil {
+		t.Fatalf("refresh channel cache: %v", err)
+	}
+	config := model.DefaultGroupRelayConfigForMode(model.GroupModeScore)
+	config.AutoRouting = "shadow"
+	config.AutoContextOverrides = map[string]int{
+		"41": 6000, // <= suggested 6000 -> covered
+		"42": 7000, // between suggested 6000 and min failed 8000 -> review_margin
+	}
+	group, err := GroupCreate(&model.GroupCreateRequest{
+		Name:        "ctx-status-group",
+		Mode:        model.GroupModeScore,
+		RelayConfig: config,
+		Items: []model.GroupItemInput{
+			{ChannelGrantID: 41},
+			{ChannelGrantID: 42},
+			{ChannelGrantID: 43},
+		},
+	}, model.Scope{ID: 1, Role: model.RoleAdmin}, context.Background())
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	now := time.Now()
+	requests := []model.RelayRequest{
+		{ID: 501, UserID: 1, GroupID: group.ID, Status: "failed", StartedAt: now, PromptTokens: 8000, TargetModel: "model-a", AutoTask: "coding", AutoMode: "active"},
+		{ID: 502, UserID: 1, GroupID: group.ID, Status: "failed", StartedAt: now.Add(-time.Minute), PromptTokens: 8000, TargetModel: "model-a", AutoTask: "coding", AutoMode: "active"},
+		{ID: 503, UserID: 1, GroupID: group.ID, Status: "failed", StartedAt: now.Add(-2 * time.Minute), PromptTokens: 8000, TargetModel: "model-a", AutoTask: "coding", AutoMode: "active"},
+		{ID: 504, UserID: 1, GroupID: group.ID, Status: "failed", StartedAt: now.Add(-3 * time.Minute), PromptTokens: 8000, TargetModel: "model-a", AutoTask: "coding", AutoMode: "active"},
+	}
+	if err := database.Create(&requests).Error; err != nil {
+		t.Fatalf("create requests: %v", err)
+	}
+	attempts := []model.RelayRequestAttempt{
+		// #2001 has 2 samples (more than #2003), but is already covered so it must sort last.
+		{RequestID: 501, Round: 1, ChannelID: 11, ChannelCode: "#2001", TargetModel: "model-a", Status: "context_length", Decision: `{"mode":"score","reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+		{RequestID: 502, Round: 1, ChannelID: 11, ChannelCode: "#2001", TargetModel: "model-a", Status: "context_length", Decision: `{"mode":"score","reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+		{RequestID: 503, Round: 1, ChannelID: 12, ChannelCode: "#2002", TargetModel: "model-a", Status: "context_length", Decision: `{"mode":"score","reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+		{RequestID: 504, Round: 1, ChannelID: 13, ChannelCode: "#2003", TargetModel: "model-a", Status: "context_length", Decision: `{"mode":"score","reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`},
+	}
+	if err := database.Create(&attempts).Error; err != nil {
+		t.Fatalf("create attempts: %v", err)
+	}
+	summary, err := AutoRoutingAggregate(model.Scope{ID: 1, Role: model.RoleAdmin}, group.ID, 7)
+	if err != nil {
+		t.Fatalf("aggregate: %v", err)
+	}
+	if len(summary.ContextWindowHints) != 3 {
+		t.Fatalf("expected 3 hints, got %+v", summary.ContextWindowHints)
+	}
+	first := summary.ContextWindowHints[0]
+	if first.ChannelCode != "#2003" || first.ChannelGrantID != 43 ||
+		first.ConfiguredContextLength != 128000 || first.HasContextOverride ||
+		first.ConfigStatus != "exceeds_observed_failure" || first.SuggestedContextLength != 6000 {
+		t.Fatalf("unexpected first hint: %+v", first)
+	}
+	second := summary.ContextWindowHints[1]
+	if second.ChannelCode != "#2002" || second.ChannelGrantID != 42 ||
+		second.ConfiguredContextLength != 7000 || !second.HasContextOverride ||
+		second.ConfigStatus != "review_margin" {
+		t.Fatalf("unexpected second hint: %+v", second)
+	}
+	third := summary.ContextWindowHints[2]
+	if third.ChannelCode != "#2001" || third.ChannelGrantID != 41 ||
+		third.ConfiguredContextLength != 6000 || !third.HasContextOverride ||
+		third.ConfigStatus != "covered" {
+		t.Fatalf("unexpected third hint: %+v", third)
 	}
 }
 

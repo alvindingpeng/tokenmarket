@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,15 +66,22 @@ type AutoRoutingCostBandSummary struct {
 
 // AutoRoutingContextWindowHint 是上游上下文超限后对候选窗口的可执行复核建议。
 // PromptTokens 是失败尝试实际请求的输入长度，而不是目录预埋值；Samples 与
-// ObservedMaxInputTokens 只统计明确分类为 context 的失败，不把普通 400 混入。
+// ObservedMinInputTokens / ObservedMaxInputTokens 只统计明确分类为 context 的失败，
+// 不把普通 400 混入。SuggestedContextLength 以最小失败输入为紧上界保留 25% 安全余量。
 type AutoRoutingContextWindowHint struct {
-	Task                   string `json:"task"`
-	Model                  string `json:"model"`
-	ChannelCode            string `json:"channel_code"`
-	Samples                int64  `json:"samples"`
-	ObservedMaxInputTokens int64  `json:"observed_max_input_tokens"`
-	SuggestedContextLength int64  `json:"suggested_context_length"`
-	Reason                 string `json:"reason"`
+	Task                          string `json:"task"`
+	Model                         string `json:"model"`
+	ChannelCode                   string `json:"channel_code"`
+	ChannelGrantID                int    `json:"channel_grant_id,omitempty"`
+	Samples                       int64  `json:"samples"`
+	ObservedMinInputTokens        int64  `json:"observed_min_input_tokens"`
+	ObservedMaxInputTokens        int64  `json:"observed_max_input_tokens"`
+	ObservedMaxSuccessInputTokens int64  `json:"observed_max_success_input_tokens,omitempty"`
+	ConfiguredContextLength       int64  `json:"configured_context_length,omitempty"`
+	HasContextOverride            bool   `json:"has_context_override,omitempty"`
+	SuggestedContextLength        int64  `json:"suggested_context_length"`
+	ConfigStatus                  string `json:"config_status,omitempty"`
+	Reason                        string `json:"reason"`
 }
 
 // AutoRoutingModelRisk 是主动路由真实落地模型的样本级风险卡。
@@ -996,13 +1004,13 @@ func applyReadinessCandidateConfig(
 	scope model.Scope,
 	groupID int,
 	evidence map[string]*autoReadinessEvidence,
-) {
+) *model.Group {
 	if groupID <= 0 {
-		return
+		return nil
 	}
 	group, err := GroupGet(groupID, scope)
 	if err != nil {
-		return
+		return nil
 	}
 	verified := autoGrantSet(group.RelayConfig.AutoToolVerified)
 	for _, task := range model.AutoRoutingTasks {
@@ -1028,6 +1036,60 @@ func applyReadinessCandidateConfig(
 				actual.verifiedCandidates++
 			}
 		}
+	}
+	return &group
+}
+
+func autoEffectiveGroupItemContextLength(group *model.Group, item model.GroupItem) (int64, bool) {
+	limit := item.ContextLength
+	if limit == 0 {
+		limit = ModelReferenceGet(item.ModelName).ContextLength
+	}
+	if capability, ok := CapabilityGet(item.ModelName); ok &&
+		capability.Source == model.CapabilitySourceManual &&
+		strings.EqualFold(capability.Name, item.ModelName) &&
+		capability.Context > 0 {
+		limit = capability.Context
+	}
+	override := group.RelayConfig.AutoContextOverrides[strconv.Itoa(item.ChannelGrantID)]
+	if override > 0 {
+		return int64(override), true
+	}
+	return int64(limit), false
+}
+
+func matchContextWindowHintItem(group *model.Group, groupItemID, channelID int, channelCode, modelName string) (model.GroupItem, bool) {
+	if group == nil {
+		return model.GroupItem{}, false
+	}
+	if groupItemID > 0 {
+		for _, item := range group.Items {
+			if item.ID == groupItemID {
+				return item, true
+			}
+		}
+	}
+	for _, item := range group.Items {
+		if !strings.EqualFold(item.ModelName, modelName) {
+			continue
+		}
+		if (channelID > 0 && item.ChannelID == channelID) || (channelCode != "" && item.ChannelName == channelCode) {
+			return item, true
+		}
+	}
+	return model.GroupItem{}, false
+}
+
+func contextWindowHintStatusRank(status string) int {
+	switch status {
+	case "exceeds_observed_failure":
+		return 0
+	case "review_margin":
+		return 1
+	case "covered":
+		return 3
+	default:
+		return 2
 	}
 }
 
@@ -1145,16 +1207,20 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 	predictions := make(map[string]*predictionCount)
 	type contextWindowCount struct {
 		task, model, channelCode string
-		samples, maxInputTokens  int64
+		groupItemID, channelID   int
+		samples                  int64
+		minInputTokens           int64
+		maxInputTokens           int64
 	}
 	contextWindows := make(map[string]*contextWindowCount)
+	maxSuccessInputByWindow := make(map[string]int64)
 	contextWindowKey := func(task, model, channelCode string) string {
 		return task + "\x00" + model + "\x00" + channelCode
 	}
 	shadowPredictions := make(map[uint64]autoPredictionEvidence)
 	requestTasks := make(map[uint64]string)
 	readinessByTask := make(map[string]*autoReadinessEvidence)
-	applyReadinessCandidateConfig(scope, groupID, readinessByTask)
+	groupConfig := applyReadinessCandidateConfig(scope, groupID, readinessByTask)
 	for _, evidence := range readinessByTask {
 		evidence.requireMultiUserEvidence = scope.IsAdmin()
 	}
@@ -1301,10 +1367,24 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 				key := contextWindowKey(task, name, attempt.ChannelCode)
 				hint := contextWindows[key]
 				if hint == nil {
-					hint = &contextWindowCount{task: task, model: name, channelCode: attempt.ChannelCode}
+					hint = &contextWindowCount{
+						task:           task,
+						model:          name,
+						channelCode:    attempt.ChannelCode,
+						minInputTokens: request.PromptTokens,
+					}
 					contextWindows[key] = hint
 				}
 				hint.samples++
+				if attempt.GroupItemID > 0 {
+					hint.groupItemID = attempt.GroupItemID
+				}
+				if attempt.ChannelID > 0 {
+					hint.channelID = attempt.ChannelID
+				}
+				if request.PromptTokens < hint.minInputTokens {
+					hint.minInputTokens = request.PromptTokens
+				}
 				if request.PromptTokens > hint.maxInputTokens {
 					hint.maxInputTokens = request.PromptTokens
 				}
@@ -1312,6 +1392,12 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 		}
 		if attempt.Status == "success" {
 			mc.success++
+			if request.PromptTokens > 0 {
+				key := contextWindowKey(task, name, attempt.ChannelCode)
+				if request.PromptTokens > maxSuccessInputByWindow[key] {
+					maxSuccessInputByWindow[key] = request.PromptTokens
+				}
+			}
 			// Request-level cost is booked once for the final successful route.
 			// Counting it for every try of the same successful request would inflate
 			// the model's average cost when a retry preceded the successful attempt.
@@ -1549,16 +1635,37 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 			Reason: class, Count: count,
 		})
 	}
-	for _, count := range contextWindows {
+	for key, count := range contextWindows {
 		hint := AutoRoutingContextWindowHint{
-			Task: count.task, Model: count.model, ChannelCode: count.channelCode,
-			Samples: count.samples, ObservedMaxInputTokens: count.maxInputTokens,
+			Task:                          count.task,
+			Model:                         count.model,
+			ChannelCode:                   count.channelCode,
+			Samples:                       count.samples,
+			ObservedMinInputTokens:        count.minInputTokens,
+			ObservedMaxInputTokens:        count.maxInputTokens,
+			ObservedMaxSuccessInputTokens: maxSuccessInputByWindow[key],
 			Reason: "context_length_error_observed",
 		}
-		// 失败输入长度只证明这个长度无法由该渠道处理。建议值保留 25% 安全余量，
-		// 因为 token 估算与上游分词不完全一致；管理员确认后再写入上下文覆盖。
-		if count.maxInputTokens > 0 {
-			hint.SuggestedContextLength = max(1, count.maxInputTokens*3/4)
+		// 最小失败输入长度是该渠道真实窗口的最紧上界。建议值在此基础上保留 25% 安全余量，
+		// 避免把大样本失败抬高到已经触发超限的较小输入之上；管理员确认后再写入上下文覆盖。
+		if count.minInputTokens > 0 {
+			hint.SuggestedContextLength = max(1, count.minInputTokens*3/4)
+		}
+		if item, ok := matchContextWindowHintItem(groupConfig, count.groupItemID, count.channelID, count.channelCode, count.model); ok {
+			hint.ChannelGrantID = item.ChannelGrantID
+			configured, hasOverride := autoEffectiveGroupItemContextLength(groupConfig, item)
+			hint.ConfiguredContextLength = configured
+			hint.HasContextOverride = hasOverride
+			if configured > 0 && hint.SuggestedContextLength > 0 {
+				switch {
+				case configured <= hint.SuggestedContextLength:
+					hint.ConfigStatus = "covered"
+				case hint.ObservedMinInputTokens > 0 && configured >= hint.ObservedMinInputTokens:
+					hint.ConfigStatus = "exceeds_observed_failure"
+				default:
+					hint.ConfigStatus = "review_margin"
+				}
+			}
 		}
 		summary.ContextWindowHints = append(summary.ContextWindowHints, hint)
 	}
@@ -1597,8 +1704,16 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 		return summary.CostBands[i].Band < summary.CostBands[j].Band
 	})
 	sort.Slice(summary.ContextWindowHints, func(i, j int) bool {
+		leftRank := contextWindowHintStatusRank(summary.ContextWindowHints[i].ConfigStatus)
+		rightRank := contextWindowHintStatusRank(summary.ContextWindowHints[j].ConfigStatus)
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
 		if summary.ContextWindowHints[i].Samples != summary.ContextWindowHints[j].Samples {
 			return summary.ContextWindowHints[i].Samples > summary.ContextWindowHints[j].Samples
+		}
+		if summary.ContextWindowHints[i].ObservedMinInputTokens != summary.ContextWindowHints[j].ObservedMinInputTokens {
+			return summary.ContextWindowHints[i].ObservedMinInputTokens < summary.ContextWindowHints[j].ObservedMinInputTokens
 		}
 		if summary.ContextWindowHints[i].Task != summary.ContextWindowHints[j].Task {
 			return summary.ContextWindowHints[i].Task < summary.ContextWindowHints[j].Task

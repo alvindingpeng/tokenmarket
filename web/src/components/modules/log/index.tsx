@@ -39,9 +39,15 @@ interface AutoRoutingSummary {
         task: string;
         model: string;
         channel_code: string;
+        channel_grant_id?: number;
         samples: number;
+        observed_min_input_tokens: number;
         observed_max_input_tokens: number;
+        observed_max_success_input_tokens?: number;
+        configured_context_length?: number;
+        has_context_override?: boolean;
         suggested_context_length: number;
+        config_status?: string;
         reason: string;
     }[];
     sample_limit: number;
@@ -428,22 +434,67 @@ function AutoRoutingPanel() {
                     <h3 className="mb-1 text-sm font-semibold">{tr('contextWindowHintsTitle')}</h3>
                     <p className="mb-3 text-xs text-muted-foreground">{tr('contextWindowHintsHint')}</p>
                     <div className="space-y-2">
-                        {data.context_window_hints.slice(0, 10).map((item) => (
-                            <div key={`${item.task}-${item.model}-${item.channel_code}`} className="rounded-xl border border-border/40 px-3 py-2 text-xs">
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <span className="font-medium">{item.channel_code || '-'}</span>
-                                    <span className="font-mono">{item.model}</span>
-                                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">{tr('task.' + item.task)}</span>
+                        {data.context_window_hints.slice(0, 10).map((item) => {
+                            const minFailed = item.observed_min_input_tokens || item.observed_max_input_tokens;
+                            const range = minFailed !== item.observed_max_input_tokens
+                                ? `${minFailed}–${item.observed_max_input_tokens}`
+                                : `${minFailed}`;
+                            const statusClass =
+                                item.config_status === 'exceeds_observed_failure'
+                                    ? 'bg-destructive/10 text-destructive'
+                                    : item.config_status === 'review_margin'
+                                        ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                                        : item.config_status === 'covered'
+                                            ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                                            : 'bg-muted text-muted-foreground';
+                            return (
+                                <div key={`${item.task}-${item.model}-${item.channel_code}`} className="rounded-xl border border-border/40 px-3 py-2 text-xs">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className="font-medium">{item.channel_code || '-'}</span>
+                                        <span className="font-mono">{item.model}</span>
+                                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">{tr('task.' + item.task)}</span>
+                                        {item.channel_grant_id ? (
+                                            <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+                                                {tr('contextWindowHintGrant', { id: item.channel_grant_id })}
+                                            </span>
+                                        ) : null}
+                                        {item.config_status ? (
+                                            <span className={`rounded-full px-2 py-0.5 text-[10px] ${statusClass}`}>
+                                                {tr('contextWindowHintStatus.' + item.config_status)}
+                                            </span>
+                                        ) : null}
+                                    </div>
+                                    <p className="mt-1 text-muted-foreground tabular-nums">
+                                        {tr('contextWindowHintObserved', {
+                                            samples: item.samples,
+                                            range,
+                                            suggestion: item.suggested_context_length,
+                                        })}
+                                    </p>
+                                    {(item.configured_context_length || item.observed_max_success_input_tokens) ? (
+                                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground tabular-nums">
+                                            {item.configured_context_length ? (
+                                                <span>
+                                                    {tr(
+                                                        item.has_context_override
+                                                            ? 'contextWindowHintConfiguredOverride'
+                                                            : 'contextWindowHintConfiguredDefault',
+                                                        { tokens: item.configured_context_length }
+                                                    )}
+                                                </span>
+                                            ) : null}
+                                            {item.observed_max_success_input_tokens ? (
+                                                <span>
+                                                    {tr('contextWindowHintMaxSuccess', {
+                                                        tokens: item.observed_max_success_input_tokens,
+                                                    })}
+                                                </span>
+                                            ) : null}
+                                        </div>
+                                    ) : null}
                                 </div>
-                                <p className="mt-1 text-muted-foreground">
-                                    {tr('contextWindowHintObserved', {
-                                        samples: item.samples,
-                                        tokens: item.observed_max_input_tokens,
-                                        suggestion: item.suggested_context_length,
-                                    })}
-                                </p>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </section>
             )}
