@@ -94,6 +94,14 @@ interface AutoRoutingSummary {
             stream_started: number;
             stream_incomplete: number;
             stream_incomplete_rate: number;
+            earlier_stream_started: number;
+            earlier_stream_incomplete: number;
+            earlier_stream_incomplete_rate: number;
+            recent_stream_started: number;
+            recent_stream_incomplete: number;
+            recent_stream_incomplete_rate: number;
+            stream_trend: 'insufficient' | 'stable' | 'degrading';
+            stream_incomplete_rate_delta: number;
             eligible_for_promotion: boolean;
             reasons: string[];
         }[];
@@ -270,6 +278,14 @@ function AutoRoutingPanel() {
                                                             </span>
                                                         )}
                                                         {risk.stream_started > 0 && <span className={risk.state === 'blocked' ? 'text-destructive' : undefined}>{tr('modelRiskStream', { value: `${(risk.stream_incomplete_rate * 100).toFixed(1)}%`, count: risk.stream_incomplete })}</span>}
+                                                        {risk.stream_trend !== 'insufficient' && (
+                                                            <span className={risk.stream_trend === 'degrading' ? 'text-destructive' : undefined}>
+                                                                {tr('modelRiskStreamTrend', {
+                                                                    earlier: `${(risk.earlier_stream_incomplete_rate * 100).toFixed(1)}%`,
+                                                                    recent: `${(risk.recent_stream_incomplete_rate * 100).toFixed(1)}%`,
+                                                                })}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     {risk.reasons.length > 0 && (
                                                         <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{risk.reasons.map((reason) => tr('modelRiskReason.' + reason)).join(' · ')}</p>

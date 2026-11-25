@@ -92,6 +92,14 @@ type AutoRoutingModelRisk struct {
 	StreamStarted            int64    `json:"stream_started"`
 	StreamIncomplete         int64    `json:"stream_incomplete"`
 	StreamIncompleteRate     float64  `json:"stream_incomplete_rate"`
+	EarlierStreamStarted     int64    `json:"earlier_stream_started"`
+	EarlierStreamIncomplete  int64    `json:"earlier_stream_incomplete"`
+	EarlierStreamRate        float64  `json:"earlier_stream_incomplete_rate"`
+	RecentStreamStarted      int64    `json:"recent_stream_started"`
+	RecentStreamIncomplete   int64    `json:"recent_stream_incomplete"`
+	RecentStreamRate         float64  `json:"recent_stream_incomplete_rate"`
+	StreamTrend              string   `json:"stream_trend"`
+	StreamRateDelta          float64  `json:"stream_incomplete_rate_delta"`
 	EligibleForPromotion     bool     `json:"eligible_for_promotion"`
 	Reasons                  []string `json:"reasons"`
 }
@@ -298,9 +306,11 @@ type autoReadinessEvidence struct {
 }
 
 type autoModelOutcomeSample struct {
-	StartedAt    time.Time
-	Success      bool
-	FirstTokenMs int64
+	StartedAt        time.Time
+	Success          bool
+	FirstTokenMs     int64
+	StreamStarted    bool
+	StreamIncomplete bool
 }
 
 const autoReadinessMinimumBuckets = 4
@@ -312,6 +322,7 @@ const autoReadinessMaxSuccessRateDrop = 0.10
 const autoReadinessMaxFirstTokenP90Rise = 0.25
 const autoReadinessMaxFirstTokenP90Ms = 30000
 const autoReadinessMaxStreamIncompleteRate = 0.05
+const autoReadinessStreamRateRiseTrigger = 0.02
 
 const autoReadinessConfidenceZ = 1.96
 
@@ -399,7 +410,8 @@ func autoModelRiskFor(
 	earlierSamples, earlierSuccess, recentSamples, recentSuccess int64,
 	firstTokenDurations []float64,
 	earlierFirstToken, recentFirstToken []float64,
-	streamStarted, streamIncomplete int64,
+	streamStarted, streamIncomplete,
+	earlierStreamStarted, earlierStreamIncomplete, recentStreamStarted, recentStreamIncomplete int64,
 ) AutoRoutingModelRisk {
 	risk := AutoRoutingModelRisk{
 		Task: task, Model: model, ActiveRequests: attempts, Success: success,
@@ -426,6 +438,16 @@ func autoModelRiskFor(
 	}
 	if streamStarted > 0 {
 		risk.StreamIncompleteRate = float64(streamIncomplete) / float64(streamStarted)
+	}
+	risk.EarlierStreamStarted = earlierStreamStarted
+	risk.EarlierStreamIncomplete = earlierStreamIncomplete
+	risk.RecentStreamStarted = recentStreamStarted
+	risk.RecentStreamIncomplete = recentStreamIncomplete
+	if earlierStreamStarted > 0 {
+		risk.EarlierStreamRate = float64(earlierStreamIncomplete) / float64(earlierStreamStarted)
+	}
+	if recentStreamStarted > 0 {
+		risk.RecentStreamRate = float64(recentStreamIncomplete) / float64(recentStreamStarted)
 	}
 	if earlierSamples > 0 {
 		risk.EarlierSuccessRate = float64(earlierSuccess) / float64(earlierSamples)
@@ -461,6 +483,19 @@ func autoModelRiskFor(
 	} else {
 		risk.FirstTokenTrend = "insufficient"
 	}
+	if earlierStreamStarted >= autoReadinessMinimumTrendSamplesPerHalf &&
+		recentStreamStarted >= autoReadinessMinimumTrendSamplesPerHalf {
+		risk.StreamRateDelta = risk.RecentStreamRate - risk.EarlierStreamRate
+		if risk.RecentStreamRate > autoReadinessMaxStreamIncompleteRate &&
+			risk.RecentStreamRate >= risk.EarlierStreamRate+autoReadinessStreamRateRiseTrigger {
+			risk.StreamTrend = "degrading"
+			risk.Reasons = append(risk.Reasons, "model_recent_stream_incomplete_rise")
+		} else {
+			risk.StreamTrend = "stable"
+		}
+	} else {
+		risk.StreamTrend = "insufficient"
+	}
 	if attempts < autoReadinessMinimumModelSamples {
 		risk.State = "collect_samples"
 		risk.Reasons = append(risk.Reasons, "model_sample_below_10")
@@ -478,6 +513,8 @@ func autoModelRiskFor(
 	} else if risk.SuccessTrend == "declining" {
 		risk.State = "blocked"
 	} else if risk.FirstTokenTrend == "degrading" {
+		risk.State = "blocked"
+	} else if risk.StreamTrend == "degrading" {
 		risk.State = "blocked"
 	} else {
 		risk.State = "healthy"
@@ -542,7 +579,9 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 		risk := autoModelRiskFor(task, name, attempts, evidence.modelSuccessful[name],
 			trend.EarlierSamples, trend.EarlierSuccess, trend.RecentSamples, trend.RecentSuccess,
 			evidence.modelFirstToken[name], trend.EarlierFirstToken, trend.RecentFirstToken,
-			evidence.modelStreamStarted[name], evidence.modelStreamIncomplete[name])
+			evidence.modelStreamStarted[name], evidence.modelStreamIncomplete[name],
+			trend.EarlierStreamStarted, trend.EarlierStreamIncomplete,
+			trend.RecentStreamStarted, trend.RecentStreamIncomplete)
 		readiness.ModelRisks = append(readiness.ModelRisks, risk)
 		if risk.EligibleForPromotion {
 			readiness.ModelEligibleTeams++
@@ -676,12 +715,16 @@ func autoReadinessFor(task string, evidence autoReadinessEvidence) AutoRoutingRe
 // autoSplitOutcomeSamples 将一个模型按请求开始时间从早到晚分成前后两段。
 // 这用于识别“总体成功率仍高，但最近持续恶化”的模型，避免累计平均值掩盖退化。
 type autoModelTrendEvidence struct {
-	EarlierSamples    int64
-	EarlierSuccess    int64
-	RecentSamples     int64
-	RecentSuccess     int64
-	EarlierFirstToken []float64
-	RecentFirstToken  []float64
+	EarlierSamples          int64
+	EarlierSuccess          int64
+	RecentSamples           int64
+	RecentSuccess           int64
+	EarlierFirstToken       []float64
+	RecentFirstToken        []float64
+	EarlierStreamStarted    int64
+	EarlierStreamIncomplete int64
+	RecentStreamStarted     int64
+	RecentStreamIncomplete  int64
 }
 
 func autoSplitOutcomeSamples(samples []autoModelOutcomeSample) autoModelTrendEvidence {
@@ -707,6 +750,12 @@ func autoSplitOutcomeSamples(samples []autoModelOutcomeSample) autoModelTrendEvi
 		if sample.FirstTokenMs > 0 {
 			result.EarlierFirstToken = append(result.EarlierFirstToken, float64(sample.FirstTokenMs))
 		}
+		if sample.StreamStarted {
+			result.EarlierStreamStarted++
+			if sample.StreamIncomplete {
+				result.EarlierStreamIncomplete++
+			}
+		}
 	}
 	for _, sample := range sorted[middle:] {
 		if sample.Success {
@@ -714,6 +763,12 @@ func autoSplitOutcomeSamples(samples []autoModelOutcomeSample) autoModelTrendEvi
 		}
 		if sample.FirstTokenMs > 0 {
 			result.RecentFirstToken = append(result.RecentFirstToken, float64(sample.FirstTokenMs))
+		}
+		if sample.StreamStarted {
+			result.RecentStreamStarted++
+			if sample.StreamIncomplete {
+				result.RecentStreamIncomplete++
+			}
 		}
 	}
 	return result
@@ -1078,9 +1133,12 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 					readiness.modelSuccess[name]++
 					readiness.activeRequests++
 					readiness.modelTimeline[name] = append(readiness.modelTimeline[name], autoModelOutcomeSample{
-						StartedAt:    request.StartedAt,
-						Success:      request.Status == "success",
-						FirstTokenMs: attempt.FirstTokenMs,
+						StartedAt:     request.StartedAt,
+						Success:       request.Status == "success",
+						FirstTokenMs:  attempt.FirstTokenMs,
+						StreamStarted: attempt.FirstTokenMs > 0,
+						StreamIncomplete: attempt.FirstTokenMs > 0 &&
+							(request.Status == "failed" || request.Status == "canceled"),
 					})
 					if attempt.FirstTokenMs > 0 {
 						readiness.modelFirstToken[name] = append(readiness.modelFirstToken[name], float64(attempt.FirstTokenMs))

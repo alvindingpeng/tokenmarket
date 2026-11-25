@@ -281,29 +281,29 @@ func TestAutoRoutingReadinessHoldsAndScalesActiveSafely(t *testing.T) {
 }
 
 func TestAutoModelRiskScorecardsUseMinimumSamples(t *testing.T) {
-	collecting := autoModelRiskFor(model.AutoRoutingTaskCoding, "small-model", 9, 9, 4, 4, 5, 5, nil, nil, nil, 0, 0)
+	collecting := autoModelRiskFor(model.AutoRoutingTaskCoding, "small-model", 9, 9, 4, 4, 5, 5, nil, nil, nil, 0, 0, 0, 0, 0, 0)
 	if collecting.State != "collect_samples" || collecting.EligibleForPromotion ||
 		!slices.Contains(collecting.Reasons, "model_sample_below_10") {
 		t.Fatalf("small model sample should only collect evidence: %+v", collecting)
 	}
 
-	healthy := autoModelRiskFor(model.AutoRoutingTaskCoding, "healthy-model", 10, 9, 5, 4, 5, 5, nil, nil, nil, 0, 0)
+	healthy := autoModelRiskFor(model.AutoRoutingTaskCoding, "healthy-model", 10, 9, 5, 4, 5, 5, nil, nil, nil, 0, 0, 0, 0, 0, 0)
 	if healthy.State != "healthy" || !healthy.EligibleForPromotion {
 		t.Fatalf("90 percent success at ten samples should pass the risk threshold: %+v", healthy)
 	}
 
-	unstable := autoModelRiskFor(model.AutoRoutingTaskCoding, "unstable-model", 10, 8, 5, 4, 5, 4, nil, nil, nil, 0, 0)
+	unstable := autoModelRiskFor(model.AutoRoutingTaskCoding, "unstable-model", 10, 8, 5, 4, 5, 4, nil, nil, nil, 0, 0, 0, 0, 0, 0)
 	if unstable.State != "blocked" ||
 		!slices.Contains(unstable.Reasons, "model_success_below_85_percent") {
 		t.Fatalf("80 percent success at ten samples should block expansion: %+v", unstable)
 	}
 
-	atLimit := autoModelRiskFor(model.AutoRoutingTaskCoding, "stream-limit", 20, 20, 10, 10, 10, 10, nil, nil, nil, 20, 1)
+	atLimit := autoModelRiskFor(model.AutoRoutingTaskCoding, "stream-limit", 20, 20, 10, 10, 10, 10, nil, nil, nil, 20, 1, 10, 1, 10, 1)
 	if atLimit.State != "healthy" || !atLimit.EligibleForPromotion {
 		t.Fatalf("five percent incomplete streams are inside the configured limit: %+v", atLimit)
 	}
 
-	streaming := autoModelRiskFor(model.AutoRoutingTaskCoding, "stream-unstable", 20, 20, 10, 10, 10, 10, nil, nil, nil, 20, 2)
+	streaming := autoModelRiskFor(model.AutoRoutingTaskCoding, "stream-unstable", 20, 20, 10, 10, 10, 10, nil, nil, nil, 20, 2, 10, 0, 10, 2)
 	if streaming.State != "blocked" ||
 		!slices.Contains(streaming.Reasons, "model_stream_incomplete_above_5_percent") {
 		t.Fatalf("ten percent incomplete streams should block expansion: %+v", streaming)
@@ -313,20 +313,20 @@ func TestAutoModelRiskScorecardsUseMinimumSamples(t *testing.T) {
 	for i := range slow {
 		slow[i] = float64(autoReadinessMaxFirstTokenP90Ms + 100)
 	}
-	latency := autoModelRiskFor(model.AutoRoutingTaskCoding, "slow-model", 10, 10, 5, 5, 5, 5, slow, nil, nil, 0, 0)
+	latency := autoModelRiskFor(model.AutoRoutingTaskCoding, "slow-model", 10, 10, 5, 5, 5, 5, slow, nil, nil, 0, 0, 0, 0, 0, 0)
 	if latency.State != "blocked" ||
 		!slices.Contains(latency.Reasons, "model_first_token_p90_above_30_seconds") {
 		t.Fatalf("slow first-token tail should block expansion: %+v", latency)
 	}
 
-	declining := autoModelRiskFor(model.AutoRoutingTaskCoding, "declining-model", 10, 10, 5, 5, 5, 4, nil, nil, nil, 0, 0)
+	declining := autoModelRiskFor(model.AutoRoutingTaskCoding, "declining-model", 10, 10, 5, 5, 5, 4, nil, nil, nil, 0, 0, 0, 0, 0, 0)
 	if declining.State != "blocked" || declining.SuccessTrend != "declining" ||
 		declining.SuccessRateDelta > -autoReadinessMaxSuccessRateDrop ||
 		!slices.Contains(declining.Reasons, "model_recent_success_drop_above_10_percent") {
 		t.Fatalf("recent success deterioration should block expansion: %+v", declining)
 	}
 
-	insufficientTrend := autoModelRiskFor(model.AutoRoutingTaskCoding, "trend-small", 7, 6, 3, 3, 4, 3, nil, nil, nil, 0, 0)
+	insufficientTrend := autoModelRiskFor(model.AutoRoutingTaskCoding, "trend-small", 7, 6, 3, 3, 4, 3, nil, nil, nil, 0, 0, 0, 0, 0, 0)
 	if insufficientTrend.State != "collect_samples" || insufficientTrend.SuccessTrend != "insufficient" {
 		t.Fatalf("small trend halves must not claim deterioration: %+v", insufficientTrend)
 	}
@@ -334,7 +334,7 @@ func TestAutoModelRiskScorecardsUseMinimumSamples(t *testing.T) {
 	earlierLatency := []float64{200, 200, 200, 200, 200}
 	recentLatency := []float64{300, 300, 300, 300, 300}
 	degradedLatency := autoModelRiskFor(model.AutoRoutingTaskCoding, "latency-degraded", 10, 10,
-		5, 5, 5, 5, append(earlierLatency, recentLatency...), earlierLatency, recentLatency, 0, 0)
+		5, 5, 5, 5, append(earlierLatency, recentLatency...), earlierLatency, recentLatency, 0, 0, 0, 0, 0, 0)
 	if degradedLatency.State != "blocked" || degradedLatency.FirstTokenTrend != "degrading" ||
 		degradedLatency.FirstTokenP90DeltaMs != 100 ||
 		!slices.Contains(degradedLatency.Reasons, "model_first_token_p90_rise_above_25_percent") {
@@ -342,16 +342,30 @@ func TestAutoModelRiskScorecardsUseMinimumSamples(t *testing.T) {
 	}
 
 	stableLatency := autoModelRiskFor(model.AutoRoutingTaskCoding, "latency-stable", 10, 10,
-		5, 5, 5, 5, append(earlierLatency, recentLatency...), earlierLatency, earlierLatency, 0, 0)
+		5, 5, 5, 5, append(earlierLatency, recentLatency...), earlierLatency, earlierLatency, 0, 0, 0, 0, 0, 0)
 	if stableLatency.State != "healthy" || stableLatency.FirstTokenTrend != "stable" {
 		t.Fatalf("latency within the trend threshold should pass: %+v", stableLatency)
 	}
 
 	insufficientLatency := autoModelRiskFor(model.AutoRoutingTaskCoding, "latency-small", 8, 8,
 		4, 4, 4, 4, []float64{200, 200, 200, 200, 300, 300, 300, 300},
-		[]float64{200, 200, 200, 200}, []float64{300, 300, 300, 300}, 0, 0)
+		[]float64{200, 200, 200, 200}, []float64{300, 300, 300, 300}, 0, 0, 0, 0, 0, 0)
 	if insufficientLatency.FirstTokenTrend != "insufficient" || insufficientLatency.State != "collect_samples" {
 		t.Fatalf("small latency halves must not claim degradation: %+v", insufficientLatency)
+	}
+
+	degradedStream := autoModelRiskFor(model.AutoRoutingTaskCoding, "stream-trend-degraded", 10, 10,
+		5, 5, 5, 5, nil, nil, nil, 20, 2, 10, 0, 10, 2)
+	if degradedStream.State != "blocked" || degradedStream.StreamTrend != "degrading" ||
+		degradedStream.RecentStreamRate != 0.2 || degradedStream.StreamRateDelta != 0.2 ||
+		!slices.Contains(degradedStream.Reasons, "model_recent_stream_incomplete_rise") {
+		t.Fatalf("recent stream failures should block expansion: %+v", degradedStream)
+	}
+
+	stableStream := autoModelRiskFor(model.AutoRoutingTaskCoding, "stream-trend-stable", 10, 10,
+		5, 5, 5, 5, nil, nil, nil, 10, 0, 5, 0, 5, 0)
+	if stableStream.State != "healthy" || stableStream.StreamTrend != "stable" {
+		t.Fatalf("stable stream completion should pass: %+v", stableStream)
 	}
 }
 
@@ -468,7 +482,9 @@ func TestAutoRoutingModelRiskUsesTimeOrderedTrend(t *testing.T) {
 	}
 	risk := autoModelRiskFor(model.AutoRoutingTaskCoding, "ordered-model", 20, 15,
 		trend.EarlierSamples, trend.EarlierSuccess, trend.RecentSamples, trend.RecentSuccess,
-		nil, trend.EarlierFirstToken, trend.RecentFirstToken, 0, 0)
+		nil, trend.EarlierFirstToken, trend.RecentFirstToken, 0, 0,
+		trend.EarlierStreamStarted, trend.EarlierStreamIncomplete,
+		trend.RecentStreamStarted, trend.RecentStreamIncomplete)
 	if risk.EarlierSuccessRate != 1 || risk.RecentSuccessRate != 0.5 ||
 		risk.SuccessRateDelta != -0.5 || risk.SuccessTrend != "declining" || risk.State != "blocked" ||
 		!slices.Contains(risk.Reasons, "model_recent_success_drop_above_10_percent") {
@@ -595,6 +611,59 @@ func TestAutoRoutingModelFirstTokenTrendUsesChronologicalActiveEvidence(t *testi
 		risk.FirstTokenTrend != "degrading" || risk.FirstTokenP90DeltaMs != 200 ||
 		!slices.Contains(risk.Reasons, "model_first_token_p90_rise_above_25_percent") {
 		t.Fatalf("aggregate did not expose chronological first-token degradation: %+v", risk)
+	}
+}
+
+func TestAutoRoutingModelStreamTrendUsesChronologicalActiveEvidence(t *testing.T) {
+	if err := db.InitDB("sqlite", filepath.Join(t.TempDir(), "auto-routing-stream-trend.db"), false); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	now := time.Now()
+	requests := make([]model.RelayRequest, 0, 12)
+	attempts := make([]model.RelayRequestAttempt, 0, 12)
+	for i := 0; i < 12; i++ {
+		status := "success"
+		if i >= 8 {
+			status = "failed"
+		}
+		id := uint64(901 + i)
+		requests = append(requests, model.RelayRequest{
+			ID: id, UserID: 7, GroupID: 37, Status: status,
+			StartedAt:   now.Add(time.Duration(i) * time.Minute),
+			TargetModel: "model-a", AutoTask: "coding", AutoMode: "active",
+		})
+		attempts = append(attempts, model.RelayRequestAttempt{
+			RequestID: id, Round: 1, TargetModel: "model-a", Status: status,
+			FirstTokenMs: 100,
+			Decision:     `{"reason":"auto_coding","details":"{\"route_action\":\"active\"}"}`,
+		})
+	}
+	if err := db.GetDB().Create(&requests).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.GetDB().Create(&attempts).Error; err != nil {
+		t.Fatal(err)
+	}
+	summary, err := AutoRoutingAggregate(model.Scope{ID: 7, Role: model.RoleAdmin}, 37, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var coding *AutoRoutingReadiness
+	for i := range summary.Readiness {
+		if summary.Readiness[i].Task == model.AutoRoutingTaskCoding {
+			coding = &summary.Readiness[i]
+			break
+		}
+	}
+	if coding == nil || len(coding.ModelRisks) != 1 {
+		t.Fatalf("coding model risk card missing: %+v", coding)
+	}
+	risk := coding.ModelRisks[0]
+	if risk.EarlierStreamStarted != 6 || risk.EarlierStreamIncomplete != 0 ||
+		risk.RecentStreamStarted != 6 || risk.RecentStreamIncomplete != 4 ||
+		risk.StreamTrend != "degrading" ||
+		!slices.Contains(risk.Reasons, "model_recent_stream_incomplete_rise") {
+		t.Fatalf("aggregate did not expose chronological stream degradation: %+v", risk)
 	}
 }
 

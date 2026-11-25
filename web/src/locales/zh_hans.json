@@ -1383,6 +1383,7 @@
             "modelRiskFirstToken": "首 token P90 {value} · {samples} 个样本",
             "modelRiskFirstTokenTrend": "首 token P90 早期 {earlier} → 近期 {recent}",
             "modelRiskStream": "首字后未完成 {value} · {count} 个",
+            "modelRiskStreamTrend": "首字后未完成率 早期 {earlier} → 近期 {recent}",
             "readinessFirstToken": "首 token P90 {value} · {samples} 个样本",
             "readinessStream": "首字后未完成 {value} · {count} 个",
             "readinessRamp": "建议主动流量：{value}%",
@@ -1442,7 +1443,8 @@
                 "model_stream_incomplete_above_5_percent": "首字后未完成率超过 5%",
                 "model_first_token_p90_above_30_seconds": "首 token P90 超过 30 秒",
                 "model_recent_success_drop_above_10_percent": "近期成功率比早期下降至少 10 个百分点",
-                "model_first_token_p90_rise_above_25_percent": "近期首 token P90 比早期上升至少 25%"
+                "model_first_token_p90_rise_above_25_percent": "近期首 token P90 比早期上升至少 25%",
+                "model_recent_stream_incomplete_rise": "近期首字后未完成率明显上升并超过安全阈值"
             },
             "task": {
                 "general": "通用",
