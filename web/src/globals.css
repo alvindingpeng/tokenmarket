@@ -316,3 +316,41 @@ html.dark,
 @media (min-width: 1280px) {
   .theme-compact .workspace-market-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+
+/* The wallet has several fixed-height summary sections above its tabular content. */
+@media (max-width: 767px), (max-height: 600px) {
+  .wallet-page {
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+  .wallet-page > .flex-1 {
+    flex: 0 0 auto;
+    min-height: 16rem;
+  }
+}
+
+/* On short screens, keep filters and the list in one reachable scroll area. */
+@media (max-height: 600px) {
+  .responsive-page {
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+  .responsive-page > .h-full {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+  }
+  .responsive-page > .h-full > .flex-1,
+  .responsive-page > .h-full > .virtualized-grid {
+    flex: 0 0 auto;
+    min-height: 14rem;
+  }
+  .settings-page > .flex-1 {
+    height: auto;
+    overflow: visible;
+  }
+  .responsive-page .virtualized-grid {
+    min-height: 14rem;
+  }
+}

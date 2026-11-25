@@ -70,7 +70,7 @@ export function Setting() {
     const View = activeView ? SETTING_VIEWS[activeView] : null;
 
     return (
-        <div className="flex h-full min-h-0 flex-col">
+        <div className="settings-page flex h-full min-h-0 flex-col">
             <div
                 role="tablist"
                 aria-label={t('sections.label')}
