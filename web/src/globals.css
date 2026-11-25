@@ -369,3 +369,92 @@ html.dark,
     min-height: 14rem;
   }
 }
+
+/* 落地页科技感背景网格与光束动效 */
+.landing-tech-grid {
+  background-image:
+    linear-gradient(to right, rgba(56, 189, 248, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(56, 189, 248, 0.08) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 80% 65% at 50% 25%, #000 35%, transparent 100%);
+}
+
+@keyframes landing-beam-sweep {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(220%);
+    opacity: 0;
+  }
+}
+
+@keyframes landing-orb-pulse {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.45;
+  }
+  50% {
+    transform: translate3d(0, -14px, 0) scale(1.08);
+    opacity: 0.72;
+  }
+}
+
+@keyframes landing-packet-flow {
+  from {
+    stroke-dashoffset: 48;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes landing-scanline {
+  0% {
+    transform: translateY(-120%);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.5;
+  }
+  80% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: translateY(420%);
+    opacity: 0;
+  }
+}
+
+.landing-beam-animate {
+  animation: landing-beam-sweep 4.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.landing-orb-animate {
+  animation: landing-orb-pulse 8s ease-in-out infinite;
+}
+
+.landing-packet-animate {
+  stroke-dasharray: 8 16;
+  animation: landing-packet-flow 1.4s linear infinite;
+}
+
+.landing-scanline-animate {
+  animation: landing-scanline 6.5s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-beam-animate,
+  .landing-orb-animate,
+  .landing-packet-animate,
+  .landing-scanline-animate {
+    animation: none;
+  }
+}
