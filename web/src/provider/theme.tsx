@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
-type Theme = 'light' | 'dark' | 'system';
-type ResolvedTheme = Exclude<Theme, 'system'>;
+type Theme = 'light' | 'dark' | 'system' | 'white';
+type ResolvedTheme = 'light' | 'dark';
 
 interface ThemeContextValue {
     theme: Theme;
@@ -14,14 +14,14 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 export function ThemeProvider({ children }: { children: ReactNode }) {
     const [theme, setThemeState] = useState<Theme>(() => {
         const storedTheme = localStorage.getItem('theme');
-        return storedTheme === 'light' || storedTheme === 'dark' || storedTheme === 'system'
+        return storedTheme === 'light' || storedTheme === 'dark' || storedTheme === 'system' || storedTheme === 'white'
             ? storedTheme
             : 'system';
     });
     const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(() =>
         window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
     );
-    const resolvedTheme = theme === 'system' ? systemTheme : theme;
+    const resolvedTheme = theme === 'system' ? systemTheme : theme === 'dark' ? 'dark' : 'light';
 
     useEffect(() => {
         const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -37,16 +37,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         const root = document.documentElement;
         root.classList.toggle('dark', resolvedTheme === 'dark');
+        root.classList.toggle('theme-white', theme === 'white');
         root.style.colorScheme = resolvedTheme;
         document.querySelector('meta[name="theme-color"]')?.setAttribute(
             'content',
-            resolvedTheme === 'dark' ? '#413a2c' : '#eae9e3'
+            theme === 'white' ? '#f7f8fa' : resolvedTheme === 'dark' ? '#413a2c' : '#eae9e3'
         );
         localStorage.setItem('theme', theme);
     }, [resolvedTheme, theme]);
 
     const setTheme = (value: string) => {
-        if (value === 'light' || value === 'dark' || value === 'system') {
+        if (value === 'light' || value === 'dark' || value === 'system' || value === 'white') {
             setThemeState(value);
         }
     };

@@ -146,7 +146,7 @@ export function TicketDetail({ ticketId, admin, onBack }: TicketDetailProps) {
     const admins = admin ? assignableAdmins(users.data ?? []) : [];
 
     return (
-        <div className="flex h-full min-h-0 flex-col gap-3 pb-24 md:pb-0">
+        <div className="flex h-full min-h-0 flex-col gap-3">
             <div className="flex shrink-0 flex-wrap items-center gap-2">
                 {backButton}
                 <h2 className="min-w-0 flex-1 truncate text-lg font-bold text-card-foreground" title={ticket.title}>

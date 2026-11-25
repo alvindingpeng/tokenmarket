@@ -209,7 +209,7 @@ export function Market() {
                     <span>{t('refreshNote')}</span>
                 </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pb-24 pr-1 md:pb-4">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pr-1 md:pb-4">
                 {/* 空态要分清"筛完没有"和"本来就没有": 只看收藏时给一句可操作的话, 否则用户会以为页面坏了。 */}
                 {models.length === 0 ? (
                     <p className="py-16 text-center text-sm text-muted-foreground">

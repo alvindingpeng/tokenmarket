@@ -62,11 +62,11 @@ export function Total() {
     ];
 
     return (
-        <div className="grid grid-cols-1 @xl/home:grid-cols-2 @3xl/home:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 @xl/home:grid-cols-2 @5xl/home:grid-cols-4 gap-4">
             {cards.map((card) => (
                 <section
                     key={card.title}
-                    className="rounded-3xl bg-card border-border border p-5 text-card-foreground flex flex-row items-center gap-4"
+                    className="home-summary-card min-w-0 rounded-3xl bg-card border-border border p-4 sm:p-5 text-card-foreground flex flex-row items-center gap-4"
                 >
                     <div className="flex flex-col items-center justify-center gap-3 border-r border-border/50 pr-4 py-1 self-stretch">
                         <card.headerIcon className="w-4 h-4" />
@@ -87,7 +87,7 @@ export function Total() {
                                             {item.hint}
                                         </span>
                                     )}
-                                    <div className="flex items-baseline gap-1">
+                                    <div className="flex flex-wrap items-baseline gap-x-1">
                                         <span className="text-xl">
                                             <AnimatedNumber value={item.metric?.formatted.value} />
                                         </span>

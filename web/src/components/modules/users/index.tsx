@@ -602,7 +602,7 @@ export function Users() {
 
             <QuotaCard query={selfQuota} />
 
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-24 md:pb-4">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4">
                 {isLoading ? (
                     <div className="flex h-40 items-center justify-center">
                         <Loader2 className="size-6 animate-spin text-muted-foreground" />

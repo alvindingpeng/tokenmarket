@@ -109,6 +109,7 @@
         "tickets": "工單"
     },
     "toolbar": {
+        "search": "搜尋",
         "hideChannelName": "模糊渠道名稱",
         "share": "分享",
         "popover": {
@@ -222,6 +223,7 @@
         "appearance": "外觀",
         "system": "系統",
         "theme": {
+            "white": "白色範本",
             "label": "主題",
             "light": "淺色",
             "dark": "深色",

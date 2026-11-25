@@ -151,7 +151,7 @@ export function AnalyticsPage({ initialPreset = 'today' }: { initialPreset?: Pre
     }
 
     return (
-        <div data-testid="analytics-scroll" className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto overflow-x-hidden overscroll-contain pb-24 pr-1 md:pb-4">
+        <div data-testid="analytics-scroll" className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto overflow-x-hidden overscroll-contain pr-1 md:pb-4">
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
                 <h2 className="flex items-center gap-2 text-lg font-bold">
                     <BarChart3 className="size-5" />

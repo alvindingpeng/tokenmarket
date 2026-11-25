@@ -1,6 +1,6 @@
 import { lazy, Suspense, useDeferredValue, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useAuth } from '@/api/user';
 import {
     apiKeyDashboardStatsQueryOptions,
@@ -17,6 +17,7 @@ import { LandingPage } from '@/components/modules/landing';
 import { APIKeyDashboard } from '@/components/modules/apikey-dashboard';
 import { navItemsFor, useAppStore } from '@/stores/app';
 import { useApplySiteTitle } from '@/lib/site-title';
+import { useTheme } from '@/provider/theme';
 import { pageImports } from '@/lib/page-preload';
 
 // 页面和顶栏操作共用 pageImports 中的懒加载模块。
@@ -72,6 +73,9 @@ function GuestEntry() {
 export function AppContainer() {
     const { isAuthenticated, isAPIKeyAuth, isLoading: authLoading, role } = useAuth();
     const queryClient = useQueryClient();
+    const { theme } = useTheme();
+    const reduceMotion = useReducedMotion();
+    const usePageScale = !reduceMotion && theme !== 'white';
     // 浏览器标题在登录页也要生效, 所以挂在最外层而不是 AppShell 里。
     useApplySiteTitle();
     const authMode = isAPIKeyAuth ? 'apikey' : 'user'; // authMode 区分两种认证模式各自需要的初始 API。
@@ -166,20 +170,20 @@ export function AppContainer() {
                     <AnimatePresence mode="sync">
                         <motion.div
                             key={visibleItem}
-                            initial={{ opacity: 0, scale: 0.8 }}
+                            initial={reduceMotion ? false : { opacity: 0, ...(usePageScale && { scale: 0.8 }) }}
                             animate={{
                                 opacity: 1,
-                                scale: 1,
+                                ...(usePageScale && { scale: 1 }),
                                 transition: {
-                                    duration: 0.5,
+                                    duration: reduceMotion ? 0 : usePageScale ? 0.5 : 0.2,
                                     ease: [0.16, 1, 0.3, 1],
-                                    delay: 0.1,
+                                    delay: usePageScale ? 0.1 : 0,
                                 },
                             }}
                             exit={{
                                 opacity: 0,
-                                scale: 0.98,
-                                transition: { duration: 0.25 },
+                                ...(usePageScale && { scale: 0.98 }),
+                                transition: { duration: reduceMotion ? 0 : 0.25 },
                             }}
                             className="absolute inset-0 min-h-0 overflow-hidden"
                         >

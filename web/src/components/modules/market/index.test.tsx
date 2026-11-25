@@ -71,7 +71,7 @@ describe('Market 页面状态(mock SSR)', () => {
         expect(html).toContain('overflow-y-auto');
         expect(html).toContain('overscroll-contain');
         // 底部留白: 卡片贴到视口底边时最后一个展开按钮会压在安全区上。
-        expect(html).toContain('pb-24');
+        expect(html).toContain('pb-4');
     });
 
     it('渲染真值而不是加载占位', () => {

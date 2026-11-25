@@ -38,7 +38,7 @@ export function APIKeyDashboard() {
     const t = useTranslations('apiKeyDashboard');
     const { data, error, isLoading, refetch, isRefetching } = useAPIKeyDashboardStats();
     const { logout } = useAuthStore();
-    const { theme, setTheme } = useTheme();
+    const { resolvedTheme, setTheme } = useTheme();
     const { locale, setLocale } = useSettingStore();
     const [, copyToClipboard] = useCopyToClipboard();
     // 站点名称来自「系统信息配置」, 留空回退默认品牌; 密钥视图同样要显示自己站点的名字。
@@ -100,14 +100,14 @@ export function APIKeyDashboard() {
             key={model}
             variant="secondary"
             size="sm"
-            className="h-8 rounded-lg px-3 text-sm transition-colors hover:bg-primary hover:text-primary-foreground"
+            className="h-auto min-h-8 max-w-full whitespace-normal [overflow-wrap:anywhere] rounded-lg px-3 py-1 text-sm transition-colors hover:bg-primary hover:text-primary-foreground"
             onClick={() => void copyWithToast(model, model)}
         >
             {model}
         </Button>
     ));
 
-    const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
+    const toggleTheme = () => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark');
     const toggleLanguage = () => {
         if (locale === 'zh_hans') setLocale('zh_hant');
         else if (locale === 'zh_hant') setLocale('en');
@@ -115,7 +115,7 @@ export function APIKeyDashboard() {
     };
 
     return (
-        <div className="mx-auto max-w-6xl px-3 md:px-6">
+        <div className="w-full px-3 md:px-6">
             {/* Header - Consistent with app.tsx */}
             <header className="my-6 flex items-center gap-2 px-2">
                 <Logo size={48} />

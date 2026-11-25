@@ -97,7 +97,7 @@ export function Channel() {
 
     return (
         <div className="flex h-full min-h-0 flex-col gap-3">
-            <div className="flex shrink-0 items-center gap-1">
+            <div className="flex shrink-0 flex-wrap items-center gap-1">
                 {tabs.map(({ key, label, icon }) => (
                     <button
                         key={key}

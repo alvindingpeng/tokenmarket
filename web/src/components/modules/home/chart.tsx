@@ -1,4 +1,4 @@
-import { Fragment, useId, useMemo } from 'react';
+import { Fragment, useEffect, useId, useMemo, useState } from 'react';
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { useTranslations } from 'use-intl';
 import { useStatsHome, type StatsMetricsFormatted } from '@/api/stats';
@@ -24,7 +24,7 @@ export function StatsChart() {
     const t = useTranslations('home.chart');
     const tMetric = useTranslations('home.metric');
     // 订阅主题: 切换时 :root 上 --chart-* 的取值会变, 需重渲染以重新取色。
-    useTheme();
+    const { theme, resolvedTheme } = useTheme();
     // 屏内图表与分享舞台副本同时存在, 渐变 id 需唯一, 避免 url(#id) 指向另一份 defs。
     const gradientId = `fillMetric-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
 
@@ -50,9 +50,15 @@ export function StatsChart() {
         .slice(firstUsage === -1 ? Math.max(source.length - 1, 0) : Math.max(firstUsage - 1, 0))
         .map((item) => ({ date: item.label, value: item.stat[metricField].raw }));
 
-    const chartColor = getComputedStyle(document.documentElement)
-        .getPropertyValue(metricType === 'cost' ? '--chart-1' : metricType === 'count' ? '--chart-2' : '--chart-3')
-        .trim();
+    const [chartColor, setChartColor] = useState('');
+    useEffect(() => {
+        // Wait until the theme provider has applied its root class before reading the color.
+        const frame = requestAnimationFrame(() => {
+            const token = metricType === 'cost' ? '--chart-1' : metricType === 'count' ? '--chart-2' : '--chart-3';
+            setChartColor(getComputedStyle(document.documentElement).getPropertyValue(token).trim());
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [theme, resolvedTheme, metricType]);
     const periodLabel = { '1': t('period.today'), '7': t('period.last7Days'), '30': t('period.last30Days') }[period];
     const summary = [
         { label: t('totalRequests'), metric: formatCount(source.reduce((sum, item) => sum + item.stat.request_count.raw, 0)) },
@@ -63,13 +69,13 @@ export function StatsChart() {
     return (
         <div className="rounded-3xl bg-card border-border border pt-2 pb-0 text-card-foreground">
             <div className="px-4 pb-2 space-y-2">
-                <div className="flex justify-between items-center">
+                <div className="flex flex-wrap items-center justify-between gap-x-2">
                     <h3 className="font-semibold text-base">{t('title')}</h3>
                     <MetricTabs value={metricType} onChange={setMetricType} />
                 </div>
 
-                <div className="flex justify-between items-start">
-                    <div className="flex gap-2 text-sm">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="flex flex-wrap gap-2 text-sm">
                         {summary.map(({ label, metric }, index) => (
                             <Fragment key={label}>
                                 {index > 0 && <div className="w-px bg-border self-stretch" />}

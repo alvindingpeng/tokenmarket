@@ -114,7 +114,7 @@ export function Setting() {
                     </Suspense>
                 </div>
             ) : (
-                <div className="h-full min-h-0 flex-1 overflow-y-auto overscroll-contain pb-24 md:pb-4">
+                <div className="h-full min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4">
                     <div className="columns-1 gap-4 md:columns-2 *:mb-4 *:break-inside-avoid">
                         {active.cards.map((card) => (
                             <Fragment key={card}>{SETTING_CARDS[card]()}</Fragment>

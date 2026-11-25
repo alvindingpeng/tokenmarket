@@ -17,15 +17,17 @@
     <title>Switchyard</title>
     <script>
       const theme = localStorage.getItem('theme');
+      const isWhite = theme === 'white';
       const isDark =
         theme === 'dark' ||
-        ((theme === null || theme === 'system') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        ((theme !== 'light' && !isWhite) && window.matchMedia('(prefers-color-scheme: dark)').matches);
       const root = document.documentElement;
       root.classList.toggle('dark', isDark);
+      root.classList.toggle('theme-white', isWhite);
       root.style.colorScheme = isDark ? 'dark' : 'light';
       document.querySelector('meta[name="theme-color"]')?.setAttribute(
         'content',
-        isDark ? '#413a2c' : '#eae9e3',
+        isWhite ? '#f7f8fa' : isDark ? '#413a2c' : '#eae9e3',
       );
     </script>
     <style>
@@ -43,6 +45,10 @@
       html.dark #initial-loader {
         background: oklch(0.2809 0.0264 153.4040);
         color: oklch(0.6990 0.1292 144.8727);
+      }
+      html.theme-white #initial-loader {
+        background: #f7f8fa;
+        color: #4269c9;
       }
       #initial-loader.octo-hide {
         opacity: 0;

@@ -109,6 +109,7 @@
         "tickets": "Tickets"
     },
     "toolbar": {
+        "search": "Search",
         "hideChannelName": "Blur channel names",
         "share": "Share",
         "popover": {
@@ -222,6 +223,7 @@
         "appearance": "Appearance",
         "system": "System",
         "theme": {
+            "white": "White template",
             "label": "Theme",
             "light": "Light",
             "dark": "Dark",

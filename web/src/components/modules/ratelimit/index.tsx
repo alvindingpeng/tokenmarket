@@ -116,7 +116,7 @@ export default function RateLimit() {
     };
 
     return (
-        <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain pb-24 md:pb-0">
+        <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain">
             {quotaUserId > 0 && (
                 <QuotaCard
                     query={quotaUsage}

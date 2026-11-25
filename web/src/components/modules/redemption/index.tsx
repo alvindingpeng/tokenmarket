@@ -187,7 +187,7 @@ export default function Redemption() {
     };
 
     return (
-        <div className="flex h-full min-h-0 flex-col gap-3 pb-24 md:pb-0">
+        <div className="flex h-full min-h-0 flex-col gap-3">
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
                 <h2 className="flex items-center gap-2 text-lg font-bold text-card-foreground">
                     <Ticket className="size-5" />

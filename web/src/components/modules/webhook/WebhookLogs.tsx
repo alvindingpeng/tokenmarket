@@ -68,7 +68,7 @@ export function WebhookLogs({ userId, id, onBack }: { userId: number; id: number
     }
 
     return (
-        <div className="flex h-full min-h-0 flex-col gap-3 pb-24 md:pb-0">
+        <div className="flex h-full min-h-0 flex-col gap-3">
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
                 <h2 className="text-lg font-bold text-card-foreground">{t('logs.title')}</h2>
                 {backButton}

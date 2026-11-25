@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useTranslations } from 'use-intl';
 import Logo from '@/components/modules/logo';
 import { LanguageSwitch } from '@/components/language-switch';
@@ -11,6 +11,7 @@ import { BalanceLowBanner } from '@/components/balance-low-banner';
 import { navItemsFor, useAppStore } from '@/stores/app';
 import { useAuthStore } from '@/api/user';
 import { preloadPage } from '@/lib/page-preload';
+import { useTheme } from '@/provider/theme';
 import { cn } from '@/lib/utils';
 
 // AppShell 作为普通用户界面的稳定布局层，统一渲染导航、顶栏和页面内容。
@@ -19,6 +20,9 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
     const direction = useAppStore((state) => state.direction);
     const setCurrentPage = useAppStore((state) => state.setCurrentPage);
     const t = useTranslations('navbar');
+    const { theme } = useTheme();
+    const reduceMotion = useReducedMotion();
+    const titleOffset = reduceMotion || theme === 'white' ? 0 : 32;
     const role = useAuthStore((state) => state.role);
     const navItems = navItemsFor(role); // 导航按角色裁剪: 无权页面不出现在 Dock 中。
     const activeIndex = navItems.findIndex((route) => route.id === currentPage); // activeIndex 表示选中项在 Dock 中的位置。
@@ -36,14 +40,14 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
         const active = container.children[activeIndex + 2] as HTMLElement | undefined; // 前两个子节点是两个指示层。
         if (!active) return;
         if (container.scrollWidth > container.clientWidth) {
-            active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+            active.scrollIntoView({ behavior: reduceMotion ? 'instant' : 'smooth', block: 'nearest', inline: 'center' });
         } else if (container.scrollHeight > container.clientHeight) {
-            active.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+            active.scrollIntoView({ behavior: reduceMotion ? 'instant' : 'smooth', block: 'center', inline: 'nearest' });
         }
-    }, [activeIndex, currentPage]);
+    }, [activeIndex, currentPage, reduceMotion]);
 
     return (
-        <div className="mx-auto flex h-dvh max-w-6xl animate-in flex-col overflow-hidden px-3 fade-in duration-300 md:grid md:grid-cols-[auto_1fr] md:grid-rows-[auto_auto_minmax(0,1fr)] md:gap-x-6 md:px-6">
+        <div className="flex h-dvh w-full flex-col overflow-hidden px-3 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-300 md:grid md:grid-cols-[auto_minmax(0,1fr)] md:grid-rows-[auto_auto_minmax(0,1fr)] md:gap-x-6 md:px-6">
             {/* md:min-h-0 让这一列可以被压缩, 否则内容高度会把网格行撑破并被外层 overflow-hidden 裁掉。 */}
             {/* row-span-3 跨过头部与横幅槽: 横幅出现或消失都不改变导航的 sticky 容器高度。 */}
             <div className="relative z-50 md:row-span-3 md:min-h-0">
@@ -53,7 +57,7 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                     className={cn(
                         // 移动端: 贴底单行, 横向可滚动 —— 导航项多于屏宽时滑动查看, 绝不换行挤压或溢出屏幕。
                         // 垂直位置用安全区偏移, 避免被 iOS 底部横条与浏览器工具栏盖住。
-                        'fixed left-1/2 isolate flex -translate-x-1/2 animate-in items-center gap-1 p-2 fade-in zoom-in-95 duration-300',
+                        'fixed bottom-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] left-1/2 isolate flex -translate-x-1/2 items-center gap-1 p-2 motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 motion-safe:duration-300',
                         'max-w-[calc(100vw-1rem)] overflow-x-auto overflow-y-hidden overscroll-x-contain',
                         // 手机上不存在悬浮滚动条语义, 隐藏后仍可滑动。
                         'nav-scrollbar',
@@ -65,7 +69,6 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                         'md:max-h-[calc(100dvh-8rem)] md:overflow-y-auto md:overflow-x-hidden md:overscroll-contain md:nav-scrollbar',
                         'bg-sidebar text-sidebar-foreground border border-sidebar-border rounded-3xl',
                     )}
-                    style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)' }}
                     onMouseLeave={() => setIsNavHovered(false)}
                 >
                     <span
@@ -133,34 +136,34 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                 </nav>
             </div>
 
-            <header className="my-3 md:my-6 flex flex-none items-center gap-x-2 px-2">
-                <Logo size={48} />
+            <header className="my-3 flex min-w-0 flex-none flex-wrap items-center gap-x-2 gap-y-1 px-2 md:my-6">
+                <div className="w-9 shrink-0 [&>svg]:size-full sm:w-12"><Logo /></div>
                 <div className="min-w-0 flex-1 overflow-hidden">
                     <AnimatePresence mode="wait" custom={direction}>
                         <motion.div
                             key={currentPage}
                             custom={direction}
                             variants={{
-                                initial: (value: number) => ({ y: 32 * value, opacity: 0 }),
+                                initial: (value: number) => ({ y: titleOffset * value, opacity: 0 }),
                                 animate: { y: 0, opacity: 1 },
-                                exit: (value: number) => ({ y: -32 * value, opacity: 0 }),
+                                exit: (value: number) => ({ y: -titleOffset * value, opacity: 0 }),
                             }}
                             initial="initial"
                             animate="animate"
                             exit="exit"
-                            transition={{ duration: 0.3 }}
+                            transition={{ duration: reduceMotion ? 0 : 0.3 }}
                             className="flex items-center"
                         >
-                            <span className="mt-1 truncate text-3xl font-bold">
+                            <h1 className="min-w-0 truncate text-xl font-bold sm:text-3xl">
                                 {t(currentPage)}
-                            </span>
+                            </h1>
                         </motion.div>
                     </AnimatePresence>
                 </div>
-                {/* 语言切换常驻网页右上方: 任意页面一步切换语言, 不必进 设置 > 外观;
-                    页面操作按钮依次排在它左侧, 顶栏换行/截断规则保持不变。 */}
-                <div className="ml-auto flex items-center gap-x-2">
+                <div className="flex min-w-0 justify-end empty:hidden max-sm:order-last max-sm:w-full">
                     {actions}
+                </div>
+                <div className="ml-auto flex shrink-0 items-center gap-x-1 sm:gap-x-2">
                     {/* 通知铃铛常驻顶栏: 未读数让用户在不进页面就能发现余额/限流/审核事件。 */}
                     <NotificationBell />
                     <LanguageSwitch />
@@ -184,12 +187,8 @@ export function AppShell({ children, actions }: { children: ReactNode; actions?:
                 </div>
             </div>
 
-            {/* main 是页面内容的默认滚动容器: 各页只需管好自己的高度, 无需各自再造一个滚动层。 */}
-            {/* 底部内边距按导航高度 + 安全区留净空, 保证最后一行内容不被贴底导航盖住。 */}
-            <main
-                className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-contain px-1 pb-24 md:overflow-hidden md:px-0 md:pb-0"
-                style={{ scrollPaddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 5.5rem)' }}
-            >
+            {/* 在滚动容器之外预留 Dock 净空，绝对定位的页面及其内部滚动区也能避开导航。 */}
+            <main className="relative mb-[calc(env(safe-area-inset-bottom,0px)+4.5rem)] flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden md:mb-0">
                 {children}
             </main>
         </div>

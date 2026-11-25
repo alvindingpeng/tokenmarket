@@ -27,7 +27,7 @@ function RankCard({
 
     return (
         <div className="rounded-3xl bg-card text-card-foreground border-border border pt-2 px-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-x-2">
                 <h3 className="font-semibold text-base">{title}</h3>
                 <MetricTabs value={sortMode} onChange={onSortModeChange} />
             </div>

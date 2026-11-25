@@ -106,6 +106,39 @@ html.dark,
   --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
 }
 
+:root.theme-white {
+  --background: #f7f8fa;
+  --foreground: #171a20;
+  --card: #fff;
+  --card-foreground: #171a20;
+  --popover: #fff;
+  --popover-foreground: #171a20;
+  --primary: #4269c9;
+  --primary-foreground: #fff;
+  --secondary: #edf4ff;
+  --secondary-foreground: #243553;
+  --muted: #eef1f5;
+  --muted-foreground: #566275;
+  --accent: #4269c9;
+  --accent-foreground: #fff;
+  --border: #eaedf1;
+  --input: #b7c1cf;
+  --ring: #4269c9;
+  --chart-1: #4269c9;
+  --chart-2: #6c97df;
+  --chart-3: #86aae6;
+  --chart-4: #a6c3f7;
+  --chart-5: #dce9fa;
+  --sidebar: #fff;
+  --sidebar-foreground: #293547;
+  --sidebar-primary: #171a20;
+  --sidebar-primary-foreground: #fff;
+  --sidebar-accent: #edf4ff;
+  --sidebar-accent-foreground: #171a20;
+  --sidebar-border: #eaedf1;
+  --sidebar-ring: #4269c9;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -199,4 +232,29 @@ html.dark,
     bottom: 10%;
     left: 5%;
   }
+
+  .theme-white body::before,
+  .theme-white body::after {
+    content: none;
+  }
+}
+
+.theme-white nav.nav-scrollbar {
+  box-shadow: 0 12px 40px #26344b0a;
+}
+
+.theme-white .home-summary-card {
+  background: linear-gradient(115deg, #fff 35%, #edf4ff);
+  box-shadow: 0 8px 28px #2d4e760d;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .theme-white .home-summary-card {
+    animation: white-summary-arrive 0.6s ease-out both;
+  }
+}
+
+@keyframes white-summary-arrive {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }

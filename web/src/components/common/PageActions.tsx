@@ -140,9 +140,9 @@ export function PageActions({
     const searchInputRef = useRef<HTMLInputElement>(null);
 
     return (
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-1 sm:flex-nowrap sm:gap-2">
             {/* 搜索按钮/展开框 */}
-            <div className="relative h-9 w-9">
+            <div className={cn('relative h-9 w-9 shrink-0', searchExpanded && 'max-sm:w-39')}>
                 <div
                     className={cn(
                         'absolute right-0 top-0 flex h-9 items-center gap-2 overflow-hidden rounded-xl border transition-[width,padding,border-color] duration-200 ease-linear',
@@ -151,6 +151,8 @@ export function PageActions({
                 >
                     <button
                         type="button"
+                        aria-label={t('search')}
+                        aria-expanded={searchExpanded}
                         onClick={() => {
                             if (searchExpanded) return;
                             setSearchExpanded(true);
@@ -166,6 +168,7 @@ export function PageActions({
                     <input
                         ref={searchInputRef}
                         type="text"
+                        aria-label={t('search')}
                         value={searchTerm}
                         onChange={(event) => onSearchTermChange(event.target.value)}
                         tabIndex={searchExpanded ? 0 : -1}
