@@ -90,20 +90,22 @@ func clampPositive(value, fallback, maximum int) int {
 
 // 分组 Relay 的持久化配置，数据库中以 JSON 存储。
 type GroupRelayConfig struct {
-	AutoRouting             string         `json:"auto_routing,omitempty" binding:"omitempty,oneof=shadow active"`
-	AutoGeneral             string         `json:"auto_general,omitempty" binding:"max=512"`
-	AutoSummary             string         `json:"auto_summary,omitempty" binding:"max=512"`
-	AutoCoding              string         `json:"auto_coding,omitempty" binding:"max=512"`
-	AutoTool                string         `json:"auto_tool,omitempty" binding:"max=512"`
-	AutoExtract             string         `json:"auto_extract,omitempty" binding:"max=512"`
-	AutoToolVerified        string         `json:"auto_tool_verified,omitempty" binding:"max=512"`                     // 已由管理员验证多轮工具调用的授权 ID; 不从模型目录推断。
-	AutoContextOverrides    map[string]int `json:"auto_context_overrides,omitempty"`                                   // 按渠道授权 ID 覆盖上下文窗口, 用于修正缺失或错误的上游元数据。
-	AutoRampPercent         int            `json:"auto_ramp_percent,omitempty" binding:"omitempty,min=1,max=100"`      // 主动自动路由命中比例; 0 兼容旧配置并按 100% 运行。
-	AutoFallbackFailures    int            `json:"auto_fallback_failures,omitempty" binding:"omitempty,min=1,max=100"` // 连续失败多少次后暂时回退。
-	AutoFallbackSeconds     int            `json:"auto_fallback_seconds,omitempty" binding:"omitempty,min=1,max=3600"` // 回退持续时间。
-	AutoStickySeconds       int            `json:"auto_sticky_seconds,omitempty" binding:"omitempty,min=0,max=3600"`   // 同一 API Key 与任务成功后沿用上次成员的秒数; 0 关闭。
-	AutoFallbackNoCandidate bool           `json:"auto_fallback_no_candidate,omitempty"`                               // 质量门槛导致无候选时是否回退原评分策略。
-	AutoExplorePercent      int            `json:"auto_explore_percent,omitempty" binding:"omitempty,min=0,max=20"`    // 无已验证候选时按稳定分桶进行受控探索的比例; 0 关闭。
+	AutoRouting               string         `json:"auto_routing,omitempty" binding:"omitempty,oneof=shadow active"`
+	AutoResponsesToolVerified string         `json:"auto_responses_tool_verified,omitempty" binding:"max=512"`
+	AutoTaskRampPercent       map[string]int `json:"auto_task_ramp_percent,omitempty" binding:"omitempty,dive,min=0,max=100"`
+	AutoGeneral               string         `json:"auto_general,omitempty" binding:"max=512"`
+	AutoSummary               string         `json:"auto_summary,omitempty" binding:"max=512"`
+	AutoCoding                string         `json:"auto_coding,omitempty" binding:"max=512"`
+	AutoTool                  string         `json:"auto_tool,omitempty" binding:"max=512"`
+	AutoExtract               string         `json:"auto_extract,omitempty" binding:"max=512"`
+	AutoToolVerified          string         `json:"auto_tool_verified,omitempty" binding:"max=512"`                     // 已由管理员验证多轮工具调用的授权 ID; 不从模型目录推断。
+	AutoContextOverrides      map[string]int `json:"auto_context_overrides,omitempty"`                                   // 按渠道授权 ID 覆盖上下文窗口, 用于修正缺失或错误的上游元数据。
+	AutoRampPercent           int            `json:"auto_ramp_percent,omitempty" binding:"omitempty,min=1,max=100"`      // 主动自动路由命中比例; 0 兼容旧配置并按 100% 运行。
+	AutoFallbackFailures      int            `json:"auto_fallback_failures,omitempty" binding:"omitempty,min=1,max=100"` // 连续失败多少次后暂时回退。
+	AutoFallbackSeconds       int            `json:"auto_fallback_seconds,omitempty" binding:"omitempty,min=1,max=3600"` // 回退持续时间。
+	AutoStickySeconds         int            `json:"auto_sticky_seconds,omitempty" binding:"omitempty,min=0,max=3600"`   // 同一 API Key 与任务成功后沿用上次成员的秒数; 0 关闭。
+	AutoFallbackNoCandidate   bool           `json:"auto_fallback_no_candidate,omitempty"`                               // 质量门槛导致无候选时是否回退原评分策略。
+	AutoExplorePercent        int            `json:"auto_explore_percent,omitempty" binding:"omitempty,min=0,max=20"`    // 无已验证候选时按稳定分桶进行受控探索的比例; 0 关闭。
 	// 任务能力门槛与综合评分。门槛为 0 时完全沿用 v1.16.7 的“最低成本优先”行为；
 	// 设置门槛后，候选必须已经有管理员验证且达到该质量分，再按下面的权重综合选路。
 	AutoMinTaskScore                      int    `json:"auto_min_task_score,omitempty" binding:"omitempty,min=0,max=100"`
@@ -268,6 +270,15 @@ func NormalizeGroupRelayConfigForMode(config *GroupRelayConfig, mode GroupMode) 
 	config.ScoreLatencyWeight = min(max(config.ScoreLatencyWeight, 0), 100)
 	config.ScoreSuccessWeight = min(max(config.ScoreSuccessWeight, 0), 100)
 	config.AutoRampPercent = min(max(config.AutoRampPercent, 0), 100)
+	if len(config.AutoTaskRampPercent) > 0 {
+		ramps := make(map[string]int, len(AutoRoutingTasks))
+		for _, task := range AutoRoutingTasks {
+			if percent, ok := config.AutoTaskRampPercent[task]; ok {
+				ramps[task] = min(max(percent, 0), 100)
+			}
+		}
+		config.AutoTaskRampPercent = ramps
+	}
 	// Preserve zero as "use the runtime defaults", including for legacy rows.
 	// Normalization runs whenever an unrelated group setting is edited, so
 	// materializing these defaults would silently upgrade every save.
@@ -318,6 +329,7 @@ type Group struct {
 	AutoRequestCosts         map[int]float64  `json:"-" gorm:"-"`
 	AutoTaskScores           map[int]int      `json:"-" gorm:"-"`
 	AutoTaskVerified         map[int]bool     `json:"-" gorm:"-"`
+	AutoPerformancePenalty   map[int]float64  `json:"-" gorm:"-"`
 	RequestRoutingPreference string           `json:"-" gorm:"-"`                                                                                                       // 请求级偏好, 不持久化。
 	ID                       int              `json:"id" gorm:"primaryKey"`                                                                                             // 分组主键。
 	UserID                   uint             `json:"user_id" gorm:"uniqueIndex:idx_group_owner_name;not null;default:0"`                                               // 归属用户; 分组名在归属内唯一, 跨用户可重名。

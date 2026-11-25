@@ -2,9 +2,11 @@ package op
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/alvindingpeng/switchyard/internal/db"
@@ -17,6 +19,58 @@ var (
 	groupCache     = cache.New[int, model.Group](16) // 按主键保存完整分组配置。
 	groupNameIndex = cache.New[string, int](16)      // 归属+客户端模型名对应的分组主键; 分组名按归属唯一, 跨用户可重名。
 )
+
+var ErrContextOverrideConflict = errors.New("group member or context override changed")
+
+func GroupSaveContextOverride(ctx context.Context, scope model.Scope, groupID, grantID, expected, limit int) (*model.Group, error) {
+	if !scope.IsAdmin() || limit <= 0 || expected < 0 {
+		return nil, ErrContextOverrideConflict
+	}
+	key := strconv.Itoa(grantID)
+	var group model.Group
+	username := ""
+	if user, err := UserGetByID(scope.ID); err == nil {
+		username = user.Username
+	}
+	err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := db.AcquireWriteLock(tx); err != nil {
+			return err
+		}
+		if err := tx.Preload("Items").First(&group, groupID).Error; err != nil {
+			return err
+		}
+		if group.UserID != scope.ID || group.Mode != model.GroupModeScore || group.RelayConfig.AutoRouting == "" ||
+			!slices.ContainsFunc(group.Items, func(item model.GroupItem) bool { return item.ChannelGrantID == grantID }) {
+			return ErrContextOverrideConflict
+		}
+		current := group.RelayConfig.AutoContextOverrides[key]
+		if current != expected {
+			return ErrContextOverrideConflict
+		}
+		if current == limit {
+			return nil
+		}
+		if group.RelayConfig.AutoContextOverrides == nil {
+			group.RelayConfig.AutoContextOverrides = make(map[string]int)
+		}
+		group.RelayConfig.AutoContextOverrides[key] = limit
+		if err := tx.Model(&group).Select("relay_config").Updates(&group).Error; err != nil {
+			return err
+		}
+		return tx.Create(&model.AuditLog{
+			UserID: scope.ID, Username: username, Action: "group.context-override",
+			Target: fmt.Sprintf("group#%d grant#%d", groupID, grantID),
+			Detail: fmt.Sprintf("%d -> %d tokens", current, limit),
+		}).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	sortGroupItems(group.Items)
+	groupCache.Set(group.ID, group)
+	snapshot := groupSnapshot(group, scope)
+	return &snapshot, nil
+}
 
 // groupIndexKey 分组名索引键: 分组名在归属内唯一, 解析必须带归属。
 func groupIndexKey(userID uint, name string) string {

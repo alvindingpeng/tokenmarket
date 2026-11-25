@@ -62,6 +62,24 @@ func TestClassifyAutoCodingToolAndUnsupportedShapes(t *testing.T) {
 			want:     AutoTaskCoding,
 		},
 		{
+			name:     "anthropic native coding text",
+			body:     `{"system":[{"type":"text","text":"Be concise"}],"messages":[{"role":"user","content":[{"type":"text","text":"Fix this compile error"}]}]}`,
+			protocol: model.ProtocolAnthropicMessage,
+			want:     AutoTaskCoding,
+		},
+		{
+			name:     "responses full function history",
+			body:     `{"input":[{"type":"function_call","call_id":"call_1","name":"lookup","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`,
+			protocol: model.ProtocolOpenAIResponse,
+			want:     AutoTaskTool,
+		},
+		{
+			name:     "responses stored continuation requires affinity",
+			body:     `{"previous_response_id":"resp_1","input":"continue"}`,
+			protocol: model.ProtocolOpenAIResponse,
+			want:     AutoTaskUnsupported,
+		},
+		{
 			name:     "responses function output is unsupported",
 			body:     `{"input":[{"role":"user","content":[{"type":"input_text","text":"Continue"}]},{"type":"function_call_output","output":"ok"}]}`,
 			protocol: model.ProtocolOpenAIResponse,

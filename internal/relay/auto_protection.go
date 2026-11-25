@@ -67,6 +67,14 @@ func autoRampHit(groupID, keyID, userID, percent int) bool {
 	return bucket < percent
 }
 
+func autoTaskRampHit(group model.Group, task string, keyID int, userID uint) bool {
+	percent, configured := group.RelayConfig.AutoTaskRampPercent[task]
+	if !configured {
+		percent = group.RelayConfig.AutoRampPercent
+	}
+	return (!configured || percent > 0) && autoRampHit(group.ID, keyID, int(userID), percent)
+}
+
 func autoCircuitOpen(groupID int, task string) bool {
 	key := autoCircuitKey{groupID: groupID, task: task}
 	now := time.Now()
@@ -190,6 +198,7 @@ func autoExploreHit(groupID, keyID, userID, percent int, task string) bool {
 }
 
 func autoResetForGroup(groupID int) {
+	autoPerformanceReset(groupID)
 	autoCircuitMu.Lock()
 	for key := range autoCircuits {
 		if key.groupID == groupID {

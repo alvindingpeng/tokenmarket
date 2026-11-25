@@ -918,6 +918,24 @@ export function GroupEditor({
                                                 return (
                                                     <Field key={key}>
                                                         <FieldLabel>{t(`form.${label}`)}</FieldLabel>
+                                                        <Input
+                                                            type="number"
+                                                            min={0}
+                                                            max={100}
+                                                            aria-label={t('form.autoTaskRamp', { task: t(`form.${label}`) })}
+                                                            placeholder={t('form.autoTaskRampDefault', { percent: relayConfig.auto_ramp_percent || 100 })}
+                                                            value={relayConfig.auto_task_ramp_percent?.[key === 'auto_extract' ? 'extraction' : key.slice(5)] ?? ''}
+                                                            onChange={(event) => {
+                                                                const value = event.target.value;
+                                                                const task = key === 'auto_extract' ? 'extraction' : key.slice(5);
+                                                                setRelayConfig((previous) => {
+                                                                    const ramps = { ...previous.auto_task_ramp_percent };
+                                                                    if (value === '') delete ramps[task];
+                                                                    else ramps[task] = Math.min(100, Math.max(0, Math.trunc(Number(value))));
+                                                                    return { ...previous, auto_task_ramp_percent: ramps };
+                                                                });
+                                                            }}
+                                                        />
                                                         {selectedMembers.length === 0 ? (
                                                             <p className="text-xs text-muted-foreground">{t('form.autoNoMembers')}</p>
                                                         ) : (
@@ -958,6 +976,15 @@ export function GroupEditor({
                                                                                         }))}
                                                                                     />
                                                                                     {t('form.autoToolVerified')}
+                                                                                    <Checkbox
+                                                                                        aria-label={t('form.autoResponsesToolVerified')}
+                                                                                        checked={parseAutoGrantIDs(relayConfig.auto_responses_tool_verified).includes(member.channel_grant_id)}
+                                                                                        onCheckedChange={(value) => setRelayConfig((previous) => ({
+                                                                                            ...previous,
+                                                                                            auto_responses_tool_verified: autoGrantIDsValue(selectedMembers, toggleAutoGrantID(parseAutoGrantIDs(previous.auto_responses_tool_verified), member.channel_grant_id, value === true)),
+                                                                                        }))}
+                                                                                    />
+                                                                                    {t('form.autoResponsesToolVerified')}
                                                                                 </span>
                                                                             )}
                                                                         </label>

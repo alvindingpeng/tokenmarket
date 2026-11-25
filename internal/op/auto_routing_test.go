@@ -276,6 +276,22 @@ func TestAutoRoutingContextWindowHintsReflectConfiguredStatusAndOrder(t *testing
 		third.ConfigStatus != "covered" {
 		t.Fatalf("unexpected third hint: %+v", third)
 	}
+	scope := model.Scope{ID: 1, Role: model.RoleAdmin}
+	updated, err := GroupSaveContextOverride(context.Background(), scope, group.ID, 43, 0, 6000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.RelayConfig.AutoContextOverrides["43"] != 6000 ||
+		updated.RelayConfig.AutoContextOverrides["42"] != 7000 || updated.RelayConfig.AutoRouting != "shadow" {
+		t.Fatalf("unexpected saved configuration: %+v", updated.RelayConfig)
+	}
+	if _, err := GroupSaveContextOverride(context.Background(), scope, group.ID, 43, 0, 5000); err != ErrContextOverrideConflict {
+		t.Fatalf("stale confirmation error = %v", err)
+	}
+	var auditCount int64
+	if err := database.Model(&model.AuditLog{}).Where("action = ?", "group.context-override").Count(&auditCount).Error; err != nil || auditCount != 1 {
+		t.Fatalf("audit entries = %d, error = %v", auditCount, err)
+	}
 }
 
 func TestAutoRoutingReadinessStartsConservatively(t *testing.T) {

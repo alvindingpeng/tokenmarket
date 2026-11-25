@@ -15,6 +15,8 @@ type autoTask struct {
 	input, output int64
 	confidence    int
 	rule          string
+	protocol      model.Protocol
+	stream        bool
 }
 
 const (
@@ -46,8 +48,8 @@ var (
 // unsupported instead of being routed to a plausible-looking but incompatible
 // model.
 func classifyAuto(body []byte, protocol model.Protocol, input, output int64) autoTask {
-	task := autoTask{name: AutoTaskUnsupported, input: input, output: output, confidence: 100, rule: "unsupported_shape"}
-	if protocol != model.ProtocolOpenAIChatCompletion && protocol != model.ProtocolOpenAIResponse {
+	task := autoTask{name: AutoTaskUnsupported, input: input, output: output, confidence: 100, rule: "unsupported_shape", protocol: protocol}
+	if protocol != model.ProtocolOpenAIChatCompletion && protocol != model.ProtocolOpenAIResponse && protocol != model.ProtocolAnthropicMessage {
 		task.rule = "unsupported_protocol"
 		return task
 	}
@@ -58,12 +60,17 @@ func classifyAuto(body []byte, protocol model.Protocol, input, output int64) aut
 			ToolCalls    json.RawMessage `json:"tool_calls"`
 			FunctionCall json.RawMessage `json:"function_call"`
 		}
-		Tools        json.RawMessage
-		Functions    json.RawMessage
-		ToolChoice   json.RawMessage `json:"tool_choice"`
-		FunctionCall json.RawMessage `json:"function_call"`
-		Input        json.RawMessage
-		Text         struct {
+		Tools              json.RawMessage
+		Functions          json.RawMessage
+		ToolChoice         json.RawMessage `json:"tool_choice"`
+		FunctionCall       json.RawMessage `json:"function_call"`
+		Input              json.RawMessage
+		System             json.RawMessage
+		Instructions       json.RawMessage
+		Stream             bool
+		PreviousResponseID string `json:"previous_response_id"`
+		Conversation       json.RawMessage
+		Text               struct {
 			Format struct {
 				Type   string
 				Schema json.RawMessage `json:"schema"`
@@ -78,6 +85,11 @@ func classifyAuto(body []byte, protocol model.Protocol, input, output int64) aut
 	if json.Unmarshal(body, &request) != nil ||
 		(len(request.Modalities) != 0 && (len(request.Modalities) != 1 || request.Modalities[0] != "text")) {
 		task.rule = "unsupported_multimodal_or_invalid"
+		return task
+	}
+	task.stream = request.Stream
+	if protocol == model.ProtocolOpenAIResponse && (request.PreviousResponseID != "" || nonEmptyJSON(request.Conversation)) {
+		task.rule = "unsupported_response_state"
 		return task
 	}
 
@@ -111,12 +123,13 @@ func classifyAuto(body []byte, protocol model.Protocol, input, output int64) aut
 		}
 	}
 	if protocol == model.ProtocolOpenAIResponse {
-		inputText, ok := autoResponseInputText(request.Input)
+		inputText, inputTools, ok := autoResponseInputText(request.Input)
 		if !ok {
 			task.rule = "unsupported_response_input"
 			return task
 		}
-		if strings.TrimSpace(inputText) != "" {
+		hasTools = hasTools || inputTools
+		if strings.TrimSpace(inputText) != "" || inputTools {
 			hasInput = true
 			textParts = append(textParts, inputText)
 			intentParts = append(intentParts, inputText)
@@ -126,24 +139,34 @@ func classifyAuto(body []byte, protocol model.Protocol, input, output int64) aut
 		task.rule = "empty_or_unsupported_input"
 		return task
 	}
-	var nonASCII int64
-	for _, value := range body {
-		if value >= 128 {
-			nonASCII++
-		}
+	task.input = 32
+	for _, message := range request.Messages {
+		text, _ := autoText(message.Content)
+		task.input += 8 + autoTextTokens(text) + autoTextTokens(string(message.ToolCalls)) + autoTextTokens(string(message.FunctionCall))
 	}
-	task.input = max(input, (int64(len(body))-nonASCII)/4+nonASCII+32)
+	for _, value := range []json.RawMessage{request.System, request.Instructions, request.Tools, request.Functions, request.ToolChoice, request.FunctionCall, request.Input, request.Text.Format.Schema, request.ResponseFormat.Schema} {
+		task.input += autoTextTokens(string(value))
+	}
 	last := lastUserText(request.Messages)
 	if protocol == model.ProtocolOpenAIResponse {
 		last = lastResponseUserText(request.Input)
 	}
 	if hasTools {
-		// The pilot currently promises round-trip compatibility for OpenAI Chat
-		// function calls. Responses requests that merely contain tool markers are
-		// left unsupported until its continuation semantics have dedicated coverage.
-		if protocol == model.ProtocolOpenAIResponse {
-			task.rule = "unsupported_responses_tools"
+		if protocol == model.ProtocolAnthropicMessage {
+			task.rule = "unsupported_anthropic_tools"
 			return task
+		}
+		if protocol == model.ProtocolOpenAIResponse && nonEmptyJSON(request.Tools) {
+			var tools []struct{ Type string }
+			if json.Unmarshal(request.Tools, &tools) != nil {
+				return task
+			}
+			for _, tool := range tools {
+				if tool.Type != "function" {
+					task.rule = "unsupported_responses_tool_type"
+					return task
+				}
+			}
 		}
 		task.name = AutoTaskTool
 		task.confidence = 100
@@ -190,6 +213,18 @@ func classifyAuto(body []byte, protocol model.Protocol, input, output int64) aut
 	return task
 }
 
+func autoTextTokens(value string) int64 {
+	var ascii, other int64
+	for _, char := range value {
+		if char < 128 {
+			ascii++
+		} else {
+			other++
+		}
+	}
+	return (ascii+2)/3 + 2*other
+}
+
 func nonEmptyJSON(value json.RawMessage) bool {
 	trimmed := strings.TrimSpace(string(value))
 	return boundaryValue(trimmed)
@@ -227,37 +262,48 @@ func autoText(raw json.RawMessage) (string, bool) {
 	return strings.Join(texts, "\n"), true
 }
 
-func autoResponseInputText(raw json.RawMessage) (string, bool) {
+func autoResponseInputText(raw json.RawMessage) (string, bool, bool) {
 	if len(raw) == 0 || string(raw) == "null" {
-		return "", true
+		return "", false, true
 	}
 	var input string
 	if json.Unmarshal(raw, &input) == nil {
-		return input, true
+		return input, false, true
 	}
 	var parts []struct {
-		Role    string
-		Type    string
-		Content json.RawMessage
-		Text    string
+		Role             string
+		Type             string
+		Content          json.RawMessage
+		Text             string
+		CallID           string `json:"call_id"`
+		EncryptedContent string `json:"encrypted_content"`
 	}
 	if json.Unmarshal(raw, &parts) != nil {
-		return "", false
+		return "", false, false
 	}
 	var texts []string
+	hasTools := false
+	calls := make(map[string]bool)
 	for _, part := range parts {
+		if part.Type == "reasoning" && part.EncryptedContent != "" {
+			continue
+		}
 		if part.Type == "function_call" || part.Type == "function_call_output" {
-			// The pilot has no Responses continuation/function-output
-			// round-trip coverage. Refuse this shape instead of converting only
-			// the visible text and dropping the call state.
-			return "", false
+			if part.CallID == "" || (part.Type == "function_call_output" && !calls[part.CallID]) {
+				return "", false, false
+			}
+			if part.Type == "function_call" {
+				calls[part.CallID] = true
+			}
+			hasTools = true
+			continue
 		}
 		itemType := part.Type
 		if itemType == "" {
 			itemType = "message"
 		}
 		if itemType != "message" || (part.Role != "user" && part.Role != "assistant" && part.Role != "system" && part.Role != "developer") {
-			return "", false
+			return "", false, false
 		}
 		rawContent := part.Content
 		if len(rawContent) == 0 && part.Text != "" {
@@ -265,11 +311,11 @@ func autoResponseInputText(raw json.RawMessage) (string, bool) {
 		}
 		text, ok := autoText(rawContent)
 		if !ok {
-			return "", false
+			return "", false, false
 		}
 		texts = append(texts, text)
 	}
-	return strings.Join(texts, "\n"), true
+	return strings.Join(texts, "\n"), hasTools, true
 }
 
 func lastUserText(messages []struct {
@@ -379,7 +425,11 @@ func analyzeAutoCandidates(group model.Group, task autoTask) autoCandidateResult
 		qualified = config.AutoCoding
 	case AutoTaskTool:
 		qualified = config.AutoTool
-		for _, value := range strings.Split(config.AutoToolVerified, ",") {
+		verifiedGrants := config.AutoToolVerified
+		if task.protocol == model.ProtocolOpenAIResponse {
+			verifiedGrants = config.AutoResponsesToolVerified
+		}
+		for _, value := range strings.Split(verifiedGrants, ",") {
 			if id, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && id > 0 {
 				verified[id] = true
 			}
@@ -400,6 +450,7 @@ func analyzeAutoCandidates(group model.Group, task autoTask) autoCandidateResult
 	group.AutoRequestCosts = make(map[int]float64, len(items))
 	group.AutoTaskScores = make(map[int]int, len(items))
 	group.AutoTaskVerified = make(map[int]bool, len(items))
+	group.AutoPerformancePenalty = make(map[int]float64, len(items))
 	var excluded []model.RelayRouteCandidate
 	var qualityRejected, unverified int
 	var exploreCandidates []model.GroupItem
@@ -441,6 +492,7 @@ func analyzeAutoCandidates(group model.Group, task autoTask) autoCandidateResult
 		group.AutoRequestCosts[item.ID] = (float64(task.input)*item.UserPrice.Input + float64(task.output)*item.UserPrice.Output) / 1e6
 		group.AutoTaskScores[item.ID] = taskScore
 		group.AutoTaskVerified[item.ID] = hasTaskCapability && taskCapability.Verified
+		group.AutoPerformancePenalty[item.ID] = autoPerformancePenalty(group.ID, item.ID, task)
 	}
 	// 受控探索只考虑通过协议、上下文、渠道形态等安全过滤、但缺质量证据的文本任务成员。
 	// 工具任务不进入探索池，因为工具 -- 多轮往返不是价格或样本数量能替代的能力验证。
@@ -530,6 +582,9 @@ func autoExclusion(item model.GroupItem, task autoTask, qualified, toolVerified 
 	var grant model.ChannelGrant
 	switch task.name {
 	case AutoTaskCoding:
+		if task.protocol == model.ProtocolAnthropicMessage {
+			break
+		}
 		if item.Protocols&(model.ProtocolOpenAIChatCompletion|model.ProtocolOpenAIResponse) == 0 {
 			return "auto_protocol_incompatible"
 		}
@@ -547,11 +602,16 @@ func autoExclusion(item model.GroupItem, task autoTask, qualified, toolVerified 
 		if !toolVerified {
 			return "auto_tool_unverified"
 		}
-		// The pilot only accepts native Chat-Completions for tool round trips.
 		required = model.ProtocolOpenAIChatCompletion
+		if task.protocol == model.ProtocolOpenAIResponse {
+			required = model.ProtocolOpenAIResponse
+		}
 		if item.Protocols&required == 0 {
 			return "auto_protocol_incompatible"
 		}
+	}
+	if task.protocol == model.ProtocolAnthropicMessage {
+		required = model.ProtocolAnthropicMessage
 	}
 	if grant.ID == 0 {
 		var err error

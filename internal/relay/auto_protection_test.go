@@ -2,9 +2,38 @@ package relay
 
 import (
 	"testing"
+	"time"
 
 	"github.com/alvindingpeng/switchyard/internal/model"
 )
+
+func TestAutoTaskRampAndPerformanceIsolation(t *testing.T) {
+	group := model.Group{ID: 904, RelayConfig: model.GroupRelayConfig{
+		AutoTaskRampPercent: map[string]int{AutoTaskCoding: 0}, AutoRampPercent: 100,
+	}}
+	t.Cleanup(func() { ResetAutoState(group.ID) })
+	if autoTaskRampHit(group, AutoTaskCoding, 1, 1) || !autoTaskRampHit(group, AutoTaskGeneral, 1, 1) {
+		t.Fatal("explicit zero must be local to the configured task")
+	}
+	task := autoTask{name: AutoTaskCoding, input: 20_000, stream: true, protocol: model.ProtocolOpenAIResponse}
+	for sample := 0; sample < 5; sample++ {
+		recordAutoPerformance(group, 1, task, "", true, 31*time.Second)
+	}
+	if got := autoPerformancePenalty(group.ID, 1, task); got >= 1 || got < 0.5 {
+		t.Fatalf("slow stream penalty = %v", got)
+	}
+	recordAutoPerformance(group, 1, task, ErrorClassContext, false, 0)
+	if got := autoPerformancePenalty(group.ID, 1, task); got != 0.5 {
+		t.Fatalf("context failure penalty = %v", got)
+	}
+	if autoPerformancePenalty(group.ID, 2, task) != 1 {
+		t.Fatal("unrelated member inherited a penalty")
+	}
+	task.input = 100
+	if autoPerformancePenalty(group.ID, 1, task) != 1 {
+		t.Fatal("short requests inherited a long-input penalty")
+	}
+}
 
 func TestAutoRampZeroPreservesLegacyActiveBehaviorAndBucketsSafely(t *testing.T) {
 	// Existing active configurations predate auto_ramp_percent. Their omitted

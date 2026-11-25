@@ -69,11 +69,14 @@ type AutoRoutingCostBandSummary struct {
 // ObservedMinInputTokens / ObservedMaxInputTokens 只统计明确分类为 context 的失败，
 // 不把普通 400 混入。SuggestedContextLength 以最小失败输入为紧上界保留 25% 安全余量。
 type AutoRoutingContextWindowHint struct {
+	GroupID                       int    `json:"group_id"`
+	GroupItemID                   int    `json:"group_item_id,omitempty"`
 	Task                          string `json:"task"`
 	Model                         string `json:"model"`
 	ChannelCode                   string `json:"channel_code"`
 	ChannelGrantID                int    `json:"channel_grant_id,omitempty"`
 	Samples                       int64  `json:"samples"`
+	EstimatedSamples              int64  `json:"estimated_samples,omitempty"`
 	ObservedMinInputTokens        int64  `json:"observed_min_input_tokens"`
 	ObservedMaxInputTokens        int64  `json:"observed_max_input_tokens"`
 	ObservedMaxSuccessInputTokens int64  `json:"observed_max_success_input_tokens,omitempty"`
@@ -485,20 +488,7 @@ func autoFailureClassCounts(counts map[string]int64) []AutoRoutingReasonSummary 
 	return result
 }
 
-func autoInputCostBand(promptTokens int64) string {
-	switch {
-	case promptTokens <= 0:
-		return ""
-	case promptTokens < 2000:
-		return "short"
-	case promptTokens < 16000:
-		return "medium"
-	case promptTokens < 64000:
-		return "long"
-	default:
-		return "xlong"
-	}
-}
+var autoInputCostBand = model.AutoInputBand
 
 func autoModelBandRiskFor(task, model, band string, evidence *autoModelBandEvidence) AutoRoutingModelBandRisk {
 	risk := AutoRoutingModelBandRisk{
@@ -1062,22 +1052,23 @@ func matchContextWindowHintItem(group *model.Group, groupItemID, channelID int, 
 	if group == nil {
 		return model.GroupItem{}, false
 	}
-	if groupItemID > 0 {
-		for _, item := range group.Items {
-			if item.ID == groupItemID {
-				return item, true
-			}
-		}
-	}
+	var matched model.GroupItem
 	for _, item := range group.Items {
-		if !strings.EqualFold(item.ModelName, modelName) {
+		if item.ModelName != modelName || (groupItemID > 0 && item.ID != groupItemID) {
 			continue
 		}
-		if (channelID > 0 && item.ChannelID == channelID) || (channelCode != "" && item.ChannelName == channelCode) {
-			return item, true
+		if channelID > 0 && channelID != item.ChannelID {
+			continue
 		}
+		if groupItemID == 0 && channelID == 0 && (channelCode == "" || item.ChannelName != channelCode) {
+			continue
+		}
+		if matched.ID != 0 {
+			return model.GroupItem{}, false
+		}
+		matched = item
 	}
-	return model.GroupItem{}, false
+	return matched, matched.ID != 0
 }
 
 func contextWindowHintStatusRank(status string) int {
@@ -1166,6 +1157,10 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 	if err := db.GetDB().Where("request_id IN ?", ids).Order("request_id ASC, round ASC").Find(&attempts).Error; err != nil {
 		return summary, fmt.Errorf("failed to aggregate relay attempts: %w", err)
 	}
+	finalAttemptRound := make(map[uint64]int, len(requests))
+	for _, attempt := range attempts {
+		finalAttemptRound[attempt.RequestID] = attempt.Round
+	}
 
 	type taskCount struct {
 		requests, success, failed                        int64
@@ -1205,18 +1200,18 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 		predictedCost, actualCost float64
 	}
 	predictions := make(map[string]*predictionCount)
+	type contextWindowIdentity struct {
+		task, model, channelCode        string
+		groupID, groupItemID, channelID int
+	}
 	type contextWindowCount struct {
-		task, model, channelCode string
-		groupItemID, channelID   int
-		samples                  int64
-		minInputTokens           int64
-		maxInputTokens           int64
+		samples        int64
+		estimated      int64
+		minInputTokens int64
+		maxInputTokens int64
 	}
-	contextWindows := make(map[string]*contextWindowCount)
-	maxSuccessInputByWindow := make(map[string]int64)
-	contextWindowKey := func(task, model, channelCode string) string {
-		return task + "\x00" + model + "\x00" + channelCode
-	}
+	contextWindows := make(map[contextWindowIdentity]*contextWindowCount)
+	maxSuccessInputByWindow := make(map[contextWindowIdentity]int64)
 	shadowPredictions := make(map[uint64]autoPredictionEvidence)
 	requestTasks := make(map[uint64]string)
 	readinessByTask := make(map[string]*autoReadinessEvidence)
@@ -1310,6 +1305,10 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 		}
 		if json.Unmarshal([]byte(request.RouteEvents), &routeEvents) == nil {
 			for _, event := range routeEvents {
+				if event.Phase == "auto_classification" && strings.HasPrefix(event.Reason, "unsupported_") {
+					events[event.Reason]++
+					continue
+				}
 				if event.Phase != "auto_shadow" && event.Phase != "auto_routing" {
 					continue
 				}
@@ -1352,6 +1351,7 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 			models[key] = mc
 		}
 		mc.attempts++
+		windowKey := contextWindowIdentity{task, name, attempt.ChannelCode, request.GroupID, attempt.GroupItemID, attempt.ChannelID}
 		mc.duration += attempt.DurationMs
 		mc.durations = append(mc.durations, float64(attempt.DurationMs))
 		if attempt.FirstTokenMs > 0 {
@@ -1363,40 +1363,40 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 			class := autoAttemptErrorClass(attempt.Status)
 			errorsByTask[modelKey(task, class)]++
 			errorClassCounts[class]++
-			if class == "context" && request.PromptTokens > 0 {
-				key := contextWindowKey(task, name, attempt.ChannelCode)
-				hint := contextWindows[key]
-				if hint == nil {
-					hint = &contextWindowCount{
-						task:           task,
-						model:          name,
-						channelCode:    attempt.ChannelCode,
-						minInputTokens: request.PromptTokens,
+			if class == "context" {
+				tokens := request.PromptTokens
+				estimated := tokens <= 0 || attempt.Round != finalAttemptRound[attempt.RequestID]
+				if estimated {
+					var details struct {
+						EstimatedInput int64 `json:"estimated_input"`
 					}
-					contextWindows[key] = hint
+					if json.Unmarshal([]byte(decision.Details), &details) == nil {
+						tokens = details.EstimatedInput
+					} else {
+						tokens = 0
+					}
 				}
-				hint.samples++
-				if attempt.GroupItemID > 0 {
-					hint.groupItemID = attempt.GroupItemID
-				}
-				if attempt.ChannelID > 0 {
-					hint.channelID = attempt.ChannelID
-				}
-				if request.PromptTokens < hint.minInputTokens {
-					hint.minInputTokens = request.PromptTokens
-				}
-				if request.PromptTokens > hint.maxInputTokens {
-					hint.maxInputTokens = request.PromptTokens
+				if tokens > 0 {
+					hint := contextWindows[windowKey]
+					if hint == nil {
+						hint = &contextWindowCount{
+							minInputTokens: tokens,
+						}
+						contextWindows[windowKey] = hint
+					}
+					hint.samples++
+					if estimated {
+						hint.estimated++
+					}
+					hint.minInputTokens = min(hint.minInputTokens, tokens)
+					hint.maxInputTokens = max(hint.maxInputTokens, tokens)
 				}
 			}
 		}
 		if attempt.Status == "success" {
 			mc.success++
-			if request.PromptTokens > 0 {
-				key := contextWindowKey(task, name, attempt.ChannelCode)
-				if request.PromptTokens > maxSuccessInputByWindow[key] {
-					maxSuccessInputByWindow[key] = request.PromptTokens
-				}
+			if request.Status == "success" && attempt.Round == finalAttemptRound[attempt.RequestID] {
+				maxSuccessInputByWindow[windowKey] = max(maxSuccessInputByWindow[windowKey], request.PromptTokens)
 			}
 			// Request-level cost is booked once for the final successful route.
 			// Counting it for every try of the same successful request would inflate
@@ -1637,21 +1637,24 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 	}
 	for key, count := range contextWindows {
 		hint := AutoRoutingContextWindowHint{
-			Task:                          count.task,
-			Model:                         count.model,
-			ChannelCode:                   count.channelCode,
+			GroupID:                       key.groupID,
+			GroupItemID:                   key.groupItemID,
+			Task:                          key.task,
+			Model:                         key.model,
+			ChannelCode:                   key.channelCode,
 			Samples:                       count.samples,
+			EstimatedSamples:              count.estimated,
 			ObservedMinInputTokens:        count.minInputTokens,
 			ObservedMaxInputTokens:        count.maxInputTokens,
 			ObservedMaxSuccessInputTokens: maxSuccessInputByWindow[key],
-			Reason: "context_length_error_observed",
+			Reason:                        "context_length_error_observed",
 		}
 		// 最小失败输入长度是该渠道真实窗口的最紧上界。建议值在此基础上保留 25% 安全余量，
 		// 避免把大样本失败抬高到已经触发超限的较小输入之上；管理员确认后再写入上下文覆盖。
 		if count.minInputTokens > 0 {
-			hint.SuggestedContextLength = max(1, count.minInputTokens*3/4)
+			hint.SuggestedContextLength = max(1, count.minInputTokens/4*3+count.minInputTokens%4*3/4)
 		}
-		if item, ok := matchContextWindowHintItem(groupConfig, count.groupItemID, count.channelID, count.channelCode, count.model); ok {
+		if item, ok := matchContextWindowHintItem(groupConfig, key.groupItemID, key.channelID, key.channelCode, key.model); ok {
 			hint.ChannelGrantID = item.ChannelGrantID
 			configured, hasOverride := autoEffectiveGroupItemContextLength(groupConfig, item)
 			hint.ConfiguredContextLength = configured
@@ -1721,7 +1724,14 @@ func AutoRoutingAggregate(scope model.Scope, groupID, days int) (AutoRoutingSumm
 		if summary.ContextWindowHints[i].Model != summary.ContextWindowHints[j].Model {
 			return summary.ContextWindowHints[i].Model < summary.ContextWindowHints[j].Model
 		}
-		return summary.ContextWindowHints[i].ChannelCode < summary.ContextWindowHints[j].ChannelCode
+		left, right := summary.ContextWindowHints[i], summary.ContextWindowHints[j]
+		if left.ChannelCode != right.ChannelCode {
+			return left.ChannelCode < right.ChannelCode
+		}
+		if left.GroupID != right.GroupID {
+			return left.GroupID < right.GroupID
+		}
+		return left.GroupItemID < right.GroupItemID
 	})
 	sort.Slice(summary.Predictions, func(i, j int) bool {
 		return summary.Predictions[i].Compared > summary.Predictions[j].Compared

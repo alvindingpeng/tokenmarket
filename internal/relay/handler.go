@@ -358,6 +358,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			if autoMode != "" && !observed {
 				observedTask = classifyAuto(raw.Body, requestProtocol, estIn, estOut)
 				request.setAutoObservation(observedTask, autoMode)
+				if observedTask.name == AutoTaskUnsupported {
+					request.addRouteEvent("auto_classification", observedTask.rule)
+				}
 				observed = true
 				observedNow = true
 				if autoMode == "active" {
@@ -439,7 +442,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 						request.setAutoDecisionState("fallback")
 					}
 					request.addRouteEvent("auto_routing", "auto_circuit_open")
-				} else if !autoRampHit(group.ID, c.GetInt("api_key_id"), int(keyUserID), group.RelayConfig.AutoRampPercent) {
+				} else if !autoTaskRampHit(group, task.name, c.GetInt("api_key_id"), keyUserID) {
 					if task.name == AutoTaskUnsupported || task.name == AutoTaskTool {
 						request.setAutoDecisionState("reject")
 					} else {
@@ -635,6 +638,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				decision.Details = autoDecisionDetailsJSON(observedTask, nil, detailsCandidates, action, stickyDetails)
 			} else if autoMode == "shadow" {
 				decision.Candidates = append(decision.Candidates, shadowExcluded...)
+				decision.Details = autoDecisionDetailsJSON(observedTask, nil, nil, "", nil)
 			} else if autoRouteFallback {
 				decision.Details = autoDecisionDetailsJSON(observedTask, nil, autoExcluded, "fallback", nil)
 				request.addRouteEvent("auto_routing", "auto_fallback_no_candidate")
@@ -919,6 +923,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				mediaOneShot := dispatched && isMediaProtocol(requestProtocol)
 				// 按错误分类决定重试/换渠道/透传: 语义(code/type/文本)优先、状态码兜底, 规则见 upstream_error.go。
 				class, ruleName := classifyUpstreamErrorForChannel(err, channel.Dialect)
+				if dispatched && observed && ctx.Err() == nil && roundCtx.Err() != context.Canceled {
+					recordAutoPerformance(group, item.ID, observedTask, class, false, 0)
+				}
 				request.addRouteEvent("error_class", ruleName)
 				// 记录本轮上游调用已经结束及其失败原因。
 				request.finishRound(err.Error(), attemptStatusOf(err))
@@ -1103,6 +1110,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			roundWaitTime := time.Since(roundStartedAt).Milliseconds() // 流式响应只统计等待首帧的时间。
 			// 首帧只保存延迟, 不代表流已成功。评分与熔断恢复必须等完整终态。
 			recordSuccess := func() {
+				if observed {
+					recordAutoPerformance(group, item.ID, observedTask, "", true, request.FirstTokenDuration)
+				}
 				recordRouteSuccess(group, item.ID)
 				// 记录成员运行指标(首响应耗时与成功), 供延迟/成功率/综合评分策略排名。
 				recordMemberMetric(group.ID, item.ID, channelModel.ID, group.RelayConfig.MetricWindowSize, roundWaitTime, true)
@@ -1287,6 +1297,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					releaseRouteProbe(group, item.ID)
 				} else {
 					class, ruleName := classifyUpstreamErrorForChannel(err, channel.Dialect)
+					if observed {
+						recordAutoPerformance(group, item.ID, observedTask, class, false, request.FirstTokenDuration)
+					}
 					request.addRouteEvent("error_class", ruleName)
 					switch class {
 					case ErrorClassRate:

@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { useTranslations } from 'use-intl';
 import { Activity, ChevronLeft, ChevronRight, Download, Loader2, Logs, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { useAuthStore } from '@/api/user';
 import { apiRequest } from '@/api/client';
 import { useGroupList, type Group } from '@/api/group';
 import { routeEventText, routeReasonText } from './reason';
@@ -36,11 +37,14 @@ interface AutoRoutingSummary {
     error_class_counts: { reason: string; count: number }[];
     cost_bands: { task: string; band: string; requests: number; success: number; avg_prompt_tokens: number; avg_cost_usd: number; p90_cost_usd: number }[];
     context_window_hints: {
+        group_id?: number;
+        group_item_id?: number;
         task: string;
         model: string;
         channel_code: string;
         channel_grant_id?: number;
         samples: number;
+        estimated_samples?: number;
         observed_min_input_tokens: number;
         observed_max_input_tokens: number;
         observed_max_success_input_tokens?: number;
@@ -163,6 +167,7 @@ function AutoRoutingPanel() {
     const [days, setDays] = useState(7);
     const groups = useGroupList();
     const [groupID, setGroupID] = useState(0);
+    const role = useAuthStore((state) => state.role);
     const groupOptions = useMemo(() => (groups.data ?? []).filter((group: Group) => group.mode === 'score' && group.relay_config.auto_routing), [groups.data]);
     const summary = useQuery({
         queryKey: ['logs', 'auto-routing', 'summary', days, groupID],
@@ -170,6 +175,18 @@ function AutoRoutingPanel() {
         refetchInterval: 15 * 1000,
     });
     const data = summary.data;
+    const applyOverride = useMutation({
+        mutationFn: ({ groupId, grantId, expected, limit }: { groupId: number; grantId: number; expected: number; limit: number }) =>
+            apiRequest(`/api/v1/group/context-override/${groupId}`, {
+                method: 'POST',
+                body: { channel_grant_id: grantId, expected_override: expected, context_length: limit },
+            }),
+        onSuccess: () => {
+            toast.success(tr('contextWindowSaved'));
+            void summary.refetch();
+        },
+        onError: (error) => toast.error(error.message),
+    });
     if (summary.isLoading) return <div className="flex h-full items-center justify-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>;
     if (summary.isError || !data) return <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground"><Activity className="size-6" /><span>{tr('loadFailed')}</span></div>;
     return (
@@ -385,6 +402,16 @@ function AutoRoutingPanel() {
                     </div>
                 </section>
             )}
+            {data.events.some((event) => event.reason.startsWith('unsupported_')) && (
+                <section className="rounded-2xl border border-border/60 bg-card p-4">
+                    <h3 className="mb-2 text-sm font-semibold">{tr('unsupportedShapes')}</h3>
+                    {data.events.filter((event) => event.reason.startsWith('unsupported_')).map((event) => (
+                        <div key={event.reason} className="flex justify-between gap-3 py-1 text-xs">
+                            <span className="font-mono">{event.reason}</span><span className="tabular-nums">{event.count}</span>
+                        </div>
+                    ))}
+                </section>
+            )}
             {(data.exclusions.length > 0 || data.events.length > 0) && (
                 <div className="grid gap-3 lg:grid-cols-2">
                     <section className="rounded-2xl border border-border/60 bg-card p-4"><h3 className="mb-3 text-sm font-semibold">{tr('exclusionsTitle')}</h3><div className="space-y-1">{data.exclusions.slice(0, 10).map((item) => <div key={item.reason} className="flex justify-between gap-3 text-xs"><span className="text-muted-foreground">{routeReasonText(t, item.reason)}</span><span className="font-mono">{item.count}</span></div>)}</div></section>
@@ -448,7 +475,7 @@ function AutoRoutingPanel() {
                                             ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
                                             : 'bg-muted text-muted-foreground';
                             return (
-                                <div key={`${item.task}-${item.model}-${item.channel_code}`} className="rounded-xl border border-border/40 px-3 py-2 text-xs">
+                                <div key={JSON.stringify([item.group_id, item.group_item_id, item.task, item.model, item.channel_code])} className="rounded-xl border border-border/40 px-3 py-2 text-xs">
                                     <div className="flex flex-wrap items-center gap-2">
                                         <span className="font-medium">{item.channel_code || '-'}</span>
                                         <span className="font-mono">{item.model}</span>
@@ -471,6 +498,7 @@ function AutoRoutingPanel() {
                                             suggestion: item.suggested_context_length,
                                         })}
                                     </p>
+                                    {Boolean(item.estimated_samples) && <p className="mt-1 text-muted-foreground">{tr('contextWindowEstimated', { count: item.estimated_samples ?? 0 })}</p>}
                                     {(item.configured_context_length || item.observed_max_success_input_tokens) ? (
                                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground tabular-nums">
                                             {item.configured_context_length ? (
@@ -491,6 +519,18 @@ function AutoRoutingPanel() {
                                                 </span>
                                             ) : null}
                                         </div>
+                                    ) : null}
+                                    {role === 'admin' && groupID > 0 && item.channel_grant_id && item.suggested_context_length > 0 &&
+                                      (item.config_status === 'exceeds_observed_failure' || item.config_status === 'review_margin') &&
+                                      item.suggested_context_length >= (item.observed_max_success_input_tokens ?? 0) ? (
+                                        <Button size="sm" variant="outline" className="mt-2" disabled={applyOverride.isPending} onClick={() => {
+                                            const grantId = item.channel_grant_id;
+                                            if (grantId && window.confirm(tr('contextWindowConfirm', {
+                                                model: item.model, grant: grantId, tokens: item.suggested_context_length,
+                                            }))) {
+                                                applyOverride.mutate({ groupId: groupID, grantId, expected: item.has_context_override ? item.configured_context_length ?? 0 : 0, limit: item.suggested_context_length });
+                                            }
+                                        }}>{tr('contextWindowApply')}</Button>
                                     ) : null}
                                 </div>
                             );

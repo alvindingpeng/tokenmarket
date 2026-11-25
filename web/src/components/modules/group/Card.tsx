@@ -146,6 +146,8 @@ export const GroupCard = memo(function GroupCard({
             (values.relay_config.auto_tool_verified ?? '') !== (group.relay_config.auto_tool_verified ?? '') ||
             compareContextOverrides(values.relay_config.auto_context_overrides, group.relay_config.auto_context_overrides) ||
             (values.relay_config.auto_ramp_percent ?? 0) !== (group.relay_config.auto_ramp_percent ?? 0) ||
+            compareContextOverrides(values.relay_config.auto_task_ramp_percent, group.relay_config.auto_task_ramp_percent) ||
+            (values.relay_config.auto_responses_tool_verified ?? '') !== (group.relay_config.auto_responses_tool_verified ?? '') ||
             (values.relay_config.auto_fallback_failures ?? 0) !== (group.relay_config.auto_fallback_failures ?? 0) ||
             (values.relay_config.auto_fallback_seconds ?? 0) !== (group.relay_config.auto_fallback_seconds ?? 0) ||
             (values.relay_config.auto_sticky_seconds ?? 0) !== (group.relay_config.auto_sticky_seconds ?? 0) ||

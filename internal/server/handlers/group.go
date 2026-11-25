@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -42,6 +43,10 @@ func init() {
 				Handle(createGroup),
 		).
 		AddRoute(
+			router.NewRoute("/context-override/:id", http.MethodPost).
+				Handle(saveGroupContextOverride),
+		).
+		AddRoute(
 			router.NewRoute("/update/:id", http.MethodPost).
 				Handle(updateGroup),
 		).
@@ -55,6 +60,37 @@ func init() {
 			router.NewRoute("/delete/:id", http.MethodDelete).
 				Handle(deleteGroup),
 		)
+}
+
+func saveGroupContextOverride(c *gin.Context) {
+	userID, role := middleware.CurrentUser(c)
+	scope := model.Scope{ID: userID, Role: role}
+	if !scope.IsAdmin() {
+		resp.Error(c, http.StatusForbidden, "administrator required")
+		return
+	}
+	id, err := strconv.Atoi(c.Param("id"))
+	var request struct {
+		GrantID  int  `json:"channel_grant_id" binding:"required,gt=0"`
+		Expected *int `json:"expected_override" binding:"required,gte=0"`
+		Limit    int  `json:"context_length" binding:"required,gt=0"`
+	}
+	if err != nil || id <= 0 || c.ShouldBindJSON(&request) != nil {
+		resp.Error(c, http.StatusBadRequest, "invalid context override")
+		return
+	}
+	group, err := op.GroupSaveContextOverride(c.Request.Context(), scope, id, request.GrantID, *request.Expected, request.Limit)
+	if errors.Is(err, op.ErrContextOverrideConflict) {
+		resp.Error(c, http.StatusConflict, err.Error())
+		return
+	}
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, "save context override failed")
+		return
+	}
+	response := groupResponse{Group: *group, Runtime: relay.RouteStateOf(*group)}
+	publishGroupEvent(groupEvent{Name: "changed", Data: response, ownerID: group.UserID})
+	resp.Success(c, response)
 }
 
 // groupResponse 是分组读取响应: 分组配置加其当前实时路由状态。

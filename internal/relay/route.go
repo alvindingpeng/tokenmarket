@@ -400,6 +400,9 @@ func autoCandidateScores(group model.Group, candidates []model.GroupItem) map[in
 			float64(successWeight)*succScore) / float64(weightSum)
 		score *= reliabilityPenalty(rates[i], samples[i], floor)
 		score *= observationPenalty(item)
+		if penalty := group.AutoPerformancePenalty[item.ID]; penalty > 0 {
+			score *= penalty
+		}
 		scores[item.ID] = score * 100
 	}
 	return scores
