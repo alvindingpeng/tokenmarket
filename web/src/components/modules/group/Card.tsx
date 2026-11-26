@@ -245,7 +245,7 @@ export const GroupCard = memo(function GroupCard({
                         <MorphingDialogContainer>
                             <MorphingDialogContent
                                 dismissOnClickOutside={false}
-                                className="relative w-screen max-w-full md:max-w-4xl bg-card text-card-foreground px-6 py-4 rounded-3xl h-[calc(100dvh-2rem)] flex flex-col overflow-hidden"
+                                className="relative w-full max-w-5xl bg-card text-card-foreground px-3 py-3 sm:px-5 rounded-2xl sm:rounded-3xl h-[calc(100dvh-2rem)] flex flex-col overflow-hidden"
                             >
                                 <EditDialogContent
                                     group={group}

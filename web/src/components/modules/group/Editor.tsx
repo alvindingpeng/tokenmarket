@@ -39,7 +39,7 @@ function ToolProbeRunButton({ label, pending, onClick }: {
             disabled={pending}
             aria-label={label}
             onClick={onClick}
-            className="shrink-0 rounded-md border border-border px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-muted disabled:opacity-50"
+            className="min-h-7 max-w-full whitespace-normal rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted disabled:opacity-50"
         >
             {pending ? <LoaderCircle className="size-3 animate-spin" /> : label}
         </button>
@@ -125,9 +125,11 @@ function FieldHelp({ text }: { text: string }) {
     return (
         <Tooltip>
             <TooltipTrigger asChild>
-                <HelpCircle className="size-4 cursor-help text-muted-foreground" />
+                <button type="button" aria-label={text} className="size-4 shrink-0 cursor-help text-muted-foreground">
+                    <HelpCircle className="size-4" />
+                </button>
             </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={10} align="center">
+            <TooltipContent side="top" sideOffset={10} align="center" className="max-w-[min(22rem,calc(100vw-2rem))] wrap-anywhere text-pretty">
                 {text}
             </TooltipContent>
         </Tooltip>
@@ -416,6 +418,7 @@ export function GroupEditor({
     onCancel?: () => void;
 }) {
     const t = useTranslations('group');
+    const modelMeta = useTranslations('model.card');
     const { data: grantCandidates = [] } = useChannelGrantList();
     const grantMembers = useMemo<SelectedMember[]>(() => grantCandidates.map((grant) => ({
         id: String(grant.id),
@@ -529,9 +532,9 @@ export function GroupEditor({
 
     return (
         <form onSubmit={handleSubmit} className="flex flex-col h-full min-h-0 ">
-            <div className="flex-1 min-h-0 overflow-hidden px-1">
-                <FieldGroup className="gap-4 flex flex-col min-h-0 h-full">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="min-h-0 min-w-0 flex-1 overflow-hidden px-1 has-[.group-relay-panel[data-state=active]]:overflow-y-auto has-[.group-relay-panel[data-state=active]]:overscroll-contain">
+                <FieldGroup className="flex h-full min-h-0 min-w-0 flex-col gap-3 has-[.group-relay-panel[data-state=active]]:h-auto">
+                    <div className="grid shrink-0 grid-cols-2 gap-2 @min-[36rem]/field-group:gap-4">
                         <Field>
                             <FieldLabel htmlFor="group-name">{t('form.name')}</FieldLabel>
                             <Input
@@ -572,7 +575,7 @@ export function GroupEditor({
                         </Field>
                     </div>
 
-                    <Tabs defaultValue="members" className="flex flex-1 min-h-0">
+                    <Tabs defaultValue="members" className="flex min-h-0 min-w-0 flex-1">
                         <TabsList className="grid w-full shrink-0 grid-cols-2">
                             <TabsTrigger value="members">{t('form.members')}</TabsTrigger>
                             <TabsTrigger value="relay">{t('form.relay')}</TabsTrigger>
@@ -600,15 +603,15 @@ export function GroupEditor({
                             </div>
                         </TabsContent>
 
-                        <TabsContent value="relay" className="min-h-0 overflow-y-auto px-1">
-                            <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-border/50 bg-muted/30 px-3 py-2">
+                        <TabsContent value="relay" className="group-relay-panel min-w-0 wrap-anywhere px-1 pb-1 [&_[data-slot=field]]:min-w-0">
+                            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/50 bg-muted/30 px-3 py-2">
                                 <span className="text-xs text-muted-foreground">{t('form.presetHint')}</span>
                                 <Button type="button" variant="outline" size="sm" className="rounded-lg" onClick={() => setRelayConfig((prev) => preserveCanary(modeRelayConfig(mode), prev))}>{t('form.applyPreset')}</Button>
                             </div>
                             {mode === 'score' && (
                                 <p className="mb-3 text-sm text-muted-foreground">{t('form.scoreRetryHint')}</p>
                             )}
-                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                            <div className="grid grid-cols-1 gap-3 @min-[36rem]/field-group:grid-cols-2">
                                 {(['request_timeout_seconds', 'max_total_attempts', 'max_wait_seconds', 'max_waiting_requests', 'member_stream_idle_timeout_seconds'] as const).map((key) => (
                                     <Field key={key}>
                                         <FieldLabel htmlFor={'group-' + key}>{t('form.' + key)}<FieldHelp text={t('form.' + key + 'Hint')} /></FieldLabel>
@@ -793,12 +796,12 @@ export function GroupEditor({
                                     </Select>
                                 </Field>
                                 {!!relayConfig.auto_routing && (
-                                    <div className="space-y-3">
+                                    <div className="col-span-full min-w-0 space-y-3">
                                         <p className="text-sm text-muted-foreground">{t('form.autoHint')}</p>
                                         <p className="text-xs leading-relaxed text-muted-foreground">{t('form.autoRefreshHint')}</p>
                                         {relayConfig.auto_routing === 'active' && (
                                             <>
-                                            <div className="grid gap-3 rounded-xl border border-border/50 p-3 md:grid-cols-3">
+                                            <div className="grid gap-3 rounded-xl border border-border/50 p-3 @min-[42rem]/field-group:grid-cols-3 @min-[30rem]/field-group:grid-cols-2">
                                                 <Field>
                                                     <FieldLabel htmlFor="group-auto-ramp">
                                                         {t('form.autoRampPercent')}
@@ -879,7 +882,7 @@ export function GroupEditor({
                                             <div className="rounded-xl border border-border/50 p-3">
                                                 <h4 className="mb-1 text-sm font-medium">{t('form.autoQualityTitle')}</h4>
                                                 <p className="mb-3 text-xs leading-relaxed text-muted-foreground">{t('form.autoQualityHint')}</p>
-                                                <div className="grid gap-3 md:grid-cols-3">
+                                                <div className="grid gap-3 @min-[42rem]/field-group:grid-cols-3 @min-[30rem]/field-group:grid-cols-2">
                                                     <Field>
                                                         <FieldLabel htmlFor="group-auto-min-score">{t('form.autoMinTaskScore')}</FieldLabel>
                                                         <Input id="group-auto-min-score" type="number" min={0} max={100} step={1}
@@ -905,8 +908,8 @@ export function GroupEditor({
                                                 <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
                                                     {t('form.autoQualityRegistryHint')}
                                                 </p>
-                                                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                                                    <label className="flex items-start gap-2 rounded-xl border border-border/50 p-3 text-xs">
+                                                <div className="mt-3 grid gap-3 @min-[36rem]/field-group:grid-cols-2">
+                                                    <label className="flex min-w-0 items-start gap-2 rounded-xl border border-border/50 p-3 text-xs">
                                                         <Checkbox
                                                             checked={!!relayConfig.auto_fallback_no_candidate}
                                                             onCheckedChange={(value) => setRelayConfig((prev) => ({ ...prev, auto_fallback_no_candidate: value === true }))}
@@ -930,7 +933,7 @@ export function GroupEditor({
                                             </div>
                                             </>
                                         )}
-                                        <div className="space-y-3">
+                                        <div className="grid items-start gap-3 @min-[36rem]/field-group:grid-cols-2">
                                             {([
                                                 ['auto_general', 'autoGeneral'],
                                                 ['auto_summary', 'autoSummary'],
@@ -940,7 +943,7 @@ export function GroupEditor({
                                             ] as const).map(([key, label]) => {
                                                 const selected = parseAutoGrantIDs(relayConfig[key]);
                                                 return (
-                                                    <Field key={key}>
+                                                    <Field key={key} className={key === 'auto_tool' ? 'col-span-full' : undefined}>
                                                         <FieldLabel>{t(`form.${label}`)}</FieldLabel>
                                                         <Input
                                                             type="number"
@@ -968,84 +971,70 @@ export function GroupEditor({
                                                                     const checked = selected.includes(member.channel_grant_id);
                                                                     const inputID = `${key}-${member.channel_grant_id}`;
                                                                     return (
-                                                                        <label key={member.channel_grant_id} htmlFor={inputID} className="flex cursor-pointer flex-wrap items-center gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-muted/60">
-                                                                            <Checkbox
-                                                                                id={inputID}
-                                                                                checked={checked}
-                                                                                onCheckedChange={(value) => setRelayConfig((prev) => ({
-                                                                                    ...prev,
-                                                                                    [key]: autoGrantIDsValue(
-                                                                                        selectedMembers,
-                                                                                        toggleAutoGrantID(parseAutoGrantIDs(prev[key]), member.channel_grant_id, value === true),
-                                                                                    ),
-                                                                                } satisfies Partial<Record<AutoTaskConfigField, string>>))}
-                                                                            />
-                                                                                <span className="min-w-0 flex-1 truncate">
-                                                                                {member.channel_name} · {member.name} · {member.key_name}
-                                                                                {(member.context_length || member.max_output) && (
-                                                                                    <span className="ml-2 text-muted-foreground">
-                                                                                        · context {member.context_length || '?'} · max output {member.max_output || '?'}
-                                                                                    </span>
-                                                                                )}
-                                                                                {key === 'auto_tool' && checked && !!(member.protocols & Protocol.OpenAIChatCompletion) && (
-                                                                                    <ToolProbeControls grantID={member.channel_grant_id} score={relayConfig.auto_min_task_score || 80} />
-                                                                                )}
-                                                                                {key === 'auto_tool' && checked && !!(member.protocols & Protocol.AnthropicMessage) && (
-                                                                                    <ToolProbeControls grantID={member.channel_grant_id} score={0} onAnthropicVerified={() => setRelayConfig((previous) => ({
-                                                                                        ...previous,
-                                                                                        auto_anthropic_tool_verified: autoGrantIDsValue(selectedMembers, toggleAutoGrantID(parseAutoGrantIDs(previous.auto_anthropic_tool_verified), member.channel_grant_id, true)),
-                                                                                    }))} />
-                                                                                )}
-                                                                                {key === 'auto_tool' && checked && !!(member.protocols & Protocol.AnthropicMessage) && (
-                                                                                    <ToolProbeControls grantID={member.channel_grant_id} score={0} stream onAnthropicVerified={() => setRelayConfig((previous) => ({
-                                                                                        ...previous,
-                                                                                        auto_anthropic_stream_verified: autoGrantIDsValue(selectedMembers, toggleAutoGrantID(parseAutoGrantIDs(previous.auto_anthropic_stream_verified), member.channel_grant_id, true)),
-                                                                                    }))} />
-                                                                                )}
-                                                                            </span>
-                                                                            {key === 'auto_tool' && checked && (
-                                                                                <span className="flex basis-full flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground" onClick={(event) => event.stopPropagation()}>
-                                                                                    <Checkbox
-                                                                                        checked={parseAutoGrantIDs(relayConfig.auto_tool_verified).includes(member.channel_grant_id)}
-                                                                                        onCheckedChange={(value) => setRelayConfig((prev) => ({ ...prev,
-                                                                                            auto_tool_verified: autoGrantIDsValue(selectedMembers, toggleAutoGrantID(parseAutoGrantIDs(prev.auto_tool_verified), member.channel_grant_id, value === true)),
-                                                                                        }))}
-                                                                                    />
-                                                                                    {t('form.autoToolVerified')}
-                                                                                    <Checkbox
-                                                                                        aria-label={t('form.autoResponsesToolVerified')}
-                                                                                        checked={parseAutoGrantIDs(relayConfig.auto_responses_tool_verified).includes(member.channel_grant_id)}
-                                                                                        onCheckedChange={(value) => setRelayConfig((previous) => ({
-                                                                                            ...previous,
-                                                                                            auto_responses_tool_verified: autoGrantIDsValue(selectedMembers, toggleAutoGrantID(parseAutoGrantIDs(previous.auto_responses_tool_verified), member.channel_grant_id, value === true)),
-                                                                                        }))}
-                                                                                    />
-                                                                                    {t('form.autoResponsesToolVerified')}
-                                                                                    <Checkbox
-                                                                                        aria-label={t('form.autoAnthropicToolVerified')}
-                                                                                        checked={parseAutoGrantIDs(relayConfig.auto_anthropic_tool_verified).includes(member.channel_grant_id)}
-                                                                                        onCheckedChange={(value) => setRelayConfig((previous) => ({
-                                                                                            ...previous,
-                                                                                            auto_anthropic_tool_verified: autoGrantIDsValue(selectedMembers, toggleAutoGrantID(parseAutoGrantIDs(previous.auto_anthropic_tool_verified), member.channel_grant_id, value === true)),
-                                                                                        }))}
-                                                                                    />
-                                                                                    {t('form.autoAnthropicToolVerified')}
-                                                                                    {!!(member.protocols & Protocol.AnthropicMessage) && (
-                                                                                        <>
-                                                                                            <Checkbox
-                                                                                                aria-label={t('form.autoAnthropicStreamVerified')}
-                                                                                                checked={parseAutoGrantIDs(relayConfig.auto_anthropic_stream_verified).includes(member.channel_grant_id)}
-                                                                                                onCheckedChange={(value) => setRelayConfig((previous) => ({
-                                                                                                    ...previous,
-                                                                                                    auto_anthropic_stream_verified: autoGrantIDsValue(selectedMembers, toggleAutoGrantID(parseAutoGrantIDs(previous.auto_anthropic_stream_verified), member.channel_grant_id, value === true)),
-                                                                                                }))}
-                                                                                            />
-                                                                                            {t('form.autoAnthropicStreamVerified')}
-                                                                                        </>
+                                                                        <div key={member.channel_grant_id} className="min-w-0 rounded-lg px-2 py-1.5 text-xs hover:bg-muted/60">
+                                                                            <label htmlFor={inputID} className="flex cursor-pointer items-start gap-2">
+                                                                                <Checkbox
+                                                                                    id={inputID}
+                                                                                    checked={checked}
+                                                                                    onCheckedChange={(value) => setRelayConfig((prev) => ({
+                                                                                        ...prev,
+                                                                                        [key]: autoGrantIDsValue(
+                                                                                            selectedMembers,
+                                                                                            toggleAutoGrantID(parseAutoGrantIDs(prev[key]), member.channel_grant_id, value === true),
+                                                                                        ),
+                                                                                    } satisfies Partial<Record<AutoTaskConfigField, string>>))}
+                                                                                />
+                                                                                <span className="min-w-0 flex-1 space-y-0.5">
+                                                                                    <span className="block font-medium">{member.name}</span>
+                                                                                    <span className="block text-muted-foreground">{member.channel_name} · {member.key_name}</span>
+                                                                                    {!!(member.context_length || member.max_output) && (
+                                                                                        <span className="flex flex-wrap gap-x-3 text-muted-foreground">
+                                                                                            <span>{modelMeta('context')} {member.context_length || '?'}</span>
+                                                                                            <span>{modelMeta('maxOutput')} {member.max_output || '?'}</span>
+                                                                                        </span>
                                                                                     )}
                                                                                 </span>
+                                                                            </label>
+                                                                            {key === 'auto_tool' && checked && !!(member.protocols & Protocol.OpenAIChatCompletion) && (
+                                                                                <ToolProbeControls grantID={member.channel_grant_id} score={relayConfig.auto_min_task_score || 80} />
                                                                             )}
-                                                                        </label>
+                                                                            {key === 'auto_tool' && checked && !!(member.protocols & Protocol.AnthropicMessage) && (
+                                                                                <ToolProbeControls grantID={member.channel_grant_id} score={0} onAnthropicVerified={() => setRelayConfig((previous) => ({
+                                                                                    ...previous,
+                                                                                    auto_anthropic_tool_verified: autoGrantIDsValue(selectedMembers, toggleAutoGrantID(parseAutoGrantIDs(previous.auto_anthropic_tool_verified), member.channel_grant_id, true)),
+                                                                                }))} />
+                                                                            )}
+                                                                            {key === 'auto_tool' && checked && !!(member.protocols & Protocol.AnthropicMessage) && (
+                                                                                <ToolProbeControls grantID={member.channel_grant_id} score={0} stream onAnthropicVerified={() => setRelayConfig((previous) => ({
+                                                                                    ...previous,
+                                                                                    auto_anthropic_stream_verified: autoGrantIDsValue(selectedMembers, toggleAutoGrantID(parseAutoGrantIDs(previous.auto_anthropic_stream_verified), member.channel_grant_id, true)),
+                                                                                }))} />
+                                                                            )}
+                                                                            {key === 'auto_tool' && checked && (
+                                                                                <div className="mt-2 grid gap-2 text-muted-foreground @min-[36rem]/field-group:grid-cols-2">
+                                                                                    {([
+                                                                                        ['auto_tool_verified', 'autoToolVerified'],
+                                                                                        ['auto_responses_tool_verified', 'autoResponsesToolVerified'],
+                                                                                        ['auto_anthropic_tool_verified', 'autoAnthropicToolVerified'],
+                                                                                        ['auto_anthropic_stream_verified', 'autoAnthropicStreamVerified'],
+                                                                                    ] as const).map(([field, label]) => {
+                                                                                        if (field === 'auto_anthropic_stream_verified' && !(member.protocols & Protocol.AnthropicMessage)) return null;
+                                                                                        return (
+                                                                                            <label key={field} className="flex min-w-0 cursor-pointer items-start gap-2">
+                                                                                                <Checkbox
+                                                                                                    checked={parseAutoGrantIDs(relayConfig[field]).includes(member.channel_grant_id)}
+                                                                                                    onCheckedChange={(value) => setRelayConfig((previous) => ({
+                                                                                                        ...previous,
+                                                                                                        [field]: autoGrantIDsValue(selectedMembers, toggleAutoGrantID(parseAutoGrantIDs(previous[field]), member.channel_grant_id, value === true)),
+                                                                                                    }))}
+                                                                                                />
+                                                                                                <span className="min-w-0">{t(`form.${label}`)}</span>
+                                                                                            </label>
+                                                                                        );
+                                                                                    })}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
                                                                     );
                                                                 })}
                                                             </div>
@@ -1072,12 +1061,12 @@ export function GroupEditor({
                                                     <span className="text-sm font-medium">{t('form.autoContextOverrides')}</span>
                                                     <p className="text-xs text-muted-foreground">{t('form.autoContextOverridesHint')}</p>
                                                 </div>
-                                                <div className="grid gap-2 md:grid-cols-2">
+                                                <div className="grid gap-2 @min-[36rem]/field-group:grid-cols-2">
                                                     {selectedMembers.map((member) => {
                                                         const overrides = parseContextOverrides(relayConfig.auto_context_overrides);
                                                         return (
-                                                            <label key={`context-${member.channel_grant_id}`} className="flex items-center gap-2 text-xs text-muted-foreground">
-                                                                <span className="min-w-0 flex-1 truncate">{member.channel_name} · {member.name}</span>
+                                                            <label key={`context-${member.channel_grant_id}`} className="flex min-w-0 items-start gap-2 text-xs text-muted-foreground">
+                                                                <span className="min-w-0 flex-1">{member.channel_name} · {member.name}</span>
                                                                 <Input
                                                                     type="number"
                                                                     min={1}
@@ -1091,7 +1080,7 @@ export function GroupEditor({
                                                                         else delete next[member.channel_grant_id];
                                                                         setRelayConfig((prev) => ({ ...prev, auto_context_overrides: contextOverridesValue(next) }));
                                                                     }}
-                                                                    className="h-8 w-28 rounded-lg"
+                                                                    className="h-8 w-28 shrink-0 rounded-lg"
                                                                     aria-label={t('form.autoContextOverrideFor', { model: member.name })}
                                                                 />
                                                             </label>
@@ -1191,8 +1180,8 @@ export function GroupEditor({
                                 <section className="mt-4 rounded-xl border border-border/50 bg-muted/20 p-3">
                                     <h4 className="mb-1 text-sm font-semibold">{t('form.canaryTitle')}</h4>
                                     <p className="mb-3 text-xs leading-relaxed text-muted-foreground">{t('form.canaryHint')}</p>
-                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                        <Field>
+                                    <div className="grid grid-cols-1 gap-3 @min-[36rem]/field-group:grid-cols-2">
+                                        <Field className="col-span-full">
                                             <FieldLabel htmlFor="group-canary-member">
                                                 {t('form.canaryMember')}
                                                 <FieldHelp text={t('form.canaryMemberHint')} />
@@ -1205,14 +1194,19 @@ export function GroupEditor({
                                                     value={String(canaryItemID)}
                                                     onValueChange={(value) => setRelayConfig((prev) => ({ ...prev, canary_item_id: Number(value) }))}
                                                 >
-                                                    <SelectTrigger id="group-canary-member" className="w-full rounded-xl">
+                                                    <SelectTrigger id="group-canary-member" className="w-full min-w-0 whitespace-normal rounded-xl text-left data-[size=default]:h-auto *:data-[slot=select-value]:line-clamp-none *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:wrap-anywhere">
                                                         <SelectValue />
                                                     </SelectTrigger>
-                                                    <SelectContent>
+                                                    <SelectContent
+                                                        className="w-(--radix-select-trigger-width) min-w-0 overflow-hidden [&>[data-radix-select-viewport]]:h-auto"
+                                                        align="start"
+                                                        side="top"
+                                                        collisionPadding={8}
+                                                    >
                                                         {/* 「关闭」恒为首项: 灰度是可选叠加, 必须能一键回到关闭。 */}
                                                         <SelectItem value="0">{t('form.canaryOff')}</SelectItem>
                                                         {canaryMembers.map((member) => (
-                                                            <SelectItem key={member.item_id} value={String(member.item_id)}>
+                                                            <SelectItem key={member.item_id} value={String(member.item_id)} className="min-w-0 wrap-anywhere">
                                                                 {member.channel_name} · {member.name}
                                                             </SelectItem>
                                                         ))}
@@ -1252,7 +1246,7 @@ export function GroupEditor({
                                                         const value = Number.parseInt(event.target.value, 10);
                                                         setRelayConfig((prev) => ({ ...prev, canary_percent: Number.isFinite(value) ? Math.min(Math.max(value, 0), 100) : 0 }));
                                                     }}
-                                                    className="h-1.5 flex-1 accent-primary"
+                                                    className="h-1.5 min-w-0 flex-1 accent-primary"
                                                 />
                                             </div>
                                         </Field>
@@ -1297,7 +1291,7 @@ export function GroupEditor({
                 </FieldGroup>
             </div>
 
-            <div className="pt-4 mt-auto shrink-0">
+            <div className="mt-auto shrink-0 pt-2 sm:pt-3">
                 <div className="flex gap-2">
                     {onCancel && (
                         <Button type="button" variant="secondary" className="flex-1 rounded-xl h-11" onClick={onCancel}>
