@@ -173,6 +173,8 @@ export const GroupCard = memo(function GroupCard({
             values.relay_config.score_latency_weight !== group.relay_config.score_latency_weight ||
             values.relay_config.score_success_weight !== group.relay_config.score_success_weight ||
             values.relay_config.reliability_floor !== group.relay_config.reliability_floor ||
+            (values.relay_config.standby_grant_id ?? 0) !== (group.relay_config.standby_grant_id ?? 0) ||
+            (values.relay_config.standby_after_failures ?? 0) !== (group.relay_config.standby_after_failures ?? 0) ||
             // 灰度四项单独比: 用户 ID 是集合语义, 顺序不同不算改动, 交给 canaryChanged 统一判定。
             canaryChanged(values.relay_config, group.relay_config)
         ) payload.relay_config = values.relay_config;

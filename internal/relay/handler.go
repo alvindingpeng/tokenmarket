@@ -198,6 +198,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		var autoProtectionGroup model.Group
 		var autoProtectionTask autoTask
 		autoProtectionEngaged := false
+		usingStandby := false
 		autoRouteGroupID := 0
 		sessionRevision := ""
 		sessionFailure := ""
@@ -208,6 +209,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			}
 			switch request.statusSnapshot() {
 			case StatusSuccess:
+				if usingStandby {
+					autoCircuitRecordFailure(autoProtectionGroup, autoProtectionTask.name)
+					return
+				}
 				autoCircuitRecordSuccess(autoProtectionGroup.ID, autoProtectionTask.name)
 				if itemID := request.autoChoiceSnapshot(); session == "" && itemID != 0 && autoRouteGroupID != 0 {
 					autoStickyRecordSuccess(autoProtectionGroup, sessionKeyID, keyUserID, autoProtectionTask.name, autoProtectionTask.protocol, itemID)
@@ -239,6 +244,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		failedItemID := 0 // 当前累计连续失败次数的成员 ID。
 		failures := 0     // 该成员包含首次请求的连续失败次数。
 		totalAttempts := 0
+		var standby standbyRetry
 		// rateRetries 单独统计"上游 429 之后的退避重试"次数, 不并入 totalAttempts(理由见 rateRetryBackoff)。
 		// 跨成员累计、换成员后不清零: 限流是上游侧的窗口状态, 与"换个成员重新开始"无关。
 		rateRetries := 0
@@ -275,6 +281,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			}
 		}
 		waitAvailable := func() bool {
+			if usingStandby {
+				stop(standby.lastError, upstreamStatus(standby.lastError))
+				return false
+			}
 			if group.Mode == model.GroupModeScore && lastScoreError != nil {
 				stop(lastScoreError, upstreamStatus(lastScoreError))
 				return false
@@ -306,7 +316,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			// retain their existing retry semantics.
 			// pendingRateRetry 的轮次不查预算: 它不消耗 totalAttempts(见 rateRetryBackoff),
 			// 若在这里被拦, 429 之后的退避永远等不到执行。
-			if !pendingRateRetry && group.Mode != model.GroupModeScore && group.RelayConfig.MaxTotalAttempts > 0 && totalAttempts >= group.RelayConfig.MaxTotalAttempts {
+			if !pendingRateRetry && group.Mode != model.GroupModeScore && group.RelayConfig.MaxTotalAttempts > 0 && totalAttempts >= group.RelayConfig.MaxTotalAttempts && standby.lastError == nil {
 				stop(errors.New("relay maximum total attempts exceeded"), http.StatusServiceUnavailable)
 				return
 			}
@@ -348,6 +358,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			if group.Mode == model.GroupModeScore {
 				autoMode = group.RelayConfig.AutoRouting
 			}
+			fullGroup := group
+			var standbyItem model.GroupItem
+			group, standbyItem = reserveStandby(group)
+			fullGroup.StandbyItemID = group.StandbyItemID
 			group = effectiveGroupForRequest(group, c.GetString("routing_preference"))
 			// A rate retry is explicitly waiting to probe the same upstream again. In score mode,
 			// ordinary failures stay excluded, but this retry must survive the request-local filter.
@@ -609,13 +623,25 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				group.AutoTaskScores = make(map[int]int)
 				group.AutoTaskVerified = make(map[int]bool)
 			}
-			// Recheck after refresh: a live configuration change may lower the
-			// budget or switch this request into score mode between attempts.
-			// The pending rate retry is a bounded probe and does not consume totalAttempts,
-			// so score mode must not reject it at the refreshed budget guard.
-			if !pendingRateRetry && group.Mode == model.GroupModeScore && totalAttempts >= scoreAttemptLimit(group.RelayConfig.MaxTotalAttempts) {
-				if lastScoreError != nil {
-					stop(lastScoreError, upstreamStatus(lastScoreError))
+			limit := group.RelayConfig.MaxTotalAttempts
+			if group.Mode == model.GroupModeScore {
+				limit = scoreAttemptLimit(limit)
+			}
+			budgetUsed := !pendingRateRetry && limit > 0 && totalAttempts >= limit && (group.Mode == model.GroupModeScore || standby.lastError != nil)
+			standbyEligible := func() bool {
+				return standby.eligible(fullGroup, standbyItem, requestProtocol, raw.Body, estIn, estOut, autoMode == "active" || lockedActive)
+			}
+			var item model.GroupItem
+			if standby.lastError != nil && (budgetUsed || standby.exhausted || standby.failures >= max(1, group.RelayConfig.StandbyAfterFailures)) && standbyEligible() {
+				item, usingStandby = standbyItem, true
+			}
+			if !usingStandby && (budgetUsed || standby.exhausted) {
+				cause := lastScoreError
+				if cause == nil {
+					cause = standby.lastError
+				}
+				if cause != nil {
+					stop(cause, upstreamStatus(cause))
 				} else {
 					stop(errors.New("relay maximum total attempts exceeded"), http.StatusServiceUnavailable)
 				}
@@ -633,9 +659,8 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			// 灰度先于策略选路: 命中者本轮只走灰度成员, 与价格/评分等策略无关。
 			// 灰度成员此刻不可用(已停用、额度熔断、在冷却)则不占用本轮, 直接回落策略选路 ——
 			// 灰度是"额外分一点流量给新渠道", 不能因为新渠道还没就绪就把请求卡住。
-			var item model.GroupItem
 			canary := false
-			if group.AutoRequestCosts == nil && canaryHit && !canaryFailed {
+			if !usingStandby && group.AutoRequestCosts == nil && canaryHit && !canaryFailed {
 				if canaryItem, ok := pickCanaryItem(group); ok {
 					item, canary = canaryItem, true
 				} else if !canaryWarned {
@@ -645,11 +670,26 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					request.addRouteEvent("selection", "canary_unavailable")
 				}
 			}
-			if !canary {
+			if !usingStandby && !canary {
 				item = pickGroupItem(group, preferredSessionItem)
+				if item.ID == 0 && standbyEligible() {
+					item, usingStandby = standbyItem, true
+				}
+			}
+			if usingStandby {
+				fullGroup.Mode = group.Mode
+				fullGroup.RequestRoutingPreference = group.RequestRoutingPreference
+				group = fullGroup
 			}
 			decision := routeExplanation(group, item, canary)
-			if group.AutoRequestCosts != nil {
+			if usingStandby {
+				decision.Reason = "standby_selected"
+				if observed {
+					request.setAutoRouteAction("standby")
+					decision.Details = autoDecisionDetailsJSON(observedTask, nil, nil, "standby", nil)
+				}
+				request.addRouteEvent("selection", "standby_selected")
+			} else if group.AutoRequestCosts != nil {
 				decision.Candidates = append(decision.Candidates, autoExcluded...)
 				decision.Reason = "auto_" + observedTask.name
 				action := "active"
@@ -689,7 +729,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				decision.Details = autoDecisionDetailsJSON(observedTask, nil, autoExcluded, "fallback", nil)
 				request.addRouteEvent("auto_routing", "auto_fallback_no_candidate")
 			}
-			if request.autoDecisionSnapshot() == "reject" && !autoRouteFallback {
+			if !usingStandby && request.autoDecisionSnapshot() == "reject" && !autoRouteFallback {
 				decision.Mode = "score"
 				decision.Phase = "selected"
 				decision.Reason = "auto_" + observedTask.name
@@ -819,7 +859,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			}
 
 			// 检查请求是否超过模型的上下文限制。
-			if exceeded, limit, estimated := checkContextLimit(channelModel.Name, raw.Body); group.AutoRequestCosts == nil && exceeded {
+			if exceeded, limit, estimated := checkContextLimit(channelModel.Name, raw.Body); !usingStandby && group.AutoRequestCosts == nil && exceeded {
 				err := fmt.Errorf("Request exceeds model context limit: estimated %d tokens, limit %d tokens", estimated, limit)
 				request.markFailed(err, "", nil)
 				// 使用 context_length_exceeded 错误类型，与上游错误保持一致
@@ -839,6 +879,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			// 在渠道授权支持的协议内选出本轮上游协议, 按该协议的路径与授权绑定的凭据构造出站转换器。
 			// 先于登记本轮目标: 选中的协议是本轮目标的一部分, 需与渠道和模型一并推给界面。
 			outbound, targetProtocol, passthrough, err := buildOutbound(channel, grant, *channelKey, requestProtocol, format)
+			if usingStandby && (err != nil || !passthrough || targetProtocol != requestProtocol) {
+				stop(standby.lastError, upstreamStatus(standby.lastError))
+				return
+			}
 
 			// 为本轮上游调用建立独立取消入口并登记当前目标; 取消原因用于区分人工中止与响应超时。
 			roundCtx, cancelRoundCause := context.WithCancelCause(ctx)
@@ -1000,6 +1044,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				if context.Cause(roundCtx) == context.Canceled {
 					releaseRouteProbe(group, item.ID)
 					upstreamReservation.Settle(0, 0, true)
+					if usingStandby {
+						stop(standby.lastError, upstreamStatus(standby.lastError))
+						return
+					}
 					if mediaOneShot {
 						// 人工中止的媒体轮次同样只停不换目标: 本轮创建请求可能已被上游受理。
 						stop(err, upstreamStatus(err))
@@ -1025,7 +1073,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					upstreamReservation.Settle(0, 0, true)
 					limiter.MarkBlocked(upstreamScopes, upEstIn, upEstOut)
 					cancelRound()
-					if mediaOneShot || c.Writer.Written() {
+					if usingStandby || mediaOneShot || c.Writer.Written() {
 						// 429 也可能发生在上游受理创建之后, 媒体保守不重发, 直接透传限流错误。
 						stop(err, upstreamStatus(err))
 						return
@@ -1081,6 +1129,19 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 						op.RecordChannelModelError(channelModel.ID, string(class))
 					}
 				}
+				if usingStandby {
+					cooldown := classCooldownSeconds(class)
+					if cooldown <= 0 {
+						cooldown = group.RelayConfig.MemberCooldownSeconds
+					}
+					coolItem(group, item.ID, cooldown)
+					coolEgress(egress.ID, cooldown)
+					stop(err, upstreamStatus(err))
+					return
+				}
+				if standbyItem.ID != 0 && dispatched && !mediaOneShot && !c.Writer.Written() {
+					standby.record(item, class, err)
+				}
 				if group.Mode == model.GroupModeScore {
 					// One failed channel/model gets one chance per request, regardless
 					// of member retry settings, key rotation or shared recovery state.
@@ -1105,6 +1166,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					// 媒体单发: 冷却照做(保护其他请求不再撞同一个故障端点), 但不换目标重发,
 					// 落到下方按类别透传错误(模型缺失包一层友好提示)。
 					if !c.Writer.Written() && !mediaOneShot && group.Mode != model.GroupModeManual && hasOtherEligible(group, item.ID) {
+						continue
+					}
+					if !mediaOneShot && !c.Writer.Written() && standbyEligible() {
+						standby.exhausted = true
 						continue
 					}
 					if class == ErrorClassModel {
@@ -1133,6 +1198,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				// 同组还有别的可用成员时立即切换, 不等待重试(避免同一失效端点反复阻塞)。
 				if hasOtherEligible(group, item.ID) {
 					recordRouteFailure(group, item.ID, group.RelayConfig.MemberMaxAttempts)
+					continue
+				}
+				if standby.lastError != nil && standby.failures >= group.RelayConfig.StandbyAfterFailures && standbyEligible() {
 					continue
 				}
 				timer := time.NewTimer(time.Duration(group.RelayConfig.MemberRetryIntervalSeconds) * time.Second)

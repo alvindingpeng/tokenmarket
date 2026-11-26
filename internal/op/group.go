@@ -177,6 +177,7 @@ func GroupCreate(req *model.GroupCreateRequest, scope model.Scope, ctx context.C
 		}
 		group.Items[i] = model.GroupItem{ChannelGrantID: item.ChannelGrantID, Priority: i + 1}
 	}
+	clearMissingStandby(&group)
 	if err := db.GetDB().WithContext(ctx).Create(&group).Error; err != nil {
 		return nil, err
 	}
@@ -214,6 +215,17 @@ func validateGroupItemAccess(grantID int, scope model.Scope) error {
 		return nil
 	}
 	return fmt.Errorf("channel grant not found")
+}
+
+// clearMissingStandby keeps the configured grant tied to a member of this group.
+func clearMissingStandby(group *model.Group) bool {
+	id := group.RelayConfig.StandbyGrantID
+	if id == 0 || len(group.Items) >= 2 && slices.ContainsFunc(group.Items, func(item model.GroupItem) bool { return item.ChannelGrantID == id }) {
+		return false
+	}
+	group.RelayConfig.StandbyGrantID = 0
+	group.RelayConfig.StandbyAfterFailures = 0
+	return true
 }
 
 // GroupUpdate 更新分组配置, 成员和当前成员，并返回刷新后的分组。
@@ -276,12 +288,18 @@ func GroupUpdate(id int, req *model.GroupUpdateRequest, scope model.Scope, ctx c
 		}
 		// 灰度成员可能刚被移出分组: 留着悬空的 canary_item_id 会让界面显示"灰度开着"却永远不生效,
 		// 也会让人误以为新渠道还在接流量。成员集合定稿后立即对齐, 与分组成员保持同一事务。
+		configChanged := clearMissingStandby(&group)
 		if group.RelayConfig.CanaryItemID != 0 &&
-			!slices.ContainsFunc(group.Items, func(item model.GroupItem) bool { return item.ID == group.RelayConfig.CanaryItemID }) {
+			!slices.ContainsFunc(group.Items, func(item model.GroupItem) bool {
+				return item.ID == group.RelayConfig.CanaryItemID && item.ChannelGrantID != group.RelayConfig.StandbyGrantID
+			}) {
 			group.RelayConfig.CanaryItemID = 0
+			configChanged = true
+		}
+		if configChanged {
 			cleared := model.Group{ID: id, RelayConfig: group.RelayConfig}
 			if err := tx.Model(&model.Group{}).Where("id = ?", id).Select("relay_config").Updates(&cleared).Error; err != nil {
-				return fmt.Errorf("failed to clear canary item: %w", err)
+				return fmt.Errorf("failed to clear removed routing member: %w", err)
 			}
 		}
 		// 当前成员在成员集合定稿后才写入: syncGroupItems 会清空指向已删除成员的当前成员,

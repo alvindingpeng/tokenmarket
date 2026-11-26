@@ -137,6 +137,9 @@ type GroupRelayConfig struct {
 	ReliabilityFloor int `json:"reliability_floor" binding:"omitempty,min=0,max=100"`
 	// 灰度分流(金丝雀): 与上面所有选择模式正交, 命中者优先走灰度成员, 未命中或灰度不可用则完全按原模式选路。
 	// 这样新渠道/新模型不必先临时改分组模式, 也不会把未命中流量的既有行为换掉。
+	StandbyGrantID       int `json:"standby_grant_id,omitempty" binding:"omitempty,min=0"`
+	StandbyAfterFailures int `json:"standby_after_failures,omitempty" binding:"omitempty,min=1,max=10"`
+
 	CanaryItemID     int   `json:"canary_item_id" binding:"omitempty,min=0"`         // 灰度成员的分组成员 ID; 0 表示关闭灰度。
 	CanaryPercent    int   `json:"canary_percent" binding:"omitempty,min=0,max=100"` // 命中灰度的流量百分比, 0-100。
 	CanaryUserIDs    []int `json:"canary_user_ids"`                                  // 显式灰度用户 ID 列表; 非空时这些用户恒定走灰度, 优先于比例。
@@ -304,6 +307,12 @@ func NormalizeGroupRelayConfigForMode(config *GroupRelayConfig, mode GroupMode) 
 		config.AutoContextOverrides = cleaned
 	}
 	// 灰度配置只做范围收敛, 不做"没配就补默认": 灰度成员 0 与比例 0 本身就是「关闭」这一有效状态。
+	config.StandbyGrantID = max(config.StandbyGrantID, 0)
+	if config.StandbyGrantID == 0 {
+		config.StandbyAfterFailures = 0
+	} else {
+		config.StandbyAfterFailures = clampPositive(config.StandbyAfterFailures, 2, 10)
+	}
 	config.CanaryItemID = max(config.CanaryItemID, 0)
 	config.CanaryPercent = min(max(config.CanaryPercent, 0), 100)
 	config.AutoMinTaskScore = min(max(config.AutoMinTaskScore, 0), 100)
@@ -329,6 +338,7 @@ func NormalizeGroupRelayConfigForMode(config *GroupRelayConfig, mode GroupMode) 
 
 // 客户端模型名称及其可手动选择或故障转移的上游分组。
 type Group struct {
+	StandbyItemID            int              `json:"-" gorm:"-"` // Keep the reserved member in shared route state while excluding it from primary selection.
 	AutoRequestCosts         map[int]float64  `json:"-" gorm:"-"`
 	AutoTaskScores           map[int]int      `json:"-" gorm:"-"`
 	AutoTaskVerified         map[int]bool     `json:"-" gorm:"-"`

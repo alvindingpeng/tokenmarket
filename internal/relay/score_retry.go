@@ -32,12 +32,16 @@ func (s *scoreRetryState) filtered(group model.Group) model.Group {
 	items := append([]model.GroupItem(nil), group.Items...)
 	for i := range items {
 		item := &items[i]
-		if s.failed[[2]int{item.ChannelID, item.ChannelModelID}] || s.quotaChannels[item.ChannelID] {
+		if s.excludes(*item) {
 			item.Available = false
 		}
 	}
 	group.Items = items
 	return group
+}
+
+func (s *scoreRetryState) excludes(item model.GroupItem) bool {
+	return s.failed[[2]int{item.ChannelID, item.ChannelModelID}] || s.quotaChannels[item.ChannelID]
 }
 
 // Preserve the configured group budget; five is an example, not a hard cap.

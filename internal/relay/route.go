@@ -827,6 +827,9 @@ func groupRouteLocked(group model.Group) *RouteState {
 	for _, item := range group.Items {
 		items[item.ID] = true
 	}
+	if group.StandbyItemID != 0 {
+		items[group.StandbyItemID] = true
+	}
 	for itemID := range route.Cooldowns {
 		if !items[itemID] {
 			delete(route.Cooldowns, itemID)

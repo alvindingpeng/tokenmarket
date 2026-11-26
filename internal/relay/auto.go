@@ -734,15 +734,19 @@ func autoExclusion(item model.GroupItem, task autoTask, qualified, toolVerified 
 	if err != nil || (channel.Dialect != "" && channel.Dialect != model.DialectGeneric) || strings.TrimSpace(channel.ParamOverride) != "" {
 		return "auto_channel_incompatible"
 	}
-	reference := op.ModelReferenceGet(grant.ChannelModel.Name)
+	return autoTokenExclusion(grant.ChannelModel, task, contextOverride)
+}
+
+func autoTokenExclusion(channelModel *model.ChannelModel, task autoTask, contextOverride int) string {
+	reference := op.ModelReferenceGet(channelModel.Name)
 	// Precedence follows the operator's ability to make a deliberate correction:
 	// manual capability first, explicit group override second, then the synced
 	// channel field and finally the global models.dev reference.
-	limit, maxOutput := grant.ChannelModel.ContextLength, reference.MaxOutput
+	limit, maxOutput := channelModel.ContextLength, reference.MaxOutput
 	if limit == 0 {
 		limit = reference.ContextLength
 	}
-	if capability, ok := op.CapabilityGet(grant.ChannelModel.Name); ok && capability.Source == model.CapabilitySourceManual && strings.EqualFold(capability.Name, grant.ChannelModel.Name) {
+	if capability, ok := op.CapabilityGet(channelModel.Name); ok && capability.Source == model.CapabilitySourceManual && strings.EqualFold(capability.Name, channelModel.Name) {
 		if capability.Context > 0 {
 			limit = capability.Context
 		}

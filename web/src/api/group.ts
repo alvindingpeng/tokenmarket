@@ -54,6 +54,8 @@ export interface GroupRelayConfig {
     score_success_weight: number;
     reliability_floor: number;
     // 以下是灰度分流配置: 灰度叠加在上述任一选择模式之上, 手动模式不生效(手动的成员是硬约束)。
+    standby_grant_id?: number;
+    standby_after_failures?: number;
     canary_item_id: number; // 灰度成员的分组成员 ID(GroupItem.id); 0 表示关闭灰度。
     canary_percent: number; // 命中灰度的流量百分比 0-100。
     canary_user_ids: number[]; // 显式灰度用户: 非空时这些用户恒定走灰度, 优先于比例。

@@ -9,7 +9,7 @@
 const ROUTE_REASON_KEYS = [
     'strategy_price', 'strategy_latency', 'strategy_success', 'strategy_score',
     'strategy_random', 'strategy_failover', 'strategy_manual',
-    'canary_rollout', 'recovery_probe', 'cold_start_explore', 'affinity',
+    'standby_selected', 'canary_rollout', 'recovery_probe', 'cold_start_explore', 'affinity',
     'eligible', 'selected', 'unavailable', 'rate_or_concurrency_limit',
     'not_manual_target', 'cooldown',
     'auto_general', 'auto_summary', 'auto_coding', 'auto_tool', 'auto_extraction',

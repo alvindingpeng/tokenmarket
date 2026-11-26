@@ -13,6 +13,9 @@ const group = {
         id: 9, channel_grant_id: 7, channel_id: 3, model_name: modelName,
         channel_name: channelName, key_name: keyName, protocols: 10, available: true,
         context_length: 200000, max_output: 16384,
+    }, {
+        id: 10, channel_grant_id: 8, channel_id: 4, model_name: 'backup-model',
+        channel_name: 'secondary', key_name: 'backup-key', protocols: 2, available: true,
     }],
 };
 
@@ -38,6 +41,10 @@ for (const viewport of [
             const path = new URL(route.request().url()).pathname;
             if (path === '/api/v1/group/events') {
                 await route.fulfill({ contentType: 'text/event-stream', body: ': ready\n\n' });
+                return;
+            }
+            if (path === '/api/v1/group/update/1') {
+                await route.fulfill({ json: { data: { ...group, ...route.request().postDataJSON() } } });
                 return;
             }
             const data = path === '/api/v1/user/status'
@@ -105,7 +112,17 @@ for (const viewport of [
         expect(await scroller.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
         await panel.locator('#group-canary-per-request').scrollIntoViewIfNeeded();
         await expect(panel.locator('#group-canary-per-request')).toBeInViewport();
-        await expect(dialog.getByRole('button', { name: english ? 'Save' : '保存', exact: true })).toBeInViewport();
+        const standby = panel.locator('#group-standby-member');
+        await standby.click();
+        await page.getByRole('option', { name: /backup-model/ }).click();
+        const threshold = panel.locator('#group-standby-failures');
+        await expect(threshold).toHaveValue('2');
+        await threshold.fill('3');
+        const save = dialog.getByRole('button', { name: english ? 'Save' : '保存', exact: true });
+        await expect(save).toBeInViewport();
+        const update = page.waitForRequest(request => request.url().endsWith('/api/v1/group/update/1') && request.method() === 'POST');
+        await save.click();
+        expect((await update).postDataJSON().relay_config).toMatchObject({ standby_grant_id: 8, standby_after_failures: 3, canary_item_id: 9 });
         await context.close();
     });
 }

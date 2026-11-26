@@ -111,6 +111,17 @@ function modeRelayConfig(mode: GroupMode): GroupRelayConfig {
     return { ...modeRelayDefaults[mode], ...canaryDefaults(), auto_ramp_percent: 5, auto_fallback_failures: 3, auto_fallback_seconds: 60, auto_sticky_seconds: 300, auto_fallback_no_candidate: true, auto_explore_percent: 5, auto_min_task_score: 0, auto_quality_weight: 40, auto_price_weight: 20, auto_latency_weight: 20, auto_success_weight: 20 };
 }
 
+function applyModeDefaults(mode: GroupMode, current: GroupRelayConfig): GroupRelayConfig {
+    return {
+        ...preserveCanary(modeRelayConfig(mode), current),
+        standby_grant_id: current.standby_grant_id,
+        standby_after_failures: current.standby_after_failures,
+    };
+}
+
+const memberSelectTrigger = 'w-full min-w-0 whitespace-normal rounded-xl text-left data-[size=default]:h-auto *:data-[slot=select-value]:line-clamp-none *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:wrap-anywhere';
+const memberSelectContent = 'w-(--radix-select-trigger-width) min-w-0 overflow-hidden [&>[data-radix-select-viewport]]:h-auto';
+
 // PROTOCOL_TAGS 是凭据行上的协议标识。
 // 此处写全称: 凭据行只有名称一列, 横向有余量; 渠道表单的授权矩阵是三列复选框, 列宽紧张才用缩写。
 const PROTOCOL_TAGS = [
@@ -506,6 +517,10 @@ export function GroupEditor({
     const canaryInvalid = canarySubmitBlocked(mode, canaryUserIDsText);
     const isValid = groupKey.length > 0 && selectedMembers.length > 0 && !canaryInvalid;
 
+    const standbyGrantID = selectedMembers.length >= 2 &&
+        selectedMembers.some((member) => member.channel_grant_id === relayConfig.standby_grant_id)
+        ? relayConfig.standby_grant_id ?? 0
+        : 0;
     // 灰度成员只能从已落库的成员里选: 新建分组尚未保存时成员还没有 item_id, 灰度无处可指,
     // 后端创建时也会清掉 canary_item_id, 两边口径一致。
     const canaryMembers = useMemo(
@@ -513,7 +528,7 @@ export function GroupEditor({
         [selectedMembers],
     );
     // 保存的灰度成员可能已被移出分组, 找不到就回落到「关闭」, 不给一个指向不存在成员的值。
-    const canaryItemID = canaryMembers.some((member) => member.item_id === relayConfig.canary_item_id)
+    const canaryItemID = canaryMembers.some((member) => member.item_id === relayConfig.canary_item_id && member.channel_grant_id !== standbyGrantID)
         ? relayConfig.canary_item_id
         : 0;
 
@@ -524,7 +539,12 @@ export function GroupEditor({
             name: groupName,
             mode,
             // 用户列表以输入框为准: 它与 canary_user_ids 是同一份数据, 提交时统一按下标解析结果落库。
-            relay_config: canarySubmitConfig(relayConfig, canaryUserIDsText),
+            relay_config: canarySubmitConfig({
+                ...relayConfig,
+                standby_grant_id: standbyGrantID,
+                standby_after_failures: standbyGrantID ? relayConfig.standby_after_failures ?? 2 : 0,
+                canary_item_id: canaryItemID,
+            }, canaryUserIDsText),
             members: selectedMembers,
         });
     };
@@ -556,7 +576,7 @@ export function GroupEditor({
                                     setMode(nextMode);
                                     // 新建分组切换策略时直接采用该策略预设; 编辑已有分组保留手工调整值。
                                     // 灰度不属于任何模式的预设, 换模式(含切到手动)都原样保留已填的灰度值。
-                                    if (!initial) setRelayConfig((prev) => preserveCanary(modeRelayConfig(nextMode), prev));
+                                    if (!initial) setRelayConfig((prev) => applyModeDefaults(nextMode, prev));
                                 }}
                             >
                                 <SelectTrigger id="group-mode" className="w-full rounded-xl">
@@ -606,7 +626,7 @@ export function GroupEditor({
                         <TabsContent value="relay" className="group-relay-panel min-w-0 wrap-anywhere px-1 pb-1 [&_[data-slot=field]]:min-w-0">
                             <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/50 bg-muted/30 px-3 py-2">
                                 <span className="text-xs text-muted-foreground">{t('form.presetHint')}</span>
-                                <Button type="button" variant="outline" size="sm" className="rounded-lg" onClick={() => setRelayConfig((prev) => preserveCanary(modeRelayConfig(mode), prev))}>{t('form.applyPreset')}</Button>
+                                <Button type="button" variant="outline" size="sm" className="rounded-lg" onClick={() => setRelayConfig((prev) => applyModeDefaults(mode, prev))}>{t('form.applyPreset')}</Button>
                             </div>
                             {mode === 'score' && (
                                 <p className="mb-3 text-sm text-muted-foreground">{t('form.scoreRetryHint')}</p>
@@ -1174,6 +1194,48 @@ export function GroupEditor({
                                 </>
                                 )}
                             </div>
+                            {mode !== 'manual' && (
+                                <section className="mt-4 space-y-3 rounded-xl border border-border/50 bg-muted/20 p-3">
+                                    <div>
+                                        <h4 className="text-sm font-semibold">{t('form.standbyTitle')}</h4>
+                                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t('form.standbyHint')}</p>
+                                    </div>
+                                    {selectedMembers.length < 2 ? (
+                                        <p className="text-xs text-muted-foreground">{t('form.standbyNeedsMembers')}</p>
+                                    ) : (
+                                        <Field>
+                                            <FieldLabel htmlFor="group-standby-member">{t('form.standbyMember')}</FieldLabel>
+                                            <Select
+                                                value={String(standbyGrantID)}
+                                                onValueChange={(value) => setRelayConfig((prev) => ({ ...prev, standby_grant_id: Number(value) }))}
+                                            >
+                                                <SelectTrigger id="group-standby-member" className={memberSelectTrigger}><SelectValue /></SelectTrigger>
+                                                <SelectContent className={memberSelectContent} align="start" side="top" collisionPadding={8}>
+                                                    <SelectItem value="0">{t('form.canaryOff')}</SelectItem>
+                                                    {selectedMembers.map((member) => (
+                                                        <SelectItem key={member.channel_grant_id} value={String(member.channel_grant_id)} className="min-w-0 wrap-anywhere">
+                                                            {member.channel_name} · {member.name} · {member.key_name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </Field>
+                                    )}
+                                    {standbyGrantID > 0 && (
+                                        <Field className="max-w-xs">
+                                            <FieldLabel htmlFor="group-standby-failures">{t('form.standbyFailures')}</FieldLabel>
+                                            <Input id="group-standby-failures" type="number" min={1} max={10} step={1}
+                                                value={relayConfig.standby_after_failures || 2}
+                                                onChange={(event) => setRelayConfig((prev) => ({
+                                                    ...prev,
+                                                    standby_after_failures: Math.min(10, Math.max(1, Math.trunc(Number(event.target.value)))),
+                                                }))}
+                                                className="rounded-xl"
+                                            />
+                                        </Field>
+                                    )}
+                                </section>
+                            )}
                             {/* 灰度分流叠加在上面的模式之上, 手动模式除外 —— 手动的成员是硬约束, 没有可叠加的余地,
                                 故整块不渲染而不是渲染成禁用态。 */}
                             {mode !== 'manual' && (
@@ -1194,18 +1256,18 @@ export function GroupEditor({
                                                     value={String(canaryItemID)}
                                                     onValueChange={(value) => setRelayConfig((prev) => ({ ...prev, canary_item_id: Number(value) }))}
                                                 >
-                                                    <SelectTrigger id="group-canary-member" className="w-full min-w-0 whitespace-normal rounded-xl text-left data-[size=default]:h-auto *:data-[slot=select-value]:line-clamp-none *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:wrap-anywhere">
+                                                    <SelectTrigger id="group-canary-member" className={memberSelectTrigger}>
                                                         <SelectValue />
                                                     </SelectTrigger>
                                                     <SelectContent
-                                                        className="w-(--radix-select-trigger-width) min-w-0 overflow-hidden [&>[data-radix-select-viewport]]:h-auto"
+                                                        className={memberSelectContent}
                                                         align="start"
                                                         side="top"
                                                         collisionPadding={8}
                                                     >
                                                         {/* 「关闭」恒为首项: 灰度是可选叠加, 必须能一键回到关闭。 */}
                                                         <SelectItem value="0">{t('form.canaryOff')}</SelectItem>
-                                                        {canaryMembers.map((member) => (
+                                                        {canaryMembers.filter((member) => member.channel_grant_id !== standbyGrantID).map((member) => (
                                                             <SelectItem key={member.item_id} value={String(member.item_id)} className="min-w-0 wrap-anywhere">
                                                                 {member.channel_name} · {member.name}
                                                             </SelectItem>
