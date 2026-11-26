@@ -181,17 +181,16 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
         <article
             ref={cardRef}
             className={cn(
-                'group relative rounded-3xl border border-border bg-card flex items-center gap-3 p-4',
+                'group relative flex flex-wrap items-center gap-2.5 rounded-xl border border-border bg-card p-2.5',
                 (isEditOpen || confirmDelete || taskEditorOpen) && 'z-50'
             )}
         >
-            <Icon aria-hidden="true" className={iconClassName} width={52} height={52} />
-
-            <div className="flex-1 min-w-0 flex flex-col justify-center gap-2">
+            <div className="min-w-0 flex flex-1 flex-col gap-1">
                 <span className="flex items-center gap-1.5 min-w-0">
+                    <Icon aria-hidden="true" className={cn('shrink-0', iconClassName)} width={24} height={24} />
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <span className="w-fit max-w-full text-base font-semibold text-card-foreground leading-tight truncate">
+                            <span className="w-fit max-w-full text-sm font-semibold text-card-foreground leading-tight truncate">
                                 {model.name}
                             </span>
                         </TooltipTrigger>
@@ -210,106 +209,40 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
                     )}
                 </span>
 
-                {isListLayout ? (
-                    <p className="flex items-center gap-2 overflow-hidden text-sm text-muted-foreground whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1">
-                            <ArrowDownToLine className="size-3.5 shrink-0" style={{ color: brandColor }} />
-                            {t('card.inputCache')}
-                            <span className="tabular-nums">{model.input.toFixed(2)}/{model.cache_read.toFixed(2)}$</span>
-                        </span>
-                        <span className="text-muted-foreground/60">|</span>
-                        <span className="inline-flex items-center gap-1 overflow-hidden">
-                            <ArrowUpFromLine className="size-3.5 shrink-0" style={{ color: brandColor }} />
-                            {t('card.outputCache')}
-                            <span className="tabular-nums truncate">{model.output.toFixed(2)}/{model.cache_write.toFixed(2)}$</span>
-                        </span>
-                        <span className="text-muted-foreground/60">|</span>
-                        <span className="inline-flex items-center gap-1 shrink-0">
-                            <Gauge className={cn('size-3.5 shrink-0', score && score.samples > 0 && score.success < 0.7 && 'text-destructive')} />
-                            {score && score.samples > 0 ? (
-                                <span title={scoreTooltip(score, t)} className={cn('tabular-nums', score.success >= 0.7 ? 'text-primary' : 'text-destructive')}>
-                                    {t('card.scoreLine', { latency: formatLatency(score.wait_ms), success: Math.round(score.success * 100), samples: score.samples })}
-                                </span>
-                            ) : (
-                                <span title={scoreTooltip(score, t)} className="text-muted-foreground/70">{t('card.scoreCold')}</span>
-                            )}
-                        </span>
-                        {(context > 0 || maxOutput > 0) && (
-                            <>
-                                <span className="text-muted-foreground/60">|</span>
-                                <span className="inline-flex items-center gap-1 shrink-0">
-                                    <MessageSquare className="size-3.5 shrink-0" style={{ color: brandColor }} />
-                                    {context > 0 && (
-                                        <span className="tabular-nums">
-                                            {t('card.context')} {context.toLocaleString()}
-                                        </span>
-                                    )}
-                                    {context > 0 && maxOutput > 0 && (
-                                        <span className="text-muted-foreground/60">/</span>
-                                    )}
-                                    {maxOutput > 0 && (
-                                        <span className="tabular-nums">
-                                            {t('card.maxOutput')} {maxOutput.toLocaleString()}
-                                        </span>
-                                    )}
-                                </span>
-                            </>
+                <div className={cn(
+                    'flex gap-x-3 gap-y-0.5 text-xs leading-snug text-muted-foreground wrap-anywhere',
+                    isListLayout ? 'flex-wrap' : 'flex-col',
+                )}>
+                    <span className="inline-flex flex-wrap items-center gap-x-1">
+                        <ArrowDownToLine className="size-3 shrink-0" style={{ color: brandColor }} />
+                        {t('card.inputCache')}
+                        <span className="tabular-nums">{model.input.toFixed(2)}/{model.cache_read.toFixed(2)}$</span>
+                    </span>
+                    <span className="inline-flex flex-wrap items-center gap-x-1">
+                        <ArrowUpFromLine className="size-3 shrink-0" style={{ color: brandColor }} />
+                        {t('card.outputCache')}
+                        <span className="tabular-nums">{model.output.toFixed(2)}/{model.cache_write.toFixed(2)}$</span>
+                    </span>
+                    <span className="inline-flex flex-wrap items-center gap-x-1">
+                        <Gauge className="size-3 shrink-0" />
+                        {score && score.samples > 0 ? (
+                            <span title={scoreTooltip(score, t)} className={cn('tabular-nums font-medium', score.success >= 0.7 ? 'text-primary' : 'text-destructive')}>
+                                {t('card.scoreLine', { latency: formatLatency(score.wait_ms), success: Math.round(score.success * 100), samples: score.samples })}
+                            </span>
+                        ) : (
+                            <span title={scoreTooltip(score, t)}>{t('card.scoreCold')}</span>
                         )}
-                    </p>
-                ) : (
-                    <>
-                        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                            <ArrowDownToLine className="size-3.5" style={{ color: brandColor }} />
-                            {t('card.inputCache')}
-                            <span className="tabular-nums">{model.input.toFixed(2)}/{model.cache_read.toFixed(2)}$</span>
-                        </p>
-
-                        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                            <ArrowUpFromLine className="size-3.5" style={{ color: brandColor }} />
-                            {t('card.outputCache')}
-                            <span className="tabular-nums">{model.output.toFixed(2)}/{model.cache_write.toFixed(2)}$</span>
-                        </p>
-
-
-                <p className="flex items-center gap-1.5 text-sm">
-                    <Gauge className="size-3.5 shrink-0 text-muted-foreground" />
-                    {score && score.samples > 0 ? (
-                        <span
-                            title={scoreTooltip(score, t)}
-                            className={cn(
-                                'tabular-nums font-medium',
-                                score.success >= 0.7 ? 'text-primary' : 'text-destructive'
-                            )}
-                        >
-                            {t('card.scoreLine', { latency: formatLatency(score.wait_ms), success: Math.round(score.success * 100), samples: score.samples })}
+                    </span>
+                    {(context > 0 || maxOutput > 0) && (
+                        <span className="inline-flex flex-wrap items-center gap-x-1">
+                            <MessageSquare className="size-3 shrink-0" style={{ color: brandColor }} />
+                            {context > 0 && <span className="tabular-nums">{t('card.context')} {context.toLocaleString()}</span>}
+                            {maxOutput > 0 && <span className="tabular-nums">{t('card.maxOutput')} {maxOutput.toLocaleString()}</span>}
                         </span>
-                    ) : (
-                        <span title={scoreTooltip(score, t)} className="text-muted-foreground/70">{t('card.scoreCold')}</span>
                     )}
-                </p>
-
-                {(context > 0 || maxOutput > 0) && (
-                    <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                        <MessageSquare className="size-3.5" style={{ color: brandColor }} />
-                        {context > 0 && (
-                            <span className="tabular-nums">
-                                {t('card.context')} {context.toLocaleString()}
-                            </span>
-                        )}
-                        {context > 0 && maxOutput > 0 && (
-                            <span className="text-muted-foreground/60">/</span>
-                        )}
-                        {maxOutput > 0 && (
-                            <span className="tabular-nums">
-                                {t('card.maxOutput')} {maxOutput.toLocaleString()}
-                            </span>
-                        )}
-                    </p>
-                )}
-                    </>
-                )}
+                </div>
                 {officialPrice && (
-                    <p className="text-xs text-muted-foreground" title={`models.dev · ${model.reference?.price_provider}`}>
+                    <p className="text-xs leading-snug text-muted-foreground wrap-anywhere" title={`models.dev · ${model.reference?.price_provider}`}>
                         {t('card.officialPrice', {
                             input: officialPrice.input ?? '—',
                             output: officialPrice.output ?? '—',
@@ -322,9 +255,8 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
 
             <div
                 className={cn(
-                    isListLayout
-                        ? 'shrink-0 flex items-center gap-2 self-center'
-                        : 'shrink-0 flex flex-col justify-between self-stretch',
+                    'grid shrink-0 grid-cols-2 gap-1',
+                    isListLayout && 'sm:grid-cols-4',
                     (isEditOpen || confirmDelete) && 'invisible pointer-events-none'
                 )}
             >
@@ -338,7 +270,7 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
                             type="button"
                             title={customized ? t('rule.customized') : t('rule.open')}
                             className={cn(
-                                'h-9 w-9 flex items-center justify-center rounded-lg transition-colors',
+                                'size-8 flex items-center justify-center rounded-lg transition-colors',
                                 customized
                                     ? 'bg-primary/15 text-primary hover:bg-primary/25'
                                     : 'bg-muted/60 text-muted-foreground hover:bg-muted'
@@ -356,7 +288,7 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
                     })) as Record<AutoRoutingTask, { score: string; verified: boolean; notes: string }>);
                     setTaskEditorOpen((open) => !open);
                 }}
-                    className={cn('h-9 w-9 flex items-center justify-center rounded-lg transition-colors', taskCapabilities?.some((item) => item.verified) ? 'bg-primary/15 text-primary hover:bg-primary/25' : 'bg-muted/60 text-muted-foreground hover:bg-muted')}>
+                    className={cn('size-8 flex items-center justify-center rounded-lg transition-colors', taskCapabilities?.some((item) => item.verified) ? 'bg-primary/15 text-primary hover:bg-primary/25' : 'bg-muted/60 text-muted-foreground hover:bg-muted')}>
                     <Gauge className="size-4" />
                 </button>
                 <motion.button
@@ -364,7 +296,7 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
                     type="button"
                     onClick={handleEditClick}
                     disabled={isEditOpen || confirmDelete}
-                    className="h-9 w-9 flex items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                    className="size-8 flex items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
                 >
                     <Pencil className="size-4" />
                 </motion.button>
@@ -374,21 +306,21 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
                     type="button"
                     onClick={handleDeleteClick}
                     disabled={isEditOpen || confirmDelete}
-                    className="h-9 w-9 flex items-center justify-center rounded-lg bg-destructive/10 text-destructive transition-colors hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50"
+                    className="size-8 flex items-center justify-center rounded-lg bg-destructive/10 text-destructive transition-colors hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50"
                 >
                     <Trash2 className="size-4" />
                 </motion.button>
             </div>
 
             {taskEditorOpen && (
-                <div className="absolute inset-x-3 bottom-3 z-20 rounded-2xl border border-border bg-card p-3 shadow-xl">
+                <div className="w-full rounded-xl border border-border bg-background p-3">
                     <div className="mb-2 flex items-center justify-between">
                         <span className="text-xs font-semibold">{t('taskCapability.title')}</span>
                         <button type="button" onClick={() => setTaskEditorOpen(false)} className="text-xs text-muted-foreground">{t('taskCapability.close')}</button>
                     </div>
                     <div className="grid gap-2">
                         {(['general', 'summary', 'coding', 'tool', 'extraction'] as const).map((task) => (
-                            <div key={task} className="grid grid-cols-[5rem_4rem_auto_1fr] items-center gap-2 text-xs">
+                            <div key={task} className="grid grid-cols-[minmax(0,1fr)_3.5rem_auto] items-center gap-2 text-xs sm:grid-cols-[5rem_3.5rem_auto_minmax(0,1fr)]">
                                 <span>{t('taskCapability.tasks.' + task)}</span>
                                 <input type="number" min={0} max={100} value={taskValues[task].score} aria-label={t('taskCapability.score')}
                                     onChange={(event) => setTaskValues((current) => ({ ...current, [task]: { ...current[task], score: event.target.value } }))}
@@ -397,7 +329,7 @@ export const ModelItem = memo(function ModelItem({ model, layout = 'grid', score
                                     onChange={(event) => setTaskValues((current) => ({ ...current, [task]: { ...current[task], verified: event.target.checked } }))} /> {t('taskCapability.verified')}</label>
                                 <input value={taskValues[task].notes} placeholder={t('taskCapability.notes')}
                                     onChange={(event) => setTaskValues((current) => ({ ...current, [task]: { ...current[task], notes: event.target.value } }))}
-                                    className="h-7 rounded-lg border border-border bg-background px-2" />
+                                    className="col-span-full h-7 min-w-0 rounded-lg border border-border bg-background px-2 sm:col-span-1" />
                             </div>
                         ))}
                     </div>

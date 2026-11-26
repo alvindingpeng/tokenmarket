@@ -117,7 +117,8 @@ export function Model() {
             items={visibleModels}
             layout={layout}
             columns={{ default: 1, md: 2, lg: 2 }}
-            estimateItemHeight={112}
+            estimateItemHeight={layout === 'list' ? 78 : 108}
+            gap={8}
             getItemKey={(model) => `model-${model.name}`}
             renderItem={(model) => (
                 <ModelItem

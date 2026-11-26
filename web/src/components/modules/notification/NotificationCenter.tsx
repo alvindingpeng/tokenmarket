@@ -62,11 +62,11 @@ export function NotificationCenter() {
     ];
 
     return (
-        <div className="notification-page flex h-full min-h-0 w-full min-w-0 flex-col gap-4 overflow-y-auto overscroll-contain p-4 md:p-6">
+        <div className="notification-page flex h-full min-h-0 w-full min-w-0 flex-col gap-3 overflow-y-auto overscroll-contain p-4 md:p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                     <Bell className="size-5 text-muted-foreground" />
-                    <h1 className="text-xl font-semibold">{t('title')}</h1>
+                    <h1 className="text-lg font-semibold">{t('title')}</h1>
                 </div>
                 <Button variant="outline" size="sm" onClick={handleMarkAllRead} disabled={markAllRead.isPending}>
                     <CheckCheck className="size-4" />
@@ -74,7 +74,7 @@ export function NotificationCenter() {
                 </Button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
                 {filters.map((filter) => (
                     <Button
                         key={filter.id}
@@ -91,38 +91,38 @@ export function NotificationCenter() {
             </div>
 
             {isLoading ? (
-                <Card>
-                    <CardContent className="py-10 text-center text-sm text-muted-foreground">{t('loading')}</CardContent>
+                <Card className="py-0">
+                    <CardContent className="py-6 text-center text-sm text-muted-foreground">{t('loading')}</CardContent>
                 </Card>
             ) : isError ? (
                 // 失败与"真的没有通知"此前看起来一模一样: 都落到 items.length === 0 的空态,
                 // 于是接口故障被伪装成"没有新通知", 用户不会去重试也不会怀疑服务。
-                <Card>
-                    <CardContent className="py-10">
+                <Card className="py-0">
+                    <CardContent className="py-6">
                         <ListErrorState onRetry={() => void refetch()} retrying={isRefetching} />
                     </CardContent>
                 </Card>
             ) : items.length === 0 ? (
-                <Card>
-                    <CardContent className="py-10 text-center text-sm text-muted-foreground">{t('empty')}</CardContent>
+                <Card className="py-0">
+                    <CardContent className="py-6 text-center text-sm text-muted-foreground">{t('empty')}</CardContent>
                 </Card>
             ) : (
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-1.5">
                     {items.map((item) => {
                         const unread = item.status === 'unread';
                         return (
-                            <Card key={item.id} className={cn(unread && 'border-primary/40 bg-primary/5')}>
-                                <CardContent className="flex items-start gap-3 p-4">
+                            <Card key={item.id} className={cn('gap-0 py-0', unread && 'border-primary/40 bg-primary/5')}>
+                                <CardContent className="flex items-start gap-2 px-3 py-2">
                                     <div className="min-w-0 flex-1">
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <span className="min-w-0 font-medium wrap-anywhere">{item.title}</span>
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                            <span className="min-w-0 text-sm leading-snug font-medium wrap-anywhere">{item.title}</span>
                                             <Badge variant={unread ? 'default' : 'secondary'} className="text-[10px]">
                                                 {t(notificationTypeKey(item.type))}
                                             </Badge>
                                             {unread && <span className="size-1.5 rounded-full bg-primary" />}
                                         </div>
-                                        <p className="mt-1 break-words text-sm text-muted-foreground">{item.content}</p>
-                                        <span className="mt-2 block text-xs text-muted-foreground/80">
+                                        <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground wrap-anywhere">{item.content}</p>
+                                        <span className="mt-1 block text-xs leading-tight text-muted-foreground/80">
                                             {new Date(item.created_at).toLocaleString()}
                                         </span>
                                     </div>
@@ -130,7 +130,7 @@ export function NotificationCenter() {
                                         {notificationNavigation(item.type, item.related_id) && (
                                             <Button
                                                 variant="ghost"
-                                                size="icon"
+                                                size="icon-sm"
                                                 aria-label={t('viewTicket') + ': ' + item.title}
                                                 onClick={() => handleOpen(item)}
                                             >
@@ -140,7 +140,7 @@ export function NotificationCenter() {
                                         {unread && (
                                             <Button
                                                 variant="ghost"
-                                                size="icon"
+                                                size="icon-sm"
                                                 aria-label={t('markRead')}
                                                 onClick={() => handleMarkRead([item.id])}
                                             >
@@ -149,7 +149,7 @@ export function NotificationCenter() {
                                         )}
                                         <Button
                                             variant="ghost"
-                                            size="icon"
+                                            size="icon-sm"
                                             aria-label={t('delete')}
                                             onClick={() => handleRemove(item.id)}
                                         >

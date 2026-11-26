@@ -134,6 +134,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 667, height: 375 }
                 await expect(page.getByText('Notification 20')).toHaveCount(1);
                 await expect.poll(() => content.evaluate(el => Math.abs(el.getBoundingClientRect().width - el.parentElement!.clientWidth))).toBeLessThanOrEqual(1);
                 expect(await content.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+                const regularCard = content.locator('[data-slot=card]').filter({ hasText: /^Notification 20/ });
+                expect(await regularCard.evaluate(el => el.clientHeight)).toBeLessThan(100);
             }
 
             const scroller = viewport.width <= 767 || viewport.height <= 600
@@ -223,4 +225,37 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 667, height: 375 }
             await context.close();
         });
     }
+}
+
+for (const width of [390, 1440]) {
+    test(`compact price cards keep model details and actions visible at ${width}px`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 844 });
+        await page.route('**/api/v1/**', async route => {
+            const path = new URL(route.request().url()).pathname;
+            const data = path === '/api/v1/user/status'
+                ? { id: 1, username: 'demo', role: 'admin', status: 'active', balance: 100 }
+                : path === '/api/v1/model/list'
+                    ? [{
+                        name: 'example-model', input: 1.25, output: 4.5, cache_read: 0.25, cache_write: 0.75,
+                        reference: { context_length: 128000, max_output: 16000, price_provider: 'example', official_price: { input: 2, output: 5 } },
+                    }]
+                    : [];
+            await route.fulfill({ json: { data } });
+        });
+        await page.goto('/');
+        await page.locator('#initial-loader').waitFor({ state: 'hidden' });
+        await page.getByRole('button', { name: 'EN', exact: true }).click();
+        await page.getByRole('navigation', { name: 'Main Navigation' }).getByRole('button', { name: 'Model', exact: true }).click();
+        const card = page.locator('article').filter({ hasText: 'example-model' });
+        await expect(card.getByText('1.25/0.25$')).toBeVisible();
+        await expect(card.getByText('4.50/0.75$')).toBeVisible();
+        await expect(card.getByText('Context 128,000')).toBeVisible();
+        await expect(card.getByText('Output 16,000')).toBeVisible();
+        await expect(card.getByText(/Developer reference/)).toBeVisible();
+        expect(await card.evaluate(el => el.clientHeight)).toBeLessThan(160);
+        expect(await card.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+        await card.getByRole('button', { name: 'Task capability and verification' }).click();
+        await expect(card.getByRole('button', { name: 'Save task capability' })).toBeVisible();
+        expect(await card.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+    });
 }
