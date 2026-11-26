@@ -879,6 +879,10 @@
             "autoQualityTitle": "品質門檻與綜合評分",
             "autoQualityHint": "門檻大於 0 時，先排除未驗證或品質分不達標的模型，再按品質、成本、延遲和成功率綜合選擇。設定為 0 時保持原來的最低成本優先。",
             "autoMinTaskScore": "最低任務品質分",
+            "autoMinQualityScore": "最低品質分",
+            "autoMinSuccessRate": "最低成功率 (%)",
+            "autoParetoEnabled": "帕累托前沿篩選",
+            "autoParetoEnabledHint": "綜合評分前，先剔除在成本、延遲、成功率與任務品質上被其他候選全面壓制的成員。",
             "autoQualityWeight": "品質權重",
             "autoPriceWeight": "成本權重",
             "autoLatencyWeight": "延遲權重",
@@ -1333,6 +1337,8 @@
             "sticky_miss": "黏性失效",
             "auto_quality_unverified": "任務能力尚未驗證",
             "auto_quality_below_threshold": "任務品質分未達門檻",
+            "auto_success_below_floor": "成功率低於配置下限",
+            "auto_pareto_dominated": "在帕累托前沿上被壓制",
             "auto_eligible": "通過任務能力門檻"
         },
         "eventPhase": {

@@ -21,7 +21,7 @@ const ROUTE_REASON_KEYS = [
     'auto_session_expired', 'auto_session_member_unavailable', 'auto_session_member_cooling',
     'auto_session_upstream_changed', 'auto_session_member_ineligible', 'auto_session_disabled', 'auto_session_store_unavailable',
     'auto_tool_unverified', 'auto_signed_session_required', 'auto_ramp_hold', 'auto_circuit_open',
-    'auto_quality_unverified', 'auto_quality_below_threshold', 'auto_eligible',
+    'auto_quality_unverified', 'auto_quality_below_threshold', 'auto_success_below_floor', 'auto_pareto_dominated', 'auto_eligible',
     'auto_sticky_hit', 'auto_sticky_miss', 'auto_fallback_no_candidate',
     'auto_explore', 'auto_sticky', 'auto_sticky_fallback', 'auto_reject',
     'active_selected', 'fallback_selected', 'rejected', 'explored',

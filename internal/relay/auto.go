@@ -573,13 +573,14 @@ func analyzeAutoCandidates(group model.Group, task autoTask) autoCandidateResult
 		}
 		// 门槛为 0 是 v1.16.7 兼容模式: 管理员没有声明质量要求时不改变原有选路。
 		// 一旦设置门槛，未验证和低于门槛的模型都不能进入候选，避免“便宜但不会做”的模型
-		// 仅因价格取胜。
-		if config.AutoMinTaskScore > 0 {
+		// 仅因价格取胜。auto_min_quality_score 优先于 auto_min_task_score。
+		qualityFloor := autoQualityFloor(config)
+		if qualityFloor > 0 {
 			switch {
 			case !hasTaskCapability || !taskCapability.Verified:
 				reason = "auto_quality_unverified"
 				unverified++
-			case taskCapability.Score < config.AutoMinTaskScore:
+			case taskCapability.Score < qualityFloor:
 				reason = "auto_quality_below_threshold"
 				qualityRejected++
 			}
@@ -590,6 +591,15 @@ func analyzeAutoCandidates(group model.Group, task autoTask) autoCandidateResult
 				Reason: reason, TaskScore: taskScore, QualityEligible: qualityEligible,
 			})
 			continue
+		}
+		if successFloor := autoReliabilityFloor(config); successFloor > 0 {
+			if _, rate, samples := memberScopeMetric(group, item); samples > 0 && rate < successFloor {
+				excluded = append(excluded, model.RelayRouteCandidate{
+					ItemID: item.ID, ChannelCode: item.ChannelName, Model: item.ModelName,
+					Reason: "auto_success_below_floor", TaskScore: taskScore, QualityEligible: qualityEligible,
+				})
+				continue
+			}
 		}
 		group.Items = append(group.Items, item)
 		group.AutoRequestCosts[item.ID] = (float64(task.input)*item.UserPrice.Input + float64(task.output)*item.UserPrice.Output) / 1e6
@@ -606,7 +616,8 @@ func analyzeAutoCandidates(group model.Group, task autoTask) autoCandidateResult
 				continue
 			}
 			capability, ok := op.TaskCapabilityGet(item.ModelName, task.name)
-			if !ok || (!capability.Verified && capability.Score < config.AutoMinTaskScore) {
+			floor := autoQualityFloor(config)
+			if !ok || (!capability.Verified && (floor <= 0 || capability.Score < floor)) {
 				exploreCandidates = append(exploreCandidates, item)
 			}
 		}
@@ -663,15 +674,43 @@ func autoDecisionDetailsJSON(task autoTask, prediction *autoPredictionDetails, c
 // 最终候选集计算，避免诊断看板与真实选路使用两套公式。
 func autoCandidatesForDetails(group model.Group, finalScores map[int]float64) []model.RelayRouteCandidate {
 	items := make([]model.RelayRouteCandidate, 0, len(group.Items))
+	pareto := map[int]bool{}
+	if group.RelayConfig.AutoParetoEnabled {
+		for _, item := range autoParetoFront(group, group.Items) {
+			pareto[item.ID] = true
+		}
+	}
 	for _, item := range group.Items {
+		reason := "auto_eligible"
+		if group.RelayConfig.AutoParetoEnabled && !pareto[item.ID] {
+			reason = "auto_pareto_dominated"
+		}
 		items = append(items, model.RelayRouteCandidate{
 			ItemID: item.ID, ChannelCode: item.ChannelName, Model: item.ModelName,
-			Reason: "auto_eligible", TaskScore: group.AutoTaskScores[item.ID],
+			Reason: reason, TaskScore: group.AutoTaskScores[item.ID],
 			QualityEligible: true, EstimatedCost: group.AutoRequestCosts[item.ID],
 			FinalScore: finalScores[item.ID],
 		})
 	}
 	return items
+}
+
+// pickAutoExploreItem 在缺质量证据的候选中按历史成功率从高到低取一个，
+// 同成功率时回落到候选顺序，避免完全随机把探索流量送给已知更差的成员。
+// 受控探索仅用于普通任务，工具任务不会进入这里。
+func pickAutoExploreItem(group model.Group, candidates []model.GroupItem) model.GroupItem {
+	if len(candidates) == 0 {
+		return model.GroupItem{}
+	}
+	best := candidates[0]
+	bestRate, bestKnown := memberRate(group, candidates[0])
+	for _, item := range candidates[1:] {
+		rate, known := memberRate(group, item)
+		if known && (!bestKnown || rate > bestRate) {
+			best, bestRate, bestKnown = item, rate, true
+		}
+	}
+	return best
 }
 
 func autoExclusion(item model.GroupItem, task autoTask, qualified, toolVerified bool, contextOverride int) string {

@@ -108,7 +108,7 @@ const modeRelayDefaults: Record<GroupMode, ModeRelayDefaults> = {
 
 // modeRelayConfig 返回该模式的预设; 灰度恒从关闭态起步 —— 它叠加在模式之上, 不属于任何模式的预设。
 function modeRelayConfig(mode: GroupMode): GroupRelayConfig {
-    return { ...modeRelayDefaults[mode], ...canaryDefaults(), auto_ramp_percent: 5, auto_fallback_failures: 3, auto_fallback_seconds: 60, auto_sticky_seconds: 300, auto_fallback_no_candidate: true, auto_explore_percent: 5, auto_min_task_score: 0, auto_quality_weight: 40, auto_price_weight: 20, auto_latency_weight: 20, auto_success_weight: 20 };
+    return { ...modeRelayDefaults[mode], ...canaryDefaults(), auto_ramp_percent: 5, auto_fallback_failures: 3, auto_fallback_seconds: 60, auto_sticky_seconds: 300, auto_fallback_no_candidate: true, auto_explore_percent: 5, auto_min_task_score: 0, auto_min_quality_score: 0, auto_min_success_rate: 0, auto_pareto_enabled: false, auto_quality_weight: 40, auto_price_weight: 20, auto_latency_weight: 20, auto_success_weight: 20 };
 }
 
 function applyModeDefaults(mode: GroupMode, current: GroupRelayConfig): GroupRelayConfig {
@@ -910,6 +910,20 @@ export function GroupEditor({
                                                             onChange={(event) => setRelayConfig((prev) => ({ ...prev, auto_min_task_score: Math.min(Math.max(Number.parseInt(event.target.value, 10) || 0, 0), 100) }))}
                                                             className="rounded-xl" />
                                                     </Field>
+                                                    <Field>
+                                                        <FieldLabel htmlFor="group-auto-min-quality-score">{t('form.autoMinQualityScore')}</FieldLabel>
+                                                        <Input id="group-auto-min-quality-score" type="number" min={0} max={100} step={1}
+                                                            value={String(relayConfig.auto_min_quality_score ?? 0)}
+                                                            onChange={(event) => setRelayConfig((prev) => ({ ...prev, auto_min_quality_score: Math.min(Math.max(Number.parseInt(event.target.value, 10) || 0, 0), 100) }))}
+                                                            className="rounded-xl" />
+                                                    </Field>
+                                                    <Field>
+                                                        <FieldLabel htmlFor="group-auto-min-success-rate">{t('form.autoMinSuccessRate')}</FieldLabel>
+                                                        <Input id="group-auto-min-success-rate" type="number" min={0} max={100} step={1}
+                                                            value={String(relayConfig.auto_min_success_rate ?? 0)}
+                                                            onChange={(event) => setRelayConfig((prev) => ({ ...prev, auto_min_success_rate: Math.min(Math.max(Number.parseInt(event.target.value, 10) || 0, 0), 100) }))}
+                                                            className="rounded-xl" />
+                                                    </Field>
                                                     {([
                                                         ['auto_quality_weight', 'autoQualityWeight'],
                                                         ['auto_price_weight', 'autoPriceWeight'],
@@ -928,6 +942,18 @@ export function GroupEditor({
                                                 <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
                                                     {t('form.autoQualityRegistryHint')}
                                                 </p>
+                                                <label className="mt-3 flex min-w-0 items-start gap-2 rounded-xl border border-border/50 p-3 text-xs">
+                                                    <Checkbox
+                                                        checked={!!relayConfig.auto_pareto_enabled}
+                                                        onCheckedChange={(value) => setRelayConfig((prev) => ({ ...prev, auto_pareto_enabled: value === true }))}
+                                                        className="mt-0.5"
+                                                        aria-label={t('form.autoParetoEnabled')}
+                                                    />
+                                                    <span>
+                                                        <span className="block font-medium">{t('form.autoParetoEnabled')}</span>
+                                                        <span className="mt-1 block leading-relaxed text-muted-foreground">{t('form.autoParetoEnabledHint')}</span>
+                                                    </span>
+                                                </label>
                                                 <div className="mt-3 grid gap-3 @min-[36rem]/field-group:grid-cols-2">
                                                     <label className="flex min-w-0 items-start gap-2 rounded-xl border border-border/50 p-3 text-xs">
                                                         <Checkbox

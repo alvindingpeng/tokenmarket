@@ -357,6 +357,11 @@ func autoScoreWeights(config model.GroupRelayConfig) (quality, price, latency, s
 // “便宜但能力不足”的模型，同时仍允许管理员把价格权重调高。
 func selectAutoByScore(group model.Group, candidates []model.GroupItem) model.GroupItem {
 	scores := autoCandidateScores(group, candidates)
+	if group.RelayConfig.AutoParetoEnabled {
+		if front := autoParetoFront(group, candidates); len(front) > 0 {
+			candidates = front
+		}
+	}
 	best, bestScore := candidates[0], math.Inf(-1)
 	for _, item := range candidates {
 		score := scores[item.ID]
@@ -365,6 +370,77 @@ func selectAutoByScore(group model.Group, candidates []model.GroupItem) model.Gr
 		}
 	}
 	return best
+}
+
+// autoParetoFront 在成本、延迟、成功率与任务质量四个维度上求非支配候选集。
+// 一个候选若在任一维度不优于另一候选、且在至少一个维度更差，则被支配。
+// 冷成员没有延迟/成功率观测，仍保留在候选集内，避免帕累托过滤把新成员永久排除。
+func autoParetoFront(group model.Group, candidates []model.GroupItem) []model.GroupItem {
+	if len(candidates) < 2 {
+		return candidates
+	}
+	prices := make([]float64, len(candidates))
+	waits := make([]float64, len(candidates))
+	rates := make([]float64, len(candidates))
+	qualities := make([]float64, len(candidates))
+	known := make([]bool, len(candidates))
+	for i, item := range candidates {
+		prices[i] = memberPrice(group, item)
+		waits[i], rates[i], _ = memberScopeMetric(group, item)
+		_, _, samples := memberScopeMetric(group, item)
+		known[i] = samples > 0
+		quality := 0.5
+		if taskScore, ok := group.AutoTaskScores[item.ID]; ok && taskScore >= 0 {
+			quality = float64(taskScore) / 100
+		}
+		qualities[i] = quality
+	}
+	front := make([]model.GroupItem, 0, len(candidates))
+	for i := range candidates {
+		// A member without latency or success observations cannot be proven
+		// dominated. Keeping it in the front also preserves the cold-start
+		// path that gives new upstreams their first samples.
+		if !known[i] {
+			front = append(front, candidates[i])
+			continue
+		}
+		dominated := false
+		for j := range candidates {
+			if i == j || !known[j] {
+				continue
+			}
+			noWorse := prices[j] <= prices[i] && qualities[j] >= qualities[i]
+			noWorse = noWorse && waits[j] <= waits[i] && rates[j] >= rates[i]
+			better := prices[j] < prices[i] || qualities[j] > qualities[i]
+			better = better || waits[j] < waits[i] || rates[j] > rates[i]
+			if noWorse && better {
+				dominated = true
+				break
+			}
+		}
+		if !dominated {
+			front = append(front, candidates[i])
+		}
+	}
+	if len(front) == 0 {
+		return candidates
+	}
+	return front
+}
+
+// autoQualityFloor 返回自动路由要求的最低任务质量分。
+// 分组显式值优先，未设置时沿用 auto_min_task_score，保持旧配置行为。
+func autoQualityFloor(config model.GroupRelayConfig) int {
+	if config.AutoMinQualityScore > 0 {
+		return config.AutoMinQualityScore
+	}
+	return config.AutoMinTaskScore
+}
+
+// autoReliabilityFloor 返回自动路由要求的最低成功率。
+// 冷成员没有观测时按通过处理，交由评分与探索处理。
+func autoReliabilityFloor(config model.GroupRelayConfig) float64 {
+	return float64(config.AutoMinSuccessRate) / 100
 }
 
 // autoCandidateScores 计算一组成员在自动路由门槛之后相对彼此的综合分。

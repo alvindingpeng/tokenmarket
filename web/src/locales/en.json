@@ -879,6 +879,10 @@
             "autoQualityTitle": "Quality floor and blended score",
             "autoQualityHint": "A floor above 0 first removes unverified or below-threshold models, then blends quality, cost, latency and success. A floor of 0 preserves the original lowest-cost behavior.",
             "autoMinTaskScore": "Minimum task score",
+            "autoMinQualityScore": "Minimum quality score",
+            "autoMinSuccessRate": "Minimum success rate (%)",
+            "autoParetoEnabled": "Pareto-front selection",
+            "autoParetoEnabledHint": "Keep only candidates not dominated on cost, latency, success rate and task quality before blended scoring.",
             "autoQualityWeight": "Quality weight",
             "autoPriceWeight": "Cost weight",
             "autoLatencyWeight": "Latency weight",
@@ -1333,6 +1337,8 @@
             "sticky_miss": "Sticky miss",
             "auto_quality_unverified": "Task capability is not verified",
             "auto_quality_below_threshold": "Task score is below the floor",
+            "auto_success_below_floor": "Success rate is below the configured floor",
+            "auto_pareto_dominated": "Dominated on the Pareto front",
             "auto_eligible": "Meets the task quality floor"
         },
         "eventPhase": {

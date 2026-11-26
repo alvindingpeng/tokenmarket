@@ -116,6 +116,9 @@ type GroupRelayConfig struct {
 	AutoPriceWeight                       int    `json:"auto_price_weight,omitempty" binding:"omitempty,min=0,max=100"`
 	AutoLatencyWeight                     int    `json:"auto_latency_weight,omitempty" binding:"omitempty,min=0,max=100"`
 	AutoSuccessWeight                     int    `json:"auto_success_weight,omitempty" binding:"omitempty,min=0,max=100"`
+	AutoParetoEnabled                     bool   `json:"auto_pareto_enabled,omitempty"`                                      // 开启后综合评分先在帕累托前沿内择优, 关闭时保持旧行为。
+	AutoMinSuccessRate                    int    `json:"auto_min_success_rate,omitempty" binding:"omitempty,min=0,max=100"`  // 自动路由要求的最低历史成功率, 0 关闭。
+	AutoMinQualityScore                   int    `json:"auto_min_quality_score,omitempty" binding:"omitempty,min=0,max=100"` // 自动路由要求的任务质量下限, 0 沿用 auto_min_task_score。
 	MemberStreamIdleTimeoutSeconds        int    `json:"member_stream_idle_timeout_seconds" binding:"omitempty,min=1,max=3600"`
 	RequestTimeoutSeconds                 int    `json:"request_timeout_seconds" binding:"omitempty,min=1,max=3600"`                    // 整请求最大耗时, 包含重试与流式传输。
 	MaxWaitSeconds                        int    `json:"max_wait_seconds" binding:"omitempty,min=0,max=300"`                            // 无可用成员时最大等待秒数, 0 立即返回。
@@ -320,6 +323,8 @@ func NormalizeGroupRelayConfigForMode(config *GroupRelayConfig, mode GroupMode) 
 	config.AutoPriceWeight = min(max(config.AutoPriceWeight, 0), 100)
 	config.AutoLatencyWeight = min(max(config.AutoLatencyWeight, 0), 100)
 	config.AutoSuccessWeight = min(max(config.AutoSuccessWeight, 0), 100)
+	config.AutoMinSuccessRate = min(max(config.AutoMinSuccessRate, 0), 100)
+	config.AutoMinQualityScore = min(max(config.AutoMinQualityScore, 0), 100)
 	// 用户 ID 去重并丢掉非法值: 重复项只会让列表越来越长, 负数与 0 不是合法用户。
 	if len(config.CanaryUserIDs) > 0 {
 		seen := make(map[int]bool, len(config.CanaryUserIDs))

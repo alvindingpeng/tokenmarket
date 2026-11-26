@@ -597,3 +597,52 @@ func TestAnthropicSignedHistoryUsesBoundSession(t *testing.T) {
 		}
 	}
 }
+
+func TestAutoParetoFrontKeepsNonDominatedCandidates(t *testing.T) {
+	group := model.Group{ID: 991, RelayConfig: model.GroupRelayConfig{AutoParetoEnabled: true}}
+	group.Items = []model.GroupItem{
+		{ID: 1, UserPrice: model.LLMPrice{Input: 1, Output: 1}},
+		{ID: 2, UserPrice: model.LLMPrice{Input: 2, Output: 2}},
+	}
+	group.AutoRequestCosts = map[int]float64{1: 1, 2: 2}
+	group.AutoTaskScores = map[int]int{1: 100, 2: 100}
+	recordMemberMetric(group.ID, 1, 0, 30, 100, true)
+	recordMemberMetric(group.ID, 2, 0, 30, 100, true)
+	front := autoParetoFront(group, group.Items)
+	if len(front) != 1 || front[0].ID != 1 {
+		t.Fatalf("cheaper same-quality member must dominate: %+v", front)
+	}
+	group.AutoTaskScores[2] = 100
+	group.AutoTaskScores[1] = 50
+	front = autoParetoFront(group, group.Items)
+	if len(front) != 2 {
+		t.Fatalf("cost-quality tradeoff must keep both: %+v", front)
+	}
+}
+
+func TestAutoParetoFrontKeepsColdCandidates(t *testing.T) {
+	group := model.Group{ID: 992, RelayConfig: model.GroupRelayConfig{AutoParetoEnabled: true}}
+	group.Items = []model.GroupItem{
+		{ID: 1, UserPrice: model.LLMPrice{Input: 1, Output: 1}},
+		{ID: 2, UserPrice: model.LLMPrice{Input: 1, Output: 1}},
+	}
+	group.AutoRequestCosts = map[int]float64{1: 1, 2: 1}
+	group.AutoTaskScores = map[int]int{1: 100, 2: 100}
+	front := autoParetoFront(group, group.Items)
+	if len(front) != 2 {
+		t.Fatalf("cold candidate must remain on the front: %+v", front)
+	}
+}
+
+func TestAutoMinQualityAndSuccessConstraints(t *testing.T) {
+	config := model.GroupRelayConfig{AutoMinQualityScore: 80, AutoMinSuccessRate: 90}
+	if got := autoQualityFloor(config); got != 80 {
+		t.Fatalf("quality floor = %d", got)
+	}
+	if got := autoQualityFloor(model.GroupRelayConfig{AutoMinTaskScore: 70}); got != 70 {
+		t.Fatalf("legacy quality floor = %d", got)
+	}
+	if got := autoReliabilityFloor(config); got != 0.9 {
+		t.Fatalf("success floor = %v", got)
+	}
+}

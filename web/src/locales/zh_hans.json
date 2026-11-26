@@ -879,6 +879,10 @@
             "autoQualityTitle": "质量门槛与综合评分",
             "autoQualityHint": "门槛大于 0 时，先排除未验证或质量分不达标的模型，再按质量、成本、延迟和成功率综合选择。设置为 0 时保持原来的最低成本优先。",
             "autoMinTaskScore": "最低任务质量分",
+            "autoMinQualityScore": "最低质量分",
+            "autoMinSuccessRate": "最低成功率 (%)",
+            "autoParetoEnabled": "帕累托前沿筛选",
+            "autoParetoEnabledHint": "综合评分前，先剔除在成本、延迟、成功率与任务质量上被其他候选全面压制的成员。",
             "autoQualityWeight": "质量权重",
             "autoPriceWeight": "成本权重",
             "autoLatencyWeight": "延迟权重",
@@ -1333,6 +1337,8 @@
             "sticky_miss": "粘性失效",
             "auto_quality_unverified": "任务能力尚未验证",
             "auto_quality_below_threshold": "任务质量分未达门槛",
+            "auto_success_below_floor": "成功率低于配置下限",
+            "auto_pareto_dominated": "在帕累托前沿上被压制",
             "auto_eligible": "通过任务能力门槛"
         },
         "eventPhase": {

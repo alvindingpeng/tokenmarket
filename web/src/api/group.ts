@@ -32,6 +32,9 @@ export interface GroupRelayConfig {
     auto_fallback_no_candidate?: boolean;
     auto_explore_percent?: number;
     auto_min_task_score?: number;
+    auto_min_quality_score?: number;
+    auto_min_success_rate?: number;
+    auto_pareto_enabled?: boolean;
     auto_quality_weight?: number;
     auto_price_weight?: number;
     auto_latency_weight?: number;

@@ -438,7 +438,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 						if task.name != AutoTaskUnsupported &&
 							task.name != AutoTaskTool &&
 							len(analysis.ExploreCandidate) > 0 {
-							autoExplore = analysis.ExploreCandidate[rand.IntN(len(analysis.ExploreCandidate))]
+							autoExplore = pickAutoExploreItem(group, analysis.ExploreCandidate)
 							group.Items = []model.GroupItem{autoExplore}
 							group.AutoRequestCosts = make(map[int]float64, 1)
 							group.AutoTaskScores = make(map[int]int, 1)
@@ -528,7 +528,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 						task.name != AutoTaskTool &&
 						len(analysis.ExploreCandidate) > 0 &&
 						autoExploreHit(group.ID, c.GetInt("api_key_id"), int(keyUserID), group.RelayConfig.AutoExplorePercent, task.name) {
-						autoExplore = analysis.ExploreCandidate[rand.IntN(len(analysis.ExploreCandidate))]
+						autoExplore = pickAutoExploreItem(group, analysis.ExploreCandidate)
 						group.Items = []model.GroupItem{autoExplore}
 						group.AutoRequestCosts = make(map[int]float64, 1)
 						group.AutoTaskScores = make(map[int]int, 1)
@@ -570,6 +570,11 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				reason := task.name + ":no_candidate"
 				var prediction *autoPredictionDetails
 				if len(candidates) > 0 {
+					if eligible.RelayConfig.AutoParetoEnabled {
+						if front := autoParetoFront(eligible, candidates); len(front) > 0 {
+							candidates = front
+						}
+					}
 					predicted := selectGroupItem(eligible, candidates)
 					reason = fmt.Sprintf("%s:item=%d", task.name, predicted.ID)
 					prediction = &autoPredictionDetails{

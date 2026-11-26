@@ -157,6 +157,9 @@ export const GroupCard = memo(function GroupCard({
             (values.relay_config.auto_fallback_no_candidate ?? false) !== (group.relay_config.auto_fallback_no_candidate ?? false) ||
             (values.relay_config.auto_explore_percent ?? 0) !== (group.relay_config.auto_explore_percent ?? 0) ||
             (values.relay_config.auto_min_task_score ?? 0) !== (group.relay_config.auto_min_task_score ?? 0) ||
+            (values.relay_config.auto_min_quality_score ?? 0) !== (group.relay_config.auto_min_quality_score ?? 0) ||
+            (values.relay_config.auto_min_success_rate ?? 0) !== (group.relay_config.auto_min_success_rate ?? 0) ||
+            !!values.relay_config.auto_pareto_enabled !== !!group.relay_config.auto_pareto_enabled ||
             (values.relay_config.auto_quality_weight ?? 0) !== (group.relay_config.auto_quality_weight ?? 0) ||
             (values.relay_config.auto_price_weight ?? 0) !== (group.relay_config.auto_price_weight ?? 0) ||
             (values.relay_config.auto_latency_weight ?? 0) !== (group.relay_config.auto_latency_weight ?? 0) ||
