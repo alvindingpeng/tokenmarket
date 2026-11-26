@@ -62,7 +62,7 @@ export function NotificationCenter() {
     ];
 
     return (
-        <div className="notification-page mx-auto flex h-full min-h-0 w-full max-w-4xl flex-col gap-4 overflow-y-auto overscroll-contain p-4 md:p-6">
+        <div className="notification-page flex h-full min-h-0 w-full min-w-0 flex-col gap-4 overflow-y-auto overscroll-contain p-4 md:p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                     <Bell className="size-5 text-muted-foreground" />
@@ -74,7 +74,7 @@ export function NotificationCenter() {
                 </Button>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
                 {filters.map((filter) => (
                     <Button
                         key={filter.id}
@@ -115,7 +115,7 @@ export function NotificationCenter() {
                                 <CardContent className="flex items-start gap-3 p-4">
                                     <div className="min-w-0 flex-1">
                                         <div className="flex flex-wrap items-center gap-2">
-                                            <span className="font-medium">{item.title}</span>
+                                            <span className="min-w-0 font-medium wrap-anywhere">{item.title}</span>
                                             <Badge variant={unread ? 'default' : 'secondary'} className="text-[10px]">
                                                 {t(notificationTypeKey(item.type))}
                                             </Badge>
@@ -164,7 +164,7 @@ export function NotificationCenter() {
             )}
 
             {totalPages > 1 && (
-                <div className="flex items-center justify-between text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                     <span className="text-muted-foreground">{t('total', { total })}</span>
                     <div className="flex items-center gap-2">
                         <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>

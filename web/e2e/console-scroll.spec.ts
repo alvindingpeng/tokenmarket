@@ -85,17 +85,19 @@ test('short landscape settings and home can scroll by touch', async ({ browser }
     await context.close();
 });
 
-for (const viewport of [{ width: 390, height: 844 }, { width: 667, height: 375 }, { width: 844, height: 390 }]) {
+for (const viewport of [{ width: 390, height: 844 }, { width: 667, height: 375 }, { width: 844, height: 390 }, { width: 1440, height: 900 }]) {
     for (const pageName of ['notification', 'ops']) {
+        if (viewport.width === 1440 && pageName !== 'notification') continue;
         test(`${pageName} content is reachable by touch at ${viewport.width}x${viewport.height}`, async ({ browser }) => {
-            const context = await browser.newContext({ viewport, isMobile: true, hasTouch: true, reducedMotion: 'reduce' });
+            const context = await browser.newContext({ viewport, isMobile: viewport.width < 1440, hasTouch: true, reducedMotion: 'reduce' });
             const page = await context.newPage();
             await page.addInitScript((currentPage) => {
                 localStorage.setItem('nav-storage', JSON.stringify({ state: { currentPage, settingSection: 'personal' }, version: 0 }));
             }, pageName);
             const notifications = Array.from({ length: 20 }, (_, index) => ({
                 id: index + 1, user_id: 1, type: 'system', status: 'read',
-                title: `Notification ${index + 1}`, content: 'A notification with enough content to occupy space.',
+                title: index === 0 ? 'notification-id-'.repeat(24) : `Notification ${index + 1}`,
+                content: 'A notification with enough content to occupy space.',
                 created_at: '2026-11-25T00:00:00Z',
             }));
             await page.route('**/api/v1/**', async route => {
@@ -128,7 +130,11 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 667, height: 375 }
             await page.getByRole('navigation', { name: 'Main Navigation' }).getByRole('button', { name: pageName === 'notification' ? 'Notification' : 'Ops', exact: true }).click();
             const content = page.locator(pageName === 'notification' ? '.notification-page' : '.ops-page');
             await expect(content).toBeVisible();
-            if (pageName === 'notification') await expect(page.getByText('Notification 20')).toHaveCount(1);
+            if (pageName === 'notification') {
+                await expect(page.getByText('Notification 20')).toHaveCount(1);
+                await expect.poll(() => content.evaluate(el => Math.abs(el.getBoundingClientRect().width - el.parentElement!.clientWidth))).toBeLessThanOrEqual(1);
+                expect(await content.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+            }
 
             const scroller = viewport.width <= 767 || viewport.height <= 600
                 ? page.locator('.responsive-page')
